@@ -36,6 +36,7 @@ const item: McpInvocationView = {
   tool_id: 'tool_1',
   tool_display_key: 'create_issue',
   tool_display_name: 'Create issue',
+  mcp_method: 'tools/call',
   status: 'success',
   policy_result: 'allowed',
   latency_ms: 120,
@@ -94,6 +95,7 @@ describe('McpInvocationsPage', () => {
     fireEvent.change(screen.getByTestId('mcp-filter-request-id'), { target: { value: 'req_1' } })
     fireEvent.change(screen.getByTestId('mcp-filter-server'), { target: { value: 'github' } })
     fireEvent.change(screen.getByTestId('mcp-filter-tool'), { target: { value: 'create_issue' } })
+    fireEvent.change(screen.getByTestId('mcp-filter-method'), { target: { value: 'tools/call' } })
     fireEvent.change(screen.getByTestId('mcp-filter-api-key'), { target: { value: 'api_key_1' } })
     fireEvent.change(screen.getByTestId('mcp-filter-team'), { target: { value: 'team_1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }))
@@ -105,6 +107,7 @@ describe('McpInvocationsPage', () => {
           request_id: 'req_1',
           server_display_key: 'github',
           tool_display_key: 'create_issue',
+          mcp_method: 'tools/call',
           api_key_id: 'api_key_1',
           user_id: undefined,
           team_id: 'team_1',

@@ -330,6 +330,7 @@ impl CatalogInvocation<'_> {
                     tool_id: Some(self.record.tool.mcp_tool_id),
                     tool_display_key: self.record.tool.upstream_name.clone(),
                     tool_display_name: self.record.tool.display_name.clone(),
+                    mcp_method: "tools/call".to_string(),
                     status,
                     policy_result,
                     latency_ms: Some(self.started_at.elapsed().as_millis() as i64),

@@ -48,6 +48,7 @@ const initialFilters: McpInvocationFiltersInput = {
   request_id: '',
   server_display_key: '',
   tool_display_key: '',
+  mcp_method: '',
   api_key_id: '',
   user_id: '',
   team_id: '',
@@ -173,6 +174,16 @@ export function McpInvocationsPage() {
                 placeholder="create_issue"
                 value={filters.tool_display_key ?? ''}
                 onChange={(event) => updateFilter('tool_display_key', event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="mcp-filter-method">Method</FieldLabel>
+              <Input
+                id="mcp-filter-method"
+                data-testid="mcp-filter-method"
+                placeholder="resources/read"
+                value={filters.mcp_method ?? ''}
+                onChange={(event) => updateFilter('mcp_method', event.target.value)}
               />
             </Field>
             <Field>
@@ -310,19 +321,20 @@ export function McpInvocationsPage() {
               <EmptyHeader>
                 <EmptyTitle>No MCP invocations found</EmptyTitle>
                 <EmptyDescription>
-                  No tool calls match the current filters or the gateway has not recorded MCP
+                  No MCP calls match the current filters or the gateway has not recorded MCP
                   invocation rows yet.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
             <div className="border-border overflow-x-auto rounded-md border">
-              <Table data-testid="mcp-invocations-table" className="min-w-[78rem]">
+              <Table data-testid="mcp-invocations-table" className="min-w-[84rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Request</TableHead>
                     <TableHead>Owner Context</TableHead>
                     <TableHead>Server</TableHead>
+                    <TableHead>Method</TableHead>
                     <TableHead>Tool</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Policy</TableHead>
@@ -346,6 +358,7 @@ export function McpInvocationsPage() {
                         <OwnerLabel item={item} />
                       </TableCell>
                       <TableCell className="font-mono">{item.server_display_key}</TableCell>
+                      <TableCell className="font-mono">{item.mcp_method}</TableCell>
                       <TableCell className="font-mono">{item.tool_display_key}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
@@ -431,6 +444,7 @@ function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
         <DetailRow label="User" value={invocation.user_id ?? 'n/a'} mono />
         <DetailRow label="Team" value={invocation.team_id ?? 'n/a'} mono />
         <DetailRow label="Server" value={invocation.server_display_key} mono />
+        <DetailRow label="Method" value={invocation.mcp_method} mono />
         <DetailRow label="Tool" value={invocation.tool_display_key} mono />
         <DetailRow label="Occurred At" value={invocation.occurred_at} />
         <DetailRow label="Latency" value={formatLatency(invocation.latency_ms)} />
@@ -645,6 +659,7 @@ function normalizeFilterSearch(search: Record<string, unknown>): McpInvocationFi
     request_id: searchParamValue(search.request_id),
     server_display_key: searchParamValue(search.server_display_key),
     tool_display_key: searchParamValue(search.tool_display_key),
+    mcp_method: searchParamValue(search.mcp_method),
     api_key_id: searchParamValue(search.api_key_id),
     user_id: searchParamValue(search.user_id),
     team_id: searchParamValue(search.team_id),

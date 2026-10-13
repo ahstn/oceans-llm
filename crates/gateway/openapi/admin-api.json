@@ -2705,6 +2705,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "mcp_method",
+            "in": "query",
+            "description": "MCP JSON-RPC method, such as `tools/call` or `resources/read`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -14721,6 +14733,7 @@
           "server_display_name",
           "tool_display_key",
           "tool_display_name",
+          "mcp_method",
           "status",
           "policy_result",
           "has_payload",
@@ -14759,6 +14772,10 @@
               "null"
             ],
             "format": "int64"
+          },
+          "mcp_method": {
+            "type": "string",
+            "description": "MCP JSON-RPC method this row records, such as `tools/call`,\n`resources/read`, or `prompts/get`. Unparseable requests use `invalid`."
           },
           "mcp_tool_invocation_id": {
             "type": "string"

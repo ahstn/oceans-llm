@@ -2146,7 +2146,15 @@ pub struct McpToolInvocationRecord {
     pub arguments_payload_redacted: bool,
     pub result_payload_redacted: bool,
     pub metadata: Map<String, Value>,
+    /// MCP JSON-RPC method this row records, such as `tools/call`, `tools/list`,
+    /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+    #[serde(default = "default_mcp_invocation_method")]
+    pub mcp_method: String,
     pub occurred_at: OffsetDateTime,
+}
+
+fn default_mcp_invocation_method() -> String {
+    "tools/call".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2174,6 +2182,7 @@ pub struct McpToolInvocationQuery {
     pub policy_result: Option<McpToolPolicyResult>,
     pub occurred_at_start: Option<OffsetDateTime>,
     pub occurred_at_end: Option<OffsetDateTime>,
+    pub mcp_method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

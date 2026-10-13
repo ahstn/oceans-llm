@@ -77,6 +77,27 @@ For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` respons
 
 For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error, and the gateway logs them as policy-denied invocations.
 
+### Other methods on direct `/mcp/{server_key}`
+
+Resources, prompts, and completions can return server data just as tools can, so the direct proxy classifies every JSON-RPC method before it contacts the upstream server:
+
+| Method | Gateway behavior |
+| --- | --- |
+| `initialize`, `ping`, `logging/setLevel`, `notifications/*` (no `id`), client replies to server requests, `DELETE` (end session) | Forwarded. These carry no server data. |
+| `tools/list`, `tools/call` | Filtered and checked per tool, as described above. |
+| `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `completion/complete` | Forwarded only when the caller has at least one effective grant on the server. Otherwise the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a policy-denied invocation with error code `mcp_server_not_granted`. |
+| `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. The stream is not logged per call. |
+| Any other method | Denied with HTTP 403 and JSON-RPC code `-32601`, and logged with error code `mcp_method_not_allowed`. |
+| `POST` with an empty or malformed body | Rejected with HTTP 400 and JSON-RPC code `-32600`. |
+
+Grants are per tool, and resources and prompts have no grant model of their own. A grant on any tool on the server is therefore the minimum bar for reading its resources or prompts. Use the server's tool grants to decide who may use the server at all.
+
+The gateway applies result guardrails to `resources/read` and `prompts/get` responses, including finite `text/event-stream` responses, in the same way as `tools/call` results. List and completion results are not result-guarded, which matches `tools/list`. Resource and prompt requests are not checked against request guardrails.
+
+Each governed call is recorded on the MCP Invocations page. The `Method` column holds the JSON-RPC method. For `resources/read` and the resource subscription methods, the tool column shows the resource URI; for `prompts/get` it shows the prompt name.
+
+Before this change, the direct proxy forwarded every method other than `tools/list` and `tools/call` once it had resolved the upstream credential, without checking grants, guardrails, or logging. Any valid API key could read resources and prompts from any active server. See [Govern every MCP method on the direct proxy](../adr/2026-10-13-govern-every-mcp-method.md).
+
 `call_tool` input uses:
 
 ```json
@@ -101,6 +122,8 @@ tools from effective access at request time:
 - direct `/mcp/{server_key}` exposes only granted active upstream tools on that
   server
 - the gateway rejects denied direct calls before it contacts the upstream MCP server
+- direct resources, prompts, and completions need at least one effective grant
+  on the server, and unknown methods are denied
 - missing or expired upstream credentials fail after grant checks, so denied
   callers do not learn whether a credential exists
 

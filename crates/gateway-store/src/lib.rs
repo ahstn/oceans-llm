@@ -1238,6 +1238,7 @@ pub(crate) mod tests {
             arguments_payload_redacted: true,
             result_payload_redacted: false,
             metadata: Map::new(),
+            mcp_method: "tools/call".to_string(),
             occurred_at,
         }
     }
@@ -1323,6 +1324,7 @@ pub(crate) mod tests {
             status: McpToolInvocationStatus::Unauthorized,
             policy_result: McpToolPolicyResult::Denied,
             has_payload: false,
+            mcp_method: "resources/read".to_string(),
             occurred_at: occurred_at - Duration::seconds(60),
             ..invocation.clone()
         };
@@ -1352,6 +1354,7 @@ pub(crate) mod tests {
                 policy_result: Some(McpToolPolicyResult::Allowed),
                 occurred_at_start: Some(occurred_at - Duration::seconds(5)),
                 occurred_at_end: Some(occurred_at + Duration::seconds(5)),
+                mcp_method: Some("tools/call".to_string()),
             })
             .await
             .expect("list invocations");
@@ -1372,6 +1375,19 @@ pub(crate) mod tests {
             .expect("list denied invocations");
         assert_eq!(denied_page.total, 1);
         assert_eq!(denied_page.items[0].request_id, "req-mcp-2");
+        assert_eq!(denied_page.items[0].mcp_method, "resources/read");
+
+        let resource_page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                mcp_method: Some("resources/read".to_string()),
+                ..Default::default()
+            })
+            .await
+            .expect("list resource invocations");
+        assert_eq!(resource_page.total, 1);
+        assert_eq!(resource_page.items[0].request_id, "req-mcp-2");
 
         let detail = store
             .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)

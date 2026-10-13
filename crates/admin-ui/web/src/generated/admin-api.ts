@@ -3791,6 +3791,11 @@ export interface components {
             has_payload: boolean;
             /** Format: int64 */
             latency_ms?: number | null;
+            /**
+             * @description MCP JSON-RPC method this row records, such as `tools/call`,
+             *     `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+             */
+            mcp_method: string;
             mcp_tool_invocation_id: string;
             metadata: {
                 [key: string]: unknown;
@@ -6046,6 +6051,8 @@ export interface operations {
                 policy_result?: string | null;
                 occurred_at_start?: string | null;
                 occurred_at_end?: string | null;
+                /** @description MCP JSON-RPC method, such as `tools/call` or `resources/read`. */
+                mcp_method?: string | null;
             };
             header?: never;
             path?: never;
