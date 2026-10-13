@@ -3,6 +3,9 @@ name: React Doctor
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "crates/admin-ui/web/**"
+      - ".github/workflows/react-doctor.yml"
   push:
     branches: ["main"]
 

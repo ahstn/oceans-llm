@@ -132,13 +132,6 @@ jobs:
         with:
           "cache": false
           "install_args": "rust"
-      - name: "Verify the build toolchain"
-        run: "mise exec -- rustc --version"
-        shell: "bash"
-      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          key: ${{ join(matrix.targets, '-') }}
-          cache-provider: ${{ matrix.cache_provider }}
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest

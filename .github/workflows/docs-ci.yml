@@ -2,6 +2,11 @@ name: docs-ci
 
 on:
   pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-ci.yml"
+      - "mise.toml"
+      - "mise.lock"
   push:
     branches: ["main"]
 
@@ -13,8 +18,8 @@ permissions:
   contents: read
 
 env:
-  MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
 
 jobs:
   docs-check:

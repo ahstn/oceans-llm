@@ -3,6 +3,8 @@
 Status: Accepted
 
 > **Amendment note (2026-10-13):** [Built-in MCP, pi-intercom, and advisory review status](#amendment-built-in-mcp-pi-intercom-and-advisory-review-status) replaces `pi-mcp-adapter` and makes failed reviews advisory. The original decision remains below as history.
+>
+> **Amendment note (2026-10-13, trigger):** [Review workflow on `pull_request`](#amendment-review-workflow-on-pull_request) replaces the `pull_request_target` trigger described under Consequences.
 
 ## Context
 
@@ -55,3 +57,20 @@ Pi 1.x ships MCP support, so the adapter duplicated a built-in capability. Revie
 - Checks created with `GITHUB_TOKEN` can appear grouped under another workflow.
 - Dependabot-triggered runs are skipped because they receive no secrets and a read-only token.
 - If `Oceans review` becomes a required check, `neutral` counts as passing.
+
+## Amendment: review workflow on `pull_request`
+
+Date: 2026-10-13
+
+### Decision
+
+Run `oceans-review-agent.yml` on `pull_request` instead of `pull_request_target`. Keep skipping fork, draft, and Dependabot pull requests. Keep the separate PR-head checkout as review data.
+
+### Rationale
+
+GitHub's workflow execution protections disable `pull_request_target` by default in public repositories and start enforcing that on 2026-11-02. Same-repository pull requests receive secrets and the declared token permissions on `pull_request`. Their authors already have write access and could run a credentialed workflow by pushing a branch. The trusted-branch boundary therefore added little protection. The generated consumer workflow already uses `pull_request`.
+
+### Trade-offs and follow-ups
+
+- Workflow and action changes now take effect in the pull request that makes them, not only after merge.
+- A pull request can change the code that receives `OPENROUTER_API_KEY`. Move the key into a protected environment if contributors without write access ever need same-repository branches.

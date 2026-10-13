@@ -139,7 +139,7 @@ Drift prevention is intentionally simple:
 - check the generated files into the repository,
 - fail CI and local lint if regeneration changes the working tree.
 
-The tooling for that lives in [../../mise.toml](../../mise.toml) and the CI gate in [../../.github/workflows/rust-ci.yml](../../.github/workflows/rust-ci.yml).
+The tooling for that lives in [../../mise.toml](../../mise.toml) and the CI gate in [../../.github/workflows/ci.yml](../../.github/workflows/ci.yml).
 
 This approach keeps the source of truth inspectable and makes contract drift a normal code review problem instead of a runtime surprise.
 

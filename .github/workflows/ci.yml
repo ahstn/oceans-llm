@@ -1,7 +1,11 @@
-name: rust-ci
+name: ci
 
 on:
   pull_request:
+    # No status checks are required on main. If ci / check becomes required,
+    # drop this filter or docs-only PRs will wait on a check that never runs.
+    paths-ignore:
+      - "docs/**"
   push:
     branches: ["main"]
 
@@ -13,17 +17,20 @@ permissions:
   contents: read
 
 env:
-  MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
   POSTGRES_CONNECTION: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
 
 jobs:
-  rust-lint-test:
+  # One job shares a single Rust cache restore and compile across the Rust,
+  # admin contract, and end-to-end checks. Cheap checks run first.
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     services:
       postgres:
-        image: postgres:17-alpine
+        # Matches the Postgres version that mise.toml runs for local development.
+        image: postgres:18-alpine
         env:
           POSTGRES_DB: oceans_llm_ci
           POSTGRES_USER: oceans
@@ -35,16 +42,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup mise and Rust
+      - name: Setup mise, Rust, Bun, and Node.js
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          install_args: rust
+          install_args: rust bun node
 
       - name: Cache Cargo artifacts
         uses: ./.github/actions/rust-cache
@@ -55,6 +63,9 @@ jobs:
       - name: Lint Rust workspace
         run: mise run rust-lint
 
+      - name: Check generated admin contract
+        run: mise run admin-contract-check
+
       - name: Test Rust workspace including Postgres
         env:
           TEST_POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
@@ -64,3 +75,16 @@ jobs:
         env:
           POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
         run: mise run //crates/gateway-store:smoke:postgres
+
+      - name: Run end-to-end contract tests
+        run: mise run e2e-test
+
+      - name: Upload Playwright report and test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright
+          path: |
+            crates/admin-ui/web/playwright-report
+            crates/admin-ui/web/test-results
+          if-no-files-found: ignore

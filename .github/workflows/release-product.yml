@@ -8,8 +8,8 @@ on:
         type: string
 
 env:
-  MISE_EXPERIMENTAL: true
   MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
   HELM_CHART_NAME: oceans-llm
   HELM_CHART_DIR: deploy/helm/oceans-llm
   HELM_OCI_REGISTRY: ghcr.io/ahstn/charts
@@ -133,16 +133,17 @@ jobs:
           install_args: helm
           cache: false
 
-      - name: Validate chart
+      # A tag can point at a commit helm-ci never checked, so validate here too.
+      - name: Lint and render the chart
         run: mise run helm-check
 
-      - name: Log in to GHCR for Helm
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
-
       - name: Package and push Helm chart
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
+          helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
           chart_version="${GITHUB_REF_NAME#v}"
           mkdir -p dist/charts
 
