@@ -1,0 +1,61 @@
+crates/gateway-core/src/error.rs
+  s_4743c3bdc4d116::t_d7b3aca2250993 41-46,185-187,191-192,284-286
+Cargo.lock
+  s_4743c3bdc4d116::t_18f0490f242b7d 2008
+crates/gateway-core/src/lib.rs
+  s_4743c3bdc4d116::t_864288309fba49 8,121-124
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_d4607441ce9bfe 1-187
+crates/gateway-service/Cargo.toml
+  s_4743c3bdc4d116::t_5b0ccdbb5079ac 23
+crates/gateway-service/src/lib.rs
+  s_4743c3bdc4d116::t_535010cb35b57d 15,84
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_ea68a2e7be7e36 1-10
+crates/gateway-service/src/mcp_client_oauth/settings.rs
+  s_4743c3bdc4d116::t_86e9f30d2680fc 1-243
+crates/gateway/src/config/mcp.rs
+  s_4743c3bdc4d116::t_81d75b0fab1d62 13-14
+crates/gateway/src/config/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_f22ac1f50e6cdb 1-87
+crates/gateway/src/config/mod.rs
+  s_4743c3bdc4d116::t_c573bab4034913 21,57,161
+crates/gateway/src/config/tests/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_605c053865011f 1-198
+crates/gateway/src/config/tests/mod.rs
+  s_4743c3bdc4d116::t_83c02fd4b69e05 37
+crates/gateway/src/http/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_63d19955eae8e9 1-53
+crates/gateway/src/http/mcp_client_oauth/metadata.rs
+  s_4743c3bdc4d116::t_bc8991d7806f05 1-149
+crates/gateway/src/http/mcp_client_oauth/tests.rs
+  s_4743c3bdc4d116::t_798f3abc0b52e2 1-241
+crates/gateway/src/http/mcp_gateway.rs
+  s_4743c3bdc4d116::t_445cb13389ca1d 22-24,42,72-73,76,81,649-667
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_4743c3bdc4d116::t_61974404dad4bc 14,37-38,62,65,69
+crates/gateway/src/http/mod.rs
+  s_4743c3bdc4d116::t_7d78178b404525 17,52-54,408-419
+crates/gateway/src/http/state.rs
+  s_4743c3bdc4d116::t_1caf4760ad366f 5-7,35-36
+crates/gateway/src/http/test_support.rs
+  s_4743c3bdc4d116::t_86521d9cc90237 41
+crates/gateway/src/main.rs
+  s_4743c3bdc4d116::t_affbdfd4c00cbf 296-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3075b42b12dfefff1c5bad412bf8c973a3b43b0a",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
