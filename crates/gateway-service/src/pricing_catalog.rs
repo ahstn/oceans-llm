@@ -469,8 +469,8 @@ where
     }
 }
 
-/// Resolve the effective catalog pricing row for a target, trying the exact id before
-/// its [`catalog_model_id_fallback`].
+/// Resolve the effective catalog pricing row for a target, preferring the exact id over
+/// its [`catalog_model_id_fallback`] in a single repository lookup.
 pub(crate) async fn resolve_catalog_pricing_record<R>(
     repo: &R,
     pricing_provider_id: &str,
@@ -480,19 +480,22 @@ pub(crate) async fn resolve_catalog_pricing_record<R>(
 where
     R: PricingCatalogRepository + Send + Sync + ?Sized,
 {
-    if let Some(record) = repo
-        .resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
-        .await?
-    {
-        return Ok(Some(record));
-    }
-    let Some(fallback_model_id) = catalog_model_id_fallback(pricing_provider_id, pricing_model_id)
-    else {
-        return Ok(None);
+    let record = match catalog_model_id_fallback(pricing_provider_id, pricing_model_id) {
+        Some(fallback_model_id) => {
+            repo.resolve_model_pricing_with_fallback_at(
+                pricing_provider_id,
+                pricing_model_id,
+                &fallback_model_id,
+                occurred_at,
+            )
+            .await?
+        }
+        None => {
+            repo.resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
+                .await?
+        }
     };
-    Ok(repo
-        .resolve_model_pricing_at(pricing_provider_id, &fallback_model_id, occurred_at)
-        .await?)
+    Ok(record)
 }
 
 pub async fn fetch_vendored_snapshot(
