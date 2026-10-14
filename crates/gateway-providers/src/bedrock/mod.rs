@@ -674,12 +674,29 @@ const INFERENCE_PROFILE_PREFIXES: &[&str] = &[
 ];
 
 /// `CountTokens` accepts foundation model IDs only, so a cross-Region inference
-/// profile such as `us.anthropic.claude-sonnet-4-6` is counted against
-/// `anthropic.claude-sonnet-4-6`. ARNs pass through unchanged.
+/// profile such as `us.anthropic.claude-sonnet-4-6`, or its
+/// `arn:...:inference-profile/us.anthropic.claude-sonnet-4-6` ARN, is counted
+/// against `anthropic.claude-sonnet-4-6`. Other ARNs pass through unchanged:
+/// application inference profile IDs are opaque, so they cannot be mapped to
+/// a foundation model without calling Bedrock.
 fn count_tokens_model_id(upstream_model: &str) -> &str {
+    let profile_id = if upstream_model.starts_with("arn:") {
+        // arn:partition:service:region:account:resource. The resource may
+        // itself contain `:`, as in `...-v1:0`, so split at most five times.
+        match upstream_model
+            .splitn(6, ':')
+            .nth(5)
+            .and_then(|resource| resource.strip_prefix("inference-profile/"))
+        {
+            Some(profile_id) => profile_id,
+            None => return upstream_model,
+        }
+    } else {
+        upstream_model
+    };
     INFERENCE_PROFILE_PREFIXES
         .iter()
-        .find_map(|prefix| upstream_model.strip_prefix(prefix))
+        .find_map(|prefix| profile_id.strip_prefix(prefix))
         .unwrap_or(upstream_model)
 }
 

@@ -132,6 +132,18 @@ async fn count_tokens_uses_the_foundation_model_behind_a_profile() {
             "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
             "/model/arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6/count-tokens",
         ),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+            "/model/anthropic.claude-sonnet-4-6/count-tokens",
+        ),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:inference-profile/eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
+            "/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/count-tokens",
+        ),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+            "/model/arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6/count-tokens",
+        ),
     ] {
         let context = context_with_api_style(
             upstream_model,

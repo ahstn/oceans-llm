@@ -48,7 +48,7 @@ Preconditions:
 - No local route speaks the OpenAI Decisions format upstream (`compatibility.openai_compat.decisions_api: openai`). The provider round-trip tests cover that path. Do not add an OpenAI route only for a canary.
 - Token counting is never logged as a request. Prove it from the HTTP response and the `anthropic count_tokens request completed` gateway log event, not from Request Logs or usage totals.
 - The seeded `claude-sonnet-4.6` route uses the cross-Region profile `us.anthropic.claude-sonnet-4-6`, so its count is sent to `anthropic.claude-sonnet-4-6`. A Bedrock `ValidationException` naming the model ID means the route uses an ID Bedrock does not publish, not a gateway failure.
-- Bedrock `CountTokens` accepts foundation model IDs only. The gateway strips a cross-Region profile prefix such as `us.`; an application inference profile ARN is rejected upstream.
+- Bedrock `CountTokens` accepts foundation model IDs only. The gateway strips a cross-Region profile prefix such as `us.`, including inside a system-defined `inference-profile/` ARN; an application inference profile ARN is rejected upstream.
 - The unversioned aliases (`/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`) reuse the `/v1` handlers. A canary on an alias proves routing only, not provider behavior.
 - Bedrock stored responses default to retention. Keep `store: false` unless storage behavior is the test target.
 - A provider outage, missing model access, expired credential, quota, or network block is an integration failure with a specific cause. It does not invalidate separate local UI proof.
