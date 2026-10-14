@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { verifyNoMcpGrant } from "./mcp-canary.mjs";
-import { attemptScope, loadStackEnv } from "./mcp-browser.mjs";
+import { attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = process.env.OCEANS_VERIFY_REPO_ROOT ?? path.resolve(scripts, "../../../..");
@@ -144,4 +144,12 @@ test("credential aliases come from the launch record, not the driver's environme
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test("the expected MCP endpoint normalizes the base URL like the gateway", () => {
+  assert.equal(mcpEndpointFor("http://127.0.0.1:38123"), "http://127.0.0.1:38123/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/v1"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/v1/"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/llm"), "https://gateway.example/llm/mcp");
 });

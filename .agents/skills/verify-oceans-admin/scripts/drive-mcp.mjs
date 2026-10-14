@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { registerServer, verifyWorkbench, createAccess, attemptScope, loadStackEnv } from "./mcp-browser.mjs";
+import { registerServer, verifyWorkbench, createAccess, attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 import { runMcpCanaries, verifyNoMcpGrant, testRevokedKey } from "./mcp-canary.mjs";
 import { createProofRecorder } from "./proof.mjs";
 
@@ -31,7 +31,7 @@ const owned = { servers: [], toolsets: [], grants: [], apiKeyId: null, apiKeyNam
 requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
 // The gateway inherited its environment at launch, so credential aliases come from that record.
 const stackEnv = await loadStackEnv(process.env.OCEANS_VERIFY_STACK_ENV);
-const expectedGatewayUrl = config.expected_gateway_url ?? `${stackEnv.clientConfigBaseUrl ?? baseURL}/mcp`;
+const expectedGatewayUrl = config.expected_gateway_url ?? mcpEndpointFor(stackEnv.clientConfigBaseUrl ?? baseURL);
 const scope = attemptScope(runId);
 const proof = {
   entryPoint: `${baseURL}/admin/mcp`, candidates: [], actions, failures, attemptScope: scope.key, aliasSource: stackEnv.source,

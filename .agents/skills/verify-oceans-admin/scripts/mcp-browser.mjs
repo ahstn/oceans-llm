@@ -15,6 +15,12 @@ export function attemptScope(runId, now = Date.now()) {
   };
 }
 
+/** The aggregate MCP endpoint the gateway generates for a client base URL (see `normalize_gateway_base_url`). */
+export function mcpEndpointFor(baseUrl) {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  return `${trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed}/mcp`;
+}
+
 /**
  * Reads what `launch` resolved for the gateway: which OCEANS_MCP_DISCOVERY_* aliases were set
  * and the client configuration base URL. Without a launch record, falls back to this process.
