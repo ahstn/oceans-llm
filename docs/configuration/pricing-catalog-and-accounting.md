@@ -85,6 +85,8 @@ Current exact catalog coverage, used only when a route has no pricing override, 
 
 Anthropic-on-Vertex pricing is supported only for `location=global`.
 
+The catalog lists most Anthropic-on-Vertex models under a versioned id, such as `claude-fable-5-1@default` or `claude-haiku-4-5@20251001`. Oceans looks up the exact upstream model first. If an unversioned id such as `anthropic/claude-fable-5-1` has no exact entry, Oceans tries `<model>@default`. Dated releases without a `@default` entry, such as `claude-sonnet-4-5`, must name the dated id (`anthropic/claude-sonnet-4-5@20250929`) or use a pricing override.
+
 If a route changes provider, upstream model, location, or a billing modifier such as `service_tier`, review pricing behavior before relying on budget enforcement for that traffic.
 
 ## When Requests Are Not Charged

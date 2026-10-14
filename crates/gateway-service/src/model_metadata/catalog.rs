@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::pricing_catalog::{
     PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
-    PricingCatalogSnapshot, metadata::CatalogModelMetadata,
+    PricingCatalogSnapshot, catalog_model_id_fallback, metadata::CatalogModelMetadata,
 };
 
 #[derive(Debug, Deserialize)]
@@ -77,7 +77,12 @@ pub(super) fn resolve(
         .document
         .providers
         .get(provider_id)
-        .and_then(|provider| provider.models.get(model_id));
+        .and_then(|provider| {
+            provider.models.get(model_id).or_else(|| {
+                catalog_model_id_fallback(provider_id, model_id)
+                    .and_then(|fallback| provider.models.get(&fallback))
+            })
+        });
     let supplement = snapshot();
     let secondary = (provider_id == &supplement.provenance.provider_id)
         .then(|| supplement.models.get(model_id))

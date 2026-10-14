@@ -479,7 +479,6 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-fable-5-1
-        context_window_tokens: 1000000
 
   - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock
