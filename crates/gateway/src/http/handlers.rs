@@ -290,6 +290,17 @@ async fn v1_messages_inner(
         )
         .await
     {
+        record_guarded_pre_provider_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata,
+            request_started_at,
+            &labels,
+            &error,
+        )
+        .await;
         return Err(AppError(error));
     }
 
@@ -905,7 +916,7 @@ pub async fn v1_embeddings(
         };
     let core_request = openai_embeddings_request_to_core(&request);
 
-    state
+    if let Err(error) = state
         .service
         .enforce_pre_provider_budget(
             &auth,
@@ -914,7 +925,21 @@ pub async fn v1_embeddings(
             Some(route.upstream_model.as_str()),
             OffsetDateTime::now_utc(),
         )
-        .await?;
+        .await
+    {
+        record_guarded_pre_provider_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata,
+            request_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
 
     let mut context = build_provider_context(
         &request_id,
@@ -1115,7 +1140,7 @@ pub async fn v1_decisions(
     );
     redact_typed_request(&state, &request_id, &route_key, &mut core_request).await?;
 
-    state
+    if let Err(error) = state
         .service
         .enforce_pre_provider_budget(
             &auth,
@@ -1124,7 +1149,21 @@ pub async fn v1_decisions(
             Some(route.upstream_model.as_str()),
             OffsetDateTime::now_utc(),
         )
-        .await?;
+        .await
+    {
+        record_guarded_pre_provider_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata,
+            request_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
 
     let mut context = build_provider_context(
         &request_id,
@@ -1512,6 +1551,8 @@ struct UsageAccountingContext<'a> {
     operation: &'static str,
 }
 
+/// Records a request rejected after routing but before any provider call, such as a
+/// guardrail block or a hard-budget rejection: a summary row with no attempts.
 #[allow(clippy::too_many_arguments)]
 async fn record_guarded_pre_provider_failure(
     state: &AppState,

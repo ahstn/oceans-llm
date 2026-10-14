@@ -40,6 +40,7 @@ The live request path is single-route in this slice.
 8. The budget guard runs after model policy and capability enforcement, before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
+   - the rejection writes a request-log summary row with the returned status, `error_code = budget_exceeded`, and no provider attempts
 9. Route compatibility metadata is passed into the provider adapter.
 10. The provider adapter applies any declared compatibility transforms to the outbound provider request.
 11. The first eligible route executes.
@@ -180,7 +181,7 @@ These failures look similar from far away, but they mean different things.
 - A pre-provider hard-limit check blocked the request.
 - The HTTP response is `429`.
 - No provider call occurs on this path.
-- Observability records this as a request outcome rather than as provider execution.
+- Observability records this as a request outcome rather than as provider execution: a `budget_error` request metric and a request-log summary row with the returned status, `error_code = budget_exceeded`, and no attempts. This holds for `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, and `/v1/decisions`. Batch creation enforces the same budget but writes no request-log row for any outcome.
 
 ### `unpriced`
 

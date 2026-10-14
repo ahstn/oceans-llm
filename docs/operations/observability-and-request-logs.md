@@ -58,7 +58,7 @@ Request correlation is anchored on `x-request-id`. The HTTP middleware boundary 
 
 Request outcomes are emitted once per request with bounded labels. Important examples in this slice are:
 
-- `budget_error` for pre-provider hard-limit rejection
+- `budget_error` for pre-provider hard-limit rejection; the request-log row stores `error_code = budget_exceeded` with no provider attempts
 - `invalid_request` for capability mismatch
 - `upstream_error` for upstream execution or stream failure
 
@@ -301,7 +301,7 @@ Recent cleanup changed the contract in a few important ways.
 - provider execution attempts now live in `request_log_attempts` instead of summary metadata
 - missing request-log detail rows return strict `404 not_found`
 - stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
-- budget-rejected chat requests record a `budget_error` request outcome without executing the provider
+- budget-rejected chat, Responses, Messages, embeddings, and Decisions requests record a `budget_error` request outcome and a request-log summary row without executing the provider
 
 Admins and maintainers should stop expecting:
 
