@@ -1,0 +1,29 @@
+crates/gateway-providers/src/http.rs
+  s_481a97bf7114e6::t_484ec6eab145dd 173,481-486
+crates/gateway/src/http/response_headers.rs
+  s_6d03b8bf1a1feb::t_a1d8306eaa4e86 162-165,187-195,201-202,210-213,215-216,236-237,239-249,473-481,494
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bdf6eabf916cd1312c8f96e3942e4e103516dcd",
+  "prompts": {},
+  "sessions": {
+    "s_481a97bf7114e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7080efcb-45cc-454b-94f3-8e9a952844fd",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
