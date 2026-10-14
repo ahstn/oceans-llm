@@ -62,6 +62,10 @@ Request outcomes are emitted once per request with bounded labels. Important exa
 - `invalid_request` for capability mismatch
 - `upstream_error` for upstream execution or stream failure
 
+### Response headers
+
+Every response returns `x-request-id`, so callers can look up the matching request log. Inference responses also return `x-oceans-*` routing headers, and on successful priced requests a cost that equals the request log's cost. The header contract lives in [Response Headers](../reference/request-lifecycle-and-failure-modes.md#response-headers).
+
 ## Tagging and Attribution
 
 The request-log surface records caller-supplied request tags for filtering and attribution. The tag header contract, validation rules, examples, and identity tag guidance live in [Tagging](tagging.md).

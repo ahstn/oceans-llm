@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::Mutex;
 
-use crate::http::map_reqwest_error;
+use crate::http::{map_reqwest_error, upstream_retry_after};
 
 const DEFAULT_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const METADATA_TOKEN_URL: &str =
@@ -518,11 +518,13 @@ async fn fetch_metadata_server_token(
         .map_err(map_reqwest_error)?;
 
     let status = response.status();
+    let retry_after = upstream_retry_after(status, response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -550,11 +552,13 @@ async fn fetch_metadata_server_id_token(
         .map_err(map_reqwest_error)?;
 
     let status = response.status();
+    let retry_after = upstream_retry_after(status, response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -605,12 +609,14 @@ async fn parse_oauth_token_response(
     response: reqwest::Response,
 ) -> Result<AccessToken, ProviderError> {
     let status = response.status();
+    let retry_after = upstream_retry_after(status, response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
 
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -629,12 +635,14 @@ async fn parse_oauth_id_token_response(
     response: reqwest::Response,
 ) -> Result<AccessToken, ProviderError> {
     let status = response.status();
+    let retry_after = upstream_retry_after(status, response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
 
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
 
@@ -673,6 +681,7 @@ mod tests {
         AccessToken, AccessTokenSource, AdcTokenSource, CachedAccessTokenSource, Duration,
         OffsetDateTime, ServiceAccountIdTokenSource, ServiceAccountTokenSource,
         StaticBearerTokenSource, fetch_metadata_server_id_token, id_token_expires_at,
+        parse_oauth_token_response,
     };
     use crate::token::CLOUD_PLATFORM_SCOPE;
 
@@ -815,6 +824,40 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
         .expect("source");
         let token = source.fetch_token().await.expect("token");
         assert_eq!(token.token, "sa-token");
+    }
+
+    #[tokio::test]
+    async fn oauth_token_errors_keep_upstream_retry_after() {
+        let app = Router::new().route(
+            "/token",
+            post(|| async {
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [(axum::http::header::RETRY_AFTER, "12")],
+                    "rate limited",
+                )
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/token"))
+            .send()
+            .await
+            .expect("response");
+        let error = parse_oauth_token_response(response)
+            .await
+            .expect_err("rate limited");
+
+        assert!(matches!(
+            error,
+            gateway_core::ProviderError::UpstreamHttp { status: 429, retry_after: Some(ref value), .. }
+                if value == "12"
+        ));
     }
 
     #[test]

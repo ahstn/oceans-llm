@@ -303,6 +303,11 @@ impl InferenceExecution<'_> {
             saw_terminal_event: false,
             collector: state.service.new_stream_response_collector(),
             stream_trace,
+            held_usage_chunk: None,
+            held_after_usage: Vec::new(),
+            framer: gateway_core::SseEventFramer::default(),
+            pending: Default::default(),
+            cost_usd: None,
         });
 
         let response = Response::builder()

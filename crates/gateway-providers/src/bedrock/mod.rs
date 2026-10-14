@@ -596,11 +596,13 @@ impl BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = crate::http::upstream_retry_after(status, response.headers());
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
 
@@ -648,12 +650,14 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = crate::http::upstream_retry_after(status, response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 
@@ -733,12 +737,14 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = crate::http::upstream_retry_after(status, response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
 
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
 

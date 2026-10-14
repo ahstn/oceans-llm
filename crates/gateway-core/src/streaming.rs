@@ -1,3 +1,5 @@
+use bytes::{Bytes, BytesMut};
+
 use crate::ProviderError;
 
 #[derive(Debug, Clone)]
@@ -123,7 +125,54 @@ impl Utf8ChunkDecoder {
     }
 }
 
-fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
+/// Splits a byte stream at SSE event boundaries, with the same delimiters and scan as
+/// `SseEventParser`, so every piece it returns holds only whole events.
+#[derive(Debug, Clone, Default)]
+pub struct SseEventFramer {
+    buffer: BytesMut,
+    scan_offset: usize,
+}
+
+impl SseEventFramer {
+    /// Returns the events that `chunk` completes, which may be empty. The bytes of an
+    /// incomplete trailing event stay buffered until a later chunk completes it.
+    pub fn push(&mut self, chunk: Bytes) -> Bytes {
+        if self.buffer.is_empty() {
+            let end = last_sse_delimiter_end(&chunk, 0).unwrap_or(0);
+            self.buffer.extend_from_slice(&chunk[end..]);
+            self.scan_offset = self.buffer.len().saturating_sub(3);
+            return chunk.slice(..end);
+        }
+        self.buffer.extend_from_slice(&chunk);
+        let Some(end) = last_sse_delimiter_end(&self.buffer, self.scan_offset) else {
+            self.scan_offset = self.buffer.len().saturating_sub(3);
+            return Bytes::new();
+        };
+        let events = self.buffer.split_to(end).freeze();
+        self.scan_offset = self.buffer.len().saturating_sub(3);
+        events
+    }
+
+    /// Returns whatever is still buffered: an event the stream never completed.
+    pub fn finish(&mut self) -> Bytes {
+        self.scan_offset = 0;
+        self.buffer.split().freeze()
+    }
+}
+
+fn last_sse_delimiter_end(input: &[u8], from: usize) -> Option<usize> {
+    let mut end = None;
+    let mut from = from;
+    while let Some((index, len)) = find_sse_delimiter(input, from) {
+        from = index + len;
+        end = Some(from);
+    }
+    end
+}
+
+/// Finds the first blank line at or after `from`, as `(index, length)`. SSE lines may end
+/// with CRLF, LF or a lone CR.
+pub fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
     for index in from..input.len().saturating_sub(1) {
         let suffix = &input[index..];
         if suffix.starts_with(b"\r\n\r\n") {
@@ -138,7 +187,9 @@ fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{SseEventParser, Utf8ChunkDecoder};
+    use bytes::Bytes;
+
+    use super::{SseEventFramer, SseEventParser, Utf8ChunkDecoder};
 
     #[test]
     fn sse_events_survive_every_chunk_boundary_and_single_byte_chunks() {
@@ -164,6 +215,46 @@ mod tests {
             assert_eq!(events[1].data, "next");
             parser.finish().unwrap();
         }
+    }
+
+    #[test]
+    fn sse_framer_returns_whole_events_for_every_chunk_boundary() {
+        for delimiter in ["\n\n", "\r\r", "\r\n\r\n"] {
+            let input = format!("event: update\ndata: 🙂 café{delimiter}data: next{delimiter}");
+            for split in 0..=input.len() {
+                let mut framer = SseEventFramer::default();
+                let mut parser = SseEventParser::default();
+                let mut pieces = Vec::new();
+                for part in [&input.as_bytes()[..split], &input.as_bytes()[split..]] {
+                    let piece = framer.push(Bytes::copy_from_slice(part));
+                    // Each piece holds exactly the events the parser completes.
+                    let completed = parser.push_bytes(part).unwrap().len();
+                    let mut alone = SseEventParser::default();
+                    assert_eq!(alone.push_bytes(&piece).unwrap().len(), completed);
+                    alone.finish().expect("no partial event in a piece");
+                    pieces.push(piece);
+                }
+                assert_eq!(pieces.concat(), input.as_bytes());
+                assert!(framer.finish().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn sse_framer_finish_returns_an_incomplete_event() {
+        let mut framer = SseEventFramer::default();
+        assert_eq!(
+            framer.push(Bytes::from_static(b"data: a\n\ndata: b")),
+            &b"data: a\n\n"[..]
+        );
+        assert_eq!(framer.push(Bytes::from_static(b"\r\n")), Bytes::new());
+        assert_eq!(framer.push(Bytes::from_static(b"\r")), Bytes::new());
+        assert_eq!(
+            framer.push(Bytes::from_static(b"\n")),
+            &b"data: b\r\n\r\n"[..]
+        );
+        assert_eq!(framer.push(Bytes::from_static(b"data: c")), Bytes::new());
+        assert_eq!(framer.finish(), &b"data: c"[..]);
     }
 
     #[test]

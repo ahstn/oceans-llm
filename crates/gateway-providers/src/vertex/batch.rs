@@ -528,6 +528,7 @@ impl VertexProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after: None,
             });
         }
         if text.is_empty() {
@@ -859,6 +860,7 @@ mod tests {
         assert!(table_already_exists(&ProviderError::UpstreamHttp {
             status: 409,
             body: "table exists".to_string(),
+            retry_after: None,
         }));
     }
 

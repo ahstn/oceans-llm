@@ -47,6 +47,8 @@ pub struct StreamChunkObservation {
     pub has_usage: bool,
     pub has_terminal_event: bool,
     pub ends_stream: bool,
+    /// The chunk's last usage event, and every event after it, carry no output.
+    pub ends_with_usage_report: bool,
 }
 
 impl StreamResponseCollector {
@@ -87,13 +89,17 @@ impl StreamResponseCollector {
             }
 
             let parsed = serde_json::from_str::<Value>(payload).ok();
+            let has_output = parsed.as_ref().is_some_and(stream_event_has_output);
             if let Some(usage) = parsed
                 .as_ref()
                 .and_then(usage_value_from_stream_event)
                 .filter(|usage| !usage.is_null())
             {
                 observation.has_usage = true;
+                observation.ends_with_usage_report = !has_output;
                 merge_usage_observation(&mut self.usage, usage);
+            } else if has_output {
+                observation.ends_with_usage_report = false;
             }
             if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
                 self.failure = Some(failure);
@@ -107,7 +113,7 @@ impl StreamResponseCollector {
                     self.response_id = Some(response_id.to_string());
                 }
                 self.observe_tool_calls(parsed);
-                observation.has_output |= stream_event_has_output(parsed);
+                observation.has_output |= has_output;
                 observation.has_terminal_event |= stream_event_is_terminal(parsed);
                 observation.ends_stream |= stream_event_ends_stream(parsed);
             }

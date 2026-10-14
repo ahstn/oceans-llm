@@ -154,7 +154,9 @@ pub use skills::{
     SkillRepository, SkillUploadResponse, SkillVersionMetadata, SkillVersionRecord,
     SkillVersionSummary,
 };
-pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
+pub use streaming::{
+    ParsedSseEvent, SseEventFramer, SseEventParser, Utf8ChunkDecoder, find_sse_delimiter,
+};
 pub use traits::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, BatchRepository,
     BudgetAlertRepository, BudgetRepository, GuardrailDecisionRepository, IdentityRepository,

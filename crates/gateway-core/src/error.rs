@@ -75,8 +75,13 @@ pub enum ProviderError {
     Timeout,
     #[error("upstream provider transport failure: {0}")]
     Transport(String),
+    /// `retry_after` is the upstream `Retry-After` value on 429 and 503 responses.
     #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
+    UpstreamHttp {
+        status: u16,
+        body: String,
+        retry_after: Option<String>,
+    },
     #[error("provider call failed after billable upstream usage: {source}")]
     PartialUsage {
         source: Box<ProviderError>,

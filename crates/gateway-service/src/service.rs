@@ -50,6 +50,8 @@ pub struct RecordedChatUsage {
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
+    /// The ledger row's cost. It is zero unless `pricing_status` counts toward spend.
+    pub computed_cost_usd: Money4,
 }
 
 pub struct BatchUsageInput<'a> {
@@ -1017,6 +1019,7 @@ where
             completion_tokens: record.completion_tokens,
             total_tokens: record.total_tokens,
             cost_usd: money_to_f64(record.computed_cost_usd),
+            computed_cost_usd: record.computed_cost_usd,
         };
         let span = tracing::Span::current();
         span.record(

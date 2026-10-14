@@ -19,6 +19,7 @@ config_roots = [
   "deploy/helm",
   "docs",
   "tests/harness-integration",
+  "tests/sdk-compat",
 ]
 # Keep a single mise.lock at the root for every project.
 lockfile = true
@@ -135,6 +136,7 @@ depends = [
   "//actions/review-agent:typecheck",
   "//actions/review-agent:lint",
   "//tests/harness-integration:typecheck",
+  "//tests/sdk-compat:typecheck",
 ]
 
 [tasks.build]
