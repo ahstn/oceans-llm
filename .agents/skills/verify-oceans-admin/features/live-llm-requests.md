@@ -6,6 +6,7 @@ Live LLM requests prove that a changed request path reaches a real upstream prov
 
 - `live-openrouter-generic` sends one short Chat Completions request through the preferred generic OpenRouter route.
 - `live-bedrock-mantle` sends one short Responses request through Bedrock Mantle for Bedrock-specific changes.
+- `live-count-tokens` counts a short Messages prompt through `/v1/messages/count_tokens` and confirms that a route without an upstream count API returns `501 not_implemented_error`.
 - `live-request-log` confirms the selected provider, route, upstream model, status, and usage in the admin request log.
 - `live-key-cleanup` revokes the temporary gateway key used by the canary.
 
@@ -14,6 +15,7 @@ Live LLM requests prove that a changed request path reaches a real upstream prov
 - Sign in, choose `API Keys`, and create a unique temporary key with access only to the selected canary model.
 - For a generic request-path change, call `/v1/chat/completions` with gateway model `deepseek-v4-flash-0731`.
 - For a Bedrock-specific change, call `/v1/responses` with gateway model `gpt-oss-120b-bedrock`.
+- For a token-counting change, call `/v1/messages/count_tokens` or `/messages/count_tokens` with `x-api-key` and gateway model `claude-sonnet-4.6` (Bedrock Runtime Anthropic invoke). Call it again with `deepseek-v4-flash-0731` to see the 501 path.
 - Choose `Request Logs` and open the matching request after the call completes.
 
 ## Driving it with control-oceans-admin
@@ -30,6 +32,7 @@ Preconditions:
 - **OpenRouter request.** Send one non-streaming request with `model: deepseek-v4-flash-0731`, a short synthetic prompt, and `max_tokens` no greater than 128. Expect a successful Chat Completions response.
 - **Bedrock request.** Send one non-streaming request with `model: gpt-oss-120b-bedrock`, a short synthetic input, `max_output_tokens` no greater than 64, and `store: false`. Expect a successful Responses response.
 - **Changed behavior.** Add only the smallest option needed to exercise the changed path, such as `stream: true` for streaming work or one deterministic function tool for tool translation. Do not broaden the prompt.
+- **Token count request.** Send one Messages body with a short synthetic prompt to `/v1/messages/count_tokens` using model `claude-sonnet-4.6`. Expect HTTP 200 and `{"input_tokens": N}` with `N` greater than zero. Send the same body with model `deepseek-v4-flash-0731`. Expect HTTP 501, `error.type: not_implemented_error`, and a message naming the route's provider key and upstream model. Neither call adds a Request Logs row. Record one `--check` each for the count, the 501 envelope, and the unchanged request-log list.
 - **Request-log proof.** In `Request Logs`, locate the canary by time and gateway model. Confirm success, the expected provider and configured upstream model, and non-zero usage when the provider supplies it. Capture the list and detail states with bounded, sanitized payload evidence and credentials redacted. Record it with `control-oceans-admin record live-llm-requests --file openrouter-canary-proof.json` (or `bedrock-canary-proof.json`). Use one `--check` each for the response status, provider and upstream model, usage, and request-log match, with the gateway model and request-log ID in the notes, plus the captured list and detail screenshots as `--artifact`. Do not include prompts, responses, or credentials.
 - **Cleanup.** Revoke the temporary gateway API key and confirm it can no longer call `/v1/models`. Then run the normal stack cleanup and `control-oceans-admin evidence live-llm`.
 
@@ -39,6 +42,10 @@ Preconditions:
 - OpenRouter is the preferred low-cost generic path. Its configured `deepseek/deepseek-v4-flash-0731` rate is $0.03 input and $0.10 output per million tokens, but OpenRouter can route among upstream hosts.
 - Bedrock Mantle uses model ID `openai.gpt-oss-120b` and the `/v1/responses` path. The configured standard rate in `us-east-1` is $0.15 input and $0.60 output per million tokens. The Bedrock Runtime route (`gpt-oss-120b`, `runtime_openai_chat`) is a separate path that does not accept `/v1/responses`. Do not use it for Mantle proof.
 - `/v1/decisions` (model `jev`, OpenRouter `typesafe/jev-1.13`) is a separate paid path. Its request logs show operation `Decisions`, and it skips inference guardrails. Chat and Responses canaries do not prove it.
+- Token counting is never logged as a request. Prove it from the HTTP response and the `anthropic count_tokens request completed` gateway log event, not from Request Logs or usage totals.
+- The seeded `claude-sonnet-4.6` route uses `us.anthropic.claude-sonnet-4-6-v1:0`, which Bedrock `CountTokens` rejects as an invalid model identifier (the published profile is `us.anthropic.claude-sonnet-4-6`). Until the seed changes, a positive count needs a run-local route with a valid ID. Report the seeded call as an upstream `ValidationException`, not a gateway failure.
+- Bedrock `CountTokens` accepts foundation model IDs only. The gateway strips a cross-Region profile prefix such as `us.`; an application inference profile ARN is rejected upstream.
+- The unversioned aliases (`/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`) reuse the `/v1` handlers. A canary on an alias proves routing only, not provider behavior.
 - Bedrock stored responses default to retention. Keep `store: false` unless storage behavior is the test target.
 - A provider outage, missing model access, expired credential, quota, or network block is an integration failure with a specific cause. It does not invalidate separate local UI proof.
 - Never record raw API keys, authorization headers, full environment dumps, or provider response content that can contain submitted data.

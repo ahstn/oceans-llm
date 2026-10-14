@@ -19,7 +19,10 @@ impl FromRequestParts<AppState> for InferenceAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let anthropic = matches!(parts.uri.path(), "/v1/messages" | "/messages");
+        let anthropic = matches!(
+            parts.uri.path(),
+            "/v1/messages" | "/messages" | "/v1/messages/count_tokens" | "/messages/count_tokens"
+        );
         let authorization = if anthropic {
             extract_anthropic_authorization_header(&parts.headers)
         } else {

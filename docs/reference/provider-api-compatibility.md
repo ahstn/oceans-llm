@@ -13,12 +13,16 @@ The gateway currently exposes:
 - `POST /v1/chat/completions`
 - `POST /v1/messages`
 - `POST /messages`
+- `POST /v1/messages/count_tokens`
+- `POST /messages/count_tokens`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 - `POST /v1/decisions`
 - `POST /api/v1/batches`
 
 The Responses and Decisions APIs are first-class API families. Neither is translated through Chat Completions.
+
+`POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` are unversioned aliases of the matching `/v1` endpoints. They share the same handlers and body limits.
 
 ## API-Family Matrix
 
@@ -47,6 +51,19 @@ This matrix is about current execution support, not provider marketing claims.
 | `typesafe` | Not implemented. | Not implemented. | Not implemented. | Supported through native `/v1/systemone`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
+
+## Messages Token Counting
+
+`POST /v1/messages/count_tokens` selects a route like `POST /v1/messages` and forwards only the prompt-defining fields to the provider's own count API. The gateway does not estimate tokens locally.
+
+| Provider type | Token counting |
+| --- | --- |
+| `anthropic_compat` | Supported through the upstream `/v1/messages/count_tokens` endpoint. |
+| `gcp_vertex` | Supported for `anthropic/*` routes through `count-tokens:rawPredict`. The model is sent without its `@version` suffix. Google publisher routes return 501. |
+| `aws_bedrock` | Supported for `runtime_anthropic_invoke` (the `InvokeModel` body, base64-encoded) and `runtime_converse` (the Converse prompt fields) through `/model/{modelId}/count-tokens`. Mantle and OpenAI-shaped styles return 501. |
+| `openai_compat`, `gcp_cloud_run_openai_compat`, `github_copilot`, `typesafe` | Not implemented. Returns 501. |
+
+An unsupported route returns HTTP 501 with an Anthropic error envelope, `error.type: "not_implemented_error"`, and a message naming the provider key, provider type, and upstream model. Counting writes no request log, usage-ledger row, or budget charge. See [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md#anthropic-messages-token-counting) for the logging and routing trade-offs.
 
 ## Route Compatibility Metadata
 

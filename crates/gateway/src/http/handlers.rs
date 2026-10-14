@@ -1,14 +1,18 @@
 mod auth;
+mod count_tokens;
 mod inference;
 #[cfg(test)]
 mod inference_tests;
 #[cfg(test)]
 mod model_metadata_tests;
+#[cfg(test)]
+mod route_tests;
 mod routing;
 #[cfg(test)]
 mod routing_tests;
 
 use auth::InferenceAuth;
+pub use count_tokens::v1_messages_count_tokens;
 use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
 use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
 

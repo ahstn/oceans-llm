@@ -1386,6 +1386,22 @@ pub trait ProviderClient: Send + Sync {
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError>;
 
+    /// Count the input tokens of a Messages-shaped request without generating output.
+    ///
+    /// Returns `{"input_tokens": N}`. Providers without an upstream token-count API
+    /// keep this default, so callers get a typed error instead of an estimate.
+    async fn count_tokens(
+        &self,
+        request: &ChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let _ = (request, context);
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support token counting",
+            self.provider_type()
+        )))
+    }
+
     async fn decisions(
         &self,
         request: &DecisionsRequest,

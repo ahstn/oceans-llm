@@ -10,8 +10,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::anthropic::{
-    AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_response,
-    normalize_anthropic_stream,
+    AnthropicRequestOptions, COUNT_TOKENS_FIELDS, map_anthropic_request,
+    normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
+    retain_count_tokens_fields,
 };
 use crate::http::{execute_request, join_base_url, map_reqwest_error};
 
@@ -67,6 +68,14 @@ impl AnthropicCompatProvider {
     }
 
     pub(crate) fn messages_endpoint_url(&self) -> Result<String, ProviderError> {
+        self.endpoint_url("messages")
+    }
+
+    pub(crate) fn count_tokens_endpoint_url(&self) -> Result<String, ProviderError> {
+        self.endpoint_url("messages/count_tokens")
+    }
+
+    fn endpoint_url(&self, path: &str) -> Result<String, ProviderError> {
         let base = self.config.base_url.trim_end_matches('/');
         let parsed = url::Url::parse(base)
             .map_err(|err| ProviderError::InvalidRequest(format!("invalid base_url: {err}")))?;
@@ -76,11 +85,11 @@ impl AnthropicCompatProvider {
             ));
         }
         let endpoint = if base.ends_with("/v1") {
-            "messages"
+            path.to_string()
         } else {
-            "v1/messages"
+            format!("v1/{path}")
         };
-        join_base_url(base, endpoint)
+        join_base_url(base, &endpoint)
     }
 
     pub(crate) fn build_request(
@@ -88,7 +97,15 @@ impl AnthropicCompatProvider {
         body: Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
-        let url = self.messages_endpoint_url()?;
+        self.build_request_to(self.messages_endpoint_url()?, body, context)
+    }
+
+    pub(crate) fn build_request_to(
+        &self,
+        url: String,
+        body: Value,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
         let mut request = self.client.post(url).json(&body);
 
         let mut has_version = false;
@@ -237,6 +254,46 @@ impl ProviderClient for AnthropicCompatProvider {
             "anthropic_compat",
             "anthropic_compat",
         ))
+    }
+
+    async fn count_tokens(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let options = AnthropicRequestOptions {
+            include_model: true,
+            anthropic_version_body: None,
+            default_max_tokens: Some(4096),
+            default_headers: Some(&self.config.default_headers),
+        };
+        let body = map_anthropic_request(request, context, false, &options)?;
+        let body = retain_count_tokens_fields(body, COUNT_TOKENS_FIELDS);
+        let req = self.build_request_to(self.count_tokens_endpoint_url()?, body, context)?;
+
+        let response = execute_request(
+            &self.client,
+            req,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
+
+        let status = response.status();
+        let text = response.text().await.map_err(map_reqwest_error)?;
+
+        if !status.is_success() {
+            return Err(ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body: text,
+            });
+        }
+
+        let value: Value = serde_json::from_str(&text).map_err(|err| {
+            ProviderError::Transport(format!("invalid JSON from anthropic_compat: {err}"))
+        })?;
+        normalize_count_tokens_response(&value, "input_tokens", "anthropic_compat")
     }
 
     async fn embeddings(

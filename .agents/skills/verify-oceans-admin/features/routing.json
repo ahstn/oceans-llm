@@ -333,6 +333,7 @@
         "crates/gateway-store/src/libsql_store/provider_user_credentials.rs",
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
         "crates/gateway/src/http/handlers/routing.rs",
+        "crates/gateway/src/http/handlers/count_tokens.rs",
         "crates/gateway-service/src/{routing,client_session}.rs",
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",

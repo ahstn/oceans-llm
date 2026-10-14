@@ -9,6 +9,7 @@ use aws_sigv4::{
     sign::v4,
 };
 use aws_smithy_runtime_api::client::identity::Identity;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::{Buf, Bytes};
 use futures_util::StreamExt;
 use gateway_core::{
@@ -24,6 +25,7 @@ use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
+use crate::anthropic::{normalize_count_tokens_response, retain_count_tokens_fields};
 use crate::http::{TracedResponse, execute_request, join_base_url, map_reqwest_error};
 use crate::streaming::{
     done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
@@ -266,6 +268,62 @@ impl BedrockProvider {
             context,
             "application/json",
             extra_headers,
+            api_style,
+        )
+        .await
+    }
+
+    /// Builds a runtime `CountTokens` call that wraps the body the route would send.
+    ///
+    /// Invoke routes base64-encode their full InvokeModel body; Converse routes send
+    /// the prompt-defining Converse fields. Other api styles have no count API.
+    async fn build_count_tokens_request(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let api_style = self.api_style(context)?;
+        let input = match api_style {
+            AwsBedrockApiStyle::RuntimeAnthropicInvoke => {
+                let body = map_chat_request_to_anthropic_messages(
+                    request,
+                    context,
+                    AnthropicMessagesTarget::RuntimeInvoke,
+                )?;
+                let body = serde_json::to_vec(&body).map_err(|error| {
+                    ProviderError::InvalidRequest(format!(
+                        "failed to serialize aws_bedrock request: {error}"
+                    ))
+                })?;
+                json!({ "invokeModel": { "body": BASE64_STANDARD.encode(body) } })
+            }
+            AwsBedrockApiStyle::RuntimeConverse => {
+                let body = retain_count_tokens_fields(
+                    map_chat_request_to_converse(request, context)?,
+                    &[
+                        "messages",
+                        "system",
+                        "toolConfig",
+                        "additionalModelRequestFields",
+                    ],
+                );
+                json!({ "converse": body })
+            }
+            other => {
+                return Err(ProviderError::NotImplemented(format!(
+                    "aws_bedrock api_style `{other:?}` does not support token counting"
+                )));
+            }
+        };
+        self.build_json_request(
+            self.bedrock_model_endpoint(
+                count_tokens_model_id(&context.upstream_model),
+                "count-tokens",
+            ),
+            json!({ "input": input }),
+            context,
+            "application/json",
+            Vec::new(),
             api_style,
         )
         .await
@@ -608,6 +666,21 @@ impl BedrockProvider {
     }
 }
 
+/// Geographic prefixes of cross-Region inference profile IDs.
+const INFERENCE_PROFILE_PREFIXES: &[&str] = &[
+    "us.", "us-gov.", "eu.", "apac.", "jp.", "au.", "ca.", "global.",
+];
+
+/// `CountTokens` accepts foundation model IDs only, so a cross-Region inference
+/// profile such as `us.anthropic.claude-sonnet-4-6` is counted against
+/// `anthropic.claude-sonnet-4-6`. ARNs pass through unchanged.
+fn count_tokens_model_id(upstream_model: &str) -> &str {
+    INFERENCE_PROFILE_PREFIXES
+        .iter()
+        .find_map(|prefix| upstream_model.strip_prefix(prefix))
+        .unwrap_or(upstream_model)
+}
+
 #[async_trait]
 impl ProviderClient for BedrockProvider {
     fn provider_key(&self) -> &str {
@@ -674,6 +747,36 @@ impl ProviderClient for BedrockProvider {
                     .to_string(),
             )),
         }
+    }
+
+    async fn count_tokens(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let request = self.build_count_tokens_request(request, context).await?;
+        let response = execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await
+        .map_err(map_reqwest_error)?;
+        let status = response.status();
+        let text = response.text().await.map_err(map_reqwest_error)?;
+        if !status.is_success() {
+            return Err(ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body: text,
+            });
+        }
+        let value: Value = serde_json::from_str(&text).map_err(|error| {
+            ProviderError::Transport(format!(
+                "invalid JSON from aws_bedrock count tokens: {error}"
+            ))
+        })?;
+        normalize_count_tokens_response(&value, "inputTokens", "aws_bedrock")
     }
 
     async fn chat_completions_stream(
