@@ -1,0 +1,27 @@
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_13e300ce4bf1eb::t_b74e6f579232b0 8-10,27-29,36,38-43,50-59,164-166,169-172,181-184,217,223,227,235-247
+crates/gateway/src/http/handlers/route_tests.rs
+  s_13e300ce4bf1eb::t_952d54ca858258 135-138,385-412
+docs/configuration/model-routing-and-api-behavior.md
+  s_13e300ce4bf1eb::t_c07fbacf98b4b1 407,413
+docs/providers/aws-bedrock.md
+  s_13e300ce4bf1eb::t_b46a12c1830bf3 86-101
+docs/reference/provider-api-compatibility.md
+  s_13e300ce4bf1eb::t_7c3c57bd04b752 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60389577d40a202eceeb235de1df52f1d33c5282",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
