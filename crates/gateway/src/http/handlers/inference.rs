@@ -304,6 +304,7 @@ impl InferenceExecution<'_> {
             collector: state.service.new_stream_response_collector(),
             stream_trace,
             held_usage_chunk: None,
+            held_after_usage: Vec::new(),
             pending: Default::default(),
             cost_usd: None,
         });

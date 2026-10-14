@@ -1420,8 +1420,10 @@ struct LoggingBodyStreamState {
     saw_terminal_event: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
-    /// A usage-only chunk held back until the next chunk shows whether it is the last.
+    /// A usage-only chunk held back until a later chunk shows whether it is the last.
     held_usage_chunk: Option<axum::body::Bytes>,
+    /// Chunks with neither output nor usage that arrived after the held usage chunk.
+    held_after_usage: Vec<axum::body::Bytes>,
     pending: std::collections::VecDeque<Result<axum::body::Bytes, std::io::Error>>,
     cost_usd: Option<gateway_core::Money4>,
 }
@@ -1819,6 +1821,7 @@ async fn anthropic_messages_stream_response(
         collector: state.service.new_stream_response_collector(),
         stream_trace,
         held_usage_chunk: None,
+        held_after_usage: Vec::new(),
         pending: Default::default(),
         cost_usd: None,
     });
@@ -1836,8 +1839,10 @@ async fn anthropic_messages_stream_response(
 }
 
 /// Holds the last usage event of a chunk, when neither it nor anything after it carries
-/// output, until the next chunk shows whether it is the last usage report. Events ahead
-/// of it in the same chunk are forwarded at once, so output is never delayed. When
+/// output, until a later chunk shows whether it is the last usage report. Events ahead
+/// of it in the same chunk are forwarded at once, so output is never delayed. Later
+/// chunks with neither output nor usage, such as a separate `finish_reason` chunk, are
+/// held behind it in order, up to `MAX_CHUNKS_HELD_AFTER_USAGE`. When
 /// the stream then completes cleanly, the priced cost is added to that usage object. A
 /// chunk that ends the stream gets the cost on its own usage event, if it has one.
 fn wrap_stream_with_request_logging(
@@ -1892,6 +1897,14 @@ fn wrap_stream_with_request_logging(
                         );
                         continue;
                     }
+                    if state.held_usage_chunk.is_some()
+                        && !observation.has_output
+                        && !observation.has_usage
+                        && state.held_after_usage.len() < MAX_CHUNKS_HELD_AFTER_USAGE
+                    {
+                        state.held_after_usage.push(chunk);
+                        continue;
+                    }
                     release_held_usage_chunk(&mut state, false);
                     if !observation.ends_with_usage_report {
                         state.pending.push_back(Ok(chunk));
@@ -1927,7 +1940,12 @@ fn wrap_stream_with_request_logging(
     })
 }
 
-/// Forwards the held usage chunk, adding the stream's cost when it completed cleanly.
+/// Caps how many output-free chunks can queue behind a held usage chunk, so a stream of
+/// keep-alives cannot be delayed without limit.
+const MAX_CHUNKS_HELD_AFTER_USAGE: usize = 16;
+
+/// Forwards the held usage chunk, adding the stream's cost when it completed cleanly,
+/// followed by the chunks held behind it.
 fn release_held_usage_chunk(state: &mut LoggingBodyStreamState, completed: bool) {
     let Some(chunk) = state.held_usage_chunk.take() else {
         return;
@@ -1936,6 +1954,9 @@ fn release_held_usage_chunk(state: &mut LoggingBodyStreamState, completed: bool)
         .and_then(|cost| response_headers::with_stream_cost(&chunk, cost))
         .unwrap_or(chunk);
     state.pending.push_back(Ok(chunk));
+    state
+        .pending
+        .extend(state.held_after_usage.drain(..).map(Ok));
 }
 
 /// The priced cost to report in the stream, once it has completed without failure.
@@ -2724,6 +2745,7 @@ mod tests {
                     Instant::now(),
                 ),
                 held_usage_chunk: None,
+                held_after_usage: Vec::new(),
                 pending: Default::default(),
                 cost_usd: None,
             };
@@ -2971,6 +2993,38 @@ mod tests {
         );
         assert!(last.contains(r#""total_tokens":1500,"oceans":{"cost":"0.0105"}}"#));
         assert!(last.ends_with("\n\ndata: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn priced_stream_keeps_usage_held_across_chunks_without_output() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let finish = Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        );
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\n",
+            )),
+            Ok(finish.clone()),
+            Ok(Bytes::from_static(b": keep-alive\n\n")),
+            Ok(Bytes::from_static(b"data: [DONE]\n\n")),
+        ]));
+        let (_context, state) = harness.logging_state("stream-held-across-test", upstream);
+        let chunks: Vec<Bytes> = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| chunk.expect("ok"))
+            .collect();
+
+        assert_eq!(chunks.len(), 5);
+        assert_eq!(sse_json(&chunks[1])["usage"]["oceans"]["cost"], "0.0105");
+        assert_eq!(chunks[2], finish);
+        assert_eq!(chunks[3], Bytes::from_static(b": keep-alive\n\n"));
+        assert_eq!(chunks[4], Bytes::from_static(b"data: [DONE]\n\n"));
     }
 
     /// Inference guardrails buffer the upstream stream and emit it as one chunk.
