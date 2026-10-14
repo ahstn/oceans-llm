@@ -32,7 +32,9 @@ pub use agent_session_analysis::{
     ToolInvocationFact, ToolServerDiagnostics,
 };
 pub use auth::{
-    AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
+    AUTHORIZATION_HEADER, AuthenticatedApiKey, CredentialHeaderPolicy, GatewayCredential,
+    ParsedGatewayApiKey, X_API_KEY_HEADER, X_LITELLM_API_KEY_HEADER, X_OCEANS_API_KEY_HEADER,
+    extract_bearer_token, parse_gateway_api_key, resolve_gateway_credential,
 };
 pub use batch::{
     BatchAccessScope, BatchCapabilities, BatchEndpoint, BatchItemPage, BatchItemQuery,

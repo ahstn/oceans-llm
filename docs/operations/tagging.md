@@ -1,6 +1,6 @@
 # Tagging
 
-`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Client Request Headers](../reference/client-request-headers.md)
 
 Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. Use them for attribution, filtering, export, and reconciliation. Do not use them for authorization or secret storage.
 
@@ -68,6 +68,15 @@ The universal headers are optional and may only be sent once each.
 ```text
 x-oceans-tags: cost-center=platform; workload=agent-harness
 ```
+
+Callers that already send the comma-separated `x-litellm-tags` header can keep it. Oceans maps each entry onto a bespoke tag, merges the result with `x-oceans-tags`, and applies the same validation rules:
+
+| Header | Example | Stored tags |
+| --- | --- | --- |
+| `x-oceans-tags` | `cost-center=platform; workload=agent-harness` | `cost-center=platform`, `workload=agent-harness` |
+| `x-litellm-tags` | `workload:agent-harness, batch` | `workload=agent-harness`, `batch=true` |
+
+A key that both headers set to different values is rejected. The 5-tag limit applies to the combined set. [Client Request Headers](../reference/client-request-headers.md#request-tags) owns the full mapping and merge rules.
 
 Request tags are captured at the gateway boundary and written to request-log data when request logging persists a row for that request. The request-log list supports filters for `service`, `component`, `env`, and one bespoke `tag_key`/`tag_value` pair.
 

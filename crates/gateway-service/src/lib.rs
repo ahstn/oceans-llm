@@ -116,9 +116,9 @@ pub use redaction::{
     RequestLogPayloadPolicy, parse_payload_path,
 };
 pub use request_logging::{
-    LoggedRequest, RequestAttemptOutcome, RequestLogContext, RequestLogging,
-    StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
-    UsageSummary, build_request_attempt, failed_attempt_outcome,
+    LoggedRequest, REQUEST_LOG_HEADER_SOURCES_KEY, RequestAttemptOutcome, RequestLogContext,
+    RequestLogging, StreamChunkObservation, StreamFailureSummary, StreamLogResultInput,
+    StreamResponseCollector, UsageSummary, build_request_attempt, failed_attempt_outcome,
     invoked_tool_count_from_response_body, offset_now, successful_attempt_outcome,
 };
 pub use review_agent::{

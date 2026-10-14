@@ -11,8 +11,8 @@ use futures_util::{StreamExt, TryStreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthError, AuthenticatedApiKey, BatchAccessScope, BatchEndpoint,
     BatchItemQuery, BatchItemRecord, BatchItemStatus, BatchJobRecord, BatchPricingStatus,
-    BatchQuery, BatchRepository, BatchStatus, GlobalRole, IdentityRepository, MAX_BATCH_PAGE_SIZE,
-    MAX_BATCH_RESULT_PAGE_SIZE, Money4, extract_bearer_token,
+    BatchQuery, BatchRepository, BatchStatus, CredentialHeaderPolicy, GlobalRole,
+    IdentityRepository, MAX_BATCH_PAGE_SIZE, MAX_BATCH_RESULT_PAGE_SIZE, Money4,
 };
 use gateway_service::{CreateBatchInput, CreateBatchItemInput};
 use serde::{Deserialize, Serialize};
@@ -22,8 +22,8 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::require_active_session, admin_contract::format_timestamp, error::AppError,
-    state::AppState,
+    admin_auth::require_active_session, admin_contract::format_timestamp,
+    credentials::gateway_credential, error::AppError, state::AppState,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -461,22 +461,8 @@ async fn optional_api_key(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<AuthenticatedApiKey>, AppError> {
-    let authorization = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok());
-    let explicit = headers
-        .get("x-oceans-api-key")
-        .and_then(|value| value.to_str().ok());
-    let bearer = authorization.map(extract_bearer_token).transpose()?;
-    let token = match (bearer, explicit) {
-        (Some(left), Some(right)) if left != right => {
-            return Err(AppError(gateway_core::GatewayError::Auth(
-                AuthError::ConflictingApiKeyHeaders,
-            )));
-        }
-        (Some(token), _) | (None, Some(token)) => Some(token),
-        (None, None) => None,
-    };
+    let token = gateway_credential(headers, CredentialHeaderPolicy::BearerOrOceansApiKey)?
+        .map(|credential| credential.token);
     match token {
         Some(token) => state
             .service

@@ -17,7 +17,7 @@ pub enum AuthError {
     MissingBearerToken,
     #[error("gateway api key format is invalid")]
     InvalidApiKeyFormat,
-    #[error("authorization and x-oceans-api-key headers do not match")]
+    #[error("x-oceans-api-key does not match the other gateway api key header")]
     ConflictingApiKeyHeaders,
     #[error("api key was not found")]
     ApiKeyNotFound,

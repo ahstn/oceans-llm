@@ -577,6 +577,34 @@ async fn duplicate_session_headers_are_rejected_before_provider_dispatch() {
 }
 
 #[tokio::test]
+async fn litellm_session_alias_routes_like_the_canonical_session_header() {
+    let harness = RoutingHarness::new(false).await;
+    for session in ["session-a", "session-b"] {
+        consume(
+            harness
+                .chat(session_headers(session))
+                .await
+                .map_err(|error| error.0)
+                .unwrap(),
+        )
+        .await;
+    }
+    let mut alias = HeaderMap::new();
+    alias.insert("x-litellm-session-id", "session-a".parse().unwrap());
+    consume(harness.chat(alias).await.map_err(|error| error.0).unwrap()).await;
+    let calls = harness.calls.lock().unwrap().clone();
+    assert_ne!(calls[0].provider, calls[1].provider);
+    assert_eq!(calls[2].provider, calls[0].provider);
+
+    let mut conflicting = session_headers("session-a");
+    conflicting.insert("x-litellm-session-id", "session-b".parse().unwrap());
+    let error = harness.chat(conflicting).await.unwrap_err();
+    assert_eq!(error.0.http_status_code(), 400);
+    assert!(error.0.to_string().contains("conflicting"));
+    assert_eq!(harness.calls.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
 async fn service_account_requests_skip_providers_that_require_a_user_credential() {
     let mut harness = RoutingHarness::new(false).await;
     harness.state.copilot_user_provider_keys = Arc::new(vec!["vertex".to_string()]);

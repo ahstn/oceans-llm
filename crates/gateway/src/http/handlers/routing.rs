@@ -152,6 +152,7 @@ async fn filter_credential_routes(
 fn validate_session_headers(headers: &HeaderMap) -> Result<(), GatewayError> {
     for name in [
         "x-oceans-session-id",
+        "x-litellm-session-id",
         "session-id",
         "session_id",
         "x-claude-code-session-id",

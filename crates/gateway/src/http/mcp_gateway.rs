@@ -9,15 +9,12 @@ use axum::{
     Json,
     body::{Body, Bytes, to_bytes},
     extract::{Path, State},
-    http::{
-        HeaderMap, HeaderValue, Request, Response, StatusCode,
-        header::{AUTHORIZATION, WWW_AUTHENTICATE},
-    },
+    http::{HeaderMap, HeaderValue, Request, Response, StatusCode, header::WWW_AUTHENTICATE},
     response::IntoResponse,
 };
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, GatewayError, McpToolInvocationStatus, McpToolPolicyResult,
-    OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
+    ApiKeyOwnerKind, AuthError, CredentialHeaderPolicy, GatewayError, McpToolInvocationStatus,
+    McpToolPolicyResult, OpenAiErrorEnvelope, ProviderError,
 };
 use gateway_guardrails::EvaluationPayload;
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
@@ -31,9 +28,8 @@ use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{credentials::required_gateway_credential, state::AppState};
 
-const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
 const LAST_EVENT_ID: &str = "last-event-id";
@@ -530,43 +526,8 @@ fn response_outcome(
 }
 
 fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {
-    let authorization_token = headers
-        .get(AUTHORIZATION)
-        .map(|value| {
-            value
-                .to_str()
-                .map_err(|_| AuthError::InvalidAuthorizationHeader)
-                .and_then(extract_bearer_token)
-                .map(str::to_string)
-        })
-        .transpose()?;
-
-    let explicit_key = headers
-        .get(X_OCEANS_API_KEY)
-        .map(|value| {
-            value
-                .to_str()
-                .map_err(|_| AuthError::InvalidAuthorizationHeader)
-                .map(str::trim)
-                .and_then(|value| {
-                    if value.is_empty() {
-                        Err(AuthError::MissingBearerToken)
-                    } else {
-                        Ok(value.to_string())
-                    }
-                })
-        })
-        .transpose()?;
-
-    match (authorization_token, explicit_key) {
-        (Some(authorization_token), Some(explicit_key)) if authorization_token == explicit_key => {
-            Ok(authorization_token)
-        }
-        (Some(_), Some(_)) => Err(AuthError::ConflictingApiKeyHeaders),
-        (Some(authorization_token), None) => Ok(authorization_token),
-        (None, Some(explicit_key)) => Ok(explicit_key),
-        (None, None) => Err(AuthError::MissingAuthorizationHeader),
-    }
+    required_gateway_credential(headers, CredentialHeaderPolicy::BearerOrOceansApiKey)
+        .map(|credential| credential.token.to_string())
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

@@ -16,6 +16,8 @@ const SENSITIVE_HEADERS: &[&str] = &[
     "set-cookie",
     "x-goog-api-key",
     "x-api-key",
+    "x-oceans-api-key",
+    "x-litellm-api-key",
 ];
 
 const CODEX_TURN_METADATA_FIELDS: &[&str] = &[

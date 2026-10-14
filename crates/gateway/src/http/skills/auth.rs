@@ -2,10 +2,13 @@ use axum::{
     extract::FromRequestParts,
     http::{HeaderMap, Method, header, request::Parts},
 };
-use gateway_core::{AuthError, IdentityRepository, UserStatus, extract_bearer_token};
+use gateway_core::{AuthError, CredentialHeaderPolicy, IdentityRepository, UserStatus};
 use uuid::Uuid;
 
-use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
+use crate::http::{
+    credentials::gateway_credential, error::AppError, identity::resolve_session_user,
+    state::AppState,
+};
 
 /// Resolves the authenticated owner before any upload body is buffered.
 /// A service account is a reader, and never borrows a session's write identity.
@@ -62,27 +65,10 @@ impl FromRequestParts<AppState> for SkillCaller {
 }
 
 fn api_token(headers: &HeaderMap) -> Result<Option<&str>, AppError> {
-    let authorization = header_text(headers, header::AUTHORIZATION.as_str())?;
-    let explicit = header_text(headers, "x-oceans-api-key")?;
-    let bearer = authorization.map(extract_bearer_token).transpose()?;
-    match (bearer, explicit) {
-        (Some(left), Some(right)) if left != right => {
-            Err(AuthError::ConflictingApiKeyHeaders.into())
-        }
-        (Some(token), _) | (None, Some(token)) => Ok(Some(token)),
-        (None, None) => Ok(None),
-    }
-}
-
-fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>, AppError> {
-    headers
-        .get(name)
-        .map(|value| {
-            value
-                .to_str()
-                .map_err(|_| AuthError::InvalidAuthorizationHeader.into())
-        })
-        .transpose()
+    Ok(
+        gateway_credential(headers, CredentialHeaderPolicy::BearerOrOceansApiKey)?
+            .map(|credential| credential.token),
+    )
 }
 
 fn require_same_origin(headers: &HeaderMap) -> Result<(), AppError> {
@@ -121,6 +107,8 @@ mod tests {
         headers.insert(header::AUTHORIZATION, "Bearer first".parse().unwrap());
         headers.insert("x-oceans-api-key", "second".parse().unwrap());
         assert!(api_token(&headers).is_err());
+        headers.insert("x-litellm-api-key", "Bearer second".parse().unwrap());
+        assert_eq!(api_token(&headers).ok().flatten(), Some("second"));
         headers.clear();
         headers.insert(header::HOST, "oceans.example".parse().unwrap());
         headers.insert(header::ORIGIN, "https://other.example".parse().unwrap());

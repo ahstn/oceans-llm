@@ -247,7 +247,7 @@ Providers using AWS `default_chain` or GCP `adc` or `service_account` authentica
 
 Add `routing.affinity: {}` to enable session affinity with the default idle timeout of 3,600 seconds. Set `idle_timeout_seconds` to another positive integer when required. Omit `affinity` to disable it.
 
-Callers can send `x-oceans-session-id` with a conversation ID. Affinity keys include the API key, requested gateway model, and session namespace. Two callers with the same session string do not share a binding. Two aliases that resolve to one target also keep separate bindings. Use the same API key, model name, and session source on subsequent requests.
+Callers can send `x-oceans-session-id` with a conversation ID. `x-litellm-session-id` is accepted as an alias; see [Client Request Headers](../reference/client-request-headers.md#routing-sessions). Affinity keys include the API key, requested gateway model, and session namespace. Two callers with the same session string do not share a binding. Two aliases that resolve to one target also keep separate bindings. Use the same API key, model name, and session source on subsequent requests.
 
 The gateway also accepts the session identifiers already used by Claude Code, Codex, OpenCode, Pi, and Oh My Pi. Harness detection must identify the relevant client. This shares the parsers used by agent session analysis, but routing rejects malformed or conflicting values. If the canonical header and a recognized harness session ID are both present, they must agree. Session IDs must contain 1–256 ASCII letters, digits, periods, underscores, colons, or hyphens. Prompt cache keys and prompt content do not identify sessions.
 

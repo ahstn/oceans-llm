@@ -139,6 +139,10 @@ const primarySidebar = [
         text: "Provider API Compatibility",
         link: "/reference/provider-api-compatibility",
       },
+      {
+        text: "Client Request Headers",
+        link: "/reference/client-request-headers",
+      },
     ],
   },
 ];

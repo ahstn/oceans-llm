@@ -232,6 +232,8 @@ Each request-log row persists lightweight policy metadata in `request_logs.metad
 }
 ```
 
+Rows also record `header_sources` when a request supplied a credential, bespoke tags, or a canonical routing session. It names the header that supplied each value, never the value, so alias headers such as `x-litellm-api-key` stay visible during support. See [Client Request Headers](../reference/client-request-headers.md#request-log-attribution).
+
 ## Redaction and Truncation Boundaries
 
 Payloads are wrapped before policy application:

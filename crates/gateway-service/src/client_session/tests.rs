@@ -48,6 +48,53 @@ fn canonical_id_must_agree_with_harness_id() {
 }
 
 #[test]
+fn litellm_session_id_is_an_alias_for_the_canonical_id() {
+    let session = routing_session(
+        json!({}),
+        &[("X-LiteLLM-Session-Id", "session-a")],
+        "unknown",
+    )
+    .expect("valid alias")
+    .expect("session");
+    assert_eq!(session.namespace, "oceans");
+    assert_eq!(session.value, "session-a");
+
+    let agreeing = [
+        ("x-oceans-session-id", "session-a"),
+        ("x-litellm-session-id", "session-a"),
+        ("x-claude-code-session-id", "session-a"),
+    ];
+    let session = routing_session(json!({}), &agreeing, "claude_code")
+        .expect("matching IDs")
+        .expect("session");
+    assert_eq!(session.namespace, "oceans");
+
+    for headers in [
+        [
+            ("x-oceans-session-id", "session-a"),
+            ("x-litellm-session-id", "session-b"),
+        ],
+        [
+            ("x-litellm-session-id", "session-a"),
+            ("x-claude-code-session-id", "session-b"),
+        ],
+    ] {
+        assert!(matches!(
+            routing_session(json!({}), &headers, "claude_code"),
+            Err(GatewayError::InvalidRequest(message)) if message.contains("conflicting")
+        ));
+    }
+    assert!(
+        routing_session(
+            json!({}),
+            &[("x-litellm-session-id", "bad/session")],
+            "codex"
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn routing_preserves_recognized_harness_namespaces() {
     let cases = [
         ("claude_code", "x-claude-code-session-id"),
