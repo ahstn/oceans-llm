@@ -10,7 +10,7 @@ MCP verification follows the admin browser path from server registration to tool
 - `mcp-grants` proves denial before an explicit tool-set grant and confirms the exact effective tool list after the grant.
 - `mcp-routing` calls one reviewed tool through each direct route and through aggregate `search_tools`, `describe_tool`, and `call_tool`.
 - `mcp-upstream-auth` compares a valid Exa key with an invalid-key control and requires a recorded authentication error from the control.
-- `mcp-invocations` matches calls to request-linked invocation records, then checks the filtered list and detail in the UI.
+- `mcp-invocations` matches calls to request-linked invocation records, then checks the filtered list and detail in the UI. Each row has a `Method` column, filter (`mcp-filter-method`), and detail row holding the JSON-RPC method, such as `tools/call` or `resources/read`. The `Target` column, filter, and detail row hold the tool name, resource URI, or prompt name.
 - `mcp-cleanup` revokes the grant and API key, checks HTTP 401, and disables the servers and tool sets created by the run.
 
 ## How to get to it (user POV)
@@ -68,6 +68,8 @@ mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/mcp-verifica
 
 - GitHub and Exa use gateway-managed static credentials in this recipe. Passing their calls does not prove OAuth consent, principal-bound credentials, token refresh, or revocation at the upstream service.
 - Exa discovery can succeed without a valid key. A catalog result alone is not authentication proof; keep the successful tool call and invalid-key control together.
+- Expanded tool rows in `mcp-server-tools` show the upstream `Title` and `Output schema` (`mcp-tool-output-schema-code`) when declared. A `Hints` entry holds the badges in `mcp-tool-annotations`, with the labels `Read-only`, `Destructive` or `Non-destructive`, `Idempotent`, and `Open world` or `Closed world`. The driver does not assert them, because live candidates may not declare annotations. Discovery storage, `describe_tool`/`search_tools` output, and direct `tools/list` passthrough are proved by `mcp_gateway::tests::proxy_policy` and `mcp_gateway::aggregate::tests`.
+- The driver calls only `tools/*`. Direct-route governance for `resources/*`, `prompts/*`, `completion/complete`, and unknown methods is proved by the `mcp_gateway::tests::proxy_policy` tests, which run against a mock upstream: a request is denied without a server grant, forwarded with one, has its read results guarded, and is logged with its method.
 - Not automated: `Browse catalog` import, credential bindings and `OAuth on-behalf-of`, the `Add to toolset` handoff, the `Preview access` effective-access preview, and UI grant `Revoke`. Cleanup uses `DELETE /api/v1/admin/mcp/grants`.
 - Discovery proves schema availability. The generated configuration proves rendered content. This driver does not install or run the listed client applications.
 - The temporary API key has one model grant and selected MCP access. It is not an MCP-only key, and this test makes no model-provider call.

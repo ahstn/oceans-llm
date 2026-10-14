@@ -454,6 +454,8 @@ fn search_tools_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        annotations: Some(catalog_read_annotations()),
+        ..McpTool::default()
     }
 }
 
@@ -472,6 +474,8 @@ fn describe_tool_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        annotations: Some(catalog_read_annotations()),
+        ..McpTool::default()
     }
 }
 
@@ -489,7 +493,14 @@ fn call_tool_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        ..McpTool::default()
     }
+}
+
+/// `search_tools` and `describe_tool` only read the gateway catalog.
+/// `call_tool` declares no hints because its behaviour depends on the target.
+fn catalog_read_annotations() -> Value {
+    json!({"readOnlyHint": true, "idempotentHint": true, "openWorldHint": false})
 }
 
 fn session_identity(headers: &HeaderMap) -> Option<(Uuid, String)> {

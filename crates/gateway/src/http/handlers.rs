@@ -27,8 +27,8 @@ use axum::{
 use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
-    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, ProviderClient,
-    ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptRecord,
+    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, McpToolProjection,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptRecord,
     RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
@@ -2164,7 +2164,10 @@ async fn best_effort_record_mcp_request_telemetry(
     provider: Option<&ResolvedProviderConnection>,
 ) {
     let access = McpAccess::new(state.store.clone());
-    let resolution = match access.effective_tools_for_api_key(auth, None).await {
+    let resolution = match access
+        .effective_tools_for_api_key(auth, None, McpToolProjection::Full)
+        .await
+    {
         Ok(resolution) => resolution,
         Err(error) => {
             tracing::warn!(

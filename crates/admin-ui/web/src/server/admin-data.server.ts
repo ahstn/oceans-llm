@@ -683,7 +683,8 @@ export async function startMcpOauthConnection(serverId: string): Promise<McpOaut
   return unwrapGatewayResponse(
     await client.POST('/api/v1/mcp/servers/{server_id}/oauth/start', {
       params: { path: { server_id: serverId } },
-      body: { redirect_to: '/admin/account/connections' },
+      // The callback appends `oauth=connected`; `server` names the card to confirm.
+      body: { redirect_to: `/admin/account/connections?server=${encodeURIComponent(serverId)}` },
     }),
   )
 }

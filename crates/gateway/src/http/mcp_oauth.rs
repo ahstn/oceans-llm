@@ -12,7 +12,9 @@ use gateway_core::{
     McpRegistryRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
 };
-use gateway_service::{McpCredentialService, credential_owner_scope_key, mcp_oauth_server_config};
+use gateway_service::{
+    McpCredentialService, McpOauthServerConfig, credential_owner_scope_key, mcp_oauth_server_config,
+};
 use gateway_store::GatewayStore;
 use openidconnect::{CsrfToken, PkceCodeChallenge};
 use serde::{Deserialize, Serialize};
@@ -145,6 +147,14 @@ pub async fn list_mcp_oauth_connections(
             None if availability_error.is_some() => McpOauthConnectionStatus::Unavailable,
             None => McpOauthConnectionStatus::Disconnected,
             Some(_) if config.is_none() => McpOauthConnectionStatus::Connected,
+            // The gateway refuses this binding, so the user must consent again.
+            Some(binding)
+                if config
+                    .as_ref()
+                    .is_some_and(|config| binding_mismatches_server(&binding.metadata, config)) =>
+            {
+                McpOauthConnectionStatus::Expired
+            }
             Some(binding) if has_refreshable_oauth_metadata(&binding.metadata) => {
                 McpOauthConnectionStatus::Connected
             }
@@ -398,6 +408,37 @@ fn normalize_connection_redirect(value: Option<&str>) -> String {
         .to_string()
 }
 
+/// Absolute URL of the workspace connections page that starts the OAuth flow
+/// for `server_key`. Returns `None` unless the caller can connect the server
+/// themselves: it must use user OAuth, its provider must be configured, and a
+/// public base URL must be set.
+pub(crate) fn connection_page_url(
+    state: &AppState,
+    server: &gateway_core::ExternalMcpServerRecord,
+) -> Option<String> {
+    if server.status != ExternalMcpServerStatus::Active
+        || server.auth_mode != ExternalMcpAuthMode::OauthObo
+    {
+        return None;
+    }
+    let config = mcp_oauth_server_config(&server.auth_config).ok()?;
+    let runtime = &state.mcp_oauth_runtime;
+    if runtime
+        .connection_unavailable_reason(&config.provider_key)
+        .is_some()
+    {
+        return None;
+    }
+    let mut url = url::Url::parse(&format!(
+        "{}{DEFAULT_CONNECTION_REDIRECT}",
+        runtime.public_base_url()?
+    ))
+    .ok()?;
+    url.query_pairs_mut()
+        .append_pair("connect", &server.server_key);
+    Some(url.to_string())
+}
+
 fn connection_success_redirect(redirect_to: &str) -> Response {
     let separator = if redirect_to.contains('?') { '&' } else { '?' };
     Redirect::temporary(&format!("{redirect_to}{separator}oauth=connected")).into_response()
@@ -425,6 +466,31 @@ fn callback_transaction_error(
     } else {
         None
     }
+}
+
+/// Whether a binding was granted for a different provider or resource, or lacks a
+/// scope the server now requires. Missing metadata is not judged here; the gateway
+/// checks the stored bundle when the binding is used.
+fn binding_mismatches_server(
+    metadata: &serde_json::Map<String, serde_json::Value>,
+    config: &McpOauthServerConfig,
+) -> bool {
+    let text = |key: &str| metadata.get(key).and_then(serde_json::Value::as_str);
+    if text("oauth_provider_key").is_some_and(|provider| provider != config.provider_key)
+        || text("resource").is_some_and(|resource| resource != config.resource)
+    {
+        return true;
+    }
+    let Some(granted) = metadata
+        .get("granted_scopes")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    config
+        .scopes
+        .iter()
+        .any(|scope| !granted.iter().any(|item| item.as_str() == Some(scope)))
 }
 
 fn has_refreshable_oauth_metadata(metadata: &serde_json::Map<String, serde_json::Value>) -> bool {

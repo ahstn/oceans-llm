@@ -55,6 +55,7 @@ mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod mcp_access;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;
@@ -1238,6 +1239,7 @@ pub(crate) mod tests {
             arguments_payload_redacted: true,
             result_payload_redacted: false,
             metadata: Map::new(),
+            mcp_method: "tools/call".to_string(),
             occurred_at,
         }
     }
@@ -1323,6 +1325,7 @@ pub(crate) mod tests {
             status: McpToolInvocationStatus::Unauthorized,
             policy_result: McpToolPolicyResult::Denied,
             has_payload: false,
+            mcp_method: "resources/read".to_string(),
             occurred_at: occurred_at - Duration::seconds(60),
             ..invocation.clone()
         };
@@ -1352,6 +1355,7 @@ pub(crate) mod tests {
                 policy_result: Some(McpToolPolicyResult::Allowed),
                 occurred_at_start: Some(occurred_at - Duration::seconds(5)),
                 occurred_at_end: Some(occurred_at + Duration::seconds(5)),
+                mcp_method: Some("tools/call".to_string()),
             })
             .await
             .expect("list invocations");
@@ -1372,6 +1376,19 @@ pub(crate) mod tests {
             .expect("list denied invocations");
         assert_eq!(denied_page.total, 1);
         assert_eq!(denied_page.items[0].request_id, "req-mcp-2");
+        assert_eq!(denied_page.items[0].mcp_method, "resources/read");
+
+        let resource_page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                mcp_method: Some("resources/read".to_string()),
+                ..Default::default()
+            })
+            .await
+            .expect("list resource invocations");
+        assert_eq!(resource_page.total, 1);
+        assert_eq!(resource_page.items[0].request_id, "req-mcp-2");
 
         let detail = store
             .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)
@@ -1455,6 +1472,7 @@ pub(crate) mod tests {
                             "type": "object",
                             "properties": {"title": {"type": "string"}}
                         }),
+                        metadata: gateway_core::McpToolMetadata::default(),
                         schema_hash: "sha256:title".to_string(),
                     },
                     UpsertExternalMcpToolRecord {
@@ -1466,6 +1484,7 @@ pub(crate) mod tests {
                             "type": "object",
                             "properties": {"repo": {"type": "string"}}
                         }),
+                        metadata: gateway_core::McpToolMetadata::default(),
                         schema_hash: "sha256:repo".to_string(),
                     },
                 ],
@@ -1507,6 +1526,7 @@ pub(crate) mod tests {
                             "body": {"type": "string"}
                         }
                     }),
+                    metadata: gateway_core::McpToolMetadata::default(),
                     schema_hash: "sha256:title-body".to_string(),
                 }],
             )
@@ -1592,6 +1612,128 @@ pub(crate) mod tests {
                 .expect("list active")
                 .is_empty()
         );
+    }
+
+    /// Discovers one tool with the given hash and annotations and returns the
+    /// stored row.
+    async fn discover_metadata_tool<S>(
+        store: &S,
+        mcp_server_id: Uuid,
+        at: OffsetDateTime,
+        input_schema: serde_json::Value,
+        destructive: bool,
+        schema_hash: &str,
+    ) -> gateway_core::ExternalMcpToolRecord
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: at,
+            finished_at: at,
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: Some(format!("set-{schema_hash}")),
+            error_summary: None,
+            details: Map::new(),
+        };
+        let metadata = gateway_core::McpToolMetadata {
+            title: Some("Delete page".to_string()),
+            annotations: Some(Map::from_iter([
+                ("destructiveHint".to_string(), json!(destructive)),
+                ("readOnlyHint".to_string(), json!(false)),
+                ("x-vendor".to_string(), json!({"kept": true})),
+            ])),
+            output_schema: Some(json!({
+                "type": "object",
+                "properties": {"deleted": {"type": "boolean"}}
+            })),
+        };
+        store
+            .record_external_mcp_discovery_success(
+                &run,
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id,
+                    upstream_name: "pages.delete".to_string(),
+                    display_name: "pages.delete".to_string(),
+                    description: None,
+                    input_schema,
+                    metadata,
+                    schema_hash: schema_hash.to_string(),
+                }],
+            )
+            .await
+            .expect("record discovery")
+            .remove(0)
+    }
+
+    /// `mark_legacy` must make the tool row look as if it was discovered before
+    /// tool metadata was stored.
+    async fn exercise_mcp_tool_metadata_repository<S>(store: &S, mark_legacy: impl AsyncFn(Uuid))
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "notes".to_string(),
+                display_name: "Notes".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://mcp.example.com/notes".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                created_at: now,
+            })
+            .await
+            .expect("create MCP server");
+        let id = server.mcp_server_id;
+        let schema = json!({"type": "object", "properties": {"page": {"type": "string"}}});
+        let at = |seconds| now + Duration::seconds(seconds);
+
+        let first = discover_metadata_tool(store, id, at(1), schema.clone(), true, "h1").await;
+        assert_eq!(first.schema_version, 1);
+        let listed = store
+            .list_external_mcp_tools(id, false)
+            .await
+            .expect("list tools")
+            .remove(0);
+        assert_eq!(listed.metadata, first.metadata);
+        assert_eq!(listed.metadata.title.as_deref(), Some("Delete page"));
+        assert_eq!(listed.metadata.hint("destructiveHint"), Some(true));
+        assert_eq!(
+            listed.metadata.annotations.as_ref().expect("annotations")["x-vendor"],
+            json!({"kept": true})
+        );
+        assert!(listed.metadata.output_schema.is_some());
+
+        // An annotation change arrives with a new hash and counts as drift.
+        let changed = discover_metadata_tool(store, id, at(2), schema.clone(), false, "h2").await;
+        assert_eq!(changed.schema_version, 2);
+        assert_eq!(changed.metadata.hint("destructiveHint"), Some(false));
+        let unchanged = discover_metadata_tool(store, id, at(3), schema.clone(), false, "h2").await;
+        assert_eq!(unchanged.schema_version, 2);
+
+        // The first capture for a row stored before metadata existed only
+        // moves the hash, so it is not drift.
+        mark_legacy(first.mcp_tool_id).await;
+        let recaptured =
+            discover_metadata_tool(store, id, at(4), schema.clone(), false, "h3").await;
+        assert_eq!(recaptured.schema_version, 2);
+        assert_eq!(recaptured.schema_hash, "h3");
+        assert_eq!(recaptured.metadata.hint("destructiveHint"), Some(false));
+        let after_capture =
+            discover_metadata_tool(store, id, at(5), schema.clone(), true, "h4").await;
+        assert_eq!(after_capture.schema_version, 3);
+
+        // A legacy row whose input schema also changed is still drift.
+        mark_legacy(first.mcp_tool_id).await;
+        let new_schema = json!({"type": "object", "properties": {"page_id": {"type": "string"}}});
+        let drifted = discover_metadata_tool(store, id, at(6), new_schema, true, "h5").await;
+        assert_eq!(drifted.schema_version, 4);
     }
 
     async fn exercise_mcp_upstream_credential_repository<S>(store: &S)
@@ -4501,6 +4643,30 @@ pub(crate) mod tests {
             .expect("store");
 
         exercise_mcp_registry_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_tool_metadata_round_trip_and_drift() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_tool_metadata_repository(&store, async |mcp_tool_id: Uuid| {
+            store
+                .connection()
+                .execute(
+                    "UPDATE external_mcp_tools SET metadata_captured = 0, title = NULL, annotations_json = NULL, output_schema_json = NULL WHERE mcp_tool_id = ?1",
+                    [mcp_tool_id.to_string()],
+                )
+                .await
+                .expect("mark legacy tool");
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -9880,6 +10046,43 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_mcp_registry_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_tool_metadata_round_trip_and_drift() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres MCP tool metadata test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_tool_metadata_repository(&store, async |mcp_tool_id: Uuid| {
+            sqlx::query(
+                "UPDATE external_mcp_tools SET metadata_captured = 0, title = NULL, annotations_json = NULL, output_schema_json = NULL WHERE mcp_tool_id = $1",
+            )
+            .bind(mcp_tool_id.to_string())
+            .execute(store.pool())
+            .await
+            .expect("mark legacy tool");
+        })
+        .await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

@@ -1,5 +1,6 @@
 use super::*;
 use axum::http::{HeaderMap, HeaderValue};
+use json_rpc::GovernedMcpMethod;
 
 #[test]
 fn auth_extractor_accepts_authorization_only() {
@@ -67,4 +68,777 @@ fn auth_extractor_rejects_conflicting_dual_headers() {
     headers.insert(X_OCEANS_API_KEY, HeaderValue::from_static("gwk_id.other"));
     let error = extract_mcp_gateway_api_key(&headers).expect_err("conflict");
     assert!(matches!(error, AuthError::ConflictingApiKeyHeaders));
+}
+
+mod method_classification {
+    use super::*;
+
+    fn classify(http_method: Method, body: Value) -> McpRpcRequest {
+        parse_mcp_rpc_request(&http_method, body.to_string().as_bytes()).expect("classified")
+    }
+
+    #[test]
+    fn lifecycle_methods_pass_through() {
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            ),
+            McpRpcRequest::Initialize
+        ));
+        for body in [
+            json!({"jsonrpc": "2.0", "id": 2, "method": "ping"}),
+            json!({"jsonrpc": "2.0", "id": 3, "method": "logging/setLevel", "params": {"level": "info"}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progressToken": 1, "progress": 1}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/roots/list_changed"}),
+            json!({"jsonrpc": "2.0", "id": "server-1", "result": {"roots": []}}),
+        ] {
+            assert!(
+                matches!(
+                    classify(Method::POST, body.clone()),
+                    McpRpcRequest::Lifecycle
+                ),
+                "{body} should be lifecycle"
+            );
+        }
+        assert!(matches!(
+            parse_mcp_rpc_request(&Method::DELETE, b"").expect("delete"),
+            McpRpcRequest::Lifecycle
+        ));
+    }
+
+    #[test]
+    fn task_augmented_tool_calls_are_rejected() {
+        let body = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}, "task": {"ttl": 60000}},
+        });
+        assert!(parse_mcp_rpc_request(&Method::POST, body.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn get_without_body_opens_the_event_stream() {
+        assert!(matches!(
+            parse_mcp_rpc_request(&Method::GET, b"").expect("get"),
+            McpRpcRequest::EventStream
+        ));
+    }
+
+    #[test]
+    fn get_and_delete_with_a_body_are_rejected() {
+        let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}).to_string();
+        for method in [Method::GET, Method::DELETE] {
+            assert!(
+                parse_mcp_rpc_request(&method, ping.as_bytes()).is_err(),
+                "{method} with a body should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn post_without_body_is_rejected() {
+        assert!(parse_mcp_rpc_request(&Method::POST, b"").is_err());
+    }
+
+    #[test]
+    fn resources_prompts_and_completions_are_governed() {
+        let McpRpcRequest::Governed { method, target, .. } = classify(
+            Method::POST,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "resources/read", "params": {"uri": "file:///notes.md"}}),
+        ) else {
+            panic!("resources/read should be governed");
+        };
+        assert_eq!(method, GovernedMcpMethod::ResourcesRead);
+        assert_eq!(target.as_deref(), Some("file:///notes.md"));
+
+        let McpRpcRequest::Governed { method, target, .. } = classify(
+            Method::POST,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "prompts/get", "params": {"name": "summarise"}}),
+        ) else {
+            panic!("prompts/get should be governed");
+        };
+        assert_eq!(method, GovernedMcpMethod::PromptsGet);
+        assert_eq!(target.as_deref(), Some("summarise"));
+
+        for name in [
+            "resources/list",
+            "resources/templates/list",
+            "resources/subscribe",
+            "resources/unsubscribe",
+            "prompts/list",
+            "completion/complete",
+        ] {
+            assert!(
+                matches!(
+                    classify(
+                        Method::POST,
+                        json!({"jsonrpc": "2.0", "id": 3, "method": name})
+                    ),
+                    McpRpcRequest::Governed { .. }
+                ),
+                "{name} should be governed"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_methods_and_notification_shaped_requests_are_denied() {
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "id": 1, "method": "vendor/export"})
+            ),
+            McpRpcRequest::Unknown { .. }
+        ));
+        // A request that expects a reply is not a notification, whatever its name.
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "id": 2, "method": "notifications/resources/read"})
+            ),
+            McpRpcRequest::Unknown { .. }
+        ));
+        // Only the notifications MCP defines for clients are forwarded.
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "method": "notifications/vendor/delete_all"})
+            ),
+            McpRpcRequest::Unknown { id: None, .. }
+        ));
+    }
+
+    #[test]
+    fn malformed_client_replies_are_rejected() {
+        for body in [
+            json!({"id": "server-1", "result": {}}),
+            json!({"jsonrpc": "1.0", "id": "server-1", "result": {}}),
+            json!({"jsonrpc": "2.0", "id": "server-1", "result": {}, "error": {"code": 1}}),
+        ] {
+            assert!(
+                parse_mcp_rpc_request(&Method::POST, body.to_string().as_bytes()).is_err(),
+                "{body} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_method_names_are_truncated() {
+        let McpRpcRequest::Unknown { method, .. } = classify(
+            Method::POST,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "x".repeat(1_000)}),
+        ) else {
+            panic!("expected unknown");
+        };
+        assert_eq!(method.len(), 256);
+    }
+}
+
+mod proxy_policy {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use axum::{body::to_bytes, http::header::CONTENT_TYPE};
+    use gateway_core::{
+        AdminApiKeyRepository, ApiKeyModelGrantMode, AuthMode, ExternalMcpAuthMode,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpTransport,
+        GlobalRole, McpAccessRepository, McpRegistryRepository, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolInvocationRepository, NewApiKeyRecord, NewExternalMcpServerRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord, UserStatus,
+    };
+    use gateway_guardrails::{
+        FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
+        ManagedOutcome, ManagedService, PolicyMode, ReasonCode, test_utils::StubManagedEvaluator,
+    };
+    use gateway_store::GatewayStore;
+
+    use super::*;
+    use crate::http::state::AppState;
+
+    const SECRET_TEXT: &str = "private-resource-text";
+
+    struct Upstream {
+        url: String,
+        requests: Arc<AtomicUsize>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for Upstream {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    /// Answers lifecycle, resource, and prompt requests. `prompts/get` replies
+    /// over SSE so the guarded SSE path is exercised.
+    async fn spawn_upstream() -> Upstream {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = axum::Router::new().route(
+            "/mcp",
+            axum::routing::post(move |Json(message): Json<Value>| {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let id = message["id"].clone();
+                    match message["method"].as_str().unwrap_or_default() {
+                        "initialize" => Json(json!({
+                            "jsonrpc": "2.0", "id": id,
+                            "result": {
+                                "protocolVersion": "2025-11-25",
+                                "capabilities": {"logging": {}, "tasks": {"list": {}, "cancel": {}, "requests": {"tools": {"call": {}}}}},
+                                "serverInfo": {"name": "upstream", "version": "1"},
+                            },
+                        }))
+                        .into_response(),
+                        "tools/list" => {
+                            let mut search = annotated_search_tool();
+                            search["execution"] = json!({"taskSupport": "optional"});
+                            Json(json!({
+                                "jsonrpc": "2.0", "id": id,
+                                "result": {"tools": [search, {"name": "purge", "inputSchema": {"type": "object"}}]},
+                            }))
+                            .into_response()
+                        }
+                        "resources/read" => Json(json!({
+                            "jsonrpc": "2.0", "id": id,
+                            "result": {"contents": [{"uri": message["params"]["uri"], "text": SECRET_TEXT}]},
+                        }))
+                        .into_response(),
+                        "prompts/get" => {
+                            let event = json!({
+                                "jsonrpc": "2.0", "id": id,
+                                "result": {"messages": [{"role": "user", "content": {"type": "text", "text": SECRET_TEXT}}]},
+                            });
+                            (
+                                [(CONTENT_TYPE, "text/event-stream")],
+                                format!("event: message\ndata: {event}\n\n"),
+                            )
+                                .into_response()
+                        }
+                        _ => Json(json!({"jsonrpc": "2.0", "id": id, "result": {}})).into_response(),
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let url = format!("http://{}/mcp", listener.local_addr().expect("address"));
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("upstream");
+        });
+        Upstream {
+            url,
+            requests,
+            task,
+        }
+    }
+
+    /// Seeds a user API key and one server with one tool. The key gets a grant on
+    /// that tool only when `granted` is set.
+    async fn seed_server(state: &AppState, server_url: &str, granted: bool) -> AuthenticatedApiKey {
+        let store = &state.store;
+        let now = OffsetDateTime::now_utc();
+        let user = store
+            .create_identity_user(
+                "Resource reader",
+                "reader@example.test",
+                "reader@example.test",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let key = store
+            .create_api_key(&NewApiKeyRecord {
+                name: "Resource reader".to_string(),
+                public_id: "reader".to_string(),
+                secret_hash: "unused-secret-hash".to_string(),
+                model_grant_mode: ApiKeyModelGrantMode::All,
+                owner_kind: ApiKeyOwnerKind::User,
+                owner_user_id: Some(user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                created_at: now,
+            })
+            .await
+            .expect("API key");
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "notes".to_string(),
+                display_name: "Notes".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: server_url.to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 2_000,
+                created_at: now,
+            })
+            .await
+            .expect("server");
+        let tools = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: server.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "Search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "search-v1".to_string(),
+                }],
+            )
+            .await
+            .expect("tool discovery");
+        if granted {
+            store
+                .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+                    subject_kind: McpToolGrantSubjectKind::ApiKey,
+                    subject_id: key.id,
+                    target_kind: McpToolGrantTargetKind::Tool,
+                    target_id: tools[0].mcp_tool_id,
+                    updated_at: now,
+                })
+                .await
+                .expect("tool grant");
+        }
+        AuthenticatedApiKey {
+            id: key.id,
+            public_id: key.public_id,
+            name: key.name,
+            model_grant_mode: key.model_grant_mode,
+            owner_kind: key.owner_kind,
+            owner_user_id: key.owner_user_id,
+            owner_team_id: key.owner_team_id,
+            owner_service_account_id: key.owner_service_account_id,
+        }
+    }
+
+    fn deny_results(state: &mut AppState) {
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.enabled = true;
+        config.default.mode = PolicyMode::Deny;
+        config.default.managed_checks = vec!["result-policy".to_string()];
+        config.managed_checks.insert(
+            "result-policy".to_string(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::GoogleModelArmor,
+                phases: BTreeSet::from([GuardPhase::McpResult]),
+                timeout_ms: 1_000,
+                failure_disposition: FailureDisposition::FailClosed,
+                max_content_bytes: 4_096,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([(
+                "result-policy".to_string(),
+                Arc::new(StubManagedEvaluator::new(
+                    "result-policy",
+                    ManagedService::GoogleModelArmor,
+                    [Ok(ManagedOutcome::Intervention {
+                        reason_code: ReasonCode::new("test.private_resource").unwrap(),
+                        metadata: Default::default(),
+                    })],
+                )) as Arc<dyn gateway_guardrails::ManagedEvaluator>,
+            )]),
+        ));
+    }
+
+    async fn send(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        message: Value,
+    ) -> (StatusCode, String) {
+        send_as(state, auth, &Method::POST, message).await
+    }
+
+    async fn send_as(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        http_method: &Method,
+        message: Value,
+    ) -> (StatusCode, String) {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        let response = dispatch_mcp_request(
+            state,
+            auth,
+            "notes",
+            http_method,
+            &headers,
+            Bytes::from(message.to_string()),
+            Instant::now(),
+        )
+        .await;
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 65_536).await.expect("body");
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    async fn invocations(state: &AppState) -> Vec<McpToolInvocationRecord> {
+        state
+            .store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 50,
+                ..Default::default()
+            })
+            .await
+            .expect("invocation log")
+            .items
+    }
+
+    /// The granted `search` tool as the upstream declares it, including members
+    /// the gateway does not interpret.
+    fn annotated_search_tool() -> Value {
+        json!({
+            "name": "search",
+            "title": "Search notes",
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "object", "properties": {"hits": {"type": "array"}}},
+            "annotations": {"readOnlyHint": true, "openWorldHint": false, "x-extra": 1},
+            "_meta": {"origin": "upstream"},
+        })
+    }
+
+    #[tokio::test]
+    async fn tools_list_keeps_declared_metadata_for_granted_tools() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        // The upstream also sends `execution.taskSupport`, which the gateway drops
+        // because it does not proxy tasks.
+        assert_eq!(body["result"]["tools"], json!([annotated_search_tool()]));
+    }
+
+    #[tokio::test]
+    async fn task_augmented_tool_calls_never_reach_the_upstream() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "search", "arguments": {}, "task": {"ttl": 60000}},
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 5);
+        assert!(
+            body["error"]["message"].as_str().is_some_and(
+                |message| message.contains("task-augmented tools/call is not supported")
+            )
+        );
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn discovery_stores_declared_metadata_and_counts_it_as_drift() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        seed_server(&state, &upstream.url, true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+
+        gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery");
+
+        let tools = state
+            .store
+            .list_external_mcp_tools(server.mcp_server_id, false)
+            .await
+            .expect("tools");
+        let search = tools
+            .iter()
+            .find(|tool| tool.upstream_name == "search")
+            .expect("search tool");
+        let declared = annotated_search_tool();
+        assert_eq!(search.metadata.title.as_deref(), Some("Search notes"));
+        assert_eq!(
+            search.metadata.annotations,
+            declared["annotations"].as_object().cloned()
+        );
+        assert_eq!(
+            search.metadata.output_schema.as_ref(),
+            Some(&declared["outputSchema"])
+        );
+        // The seeded row had no metadata, so the declared members are drift.
+        assert_ne!(search.schema_hash, "search-v1");
+        assert_eq!(search.schema_version, 2);
+        let purge = tools
+            .iter()
+            .find(|tool| tool.upstream_name == "purge")
+            .expect("purge tool");
+        assert_eq!(purge.metadata, gateway_core::McpToolMetadata::default());
+    }
+
+    fn read_resource() -> Value {
+        json!({"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": "file:///notes.md"}})
+    }
+
+    #[tokio::test]
+    async fn resource_read_without_a_server_grant_is_denied_and_logged() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, body) = send(&state, &auth, read_resource()).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains("MCP server is not granted for this API key"));
+        assert!(!body.contains(SECRET_TEXT));
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].mcp_method, "resources/read");
+        assert_eq!(logged[0].tool_display_key, "file:///notes.md");
+        assert_eq!(logged[0].status, McpToolInvocationStatus::PolicyDenied);
+        assert_eq!(
+            logged[0].error_code.as_deref(),
+            Some("mcp_server_not_granted")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_denied_notification_gets_an_error_without_an_id() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "resources/read", "params": {"uri": "file:///notes.md"}}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none());
+        assert_eq!(
+            body["error"]["message"],
+            "MCP server is not granted for this API key"
+        );
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn get_with_a_lifecycle_body_cannot_skip_the_event_stream_grant() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, _) = send_as(
+            &state,
+            &auth,
+            &Method::GET,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn prompt_list_without_a_server_grant_is_denied() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, _) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "prompts/list"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn resource_read_with_a_server_grant_is_forwarded_and_logged() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(&state, &auth, read_resource()).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains(SECRET_TEXT));
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 1);
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].mcp_method, "resources/read");
+        assert_eq!(logged[0].status, McpToolInvocationStatus::Success);
+        assert_eq!(logged[0].policy_result, McpToolPolicyResult::Allowed);
+        assert_eq!(logged[0].tool_id, None);
+    }
+
+    #[tokio::test]
+    async fn lifecycle_requests_pass_through_without_grants() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("initialize result");
+        // The gateway does not proxy tasks, so it must not advertise them.
+        assert_eq!(body["result"]["capabilities"], json!({"logging": {}}));
+        assert_eq!(body["result"]["protocolVersion"], "2025-11-25");
+        let (status, _) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "ping"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 2);
+        assert!(invocations(&state).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn unknown_methods_are_denied_even_with_grants() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 4, "method": "vendor/export", "params": {}}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 4);
+        assert_eq!(body["error"]["code"], -32601);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].mcp_method, "vendor/export");
+        assert_eq!(
+            logged[0].error_code.as_deref(),
+            Some("mcp_method_not_allowed")
+        );
+
+        // A rejected notification keeps the error status, and its error has no id.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "vendor/event"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none());
+        assert_eq!(body["error"]["code"], -32601);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn result_guardrail_applies_to_resource_reads() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        deny_results(&mut state);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(&state, &auth, read_resource()).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains("denied by guardrail policy"));
+        assert!(!body.contains(SECRET_TEXT));
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].mcp_method, "resources/read");
+        assert_eq!(logged[0].status, McpToolInvocationStatus::PolicyDenied);
+        assert_eq!(
+            logged[0].metadata["guardrail_result"]["guardrail_decision"],
+            "denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn result_guardrail_applies_to_prompt_results_over_sse() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        deny_results(&mut state);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 8, "method": "prompts/get", "params": {"name": "summarise"}}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(!body.contains(SECRET_TEXT));
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].mcp_method, "prompts/get");
+        assert_eq!(logged[0].tool_display_key, "summarise");
+        assert_eq!(logged[0].status, McpToolInvocationStatus::PolicyDenied);
+    }
 }

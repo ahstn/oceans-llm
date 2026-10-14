@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
-    GatewayError, McpRegistryRepository, NewExternalMcpServerRecord, StoreError,
+    GatewayError, McpRegistryRepository, McpToolMetadata, NewExternalMcpServerRecord, StoreError,
     UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
 };
 use gateway_mcp::{McpClientError, NormalizedMcpTool, StreamableHttpClient};
@@ -310,6 +310,11 @@ where
                         display_name: tool.name.clone(),
                         description: tool.description.clone(),
                         input_schema: tool.input_schema.clone(),
+                        metadata: McpToolMetadata {
+                            title: tool.title.clone(),
+                            annotations: tool.annotations.clone(),
+                            output_schema: tool.output_schema.clone(),
+                        },
                         schema_hash: tool.schema_hash.clone(),
                     })
                     .collect::<Vec<_>>();

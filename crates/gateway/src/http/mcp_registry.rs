@@ -14,7 +14,7 @@ use gateway_client_config::{
     DEFAULT_GATEWAY_BASE_URL, normalize_gateway_base_url, render_mcp_client_configs,
 };
 use gateway_core::{
-    GatewayError, McpAccessRepository, McpGrantSubject, McpToolGrantSubjectKind,
+    GatewayError, McpAccessRepository, McpGrantSubject, McpToolGrantSubjectKind, McpToolProjection,
     NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
@@ -656,7 +656,7 @@ pub async fn preview_mcp_effective_access(
     }
     let resolution = state
         .store
-        .resolve_mcp_access_for_subjects(&subjects, query.server_id)
+        .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)
         .await?;
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: resolution.referenced_server_count,

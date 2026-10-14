@@ -497,6 +497,8 @@
         "crates/admin-ui/web/src/routes/account/**",
         "crates/gateway/src/http/mcp_oauth.rs",
         "crates/gateway/src/http/mcp_oauth/**",
+        "crates/gateway/src/http/mcp_gateway/credentials.rs",
+        "crates/gateway/src/http/mcp_gateway/credentials/**",
         "crates/gateway-service/src/mcp_oauth.rs"
       ]
     },
