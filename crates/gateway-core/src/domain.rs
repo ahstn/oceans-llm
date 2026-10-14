@@ -2723,6 +2723,22 @@ pub struct RouteCompatibility {
     pub github_copilot: Option<GitHubCopilotRouteCompatibility>,
 }
 
+impl RouteCompatibility {
+    /// True when an `openai_compat` route targets a Decisions upstream: the
+    /// OpenAI Decisions API (`openai_compat.decisions_api`) or the System One
+    /// alpha route (`openrouter.api: decisions`).
+    #[must_use]
+    pub fn selects_decisions_api(&self) -> bool {
+        self.openai_compat
+            .as_ref()
+            .is_some_and(|compat| compat.decisions_api.is_some())
+            || self
+                .openrouter
+                .as_ref()
+                .is_some_and(|routing| routing.api.is_decisions())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GitHubCopilotRouteCompatibility {
@@ -2905,6 +2921,10 @@ pub struct OpenAiCompatRouteCompatibility {
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,
+    /// Decisions wire format the upstream speaks. `openai` sends OpenAI
+    /// Decisions requests to `<base_url>/decisions`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decisions_api: Option<OpenAiCompatDecisionsApi>,
 }
 
 impl Default for OpenAiCompatRouteCompatibility {
@@ -2916,8 +2936,15 @@ impl Default for OpenAiCompatRouteCompatibility {
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
             supports_stream_usage: false,
             empty_tools: OpenAiCompatEmptyTools::default(),
+            decisions_api: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OpenAiCompatDecisionsApi {
+    #[serde(rename = "openai")]
+    OpenAi,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

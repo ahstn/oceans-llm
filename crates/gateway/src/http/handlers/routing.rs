@@ -249,13 +249,7 @@ pub(super) fn route_effective_provider_capabilities(
             route.compatibility.github_copilot.as_ref(),
         );
     }
-    if provider.provider_type() == "openai_compat"
-        && route
-            .compatibility
-            .openrouter
-            .as_ref()
-            .is_some_and(|openrouter| openrouter.api.is_decisions())
-    {
+    if provider.provider_type() == "openai_compat" && route.compatibility.selects_decisions_api() {
         let mut capabilities = provider.capabilities();
         capabilities.decisions = true;
         return capabilities;

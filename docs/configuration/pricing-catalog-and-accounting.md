@@ -107,7 +107,18 @@ Both states remain visible in reports and request logs, but neither state counts
 
 ## Decisions Usage
 
-TypeSafe and OpenRouter Decisions responses report `input_tokens` and `output_tokens`. Oceans normalizes them to prompt/input and completion/output ledger fields and derives a total when both values are present.
+System One Decisions responses report `input_tokens` and `output_tokens`. Oceans normalizes them to prompt/input and completion/output ledger fields and derives a total when both values are present.
+
+OpenAI Decisions responses also report `input_tokens_details.cached_tokens`, `input_tokens_details.cache_write_tokens`, and `output_tokens_details.reasoning_tokens`. Cached input is priced through the same inclusive cache buckets as the Responses API, and reasoning tokens stay within completion tokens. Oceans always prices the upstream's own usage report, so cached tokens are counted even when a System One caller receives the response.
+
+OpenAI bills Decisions on input only. When a model such as `gpt-6-luna` has no exact catalog entry, set a route `pricing_override` with OpenAI's published input and cached-input rates and a zero output rate:
+
+```yaml
+pricing_override:
+  input_usd_per_million_tokens: "<OpenAI input rate>"
+  cache_read_usd_per_million_tokens: "<OpenAI cached input rate>"
+  output_usd_per_million_tokens: "0"
+```
 
 The vendored OpenRouter fallback includes `typesafe/jev-1.13` at $0.042 input and $0 output per million tokens with a 32,000-token context. A native TypeSafe route commonly uses `jev-latest`, which is not the same catalog key. Configure the known rates on that route instead of relying on alias inference.
 

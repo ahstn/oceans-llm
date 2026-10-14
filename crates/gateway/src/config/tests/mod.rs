@@ -2,9 +2,10 @@ use std::{env, path::Path};
 
 use gateway_core::{
     AuthMode, AwsBedrockApiStyle, BudgetCadence, GitHubCopilotChatApi, GlobalRole,
-    ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenRouterPercentilePreference,
-    ReasoningEffort, RequestLogRetentionWindow,
+    ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDecisionsApi,
+    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
+    OpenAiCompatReasoningEffort, OpenRouterPercentilePreference, ReasoningEffort,
+    RequestLogRetentionWindow,
 };
 use gateway_providers::{
     BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig, OpenAiBatchDialect,

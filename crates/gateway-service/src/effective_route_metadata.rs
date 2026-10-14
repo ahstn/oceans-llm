@@ -203,13 +203,7 @@ pub(crate) fn provider_capabilities(
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             let mut capabilities = ProviderCapabilities::openai_compat_baseline();
-            if route.is_some_and(|route| {
-                route
-                    .compatibility
-                    .openrouter
-                    .as_ref()
-                    .is_some_and(|openrouter| openrouter.api.is_decisions())
-            }) {
+            if route.is_some_and(|route| route.compatibility.selects_decisions_api()) {
                 capabilities.decisions = true;
             }
             capabilities

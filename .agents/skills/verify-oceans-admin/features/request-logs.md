@@ -35,6 +35,7 @@ Preconditions:
 - The mobile list replaces `request-log-desktop-table` below the `lg` breakpoint.
 - `gateway.yaml` capture limits apply only to live requests; seeded rows carry fixture payloads. A truncation badge is a valid stored result, not missing UI data.
 - Non-platform-admin sessions see only their own logs. Verify parity as `admin@local`.
+- Decisions logs store the response in the caller's format. A row from `/v1/decisions` with an OpenAI-format body has an ordered `answers` list, and a row from `/v1/systemone` has an `answers` map. Prompt and completion counts match the upstream usage in both cases.
 - The detail does not show guardrail decisions. Use [Guardrails](./guardrails.md) or `/api/v1/admin/guardrails/decisions`.
 - Tag filtering requires both key and value. The Apply button is disabled for a partial pair.
 - Request rows use virtualization on desktop. Locate visible content or scroll the table viewport before selecting an off-screen row.

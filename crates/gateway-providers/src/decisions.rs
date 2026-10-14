@@ -1,27 +1,36 @@
 //! Shared transport helpers for the Decisions API family.
 //!
-//! OpenRouter (alpha) and native TypeSafe share the System One wire shape: one
-//! `state` evaluated against named typed questions. Adapters own URL routing
-//! and auth; request shaping and alpha shape checks live here so both
-//! transports stay identical.
+//! Upstreams speak one of two wire formats: System One (one `state` evaluated
+//! against named typed questions; native TypeSafe and the alpha
+//! `openai_compat` route) or OpenAI Decisions (`input` plus ordered
+//! questions). Adapters own URL routing and auth; request translation and
+//! response shape checks live here so every transport stays identical.
 
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    CoreDecisionQuestion, CoreDecisionsRequest, DecisionAnswer, DecisionsResponse, ProviderError,
-    ProviderRequestContext,
+    CoreDecisionsRequest, DecisionsWireFormat, ProviderDecisionsResponse, ProviderError,
+    ProviderRequestContext, core_decisions_request_to_openai, core_decisions_request_to_system_one,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
-/// Serialize a Decisions request, pin the upstream model, and merge route
-/// `extra_body` overrides. OpenRouter applies its routing policy on top.
+/// Translate a core request into the upstream wire format, pin the upstream
+/// model, and merge route `extra_body` overrides. Requests the format cannot
+/// carry (image inputs or `safety_identifier` for System One, for example)
+/// fail as invalid requests before any upstream call.
 pub(crate) fn base_decisions_request_body(
+    format: DecisionsWireFormat,
     request: &CoreDecisionsRequest,
     context: &ProviderRequestContext,
 ) -> Result<Value, ProviderError> {
-    let mut body = serde_json::to_value(request)
-        .map_err(|error| ProviderError::Transport(error.to_string()))?;
+    let mut body = match format {
+        DecisionsWireFormat::SystemOne => core_decisions_request_to_system_one(request)
+            .map_err(ProviderError::InvalidRequest)
+            .and_then(|wire| serde_json::to_value(wire).map_err(transport_error))?,
+        DecisionsWireFormat::OpenAi => core_decisions_request_to_openai(request)
+            .map_err(ProviderError::InvalidRequest)
+            .and_then(|wire| serde_json::to_value(wire).map_err(transport_error))?,
+    };
     let Some(object) = body.as_object_mut() else {
         return Err(ProviderError::Transport(
             "decisions request must serialize to a JSON object".to_string(),
@@ -35,6 +44,10 @@ pub(crate) fn base_decisions_request_body(
         object.insert(key.clone(), value.clone());
     }
     Ok(body)
+}
+
+fn transport_error(error: serde_json::Error) -> ProviderError {
+    ProviderError::Transport(error.to_string())
 }
 
 /// POST builder with default headers, route extra headers, and `x-request-id`.
@@ -74,225 +87,127 @@ pub(crate) fn base_root_and_host(
     Ok((trimmed.to_string(), parsed.host_str().map(str::to_string)))
 }
 
-/// Reject alpha shape drift loudly: the response must satisfy the public
-/// contract, and every requested question needs a matching valid answer.
-pub(crate) fn validate_decisions_response(
-    value: &Value,
+/// Reject upstream shape drift loudly: the response must satisfy the
+/// format's contract, and every requested question needs a matching valid
+/// answer.
+pub(crate) fn parse_decisions_response(
+    format: DecisionsWireFormat,
+    body: Value,
     request: &CoreDecisionsRequest,
-) -> Result<(), ProviderError> {
-    let response = DecisionsResponse::deserialize(value).map_err(|error| {
-        ProviderError::Transport(format!("invalid decisions response: {error}"))
-    })?;
-
-    for (id, question) in &request.questions {
-        let Some(answer) = response.answers.get(id) else {
-            return Err(ProviderError::Transport(format!(
-                "decisions response is missing answer `{id}`"
-            )));
-        };
-        let expected = question.answer_type();
-        let actual = match answer {
-            DecisionAnswer::Noul { .. } => "noul",
-            DecisionAnswer::Choice { .. } => "choice",
-            DecisionAnswer::Score { .. } => "score",
-        };
-        if !matches!(
-            (question, answer),
-            (
-                CoreDecisionQuestion::Noul { .. },
-                DecisionAnswer::Noul { .. }
-            ) | (
-                CoreDecisionQuestion::Choice { .. },
-                DecisionAnswer::Choice { .. }
-            ) | (
-                CoreDecisionQuestion::Score { .. },
-                DecisionAnswer::Score { .. }
-            )
-        ) {
-            return Err(ProviderError::Transport(format!(
-                "decisions answer `{id}` has type `{actual}`, expected `{expected}`"
-            )));
-        }
-
-        match (question, answer) {
-            (CoreDecisionQuestion::Noul { .. }, DecisionAnswer::Noul { noul, .. })
-                if !(0.0..=1.0).contains(noul) =>
-            {
-                return Err(ProviderError::Transport(format!(
-                    "decisions answer `{id}` has noul probability {noul}, expected 0..=1"
-                )));
-            }
-            (
-                CoreDecisionQuestion::Choice { criteria, .. },
-                DecisionAnswer::Choice { choice, .. },
-            ) if !criteria.contains_key(choice) => {
-                return Err(ProviderError::Transport(format!(
-                    "decisions answer `{id}` selected unknown choice `{choice}`"
-                )));
-            }
-            (
-                CoreDecisionQuestion::Choice { criteria, .. },
-                DecisionAnswer::Choice {
-                    probabilities,
-                    confidence,
-                    ..
-                },
-            ) => {
-                validate_probability_metadata(id, probabilities, *confidence)?;
-                if let Some(choice) = probabilities
-                    .keys()
-                    .find(|choice| !criteria.contains_key(*choice))
-                {
-                    return Err(ProviderError::Transport(format!(
-                        "decisions answer `{id}` reports probability for unknown choice `{choice}`"
-                    )));
-                }
-            }
-            (
-                CoreDecisionQuestion::Score { criteria, .. },
-                DecisionAnswer::Score {
-                    score,
-                    probabilities,
-                    confidence,
-                    ..
-                },
-            ) => {
-                if !(0.0..=criteria.len().saturating_sub(1) as f64).contains(score) {
-                    return Err(ProviderError::Transport(format!(
-                        "decisions answer `{id}` has score {score}, expected 0..={}",
-                        criteria.len().saturating_sub(1)
-                    )));
-                }
-                validate_probability_metadata(id, probabilities, *confidence)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+) -> Result<ProviderDecisionsResponse, ProviderError> {
+    let parsed = format
+        .parse_response(&body, request)
+        .map_err(ProviderError::Transport)?;
+    Ok(ProviderDecisionsResponse {
+        format,
+        body,
+        parsed,
+    })
 }
 
-fn validate_probability_metadata(
-    id: &str,
-    probabilities: &BTreeMap<String, f64>,
-    confidence: Option<f64>,
-) -> Result<(), ProviderError> {
-    if let Some((label, probability)) = probabilities
-        .iter()
-        .find(|(_, probability)| !(0.0..=1.0).contains(*probability))
-    {
-        return Err(ProviderError::Transport(format!(
-            "decisions answer `{id}` has probability {probability} for `{label}`, expected 0..=1"
-        )));
-    }
-    if let Some(confidence) = confidence
-        && !(0.0..=1.0).contains(&confidence)
-    {
-        return Err(ProviderError::Transport(format!(
-            "decisions answer `{id}` has confidence {confidence}, expected 0..=1"
-        )));
-    }
-    Ok(())
+/// Shared fixture: a System One caller's request translated to core.
+#[cfg(test)]
+pub(crate) fn system_one_test_request() -> CoreDecisionsRequest {
+    let request: gateway_core::SystemOneDecisionsRequest =
+        serde_json::from_value(serde_json::json!({
+            "model": "jev",
+            "state": "Help! My payouts have been failing for 3 days.",
+            "questions": {
+                "is_urgent": {"type": "noul", "instructions": "Does this convey urgency?"},
+                "department": {
+                    "type": "choice",
+                    "instructions": "Which team?",
+                    "criteria": {"billing": "Payments", "technical": null}
+                },
+                "frustration": {
+                    "type": "score",
+                    "instructions": "How frustrated?",
+                    "criteria": ["Calm", "Frustrated"]
+                }
+            }
+        }))
+        .expect("valid System One request");
+    gateway_core::system_one_decisions_request_to_core(&request)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use gateway_core::CoreDecisionQuestion;
-    use serde_json::json;
+    use serde_json::{Map, json};
 
     use super::*;
 
+    fn context() -> ProviderRequestContext {
+        ProviderRequestContext {
+            request_id: "req-decisions".to_string(),
+            model_key: "jev".to_string(),
+            provider_key: "decisions".to_string(),
+            upstream_model: "upstream-jev".to_string(),
+            owner_user_id: None,
+            expected_provider_credential_id: None,
+            extra_headers: Map::new(),
+            extra_body: Map::from_iter([("seed".to_string(), json!(7))]),
+            request_headers: BTreeMap::new(),
+            compatibility: Default::default(),
+        }
+    }
+
     #[test]
-    fn validates_answers_against_requested_questions() {
-        let request = CoreDecisionsRequest {
-            model: "jev".to_string(),
-            state: json!("state"),
-            questions: BTreeMap::from([
-                (
-                    "is_urgent".to_string(),
-                    CoreDecisionQuestion::Noul {
-                        instructions: json!("urgent?"),
-                        criteria: None,
-                    },
-                ),
-                (
-                    "department".to_string(),
-                    CoreDecisionQuestion::Choice {
-                        instructions: json!("Which team?"),
-                        criteria: BTreeMap::from([("billing".to_string(), None)]),
-                    },
-                ),
-                (
-                    "frustration".to_string(),
-                    CoreDecisionQuestion::Score {
-                        instructions: json!("How frustrated?"),
-                        criteria: vec![json!("Calm"), json!("Angry")],
-                    },
-                ),
-            ]),
-            extra: BTreeMap::new(),
-        };
+    fn builds_body_in_the_upstream_format() {
+        let request = system_one_test_request();
+        let system_one =
+            base_decisions_request_body(DecisionsWireFormat::SystemOne, &request, &context())
+                .expect("System One body");
+        assert_eq!(system_one["model"], "upstream-jev");
+        assert_eq!(system_one["seed"], 7);
+        assert_eq!(system_one["questions"]["is_urgent"]["type"], "noul");
+
+        let openai = base_decisions_request_body(DecisionsWireFormat::OpenAi, &request, &context())
+            .expect("OpenAI body");
+        assert_eq!(openai["model"], "upstream-jev");
+        assert_eq!(
+            openai["input"],
+            "Help! My payouts have been failing for 3 days."
+        );
+        assert_eq!(openai["questions"][0]["name"], "department");
+    }
+
+    #[test]
+    fn safety_identifier_is_rejected_before_system_one_upstreams() {
+        let mut request = system_one_test_request();
+        request.safety_identifier = Some("user-123".to_string());
+
+        let error =
+            base_decisions_request_body(DecisionsWireFormat::SystemOne, &request, &context())
+                .expect_err("System One cannot carry safety_identifier");
+        assert!(
+            matches!(error, ProviderError::InvalidRequest(_)),
+            "{error:?}"
+        );
+
+        let openai = base_decisions_request_body(DecisionsWireFormat::OpenAi, &request, &context())
+            .expect("OpenAI carries safety_identifier");
+        assert_eq!(openai["safety_identifier"], "user-123");
+    }
+
+    #[test]
+    fn rejects_malformed_answers_as_transport_errors() {
+        let request = system_one_test_request();
         let valid = json!({
             "model": "jev",
             "answers": {
                 "is_urgent": {"type": "noul", "noul": 0.9},
-                "department": {
-                    "type": "choice",
-                    "choice": "billing",
-                    "probabilities": {"billing": 1.0},
-                    "confidence": 0.9
-                },
-                "frustration": {
-                    "type": "score",
-                    "score": 0.8,
-                    "probabilities": {"0": 0.2, "1": 0.8},
-                    "confidence": 0.7
-                }
+                "department": {"type": "choice", "choice": "billing"},
+                "frustration": {"type": "score", "score": 0.8}
             }
         });
-        validate_decisions_response(&valid, &request).expect("valid");
-        assert!(validate_decisions_response(&json!({}), &request).is_err());
+        let parsed =
+            parse_decisions_response(DecisionsWireFormat::SystemOne, valid.clone(), &request)
+                .expect("valid");
+        assert_eq!(parsed.body, valid);
+        assert_eq!(parsed.format, DecisionsWireFormat::SystemOne);
 
-        let mut wrong_type = valid.clone();
-        wrong_type["answers"]["is_urgent"] = json!({"type": "choice", "choice": "billing"});
-        let mut missing_payload = valid.clone();
-        missing_payload["answers"]["department"]
-            .as_object_mut()
-            .expect("choice answer")
-            .remove("choice");
-        let mut invalid_probability = valid.clone();
-        invalid_probability["answers"]["is_urgent"]["noul"] = json!(1.1);
-        let mut invalid_choice = valid.clone();
-        invalid_choice["answers"]["department"]["choice"] = json!("technical");
-        let mut invalid_score = valid.clone();
-        invalid_score["answers"]["frustration"]["score"] = json!(2.0);
-        let mut invalid_choice_probability = valid.clone();
-        invalid_choice_probability["answers"]["department"]["probabilities"]["billing"] =
-            json!(-0.1);
-        let mut unknown_choice_probability = valid.clone();
-        unknown_choice_probability["answers"]["department"]["probabilities"]["technical"] =
-            json!(0.1);
-        let mut invalid_score_probability = valid.clone();
-        invalid_score_probability["answers"]["frustration"]["probabilities"]["1"] = json!(1.1);
-        let mut invalid_choice_confidence = valid.clone();
-        invalid_choice_confidence["answers"]["department"]["confidence"] = json!(2.0);
-        let mut invalid_score_confidence = valid.clone();
-        invalid_score_confidence["answers"]["frustration"]["confidence"] = json!(-0.1);
-
-        for invalid in [
-            wrong_type,
-            missing_payload,
-            invalid_probability,
-            invalid_choice,
-            invalid_score,
-            invalid_choice_probability,
-            unknown_choice_probability,
-            invalid_score_probability,
-            invalid_choice_confidence,
-            invalid_score_confidence,
-        ] {
-            assert!(validate_decisions_response(&invalid, &request).is_err());
-        }
+        let error = parse_decisions_response(DecisionsWireFormat::OpenAi, valid, &request)
+            .expect_err("wrong format");
+        assert!(matches!(error, ProviderError::Transport(_)), "{error:?}");
     }
 }

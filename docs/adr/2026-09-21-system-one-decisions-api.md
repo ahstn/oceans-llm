@@ -62,3 +62,49 @@ The explicit capability default prevents existing permissive routes from becomin
 ## Validation
 
 Provider round-trip tests cover authentication, body mapping, endpoint routing, upstream errors, and malformed answers. Config tests cover valid TypeSafe and OpenRouter routes plus conflicting capabilities. Gateway verification covers the Models and Request Logs UI, a bounded live Jev call through OpenRouter, usage accounting, and request-log evidence.
+
+## Amendment (2026-10-14): Dual Request Formats, `/v1/systemone`, and the OpenAI Provider
+
+This amendment supersedes decisions 1, 2, and 7 above. Tracked in ahstn/oceans-llm#468.
+
+OpenAI published a Decisions API with its own request format: an `input` (a string, or user messages with `input_text` and `input_image` parts) and an ordered list of `predicate`, `choice`, and `score` questions. OpenAI owns that specification. The gateway needs to accept it without breaking System One callers, and needs to send it to OpenAI-hosted Decisions models.
+
+### Amended decisions
+
+1. **Supersedes 1.** `POST /v1/decisions` accepts both formats and picks one from the body: `input` means OpenAI, `state` means System One. A body with both keys, or with neither, returns 400 with a message that names the problem. `POST /v1/systemone` accepts System One only and rejects `input` with a message that points to `/v1/decisions`. The response always uses the caller's format. When the caller and the upstream speak the same format, the gateway returns the upstream body unchanged apart from the public model name. System One callers therefore keep the same response, byte for byte.
+2. **Supersedes 2.** `gateway-core` has one format-neutral request and response representation (`protocol::decisions`), plus a module per wire format that translates in both directions. Questions keep their caller key and an optional display name. Instructions and descriptions stay JSON values until a format needs text.
+7. **Supersedes 7.** A provider route declares the format it speaks. `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai` send the OpenAI format to `{base_url}/decisions`. Native TypeSafe and the alpha route keep System One. A configured `decisions_url` keeps System One unless `decisions_api` is set. Plain `openai_compat` routes without either setting do not support Decisions.
+
+### Translation rules
+
+- **Rejected before any upstream call (400):**
+  - `safety_identifier` is OpenAI-only. Routes that speak System One reject it.
+  - System One providers reject image inputs. Audio and video inputs are out of scope.
+- **Positional keys:** OpenAI questions without a `name` get the key `question_{index}`. If that collides with a named question, the key gets a numeric suffix. OpenAI answers for unnamed questions keep `name: null`.
+- **System One questions sent to OpenAI:**
+  - Questions are sorted by key, because a System One questions map has no order.
+  - `noul` criteria are added to the predicate instructions as "True when" and "False when" lines.
+  - `choice` criteria become typed choices with descriptions.
+  - `score` criteria become levels.
+  - A single-option choice cannot be sent, because OpenAI requires at least two choices.
+- **Score indices:** OpenAI reports `score` as a 0-based index into the levels. The System One `score` field is read the same way.
+- **Bounds:** OpenAI requests are limited to 1–200 questions, 2–255 choices, 2–10 score levels and 128 images. Core validation still applies the 1–255 choice bound and 2–10 score-level bound to both formats.
+- **Confidence when rendering for OpenAI callers:** System One answers carry no confidence. The renderer uses the reported confidence if present, then the probability of the selected choice (or of the nearest score level), and 1.0 as a last resort.
+- **Upstream checks:** OpenAI answers must arrive in request order, with matching names and types. A `refusal` is allowed for any question. Shape drift fails as a provider transport error.
+
+### Accounting
+
+The handler prices the upstream's own `usage` object, whatever format the caller receives. OpenAI usage reports `input_tokens_details.cached_tokens`, `cache_write_tokens` and `output_tokens_details.reasoning_tokens`. The existing inclusive cache normalization records cached input separately. Reasoning tokens stay within completion tokens. Request logs record prompt, completion, and total counts from the rendered response, and those counts match in both formats.
+
+OpenAI Decisions models such as `gpt-6-luna` bill input only. Without an exact catalog entry, operators set a route `pricing_override` with `output_usd_per_million_tokens: "0"` and OpenAI's published input and cached-input rates.
+
+### Trade-offs
+
+- Typed request errors now return 400 instead of axum's 422, because the handler parses the body after detecting its format. Both `/v1/decisions` and `/v1/systemone` behave this way.
+- Folding `noul` criteria into instructions is lossy in the other direction. An OpenAI response rendered for a System One caller has no criteria to return, and none is needed.
+- The 0-based score reading follows OpenAI's specification. If a System One provider reports 1-based scores, scores rendered for OpenAI callers will be off by one level.
+
+### Follow-up
+
+- Add Decisions-aware guardrail phases (still out of scope).
+- Revisit audio and video inputs once a provider supports them.

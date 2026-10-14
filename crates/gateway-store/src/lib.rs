@@ -3966,6 +3966,7 @@ pub(crate) mod tests {
                         reasoning_effort: OpenAiCompatReasoningEffort::ReasoningObject,
                         supports_stream_usage: true,
                         empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
+                        decisions_api: None,
                     }),
                     ..Default::default()
                 },

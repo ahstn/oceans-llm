@@ -54,7 +54,10 @@ use crate::{
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::core::{ChatRequest, DecisionsRequest, EmbeddingsRequest, ResponsesRequest},
+    protocol::{
+        core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
+        decisions::{DecisionsRequest, ProviderDecisionsResponse},
+    },
 };
 
 #[async_trait]
@@ -1390,7 +1393,7 @@ pub trait ProviderClient: Send + Sync {
         &self,
         request: &DecisionsRequest,
         context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
         let _ = (request, context);
         Err(ProviderError::NotImplemented(format!(
             "{} does not support decisions",
