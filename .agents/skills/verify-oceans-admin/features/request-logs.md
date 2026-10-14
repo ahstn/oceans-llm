@@ -6,6 +6,7 @@ Request logs lets an authorized user review seeded gateway requests, filter them
 
 - `logs-list` shows the seeded request list in desktop or mobile form.
 - `logs-filter` adds removable filter chips for model, provider, service, component, environment, tag pair, and request ID. Each chip writes its URL search param (`model_key`, `provider_key`, `service`, `component`, `env`, `tag_key` and `tag_value`, `request_id`), so the same filters deep-link (for example `?request_id=demo-req-016`).
+- `logs-search` is the debounced `Search request logs by model or user` box (placeholder `Search by model or user…`). It writes `q` to the URL with a history replace, so Back skips intermediate keystrokes.
 - `logs-detail` opens the `Request Log Detail` sheet: summary rows (including `Operation`: Chat Completions, Responses, Embeddings, or Decisions), `MCP & Tools`, `Request Tags`, `MCP Token Overhead` when present, `Provider Attempts`, and `Payloads`.
 - `logs-mcp-link` follows a request to related MCP invocations when permitted.
 
@@ -38,6 +39,7 @@ Preconditions:
 - Non-platform-admin sessions see only their own logs. Verify parity as `admin@local`.
 - The detail does not show guardrail decisions. Use [Guardrails](./guardrails.md) or `/api/v1/admin/guardrails/decisions`.
 - There is no apply button. A chip value commits on Enter or when its input loses focus, and only if it changed the filters. Wait for `Showing N of M` to change before you compare it with the API.
+- `Clear` resets only the chips. A search term in `q` stays until you empty the search box.
 - Tag filtering requires both key and value. The UI keeps a partial pair out of the URL, but the API still returns 400 for `tag_key` without `tag_value` (or the reverse).
 - `Add filter` and `Clear` appear only once a chip exists. A field that already has a chip is disabled in the `Filter by` menu. Remove one chip with its `Remove <Field> filter` button.
 - Request rows use virtualization on desktop. Locate visible content or scroll the table viewport before selecting an off-screen row.
