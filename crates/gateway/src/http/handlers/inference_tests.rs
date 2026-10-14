@@ -305,16 +305,26 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             error.0
         );
         assert_eq!(error.0.http_status_code(), 422);
-        assert_eq!(state.metrics.test_snapshot().requests, 1);
         assert!(provider.calls.lock().unwrap().is_empty());
-        assert_eq!(
-            state
-                .metrics
-                .test_snapshot()
+        let metrics = state.metrics.test_snapshot();
+        let request_outcomes = if endpoint == Endpoint::Decisions {
+            // Decisions records its own request metric, never the chat one.
+            assert_eq!(metrics.requests, 0);
+            metrics
+                .decisions_requests
+                .iter()
+                .map(|request| request.outcome.as_str())
+                .collect::<Vec<_>>()
+        } else {
+            assert_eq!(metrics.requests, 1);
+            assert!(metrics.decisions_requests.is_empty());
+            metrics
                 .request_outcomes
-                .get("budget_error"),
-            Some(&1),
-        );
+                .keys()
+                .map(String::as_str)
+                .collect()
+        };
+        assert_eq!(request_outcomes, ["budget_error"], "{endpoint:?}");
         let detail = request_detail(&state).await;
         assert_eq!(
             detail.log.status_code,
