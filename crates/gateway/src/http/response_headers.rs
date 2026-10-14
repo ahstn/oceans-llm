@@ -159,7 +159,10 @@ pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> 
 struct UsageEvent<'a> {
     /// The event's bytes in the chunk, including the blank line that ends it.
     range: Range<usize>,
-    name: Option<&'a str>,
+    /// The event's lines, without the blank line that ends it.
+    lines: Vec<&'a str>,
+    /// The index in `lines` of the first `data:` line.
+    first_data_line: usize,
     /// The `data:` lines joined with `\n`, as an SSE client sees them.
     data: String,
     /// Where the usage object sits in `data`.
@@ -181,13 +184,22 @@ fn last_usage_event(text: &str) -> Option<UsageEvent<'_>> {
         start = end;
     }
     ranges.into_iter().rev().find_map(|range| {
-        let (name, data) = parse_event(&text[range.clone()], newline)?;
+        let lines: Vec<&str> = text[range.start..range.end - terminator.len()]
+            .split(newline)
+            .collect();
+        let first_data_line = lines.iter().position(|line| data_value(line).is_some())?;
+        let data = lines
+            .iter()
+            .filter_map(|line| data_value(line))
+            .collect::<Vec<_>>()
+            .join("\n");
         let usage = usage_object(&data)?.get();
         let usage_start = (usage.as_ptr() as usize).checked_sub(data.as_ptr() as usize)?;
         let usage = usage_start..usage_start + usage.len();
         Some(UsageEvent {
             range,
-            name,
+            lines,
+            first_data_line,
             data,
             usage,
             newline,
@@ -195,22 +207,13 @@ fn last_usage_event(text: &str) -> Option<UsageEvent<'_>> {
     })
 }
 
-/// Splits an event into its name and joined data. Returns `None` for events with
-/// other fields, comments or more than one name.
-fn parse_event<'a>(event: &'a str, newline: &str) -> Option<(Option<&'a str>, String)> {
-    let mut name = None;
-    let mut data_lines = Vec::new();
-    for line in event.strip_suffix(&newline.repeat(2))?.split(newline) {
-        if let Some(value) = line.strip_prefix("event:") {
-            if name.replace(value.trim()).is_some() {
-                return None;
-            }
-        } else {
-            let data = line.strip_prefix("data:")?;
-            data_lines.push(data.strip_prefix(' ').unwrap_or(data));
-        }
+/// The value of a `data` field line, or `None` for any other line.
+fn data_value(line: &str) -> Option<&str> {
+    if line == "data" {
+        return Some("");
     }
-    Some((name, data_lines.join("\n")))
+    let value = line.strip_prefix("data:")?;
+    Some(value.strip_prefix(' ').unwrap_or(value))
 }
 
 impl UsageEvent<'_> {
@@ -230,16 +233,20 @@ impl UsageEvent<'_> {
         };
         let payload = [&data[..start], &usage, &data[end..]].concat();
 
+        // Other fields and comments are kept as sent. The rewritten data goes where the
+        // first `data:` line was.
         let mut rendered = String::new();
-        if let Some(name) = self.name {
-            rendered.push_str("event: ");
-            rendered.push_str(name);
-            rendered.push_str(self.newline);
-        }
-        for line in payload.split('\n') {
-            rendered.push_str("data: ");
-            rendered.push_str(line);
-            rendered.push_str(self.newline);
+        for (index, line) in self.lines.iter().enumerate() {
+            if index == self.first_data_line {
+                for data_line in payload.split('\n') {
+                    rendered.push_str("data: ");
+                    rendered.push_str(data_line);
+                    rendered.push_str(self.newline);
+                }
+            } else if data_value(line).is_none() {
+                rendered.push_str(line);
+                rendered.push_str(self.newline);
+            }
         }
         rendered.push_str(self.newline);
         Some(rendered)
@@ -463,6 +470,15 @@ mod tests {
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"9.0000\"}}}\n\n",
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
             ),
+            // Comments and other fields are kept where they were.
+            (
+                ": keep-alive\nid: 7\nevent: message_delta\nretry: 1000\ndata: {\"usage\":{}}\n\n",
+                ": keep-alive\nid: 7\nevent: message_delta\nretry: 1000\ndata: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
+            ),
+            (
+                "data: {\"usage\":\ndata: {}}\nid: 7\n\n",
+                "data: {\"usage\":\ndata: {\"oceans\":{\"cost\":\"0.0012\"}}}\nid: 7\n\n",
+            ),
         ] {
             let rewritten = with_stream_cost(chunk.as_bytes(), cost).expect("rewritten");
             assert_eq!(std::str::from_utf8(&rewritten).unwrap(), expected);
@@ -475,7 +491,7 @@ mod tests {
         for chunk in [
             "data: [DONE]\n\n",
             "data: {\"choices\":[]}\n\n",
-            ": keep-alive\ndata: {\"usage\":{}}\n\n",
+            ": keep-alive\n\n",
             "data: {\"usage\":{}}\n",
         ] {
             assert_eq!(with_stream_cost(chunk.as_bytes(), cost), None, "{chunk:?}");

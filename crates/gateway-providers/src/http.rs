@@ -170,8 +170,7 @@ pub fn upstream_retry_after(
         .to_str()
         .ok()?
         .trim();
-    let is_delta_seconds =
-        !value.is_empty() && value.len() <= 10 && value.bytes().all(|byte| byte.is_ascii_digit());
+    let is_delta_seconds = !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit());
     (is_delta_seconds || httpdate::parse_http_date(value).is_ok()).then(|| value.to_string())
 }
 
@@ -479,7 +478,12 @@ pub(crate) mod tests {
                 upstream_retry_after(status, &headers(date)),
                 Some(date.to_string())
             );
-            for invalid in ["", "-1", "1.5", "soon", "12345678901"] {
+            // Delta-seconds has no length limit in RFC 9110.
+            assert_eq!(
+                upstream_retry_after(status, &headers("12345678901")),
+                Some("12345678901".to_string())
+            );
+            for invalid in ["", "-1", "1.5", "soon"] {
                 assert_eq!(upstream_retry_after(status, &headers(invalid)), None);
             }
             assert_eq!(
