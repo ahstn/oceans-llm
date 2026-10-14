@@ -120,17 +120,31 @@ fn is_lifecycle_method(method: &str, has_id: bool) -> bool {
     }
 }
 
+/// A request rejected before it is classified. `id` is set once the body has
+/// been read far enough to find one, so the error response can echo it.
+#[derive(Debug)]
+pub(super) struct McpRpcRejection {
+    pub id: Option<Value>,
+    pub error: GatewayError,
+}
+
+impl From<GatewayError> for McpRpcRejection {
+    fn from(error: GatewayError) -> Self {
+        Self { id: None, error }
+    }
+}
+
 pub(super) fn parse_mcp_rpc_request(
     http_method: &Method,
     body: &[u8],
-) -> Result<McpRpcRequest, GatewayError> {
+) -> Result<McpRpcRequest, McpRpcRejection> {
     if body.is_empty() {
         return match *http_method {
             Method::GET => Ok(McpRpcRequest::EventStream),
             Method::DELETE => Ok(McpRpcRequest::Lifecycle),
-            _ => Err(GatewayError::InvalidRequest(
-                "MCP JSON-RPC body is required".to_string(),
-            )),
+            _ => Err(
+                GatewayError::InvalidRequest("MCP JSON-RPC body is required".to_string()).into(),
+            ),
         };
     }
     // Only a POST carries a JSON-RPC message. The upstream treats a GET as its event
@@ -139,7 +153,8 @@ pub(super) fn parse_mcp_rpc_request(
     if *http_method != Method::POST {
         return Err(GatewayError::InvalidRequest(format!(
             "MCP {http_method} requests must not have a body"
-        )));
+        ))
+        .into());
     }
     let value: Value = serde_json::from_slice(body).map_err(|error| {
         GatewayError::InvalidRequest(format!("invalid MCP JSON-RPC body: {error}"))
@@ -147,9 +162,14 @@ pub(super) fn parse_mcp_rpc_request(
     let Some(object) = value.as_object() else {
         return Err(GatewayError::InvalidRequest(
             "MCP gateway policy supports single JSON-RPC request objects".to_string(),
-        ));
+        )
+        .into());
     };
     let id = object.get("id").cloned();
+    let reject = |message: &str| McpRpcRejection {
+        id: id.clone(),
+        error: GatewayError::InvalidRequest(message.to_string()),
+    };
     let Some(method) = object.get("method").and_then(Value::as_str) else {
         // A client reply to a server-initiated request (sampling, elicitation, roots)
         // carries an id and exactly one of `result` or `error`.
@@ -159,9 +179,7 @@ pub(super) fn parse_mcp_rpc_request(
         if is_reply {
             return Ok(McpRpcRequest::Lifecycle);
         }
-        return Err(GatewayError::InvalidRequest(
-            "MCP JSON-RPC method is required".to_string(),
-        ));
+        return Err(reject("MCP JSON-RPC method is required"));
     };
     match method {
         "initialize" => Ok(McpRpcRequest::Initialize),
@@ -170,22 +188,18 @@ pub(super) fn parse_mcp_rpc_request(
             let params = object
                 .get("params")
                 .and_then(Value::as_object)
-                .ok_or_else(|| {
-                    GatewayError::InvalidRequest("tools/call params must be an object".to_string())
-                })?;
+                .ok_or_else(|| reject("tools/call params must be an object"))?;
             let tool_name = params
                 .get("name")
                 .and_then(Value::as_str)
                 .filter(|name| !name.trim().is_empty())
-                .ok_or_else(|| {
-                    GatewayError::InvalidRequest("tools/call params.name is required".to_string())
-                })?
+                .ok_or_else(|| reject("tools/call params.name is required"))?
                 .to_string();
             // A task's result comes back through `tasks/result`, which the gateway
             // cannot tie to a tool grant, so the call would never finish.
             if params.contains_key("task") {
-                return Err(GatewayError::InvalidRequest(
-                    "task-augmented tools/call is not supported through the gateway; call the tool without `task`".to_string(),
+                return Err(reject(
+                    "task-augmented tools/call is not supported through the gateway; call the tool without `task`",
                 ));
             }
             Ok(McpRpcRequest::ToolsCall {

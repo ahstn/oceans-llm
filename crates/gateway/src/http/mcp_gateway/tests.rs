@@ -568,7 +568,13 @@ mod proxy_policy {
         .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(body.contains("task-augmented tools/call is not supported"));
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 5);
+        assert!(
+            body["error"]["message"].as_str().is_some_and(
+                |message| message.contains("task-augmented tools/call is not supported")
+            )
+        );
         assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
     }
 

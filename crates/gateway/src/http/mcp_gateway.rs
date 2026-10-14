@@ -258,7 +258,7 @@ async fn dispatch_mcp_request(
         Ok(McpRpcRequest::Unknown { id, method }) => {
             deny_unknown_method(state, auth, &server, started_at, id, method).await
         }
-        Err(error) => {
+        Err(rejection) => {
             let _ = state
                 .service
                 .log_mcp_tool_invocation(
@@ -285,7 +285,12 @@ async fn dispatch_mcp_request(
                     },
                 )
                 .await;
-            mcp_jsonrpc_error_response(StatusCode::BAD_REQUEST, None, -32600, &error.to_string())
+            mcp_jsonrpc_error_response(
+                StatusCode::BAD_REQUEST,
+                rejection.id.as_ref(),
+                -32600,
+                &rejection.error.to_string(),
+            )
         }
     }
 }
