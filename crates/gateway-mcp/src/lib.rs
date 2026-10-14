@@ -16,6 +16,10 @@ use url::Url;
 pub mod server;
 
 pub const DEFAULT_PROTOCOL_VERSION: &str = "2025-03-26";
+/// The version the upstream client asks for. It is the first version where a
+/// tool carries a top-level `title` and an `outputSchema`; a server that picks
+/// an older version still has its `annotations.title` read as a fallback.
+pub const CLIENT_PROTOCOL_VERSION: &str = "2025-06-18";
 pub const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
 const MAX_RESPONSE_BODY_BYTES: usize = 2 * 1024 * 1024;
@@ -208,7 +212,7 @@ impl StreamableHttpClient {
         Ok(Self {
             client,
             endpoint,
-            protocol_version: DEFAULT_PROTOCOL_VERSION.to_string(),
+            protocol_version: CLIENT_PROTOCOL_VERSION.to_string(),
         })
     }
 
@@ -237,10 +241,15 @@ impl StreamableHttpClient {
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
         let mut request_headers = headers.cloned().unwrap_or_default();
-        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        let (initialize, session_id) = self.initialize_with_session(headers).await?;
         if let Some(session_id) = session_id {
             request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
         }
+        // Later requests name the version the server chose, which may be older.
+        request_headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER.to_string(),
+            initialize.protocol_version,
+        );
         self.send_notification(
             JsonRpcNotification::<Value>::new("notifications/initialized", None),
             Some(&request_headers),
@@ -285,10 +294,15 @@ impl StreamableHttpClient {
         arguments: Value,
     ) -> Result<ToolsCallResponse, McpClientError> {
         let mut request_headers = headers.cloned().unwrap_or_default();
-        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        let (initialize, session_id) = self.initialize_with_session(headers).await?;
         if let Some(session_id) = session_id {
             request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
         }
+        // Later requests name the version the server chose, which may be older.
+        request_headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER.to_string(),
+            initialize.protocol_version,
+        );
         self.send_notification(
             JsonRpcNotification::<Value>::new("notifications/initialized", None),
             Some(&request_headers),
@@ -593,10 +607,18 @@ pub fn normalize_tools(tools: Vec<McpTool>) -> Result<Vec<NormalizedMcpTool>, Mc
             });
         }
         let input_schema = canonicalize_json(&input_schema);
-        let title = tool
-            .title
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        // Before 2025-06-18 the display title lived in the annotations.
+        let annotation_title = tool
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.get("title"))
+            .and_then(Value::as_str);
+        let title = [tool.title.as_deref(), annotation_title]
+            .into_iter()
+            .flatten()
+            .map(str::trim)
+            .find(|value| !value.is_empty())
+            .map(str::to_string);
         // Invalid optional members are dropped rather than failing discovery
         // for every tool on the server.
         let output_schema = tool
@@ -883,7 +905,7 @@ mod tests {
 
         assert_eq!(
             request.headers().get(MCP_PROTOCOL_VERSION_HEADER).unwrap(),
-            DEFAULT_PROTOCOL_VERSION
+            CLIENT_PROTOCOL_VERSION
         );
         assert_eq!(
             request.headers().get(ACCEPT).unwrap(),
@@ -1003,6 +1025,24 @@ mod tests {
         let annotations = tool.annotations.expect("annotations");
         assert_eq!(annotations["destructiveHint"], json!(true));
         assert_eq!(annotations["x-vendor"], json!("kept"));
+    }
+
+    #[test]
+    fn an_annotation_title_fills_in_for_a_missing_top_level_title() {
+        let older_server_tool = McpTool {
+            name: "search".to_string(),
+            annotations: Some(json!({"title": " Search issues ", "readOnlyHint": true})),
+            ..McpTool::default()
+        };
+        let both_titles = McpTool {
+            title: Some("Find issues".to_string()),
+            ..older_server_tool.clone()
+        };
+
+        let tools = normalize_tools(vec![older_server_tool]).expect("normalize");
+        assert_eq!(tools[0].title.as_deref(), Some("Search issues"));
+        let tools = normalize_tools(vec![both_titles]).expect("normalize");
+        assert_eq!(tools[0].title.as_deref(), Some("Find issues"));
     }
 
     #[test]
