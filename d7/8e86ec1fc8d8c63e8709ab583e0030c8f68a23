@@ -1,0 +1,19 @@
+docs/adr/2026-10-14-team-scoped-identity-config-fragments.md
+  s_dd118f467446e0::t_4845760d8b0ad0 1-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d78e86ec1fc8d8c63e8709ab583e0030c8f68a23",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
