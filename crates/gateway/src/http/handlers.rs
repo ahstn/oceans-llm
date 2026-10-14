@@ -1422,8 +1422,10 @@ struct LoggingBodyStreamState {
     stream_trace: StreamTrace,
     /// A usage-only chunk held back until a later chunk shows whether it is the last.
     held_usage_chunk: Option<axum::body::Bytes>,
-    /// Chunks with neither output nor usage that arrived after the held usage chunk.
+    /// Events with neither output nor usage that arrived after the held usage chunk.
     held_after_usage: Vec<axum::body::Bytes>,
+    /// Buffers an incomplete trailing event, so every chunk handled holds whole events.
+    framer: gateway_core::SseEventFramer,
     pending: std::collections::VecDeque<Result<axum::body::Bytes, std::io::Error>>,
     cost_usd: Option<gateway_core::Money4>,
 }
@@ -1822,6 +1824,7 @@ async fn anthropic_messages_stream_response(
         stream_trace,
         held_usage_chunk: None,
         held_after_usage: Vec::new(),
+        framer: gateway_core::SseEventFramer::default(),
         pending: Default::default(),
         cost_usd: None,
     });
@@ -1841,8 +1844,10 @@ async fn anthropic_messages_stream_response(
 /// Holds the last usage event of a chunk, when neither it nor anything after it carries
 /// output, until a later chunk shows whether it is the last usage report. Events ahead
 /// of it in the same chunk are forwarded at once, so output is never delayed. Later
-/// chunks with neither output nor usage, such as a separate `finish_reason` chunk, are
-/// held behind it in order, up to `MAX_CHUNKS_HELD_AFTER_USAGE`. When
+/// events with neither output nor usage, such as a separate `finish_reason` chunk, are
+/// held behind it in order, up to `MAX_BYTES_HELD_AFTER_USAGE`; keep-alive comments pass
+/// it. Chunks are re-cut at event boundaries first, so an event split across provider
+/// chunks is handled whole. When
 /// the stream then completes cleanly, the priced cost is added to that usage object. A
 /// chunk that ends the stream gets the cost on its own usage event, if it has one.
 fn wrap_stream_with_request_logging(
@@ -1862,6 +1867,12 @@ fn wrap_stream_with_request_logging(
                     let ends_stream = observation.ends_stream;
                     state.saw_terminal_event |= observation.has_terminal_event;
                     state.stream_trace.observe_chunk(chunk.len(), observation);
+                    // The collector reports the events this chunk completes, which are
+                    // exactly the bytes the framer releases.
+                    let chunk = state.framer.push(chunk);
+                    if chunk.is_empty() {
+                        continue;
+                    }
                     // A completed Responses event promises a usable continuation ID.
                     // Stop before forwarding it if its origin cannot be persisted.
                     if observation.has_terminal_event
@@ -1895,15 +1906,26 @@ fn wrap_stream_with_request_logging(
                                 .map(|()| chunk)
                                 .map_err(|error| std::io::Error::other(error.to_string())),
                         );
+                        release_unframed_tail(&mut state);
                         continue;
                     }
                     if state.held_usage_chunk.is_some()
                         && !observation.has_output
                         && !observation.has_usage
-                        && state.held_after_usage.len() < MAX_CHUNKS_HELD_AFTER_USAGE
                     {
-                        state.held_after_usage.push(chunk);
-                        continue;
+                        if response_headers::is_comment_only(&chunk) {
+                            state.pending.push_back(Ok(chunk));
+                            continue;
+                        }
+                        let held_bytes: usize = state
+                            .held_after_usage
+                            .iter()
+                            .map(axum::body::Bytes::len)
+                            .sum();
+                        if held_bytes + chunk.len() <= MAX_BYTES_HELD_AFTER_USAGE {
+                            state.held_after_usage.push(chunk);
+                            continue;
+                        }
                     }
                     release_held_usage_chunk(&mut state, false);
                     if !observation.ends_with_usage_report {
@@ -1923,12 +1945,14 @@ fn wrap_stream_with_request_logging(
                 }
                 Some(Err(error)) => {
                     release_held_usage_chunk(&mut state, false);
+                    release_unframed_tail(&mut state);
                     let error = fail_stream_on_transport_error(&mut state, error).await;
                     state.pending.push_back(Err(error));
                 }
                 None => {
                     let result = finalize_stream(&mut state, None).await;
                     release_held_usage_chunk(&mut state, result.is_ok());
+                    release_unframed_tail(&mut state);
                     if let Err(error) = result {
                         state
                             .pending
@@ -1940,9 +1964,17 @@ fn wrap_stream_with_request_logging(
     })
 }
 
-/// Caps how many output-free chunks can queue behind a held usage chunk, so a stream of
-/// keep-alives cannot be delayed without limit.
-const MAX_CHUNKS_HELD_AFTER_USAGE: usize = 16;
+/// Caps the output-free events that can queue behind a held usage chunk. Past it, the
+/// usage is released without the cost rather than holding the stream back further.
+const MAX_BYTES_HELD_AFTER_USAGE: usize = 64 * 1024;
+
+/// Forwards bytes of an event the stream never completed, unchanged.
+fn release_unframed_tail(state: &mut LoggingBodyStreamState) {
+    let tail = state.framer.finish();
+    if !tail.is_empty() {
+        state.pending.push_back(Ok(tail));
+    }
+}
 
 /// Forwards the held usage chunk, adding the stream's cost when it completed cleanly,
 /// followed by the chunks held behind it.
@@ -2746,6 +2778,7 @@ mod tests {
                 ),
                 held_usage_chunk: None,
                 held_after_usage: Vec::new(),
+                framer: gateway_core::SseEventFramer::default(),
                 pending: Default::default(),
                 cost_usd: None,
             };
@@ -3020,11 +3053,78 @@ mod tests {
             .map(|chunk| chunk.expect("ok"))
             .collect();
 
+        // Clients ignore comments, so the keep-alive passes the held usage. The
+        // `finish_reason` event stays behind it.
         assert_eq!(chunks.len(), 5);
-        assert_eq!(sse_json(&chunks[1])["usage"]["oceans"]["cost"], "0.0105");
-        assert_eq!(chunks[2], finish);
-        assert_eq!(chunks[3], Bytes::from_static(b": keep-alive\n\n"));
+        assert_eq!(chunks[1], Bytes::from_static(b": keep-alive\n\n"));
+        assert_eq!(sse_json(&chunks[2])["usage"]["oceans"]["cost"], "0.0105");
+        assert_eq!(chunks[3], finish);
         assert_eq!(chunks[4], Bytes::from_static(b"data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn priced_stream_adds_cost_to_a_usage_event_split_across_chunks() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\r\r";
+        let (head, tail) = usage.split_at(30);
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\r\rdata: {\"cho",
+            )),
+            Ok(Bytes::from(format!(
+                "ices\":[{{\"delta\":{{\"content\":\"!\"}}}}]}}\r\r{head}"
+            ))),
+            Ok(Bytes::from(tail.to_string())),
+            Ok(Bytes::from_static(b"data: [DONE]\r\r")),
+        ]));
+        let (_context, state) = harness.logging_state("stream-split-usage-test", upstream);
+        let chunks: Vec<Bytes> = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| chunk.expect("ok"))
+            .collect();
+
+        // Each chunk forwarded holds whole events, and the usage event gets the cost.
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(
+            chunks[0],
+            Bytes::from_static(b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\r\r")
+        );
+        assert_eq!(
+            chunks[1],
+            Bytes::from_static(b"data: {\"choices\":[{\"delta\":{\"content\":\"!\"}}]}\r\r")
+        );
+        assert_eq!(
+            std::str::from_utf8(&chunks[2]).unwrap(),
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500,\"oceans\":{\"cost\":\"0.0105\"}}}\r\r"
+        );
+        assert_eq!(chunks[3], Bytes::from_static(b"data: [DONE]\r\r"));
+    }
+
+    #[tokio::test]
+    async fn priced_stream_forwards_an_incomplete_trailing_event_unchanged() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"cho",
+            )),
+            Err(ProviderError::Transport("reset".to_string())),
+        ]));
+        let (_context, state) = harness.logging_state("stream-unframed-tail-test", upstream);
+        let chunks = collect_stream(state).await;
+
+        let bytes: Vec<u8> = chunks
+            .iter()
+            .filter_map(|chunk| chunk.as_ref().ok())
+            .flat_map(|chunk| chunk.to_vec())
+            .collect();
+        assert_eq!(
+            bytes,
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"cho"
+        );
+        assert!(chunks.last().expect("error").is_err());
     }
 
     /// Inference guardrails buffer the upstream stream and emit it as one chunk.

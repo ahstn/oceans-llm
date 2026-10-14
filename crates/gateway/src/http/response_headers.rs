@@ -19,7 +19,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use gateway_core::{ModelRoute, Money4};
+use gateway_core::{ModelRoute, Money4, find_sse_delimiter};
 use gateway_service::RecordedChatUsage;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
@@ -142,6 +142,17 @@ pub(crate) fn split_before_usage_event(chunk: &Bytes) -> Option<(Bytes, Bytes)> 
     Some((chunk.slice(..start), chunk.slice(start..)))
 }
 
+/// Whether `chunk` holds only SSE comments and blank lines, such as a keep-alive. SSE
+/// clients ignore comments, so these can pass a held usage event without changing what
+/// the client sees.
+pub(crate) fn is_comment_only(chunk: &[u8]) -> bool {
+    std::str::from_utf8(chunk).is_ok_and(|text| {
+        sse_lines(text)
+            .iter()
+            .all(|line| line.is_empty() || line.starts_with(':'))
+    })
+}
+
 /// Adds `usage.oceans.cost` to the last complete SSE event in `chunk` that has a JSON
 /// usage object. Every other byte is kept. Returns `None` when there is no such event, so
 /// the caller forwards the chunk unchanged.
@@ -167,26 +178,21 @@ struct UsageEvent<'a> {
     data: String,
     /// Where the usage object sits in `data`.
     usage: Range<usize>,
-    newline: &'static str,
+    /// The line ending and blank line that end the event, kept as sent.
+    delimiter: &'a str,
 }
 
 /// Finds the last complete event in `text` with a usage object. A trailing event without
 /// its blank line is ignored.
 fn last_usage_event(text: &str) -> Option<UsageEvent<'_>> {
-    // Keep the upstream line ending; SSE allows LF or CRLF.
-    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    let terminator = newline.repeat(2);
-    let mut ranges = Vec::new();
+    let mut events = Vec::new();
     let mut start = 0;
-    while let Some(offset) = text[start..].find(&terminator) {
-        let end = start + offset + terminator.len();
-        ranges.push(start..end);
-        start = end;
+    while let Some((index, len)) = find_sse_delimiter(text.as_bytes(), start) {
+        events.push((start, index, index + len));
+        start = index + len;
     }
-    ranges.into_iter().rev().find_map(|range| {
-        let lines: Vec<&str> = text[range.start..range.end - terminator.len()]
-            .split(newline)
-            .collect();
+    events.into_iter().rev().find_map(|(start, body_end, end)| {
+        let lines = sse_lines(&text[start..body_end]);
         let first_data_line = lines.iter().position(|line| data_value(line).is_some())?;
         let data = lines
             .iter()
@@ -197,14 +203,31 @@ fn last_usage_event(text: &str) -> Option<UsageEvent<'_>> {
         let usage_start = (usage.as_ptr() as usize).checked_sub(data.as_ptr() as usize)?;
         let usage = usage_start..usage_start + usage.len();
         Some(UsageEvent {
-            range,
+            range: start..end,
             lines,
             first_data_line,
             data,
             usage,
-            newline,
+            delimiter: &text[body_end..end],
         })
     })
+}
+
+/// Splits an event into lines. SSE lines may end with CRLF, LF or a lone CR.
+fn sse_lines(event: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut rest = event;
+    while let Some(index) = rest.find(['\r', '\n']) {
+        lines.push(&rest[..index]);
+        let ending = if rest[index..].starts_with("\r\n") {
+            2
+        } else {
+            1
+        };
+        rest = &rest[index + ending..];
+    }
+    lines.push(rest);
+    lines
 }
 
 /// The value of a `data` field line, or `None` for any other line.
@@ -234,22 +257,17 @@ impl UsageEvent<'_> {
         let payload = [&data[..start], &usage, &data[end..]].concat();
 
         // Other fields and comments are kept as sent. The rewritten data goes where the
-        // first `data:` line was.
-        let mut rendered = String::new();
+        // first `data:` line was. Lines end the way the event's last line did.
+        let newline = &self.delimiter[..self.delimiter.len() / 2];
+        let mut lines = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             if index == self.first_data_line {
-                for data_line in payload.split('\n') {
-                    rendered.push_str("data: ");
-                    rendered.push_str(data_line);
-                    rendered.push_str(self.newline);
-                }
+                lines.extend(payload.split('\n').map(|data| format!("data: {data}")));
             } else if data_value(line).is_none() {
-                rendered.push_str(line);
-                rendered.push_str(self.newline);
+                lines.push((*line).to_string());
             }
         }
-        rendered.push_str(self.newline);
-        Some(rendered)
+        Some(lines.join(newline) + self.delimiter)
     }
 }
 
@@ -476,6 +494,10 @@ mod tests {
                 ": keep-alive\nid: 7\nevent: message_delta\nretry: 1000\ndata: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
             ),
             (
+                "event: message_delta\rdata: {\"usage\":{}}\r\r",
+                "event: message_delta\rdata: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\r\r",
+            ),
+            (
                 "data: {\"usage\":\ndata: {}}\nid: 7\n\n",
                 "data: {\"usage\":\ndata: {\"oceans\":{\"cost\":\"0.0012\"}}}\nid: 7\n\n",
             ),
@@ -495,6 +517,16 @@ mod tests {
             "data: {\"usage\":{}}\n",
         ] {
             assert_eq!(with_stream_cost(chunk.as_bytes(), cost), None, "{chunk:?}");
+        }
+    }
+
+    #[test]
+    fn only_comments_and_blank_lines_count_as_comment_only() {
+        for chunk in [": keep-alive\n\n", ":\r\r", ": a\r\n: b\r\n\r\n"] {
+            assert!(is_comment_only(chunk.as_bytes()), "{chunk:?}");
+        }
+        for chunk in ["data: {}\n\n", ": a\nid: 7\n\n", "event: ping\r\r"] {
+            assert!(!is_comment_only(chunk.as_bytes()), "{chunk:?}");
         }
     }
 

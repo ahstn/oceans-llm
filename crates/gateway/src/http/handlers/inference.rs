@@ -305,6 +305,7 @@ impl InferenceExecution<'_> {
             stream_trace,
             held_usage_chunk: None,
             held_after_usage: Vec::new(),
+            framer: gateway_core::SseEventFramer::default(),
             pending: Default::default(),
             cost_usd: None,
         });

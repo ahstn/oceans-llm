@@ -252,6 +252,12 @@ Streaming responses carry `x-oceans-model`, `x-oceans-route-id`, `x-oceans-provi
 
 The value uses the same decimal-string format as `x-oceans-response-cost-usd`, for example `"oceans": {"cost": "0.0012"}`. It is added only when the stream ends normally and the usage was priced. The field is appended to the upstream usage object, and the rest of the stream passes through unchanged. If an upstream gateway already sent an `oceans` field, Oceans replaces it with its own cost.
 
+Oceans can only tell that a usage report is the last one when the stream moves on. It therefore holds back a usage event that carries no output until the next output, the next usage report, or the end of the stream. Output is never delayed:
+
+- Events without output that follow the usage event, such as a separate `finish_reason` chunk, wait behind it in order, up to 64 KiB. Past that limit, the usage event is sent without the cost.
+- Keep-alive comments are sent at once, ahead of the held event. SSE clients ignore comments, so this does not change what the client sees.
+- Oceans forwards only whole SSE events. An event that the provider splits across network chunks is sent once it is complete. LF, CRLF and lone-CR line endings are all supported.
+
 The `oceans` object is an extra field on an existing usage object. Unmodified OpenAI and Anthropic SDKs parse these streams, including Python clients with strict response validation. `tests/sdk-compat` checks this with fixtures generated from gateway output.
 
 ### Errors
