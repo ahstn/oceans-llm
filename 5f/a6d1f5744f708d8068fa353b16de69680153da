@@ -1,0 +1,19 @@
+crates/gateway/src/http/response_headers.rs
+  s_13e300ce4bf1eb::t_f12a63f84649a1 140-145,148,179,184,186,399-402,420
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fa6d1f5744f708d8068fa353b16de69680153da",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
