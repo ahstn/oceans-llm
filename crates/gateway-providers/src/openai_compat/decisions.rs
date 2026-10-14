@@ -197,6 +197,30 @@ mod tests {
         assert!(body.get("provider").is_none());
     }
 
+    #[test]
+    fn route_policy_replaces_caller_provider_and_no_policy_keeps_it() {
+        // Same contract as chat and Responses: a configured route policy is
+        // authoritative; without one there is no boundary to enforce.
+        let mut caller_request = request();
+        caller_request
+            .extra
+            .insert("provider".into(), json!({"only": ["other"]}));
+
+        let body =
+            decisions_request_body(DecisionsWireFormat::SystemOne, &caller_request, &context())
+                .expect("body");
+        assert_eq!(body["provider"], json!({"order": ["typesafe"]}));
+
+        let mut no_policy = context();
+        if let Some(openrouter) = no_policy.compatibility.openrouter.as_mut() {
+            openrouter.provider = OpenRouterProviderRouting::default();
+        }
+        let body =
+            decisions_request_body(DecisionsWireFormat::SystemOne, &caller_request, &no_policy)
+                .expect("body");
+        assert_eq!(body["provider"], json!({"only": ["other"]}));
+    }
+
     fn decisions_provider(decisions_url: String) -> OpenAiCompatProvider {
         OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openrouter".to_string(),
