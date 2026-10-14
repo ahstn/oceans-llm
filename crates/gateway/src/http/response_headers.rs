@@ -10,7 +10,7 @@
 //! before usage is known. The stream wrapper writes the cost into the final usage event
 //! instead, using [`with_stream_cost`].
 
-use std::{cell::RefCell, future::Future};
+use std::{cell::RefCell, future::Future, ops::Range};
 
 use axum::{
     body::Bytes,
@@ -132,22 +132,77 @@ fn encode_identifier(key: &str) -> String {
     utf8_percent_encode(key, HEADER_VALUE_ESCAPES).to_string()
 }
 
-/// Adds `usage.oceans.cost` to a chunk that holds exactly one SSE event with a JSON
-/// usage payload. Returns `None` when the chunk has any other shape, so the caller
-/// forwards it unchanged.
+/// Splits `chunk` just before its last complete SSE event with a usage object, so the
+/// events ahead of it can be forwarded while the usage event is held. Returns `None` when
+/// the chunk has no such event.
+pub(crate) fn split_before_usage_event(chunk: &Bytes) -> Option<(Bytes, Bytes)> {
+    let text = std::str::from_utf8(chunk).ok()?;
+    let usage_event = last_usage_event(text)?;
+    let start = usage_event.range.start;
+    Some((chunk.slice(..start), chunk.slice(start..)))
+}
+
+/// Adds `usage.oceans.cost` to the last complete SSE event in `chunk` that has a JSON
+/// usage object. Every other byte is kept. Returns `None` when there is no such event, so
+/// the caller forwards the chunk unchanged.
 pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> {
     let text = std::str::from_utf8(chunk).ok()?;
+    let usage_event = last_usage_event(text)?;
+    let rewritten = usage_event.render_with_cost(cost_usd)?;
+    let range = usage_event.range;
+    Some(Bytes::from(
+        [&text[..range.start], &rewritten, &text[range.end..]].concat(),
+    ))
+}
+
+/// One SSE event that carries a usage object.
+struct UsageEvent<'a> {
+    /// The event's bytes in the chunk, including the blank line that ends it.
+    range: Range<usize>,
+    name: Option<&'a str>,
+    /// The `data:` lines joined with `\n`, as an SSE client sees them.
+    data: String,
+    /// Where the usage object sits in `data`.
+    usage: Range<usize>,
+    newline: &'static str,
+}
+
+/// Finds the last complete event in `text` with a usage object. A trailing event without
+/// its blank line is ignored.
+fn last_usage_event(text: &str) -> Option<UsageEvent<'_>> {
     // Keep the upstream line ending; SSE allows LF or CRLF.
-    let newline = if text.ends_with("\r\n\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let mut event = None;
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let terminator = newline.repeat(2);
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    while let Some(offset) = text[start..].find(&terminator) {
+        let end = start + offset + terminator.len();
+        ranges.push(start..end);
+        start = end;
+    }
+    ranges.into_iter().rev().find_map(|range| {
+        let (name, data) = parse_event(&text[range.clone()], newline)?;
+        let usage = usage_object(&data)?.get();
+        let usage_start = (usage.as_ptr() as usize).checked_sub(data.as_ptr() as usize)?;
+        let usage = usage_start..usage_start + usage.len();
+        Some(UsageEvent {
+            range,
+            name,
+            data,
+            usage,
+            newline,
+        })
+    })
+}
+
+/// Splits an event into its name and joined data. Returns `None` for events with
+/// other fields, comments or more than one name.
+fn parse_event<'a>(event: &'a str, newline: &str) -> Option<(Option<&'a str>, String)> {
+    let mut name = None;
     let mut data_lines = Vec::new();
-    for line in text.strip_suffix(&newline.repeat(2))?.split(newline) {
-        if let Some(name) = line.strip_prefix("event:") {
-            if event.replace(name.trim()).is_some() {
+    for line in event.strip_suffix(&newline.repeat(2))?.split(newline) {
+        if let Some(value) = line.strip_prefix("event:") {
+            if name.replace(value.trim()).is_some() {
                 return None;
             }
         } else {
@@ -155,36 +210,40 @@ pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> 
             data_lines.push(data.strip_prefix(' ').unwrap_or(data));
         }
     }
-    let data = data_lines.join("\n");
-    let usage = usage_object(&data)?;
-    let start = (usage.get().as_ptr() as usize).checked_sub(data.as_ptr() as usize)?;
-    let end = start + usage.get().len();
-    let mut fields = serde_json::from_str::<Map<String, Value>>(usage.get()).ok()?;
-    let cost = json!({ "cost": cost_usd.format_4dp() });
-    // Append to the upstream text so the rest of the event passes through byte for byte.
-    // An existing `oceans` field (from a chained gateway) is replaced instead.
-    let usage = if fields.contains_key("oceans") {
-        fields.insert("oceans".to_string(), cost);
-        Value::Object(fields).to_string()
-    } else {
-        let separator = if fields.is_empty() { "" } else { "," };
-        format!("{}{separator}\"oceans\":{cost}}}", &data[start..end - 1])
-    };
-    let payload = [&data[..start], &usage, &data[end..]].concat();
+    Some((name, data_lines.join("\n")))
+}
 
-    let mut rendered = String::new();
-    if let Some(event) = event {
-        rendered.push_str("event: ");
-        rendered.push_str(event);
-        rendered.push_str(newline);
+impl UsageEvent<'_> {
+    fn render_with_cost(&self, cost_usd: Money4) -> Option<String> {
+        let Range { start, end } = self.usage.clone();
+        let data = &self.data;
+        let mut fields = serde_json::from_str::<Map<String, Value>>(&data[start..end]).ok()?;
+        let cost = json!({ "cost": cost_usd.format_4dp() });
+        // Append to the upstream text so the rest of the event passes through byte for
+        // byte. An existing `oceans` field (from a chained gateway) is replaced instead.
+        let usage = if fields.contains_key("oceans") {
+            fields.insert("oceans".to_string(), cost);
+            Value::Object(fields).to_string()
+        } else {
+            let separator = if fields.is_empty() { "" } else { "," };
+            format!("{}{separator}\"oceans\":{cost}}}", &data[start..end - 1])
+        };
+        let payload = [&data[..start], &usage, &data[end..]].concat();
+
+        let mut rendered = String::new();
+        if let Some(name) = self.name {
+            rendered.push_str("event: ");
+            rendered.push_str(name);
+            rendered.push_str(self.newline);
+        }
+        for line in payload.split('\n') {
+            rendered.push_str("data: ");
+            rendered.push_str(line);
+            rendered.push_str(self.newline);
+        }
+        rendered.push_str(self.newline);
+        Some(rendered)
     }
-    for line in payload.split('\n') {
-        rendered.push_str("data: ");
-        rendered.push_str(line);
-        rendered.push_str(newline);
-    }
-    rendered.push_str(newline);
-    Some(Bytes::from(rendered))
 }
 
 /// The fields that can hold a stream's usage object. Other fields are skipped without
@@ -416,12 +475,45 @@ mod tests {
         for chunk in [
             "data: [DONE]\n\n",
             "data: {\"choices\":[]}\n\n",
-            "data: {\"usage\":{}}\n\ndata: {\"usage\":{}}\n\n",
-            "data: {\"usage\":{}}\r\n\r\ndata: {\"usage\":{}}\r\n\r\n",
             ": keep-alive\ndata: {\"usage\":{}}\n\n",
             "data: {\"usage\":{}}\n",
         ] {
             assert_eq!(with_stream_cost(chunk.as_bytes(), cost), None, "{chunk:?}");
         }
+    }
+
+    #[test]
+    fn stream_cost_goes_on_the_last_usage_event_of_a_coalesced_chunk() {
+        let cost = Money4::from_scaled(12);
+        for (chunk, expected) in [
+            (
+                "data: {\"usage\":{\"total_tokens\":3}}\n\ndata: [DONE]\n\n",
+                "data: {\"usage\":{\"total_tokens\":3,\"oceans\":{\"cost\":\"0.0012\"}}}\n\ndata: [DONE]\n\n",
+            ),
+            (
+                "data: {\"usage\":{}}\r\n\r\ndata: {\"usage\":{}}\r\n\r\ndata: [DONE]\r\n\r\n",
+                "data: {\"usage\":{}}\r\n\r\ndata: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\r\n\r\ndata: [DONE]\r\n\r\n",
+            ),
+        ] {
+            let rewritten = with_stream_cost(chunk.as_bytes(), cost).expect("rewritten");
+            assert_eq!(std::str::from_utf8(&rewritten).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn split_before_usage_event_releases_the_output_ahead_of_it() {
+        let chunk = Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[],\"usage\":{}}\n\n",
+        );
+        let (before, from_usage) = split_before_usage_event(&chunk).expect("split");
+        assert_eq!(
+            &before[..],
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"
+        );
+        assert_eq!(&from_usage[..], b"data: {\"choices\":[],\"usage\":{}}\n\n");
+        assert_eq!(
+            split_before_usage_event(&Bytes::from_static(b"data: {\"choices\":[]}\n\n")),
+            None
+        );
     }
 }

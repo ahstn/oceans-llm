@@ -1835,9 +1835,11 @@ async fn anthropic_messages_stream_response(
         })
 }
 
-/// Holds a usage-only chunk until the next chunk shows whether it is the last
-/// usage report. When the stream then completes cleanly, the priced cost is added
-/// to that chunk's usage object. Chunks carrying output are never delayed.
+/// Holds the last usage event of a chunk, when neither it nor anything after it carries
+/// output, until the next chunk shows whether it is the last usage report. Events ahead
+/// of it in the same chunk are forwarded at once, so output is never delayed. When
+/// the stream then completes cleanly, the priced cost is added to that usage object. A
+/// chunk that ends the stream gets the cost on its own usage event, if it has one.
 fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
@@ -1877,7 +1879,12 @@ fn wrap_stream_with_request_logging(
                     }
                     if ends_stream {
                         let result = finalize_stream(&mut state, None).await;
-                        release_held_usage_chunk(&mut state, result.is_ok());
+                        // A usage event coalesced with the terminator is the final report.
+                        let rewritten = completed_stream_cost(&state, result.is_ok())
+                            .filter(|_| observation.has_usage)
+                            .and_then(|cost| response_headers::with_stream_cost(&chunk, cost));
+                        release_held_usage_chunk(&mut state, result.is_ok() && rewritten.is_none());
+                        let chunk = rewritten.unwrap_or(chunk);
                         state.pending.push_back(
                             result
                                 .map(|()| chunk)
@@ -1886,7 +1893,16 @@ fn wrap_stream_with_request_logging(
                         continue;
                     }
                     release_held_usage_chunk(&mut state, false);
-                    if observation.has_usage && !observation.has_output {
+                    if !observation.ends_with_usage_report {
+                        state.pending.push_back(Ok(chunk));
+                    } else if let Some((before, from_usage)) =
+                        response_headers::split_before_usage_event(&chunk)
+                    {
+                        if !before.is_empty() {
+                            state.pending.push_back(Ok(before));
+                        }
+                        state.held_usage_chunk = Some(from_usage);
+                    } else if !observation.has_output {
                         state.held_usage_chunk = Some(chunk);
                     } else {
                         state.pending.push_back(Ok(chunk));
@@ -1916,13 +1932,20 @@ fn release_held_usage_chunk(state: &mut LoggingBodyStreamState, completed: bool)
     let Some(chunk) = state.held_usage_chunk.take() else {
         return;
     };
-    let cost = state
-        .cost_usd
-        .filter(|_| completed && state.collector.failure().is_none());
-    let chunk = cost
+    let chunk = completed_stream_cost(state, completed)
         .and_then(|cost| response_headers::with_stream_cost(&chunk, cost))
         .unwrap_or(chunk);
     state.pending.push_back(Ok(chunk));
+}
+
+/// The priced cost to report in the stream, once it has completed without failure.
+fn completed_stream_cost(
+    state: &LoggingBodyStreamState,
+    completed: bool,
+) -> Option<gateway_core::Money4> {
+    state
+        .cost_usd
+        .filter(|_| completed && state.collector.failure().is_none())
 }
 
 /// Logs and accounts a stream that failed in transport, returning the error to forward.
@@ -2913,6 +2936,61 @@ mod tests {
         assert_eq!(usage["usage"]["total_tokens"], 1500);
         assert_eq!(usage["usage"]["oceans"]["cost"], "0.0105");
         assert_eq!(chunks[3], Bytes::from_static(b"data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn priced_stream_adds_cost_to_usage_coalesced_with_other_events() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":1,\"total_tokens\":1001}}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\ndata: [DONE]\n\n",
+            )),
+        ]));
+        let (_context, state) = harness.logging_state("stream-coalesced-cost-test", upstream);
+        let chunks: Vec<Bytes> = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| chunk.expect("ok"))
+            .collect();
+
+        // The content ahead of the first usage event is released at once; the usage
+        // event itself is held and released unchanged when more events follow.
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(
+            chunks[0],
+            Bytes::from_static(b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+        );
+        assert_eq!(sse_json(&chunks[1]).pointer("/usage/oceans"), None);
+        let last = std::str::from_utf8(&chunks[2]).expect("utf8");
+        assert!(
+            last.starts_with("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+        );
+        assert!(last.contains(r#""total_tokens":1500,"oceans":{"cost":"0.0105"}}"#));
+        assert!(last.ends_with("\n\ndata: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn priced_stream_does_not_hold_content_that_carries_usage() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let content_with_usage = Bytes::from_static(
+            b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":1,\"total_tokens\":1001}}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+        );
+        // The upstream stays open, so a held chunk would never be yielded.
+        let upstream: ProviderStream =
+            Box::pin(stream::iter([Ok(content_with_usage.clone())]).chain(stream::pending()));
+        let (_context, state) = harness.logging_state("stream-no-hold-test", upstream);
+        let mut wrapped = std::pin::pin!(wrap_stream_with_request_logging(state));
+        let first = tokio::time::timeout(std::time::Duration::from_secs(5), wrapped.next())
+            .await
+            .expect("output is forwarded without waiting for the next chunk")
+            .expect("chunk")
+            .expect("ok");
+        assert_eq!(first, content_with_usage);
     }
 
     #[tokio::test]
