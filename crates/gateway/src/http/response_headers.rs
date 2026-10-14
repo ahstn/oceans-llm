@@ -137,9 +137,15 @@ fn encode_identifier(key: &str) -> String {
 /// forwards it unchanged.
 pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> {
     let text = std::str::from_utf8(chunk).ok()?;
+    // Keep the upstream line ending; SSE allows LF or CRLF.
+    let newline = if text.ends_with("\r\n\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let mut event = None;
     let mut data_lines = Vec::new();
-    for line in text.strip_suffix("\n\n")?.split('\n') {
+    for line in text.strip_suffix(&newline.repeat(2))?.split(newline) {
         if let Some(name) = line.strip_prefix("event:") {
             if event.replace(name.trim()).is_some() {
                 return None;
@@ -170,14 +176,14 @@ pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> 
     if let Some(event) = event {
         rendered.push_str("event: ");
         rendered.push_str(event);
-        rendered.push('\n');
+        rendered.push_str(newline);
     }
     for line in payload.split('\n') {
         rendered.push_str("data: ");
         rendered.push_str(line);
-        rendered.push('\n');
+        rendered.push_str(newline);
     }
-    rendered.push('\n');
+    rendered.push_str(newline);
     Some(Bytes::from(rendered))
 }
 
@@ -391,6 +397,10 @@ mod tests {
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
             ),
             (
+                "event: message_delta\r\ndata: {\"usage\":{\"output_tokens\":3}}\r\n\r\n",
+                "event: message_delta\r\ndata: {\"usage\":{\"output_tokens\":3,\"oceans\":{\"cost\":\"0.0012\"}}}\r\n\r\n",
+            ),
+            (
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"9.0000\"}}}\n\n",
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
             ),
@@ -407,6 +417,7 @@ mod tests {
             "data: [DONE]\n\n",
             "data: {\"choices\":[]}\n\n",
             "data: {\"usage\":{}}\n\ndata: {\"usage\":{}}\n\n",
+            "data: {\"usage\":{}}\r\n\r\ndata: {\"usage\":{}}\r\n\r\n",
             ": keep-alive\ndata: {\"usage\":{}}\n\n",
             "data: {\"usage\":{}}\n",
         ] {
