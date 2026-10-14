@@ -352,6 +352,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
             display_name: name.to_string(),
             description: None,
             input_schema: json!({"type": "object"}),
+            metadata: gateway_core::McpToolMetadata::default(),
             schema_hash: "schema-hash".to_string(),
         })
         .collect();

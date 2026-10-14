@@ -47,7 +47,7 @@ use gateway_core::{
     McpTokenEstimateConfidence, McpTokenEstimateSource, McpTokenOverheadRepository,
     McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
+    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus, McpToolMetadata,
     McpToolPolicyResult, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
     McpToolsetToolRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,

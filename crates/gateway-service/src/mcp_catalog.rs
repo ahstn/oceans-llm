@@ -6,7 +6,7 @@ use gateway_core::{
 };
 use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use url::Url;
 use uuid::Uuid;
 
@@ -82,7 +82,11 @@ pub struct McpCatalogToolSummary {
     pub mcp_tool_id: Uuid,
     pub upstream_name: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
     pub schema_version: i64,
 }
@@ -92,8 +96,14 @@ pub struct McpCatalogToolDescription {
     pub mcp_tool_id: Uuid,
     pub upstream_name: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: Option<String>,
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
     pub schema_version: i64,
 }
@@ -177,8 +187,11 @@ where
                 mcp_tool_id: record.tool.mcp_tool_id,
                 upstream_name: record.tool.upstream_name,
                 display_name: record.tool.display_name,
+                title: record.tool.metadata.title,
                 description: record.tool.description,
                 input_schema: record.tool.input_schema,
+                output_schema: record.tool.metadata.output_schema,
+                annotations: record.tool.metadata.annotations,
                 schema_hash: record.tool.schema_hash,
                 schema_version: record.tool.schema_version,
             },
@@ -301,7 +314,9 @@ fn search_item(
             mcp_tool_id: record.tool.mcp_tool_id,
             upstream_name: record.tool.upstream_name,
             display_name: record.tool.display_name,
+            title: record.tool.metadata.title,
             description: record.tool.description,
+            annotations: record.tool.metadata.annotations,
             schema_hash: record.tool.schema_hash,
             schema_version: record.tool.schema_version,
         },
@@ -324,6 +339,7 @@ fn score_record(record: &McpCatalogToolRecord, query_tokens: &[String]) -> i64 {
     let name_fields = [
         record.tool.upstream_name.as_str(),
         record.tool.display_name.as_str(),
+        record.tool.metadata.title.as_deref().unwrap_or_default(),
     ];
     let description_fields = [
         record.tool.description.as_deref().unwrap_or_default(),

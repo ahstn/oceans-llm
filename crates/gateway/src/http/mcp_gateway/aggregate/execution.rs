@@ -20,7 +20,7 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{mcp_gateway::credentials::credential_guidance, state::AppState};
 
 use super::{
     evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, json_rpc_response,
@@ -253,7 +253,7 @@ impl CatalogInvocation<'_> {
         address: &str,
         outcome: Result<ToolsCallResponse, CatalogCallError>,
     ) -> Response<Body> {
-        let error_context =
+        let mut error_context =
             json!({"address": address, "server_key": self.record.server.server_key});
         let (response, status, policy_result, error_code) = match outcome {
             Ok(result) => {
@@ -276,8 +276,18 @@ impl CatalogInvocation<'_> {
             Err(CatalogCallError::Gateway(error)) => {
                 let code = error.error_code().to_string();
                 let status = invocation_status_for_error(&error);
+                let message =
+                    match credential_guidance(self.state, self.auth, &self.record.server, &error) {
+                        Some(guidance) => {
+                            if let Some(url) = guidance.connect_url {
+                                error_context["connect_url"] = json!(url);
+                            }
+                            guidance.message
+                        }
+                        None => error.to_string(),
+                    };
                 (
-                    aggregate_tool_error(id, error.to_string(), &code, error_context),
+                    aggregate_tool_error(id, message, &code, error_context),
                     status,
                     McpToolPolicyResult::Allowed,
                     Some(code),
@@ -330,6 +340,7 @@ impl CatalogInvocation<'_> {
                     tool_id: Some(self.record.tool.mcp_tool_id),
                     tool_display_key: self.record.tool.upstream_name.clone(),
                     tool_display_name: self.record.tool.display_name.clone(),
+                    mcp_method: "tools/call".to_string(),
                     status,
                     policy_result,
                     latency_ms: Some(self.started_at.elapsed().as_millis() as i64),

@@ -78,6 +78,12 @@ impl McpOauthRuntime {
         self.public_base_url.is_some() && !self.providers.is_empty()
     }
 
+    /// The externally reachable gateway origin, without a trailing slash.
+    #[must_use]
+    pub fn public_base_url(&self) -> Option<&str> {
+        self.public_base_url.as_deref()
+    }
+
     #[must_use]
     pub fn connection_unavailable_reason(&self, provider_key: &str) -> Option<&'static str> {
         if self.public_base_url.is_none() {

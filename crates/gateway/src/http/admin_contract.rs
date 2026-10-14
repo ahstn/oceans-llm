@@ -1313,6 +1313,8 @@ pub struct McpToolInvocationListQuery {
     pub policy_result: Option<String>,
     pub occurred_at_start: Option<String>,
     pub occurred_at_end: Option<String>,
+    /// MCP JSON-RPC method, such as `tools/call` or `resources/read`.
+    pub mcp_method: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1338,6 +1340,9 @@ pub struct McpToolInvocationSummaryView {
     pub tool_id: Option<String>,
     pub tool_display_key: String,
     pub tool_display_name: String,
+    /// MCP JSON-RPC method this row records, such as `tools/call`,
+    /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+    pub mcp_method: String,
     pub status: String,
     pub policy_result: String,
     pub latency_ms: Option<i64>,

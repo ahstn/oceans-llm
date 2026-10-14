@@ -268,6 +268,51 @@ fn refreshable_oauth_metadata_keeps_expired_access_tokens_connected() {
     assert!(!has_refreshable_oauth_metadata(&legacy_metadata));
 }
 
+#[test]
+fn bindings_that_no_longer_match_the_server_need_reconnecting() {
+    let config = McpOauthServerConfig {
+        provider_key: "google".to_string(),
+        resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
+        scopes: vec!["drive.readonly".to_string(), "drive.file".to_string()],
+        discovery_tool_allowlist: None,
+    };
+    let metadata = |provider: &str, resource: &str, scopes: &[&str]| {
+        serde_json::Map::from_iter([
+            (
+                "oauth_provider_key".to_string(),
+                serde_json::json!(provider),
+            ),
+            ("resource".to_string(), serde_json::json!(resource)),
+            ("granted_scopes".to_string(), serde_json::json!(scopes)),
+        ])
+    };
+    let drive = "https://drivemcp.googleapis.com/mcp/v1";
+
+    assert!(!binding_mismatches_server(
+        &metadata("google", drive, &["drive.file", "drive.readonly", "extra"]),
+        &config
+    ));
+    // The server now requires a scope the user never granted.
+    assert!(binding_mismatches_server(
+        &metadata("google", drive, &["drive.readonly"]),
+        &config
+    ));
+    assert!(binding_mismatches_server(
+        &metadata("other", drive, &["drive.readonly", "drive.file"]),
+        &config
+    ));
+    assert!(binding_mismatches_server(
+        &metadata(
+            "google",
+            "https://docs.example/mcp",
+            &["drive.readonly", "drive.file"]
+        ),
+        &config
+    ));
+    // Legacy bindings without metadata are checked when they are used instead.
+    assert!(!binding_mismatches_server(&serde_json::Map::new(), &config));
+}
+
 #[tokio::test]
 async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
     use gateway_service::{McpOauthProvider, McpOauthRuntime};

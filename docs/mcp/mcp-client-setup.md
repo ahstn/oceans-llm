@@ -60,7 +60,9 @@ Ask an admin to confirm:
 For Google Drive or Google Docs, the user who owns the Oceans API key must also connect the matching server under `/admin/account/connections`. This browser consent is separate from Google sign-in to Oceans. A client harness does not perform Google OAuth. The recommended Google entries request read-only scopes and keep only the matching read tools active during discovery. Write tools require a separate scope and tool-policy decision.
 
 If any of those steps are missing, the client may connect successfully but see no
-matching tools, or receive `credential_required` when it tries to execute one.
+matching tools, or receive `credential_required` when it tries to execute one. That
+error links to the connection page when the user can fix it themselves; see
+[Connecting from an error](#connecting-from-an-error).
 
 ## Inbound Auth
 
@@ -163,4 +165,49 @@ disablement, active-tool filtering, and upstream credential separation.
 
 Oceans API keys are never forwarded upstream. For servers that need caller-specific credentials, platform admins create MCP credential bindings for a user, team, or service account. User-owned keys use a user binding first and then an allowed team binding. Service-account keys use a service-account binding first and then the owning-team binding. A service account never borrows a user's credential.
 
-Missing upstream credentials return a structured `credential_required` tool error from aggregate `call_tool`, or a normal gateway error from direct `/mcp/{server_key}` proxying. Oceans refreshes configured OAuth bundles before expiry. A revoked or non-refreshable grant returns `credential_required`. Direct proxy responses do not forward the upstream server's `WWW-Authenticate` challenge because the client must reconnect through Oceans.
+Oceans refreshes configured OAuth bundles before expiry. A revoked or non-refreshable grant returns `credential_required`. A binding whose expiry has passed returns `credential_expired`. Direct proxy responses do not forward the upstream server's `WWW-Authenticate` challenge because the client must reconnect through Oceans.
+
+### Connecting from an error
+
+When a call fails with `credential_required` or `credential_expired`, the error says what to do next.
+
+- **The user can connect the server.** The response includes a `connect_url` when all of these hold:
+  - the server uses user OAuth (`oauth_obo`)
+  - its OAuth provider is configured
+  - `mcp.oauth.public_base_url` is set
+  - the Oceans API key is user-owned
+
+  The URL has this form:
+
+  ```text
+  {public_base_url}/admin/account/connections?connect={server_key}
+  ```
+
+  Opening it in a browser starts the provider consent flow for that server, after Oceans sign-in if needed. The flow returns to the same page with a toast naming the connected server. The user then retries the call. The URL contains only the gateway origin and the server key. It carries no API key, token, or OAuth state.
+- **Only an administrator can fix it.** For example, the server uses admin-managed bindings (`user_passthrough`), or the caller is a service account. Here the message says to contact an Oceans administrator, and no `connect_url` is returned.
+
+Where the guidance appears depends on the route and method:
+
+| Route and method | Response |
+| --- | --- |
+| Aggregate `call_tool` | A tool result with `isError: true`. The text holds the message and URL. `structuredContent` has `error_code`, `server_key`, `address`, and `connect_url`. |
+| Direct `tools/call` | HTTP 200 with a tool result with `isError: true`. The text holds the message and URL. `structuredContent` has `error_code`, `server_key`, and `connect_url`. |
+| Direct `initialize`, `tools/list`, and other methods | HTTP 403. The error envelope has `code`, `message`, and `connect_url`. |
+
+The direct route needs an upstream credential before `initialize` succeeds, so a client without one fails while connecting. Most clients show the 403 message, which includes the URL. Tool results are used for `tools/call` so that clients which only show tool output still show the next step to the model and the user. A worked example of the aggregate result:
+
+```json
+{
+  "isError": true,
+  "content": [{
+    "type": "text",
+    "text": "MCP credential is required for server `google_drive`. Connect your account at https://gateway.example.com/admin/account/connections?connect=google_drive, then retry the call."
+  }],
+  "structuredContent": {
+    "address": "mcp://google_drive/tools/search",
+    "server_key": "google_drive",
+    "connect_url": "https://gateway.example.com/admin/account/connections?connect=google_drive",
+    "error_code": "credential_required"
+  }
+}
+```

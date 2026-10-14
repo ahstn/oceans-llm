@@ -1655,12 +1655,32 @@ pub struct ExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    #[serde(default)]
+    pub metadata: McpToolMetadata,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,
     pub first_discovered_at: OffsetDateTime,
     pub last_discovered_at: OffsetDateTime,
     pub deactivated_at: Option<OffsetDateTime>,
+}
+
+/// Optional members of an upstream MCP tool definition, stored as declared.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct McpToolMetadata {
+    pub title: Option<String>,
+    /// Behaviour hints such as `readOnlyHint`, kept with their upstream names.
+    pub annotations: Option<Map<String, Value>>,
+    pub output_schema: Option<Value>,
+}
+
+impl McpToolMetadata {
+    /// Reads a boolean hint such as `readOnlyHint`. Absent or non-boolean
+    /// values return `None`, so callers can apply the protocol defaults.
+    #[must_use]
+    pub fn hint(&self, name: &str) -> Option<bool> {
+        self.annotations.as_ref()?.get(name)?.as_bool()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1825,6 +1845,7 @@ pub struct UpsertExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub metadata: McpToolMetadata,
     pub schema_hash: String,
 }
 
@@ -1989,6 +2010,16 @@ pub struct UpsertMcpToolGrantRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// Which tool columns an access resolution loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpToolProjection {
+    /// Identity, schema and lifecycle columns. `metadata` is left empty because
+    /// authorization only needs to know which tools are granted.
+    Access,
+    /// Also loads the title, annotations and output schema.
+    Full,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpAccessResolution {
     pub allowed_tools: Vec<ExternalMcpToolRecord>,
@@ -2146,7 +2177,15 @@ pub struct McpToolInvocationRecord {
     pub arguments_payload_redacted: bool,
     pub result_payload_redacted: bool,
     pub metadata: Map<String, Value>,
+    /// MCP JSON-RPC method this row records, such as `tools/call`, `tools/list`,
+    /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+    #[serde(default = "default_mcp_invocation_method")]
+    pub mcp_method: String,
     pub occurred_at: OffsetDateTime,
+}
+
+fn default_mcp_invocation_method() -> String {
+    "tools/call".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2174,6 +2213,7 @@ pub struct McpToolInvocationQuery {
     pub policy_result: Option<McpToolPolicyResult>,
     pub occurred_at_start: Option<OffsetDateTime>,
     pub occurred_at_end: Option<OffsetDateTime>,
+    pub mcp_method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
