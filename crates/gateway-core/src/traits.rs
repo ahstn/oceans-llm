@@ -1307,6 +1307,24 @@ pub trait PricingCatalogRepository: Send + Sync {
         pricing_model_id: &str,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<ModelPricingRecord>, StoreError>;
+    /// Resolve `pricing_model_id`, or `fallback_model_id` when the exact id has no
+    /// effective row. Stores override this to answer with a single query.
+    async fn resolve_model_pricing_with_fallback_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError> {
+        if let Some(record) = self
+            .resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
+            .await?
+        {
+            return Ok(Some(record));
+        }
+        self.resolve_model_pricing_at(pricing_provider_id, fallback_model_id, occurred_at)
+            .await
+    }
 }
 
 #[async_trait]
