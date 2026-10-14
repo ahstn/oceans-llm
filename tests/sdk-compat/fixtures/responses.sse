@@ -17,7 +17,7 @@ event: response.output_item.done
 data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello world","annotations":[]}]}}
 
 event: response.completed
-data: {"response":{"created_at":1,"id":"resp_1","model":"fast","object":"response","output":[{"content":[{"annotations":[],"text":"Hello world","type":"output_text"}],"id":"msg_1","role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"status":"completed","tool_choice":"auto","tools":[],"usage":{"input_tokens":5,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"oceans":{"cost":"0.0012"},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":7}},"sequence_number":6,"type":"response.completed"}
+data: {"response":{"created_at":1,"id":"resp_1","model":"fast","object":"response","output":[{"content":[{"annotations":[],"text":"Hello world","type":"output_text"}],"id":"msg_1","role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"status":"completed","tool_choice":"auto","tools":[],"usage":{"input_tokens":5,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":7,"oceans":{"cost":"0.0012"}}},"sequence_number":6,"type":"response.completed"}
 
 data: [DONE]
 

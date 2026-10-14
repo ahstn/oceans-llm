@@ -21,7 +21,9 @@ use axum::{
 };
 use gateway_core::{ModelRoute, Money4};
 use gateway_service::RecordedChatUsage;
-use serde_json::{Value, json};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use serde::Deserialize;
+use serde_json::{Map, Value, json, value::RawValue};
 use uuid::Uuid;
 
 pub(crate) const X_OCEANS_MODEL: HeaderName = HeaderName::from_static("x-oceans-model");
@@ -31,6 +33,10 @@ pub(crate) const X_OCEANS_ATTEMPT_COUNT: HeaderName =
     HeaderName::from_static("x-oceans-attempt-count");
 pub(crate) const X_OCEANS_RESPONSE_COST_USD: HeaderName =
     HeaderName::from_static("x-oceans-response-cost-usd");
+
+/// Bytes percent-encoded in identifier headers. Non-ASCII bytes are always encoded, so
+/// printable ASCII keys without `%` are sent as-is.
+const HEADER_VALUE_ESCAPES: &AsciiSet = &CONTROLS.add(b'%');
 
 tokio::task_local! {
     static RESPONSE_METADATA: RefCell<ResponseMetadata>;
@@ -110,8 +116,8 @@ impl ResponseMetadata {
             }
         };
         insert(X_OCEANS_ROUTE_ID, route.route_id.to_string());
-        insert(X_OCEANS_PROVIDER, route.provider_key);
-        insert(X_OCEANS_MODEL, route.model_key);
+        insert(X_OCEANS_PROVIDER, encode_identifier(&route.provider_key));
+        insert(X_OCEANS_MODEL, encode_identifier(&route.model_key));
         if success {
             insert(X_OCEANS_ATTEMPT_COUNT, self.attempt_count.to_string());
             if let Some(cost_usd) = self.cost_usd {
@@ -119,6 +125,11 @@ impl ResponseMetadata {
             }
         }
     }
+}
+
+/// Configured keys may hold any Unicode, but header values must be visible ASCII.
+fn encode_identifier(key: &str) -> String {
+    utf8_percent_encode(key, HEADER_VALUE_ESCAPES).to_string()
 }
 
 /// Adds `usage.oceans.cost` to a chunk that holds exactly one SSE event with a JSON
@@ -138,21 +149,22 @@ pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> 
             data_lines.push(data.strip_prefix(' ').unwrap_or(data));
         }
     }
-    let mut payload = serde_json::from_str::<Value>(&data_lines.join("\n")).ok()?;
-    let usage = if payload.get("usage").is_some_and(Value::is_object) {
-        payload.get_mut("usage")
-    } else if payload
-        .pointer("/response/usage")
-        .is_some_and(Value::is_object)
-    {
-        payload.pointer_mut("/response/usage")
+    let data = data_lines.join("\n");
+    let usage = usage_object(&data)?;
+    let start = (usage.get().as_ptr() as usize).checked_sub(data.as_ptr() as usize)?;
+    let end = start + usage.get().len();
+    let mut fields = serde_json::from_str::<Map<String, Value>>(usage.get()).ok()?;
+    let cost = json!({ "cost": cost_usd.format_4dp() });
+    // Append to the upstream text so the rest of the event passes through byte for byte.
+    // An existing `oceans` field (from a chained gateway) is replaced instead.
+    let usage = if fields.contains_key("oceans") {
+        fields.insert("oceans".to_string(), cost);
+        Value::Object(fields).to_string()
     } else {
-        payload.pointer_mut("/message/usage")
-    }?;
-    usage.as_object_mut()?.insert(
-        "oceans".to_string(),
-        json!({ "cost": cost_usd.format_4dp() }),
-    );
+        let separator = if fields.is_empty() { "" } else { "," };
+        format!("{}{separator}\"oceans\":{cost}}}", &data[start..end - 1])
+    };
+    let payload = [&data[..start], &usage, &data[end..]].concat();
 
     let mut rendered = String::new();
     if let Some(event) = event {
@@ -160,10 +172,44 @@ pub(crate) fn with_stream_cost(chunk: &[u8], cost_usd: Money4) -> Option<Bytes> 
         rendered.push_str(event);
         rendered.push('\n');
     }
-    rendered.push_str("data: ");
-    rendered.push_str(&payload.to_string());
-    rendered.push_str("\n\n");
+    for line in payload.split('\n') {
+        rendered.push_str("data: ");
+        rendered.push_str(line);
+        rendered.push('\n');
+    }
+    rendered.push('\n');
     Some(Bytes::from(rendered))
+}
+
+/// The fields that can hold a stream's usage object. Other fields are skipped without
+/// being parsed into a tree, so large completed responses are not copied.
+#[derive(Deserialize)]
+struct UsageCarrier<'a> {
+    #[serde(borrow, default)]
+    usage: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    response: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    message: Option<&'a RawValue>,
+}
+
+/// Finds `usage`, `response.usage` or `message.usage`, in that order, as a slice of `json`.
+fn usage_object(json: &str) -> Option<&RawValue> {
+    let is_object = |raw: &&RawValue| raw.get().starts_with('{');
+    let carrier = serde_json::from_str::<UsageCarrier>(json).ok()?;
+    if let Some(usage) = carrier.usage.filter(is_object) {
+        return Some(usage);
+    }
+    [carrier.response, carrier.message]
+        .into_iter()
+        .flatten()
+        .filter(is_object)
+        .find_map(|nested| {
+            serde_json::from_str::<UsageCarrier>(nested.get())
+                .ok()?
+                .usage
+                .filter(is_object)
+        })
 }
 
 #[cfg(test)]
@@ -309,6 +355,48 @@ mod tests {
             let payload: Value = serde_json::from_str(data).expect("json");
             assert_eq!(payload.pointer(pointer), Some(&json!("0.0012")));
             assert!(rewritten.ends_with("\n\n"));
+        }
+    }
+
+    #[tokio::test]
+    async fn identifiers_outside_visible_ascii_are_percent_encoded() {
+        let mut route = route();
+        route.provider_key = "vertex-é%".to_string();
+        let response = with_response_headers(async move {
+            record_route("modèle rapide", &route);
+            Json(json!({})).into_response()
+        })
+        .await;
+
+        assert_eq!(
+            header(&response, X_OCEANS_PROVIDER),
+            Some("vertex-%C3%A9%25")
+        );
+        assert_eq!(
+            header(&response, X_OCEANS_MODEL),
+            Some("mod%C3%A8le rapide")
+        );
+    }
+
+    #[test]
+    fn stream_cost_leaves_the_rest_of_the_event_untouched() {
+        let cost = Money4::from_scaled(12);
+        for (chunk, expected) in [
+            (
+                "data: {\"z\":1,\"usage\":{\"total_tokens\":3},\"a\":[{\"b\": 2}]}\n\n",
+                "data: {\"z\":1,\"usage\":{\"total_tokens\":3,\"oceans\":{\"cost\":\"0.0012\"}},\"a\":[{\"b\": 2}]}\n\n",
+            ),
+            (
+                "data: {\"usage\":{}}\n\n",
+                "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
+            ),
+            (
+                "data: {\"usage\":{\"oceans\":{\"cost\":\"9.0000\"}}}\n\n",
+                "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
+            ),
+        ] {
+            let rewritten = with_stream_cost(chunk.as_bytes(), cost).expect("rewritten");
+            assert_eq!(std::str::from_utf8(&rewritten).unwrap(), expected);
         }
     }
 

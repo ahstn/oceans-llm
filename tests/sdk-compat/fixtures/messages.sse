@@ -11,7 +11,7 @@ event: content_block_stop
 data: {"type":"content_block_stop","index":0}
 
 event: message_delta
-data: {"delta":{"stop_reason":"end_turn","stop_sequence":null},"type":"message_delta","usage":{"oceans":{"cost":"0.0012"},"output_tokens":2}}
+data: {"delta":{"stop_reason":"end_turn","stop_sequence":null},"type":"message_delta","usage":{"output_tokens":2,"oceans":{"cost":"0.0012"}}}
 
 event: message_stop
 data: {"type":"message_stop"}

@@ -1869,6 +1869,7 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "percent-encoding",
  "reqwest 0.13.5",
  "serde",
  "serde_json",

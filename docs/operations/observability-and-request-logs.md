@@ -64,19 +64,7 @@ Request outcomes are emitted once per request with bounded labels. Important exa
 
 ### Response headers
 
-Every response returns `x-request-id`, so callers can look up the matching request log. Inference responses also carry routing and cost headers:
-
-| Header | Type | When present |
-| --- | --- | --- |
-| `x-request-id` | string | Every response. |
-| `x-oceans-model` | string | Once a route is selected. |
-| `x-oceans-route-id` | UUID string | Once a route is selected. |
-| `x-oceans-provider` | string | Once a route is selected. |
-| `x-oceans-attempt-count` | integer | Successful responses. |
-| `x-oceans-response-cost-usd` | decimal string, 4 decimal places | Successful, priced, non-streaming responses. |
-| `Retry-After` | delta-seconds or HTTP date | Upstream `429` or `503` errors that sent one. |
-
-`x-oceans-response-cost-usd` equals the cost on the request log for the same `x-request-id`. Streaming responses put the cost in the final usage object as `oceans.cost`. See [Response Headers](../reference/request-lifecycle-and-failure-modes.md#response-headers) for the full contract.
+Every response returns `x-request-id`, so callers can look up the matching request log. Inference responses also return `x-oceans-*` routing headers, and on successful priced requests a cost that equals the request log's cost. The header contract lives in [Response Headers](../reference/request-lifecycle-and-failure-modes.md#response-headers).
 
 ## Tagging and Attribution
 

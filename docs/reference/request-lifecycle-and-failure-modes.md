@@ -236,6 +236,8 @@ Inference responses tell the caller which route served the request and what it c
 
 The cost is the same value written to the usage ledger and shown as the request log's cost for the same `x-request-id`. When pricing is `unpriced` or usage is `usage_missing`, the request log shows no cost and the header is omitted rather than reported as `0.0000`.
 
+`x-oceans-model` and `x-oceans-provider` are sent as-is when the key is printable ASCII. Other characters, and `%`, are percent-encoded as UTF-8, so `modèle` is sent as `mod%C3%A8le`.
+
 Headers never contain provider credentials, provider base URLs, or upstream error bodies. Oceans does not set `x-litellm-*` or other third-party-prefixed response headers.
 
 ### Streaming responses
@@ -248,7 +250,7 @@ Streaming responses carry `x-oceans-model`, `x-oceans-route-id`, `x-oceans-provi
 | Responses | `response.completed` event `response.usage` | `response.usage.oceans.cost` |
 | Anthropic Messages | `message_delta` event `usage` | `usage.oceans.cost` |
 
-The value uses the same decimal-string format as `x-oceans-response-cost-usd`, for example `"oceans": {"cost": "0.0012"}`. It is added only when the stream ends normally and the usage was priced. The gateway re-serializes the event that carries the cost, so its JSON keys may be in a different order from the upstream event. Other events pass through unchanged.
+The value uses the same decimal-string format as `x-oceans-response-cost-usd`, for example `"oceans": {"cost": "0.0012"}`. It is added only when the stream ends normally and the usage was priced. The field is appended to the upstream usage object, and the rest of the stream passes through unchanged. If an upstream gateway already sent an `oceans` field, Oceans replaces it with its own cost.
 
 The `oceans` object is an extra field on an existing usage object. Unmodified OpenAI and Anthropic SDKs parse these streams, including Python clients with strict response validation. `tests/sdk-compat` checks this with fixtures generated from gateway output.
 
