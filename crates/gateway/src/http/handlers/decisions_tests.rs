@@ -1,7 +1,7 @@
 //! Decisions requests record one `gateway.decisions.requests` sample on every
 //! exit after model resolution, and never a chat request sample.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use axum::{Extension, Json, extract::State, http::HeaderMap, response::Response};
@@ -157,13 +157,18 @@ async fn call(state: &AppState, path: &str, body: Value) -> Result<Response, App
     }
 }
 
-fn recorded(state: &AppState) -> Vec<TestDecisionsRequest> {
+fn recorded(state: &AppState) -> BTreeMap<TestDecisionsRequest, u64> {
     let snapshot = state.metrics.test_snapshot();
     assert_eq!(
         snapshot.requests, 0,
         "decisions must not record chat requests"
     );
     snapshot.decisions_requests
+}
+
+/// Each sample recorded exactly once.
+fn once<const N: usize>(samples: [TestDecisionsRequest; N]) -> BTreeMap<TestDecisionsRequest, u64> {
+    samples.into_iter().map(|sample| (sample, 1)).collect()
 }
 
 fn sample(
@@ -202,10 +207,10 @@ async fn success_records_route_format_and_provider() {
 
     assert_eq!(
         recorded(&state),
-        [
+        once([
             sample("/v1/systemone", "system_one", "vertex", 200, "success"),
             sample("/v1/decisions", "openai", "vertex", 200, "success"),
-        ]
+        ])
     );
 }
 
@@ -223,13 +228,13 @@ async fn no_compatible_route_records_unavailable_provider() {
 
     assert_eq!(
         recorded(&state),
-        [sample(
+        once([sample(
             "/v1/decisions",
             "system_one",
             "unavailable",
             i64::from(error.0.http_status_code()),
             "invalid_request_error",
-        )]
+        )])
     );
 }
 
@@ -243,13 +248,13 @@ async fn provider_failure_after_billable_usage_records_upstream_error() {
 
     assert_eq!(
         recorded(&state),
-        [sample(
+        once([sample(
             "/v1/systemone",
             "system_one",
             "vertex",
             502,
             "upstream_error"
-        )]
+        )])
     );
 }
 
@@ -281,12 +286,12 @@ async fn budget_rejection_records_budget_error() {
 
     assert_eq!(
         recorded(&state),
-        [sample(
+        once([sample(
             "/v1/decisions",
             "system_one",
             "vertex",
             i64::from(error.0.http_status_code()),
             "budget_error",
-        )]
+        )])
     );
 }

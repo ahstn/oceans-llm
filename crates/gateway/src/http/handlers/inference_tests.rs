@@ -313,7 +313,10 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             metrics
                 .decisions_requests
                 .iter()
-                .map(|request| request.outcome.as_str())
+                .map(|(request, count)| {
+                    assert_eq!(*count, 1);
+                    request.outcome.as_str()
+                })
                 .collect::<Vec<_>>()
         } else {
             assert_eq!(metrics.requests, 1);

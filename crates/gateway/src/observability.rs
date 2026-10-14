@@ -105,7 +105,7 @@ pub struct McpDiscoveryRefreshMetric<'a> {
 struct TestMetricCounters {
     requests: Mutex<u64>,
     request_outcomes: Mutex<BTreeMap<String, u64>>,
-    decisions_requests: Mutex<Vec<TestDecisionsRequest>>,
+    decisions_requests: Mutex<BTreeMap<TestDecisionsRequest, u64>>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -113,11 +113,13 @@ struct TestMetricCounters {
 pub struct TestMetricSnapshot {
     pub requests: u64,
     pub request_outcomes: BTreeMap<String, u64>,
-    pub decisions_requests: Vec<TestDecisionsRequest>,
+    /// Sample counts per label set, so debug builds stay bounded by label
+    /// cardinality rather than by traffic.
+    pub decisions_requests: BTreeMap<TestDecisionsRequest, u64>,
 }
 
 #[cfg(any(test, debug_assertions))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TestDecisionsRequest {
     pub http_route: String,
     pub request_format: String,
@@ -257,17 +259,21 @@ impl GatewayMetrics {
         self.decisions_request_duration
             .record(metric.latency_seconds, &attrs);
         #[cfg(any(test, debug_assertions))]
-        self.test_counters
-            .decisions_requests
-            .lock()
-            .expect("decisions requests lock")
-            .push(TestDecisionsRequest {
-                http_route: metric.http_route.to_string(),
-                request_format: metric.request_format.to_string(),
-                provider_key: metric.provider_key.to_string(),
-                status_code: metric.status_code,
-                outcome: metric.outcome.to_string(),
-            });
+        {
+            *self
+                .test_counters
+                .decisions_requests
+                .lock()
+                .expect("decisions requests lock")
+                .entry(TestDecisionsRequest {
+                    http_route: metric.http_route.to_string(),
+                    request_format: metric.request_format.to_string(),
+                    provider_key: metric.provider_key.to_string(),
+                    status_code: metric.status_code,
+                    outcome: metric.outcome.to_string(),
+                })
+                .or_default() += 1;
+        }
     }
 
     pub fn record_usage(&self, labels: &ChatMetricLabels<'_>, usage: &RecordedChatUsage) {
