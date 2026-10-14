@@ -1,0 +1,37 @@
+crates/gateway-core/src/lib.rs
+  s_6d03b8bf1a1feb::t_f074651cdf25b5 157-159
+crates/gateway-core/src/streaming.rs
+  s_6d03b8bf1a1feb::t_e3dfb8253a27d5 1-2,128-175,190-192,220-259
+crates/gateway/src/http/handlers.rs
+  s_13e300ce4bf1eb::t_03a30b7151f790 1425,1427-1428,1827,1847-1850,1870-1875,1909,1916-1928,1948,1955,1967-1977,2781,3056-3057,3059-3061,3065-3129
+crates/gateway/src/http/handlers/inference.rs
+  s_6d03b8bf1a1feb::t_fb63c58227daa9 308
+crates/gateway/src/http/response_headers.rs
+  s_6d03b8bf1a1feb::t_f2ef3192c1e668 22,145-155,181-182,188,190-192,194-195,206,211,216-232,260-262,265,267,270,496-499,523-532
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_6d03b8bf1a1feb::t_e3b75ef7d45cc7 255-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30465842e9618b68dd6f04527f6c1371cf82b967",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
