@@ -44,9 +44,16 @@ Live enforcement windows currently use UTC:
 
 ## Hard And Soft Limits
 
-Hard budgets reject new chargeable traffic with HTTP 429 `budget_exceeded` when the active window is already at or past its cap. This check runs before the request reaches a provider. Once a provider has answered, that spend is already incurred, so the gateway always records it in the ledger even when it pushes a hard budget over its limit. The request that caused the overrun still returns its completion; the updated ledger blocks the caller's next chargeable request. This applies equally to synchronous requests, streamed responses, and asynchronous batch results. Streamed responses are charged whenever the provider reports usage, including streams that end with a provider error event or a dropped connection after usage was sent.
+Hard budgets reject new chargeable traffic when the active window is already at or past its cap. The response is HTTP 422 with `type: budget_error` and `code: budget_exceeded`, and the message names the budget's cadence and scope, for example `daily user budget exhausted`. This check runs before the request reaches a provider. Once a provider has answered, that spend is already incurred, so the gateway always records it in the ledger even when it pushes a hard budget over its limit. The request that caused the overrun still returns its completion; the updated ledger blocks the caller's next chargeable request. This applies equally to synchronous requests, streamed responses, and asynchronous batch results. Streamed responses are charged whenever the provider reports usage, including streams that end with a provider error event or a dropped connection after usage was sent.
 
 The pre-provider check reads recorded spend; it does not reserve the cost of in-flight requests. Every request that starts while the window still has headroom is admitted, so a hard budget can be exceeded by the combined cost of all requests in flight at the moment the cap is reached. For a caller that sends one request at a time that is one request's cost; for a caller running N requests concurrently it is up to N requests' cost. Set the cap with that headroom in mind.
+
+The status is 422 rather than 429 so that SDKs and agent tools do not retry a request that cannot succeed until the window resets. Callers can tell a budget rejection from a request-validation 422 by `error.type` or `error.code`. To change the status, set `budgets.exceeded_status_code` to `402`, `422` (the default) or `429`. Use `429` only for clients that were built to back off on budget errors. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md).
+
+```yaml
+budgets:
+  exceeded_status_code: 429 # restore the earlier 429 behavior
+```
 
 Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
 

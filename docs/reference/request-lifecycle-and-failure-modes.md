@@ -38,7 +38,7 @@ The live request path is single-route in this slice.
    - Disabled routes and non-positive weights drop out.
 7. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
 8. The budget guard runs after model policy and capability enforcement, before provider execution.
-   - hard-limit rejection returns `429 budget_exceeded`
+   - hard-limit rejection returns `422 budget_exceeded` by default (`budgets.exceeded_status_code` can set `402` or `429`)
    - no provider call occurs on this path
 9. Route compatibility metadata is passed into the provider adapter.
 10. The provider adapter applies any declared compatibility transforms to the outbound provider request.
@@ -178,7 +178,10 @@ These failures look similar from far away, but they mean different things.
 ### `budget_exceeded`
 
 - A pre-provider hard-limit check blocked the request.
-- The HTTP response is `429`.
+- The HTTP response is `422` by default. `budgets.exceeded_status_code` can set it to `402` or `429`.
+- The body has `type: budget_error` and `code: budget_exceeded` in both the OpenAI and the Anthropic error envelope. Use them to tell a budget rejection from a request-validation `422`.
+- The message names the budget's cadence and scope kind (`user`, `service account` or `user+model`) and says that retrying will not succeed until the window resets or an administrator raises the limit. It does not include budget ids or other principals' data.
+- SDKs do not retry the default `422`; they do retry `429`.
 - No provider call occurs on this path.
 - Observability records this as a request outcome rather than as provider execution.
 
