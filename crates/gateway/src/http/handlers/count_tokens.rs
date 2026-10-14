@@ -14,10 +14,11 @@ use uuid::Uuid;
 use crate::http::request_body::DEFAULT_MAX_BYTES;
 
 const COUNT_TOKENS_ROUTE: &str = "/v1/messages/count_tokens";
-/// Generation-only controls. They never change the count, and the inference
-/// mappers reject some of them (Bedrock rejects every OpenAI sampling control), so
-/// they are dropped before mapping. `parallel_tool_calls` and `response_format`
-/// stay: they map to tool choice and output format, which can change the prompt.
+/// Controls that never change the count. The inference mappers reject some of
+/// them (Bedrock rejects every OpenAI-only control), so they are dropped before
+/// mapping. This includes `parallel_tool_calls`, which only sets
+/// `disable_parallel_tool_use`, and `response_format`, which no Messages route
+/// maps.
 const GENERATION_FIELDS: &[&str] = &[
     "temperature",
     "top_p",
@@ -36,6 +37,8 @@ const GENERATION_FIELDS: &[&str] = &[
     "logit_bias",
     "logprobs",
     "top_logprobs",
+    "parallel_tool_calls",
+    "response_format",
 ];
 /// Baseline `max_tokens` sent with every count. Upstream count APIs ignore it, but
 /// Bedrock wraps a full InvokeModel body, which requires a valid one.
@@ -349,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_drops_every_sampling_only_control() {
+    fn prepare_drops_every_control_that_cannot_change_the_count() {
         let mut request = request(json!({
             "seed": 7,
             "n": 2,
@@ -359,11 +362,12 @@ mod tests {
             "logprobs": true,
             "top_logprobs": 3,
             "parallel_tool_calls": false,
+            "response_format": {"type": "json_object"},
         }));
         prepare_count_request(&mut request);
         assert_eq!(
             serde_json::to_value(&request.extra).unwrap(),
-            json!({"max_tokens": COUNT_MAX_TOKENS, "parallel_tool_calls": false})
+            json!({"max_tokens": COUNT_MAX_TOKENS})
         );
     }
 
