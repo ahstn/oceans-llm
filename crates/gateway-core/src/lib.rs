@@ -43,9 +43,9 @@ pub use batch::{
     ProviderBatchSubmission,
 };
 pub use budgets::{
-    BudgetContact, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord,
-    BudgetScope, BudgetScopeKind, BudgetScopeWindow, BudgetSettings, BudgetSource,
-    BudgetSourceKind, BudgetUpsert,
+    BudgetContact, BudgetExceededStatus, BudgetIncreaseBasis, BudgetIncreaseRecord,
+    BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetScopeWindow,
+    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert,
 };
 pub use domain::{
     ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,

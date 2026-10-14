@@ -3,6 +3,8 @@ pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
 pub mod batches;
+#[cfg(test)]
+mod budget_status_tests;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;
