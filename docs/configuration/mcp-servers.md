@@ -72,8 +72,8 @@ Expand a row to inspect:
 - stable Oceans tool id
 - upstream tool name
 - display title, when the server declares one
-- hint badges the upstream server declares: **Read-only**, **Destructive**,
-  **Idempotent**, and **Open world** or **Closed world**
+- hint badges the upstream server declares: **Read-only**, **Destructive** or
+  **Non-destructive**, **Idempotent**, and **Open world** or **Closed world**
 - schema version
 - persisted JSON input schema
 - output schema, when the server declares one
@@ -86,7 +86,9 @@ the row focused on the values humans need when selecting tools.
 Hint badges come from the tool's `annotations`. They are claims made by the
 upstream server, not checks made by Oceans, so treat them as review aids. A tool
 that declares `readOnlyHint` shows **Read-only** and never **Destructive**,
-because the protocol ignores `destructiveHint` on read-only tools. A tool that
+because the protocol ignores `destructiveHint` on read-only tools. An omitted
+`destructiveHint` or `openWorldHint` means true, so **Non-destructive** and
+**Closed world** appear only when the server declares false. A tool that
 declares no annotations shows no badges.
 
 When one or more active tools are selected, use **Add to toolset** to move to the

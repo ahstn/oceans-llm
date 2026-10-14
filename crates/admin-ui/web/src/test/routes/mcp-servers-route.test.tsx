@@ -273,6 +273,18 @@ describe('ServersTab', () => {
           open_world_hint: true,
         },
       },
+      {
+        ...activeTool,
+        id: 'tool_append',
+        upstream_name: 'append_note',
+        display_name: 'append_note',
+        annotations: {
+          read_only_hint: null,
+          destructive_hint: false,
+          idempotent_hint: null,
+          open_world_hint: null,
+        },
+      },
       { ...tool, id: 'tool_plain', upstream_name: 'plain', display_name: 'plain' },
     ]
     getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: annotatedTools } })
@@ -284,10 +296,10 @@ describe('ServersTab', () => {
     // Collapsed rows keep to the name, description and status; hints show when expanded.
     expect(screen.queryByTestId('mcp-tool-annotations')).not.toBeInTheDocument()
 
-    for (const name of ['query_docs', 'delete_page', 'plain']) {
+    for (const name of ['query_docs', 'delete_page', 'append_note', 'plain']) {
       fireEvent.click(screen.getByRole('button', { name: `Show ${name} schema` }))
     }
-    const [readBadges, deleteBadges] = screen.getAllByTestId('mcp-tool-annotations')
+    const [readBadges, deleteBadges, appendBadges] = screen.getAllByTestId('mcp-tool-annotations')
     expect(within(readBadges).getByText('Read-only')).toBeInTheDocument()
     expect(within(readBadges).getByText('Idempotent')).toBeInTheDocument()
     expect(within(readBadges).queryByText('Destructive')).not.toBeInTheDocument()
@@ -296,7 +308,10 @@ describe('ServersTab', () => {
     expect(within(deleteBadges).getByText('Destructive')).toBeInTheDocument()
     expect(within(deleteBadges).getByText('Open world')).toBeInTheDocument()
     expect(within(deleteBadges).queryByText('Closed world')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(2)
+    expect(within(deleteBadges).queryByText('Non-destructive')).not.toBeInTheDocument()
+    expect(within(appendBadges).getByText('Non-destructive')).toBeInTheDocument()
+    expect(within(appendBadges).queryByText('Destructive')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(3)
 
     expect(screen.getByText('Query documentation')).toBeInTheDocument()
     expect(screen.getByText('Output schema')).toBeInTheDocument()
