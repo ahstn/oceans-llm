@@ -134,8 +134,13 @@ impl DecisionsRequest {
         None
     }
 
-    pub(crate) fn question(&self, key: &str) -> Option<&DecisionQuestion> {
-        self.questions.iter().find(|question| question.key == key)
+    /// Questions indexed by key, built once so rendering stays linear in the
+    /// number of answers.
+    pub(crate) fn questions_by_key(&self) -> BTreeMap<&str, &DecisionQuestion> {
+        self.questions
+            .iter()
+            .map(|question| (question.key.as_str(), question))
+            .collect()
     }
 }
 

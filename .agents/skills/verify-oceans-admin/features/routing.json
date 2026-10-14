@@ -353,7 +353,6 @@
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/handlers/inference.rs",
-        "crates/gateway/src/http/handlers/decisions.rs",
         ".agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs"
       ]
     },

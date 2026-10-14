@@ -322,7 +322,11 @@ mod tests {
             .decisions(&request(), &context())
             .await
             .expect_err("malformed answers");
-        assert!(matches!(error, ProviderError::Transport(_)), "{error:?}");
+        assert!(
+            matches!(&error, ProviderError::PartialUsage { source, .. }
+                if matches!(source.as_ref(), ProviderError::Transport(_))),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

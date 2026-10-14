@@ -89,15 +89,20 @@ pub(crate) fn base_root_and_host(
 
 /// Reject upstream shape drift loudly: the response must satisfy the
 /// format's contract, and every requested question needs a matching valid
-/// answer.
+/// answer. The upstream has already billed a rejected response, so the error
+/// carries its `usage` for accounting.
 pub(crate) fn parse_decisions_response(
     format: DecisionsWireFormat,
     body: Value,
     request: &CoreDecisionsRequest,
 ) -> Result<ProviderDecisionsResponse, ProviderError> {
-    let parsed = format
-        .parse_response(&body, request)
-        .map_err(ProviderError::Transport)?;
+    let parsed =
+        format
+            .parse_response(&body, request)
+            .map_err(|message| ProviderError::PartialUsage {
+                source: Box::new(ProviderError::Transport(message)),
+                provider_usage: body.get("usage").cloned(),
+            })?;
     Ok(ProviderDecisionsResponse {
         format,
         body,
@@ -190,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_answers_as_transport_errors() {
+    fn rejects_malformed_answers_keeping_billed_usage() {
         let request = system_one_test_request();
         let valid = json!({
             "model": "jev",
@@ -206,8 +211,21 @@ mod tests {
         assert_eq!(parsed.body, valid);
         assert_eq!(parsed.format, DecisionsWireFormat::SystemOne);
 
-        let error = parse_decisions_response(DecisionsWireFormat::OpenAi, valid, &request)
+        let mut billed = valid;
+        billed["usage"] = json!({"input_tokens": 12, "output_tokens": 3});
+        let error = parse_decisions_response(DecisionsWireFormat::OpenAi, billed, &request)
             .expect_err("wrong format");
-        assert!(matches!(error, ProviderError::Transport(_)), "{error:?}");
+        let ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } = error
+        else {
+            panic!("expected partial usage, got {error:?}");
+        };
+        assert!(matches!(*source, ProviderError::Transport(_)), "{source:?}");
+        assert_eq!(
+            provider_usage,
+            Some(json!({"input_tokens": 12, "output_tokens": 3}))
+        );
     }
 }

@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
+use crate::protocol::decisions::DecisionsWireFormat;
 use crate::routing::ModelRoutingPolicy;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -2776,6 +2777,22 @@ impl RouteCompatibility {
                 .openrouter
                 .as_ref()
                 .is_some_and(|routing| routing.api.is_decisions())
+    }
+
+    /// Wire format this route's Decisions upstream speaks: OpenAI when
+    /// `openai_compat.decisions_api` is set, System One otherwise (TypeSafe
+    /// and the alpha route).
+    #[must_use]
+    pub fn decisions_wire_format(&self) -> DecisionsWireFormat {
+        if self
+            .openai_compat
+            .as_ref()
+            .is_some_and(|compat| compat.decisions_api == Some(OpenAiCompatDecisionsApi::OpenAi))
+        {
+            DecisionsWireFormat::OpenAi
+        } else {
+            DecisionsWireFormat::SystemOne
+        }
     }
 }
 

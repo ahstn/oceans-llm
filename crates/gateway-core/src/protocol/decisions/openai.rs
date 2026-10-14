@@ -177,8 +177,11 @@ pub struct OpenAiDecisionsOutputTokensDetails {
 }
 
 /// OpenAI request to core, with the OpenAI edge checks: 1–200 questions,
-/// unique names, 2+ unique typed choices, user-only messages, and at most
-/// 128 images. Unnamed questions get a positional `question_<index>` key.
+/// 2+ unique typed choices, user-only messages, and at most 128 images.
+/// Answers correlate by position, so names need not be unique: a question
+/// keeps its name as its key unless the name is missing or already taken,
+/// in which case it gets a positional `question_<index>` key. The original
+/// name is kept for rendering either way.
 pub fn openai_decisions_request_to_core(
     request: &OpenAiDecisionsRequest,
 ) -> Result<DecisionsRequest, String> {
@@ -190,25 +193,19 @@ pub fn openai_decisions_request_to_core(
     }
     let input = openai_input_to_core(&request.input)?;
 
-    let mut names = BTreeSet::new();
-    for name in request
+    let names = request
         .questions
         .iter()
         .filter_map(OpenAiDecisionQuestion::name)
-    {
-        if !names.insert(name) {
-            return Err(format!(
-                "decisions question name `{name}` is used more than once"
-            ));
-        }
-    }
-
+        .collect::<BTreeSet<_>>();
+    let mut keys = BTreeSet::new();
     let mut questions = Vec::with_capacity(request.questions.len());
     for (index, question) in request.questions.iter().enumerate() {
         let key = match question.name() {
-            Some(name) => name.to_string(),
-            None => positional_key(index, &names),
+            Some(name) if !keys.contains(name) => name.to_string(),
+            _ => positional_key(index, |key| names.contains(key) || keys.contains(key)),
         };
+        keys.insert(key.clone());
         questions.push(openai_question_to_core(key, question)?);
     }
 
@@ -221,11 +218,11 @@ pub fn openai_decisions_request_to_core(
     })
 }
 
-fn positional_key(index: usize, names: &BTreeSet<&str>) -> String {
+fn positional_key(index: usize, taken: impl Fn(&str) -> bool) -> String {
     let base = format!("question_{index}");
     let mut key = base.clone();
     let mut suffix = 1;
-    while names.contains(key.as_str()) {
+    while taken(&key) {
         key = format!("{base}_{suffix}");
         suffix += 1;
     }
@@ -563,11 +560,12 @@ pub fn core_decisions_response_to_openai(
     response: &DecisionsResponse,
     request: &DecisionsRequest,
 ) -> Value {
+    let questions = request.questions_by_key();
     let answers = response
         .answers
         .iter()
         .filter_map(|outcome| {
-            let question = request.question(&outcome.key)?;
+            let question = questions.get(outcome.key.as_str())?;
             Some(core_answer_to_openai(question, &outcome.answer))
         })
         .collect();
@@ -833,6 +831,22 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_question_names_get_positional_keys_and_keep_their_names() {
+        let mut duplicate = openai_request();
+        if let OpenAiDecisionQuestion::Score { name, .. } = &mut duplicate.questions[2] {
+            *name = Some("is_urgent".to_string());
+        }
+        let core = openai_decisions_request_to_core(&duplicate).expect("duplicates are valid");
+        assert_eq!(core.validation_error(), None);
+        assert_eq!(core.questions[0].key, "is_urgent");
+        assert_eq!(core.questions[2].key, "question_2");
+        assert_eq!(core.questions[2].name.as_deref(), Some("is_urgent"));
+
+        let forwarded = core_decisions_request_to_openai(&core).expect("translates");
+        assert_eq!(forwarded.questions[2].name(), Some("is_urgent"));
+    }
+
+    #[test]
     fn rejects_requests_openai_cannot_accept() {
         let single_choice: SystemOneDecisionsRequest = serde_json::from_value(json!({
             "model": "jev",
@@ -844,12 +858,6 @@ mod tests {
         .expect("valid System One request");
         let core = system_one_decisions_request_to_core(&single_choice);
         assert!(core_decisions_request_to_openai(&core).is_err());
-
-        let mut duplicate = openai_request();
-        if let OpenAiDecisionQuestion::Score { name, .. } = &mut duplicate.questions[2] {
-            *name = Some("is_urgent".to_string());
-        }
-        assert!(openai_decisions_request_to_core(&duplicate).is_err());
 
         let mut one_choice = openai_request();
         if let OpenAiDecisionQuestion::Choice { choices, .. } = &mut one_choice.questions[1] {

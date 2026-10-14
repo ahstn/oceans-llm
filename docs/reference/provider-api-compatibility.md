@@ -124,16 +124,14 @@ Provider routing is explicit:
 | `openai_compat` with `compatibility.openai_compat.decisions_api: openai` | OpenAI | `{base_url}/decisions` | `gpt-6-luna` |
 | `openai_compat` alpha route with `compatibility.openrouter.api: decisions` | System One | `/api/alpha/decisions` | `typesafe/jev-1.13` |
 
-A route-level `decisions_url` overrides the upstream URL for any of these routes.
-
-Some inputs cannot be translated, and Oceans rejects them with 400 before calling the upstream:
+Some inputs cannot be translated to every format. When a model has routes in both formats, Oceans selects only among the routes whose format can carry the request. When no route can, Oceans returns 400 before calling the upstream:
 
 - `safety_identifier` is sent to OpenAI-format routes only.
 - System One routes do not accept image inputs.
 - OpenAI-format routes need at least two options for every `choice` question.
 - OpenAI-format routes accept at most 200 questions and 128 images.
 
-When System One questions are sent to OpenAI, they are ordered by key, and `noul` criteria are added to the predicate instructions. OpenAI questions without a `name` get the positional key `question_{index}` internally, and their answers keep `name: null`. If an answer rendered for an OpenAI caller has no reported confidence, Oceans uses the probability of the selected option or nearest score level.
+When System One questions are sent to OpenAI, they are ordered by key, and `noul` criteria are added to the predicate instructions. OpenAI questions without a `name`, or whose `name` repeats an earlier question's, get the positional key `question_{index}` internally. Answers keep the caller's original `name`, including `null`. If an answer rendered for an OpenAI caller has no reported confidence, Oceans uses the probability of the selected option or nearest score level.
 
 Alpha-route provider policy remains optional. When configured, Oceans sends it as the upstream `provider` object. Native TypeSafe and OpenAI-format routes do not receive it.
 

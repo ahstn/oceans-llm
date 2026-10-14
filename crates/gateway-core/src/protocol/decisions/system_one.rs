@@ -19,6 +19,10 @@ pub struct SystemOneDecisionsRequest {
     pub state: Value,
     #[serde(default)]
     pub questions: BTreeMap<String, SystemOneDecisionQuestion>,
+    /// OpenAI-only field. Typed so it never rides along in `extra`: it reaches
+    /// OpenAI providers and is rejected before any System One upstream call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_identifier: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -126,7 +130,7 @@ pub fn system_one_decisions_request_to_core(
             .iter()
             .map(|(key, question)| system_one_question_to_core(key, question))
             .collect(),
-        safety_identifier: None,
+        safety_identifier: request.safety_identifier.clone(),
         extra: request.extra.clone(),
     }
 }
@@ -204,6 +208,7 @@ pub fn core_decisions_request_to_system_one(
         model: request.model.clone(),
         state,
         questions,
+        safety_identifier: None,
         extra: request.extra.clone(),
     })
 }
@@ -349,13 +354,13 @@ fn system_one_answer_to_core(
             let mut indexed = Vec::with_capacity(probabilities.len());
             for (label, probability) in probabilities {
                 check_probability(key, &format!("probability for `{label}`"), *probability)?;
-                // System One keys score probabilities by level index; other
-                // keys pass validation but cannot be translated.
-                if let Ok(index) = label.parse::<usize>()
-                    && index <= max
-                {
-                    indexed.push((index, *probability));
-                }
+                // System One keys score probabilities by level index.
+                let Some(index) = label.parse::<usize>().ok().filter(|index| *index <= max) else {
+                    return Err(format!(
+                        "decisions answer `{key}` reports probability for unknown score level `{label}`, expected 0..={max}"
+                    ));
+                };
+                indexed.push((index, *probability));
             }
             indexed.sort_by_key(|(index, _)| *index);
             if let Some(confidence) = confidence {
@@ -410,11 +415,12 @@ pub fn core_decisions_response_to_system_one(
     response: &DecisionsResponse,
     request: &DecisionsRequest,
 ) -> Value {
+    let questions = request.questions_by_key();
     let answers = response
         .answers
         .iter()
         .filter_map(|outcome| {
-            request.question(&outcome.key)?;
+            questions.get(outcome.key.as_str())?;
             Some((
                 outcome.key.clone(),
                 core_answer_to_system_one(&outcome.answer),
@@ -547,6 +553,19 @@ mod tests {
     }
 
     #[test]
+    fn system_one_safety_identifier_is_typed_not_forwarded_as_extra() {
+        let mut body = serde_json::to_value(system_one_request()).expect("request");
+        body["safety_identifier"] = json!("user-1");
+        let wire: SystemOneDecisionsRequest = serde_json::from_value(body).expect("request");
+        assert!(wire.extra.is_empty());
+
+        let core = system_one_decisions_request_to_core(&wire);
+        assert_eq!(core.safety_identifier.as_deref(), Some("user-1"));
+        let error = core_decisions_request_to_system_one(&core).expect_err("rejected");
+        assert!(error.contains("safety_identifier"), "{error}");
+    }
+
+    #[test]
     fn rejects_inputs_system_one_cannot_carry() {
         let mut core = system_one_decisions_request_to_core(&system_one_request());
         core.safety_identifier = Some("user-1".to_string());
@@ -609,6 +628,11 @@ mod tests {
         unknown_choice_probability["answers"]["department"]["probabilities"]["sales"] = json!(0.1);
         let mut invalid_score_probability = valid.clone();
         invalid_score_probability["answers"]["frustration"]["probabilities"]["1"] = json!(1.1);
+        let mut non_index_score_probability = valid.clone();
+        non_index_score_probability["answers"]["frustration"]["probabilities"]["bogus"] =
+            json!(0.1);
+        let mut out_of_range_score_probability = valid.clone();
+        out_of_range_score_probability["answers"]["frustration"]["probabilities"]["2"] = json!(0.1);
         let mut invalid_choice_confidence = valid.clone();
         invalid_choice_confidence["answers"]["department"]["confidence"] = json!(2.0);
         let mut invalid_score_confidence = valid.clone();
@@ -628,6 +652,8 @@ mod tests {
             invalid_choice_probability,
             unknown_choice_probability,
             invalid_score_probability,
+            non_index_score_probability,
+            out_of_range_score_probability,
             invalid_choice_confidence,
             invalid_score_confidence,
             missing_answer,

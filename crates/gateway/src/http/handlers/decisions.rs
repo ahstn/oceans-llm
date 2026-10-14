@@ -3,8 +3,10 @@
 //! Both translate into one core request, and answer in the caller's format
 //! whatever format the selected upstream speaks.
 use gateway_core::{
-    CoreDecisionsRequest, DecisionsWireFormat, OpenAiDecisionsRequest, SystemOneDecisionsRequest,
-    openai_decisions_request_to_core, system_one_decisions_request_to_core,
+    CoreDecisionsRequest, DecisionsWireFormat, ModelRoute, OpenAiDecisionsRequest,
+    SystemOneDecisionsRequest, core_decisions_request_to_openai,
+    core_decisions_request_to_system_one, openai_decisions_request_to_core,
+    system_one_decisions_request_to_core,
 };
 use serde::Deserialize;
 
@@ -116,6 +118,36 @@ fn parse_decisions_request(
     Ok(request)
 }
 
+/// Drops routes whose upstream format cannot carry this request (images or
+/// `safety_identifier` for System One; single-option choices or too many
+/// questions for OpenAI), so weighted selection only picks routes that can
+/// serve it. When no route can, the first translation error explains why.
+fn retain_representable_routes(
+    routes: &mut Vec<ModelRoute>,
+    request: &CoreDecisionsRequest,
+) -> Result<(), GatewayError> {
+    let system_one_error = core_decisions_request_to_system_one(request).err();
+    let openai_error = core_decisions_request_to_openai(request).err();
+    let mut first_error = None;
+    routes.retain(|route| {
+        let error = match route.compatibility.decisions_wire_format() {
+            DecisionsWireFormat::SystemOne => &system_one_error,
+            DecisionsWireFormat::OpenAi => &openai_error,
+        };
+        match error {
+            Some(message) => {
+                first_error.get_or_insert_with(|| message.clone());
+                false
+            }
+            None => true,
+        }
+    });
+    match first_error {
+        Some(message) if routes.is_empty() => Err(GatewayError::InvalidRequest(message)),
+        _ => Ok(()),
+    }
+}
+
 /// Same-format responses pass through with only `model` rewritten, so System
 /// One callers of System One upstreams see the upstream body unchanged.
 /// Cross-format responses are rendered from the validated core answers.
@@ -145,10 +177,12 @@ async fn execute_decisions(
     let request_id = canonical_request_id(request_id)?;
     let mut core_request = parse_decisions_request(&call.body, call.format).map_err(AppError)?;
     let requirements = core_request.requirements();
-    let resolved = state
+    let mut resolved = state
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    let route_count = resolved.routes.len();
+    retain_representable_routes(&mut resolved.routes, &core_request).map_err(AppError)?;
     record_request_span_fields(&request_span, &auth, &resolved, false, call.route_path);
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -175,7 +209,7 @@ async fn execute_decisions(
         request_model = %core_request.model,
         resolved_model = %resolved.selection.execution_model.model_key,
         request_format = call.format.as_str(),
-        route_count = resolved.routes.len(),
+        route_count,
         eligible_route_count,
         required_capabilities = ?requirements.required_capability_names(),
         "decisions request resolved"
@@ -350,7 +384,10 @@ mod tests {
     use gateway_core::{DecisionsWireFormat, ProviderDecisionsResponse};
     use serde_json::json;
 
-    use super::{detect_decisions_format, parse_decisions_request, render_caller_response};
+    use super::{
+        detect_decisions_format, parse_decisions_request, render_caller_response,
+        retain_representable_routes,
+    };
 
     fn system_one_body() -> serde_json::Value {
         json!({
@@ -462,5 +499,64 @@ mod tests {
         );
         assert_eq!(rendered["model"], "jev");
         assert_eq!(rendered["usage"]["total_tokens"], 11);
+    }
+
+    fn route(provider_key: &str, openai: bool) -> gateway_core::ModelRoute {
+        let mut route = gateway_core::ModelRoute {
+            id: uuid::Uuid::new_v4(),
+            model_id: uuid::Uuid::new_v4(),
+            provider_key: provider_key.to_string(),
+            upstream_model: "upstream".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            context_window_tokens: None,
+            pricing_override: None,
+            capabilities: gateway_core::ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        if openai {
+            route.compatibility.openai_compat =
+                Some(gateway_core::OpenAiCompatRouteCompatibility {
+                    decisions_api: Some(gateway_core::OpenAiCompatDecisionsApi::OpenAi),
+                    ..Default::default()
+                });
+        }
+        route
+    }
+
+    #[test]
+    fn route_filter_keeps_only_routes_that_can_carry_the_request() {
+        let routes = vec![route("system-one", false), route("openai", true)];
+
+        let mut image_request = openai_body();
+        image_request["input"] = json!([{"role": "user", "content": [
+            {"type": "input_image", "image_url": "https://example.test/a.png"}
+        ]}]);
+        let request =
+            parse_decisions_request(&image_request, DecisionsWireFormat::OpenAi).expect("request");
+        let mut kept = routes.clone();
+        retain_representable_routes(&mut kept, &request).expect("OpenAI route remains");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].provider_key, "openai");
+
+        let mut only_system_one = vec![route("system-one", false)];
+        let error = retain_representable_routes(&mut only_system_one, &request)
+            .expect_err("no route can carry images");
+        assert!(error.to_string().contains("image inputs"), "{error}");
+
+        let single_choice = json!({
+            "model": "jev",
+            "state": "x",
+            "questions": {"pick": {"type": "choice", "instructions": "Pick", "criteria": {"only": null}}}
+        });
+        let request = parse_decisions_request(&single_choice, DecisionsWireFormat::SystemOne)
+            .expect("request");
+        let mut kept = routes;
+        retain_representable_routes(&mut kept, &request).expect("System One route remains");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].provider_key, "system-one");
     }
 }

@@ -73,14 +73,15 @@ OpenAI published a Decisions API with its own request format: an `input` (a stri
 
 1. **Supersedes 1.** `POST /v1/decisions` accepts both formats and picks one from the body: `input` means OpenAI, `state` means System One. A body with both keys, or with neither, returns 400 with a message that names the problem. `POST /v1/systemone` accepts System One only and rejects `input` with a message that points to `/v1/decisions`. The response always uses the caller's format. When the caller and the upstream speak the same format, the gateway returns the upstream body unchanged apart from the public model name. System One callers therefore keep the same response, byte for byte.
 2. **Supersedes 2.** `gateway-core` has one format-neutral request and response representation (`protocol::decisions`), plus a module per wire format that translates in both directions. Questions keep their caller key and an optional display name. Instructions and descriptions stay JSON values until a format needs text.
-7. **Supersedes 7.** A provider route declares the format it speaks. `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai` send the OpenAI format to `{base_url}/decisions`. Native TypeSafe and the alpha route keep System One. A configured `decisions_url` keeps System One unless `decisions_api` is set. Plain `openai_compat` routes without either setting do not support Decisions.
+7. **Supersedes 7.** A provider route declares the format it speaks. `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai` send the OpenAI format to `{base_url}/decisions`. Native TypeSafe and the alpha route keep System One. Plain `openai_compat` routes without either setting do not support Decisions.
 
 ### Translation rules
 
-- **Rejected before any upstream call (400):**
-  - `safety_identifier` is OpenAI-only. Routes that speak System One reject it.
+- **Format-aware route selection:** before weighted selection, the gateway drops routes whose format cannot carry the request. A model with routes in both formats therefore serves image or `safety_identifier` requests from its OpenAI routes, and single-option choices from its System One routes.
+- **Rejected before any upstream call (400), when no route can carry the request:**
+  - `safety_identifier` is OpenAI-only. Routes that speak System One reject it, whether it arrives in an OpenAI or a System One body.
   - System One providers reject image inputs. Audio and video inputs are out of scope.
-- **Positional keys:** OpenAI questions without a `name` get the key `question_{index}`. If that collides with a named question, the key gets a numeric suffix. OpenAI answers for unnamed questions keep `name: null`.
+- **Positional keys:** OpenAI answers correlate by position, so question names need not be unique. A question without a `name`, or whose `name` repeats an earlier one, gets the key `question_{index}`. If that collides with a named question, the key gets a numeric suffix. OpenAI answers keep the caller's original `name`, including `null`.
 - **System One questions sent to OpenAI:**
   - Questions are sorted by key, because a System One questions map has no order.
   - `noul` criteria are added to the predicate instructions as "True when" and "False when" lines.
@@ -94,7 +95,7 @@ OpenAI published a Decisions API with its own request format: an `input` (a stri
 
 ### Accounting
 
-The handler prices the upstream's own `usage` object, whatever format the caller receives. OpenAI usage reports `input_tokens_details.cached_tokens`, `cache_write_tokens` and `output_tokens_details.reasoning_tokens`. The existing inclusive cache normalization records cached input separately. Reasoning tokens stay within completion tokens. Request logs record prompt, completion, and total counts from the rendered response, and those counts match in both formats.
+The handler prices the upstream's own `usage` object, whatever format the caller receives. OpenAI usage reports `input_tokens_details.cached_tokens`, `cache_write_tokens` and `output_tokens_details.reasoning_tokens`. The existing inclusive cache normalization records cached input separately. Reasoning tokens stay within completion tokens. Request logs record prompt, completion, and total counts from the rendered response, and those counts match in both formats. When an upstream response fails validation, the caller gets 502, but the gateway still records the response's billed `usage`.
 
 OpenAI Decisions models such as `gpt-6-luna` bill input only. Without an exact catalog entry, operators set a route `pricing_override` with `output_usd_per_million_tokens: "0"` and OpenAI's published input and cached-input rates.
 
