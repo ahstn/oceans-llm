@@ -646,6 +646,29 @@ mod proxy_policy {
     }
 
     #[tokio::test]
+    async fn a_denied_notification_gets_an_error_without_an_id() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "resources/read", "params": {"uri": "file:///notes.md"}}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none());
+        assert_eq!(
+            body["error"]["message"],
+            "MCP server is not granted for this API key"
+        );
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn get_with_a_lifecycle_body_cannot_skip_the_event_stream_grant() {
         let (_directory, state) = crate::http::test_support::app_state().await;
         let upstream = spawn_upstream().await;

@@ -50,12 +50,18 @@ async fn server_has_grant(
 }
 
 fn server_not_granted_response(id: Option<&Value>) -> Response<Body> {
-    mcp_jsonrpc_error_response(
-        StatusCode::FORBIDDEN,
-        id,
-        SERVER_NOT_GRANTED_CODE,
-        "MCP server is not granted for this API key",
-    )
+    const MESSAGE: &str = "MCP server is not granted for this API key";
+    match id {
+        Some(id) => mcp_jsonrpc_error_response(
+            StatusCode::FORBIDDEN,
+            Some(id),
+            SERVER_NOT_GRANTED_CODE,
+            MESSAGE,
+        ),
+        None => {
+            mcp_notification_error_response(StatusCode::FORBIDDEN, SERVER_NOT_GRANTED_CODE, MESSAGE)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
