@@ -1,0 +1,33 @@
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_009ff6129e63cc::t_fbf6dbb8e26c86 71
+.agents/skills/verify-oceans-admin/features/workspace-connections.md
+  s_009ff6129e63cc::t_e819dbab13d5e5 12
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_009ff6129e63cc::t_7de424df8ee4b0 355-356,369-370
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_009ff6129e63cc::t_ea735295eb6423 295,298
+crates/gateway/src/http/mcp_oauth.rs
+  s_009ff6129e63cc::t_6051d9a0ab0a2b 15-17,150-157,471-495
+crates/gateway/src/http/mcp_oauth/tests.rs
+  s_009ff6129e63cc::t_81fb7c297d8926 271-315
+docs/adr/2026-10-13-mcp-credential-connect-url.md
+  s_009ff6129e63cc::t_c7549338af8694 31-32
+docs/configuration/mcp-servers.md
+  s_009ff6129e63cc::t_3aa37fe0afdf54 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6773dbfdbcbd38721b4f9e71a25067a0ddcd02f0",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
