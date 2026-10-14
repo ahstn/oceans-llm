@@ -39,6 +39,7 @@ Preconditions:
 - The mobile list replaces `request-log-desktop-table` below the `lg` breakpoint.
 - `gateway.yaml` capture limits apply only to live requests; seeded rows carry fixture payloads. A truncation badge is a valid stored result, not missing UI data.
 - Non-platform-admin sessions see only their own logs. Verify parity as `admin@local`.
+- Decisions logs store the response in the caller's format. A row from `/v1/decisions` with an OpenAI-format body has an ordered `answers` list, and a row from `/v1/systemone` has an `answers` map. Prompt and completion counts match the upstream usage in both cases.
 - The detail does not show guardrail decisions. Use [Guardrails](./guardrails.md) or `/api/v1/admin/guardrails/decisions`.
 - There is no apply button. A chip value commits on Enter or when its input loses focus, and only if it changed the filters. Wait for `Showing N of M` to change before you compare it with the API.
 - `Clear` resets only the chips. A search term in `q` stays until you empty the search box.

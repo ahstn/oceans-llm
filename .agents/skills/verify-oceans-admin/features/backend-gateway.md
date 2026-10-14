@@ -39,7 +39,7 @@ Preconditions:
 - A configured route, healthy Models page, or present environment reference is not live-provider proof. Startup requires referenced environment variables to exist but does not validate credential correctness or upstream reachability.
 - OpenRouter can choose its serving host. The gateway request log proves the configured OpenRouter provider and upstream model ID, not the physical serving host.
 - Root `gateway.yaml` uses audit mode, so a matched generated tool call is returned to the caller and recorded as `audit`. It is not executed by this driver.
-- `/api/v1/admin/guardrails/decisions` returns guardrail decision events. It is unrelated to the `/v1/decisions` inference endpoint (model `jev`), which records no guardrail decisions.
+- `/api/v1/admin/guardrails/decisions` returns guardrail decision events. It is unrelated to the `/v1/decisions` and `/v1/systemone` inference endpoints (model `jev`), which record no guardrail decisions.
 - `core.shell` is also enabled. Evaluate reports the last non-allow decision among enabled packs, so reordering packs in `gateway.yaml` can change the expected pack.
 - Direct `/api/v1/guardrails/evaluate` decisions have no inference request ID. Use the generated-tool decision for request-linked proof.
 - Payload evidence is redacted and bounded by `gateway.yaml`; do not require raw prompts, responses, credentials, or authorization headers.
