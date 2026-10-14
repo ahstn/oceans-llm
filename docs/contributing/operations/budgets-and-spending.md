@@ -105,7 +105,7 @@ Service-account credentials cannot authenticate unless their service account is 
 
 Hard-limit behavior:
 
-- pre-provider rejection returns `429 budget_exceeded`
+- pre-provider rejection returns `budget_exceeded` with the status from `budgets.exceeded_status_code` (default `422`; `402` and `429` are allowed). `BudgetGuard` copies the status into `GatewayError::BudgetExceeded`, so both error envelopes and the chat-request metric (`http.response.status_code`, outcome `budget_error`) use the same value. Pre-provider rejections do not write a request-log row
 - no provider call occurs on the pre-provider rejection path
 - post-provider rejection happens before inserting a new priced ledger row
 - duplicate request ids are rejected with `400 invalid_request` before additional budget math or ledger writes

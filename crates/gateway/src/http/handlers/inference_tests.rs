@@ -262,7 +262,7 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             .unwrap();
         let error = endpoint.call(state.clone(), false).await.unwrap_err();
         assert_eq!(error.0.error_code(), "budget_exceeded");
-        assert_eq!(error.0.http_status_code(), 429);
+        assert_eq!(error.0.http_status_code(), 422);
         assert_eq!(state.metrics.test_snapshot().requests, 1);
         assert!(provider.calls.lock().unwrap().is_empty());
         assert_eq!(

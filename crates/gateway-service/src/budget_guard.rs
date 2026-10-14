@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    AuthenticatedApiKey, BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, GatewayError,
-    Money4, UsageLedgerRecord, budget_window_utc,
+    AuthenticatedApiKey, BudgetCadence, BudgetExceededStatus, BudgetRecord, BudgetRepository,
+    BudgetScope, GatewayError, Money4, UsageLedgerRecord, budget_window_utc,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -24,6 +24,7 @@ pub struct BudgetOverrun {
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
     repo: Arc<R>,
+    exceeded_status: BudgetExceededStatus,
 }
 
 impl<R> BudgetGuard<R>
@@ -32,7 +33,16 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            exceeded_status: BudgetExceededStatus::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
+        self.exceeded_status = status;
+        self
     }
 
     #[tracing::instrument(name = "gateway.budget.precheck", skip_all)]
@@ -144,8 +154,11 @@ where
         if spent >= limit {
             return Err(GatewayError::BudgetExceeded {
                 ownership_scope: budget.scope_key.clone(),
+                scope_kind: scope.kind(),
+                cadence: budget.settings.cadence,
                 projected_cost_usd: spent,
                 limit_usd: limit,
+                status: self.exceeded_status,
             });
         }
         Ok(())
@@ -214,7 +227,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::BudgetGuard;
+    use super::{BudgetExceededStatus, BudgetGuard};
 
     /// Scope-aware fake: budgets and prior spend are keyed by `scope_key`, and
     /// recorded ledger rows count toward every scope they match, so the tests
@@ -662,6 +675,44 @@ mod tests {
             .expect("usage recorded");
         assert_eq!(overruns.len(), 1);
         assert_eq!(overruns[0].limit_usd, usd(120));
+    }
+
+    #[tokio::test]
+    async fn exhausted_increase_rejects_with_the_configured_status() {
+        // Base cap $80 plus a $40 increase, with $120 already spent.
+        let user_id = Uuid::new_v4();
+        let user_scope = BudgetScope::User { user_id };
+        let repo = Arc::new(
+            InMemoryBudgetRepo::default()
+                .with_budget(budget(user_scope.clone(), usd(80), true), usd(120))
+                .with_increase(&user_scope, usd(40)),
+        );
+        let auth = user_auth(user_id);
+
+        for status in [
+            BudgetExceededStatus::default(),
+            BudgetExceededStatus::PaymentRequired,
+            BudgetExceededStatus::TooManyRequests,
+        ] {
+            let guard = BudgetGuard::new(repo.clone()).with_exceeded_status(status);
+            let error = precheck(&guard, &auth, "req_increase_spent", Uuid::new_v4())
+                .await
+                .expect_err("spent increase should block");
+            assert_budget_exceeded(&error, &user_scope.scope_key());
+            assert_eq!(error.http_status_code(), status.as_u16());
+            let GatewayError::BudgetExceeded {
+                scope_kind,
+                cadence,
+                limit_usd,
+                ..
+            } = error
+            else {
+                unreachable!("asserted above");
+            };
+            assert_eq!(scope_kind, gateway_core::BudgetScopeKind::User);
+            assert_eq!(cadence, BudgetCadence::Daily);
+            assert_eq!(limit_usd, usd(120));
+        }
     }
 
     #[tokio::test]

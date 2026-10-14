@@ -313,6 +313,7 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.payloads.stream_max_events` defaults to `128`
 - `request_logging.purge.enabled` defaults to `false`
 - `request_logging.purge.retention` defaults to `7d`
+- `budgets.exceeded_status_code` defaults to `422`
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 - `permissions.users.pages` defaults to the 10 shared console pages
@@ -655,10 +656,11 @@ Important `users` fields:
 
 ## `budgets`
 
-`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts.
+`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts. `budgets.exceeded_status_code` sets the HTTP status for every hard-budget rejection, including service-account budgets.
 
 ```yaml
 budgets:
+  exceeded_status_code: 422
   users:
     default:
       cadence: daily
@@ -676,12 +678,14 @@ budgets:
 
 Important fields:
 
+- `exceeded_status_code`: HTTP status for hard-budget rejections. One of `402`, `422` (default) or `429`. The body always has `type: budget_error` and `code: budget_exceeded`. Set `429` only for clients that back off on budget errors; the OpenAI and Anthropic Python SDKs retry it. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md)
 - `users.default`: optional default user budget for all human users
 - `users.model_defaults[].model`: gateway model id from `models[*].id`
 - `users.model_defaults[].budget`: default user model budget applied per human user for that model
 
 Validation rules:
 
+- `exceeded_status_code` must be the number `402`, `422` or `429`; other values fail startup
 - default budget amounts must be non-negative
 - model-default entries must reference an existing configured gateway model
 - duplicate model-default entries are rejected after model id normalization
