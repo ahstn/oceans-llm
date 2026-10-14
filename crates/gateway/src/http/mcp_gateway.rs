@@ -19,9 +19,9 @@ use axum::{
 };
 use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpToolInvocationStatus,
-    McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope, ProviderError,
-    auth::extract_bearer_token,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpOauthResource,
+    McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
+    ProviderError, auth::extract_bearer_token,
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
@@ -39,7 +39,7 @@ use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{mcp_client_oauth::bearer_challenge, state::AppState};
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
@@ -69,14 +69,16 @@ pub async fn mcp_streamable_http_proxy(
     let has_query = request.uri().query().is_some();
     let headers = request.headers().clone();
 
+    let resource = McpOauthResource::from_path(request.uri().path());
+
     let bearer_token = match extract_mcp_gateway_api_key(&headers) {
         Ok(token) => token,
-        Err(error) => return mcp_error_response(error.into()),
+        Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error.into()),
     };
 
     let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
         Ok(auth) => auth,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error),
     };
     tracing::Span::current().record("owner_kind", auth.owner_kind.as_str());
     if !matches!(
@@ -642,6 +644,25 @@ fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError>
         (None, Some(explicit_key)) => Ok(explicit_key),
         (None, None) => Err(AuthError::MissingAuthorizationHeader),
     }
+}
+
+/// An authentication failure on an MCP route. When OAuth for MCP clients is
+/// enabled, the `WWW-Authenticate` header points at the route's metadata.
+fn mcp_auth_error_response(
+    state: &AppState,
+    resource: Option<&McpOauthResource>,
+    error: GatewayError,
+) -> Response<Body> {
+    let challenge = state
+        .mcp_client_oauth
+        .as_deref()
+        .zip(resource)
+        .and_then(|(settings, resource)| bearer_challenge(settings, resource, &error));
+    let mut response = mcp_error_response(error);
+    if let Some(challenge) = challenge {
+        response.headers_mut().insert(WWW_AUTHENTICATE, challenge);
+    }
+    response
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

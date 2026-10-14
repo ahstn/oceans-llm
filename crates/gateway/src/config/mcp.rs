@@ -10,6 +10,8 @@ use super::references::{resolve_path_reference, resolve_secret_reference};
 pub struct McpConfig {
     #[serde(default)]
     pub oauth: McpOauthConfig,
+    #[serde(default)]
+    pub client_oauth: super::McpClientOauthConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

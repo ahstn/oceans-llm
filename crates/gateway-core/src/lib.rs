@@ -5,6 +5,7 @@ pub mod budgets;
 pub mod domain;
 pub mod error;
 pub mod gateway_keys;
+pub mod mcp_client_oauth;
 pub mod protocol;
 pub mod reasoning_policy;
 pub mod routing;
@@ -116,6 +117,10 @@ pub use gateway_keys::{
     decrypt_gateway_api_key_secret, decrypt_secret_with_key, decrypt_secret_with_key_and_aad,
     encrypt_gateway_api_key_secret, encrypt_secret_with_key, encrypt_secret_with_key_and_aad,
     generate_gateway_api_key_value, hash_gateway_key_secret, validate_secret_key_env,
+};
+pub use mcp_client_oauth::{
+    GatewayAuthMethod, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX, OAUTH_REFRESH_TOKEN_PREFIX,
+    SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, SUPPORTED_SCOPES, parse_scope_list,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

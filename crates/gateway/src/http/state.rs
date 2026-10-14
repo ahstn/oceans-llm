@@ -2,7 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
-use gateway_service::{GatewayService, McpOauthRuntime, SkillService, WeightedRoutePlanner};
+use gateway_service::{
+    GatewayService, McpClientOauthSettings, McpOauthRuntime, SkillService, WeightedRoutePlanner,
+};
 use gateway_store::AnyStore;
 
 use crate::http::{
@@ -30,6 +32,8 @@ pub struct AppState {
     pub metrics: Arc<GatewayMetrics>,
     pub mcp_http_client: reqwest::Client,
     pub mcp_oauth_runtime: Arc<McpOauthRuntime>,
+    /// The gateway as an OAuth authorization server for MCP clients; `None` when disabled.
+    pub mcp_client_oauth: Option<Arc<McpClientOauthSettings>>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,

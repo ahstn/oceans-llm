@@ -38,6 +38,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         metrics: Arc::new(GatewayMetrics::new()),
         mcp_http_client: reqwest::Client::new(),
         mcp_oauth_runtime: Arc::new(McpOauthRuntime::new(None, Vec::new())),
+        mcp_client_oauth: None,
         identity_token_secret: Arc::new("test-secret".to_string()),
         oidc_public_base_url: Arc::new(None),
         oauth_public_base_url: Arc::new(None),

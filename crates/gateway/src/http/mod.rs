@@ -14,6 +14,7 @@ pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod inference_guardrails;
+pub mod mcp_client_oauth;
 pub mod mcp_gateway;
 pub mod mcp_oauth;
 pub mod mcp_registry;
@@ -48,9 +49,9 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
-    review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
+    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_client_oauth::*,
+    mcp_gateway::*, mcp_oauth::*, mcp_registry::*, models::*, observability::*, profile::*,
+    provider_credentials::*, review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -404,6 +405,18 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
         .merge(skills::router())
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(oauth_protected_resource_metadata_aggregate),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp/{server_key}",
+            get(oauth_protected_resource_metadata_server),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth_authorization_server_metadata),
+        )
         .route(
             "/mcp",
             post(mcp_aggregate_streamable_http)

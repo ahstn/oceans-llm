@@ -12,6 +12,7 @@ pub mod effective_route_metadata;
 pub mod icon_identity;
 pub mod mcp_access;
 pub mod mcp_catalog;
+pub mod mcp_client_oauth;
 pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
@@ -80,6 +81,7 @@ pub use mcp_catalog::{
     McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput, SearchMcpToolsOutput,
     parse_tool_address, tool_address,
 };
+pub use mcp_client_oauth::{McpClientOauthSettings, McpClientOauthSettingsError};
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
     UpsertMcpCredentialBindingInput, credential_owner_scope_key,

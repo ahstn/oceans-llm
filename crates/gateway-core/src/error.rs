@@ -38,6 +38,12 @@ pub enum AuthError {
     ServiceAccountBudgetRequired,
     #[error("api key hash verification failed: {0}")]
     HashVerification(String),
+    #[error("oauth access token is invalid, expired, or revoked")]
+    OauthTokenInvalid,
+    #[error("oauth access token was not issued for this MCP resource")]
+    OauthTokenWrongResource,
+    #[error("oauth access token lacks the `{required}` scope")]
+    OauthInsufficientScope { required: String },
 }
 
 #[derive(Debug, Error)]
@@ -176,11 +182,14 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeyRevoked)
             | Self::Auth(AuthError::ApiKeySecretMismatch)
             | Self::Auth(AuthError::InvalidApiKeyFormat)
-            | Self::Auth(AuthError::ConflictingApiKeyHeaders) => 401,
+            | Self::Auth(AuthError::ConflictingApiKeyHeaders)
+            | Self::Auth(AuthError::OauthTokenInvalid)
+            | Self::Auth(AuthError::OauthTokenWrongResource) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::ServiceAccountBudgetRequired)
-            | Self::Auth(AuthError::InsufficientPrivileges) => 403,
+            | Self::Auth(AuthError::InsufficientPrivileges)
+            | Self::Auth(AuthError::OauthInsufficientScope { .. }) => 403,
             Self::BudgetExceeded { status, .. } => status.as_u16(),
             Self::RateLimited(_) => 429,
             Self::IdentityConstraint(_) => 400,
@@ -272,6 +281,9 @@ impl GatewayError {
                 "service_account_budget_required"
             }
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
+            Self::Auth(AuthError::OauthTokenInvalid) => "invalid_token",
+            Self::Auth(AuthError::OauthTokenWrongResource) => "invalid_token_resource",
+            Self::Auth(AuthError::OauthInsufficientScope { .. }) => "insufficient_scope",
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
             Self::Store(StoreError::NotFound(_)) => "not_found",

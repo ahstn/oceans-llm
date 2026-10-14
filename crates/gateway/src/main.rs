@@ -293,6 +293,10 @@ async fn run_serve_with_store(
                 .runtime()
                 .context("failed resolving MCP OAuth configuration")?,
         ),
+        mcp_client_oauth: config
+            .mcp_client_oauth_settings()
+            .context("failed resolving MCP client OAuth configuration")?
+            .map(Arc::new),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config

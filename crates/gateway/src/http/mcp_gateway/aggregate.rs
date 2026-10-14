@@ -11,7 +11,7 @@ use axum::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpAggregateSessionRepository,
-    NewMcpAggregateSessionRecord,
+    McpOauthResource, NewMcpAggregateSessionRecord,
 };
 use gateway_mcp::{
     DEFAULT_PROTOCOL_VERSION, JsonRpcId, MCP_PROTOCOL_VERSION_HEADER, MCP_SESSION_ID_HEADER,
@@ -34,7 +34,8 @@ use crate::http::state::AppState;
 
 use super::{
     MAX_MCP_REQUEST_BODY_BYTES, body_read_exceeded_limit, evaluate_mcp_call, evaluate_mcp_result,
-    extract_mcp_gateway_api_key, guardrail_decision_metadata, mcp_error_response,
+    extract_mcp_gateway_api_key, guardrail_decision_metadata, mcp_auth_error_response,
+    mcp_error_response,
 };
 
 const AGGREGATE_SERVER_NAME: &str = "oceans-mcp-gateway";
@@ -58,13 +59,14 @@ pub async fn mcp_aggregate_streamable_http(
     if method != axum::http::Method::POST && method != axum::http::Method::DELETE {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
+    let resource = Some(&McpOauthResource::Aggregate);
     let bearer_token = match extract_mcp_gateway_api_key(&headers) {
         Ok(token) => token,
-        Err(error) => return mcp_error_response(error.into()),
+        Err(error) => return mcp_auth_error_response(&state, resource, error.into()),
     };
     let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
         Ok(auth) => auth,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return mcp_auth_error_response(&state, resource, error),
     };
     if !matches!(
         auth.owner_kind,
