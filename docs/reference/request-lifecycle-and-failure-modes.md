@@ -181,7 +181,7 @@ These failures look similar from far away, but they mean different things.
 - The HTTP response is `422` by default. `budgets.exceeded_status_code` can set it to `402` or `429`.
 - The body has `type: budget_error` and `code: budget_exceeded` in both the OpenAI and the Anthropic error envelope. Use them to tell a budget rejection from a request-validation `422`.
 - The message names the budget's cadence and scope kind (`user`, `service account` or `user+model`) and says that retrying will not succeed until the window resets or an administrator raises the limit. It does not include budget ids or other principals' data.
-- SDKs do not retry the default `422`; they do retry `429`.
+- The OpenAI and Anthropic Python SDKs do not retry the default `422`; they do retry `429`. Check other clients before choosing `429`.
 - No provider call occurs on this path.
 - Observability records this as a request outcome rather than as provider execution.
 
