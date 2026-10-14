@@ -86,13 +86,7 @@ pub(super) async fn proxy_tools_list(
     id: Option<&Value>,
 ) -> Result<Response<Body>, GatewayError> {
     let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
-    let content_type = response
-        .headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let filtered_body = if content_type.contains("text/event-stream") {
+    let filtered_body = if is_event_stream(&response.headers) {
         filter_tools_list_sse(&response.body, allowed_tool_names)?
     } else {
         filter_tools_list_json(&response.body, allowed_tool_names, id)?
@@ -102,6 +96,80 @@ pub(super) async fn proxy_tools_list(
         &response.headers,
         Body::from(filtered_body),
     ))
+}
+
+/// Forwards `initialize` and removes the server's `tasks` capability from the
+/// result.
+///
+/// The gateway does not proxy MCP tasks: `tasks/result` returns a tool result
+/// with no tool to check grants or guardrails against. A client that saw the
+/// capability could start a task and never be able to read its result.
+pub(super) async fn proxy_initialize(
+    client: &reqwest::Client,
+    method: &Method,
+    inbound_headers: &HeaderMap,
+    body: Bytes,
+    upstream: &McpGatewayUpstream,
+) -> Result<Response<Body>, GatewayError> {
+    let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
+    let body = if !response.status.is_success() {
+        response.body.to_vec()
+    } else if is_event_stream(&response.headers) {
+        rewrite_sse_messages(&response.body, "initialize", |value| {
+            remove_task_capability(value);
+            Ok(())
+        })?
+    } else {
+        match serde_json::from_slice::<Value>(&response.body) {
+            Ok(mut value) => {
+                remove_task_capability(&mut value);
+                serde_json::to_vec(&value).map_err(|error| {
+                    GatewayError::Internal(format!("failed encoding MCP initialize: {error}"))
+                })?
+            }
+            // A body the client cannot parse cannot advertise anything either.
+            Err(_) => response.body.to_vec(),
+        }
+    };
+    Ok(response_from_parts(
+        response.status,
+        &response.headers,
+        Body::from(body),
+    ))
+}
+
+fn remove_task_capability(value: &mut Value) {
+    if let Some(capabilities) = value
+        .pointer_mut("/result/capabilities")
+        .and_then(Value::as_object_mut)
+    {
+        capabilities.remove("tasks");
+    }
+}
+
+/// Without `execution.taskSupport` a client must call the tool directly, which
+/// is the only way the gateway can return its result.
+fn remove_task_support(tool: &mut Value) {
+    let Some(tool) = tool.as_object_mut() else {
+        return;
+    };
+    let execution_emptied = match tool.get_mut("execution").and_then(Value::as_object_mut) {
+        Some(execution) => {
+            execution.remove("taskSupport");
+            execution.is_empty()
+        }
+        None => false,
+    };
+    if execution_emptied {
+        tool.remove("execution");
+    }
+}
+
+fn is_event_stream(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }
 
 fn upstream_request(
@@ -142,8 +210,25 @@ fn filter_tools_list_sse(
     body: &[u8],
     allowed_tool_names: &HashSet<&str>,
 ) -> Result<Vec<u8>, GatewayError> {
+    rewrite_sse_messages(body, "tools/list", |value| {
+        // Notifications and RPC errors can precede the tools result in an SSE response.
+        // Any result must still pass the tool allowlist, even in a malformed envelope.
+        if value.get("result").is_some() || !is_rpc_error_or_notification(value) {
+            filter_tools_array(value, allowed_tool_names, None)?;
+        }
+        Ok(())
+    })
+}
+
+/// Applies `rewrite` to the JSON data of every SSE event, keeping the other
+/// event fields as they were.
+fn rewrite_sse_messages(
+    body: &[u8],
+    mcp_method: &str,
+    mut rewrite: impl FnMut(&mut Value) -> Result<(), GatewayError>,
+) -> Result<Vec<u8>, GatewayError> {
     let text = std::str::from_utf8(body).map_err(|error| {
-        GatewayError::InvalidRequest(format!("MCP tools/list SSE was not UTF-8: {error}"))
+        GatewayError::InvalidRequest(format!("MCP {mcp_method} SSE was not UTF-8: {error}"))
     })?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -177,14 +262,10 @@ fn filter_tools_list_sse(
         }
         let mut value: Value = serde_json::from_str(&data).map_err(|error| {
             GatewayError::InvalidRequest(format!(
-                "MCP tools/list SSE data was invalid JSON: {error}"
+                "MCP {mcp_method} SSE data was invalid JSON: {error}"
             ))
         })?;
-        // Notifications and RPC errors can precede the tools result in an SSE response.
-        // Any result must still pass the tool allowlist, even in a malformed envelope.
-        if value.get("result").is_some() || !is_rpc_error_or_notification(&value) {
-            filter_tools_array(&mut value, allowed_tool_names, None)?;
-        }
+        rewrite(&mut value)?;
         for line in passthrough_lines {
             out.push_str(line);
             out.push('\n');
@@ -251,6 +332,7 @@ fn filter_tools_array(
             .and_then(Value::as_str)
             .is_some_and(|name| allowed_tool_names.contains(name))
     });
+    tools.iter_mut().for_each(remove_task_support);
     if let (Some(id), Some(object)) = (id, value.as_object_mut()) {
         object.insert("id".to_string(), id.clone());
     }

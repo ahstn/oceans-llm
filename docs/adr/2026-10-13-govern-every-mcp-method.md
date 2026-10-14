@@ -20,7 +20,8 @@ As a result, any valid API key could call `resources/read`, `prompts/get`, or `c
 `parse_mcp_rpc_request` now returns one of these variants:
 
 - `ToolsList` or `ToolsCall`, which keep their existing per-tool handling.
-- `Lifecycle`, which covers `initialize`, `ping`, `logging/setLevel`, the client notifications `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, and `notifications/roots/list_changed` sent without an `id`, client replies to server requests (`jsonrpc: "2.0"`, an `id`, and exactly one of `result` or `error`), and `DELETE` session termination. These are forwarded.
+- `Initialize`, which is forwarded without a grant. The gateway removes `tasks` from the result's `capabilities`, because it does not proxy MCP tasks (see below).
+- `Lifecycle`, which covers `ping`, `logging/setLevel`, the client notifications `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, and `notifications/roots/list_changed` sent without an `id`, client replies to server requests (`jsonrpc: "2.0"`, an `id`, and exactly one of `result` or `error`), and `DELETE` session termination. These are forwarded.
 - `EventStream`, which is a `GET` that opens the server-to-client stream.
 - `Governed`, which covers the five resources methods, `prompts/list`, `prompts/get`, and `completion/complete`.
 - `Unknown`, which is any other method, including any other `notifications/*` name and a client notification sent with an `id`.
@@ -28,6 +29,8 @@ As a result, any valid API key could call `resources/read`, `prompts/get`, or `c
 `Unknown` methods get HTTP 403 with JSON-RPC code `-32601`, and the gateway logs them with error code `mcp_method_not_allowed`. A request echoes its `id`. A notification gets the same status and an error body without an `id`, as the transport allows for a message the server does not accept. Logged method names are truncated to 256 characters. A `POST` with an empty body gets HTTP 400 instead of being forwarded, and so does a `GET` or `DELETE` with a body. Only a `POST` carries a JSON-RPC message, and the upstream treats a `GET` as its event stream whatever the body says, so a body must not decide which checks apply.
 
 The protocol will add methods over time. Deny-by-default means a new method needs a deliberate decision before callers can use it through the gateway.
+
+MCP tasks are the first such method family. A `tools/call` with a `task` param returns a task ID, and the tool's result arrives later through `tasks/result`, which has no tool name to check grants or result guardrails against. The gateway therefore does not proxy tasks: `tasks/*` stays `Unknown`, `initialize` results lose the `tasks` capability, `tools/list` results lose each tool's `execution.taskSupport`, and a `tools/call` that still carries `task` gets HTTP 400. Without the capability and the tool-level hint, a client calls tools directly. A tool that requires tasks fails with the upstream server's error instead of starting a task the client could never finish. Upstream discovery and aggregate calls request protocol version 2025-06-18, which has no tasks.
 
 ### 2. Resources, prompts, and completions need a server grant
 
@@ -52,6 +55,8 @@ The admin API exposes `mcp_method` on invocation summaries and accepts it as a l
 - An `initialize` call still needs a working upstream credential, but it does not need a grant. A caller with no grants can learn that a server exists and see its declared capabilities. Server keys are already visible to anyone who has the client configuration.
 
 ## Follow-up
+
+- Govern `tasks/*` if upstream servers start to require tasks. That needs the gateway to record which tool and grant started each task, so `tasks/result` can be checked and guarded like `tools/call`.
 
 - Consider resource and prompt grants if teams need to expose some resources without granting tools.
 - Consider request guardrails for `prompts/get` arguments and `completion/complete` input.

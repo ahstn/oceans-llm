@@ -79,8 +79,14 @@ mod method_classification {
 
     #[test]
     fn lifecycle_methods_pass_through() {
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            ),
+            McpRpcRequest::Initialize
+        ));
         for body in [
-            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
             json!({"jsonrpc": "2.0", "id": 2, "method": "ping"}),
             json!({"jsonrpc": "2.0", "id": 3, "method": "logging/setLevel", "params": {"level": "info"}}),
             json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
@@ -101,6 +107,15 @@ mod method_classification {
             parse_mcp_rpc_request(&Method::DELETE, b"").expect("delete"),
             McpRpcRequest::Lifecycle
         ));
+    }
+
+    #[test]
+    fn task_augmented_tool_calls_are_rejected() {
+        let body = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}, "task": {"ttl": 60000}},
+        });
+        assert!(parse_mcp_rpc_request(&Method::POST, body.to_string().as_bytes()).is_err());
     }
 
     #[test]
@@ -277,14 +292,22 @@ mod proxy_policy {
                     match message["method"].as_str().unwrap_or_default() {
                         "initialize" => Json(json!({
                             "jsonrpc": "2.0", "id": id,
-                            "result": {"protocolVersion": "2025-06-18", "capabilities": {}, "serverInfo": {"name": "upstream", "version": "1"}},
+                            "result": {
+                                "protocolVersion": "2025-11-25",
+                                "capabilities": {"logging": {}, "tasks": {"list": {}, "cancel": {}, "requests": {"tools": {"call": {}}}}},
+                                "serverInfo": {"name": "upstream", "version": "1"},
+                            },
                         }))
                         .into_response(),
-                        "tools/list" => Json(json!({
-                            "jsonrpc": "2.0", "id": id,
-                            "result": {"tools": [annotated_search_tool(), {"name": "purge", "inputSchema": {"type": "object"}}]},
-                        }))
-                        .into_response(),
+                        "tools/list" => {
+                            let mut search = annotated_search_tool();
+                            search["execution"] = json!({"taskSupport": "optional"});
+                            Json(json!({
+                                "jsonrpc": "2.0", "id": id,
+                                "result": {"tools": [search, {"name": "purge", "inputSchema": {"type": "object"}}]},
+                            }))
+                            .into_response()
+                        }
                         "resources/read" => Json(json!({
                             "jsonrpc": "2.0", "id": id,
                             "result": {"contents": [{"uri": message["params"]["uri"], "text": SECRET_TEXT}]},
@@ -523,7 +546,30 @@ mod proxy_policy {
 
         assert_eq!(status, StatusCode::OK);
         let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        // The upstream also sends `execution.taskSupport`, which the gateway drops
+        // because it does not proxy tasks.
         assert_eq!(body["result"]["tools"], json!([annotated_search_tool()]));
+    }
+
+    #[tokio::test]
+    async fn task_augmented_tool_calls_never_reach_the_upstream() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "search", "arguments": {}, "task": {"ttl": 60000}},
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("task-augmented tools/call is not supported"));
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -666,7 +712,10 @@ mod proxy_policy {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("protocolVersion"));
+        let body: Value = serde_json::from_str(&body).expect("initialize result");
+        // The gateway does not proxy tasks, so it must not advertise them.
+        assert_eq!(body["result"]["capabilities"], json!({"logging": {}}));
+        assert_eq!(body["result"]["protocolVersion"], "2025-11-25");
         let (status, _) = send(
             &state,
             &auth,

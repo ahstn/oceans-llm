@@ -241,8 +241,11 @@ async fn dispatch_mcp_request(
             )
             .await
         }
+        Ok(McpRpcRequest::Initialize) => {
+            proxy_lifecycle(state, auth, method, headers, body, server, true).await
+        }
         Ok(McpRpcRequest::Lifecycle) => {
-            proxy_lifecycle(state, auth, method, headers, body, server).await
+            proxy_lifecycle(state, auth, method, headers, body, server, false).await
         }
         Ok(McpRpcRequest::EventStream) => {
             handle_event_stream(state, auth, method, headers, body, server).await

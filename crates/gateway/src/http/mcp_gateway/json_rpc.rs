@@ -25,7 +25,10 @@ pub(super) enum McpRpcRequest {
         tool_name: String,
         arguments: Option<Value>,
     },
-    /// Session plumbing that carries no server data: `initialize`, `ping`,
+    /// `initialize`. It needs no grant, but its result loses the `tasks`
+    /// capability because the gateway does not proxy MCP tasks.
+    Initialize,
+    /// Session plumbing that carries no server data: `ping`,
     /// `logging/setLevel`, client notifications, client replies to server
     /// requests, and `DELETE` session termination.
     Lifecycle,
@@ -106,7 +109,7 @@ impl GovernedMcpMethod {
 
 fn is_lifecycle_method(method: &str, has_id: bool) -> bool {
     match method {
-        "initialize" | "ping" | "logging/setLevel" => true,
+        "ping" | "logging/setLevel" => true,
         // The notifications a client sends to a server. They never get a response, so
         // they cannot return server data. Other names go through deny-by-default.
         "notifications/initialized"
@@ -161,6 +164,7 @@ pub(super) fn parse_mcp_rpc_request(
         ));
     };
     match method {
+        "initialize" => Ok(McpRpcRequest::Initialize),
         "tools/list" => Ok(McpRpcRequest::ToolsList { id }),
         "tools/call" => {
             let params = object
@@ -177,6 +181,13 @@ pub(super) fn parse_mcp_rpc_request(
                     GatewayError::InvalidRequest("tools/call params.name is required".to_string())
                 })?
                 .to_string();
+            // A task's result comes back through `tasks/result`, which the gateway
+            // cannot tie to a tool grant, so the call would never finish.
+            if params.contains_key("task") {
+                return Err(GatewayError::InvalidRequest(
+                    "task-augmented tools/call is not supported through the gateway; call the tool without `task`".to_string(),
+                ));
+            }
             Ok(McpRpcRequest::ToolsCall {
                 id,
                 tool_name,

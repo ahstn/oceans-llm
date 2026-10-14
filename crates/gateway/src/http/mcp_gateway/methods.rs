@@ -24,7 +24,7 @@ use super::{
     guardrails::{enforce_direct_mcp_result, guardrail_decision_metadata},
     json_rpc::{GovernedMcpMethod, mcp_jsonrpc_error_response, mcp_notification_error_response},
     mcp_error_response, tool_invocation_log_input,
-    upstream::proxy_upstream,
+    upstream::{proxy_initialize, proxy_upstream},
 };
 use crate::http::state::AppState;
 
@@ -185,10 +185,11 @@ pub(super) async fn handle_event_stream(
         Ok(false) => return server_not_granted_response(None),
         Err(error) => return mcp_error_response(error),
     }
-    proxy_lifecycle(state, auth, http_method, headers, body, server).await
+    proxy_lifecycle(state, auth, http_method, headers, body, server, false).await
 }
 
-/// Forwards session plumbing that carries no server data.
+/// Forwards session plumbing that carries no server data. `initialize` is
+/// buffered so the gateway can drop capabilities it does not proxy.
 pub(super) async fn proxy_lifecycle(
     state: &AppState,
     auth: &AuthenticatedApiKey,
@@ -196,6 +197,7 @@ pub(super) async fn proxy_lifecycle(
     headers: &HeaderMap,
     body: Bytes,
     server: ExternalMcpServerRecord,
+    is_initialize: bool,
 ) -> Response<Body> {
     let gateway = McpGatewayService::new(state.store.clone())
         .with_oauth_runtime(state.mcp_oauth_runtime.clone());
@@ -206,18 +208,13 @@ pub(super) async fn proxy_lifecycle(
         Ok(upstream) => upstream,
         Err(error) => return upstream_auth_error_response(state, auth, &server, error),
     };
-    match proxy_upstream(
-        &state.mcp_http_client,
-        http_method,
-        headers,
-        body,
-        &upstream,
-    )
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => mcp_error_response(error),
-    }
+    let client = &state.mcp_http_client;
+    let response = if is_initialize {
+        proxy_initialize(client, http_method, headers, body, &upstream).await
+    } else {
+        proxy_upstream(client, http_method, headers, body, &upstream).await
+    };
+    response.unwrap_or_else(mcp_error_response)
 }
 
 pub(super) async fn deny_unknown_method(
