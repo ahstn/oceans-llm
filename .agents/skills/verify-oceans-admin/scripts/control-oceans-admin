@@ -57,6 +57,7 @@ log_file="$run_dir/stack.log"
 base_url="http://127.0.0.1:$gateway_port"
 stack_start_file="$run_dir/stack.start-time"
 launch_sources_file="$run_dir/launch-sources.json"
+stack_env_file="$run_dir/stack-env.json"
 proof_script="$repo_root/.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs"
 
 require_command() {
@@ -306,7 +307,7 @@ cleanup() {
     cleanup_skills || cleanup_status=$?
   fi
   if [[ "$cleanup_status" == 0 ]]; then
-    rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version"
+    rm -f "$stack_pid_file" "$stack_start_file" "$gateway_pid_file" "$ui_pid_file" "$run_dir/base-url" "$run_dir/gateway-port" "$run_dir/ui-port" "$run_dir/gateway-version" "$stack_env_file"
     remove_lock_if_owned
   fi
   redact_log
@@ -316,6 +317,19 @@ cleanup() {
     echo "cleanup incomplete; retained state at $run_dir" >&2
   fi
   return "$cleanup_status"
+}
+
+# Resolve the environment the way the stack command below does, from mise and this shell,
+# and save only the MCP alias names and client base URL. Drivers read this file instead of
+# their own environment, which a later shell or `mise exec` from another directory changes.
+record_stack_env() {
+  local -a stack_exec=(mise exec --)
+  [[ "${OCEANS_VERIFY_SKILLS:-false}" != "true" ]] || stack_exec=(mise -E rustfs exec --fresh-env --)
+  (cd "$repo_root" && "${stack_exec[@]}" node -e '
+    const env = process.env;
+    const aliases = Object.keys(env).filter((name) => /^OCEANS_MCP_DISCOVERY_[A-Z0-9_]+$/.test(name) && env[name]).sort();
+    console.log(JSON.stringify({ mcpDiscoveryAliases: aliases, clientConfigBaseUrl: env.GATEWAY_CLIENT_CONFIG_BASE_URL ?? null }));
+  ') >"$stack_env_file"
 }
 
 launch() {
@@ -373,6 +387,9 @@ launch() {
   if [[ "${OCEANS_VERIFY_SKILLS:-false}" == "true" ]]; then
     prepare_skills
   fi
+  # Generated MCP client configuration points at this run's gateway unless the caller chose another origin.
+  export GATEWAY_CLIENT_CONFIG_BASE_URL="${GATEWAY_CLIENT_CONFIG_BASE_URL:-$base_url}"
+  record_stack_env
   (
     cd "$repo_root"
     export GATEWAY_PORT="$gateway_port"
@@ -504,6 +521,7 @@ drive() {
   OCEANS_VERIFY_BASE_URL="$base_url" \
     OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
     OCEANS_VERIFY_LAUNCH_SOURCES="$launch_sources_file" \
+    OCEANS_VERIFY_STACK_ENV="$stack_env_file" \
     OCEANS_VERIFY_GATEWAY_VERSION="$(<"$run_dir/gateway-version")" \
     OCEANS_VERIFY_ADMIN_EMAIL="${OCEANS_VERIFY_ADMIN_EMAIL:-admin@local}" \
     OCEANS_VERIFY_ADMIN_PASSWORD="${OCEANS_VERIFY_ADMIN_PASSWORD:-admin}" \

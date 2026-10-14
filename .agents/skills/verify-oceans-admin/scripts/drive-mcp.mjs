@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { registerServer, verifyWorkbench, createAccess } from "./mcp-browser.mjs";
+import { registerServer, verifyWorkbench, createAccess, attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 import { runMcpCanaries, verifyNoMcpGrant, testRevokedKey } from "./mcp-canary.mjs";
 import { createProofRecorder } from "./proof.mjs";
 
@@ -29,8 +29,12 @@ const actions = [];
 const failures = [];
 const owned = { servers: [], toolsets: [], grants: [], apiKeyId: null, apiKeyName: null, rawKey: null };
 requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
+// The gateway inherited its environment at launch, so credential aliases come from that record.
+const stackEnv = await loadStackEnv(process.env.OCEANS_VERIFY_STACK_ENV);
+const expectedGatewayUrl = config.expected_gateway_url ?? mcpEndpointFor(stackEnv.clientConfigBaseUrl ?? baseURL);
+const scope = attemptScope(runId);
 const proof = {
-  entryPoint: `${baseURL}/admin/mcp`, candidates: [], actions, failures,
+  entryPoint: `${baseURL}/admin/mcp`, candidates: [], actions, failures, attemptScope: scope.key, aliasSource: stackEnv.source,
   authenticationScope: "Configured gateway static header or bearer token; OAuth consent is not exercised.",
 };
 await fs.mkdir(evidenceDir, { recursive: true });
@@ -38,7 +42,7 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 page.setDefaultTimeout(20_000);
-const ui = { page, baseURL, expect, adminJson, poll, capture, actions, owned, runId, config };
+const ui = { page, baseURL, expect, adminJson, poll, capture, actions, owned, scope, expectedGatewayUrl };
 
 try {
   await page.goto(`${baseURL}/admin/mcp`, { waitUntil: "domcontentloaded" });
@@ -56,10 +60,10 @@ try {
   for (const candidate of config.candidates) {
     const result = { key: candidate.key, label: candidate.label, authMode: candidate.auth_mode, required: candidate.required !== false };
     proof.candidates.push(result);
-    // The gateway inherits this shell's environment, so a missing alias here means discovery cannot authenticate.
+    // A missing alias at launch means the running gateway cannot authenticate discovery.
     const credential = candidate.auth_config?.secret_ref?.replace(/^env\//, "");
-    if (credential && !process.env[credential]) {
-      Object.assign(result, { discovery: "blocked", failure: `${credential} is not set; add it to mise.local.toml and relaunch` });
+    if (credential && !stackEnv.aliases.has(credential)) {
+      Object.assign(result, { discovery: "blocked", failure: `${credential} was not set for the launched gateway; export it or add it to mise.local.toml, then relaunch` });
       recorder.add({ id: `candidate-${candidate.key}`, status: "blocked", required: result.required, note: result.failure });
       continue;
     }

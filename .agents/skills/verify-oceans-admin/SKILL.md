@@ -46,6 +46,11 @@ Teardown uses the recorded process IDs:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin cleanup
 ```
 
+### Shared machine state
+
+- **Cargo output.** Root `mise.toml` sets `CARGO_TARGET_DIR=$HOME/.cache/cargo/target/` in `[env]`, and mise applies it over the caller's shell, so exporting `CARGO_TARGET_DIR` before `launch` or `drive` has no effect. Every checkout writes final binaries such as `debug/gateway` and `debug/oceans` there; only intermediate artifacts are per checkout through `CARGO_BUILD_BUILD_DIR`. A build in another checkout can therefore replace the binary the Skills proof imports with. To pin it, build it, copy it out, and export `OCEANS_CLI_BIN=<copy>` before `drive skills`.
+- **pitchfork version warning.** mise supervises daemons through one per-user pitchfork supervisor shared by every checkout. If the `pitchfork` CLI was upgraded since that supervisor started, commands warn about a CLI and supervisor version mismatch. The warning is harmless for verification. Do not restart the supervisor from a verification run, because that stops daemons other checkouts rely on. When nothing else needs them, the user can run `pitchfork supervisor stop` and let the next `mise` daemon command start a current one.
+
 ## Doctor
 
 Run the read-only doctor check before browser work and whenever the UI looks stale:
@@ -99,7 +104,7 @@ export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive mcp
 ```
 
-Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
+Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The aliases must be in the launch environment (exported or in `mise.local.toml`); `launch` records their names, and the driver trusts that record rather than its own environment. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
 
 Prove Skills storage and ownership with Oceans and native RustFS:
 
@@ -201,7 +206,7 @@ The Backend Gateway proof produces:
 The MCP proof produces:
 
 - Screenshots and ARIA snapshots for sign-in, discovery, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
-- `mcp-proof.json` with one check per candidate plus workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, the authentication-error control, and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias is unset is recorded as `blocked` without being registered.
+- `mcp-proof.json` with one check per candidate plus workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, the authentication-error control, and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
 - No raw key, authorization header, tool arguments, or tool-result payload in the proof JSON. Invocation detail is inspected in memory and is not captured.
 
 An optional candidate failure does not change the verdict but remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.
