@@ -112,6 +112,17 @@ mod method_classification {
     }
 
     #[test]
+    fn get_and_delete_with_a_body_are_rejected() {
+        let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}).to_string();
+        for method in [Method::GET, Method::DELETE] {
+            assert!(
+                parse_mcp_rpc_request(&method, ping.as_bytes()).is_err(),
+                "{method} with a body should be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn post_without_body_is_rejected() {
         assert!(parse_mcp_rpc_request(&Method::POST, b"").is_err());
     }
@@ -441,6 +452,15 @@ mod proxy_policy {
         auth: &AuthenticatedApiKey,
         message: Value,
     ) -> (StatusCode, String) {
+        send_as(state, auth, &Method::POST, message).await
+    }
+
+    async fn send_as(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        http_method: &Method,
+        message: Value,
+    ) -> (StatusCode, String) {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::ACCEPT,
@@ -451,7 +471,7 @@ mod proxy_policy {
             state,
             auth,
             "notes",
-            &Method::POST,
+            http_method,
             &headers,
             Bytes::from(message.to_string()),
             Instant::now(),
@@ -577,6 +597,24 @@ mod proxy_policy {
             logged[0].error_code.as_deref(),
             Some("mcp_server_not_granted")
         );
+    }
+
+    #[tokio::test]
+    async fn get_with_a_lifecycle_body_cannot_skip_the_event_stream_grant() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+
+        let (status, _) = send_as(
+            &state,
+            &auth,
+            &Method::GET,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

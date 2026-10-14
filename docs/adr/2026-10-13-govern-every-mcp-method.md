@@ -25,7 +25,7 @@ As a result, any valid API key could call `resources/read`, `prompts/get`, or `c
 - `Governed`, which covers the five resources methods, `prompts/list`, `prompts/get`, and `completion/complete`.
 - `Unknown`, which is any other method, including any other `notifications/*` name and a client notification sent with an `id`.
 
-`Unknown` methods get HTTP 403 with JSON-RPC code `-32601`, and the gateway logs them with error code `mcp_method_not_allowed`. A request echoes its `id`. A notification gets the same status and an error body without an `id`, as the transport allows for a message the server does not accept. Logged method names are truncated to 256 characters. A `POST` with an empty body gets HTTP 400 instead of being forwarded.
+`Unknown` methods get HTTP 403 with JSON-RPC code `-32601`, and the gateway logs them with error code `mcp_method_not_allowed`. A request echoes its `id`. A notification gets the same status and an error body without an `id`, as the transport allows for a message the server does not accept. Logged method names are truncated to 256 characters. A `POST` with an empty body gets HTTP 400 instead of being forwarded, and so does a `GET` or `DELETE` with a body. Only a `POST` carries a JSON-RPC message, and the upstream treats a `GET` as its event stream whatever the body says, so a body must not decide which checks apply.
 
 The protocol will add methods over time. Deny-by-default means a new method needs a deliberate decision before callers can use it through the gateway.
 

@@ -130,6 +130,14 @@ pub(super) fn parse_mcp_rpc_request(
             )),
         };
     }
+    // Only a POST carries a JSON-RPC message. The upstream treats a GET as its event
+    // stream and a DELETE as session end whatever the body says, so a body there must
+    // not decide which checks apply.
+    if *http_method != Method::POST {
+        return Err(GatewayError::InvalidRequest(format!(
+            "MCP {http_method} requests must not have a body"
+        )));
+    }
     let value: Value = serde_json::from_slice(body).map_err(|error| {
         GatewayError::InvalidRequest(format!("invalid MCP JSON-RPC body: {error}"))
     })?;
