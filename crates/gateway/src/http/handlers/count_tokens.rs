@@ -4,8 +4,12 @@
 //! count reflects the route the next Messages call would use. Counting generates
 //! nothing, so it writes no usage-ledger row, charges no budget and creates no
 //! request log. It is visible in traces as the `count_tokens` provider operation.
+//! Because counts are free to the caller, each API key may have only
+//! [`MAX_IN_FLIGHT_COUNTS_PER_KEY`] counts in flight; further counts get a 429.
 use super::*;
 use axum::extract::rejection::JsonRejection;
+use std::{collections::HashMap, sync::Mutex};
+use uuid::Uuid;
 
 use crate::http::request_body::DEFAULT_MAX_BYTES;
 
@@ -27,6 +31,54 @@ const GENERATION_FIELDS: &[&str] = &[
 /// Baseline `max_tokens` sent with every count. Upstream count APIs ignore it, but
 /// Bedrock wraps a full InvokeModel body, which requires a valid one.
 const COUNT_MAX_TOKENS: u64 = 4096;
+/// Counts one API key may have in flight on one gateway instance. Counting is not
+/// charged, so this bound is what stops a single key from driving upstream count
+/// APIs without limit.
+pub(crate) const MAX_IN_FLIGHT_COUNTS_PER_KEY: usize = 8;
+
+/// Per-key in-flight count tracking. Entries are removed when a key's last count
+/// finishes, so the map only holds keys with counts in progress.
+#[derive(Default)]
+pub struct CountTokensLimiter {
+    in_flight: Mutex<HashMap<Uuid, usize>>,
+}
+
+impl CountTokensLimiter {
+    pub(crate) fn try_acquire(self: &Arc<Self>, api_key_id: Uuid) -> Option<CountPermit> {
+        let mut in_flight = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        let count = in_flight.entry(api_key_id).or_default();
+        if *count >= MAX_IN_FLIGHT_COUNTS_PER_KEY {
+            return None;
+        }
+        *count += 1;
+        Some(CountPermit {
+            limiter: Arc::clone(self),
+            api_key_id,
+        })
+    }
+}
+
+/// Releases one in-flight count for its key when dropped.
+pub(crate) struct CountPermit {
+    limiter: Arc<CountTokensLimiter>,
+    api_key_id: Uuid,
+}
+
+impl Drop for CountPermit {
+    fn drop(&mut self) {
+        let mut in_flight = self
+            .limiter
+            .in_flight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = in_flight.get_mut(&self.api_key_id) {
+            *count -= 1;
+            if *count == 0 {
+                in_flight.remove(&self.api_key_id);
+            }
+        }
+    }
+}
 
 pub async fn v1_messages_count_tokens(
     State(state): State<AppState>,
@@ -65,6 +117,15 @@ async fn count_tokens_inner(
     request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
     let request_id = canonical_request_id(request_id)?;
+    // Held until the response is built, so it covers the guard and upstream calls.
+    let _permit = state
+        .count_tokens_limiter
+        .try_acquire(auth.id)
+        .ok_or_else(|| {
+            AppError(GatewayError::RateLimited(format!(
+                "this API key already has {MAX_IN_FLIGHT_COUNTS_PER_KEY} token counts in flight; retry after one completes"
+            )))
+        })?;
     let mut core_request = anthropic_messages_request_to_core(&request);
     prepare_count_request(&mut core_request);
     let requirements = core_request.requirements();
@@ -211,6 +272,30 @@ mod tests {
             stream: true,
             extra: serde_json::from_value(extra).unwrap(),
         }
+    }
+
+    #[test]
+    fn limiter_bounds_each_key_and_releases_on_drop() {
+        let limiter = Arc::new(CountTokensLimiter::default());
+        let (key, other_key) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut permits: Vec<_> = (0..MAX_IN_FLIGHT_COUNTS_PER_KEY)
+            .map(|_| limiter.try_acquire(key).expect("under the bound"))
+            .collect();
+
+        assert!(limiter.try_acquire(key).is_none(), "bound reached");
+        let other = limiter
+            .try_acquire(other_key)
+            .expect("keys are independent");
+
+        permits.pop();
+        assert!(
+            limiter.try_acquire(key).is_some(),
+            "a dropped permit frees a slot"
+        );
+
+        drop(permits);
+        drop(other);
+        assert!(limiter.in_flight.lock().unwrap().is_empty());
     }
 
     #[test]

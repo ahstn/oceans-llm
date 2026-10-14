@@ -7,6 +7,7 @@ use gateway_store::AnyStore;
 
 use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
+    handlers::CountTokensLimiter,
     response_cache::ResponseCache,
 };
 use crate::{
@@ -39,4 +40,5 @@ pub struct AppState {
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
+    pub count_tokens_limiter: Arc<CountTokensLimiter>,
 }

@@ -12,7 +12,7 @@ mod routing;
 mod routing_tests;
 
 use auth::InferenceAuth;
-pub use count_tokens::v1_messages_count_tokens;
+pub use count_tokens::{CountTokensLimiter, v1_messages_count_tokens};
 use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
 use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
 

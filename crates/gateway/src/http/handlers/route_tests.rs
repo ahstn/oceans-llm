@@ -285,6 +285,41 @@ async fn count_tokens_is_not_blocked_by_an_exhausted_budget() {
     assert_eq!(*provider.calls.lock().unwrap(), ["count_tokens"]);
 }
 
+#[tokio::test]
+async fn count_tokens_rejects_counts_over_the_per_key_bound() {
+    let (_directory, state, provider, router) = setup(true).await;
+    let auth = state.service.authenticate(Some(BEARER)).await.unwrap();
+    // Stand in for counts that are still waiting on the upstream.
+    let held: Vec<_> = (0..super::count_tokens::MAX_IN_FLIGHT_COUNTS_PER_KEY)
+        .map(|_| state.count_tokens_limiter.try_acquire(auth.id).unwrap())
+        .collect();
+
+    let (status, _, body) = send(
+        &router,
+        "POST",
+        "/v1/messages/count_tokens",
+        ("authorization", BEARER),
+        Some(count_body()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["type"], "error");
+    assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert!(provider.calls.lock().unwrap().is_empty());
+
+    drop(held);
+    let (status, _, body) = send(
+        &router,
+        "POST",
+        "/v1/messages/count_tokens",
+        ("authorization", BEARER),
+        Some(count_body()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(*provider.calls.lock().unwrap(), ["count_tokens"]);
+}
+
 /// A prompt guard in deny mode that rejects every prompt.
 fn deny_prompts(state: &mut AppState) {
     let config = Arc::make_mut(&mut state.guardrail_config);

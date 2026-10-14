@@ -134,6 +134,8 @@ pub enum GatewayError {
     UnprocessableEntity(String),
     #[error("request body exceeds {limit_bytes} bytes")]
     PayloadTooLarge { limit_bytes: usize },
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     #[error("guardrail policy denied the operation ({reason_code}, decision {decision_id})")]
     GuardrailDenied {
         decision_id: String,
@@ -169,7 +171,7 @@ impl GatewayError {
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::ServiceAccountBudgetRequired)
             | Self::Auth(AuthError::InsufficientPrivileges) => 403,
-            Self::BudgetExceeded { .. } => 429,
+            Self::BudgetExceeded { .. } | Self::RateLimited(_) => 429,
             Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => 400,
             Self::BatchUsageConflict { .. } => 500,
@@ -212,6 +214,7 @@ impl GatewayError {
         match self {
             Self::Auth(_) => "authentication_error",
             Self::BudgetExceeded { .. } => "budget_error",
+            Self::RateLimited(_) => "rate_limit_error",
             Self::IdentityConstraint(_) => "identity_error",
             Self::InvalidRequest(_)
             | Self::UnprocessableEntity(_)
@@ -288,6 +291,7 @@ impl GatewayError {
             Self::BatchUsageConflict { .. } => "batch_usage_conflict",
             Self::UnprocessableEntity(_) => "validation_failed",
             Self::PayloadTooLarge { .. } => "request_body_too_large",
+            Self::RateLimited(_) => "rate_limited",
             Self::GuardrailDenied { .. } => "guardrail_policy_denied",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
@@ -309,5 +313,14 @@ mod tests {
         assert_eq!(error.http_status_code(), 403);
         assert_eq!(error.error_type(), "authentication_error");
         assert_eq!(error.error_code(), "service_account_budget_required");
+    }
+
+    #[test]
+    fn rate_limited_is_too_many_requests() {
+        let error = GatewayError::RateLimited("too many counts".to_string());
+
+        assert_eq!(error.http_status_code(), 429);
+        assert_eq!(error.error_type(), "rate_limit_error");
+        assert_eq!(error.error_code(), "rate_limited");
     }
 }
