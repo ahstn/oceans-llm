@@ -352,7 +352,8 @@ function ToolOutputSchema({ schema }: { schema: McpToolView['output_schema'] }) 
 }
 
 // Badges show only hints the upstream declared. A destructive hint is
-// meaningless on a read-only tool, so it is hidden there.
+// meaningless on a read-only tool, so it is hidden there. An omitted open-world
+// hint means open world, so an explicit false gets its own badge.
 function toolAnnotationBadges(annotations: McpToolView['annotations']) {
   const badges: { label: string; variant: 'success' | 'destructive' | 'outline' }[] = []
   if (annotations.read_only_hint === true) {
@@ -365,6 +366,8 @@ function toolAnnotationBadges(annotations: McpToolView['annotations']) {
   }
   if (annotations.open_world_hint === true) {
     badges.push({ label: 'Open world', variant: 'outline' })
+  } else if (annotations.open_world_hint === false) {
+    badges.push({ label: 'Closed world', variant: 'outline' })
   }
   return badges
 }

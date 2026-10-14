@@ -73,7 +73,7 @@ Expand a row to inspect:
 - upstream tool name
 - display title, when the server declares one
 - hint badges the upstream server declares: **Read-only**, **Destructive**,
-  **Idempotent**, and **Open world**
+  **Idempotent**, and **Open world** or **Closed world**
 - schema version
 - persisted JSON input schema
 - output schema, when the server declares one

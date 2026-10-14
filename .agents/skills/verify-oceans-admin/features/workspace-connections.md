@@ -9,7 +9,7 @@ Workspace connections lets any signed-in user link or unlink their own account o
 - `connections-connect` starts the provider consent flow with `Connect` or `Reconnect`.
 - `connections-disconnect` removes the user's binding with `Disconnect`.
 - `connections-callback` shows a toast for `?oauth=connected` or `?oauth_error=<code>`. The callback also returns `?server=<server_id>`, and the success toast then names the server, such as `Google Drive connected`.
-- `connections-connect-link` handles `?connect=<server_key>`, the `connect_url` that MCP clients receive with `credential_required` and `credential_expired`. It drops the parameter, then starts consent for that server. A connected server shows `<name> is already connected`; an unknown server shows `No workspace connection is available for MCP server <key>.`; an unavailable server shows its availability error.
+- `connections-connect-link` handles `?connect=<server_key>`, the `connect_url` that MCP clients receive with `credential_required` and `credential_expired`. It drops the parameter, then starts consent for that server. A connected server shows `<name> is already connected`. A connection that no longer matches the server's provider, resource, or required scopes lists as `Expired`, so the link starts consent again; an unknown server shows `No workspace connection is available for MCP server <key>.`; an unavailable server shows its availability error.
 
 ## How to get to it (user POV)
 

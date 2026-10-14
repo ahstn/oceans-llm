@@ -292,8 +292,10 @@ describe('ServersTab', () => {
     expect(within(readBadges).getByText('Idempotent')).toBeInTheDocument()
     expect(within(readBadges).queryByText('Destructive')).not.toBeInTheDocument()
     expect(within(readBadges).queryByText('Open world')).not.toBeInTheDocument()
+    expect(within(readBadges).getByText('Closed world')).toBeInTheDocument()
     expect(within(deleteBadges).getByText('Destructive')).toBeInTheDocument()
     expect(within(deleteBadges).getByText('Open world')).toBeInTheDocument()
+    expect(within(deleteBadges).queryByText('Closed world')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(2)
 
     expect(screen.getByText('Query documentation')).toBeInTheDocument()

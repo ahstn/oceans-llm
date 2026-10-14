@@ -28,6 +28,8 @@ Service-account keys never get a URL, because they cannot use a person's connect
 
 The link holds only the public origin and the server key. It does not start OAuth on its own. The connections page reads `connect`, removes it from the URL, and calls the existing session-authenticated start endpoint. That endpoint creates the PKCE state and redirects to the provider.
 
+The page skips consent for a server that already lists as `connected`. A stored connection granted for a different provider or resource, or missing a scope the server now requires, is refused by the gateway with `credential_required`. The connections list therefore reports it as `expired`, so the link starts consent again instead of saying the server is already connected.
+
 A crafted link can therefore do no more than open the provider's consent screen for the signed-in user's own account.
 
 ### 2. Name the connected server on return
