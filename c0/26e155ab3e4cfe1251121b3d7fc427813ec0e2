@@ -1,0 +1,56 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 49-53,107,209
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  h_2f452a9c375069 11,17
+.agents/skills/verify-oceans-admin/features/mcp.md
+  h_2f452a9c375069 30-32,59
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  h_2f452a9c375069 9,12,33,45,49
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 402-403
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  h_2f452a9c375069 60,310,322-334,390-392,524
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  h_2f452a9c375069 7,32-35,37,45,63,65-66
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  h_2f452a9c375069 2-3,6-40,42-45,89,148,176,182-183,230-233
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  h_2f452a9c375069 10,115-155
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  h_2f452a9c375069 451-455
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  h_2f452a9c375069 400-438
+crates/gateway-service/src/request_logging.rs
+  h_2f452a9c375069 455-457,459,465,493
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  h_2f452a9c375069 303,308
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 471,477,488,493
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 295-305,921,930-944,1335-1336,1348,1354,1936-1961,1964,1969
+crates/gateway/src/http/handlers/decisions.rs
+  h_2f452a9c375069 275,284-298
+crates/gateway/src/http/handlers/inference.rs
+  h_2f452a9c375069 122-132
+crates/gateway/src/http/handlers/inference_tests.rs
+  h_2f452a9c375069 14-16,26-28,62-84,268-277,300-306,318-334
+docs/operations/observability-and-request-logs.md
+  h_2f452a9c375069 61,304
+docs/operations/observability/request-logs.md
+  h_2f452a9c375069 60-62
+docs/reference/request-lifecycle-and-failure-modes.md
+  h_2f452a9c375069 43,187
+mise.rustfs.toml
+  h_2f452a9c375069 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c026e155ab3e4cfe1251121b3d7fc427813ec0e2",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
