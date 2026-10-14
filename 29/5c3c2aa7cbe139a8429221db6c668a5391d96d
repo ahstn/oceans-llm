@@ -1,0 +1,19 @@
+crates/gateway/src/http/handlers.rs
+  s_63939a3786d9af::t_36738620c8724e 3052-3110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "295c3c2aa7cbe139a8429221db6c668a5391d96d",
+  "prompts": {},
+  "sessions": {
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
