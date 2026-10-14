@@ -125,8 +125,13 @@ impl Utf8ChunkDecoder {
     }
 }
 
+/// The most an incomplete event can buffer in `SseEventFramer` before it is released as
+/// it stands, so an upstream that never ends an event cannot grow the buffer without limit.
+const MAX_FRAMED_EVENT_BYTES: usize = 1024 * 1024;
+
 /// Splits a byte stream at SSE event boundaries, with the same delimiters and scan as
-/// `SseEventParser`, so every piece it returns holds only whole events.
+/// `SseEventParser`, so every piece it returns holds only whole events. An incomplete
+/// event over `MAX_FRAMED_EVENT_BYTES` is the exception: its bytes so far are released.
 #[derive(Debug, Clone, Default)]
 pub struct SseEventFramer {
     buffer: BytesMut,
@@ -139,12 +144,18 @@ impl SseEventFramer {
     pub fn push(&mut self, chunk: Bytes) -> Bytes {
         if self.buffer.is_empty() {
             let end = last_sse_delimiter_end(&chunk, 0).unwrap_or(0);
+            if chunk.len() - end > MAX_FRAMED_EVENT_BYTES {
+                return chunk;
+            }
             self.buffer.extend_from_slice(&chunk[end..]);
             self.scan_offset = self.buffer.len().saturating_sub(3);
             return chunk.slice(..end);
         }
         self.buffer.extend_from_slice(&chunk);
         let Some(end) = last_sse_delimiter_end(&self.buffer, self.scan_offset) else {
+            if self.buffer.len() > MAX_FRAMED_EVENT_BYTES {
+                return self.finish();
+            }
             self.scan_offset = self.buffer.len().saturating_sub(3);
             return Bytes::new();
         };
@@ -170,30 +181,37 @@ fn last_sse_delimiter_end(input: &[u8], from: usize) -> Option<usize> {
     end
 }
 
-/// Finds the first blank line at or after `from`, as `(index, length)`. SSE lines may end
-/// with CRLF, LF or a lone CR.
+/// Finds the first blank line at or after `from`, as `(index, length)`: one line ending
+/// followed by another. SSE lines may end with CRLF, LF or a lone CR, and the two endings
+/// need not match.
 pub fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
-    for index in from..input.len().saturating_sub(1) {
-        let suffix = &input[index..];
-        if suffix.starts_with(b"\r\n\r\n") {
-            return Some((index, 4));
-        }
-        if suffix.starts_with(b"\n\n") || suffix.starts_with(b"\r\r") {
-            return Some((index, 2));
-        }
-    }
-    None
+    // A CR as the last byte may be the start of a CRLF. It ends a line only after another
+    // lone CR, as in a stream of CR-only lines; otherwise the next byte decides.
+    let line_ending = |at: usize, after_lone_cr: bool| match input.get(at..)? {
+        [b'\r', b'\n', ..] => Some(2),
+        [b'\r'] if !after_lone_cr => None,
+        [b'\r', ..] | [b'\n', ..] => Some(1),
+        _ => None,
+    };
+    (from..input.len()).find_map(|index| {
+        let first = line_ending(index, false)?;
+        let second = line_ending(index + first, first == 1 && input[index] == b'\r')?;
+        Some((index, first + second))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
 
-    use super::{SseEventFramer, SseEventParser, Utf8ChunkDecoder};
+    use super::{
+        MAX_FRAMED_EVENT_BYTES, SseEventFramer, SseEventParser, Utf8ChunkDecoder,
+        find_sse_delimiter,
+    };
 
     #[test]
     fn sse_events_survive_every_chunk_boundary_and_single_byte_chunks() {
-        for delimiter in ["\n\n", "\r\r", "\r\n\r\n"] {
+        for delimiter in ["\n\n", "\r\r", "\r\n\r\n", "\n\r\n", "\r\n\n"] {
             let input = format!("event: update\ndata: 🙂 café{delimiter}data: next{delimiter}");
             for split in 0..=input.len() {
                 let mut parser = SseEventParser::default();
@@ -219,7 +237,7 @@ mod tests {
 
     #[test]
     fn sse_framer_returns_whole_events_for_every_chunk_boundary() {
-        for delimiter in ["\n\n", "\r\r", "\r\n\r\n"] {
+        for delimiter in ["\n\n", "\r\r", "\r\n\r\n", "\n\r\n", "\r\n\n"] {
             let input = format!("event: update\ndata: 🙂 café{delimiter}data: next{delimiter}");
             for split in 0..=input.len() {
                 let mut framer = SseEventFramer::default();
@@ -255,6 +273,41 @@ mod tests {
         );
         assert_eq!(framer.push(Bytes::from_static(b"data: c")), Bytes::new());
         assert_eq!(framer.finish(), &b"data: c"[..]);
+    }
+
+    #[test]
+    fn sse_delimiter_accepts_mixed_line_endings_and_waits_on_a_trailing_cr() {
+        for (input, expected) in [
+            (&b"a\n\rb"[..], Some((1, 2))),
+            (b"a\r\n\nb", Some((1, 3))),
+            (b"a\n\r\nb", Some((1, 3))),
+            (b"a\r\r", Some((1, 2))),
+            // The CR may be the start of a CRLF, so the next byte decides.
+            (b"a\n\r", None),
+            (b"a\r\n\r", None),
+            (b"a\r\nb", None),
+        ] {
+            assert_eq!(find_sse_delimiter(input, 0), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn sse_framer_releases_an_incomplete_event_over_the_limit() {
+        let mut framer = SseEventFramer::default();
+        let part = Bytes::from(vec![b'x'; MAX_FRAMED_EVENT_BYTES / 2]);
+        assert_eq!(
+            framer.push(Bytes::from_static(b"data: a\n\ndata: ")),
+            &b"data: a\n\n"[..]
+        );
+        assert!(framer.push(part.clone()).is_empty());
+        let released = framer.push(part.clone());
+        assert_eq!(released.len(), b"data: ".len() + 2 * part.len());
+        assert_eq!(framer.push(Bytes::from_static(b"y\n\n")), &b"y\n\n"[..]);
+        assert!(framer.finish().is_empty());
+
+        let oversized = Bytes::from(vec![b'x'; MAX_FRAMED_EVENT_BYTES + 1]);
+        assert_eq!(framer.push(oversized.clone()), oversized);
+        assert!(framer.finish().is_empty());
     }
 
     #[test]

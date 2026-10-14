@@ -256,7 +256,7 @@ Oceans can only tell that a usage report is the last one when the stream moves o
 
 - Events without output that follow the usage event, such as a separate `finish_reason` chunk, wait behind it in order, up to 64 KiB. Past that limit, the usage event is sent without the cost.
 - Keep-alive comments are sent at once, ahead of the held event. SSE clients ignore comments, so this does not change what the client sees.
-- Oceans forwards only whole SSE events. An event that the provider splits across network chunks is sent once it is complete. LF, CRLF and lone-CR line endings are all supported.
+- Oceans forwards only whole SSE events. An event that the provider splits across network chunks is sent once it is complete. LF, CRLF and lone-CR line endings are all supported, including a mix of them in one blank line. An incomplete event that grows past 1 MiB is sent as it stands rather than held further; if it carries the final usage, that usage is sent without the cost.
 
 The `oceans` object is an extra field on an existing usage object. Unmodified OpenAI and Anthropic SDKs parse these streams, including Python clients with strict response validation. `tests/sdk-compat` checks this with fixtures generated from gateway output.
 

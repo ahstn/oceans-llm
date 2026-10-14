@@ -263,7 +263,11 @@ impl UsageEvent<'_> {
 
         // Other fields and comments are kept as sent. The rewritten data goes where the
         // first `data:` line was. Lines end the way the event's last line did.
-        let newline = &self.delimiter[..self.delimiter.len() / 2];
+        let newline = if self.delimiter.starts_with("\r\n") {
+            "\r\n"
+        } else {
+            &self.delimiter[..1]
+        };
         let mut lines = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             if index == self.first_data_line {
@@ -498,6 +502,11 @@ mod tests {
             (
                 "data: {\"usage\":{\"z\":1,\"oceans\": {\"cost\":\"9.0000\",\"x\":[]} ,\"a\":2}}\n\n",
                 "data: {\"usage\":{\"z\":1,\"oceans\": {\"cost\":\"0.0012\"} ,\"a\":2}}\n\n",
+            ),
+            // Mixed endings: the event's lines keep the first ending of its blank line.
+            (
+                "event: message_delta\r\ndata: {\"usage\":{}}\r\n\n",
+                "event: message_delta\r\ndata: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\r\n\n",
             ),
             // Comments and other fields are kept where they were.
             (
