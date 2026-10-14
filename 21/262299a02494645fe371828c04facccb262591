@@ -1,0 +1,63 @@
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_13e300ce4bf1eb::t_924f43833125dc 27-28
+crates/gateway-core/src/domain.rs
+  s_7334f6fed281d0::t_82c2becff01984 8,2781-2796
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_9afcd1aad99ea7::t_97a64767bbf27e 137-143
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_7334f6fed281d0::t_e645f642d55f2e 180-184,196,200-201,205-206,208,221,225,563,568,833-848
+crates/gateway-core/src/protocol/decisions/system_one.rs
+  s_13e300ce4bf1eb::t_689b14d973c500 22-25,133,211,357-363,418,423,555-567,631-635,655-656
+crates/gateway-providers/src/decisions.rs
+  s_13e300ce4bf1eb::t_ed640a30a66efd 92-93,99-105,198,214-216,218-229
+crates/gateway-providers/src/openai_compat/decisions.rs
+  s_63939a3786d9af::t_e6404e0d40b524 325-329
+crates/gateway/src/http/handlers/decisions.rs
+  s_13e300ce4bf1eb::t_eff34f033c108d 6-9,121-150,180,184-185,212,387-390,503-561
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_9afcd1aad99ea7::t_3d80c6fa83f27e 76,80-82,84,98
+docs/configuration/model-routing-and-api-behavior.md
+  s_63939a3786d9af::t_8f0837a7ebc401 446
+docs/reference/provider-api-compatibility.md
+  s_63939a3786d9af::t_ecdd21c21f6cd4 127,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "21262299a02494645fe371828c04facccb262591",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7334f6fed281d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f11e804-9fa0-4aa6-9c92-53590c872573",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
