@@ -5,10 +5,25 @@
 //! nothing, so it writes no usage-ledger row, charges no budget and creates no
 //! request log. It is visible in traces as the `count_tokens` provider operation.
 use super::*;
-use crate::http::inference_guardrails::redact_prompt_body;
 
 const COUNT_TOKENS_ROUTE: &str = "/v1/messages/count_tokens";
-const SAMPLING_FIELDS: &[&str] = &["temperature", "top_p", "top_k", "stop_sequences"];
+/// Generation-only controls. They never change the count, and the inference
+/// mappers reject some of their values, so they are dropped before mapping.
+const GENERATION_FIELDS: &[&str] = &[
+    "temperature",
+    "top_p",
+    "top_k",
+    "stop",
+    "stop_sequences",
+    "store",
+    "stream_options",
+    "metadata",
+    "service_tier",
+    "user",
+];
+/// `max_tokens` used when a count omits it. Upstream count APIs ignore it, but
+/// Bedrock wraps a full InvokeModel body, which requires one.
+const DEFAULT_COUNT_MAX_TOKENS: u64 = 4096;
 
 pub async fn v1_messages_count_tokens(
     State(state): State<AppState>,
@@ -32,12 +47,7 @@ async fn count_tokens_inner(
 ) -> Result<Response, AppError> {
     let request_id = canonical_request_id(request_id)?;
     let mut core_request = anthropic_messages_request_to_core(&request);
-    // A count never streams, so a stray `stream: true` must not narrow eligibility.
-    core_request.stream = false;
-    // Sampling settings never change the count, and some models reject them during mapping.
-    for field in SAMPLING_FIELDS {
-        core_request.extra.remove(*field);
-    }
+    prepare_count_request(&mut core_request);
     let requirements = core_request.requirements();
     let resolved = state
         .service
@@ -75,14 +85,16 @@ async fn count_tokens_inner(
         provider.provider_type(),
     );
 
-    // Secrets are still redacted before the prompt leaves the gateway. Decisions are
-    // not persisted because there is no request log for them to attach to.
+    // The prompt guard runs exactly as for `/v1/messages`, so a count cannot send
+    // upstream a prompt that Messages would deny. Its decisions carry this request
+    // ID; the response-guard context is unused because a count generates nothing.
     let route_key = model_route_key(
         &resolved.selection.execution_model.model_key,
         &route.provider_key,
         &route.upstream_model,
     );
-    let redaction_count = redact_count_tokens_request(&state, &route_key, &mut core_request)?;
+    let guard_context =
+        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
 
     let mut context = build_provider_context(
         &request_id,
@@ -113,7 +125,7 @@ async fn count_tokens_inner(
         resolved_model = %resolved.selection.execution_model.model_key,
         provider_key = %route.provider_key,
         eligible_route_count,
-        redaction_count,
+        guardrails_enabled = guard_context.enabled,
         input_tokens,
         "anthropic count_tokens request completed"
     );
@@ -127,23 +139,30 @@ async fn count_tokens_inner(
     Ok(response)
 }
 
-fn redact_count_tokens_request(
-    state: &AppState,
-    route_key: &str,
-    request: &mut CoreChatRequest,
-) -> Result<usize, AppError> {
-    let mut redacted = serde_json::to_value(&*request).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "failed to encode redaction request: {error}"
-        )))
-    })?;
-    let decisions = redact_prompt_body(state, route_key, &mut redacted);
-    *request = serde_json::from_value(redacted).map_err(|error| {
-        AppError(GatewayError::Internal(format!(
-            "secret redaction produced an invalid request: {error}"
-        )))
-    })?;
-    Ok(decisions.len())
+/// Shapes a Messages request so every count mapper accepts it.
+///
+/// A count never streams, so a stray `stream: true` must not narrow eligibility.
+/// Generation controls are dropped, and `max_tokens` is always set: it takes
+/// `max_completion_tokens` when only that is present, and otherwise a default
+/// that leaves room for a manual thinking budget.
+fn prepare_count_request(request: &mut CoreChatRequest) {
+    request.stream = false;
+    for field in GENERATION_FIELDS {
+        request.extra.remove(*field);
+    }
+    let max_completion_tokens = request.extra.remove("max_completion_tokens");
+    if request.extra.contains_key("max_tokens") {
+        return;
+    }
+    let thinking_budget = request
+        .extra
+        .get("thinking")
+        .and_then(|thinking| thinking.get("budget_tokens"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let max_tokens = max_completion_tokens
+        .unwrap_or_else(|| json!(DEFAULT_COUNT_MAX_TOKENS.max(thinking_budget.saturating_add(1))));
+    request.extra.insert("max_tokens".to_string(), max_tokens);
 }
 
 /// A route without an upstream count API returns a typed 501 naming the route,
@@ -159,5 +178,53 @@ fn count_tokens_error(
             route.provider_key, route.upstream_model
         )),
         other => GatewayError::Provider(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(extra: serde_json::Value) -> CoreChatRequest {
+        CoreChatRequest {
+            model: "fast".to_string(),
+            messages: Vec::new(),
+            stream: true,
+            extra: serde_json::from_value(extra).unwrap(),
+        }
+    }
+
+    #[test]
+    fn prepare_defaults_max_tokens_above_a_thinking_budget() {
+        let mut without = request(json!({"temperature": 0.2}));
+        prepare_count_request(&mut without);
+        assert!(!without.stream);
+        assert_eq!(
+            serde_json::to_value(&without.extra).unwrap(),
+            json!({"max_tokens": DEFAULT_COUNT_MAX_TOKENS})
+        );
+
+        let mut thinking = request(json!({
+            "thinking": {"type": "enabled", "budget_tokens": 10_000},
+        }));
+        prepare_count_request(&mut thinking);
+        assert_eq!(thinking.extra["max_tokens"], 10_001);
+    }
+
+    #[test]
+    fn prepare_prefers_max_tokens_over_max_completion_tokens() {
+        let mut only_completion = request(json!({"max_completion_tokens": 512}));
+        prepare_count_request(&mut only_completion);
+        assert_eq!(
+            serde_json::to_value(&only_completion.extra).unwrap(),
+            json!({"max_tokens": 512})
+        );
+
+        let mut conflicting = request(json!({"max_tokens": 64, "max_completion_tokens": 512}));
+        prepare_count_request(&mut conflicting);
+        assert_eq!(
+            serde_json::to_value(&conflicting.extra).unwrap(),
+            json!({"max_tokens": 64})
+        );
     }
 }

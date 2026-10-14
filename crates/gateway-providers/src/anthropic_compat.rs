@@ -14,7 +14,7 @@ use crate::anthropic::{
     normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
     retain_count_tokens_fields,
 };
-use crate::http::{execute_request, join_base_url, map_reqwest_error};
+use crate::http::{execute_json_request, execute_request, join_base_url, map_reqwest_error};
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -270,29 +270,13 @@ impl ProviderClient for AnthropicCompatProvider {
         let body = map_anthropic_request(request, context, false, &options)?;
         let body = retain_count_tokens_fields(body, COUNT_TOKENS_FIELDS);
         let req = self.build_request_to(self.count_tokens_endpoint_url()?, body, context)?;
-
-        let response = execute_request(
+        let value = execute_json_request(
             &self.client,
             req,
             &self.config.provider_type,
             &self.config.provider_key,
         )
-        .await
-        .map_err(map_reqwest_error)?;
-
-        let status = response.status();
-        let text = response.text().await.map_err(map_reqwest_error)?;
-
-        if !status.is_success() {
-            return Err(ProviderError::UpstreamHttp {
-                status: status.as_u16(),
-                body: text,
-            });
-        }
-
-        let value: Value = serde_json::from_str(&text).map_err(|err| {
-            ProviderError::Transport(format!("invalid JSON from anthropic_compat: {err}"))
-        })?;
+        .await?;
         normalize_count_tokens_response(&value, "input_tokens", "anthropic_compat")
     }
 

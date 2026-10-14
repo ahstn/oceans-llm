@@ -1,6 +1,9 @@
 //! Router-level tests for Messages token counting and the unversioned inference aliases.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use axum::{
@@ -12,6 +15,11 @@ use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
     CoreEmbeddingsRequest, CoreResponsesRequest, Money4, ProviderCapabilities, ProviderClient,
     ProviderError, ProviderRequestContext, ProviderStream, RequestLogQuery,
+};
+use gateway_guardrails::{
+    FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
+    ManagedEvaluator, ManagedOutcome, ManagedService, PolicyMode, ReasonCode,
+    test_utils::StubManagedEvaluator,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -116,10 +124,15 @@ impl ProviderClient for RecordingProvider {
             ));
         }
         assert!(!request.stream, "a count never streams");
-        assert!(
-            !request.extra.contains_key("temperature"),
-            "sampling is dropped"
-        );
+        for dropped in [
+            "temperature",
+            "store",
+            "stream_options",
+            "max_completion_tokens",
+        ] {
+            assert!(!request.extra.contains_key(dropped), "{dropped} is dropped");
+        }
+        assert_eq!(request.extra["max_tokens"], 1024);
         assert_eq!(context.upstream_model, "fast-upstream");
         Ok(json!({"input_tokens": 7}))
     }
@@ -128,7 +141,15 @@ impl ProviderClient for RecordingProvider {
 async fn setup(
     counts_tokens: bool,
 ) -> (tempfile::TempDir, AppState, Arc<RecordingProvider>, Router) {
+    setup_with(counts_tokens, |_| {}).await
+}
+
+async fn setup_with(
+    counts_tokens: bool,
+    configure: impl FnOnce(&mut AppState),
+) -> (tempfile::TempDir, AppState, Arc<RecordingProvider>, Router) {
     let (directory, mut state) = app_state().await;
+    configure(&mut state);
     seed_stream_cancellation_test(&state.store).await;
     let provider = Arc::new(RecordingProvider {
         counts_tokens,
@@ -171,7 +192,10 @@ fn count_body() -> Value {
     json!({
         "model": "fast",
         "max_tokens": 1024,
+        "max_completion_tokens": 2048,
         "temperature": 0.5,
+        "store": true,
+        "stream_options": {"include_obfuscation": true},
         "stream": true,
         "messages": [{"role": "user", "content": "hello"}],
     })
@@ -256,6 +280,61 @@ async fn count_tokens_is_not_blocked_by_an_exhausted_budget() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(*provider.calls.lock().unwrap(), ["count_tokens"]);
+}
+
+/// A prompt guard in deny mode that rejects every prompt.
+fn deny_prompts(state: &mut AppState) {
+    let config = Arc::make_mut(&mut state.guardrail_config);
+    config.default.enabled = true;
+    config.default.mode = PolicyMode::Deny;
+    config.default.managed_checks = vec!["deny".into()];
+    config.managed_checks.insert(
+        "deny".into(),
+        ManagedCheckConfig {
+            kind: ManagedCheckKind::GoogleModelArmor,
+            phases: BTreeSet::from([GuardPhase::Prompt]),
+            timeout_ms: 1_000,
+            failure_disposition: FailureDisposition::FailClosed,
+            max_content_bytes: 4_096,
+            bedrock: None,
+            model_armor: None,
+        },
+    );
+    state.guardrail_engine = Arc::new(GuardrailEngine::new(
+        Vec::new(),
+        BTreeMap::from([(
+            "deny".into(),
+            Arc::new(StubManagedEvaluator::new(
+                "deny",
+                ManagedService::GoogleModelArmor,
+                [Ok(ManagedOutcome::Intervention {
+                    reason_code: ReasonCode::new("test.denied").unwrap(),
+                    metadata: Default::default(),
+                })],
+            )) as Arc<dyn ManagedEvaluator>,
+        )]),
+    ));
+}
+
+#[tokio::test]
+async fn count_tokens_runs_the_prompt_guard_before_the_provider() {
+    let (_directory, _state, provider, router) = setup_with(true, deny_prompts).await;
+
+    let (status, _, body) = send(
+        &router,
+        "POST",
+        "/v1/messages/count_tokens",
+        ("authorization", BEARER),
+        Some(count_body()),
+    )
+    .await;
+
+    assert!(status.is_client_error(), "{status}: {body}");
+    assert_eq!(body["type"], "error");
+    assert!(
+        provider.calls.lock().unwrap().is_empty(),
+        "a denied prompt must not reach the provider"
+    );
 }
 
 #[tokio::test]

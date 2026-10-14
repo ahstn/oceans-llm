@@ -71,8 +71,11 @@ impl HttpBody for ObservedBody {
 }
 
 pub(super) async fn observe_request_body(request: Request, next: Next) -> Response {
-    let response_type =
-        matches!(request.uri().path(), "/v1/messages" | "/messages").then_some("error");
+    let response_type = matches!(
+        request.uri().path(),
+        "/v1/messages" | "/messages" | "/v1/messages/count_tokens" | "/messages/count_tokens"
+    )
+    .then_some("error");
     let request_id = request
         .headers()
         .get("x-request-id")

@@ -404,7 +404,7 @@ Messages support still depends on the selected provider and route. Disable unsup
 
 `POST /v1/messages/count_tokens` and `POST /messages/count_tokens` accept a Messages request body and return `{"input_tokens": N}`. They use the same authentication (`Authorization` or `x-api-key`), model resolution, model grants, reasoning-effort ceiling, and route selection as `POST /v1/messages`. Errors use the Anthropic error envelope.
 
-The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking`, and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `max_tokens`, `temperature`, and `stream`. Prompt secret redaction still runs before the request leaves the gateway.
+The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking`, and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `temperature`, `stop_sequences`, `store`, and `stream`, and always sends a valid `max_tokens`, so settings that only shape generation never fail a count. The route's prompt guardrails run exactly as they do for Messages before the request leaves the gateway: secrets are redacted, and a prompt that Messages would deny is denied here too. Guardrail decisions are recorded under the count's request ID.
 
 | Selected route | Upstream count API |
 | --- | --- |
@@ -415,7 +415,7 @@ The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `to
 
 The gateway never estimates a count. When the selected route has no upstream count API, the response is a 501 whose message names the provider key, provider type, and upstream model. A 404 would wrongly suggest the endpoint does not exist.
 
-Counting generates no output, so it is not billed or logged as a request. It writes no usage-ledger row, does not check or charge budgets, creates no request log, and is not counted in the gateway request metrics. Counts are visible in traces as the `count_tokens` provider operation under the `/v1/messages/count_tokens` route, and as an `anthropic count_tokens request completed` log event with the input token and redaction counts. Redaction decisions are not persisted because there is no request log to attach them to.
+Counting generates no output, so it is not billed or logged as a request. It writes no usage-ledger row, does not check or charge budgets, creates no request log, and is not counted in the gateway request metrics. Counts are visible in traces as the `count_tokens` provider operation under the `/v1/messages/count_tokens` route, and as an `anthropic count_tokens request completed` log event with the input token count and whether guardrails were enabled.
 
 Route selection runs exactly as it does for Messages, so a count matches the route the next Messages request would most likely use. A count does not refresh session affinity. With `round_robin` routing, a count still advances the rotation, so the next Messages request can land on a different route than the one that was counted.
 
