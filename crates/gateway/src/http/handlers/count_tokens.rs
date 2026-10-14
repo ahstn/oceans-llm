@@ -15,7 +15,9 @@ use crate::http::request_body::DEFAULT_MAX_BYTES;
 
 const COUNT_TOKENS_ROUTE: &str = "/v1/messages/count_tokens";
 /// Generation-only controls. They never change the count, and the inference
-/// mappers reject some of their values, so they are dropped before mapping.
+/// mappers reject some of them (Bedrock rejects every OpenAI sampling control), so
+/// they are dropped before mapping. `parallel_tool_calls` and `response_format`
+/// stay: they map to tool choice and output format, which can change the prompt.
 const GENERATION_FIELDS: &[&str] = &[
     "temperature",
     "top_p",
@@ -27,6 +29,13 @@ const GENERATION_FIELDS: &[&str] = &[
     "metadata",
     "service_tier",
     "user",
+    "seed",
+    "n",
+    "frequency_penalty",
+    "presence_penalty",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
 ];
 /// Baseline `max_tokens` sent with every count. Upstream count APIs ignore it, but
 /// Bedrock wraps a full InvokeModel body, which requires a valid one.
@@ -233,12 +242,24 @@ fn prepare_count_request(request: &mut CoreChatRequest) {
     {
         request.extra.remove(*field);
     }
-    let thinking_budget = request
-        .extra
-        .get("thinking")
-        .and_then(|thinking| thinking.get("budget_tokens"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
+    // Every manual budget spelling the Claude mappers accept, so the limit stays
+    // above the budget whichever one they normalize into `thinking.budget_tokens`.
+    let extra = &request.extra;
+    let thinking_budget = [
+        extra
+            .get("thinking")
+            .and_then(|thinking| thinking.get("budget_tokens")),
+        extra.get("thinking_budget_tokens"),
+        extra.get("reasoning_budget_tokens"),
+        extra
+            .get("reasoning")
+            .and_then(|reasoning| reasoning.get("budget_tokens")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(serde_json::Value::as_u64)
+    .max()
+    .unwrap_or(0);
     let max_tokens = COUNT_MAX_TOKENS.max(thinking_budget.saturating_add(1));
     request
         .extra
@@ -314,6 +335,36 @@ mod tests {
         }));
         prepare_count_request(&mut thinking);
         assert_eq!(thinking.extra["max_tokens"], 10_001);
+
+        for extra in [
+            json!({"thinking_budget_tokens": 8_000}),
+            json!({"reasoning_budget_tokens": 8_000}),
+            json!({"reasoning": {"effort": "high", "budget_tokens": 8_000}}),
+            json!({"thinking": {"budget_tokens": 2_000}, "reasoning_budget_tokens": 8_000}),
+        ] {
+            let mut aliased = request(extra.clone());
+            prepare_count_request(&mut aliased);
+            assert_eq!(aliased.extra["max_tokens"], 8_001, "{extra}");
+        }
+    }
+
+    #[test]
+    fn prepare_drops_every_sampling_only_control() {
+        let mut request = request(json!({
+            "seed": 7,
+            "n": 2,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.5,
+            "logit_bias": {"50256": -100},
+            "logprobs": true,
+            "top_logprobs": 3,
+            "parallel_tool_calls": false,
+        }));
+        prepare_count_request(&mut request);
+        assert_eq!(
+            serde_json::to_value(&request.extra).unwrap(),
+            json!({"max_tokens": COUNT_MAX_TOKENS, "parallel_tool_calls": false})
+        );
     }
 
     #[test]

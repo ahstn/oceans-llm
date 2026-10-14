@@ -410,7 +410,7 @@ The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `to
 | --- | --- |
 | `anthropic_compat` | `POST /v1/messages/count_tokens` on the provider base URL |
 | `gcp_vertex` with an `anthropic/*` upstream model | `count-tokens:rawPredict` on the Anthropic publisher |
-| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens`, which needs the `bedrock:CountTokens` [IAM action](../providers/aws-bedrock.md#token-counting-permissions) |
+| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens`, which needs the `bedrock:CountTokens` [IAM action](../providers/aws-bedrock.md#token-counting-permissions). It supports only some models and Regions; see [the Bedrock limits](../providers/aws-bedrock.md#token-counting-permissions) |
 | Any other route | None. Returns `501 not_implemented_error` |
 
 The gateway never estimates a count. When the selected route has no upstream count API, the response is a 501 whose message names the provider key, provider type, and upstream model. A 404 would wrongly suggest the endpoint does not exist.
