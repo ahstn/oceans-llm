@@ -1,10 +1,18 @@
 use std::collections::HashMap;
 
+use gateway_core::McpToolProjection;
+
+use super::mcp_registry::decode_tool_metadata;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
-const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at";
+const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json, t.output_schema_json";
+/// `TOOL_COLUMNS` with the metadata columns replaced by NULLs. The row keeps
+/// the same shape, so `decode_tool` reads it and leaves the metadata empty.
+const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, NULL, NULL";
+/// Number of columns in `TOOL_COLUMNS`; server columns follow them.
+const TOOL_COLUMN_COUNT: usize = 15;
 const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
@@ -81,6 +89,7 @@ fn decode_tool(row: &libsql::Row) -> Result<ExternalMcpToolRecord, StoreError> {
         description: row.get(4).map_err(to_query_error)?,
         input_schema: serde_json::from_str(&input_schema_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        metadata: decode_tool_metadata(row, 12)?,
         schema_hash: row.get(6).map_err(to_query_error)?,
         schema_version: row.get(7).map_err(to_query_error)?,
         is_active: is_active == 1,
@@ -153,7 +162,7 @@ fn decode_server_at(
 fn decode_catalog_tool(row: &libsql::Row) -> Result<McpCatalogToolRecord, StoreError> {
     Ok(McpCatalogToolRecord {
         tool: decode_tool(row)?,
-        server: decode_server_at(row, 12)?,
+        server: decode_server_at(row, TOOL_COLUMN_COUNT)?,
     })
 }
 
@@ -427,15 +436,29 @@ impl McpAccessRepository for LibsqlStore {
         &self,
         subjects: &[McpGrantSubject],
         mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
         let exposed_tool_count = active_tool_count(&self.connection, mcp_server_id).await?;
         let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
 
         for subject in subjects {
-            collect_direct_tools(&self.connection, subject, mcp_server_id, &mut tools_by_id)
-                .await?;
-            collect_toolset_tools(&self.connection, subject, mcp_server_id, &mut tools_by_id)
-                .await?;
+            let columns = tool_columns(projection);
+            collect_direct_tools(
+                &self.connection,
+                subject,
+                mcp_server_id,
+                columns,
+                &mut tools_by_id,
+            )
+            .await?;
+            collect_toolset_tools(
+                &self.connection,
+                subject,
+                mcp_server_id,
+                columns,
+                &mut tools_by_id,
+            )
+            .await?;
         }
 
         let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
@@ -457,6 +480,19 @@ impl McpAccessRepository for LibsqlStore {
             exposed_tool_count,
             filtered_tool_count,
         })
+    }
+
+    async fn has_mcp_server_grant(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        for subject in subjects {
+            if server_grant_exists(&self.connection, subject, mcp_server_id).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     async fn resolve_mcp_catalog_access_for_subjects(
@@ -565,14 +601,45 @@ async fn active_tool_count(
     row.get(0).map_err(to_query_error)
 }
 
+async fn server_grant_exists(
+    connection: &libsql::Connection,
+    subject: &McpGrantSubject,
+    mcp_server_id: Uuid,
+) -> Result<bool, StoreError> {
+    let mut rows = connection
+        .query(
+            "SELECT EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?3) OR EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?3)",
+            libsql::params![
+                subject.subject_kind.as_str(),
+                subject.subject_id.to_string(),
+                mcp_server_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
+        StoreError::Unexpected("MCP server grant check returned no row".to_string())
+    })?;
+    let exists: i64 = row.get(0).map_err(to_query_error)?;
+    Ok(exists != 0)
+}
+
+fn tool_columns(projection: McpToolProjection) -> &'static str {
+    match projection {
+        McpToolProjection::Access => ACCESS_TOOL_COLUMNS,
+        McpToolProjection::Full => TOOL_COLUMNS,
+    }
+}
+
 async fn collect_direct_tools(
     connection: &libsql::Connection,
     subject: &McpGrantSubject,
     mcp_server_id: Option<Uuid>,
+    columns: &str,
     out: &mut HashMap<Uuid, ExternalMcpToolRecord>,
 ) -> Result<(), StoreError> {
     let sql = format!(
-        "SELECT {TOOL_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
+        "SELECT {columns} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
     );
     let mut rows = connection
         .query(
@@ -596,10 +663,11 @@ async fn collect_toolset_tools(
     connection: &libsql::Connection,
     subject: &McpGrantSubject,
     mcp_server_id: Option<Uuid>,
+    columns: &str,
     out: &mut HashMap<Uuid, ExternalMcpToolRecord>,
 ) -> Result<(), StoreError> {
     let sql = format!(
-        "SELECT {TOOL_COLUMNS} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
+        "SELECT {columns} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
     );
     let mut rows = connection
         .query(

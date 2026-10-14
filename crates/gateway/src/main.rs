@@ -705,6 +705,7 @@ fn build_gateway_service(
             budget_alert_sender,
             payload_policy,
         )
+        .with_budget_exceeded_status(config.budgets.exceeded_status_code)
         .with_agent_analysis_enabled(agent_analysis_enabled)
         .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
         .with_agent_analysis_policy(analysis_policy),

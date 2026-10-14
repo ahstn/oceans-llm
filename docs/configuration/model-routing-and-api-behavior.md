@@ -14,7 +14,8 @@ The gateway exposes these authenticated endpoints:
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
-| `POST /v1/decisions` | System One Decisions | `decisions: true` |
+| `POST /v1/decisions` | Decisions, in the System One or OpenAI format | `decisions: true` |
+| `POST /v1/systemone` | Decisions, in the System One format only | `decisions: true` |
 | `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
 | `POST /messages` | Anthropic Messages compatibility alias | Chat-capable route with provider support |
 | `POST /v1/messages/count_tokens` | Anthropic Messages token counting | Chat-capable route whose provider has an upstream count API |
@@ -290,7 +291,7 @@ Capabilities remove incompatible routes before provider execution:
 | `chat_completions` | `/v1/chat/completions` or a compatible chat path |
 | `responses` | `/v1/responses` |
 | `embeddings` | `/v1/embeddings` |
-| `decisions` | `/v1/decisions` |
+| `decisions` | `/v1/decisions` or `/v1/systemone` |
 | `stream` | Streaming output |
 | `tools` | Function, custom, MCP, or other supported tools |
 | `vision` | Image or supported multimodal input |
@@ -299,7 +300,7 @@ Capabilities remove incompatible routes before provider execution:
 
 Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
 
-`decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe and OpenRouter routes with `compatibility.openrouter.api: decisions`.
+`decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`.
 
 For example, an embedding-only route should normally disable unrelated capabilities:
 
@@ -425,11 +426,49 @@ Route selection runs exactly as it does for Messages, so a count matches the rou
 
 ### Decisions
 
-`POST /v1/decisions` accepts a `state` value and named `noul`, `choice`, or `score` questions. It is a first-class API family and is not translated through Chat Completions or Responses.
+`POST /v1/decisions` accepts two request formats. The System One format sends a `state` value and named `noul`, `choice`, or `score` questions. The OpenAI format sends an `input` (text, or user messages with text and image parts) and an ordered list of `predicate`, `choice`, or `score` questions. Oceans detects the format from the `input` or `state` key and returns the response in the same format. `POST /v1/systemone` accepts the System One format only. Decisions is a first-class API family and is not translated through Chat Completions or Responses.
 
-Oceans sends OpenRouter routes to `/api/alpha/decisions`, native TypeSafe routes to `/v1/systemone`, and reserves `/v1/decisions` as the default upstream path for future compatible adapters. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting.
+Each route speaks one format. Native TypeSafe routes send System One to `/v1/systemone`. The alpha route sends System One to `/api/alpha/decisions`. `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai` send the OpenAI format to `{base_url}/decisions`:
 
-See [TypeSafe](../providers/typesafe.md) for the request shape and route examples.
+```yaml
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+        pricing_override:
+          input_usd_per_million_tokens: "<OpenAI input rate>"
+          cache_read_usd_per_million_tokens: "<OpenAI cached input rate>"
+          output_usd_per_million_tokens: "0"
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+```
+
+`decisions_api` requires an `openai_compat` provider and `capabilities.decisions: true`. It cannot be combined with `compatibility.openrouter`. Decisions pricing for `gpt-6-luna` is input-only, so the route override sets output to zero. Use OpenAI's published input and cached-input rates.
+
+Oceans selects only routes whose format can carry the request. When none can, it returns 400 before the upstream call. `safety_identifier` works only on OpenAI-format routes, and System One routes reject image inputs. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting.
+
+See [TypeSafe](../providers/typesafe.md) for the System One request shape and [Provider API Compatibility](../reference/provider-api-compatibility.md#decisions-api) for the translation rules.
 
 ### Batch admission
 

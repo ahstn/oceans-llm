@@ -397,6 +397,45 @@ describe('RequestLogsPage detail states', () => {
     expect(within(dialog).getByText('Decisions')).toBeInTheDocument()
   })
 
+  it('shows the error code of a pre-provider budget rejection with no attempts', async () => {
+    const budgetItem: RequestLogView = {
+      ...items[0],
+      status_code: 422,
+      error_code: 'budget_exceeded',
+      prompt_tokens: null,
+      completion_tokens: null,
+      total_tokens: null,
+      cache_read_tokens: null,
+      cost_usd_10000: null,
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: { items: [budgetItem], total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: {
+        log: budgetItem,
+        user_agent_raw: null,
+        payload: {
+          request_json: { body: { model: 'gpt-4.1-mini' } },
+          response_json: {
+            body: { error: { type: 'budget_error', code: 'budget_exceeded' } },
+          },
+        },
+        attempts: [],
+      },
+    })
+
+    await renderPage()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('No provider attempts recorded')).toBeInTheDocument()
+    })
+    const dialogs = screen.getAllByRole('dialog')
+    const dialog = dialogs[dialogs.length - 1]
+    expect(within(dialog).getByText('Error Code')).toBeInTheDocument()
+    expect(within(dialog).getByText('budget_exceeded')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('422').length).toBeGreaterThan(0)
+  })
+
   it('renders the summary-only no-payload state in detail', async () => {
     const summaryOnlyItem = {
       ...items[0],

@@ -12,7 +12,8 @@ The page supports filters for:
 
 - request id
 - MCP server display key/name
-- tool display key/name
+- target: the tool, resource URI, or prompt name
+- JSON-RPC method
 - API key id
 - user id
 - team id
@@ -20,7 +21,7 @@ The page supports filters for:
 - policy result
 - time range
 
-The list shows owner context, server/tool identity, status, policy result, latency, error code, and payload redaction/truncation flags. The detail view shows sanitized arguments and sanitized result payloads when the MCP invocation payload policy captures them.
+The list shows owner context, server, JSON-RPC method, target, status, policy result, latency, error code, and payload redaction/truncation flags. The detail view shows sanitized arguments and sanitized result payloads when the MCP invocation payload policy captures them.
 
 ## API Contract
 
@@ -36,6 +37,7 @@ Expected list filters:
 - `server_display_name`
 - `tool_display_key`
 - `tool_display_name`
+- `mcp_method`
 - `api_key_id`
 - `user_id`
 - `team_id`

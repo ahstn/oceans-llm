@@ -13,7 +13,7 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = $1"
 );
-const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at";
+const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json::text, output_schema_json::text";
 
 fn decode_server(row: &PgRow) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.try_get(0).map_err(to_query_error)?;
@@ -88,12 +88,37 @@ fn decode_tool(row: &PgRow) -> Result<ExternalMcpToolRecord, StoreError> {
         description,
         input_schema: serde_json::from_str(&input_schema_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        metadata: decode_tool_metadata(row, 12)?,
         schema_hash: row.try_get(6).map_err(to_query_error)?,
         schema_version: row.try_get(7).map_err(to_query_error)?,
         is_active: is_active == 1,
         first_discovered_at: unix_to_datetime(first_discovered_at)?,
         last_discovered_at: unix_to_datetime(last_discovered_at)?,
         deactivated_at: deactivated_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+/// Decodes `title, annotations_json, output_schema_json` starting at `offset`.
+pub(super) fn decode_tool_metadata(
+    row: &PgRow,
+    offset: usize,
+) -> Result<McpToolMetadata, StoreError> {
+    let title: Option<String> = row.try_get(offset).map_err(to_query_error)?;
+    let annotations_json: Option<String> = row.try_get(offset + 1).map_err(to_query_error)?;
+    let output_schema_json: Option<String> = row.try_get(offset + 2).map_err(to_query_error)?;
+    Ok(McpToolMetadata {
+        title,
+        annotations: annotations_json
+            .as_deref()
+            .map(json_object_from_str)
+            .transpose()?,
+        output_schema: output_schema_json
+            .as_deref()
+            .map(|value| {
+                serde_json::from_str(value)
+                    .map_err(|error| StoreError::Serialization(error.to_string()))
+            })
+            .transpose()?,
     })
 }
 
@@ -339,23 +364,49 @@ impl McpRegistryRepository for PostgresStore {
 
         for tool in tools {
             let input_schema_json = serialize_json(&tool.input_schema)?;
+            let annotations_json = tool
+                .metadata
+                .annotations
+                .as_ref()
+                .map(serialize_json)
+                .transpose()?;
+            let output_schema_json = tool
+                .metadata
+                .output_schema
+                .as_ref()
+                .map(serialize_json)
+                .transpose()?;
+            // A row discovered before metadata was stored keeps its schema
+            // version when only the newly captured metadata moved the hash.
             sqlx::query(
                 r#"
                 INSERT INTO external_mcp_tools (
                     mcp_tool_id, mcp_server_id, upstream_name, display_name, description,
                     input_schema_json, schema_hash, schema_version, is_active,
-                    first_discovered_at, last_discovered_at, deactivated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, 1, 1, $8, $8, NULL)
+                    first_discovered_at, last_discovered_at, deactivated_at,
+                    title, annotations_json, output_schema_json, metadata_captured
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6::jsonb, $7, 1, 1, $8, $8, NULL,
+                    $9, $10::jsonb, $11::jsonb, 1
+                )
                 ON CONFLICT(mcp_server_id, upstream_name) DO UPDATE SET
                     display_name = excluded.display_name,
                     description = excluded.description,
                     input_schema_json = excluded.input_schema_json,
                     schema_version = CASE
                         WHEN external_mcp_tools.schema_hash != excluded.schema_hash
+                            AND NOT (
+                                external_mcp_tools.metadata_captured = 0
+                                AND external_mcp_tools.input_schema_json = excluded.input_schema_json
+                            )
                         THEN external_mcp_tools.schema_version + 1
                         ELSE external_mcp_tools.schema_version
                     END,
                     schema_hash = excluded.schema_hash,
+                    title = excluded.title,
+                    annotations_json = excluded.annotations_json,
+                    output_schema_json = excluded.output_schema_json,
+                    metadata_captured = 1,
                     is_active = 1,
                     last_discovered_at = excluded.last_discovered_at,
                     deactivated_at = NULL
@@ -369,6 +420,9 @@ impl McpRegistryRepository for PostgresStore {
             .bind(input_schema_json)
             .bind(tool.schema_hash.as_str())
             .bind(run.finished_at.unix_timestamp())
+            .bind(tool.metadata.title.as_deref())
+            .bind(annotations_json)
+            .bind(output_schema_json)
             .execute(&mut *tx)
             .await
             .map_err(to_query_error)?;

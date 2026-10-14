@@ -16,6 +16,10 @@ use url::Url;
 pub mod server;
 
 pub const DEFAULT_PROTOCOL_VERSION: &str = "2025-03-26";
+/// The version the upstream client asks for. It is the first version where a
+/// tool carries a top-level `title` and an `outputSchema`; a server that picks
+/// an older version still has its `annotations.title` read as a fallback.
+pub const CLIENT_PROTOCOL_VERSION: &str = "2025-06-18";
 pub const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
 const MAX_RESPONSE_BODY_BYTES: usize = 2 * 1024 * 1024;
@@ -158,21 +162,32 @@ pub struct ToolsCallResponse {
     pub is_error: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
     pub input_schema: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    /// Behaviour hints such as `readOnlyHint` and `destructiveHint`. Kept as
+    /// the upstream sent them so unknown members survive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedMcpTool {
     pub name: String,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub output_schema: Option<Value>,
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
 }
 
@@ -197,7 +212,7 @@ impl StreamableHttpClient {
         Ok(Self {
             client,
             endpoint,
-            protocol_version: DEFAULT_PROTOCOL_VERSION.to_string(),
+            protocol_version: CLIENT_PROTOCOL_VERSION.to_string(),
         })
     }
 
@@ -226,10 +241,15 @@ impl StreamableHttpClient {
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
         let mut request_headers = headers.cloned().unwrap_or_default();
-        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        let (initialize, session_id) = self.initialize_with_session(headers).await?;
         if let Some(session_id) = session_id {
             request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
         }
+        // Later requests name the version the server chose, which may be older.
+        request_headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER.to_string(),
+            initialize.protocol_version,
+        );
         self.send_notification(
             JsonRpcNotification::<Value>::new("notifications/initialized", None),
             Some(&request_headers),
@@ -274,10 +294,15 @@ impl StreamableHttpClient {
         arguments: Value,
     ) -> Result<ToolsCallResponse, McpClientError> {
         let mut request_headers = headers.cloned().unwrap_or_default();
-        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        let (initialize, session_id) = self.initialize_with_session(headers).await?;
         if let Some(session_id) = session_id {
             request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
         }
+        // Later requests name the version the server chose, which may be older.
+        request_headers.insert(
+            MCP_PROTOCOL_VERSION_HEADER.to_string(),
+            initialize.protocol_version,
+        );
         self.send_notification(
             JsonRpcNotification::<Value>::new("notifications/initialized", None),
             Some(&request_headers),
@@ -582,24 +607,95 @@ pub fn normalize_tools(tools: Vec<McpTool>) -> Result<Vec<NormalizedMcpTool>, Mc
             });
         }
         let input_schema = canonicalize_json(&input_schema);
-        let schema_hash = schema_hash(&input_schema)?;
+        // Before 2025-06-18 the display title lived in the annotations.
+        let annotation_title = tool
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.get("title"))
+            .and_then(Value::as_str);
+        let title = [tool.title.as_deref(), annotation_title]
+            .into_iter()
+            .flatten()
+            .map(str::trim)
+            .find(|value| !value.is_empty())
+            .map(str::to_string);
+        // Invalid optional members are dropped rather than failing discovery
+        // for every tool on the server.
+        let output_schema = tool
+            .output_schema
+            .filter(Value::is_object)
+            .map(|value| canonicalize_json(&value));
+        let annotations = match tool.annotations.map(|value| canonicalize_json(&value)) {
+            Some(Value::Object(object)) => Some(object),
+            _ => None,
+        };
+        let schema_hash = tool_schema_hash(
+            &input_schema,
+            title.as_deref(),
+            annotations.as_ref(),
+            output_schema.as_ref(),
+        )?;
         normalized.push(NormalizedMcpTool {
             name: name.to_string(),
+            title,
             description: tool.description.map(|value| value.trim().to_string()),
             input_schema,
+            output_schema,
+            annotations,
             schema_hash,
         });
     }
     Ok(normalized)
 }
 
+/// Hashes the parts of a tool definition that clients rely on.
+///
+/// A tool that declares no title, annotations, or output schema hashes its
+/// input schema alone, so hashes recorded before these members were stored
+/// stay the same. Otherwise the hash covers all of them, with a prefix so an
+/// input schema shaped like the envelope cannot produce the same hash.
+pub fn tool_schema_hash(
+    input_schema: &Value,
+    title: Option<&str>,
+    annotations: Option<&Map<String, Value>>,
+    output_schema: Option<&Value>,
+) -> Result<String, McpClientError> {
+    if title.is_none() && annotations.is_none() && output_schema.is_none() {
+        return schema_hash(input_schema);
+    }
+    let mut envelope = Map::new();
+    envelope.insert("inputSchema".to_string(), input_schema.clone());
+    if let Some(title) = title {
+        envelope.insert("title".to_string(), Value::String(title.to_string()));
+    }
+    if let Some(annotations) = annotations {
+        envelope.insert(
+            "annotations".to_string(),
+            Value::Object(annotations.clone()),
+        );
+    }
+    if let Some(output_schema) = output_schema {
+        envelope.insert("outputSchema".to_string(), output_schema.clone());
+    }
+    prefixed_hash(TOOL_DEFINITION_HASH_PREFIX, &Value::Object(envelope))
+}
+
+const TOOL_DEFINITION_HASH_PREFIX: &[u8] = b"mcp-tool-definition-v1\0";
+
 pub fn schema_hash(value: &Value) -> Result<String, McpClientError> {
+    prefixed_hash(b"", value)
+}
+
+fn prefixed_hash(prefix: &[u8], value: &Value) -> Result<String, McpClientError> {
     let canonical = serde_json::to_vec(&canonicalize_json(value)).map_err(|error| {
         McpClientError::InvalidResponse {
             message: error.to_string(),
         }
     })?;
-    let digest = Sha256::digest(canonical);
+    let digest = Sha256::new()
+        .chain_update(prefix)
+        .chain_update(canonical)
+        .finalize();
     Ok(format!("sha256:{digest:x}"))
 }
 
@@ -809,7 +905,7 @@ mod tests {
 
         assert_eq!(
             request.headers().get(MCP_PROTOCOL_VERSION_HEADER).unwrap(),
-            DEFAULT_PROTOCOL_VERSION
+            CLIENT_PROTOCOL_VERSION
         );
         assert_eq!(
             request.headers().get(ACCEPT).unwrap(),
@@ -897,12 +993,143 @@ mod tests {
         );
     }
 
+    fn annotated_tool() -> McpTool {
+        serde_json::from_value(json!({
+            "name": "delete_issue",
+            "title": " Delete issue ",
+            "description": "Deletes an issue",
+            "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}},
+            "outputSchema": {"type": "object", "properties": {"deleted": {"type": "boolean"}}},
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false,
+                "x-vendor": "kept"
+            }
+        }))
+        .expect("annotated tool")
+    }
+
+    #[test]
+    fn normalize_keeps_title_annotations_and_output_schema() {
+        let tool = normalize_tools(vec![annotated_tool()])
+            .expect("normalize")
+            .remove(0);
+
+        assert_eq!(tool.title.as_deref(), Some("Delete issue"));
+        assert_eq!(
+            tool.output_schema,
+            Some(json!({"properties": {"deleted": {"type": "boolean"}}, "type": "object"}))
+        );
+        let annotations = tool.annotations.expect("annotations");
+        assert_eq!(annotations["destructiveHint"], json!(true));
+        assert_eq!(annotations["x-vendor"], json!("kept"));
+    }
+
+    #[test]
+    fn an_annotation_title_fills_in_for_a_missing_top_level_title() {
+        let older_server_tool = McpTool {
+            name: "search".to_string(),
+            annotations: Some(json!({"title": " Search issues ", "readOnlyHint": true})),
+            ..McpTool::default()
+        };
+        let both_titles = McpTool {
+            title: Some("Find issues".to_string()),
+            ..older_server_tool.clone()
+        };
+
+        let tools = normalize_tools(vec![older_server_tool]).expect("normalize");
+        assert_eq!(tools[0].title.as_deref(), Some("Search issues"));
+        let tools = normalize_tools(vec![both_titles]).expect("normalize");
+        assert_eq!(tools[0].title.as_deref(), Some("Find issues"));
+    }
+
+    #[test]
+    fn tools_without_new_members_keep_the_input_schema_hash() {
+        let tool = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            input_schema: json!({"type": "object"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_eq!(
+            tool.schema_hash,
+            schema_hash(&json!({"type": "object"})).expect("hash")
+        );
+    }
+
+    #[test]
+    fn an_envelope_shaped_input_schema_does_not_share_a_metadata_hash() {
+        let with_title = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            title: Some("Search".to_string()),
+            input_schema: json!({"type": "object"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+        let envelope_shaped = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            input_schema: json!({"inputSchema": {"type": "object"}, "title": "Search"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_ne!(with_title.schema_hash, envelope_shaped.schema_hash);
+    }
+
+    #[test]
+    fn changing_title_annotations_or_output_schema_changes_the_hash() {
+        let baseline = normalize_tools(vec![annotated_tool()]).expect("baseline")[0]
+            .schema_hash
+            .clone();
+        let variants: [fn(&mut McpTool); 4] = [
+            |tool| tool.title = Some("Remove issue".to_string()),
+            |tool| {
+                tool.annotations.as_mut().expect("annotations")["destructiveHint"] = json!(false)
+            },
+            |tool| tool.annotations = None,
+            |tool| tool.output_schema = Some(json!({"type": "object"})),
+        ];
+        for change in variants {
+            let mut tool = annotated_tool();
+            change(&mut tool);
+            let hash = normalize_tools(vec![tool]).expect("variant")[0]
+                .schema_hash
+                .clone();
+            assert_ne!(hash, baseline);
+        }
+    }
+
+    #[test]
+    fn invalid_optional_members_are_dropped() {
+        let tool = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            title: Some("  ".to_string()),
+            input_schema: json!({"type": "object"}),
+            output_schema: Some(json!("not object")),
+            annotations: Some(json!(["not", "object"])),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_eq!(tool.title, None);
+        assert_eq!(tool.output_schema, None);
+        assert_eq!(tool.annotations, None);
+    }
+
     #[test]
     fn rejects_non_object_input_schema() {
         let error = normalize_tools(vec![McpTool {
             name: "bad".to_string(),
             description: None,
             input_schema: json!("not object"),
+            ..McpTool::default()
         }])
         .expect_err("invalid schema");
 
@@ -916,11 +1143,13 @@ mod tests {
                 name: "search".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                ..McpTool::default()
             },
             McpTool {
                 name: " search ".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                ..McpTool::default()
             },
         ])
         .expect_err("duplicate name");

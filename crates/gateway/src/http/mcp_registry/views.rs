@@ -94,15 +94,31 @@ pub struct McpToolView {
     server_id: String,
     upstream_name: String,
     display_name: String,
+    /// Human-readable title declared by the upstream server.
+    title: Option<String>,
     description: Option<String>,
     #[schema(additional_properties = true)]
     input_schema: Value,
+    /// Schema of the tool's structured result, when the upstream declares one.
+    #[schema(additional_properties = true)]
+    output_schema: Option<Value>,
+    annotations: McpToolAnnotationsView,
     schema_hash: String,
     schema_version: i64,
     is_active: bool,
     first_discovered_at: String,
     last_discovered_at: String,
     deactivated_at: Option<String>,
+}
+
+/// Behaviour hints declared by the upstream server. A missing value means the
+/// server did not declare the hint. Hints are not verified by the gateway.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpToolAnnotationsView {
+    read_only_hint: Option<bool>,
+    destructive_hint: Option<bool>,
+    idempotent_hint: Option<bool>,
+    open_world_hint: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -381,6 +397,14 @@ pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
         display_name: tool.display_name,
         description: tool.description,
         input_schema: tool.input_schema,
+        annotations: McpToolAnnotationsView {
+            read_only_hint: tool.metadata.hint("readOnlyHint"),
+            destructive_hint: tool.metadata.hint("destructiveHint"),
+            idempotent_hint: tool.metadata.hint("idempotentHint"),
+            open_world_hint: tool.metadata.hint("openWorldHint"),
+        },
+        title: tool.metadata.title,
+        output_schema: tool.metadata.output_schema,
         schema_hash: tool.schema_hash,
         schema_version: tool.schema_version,
         is_active: tool.is_active,

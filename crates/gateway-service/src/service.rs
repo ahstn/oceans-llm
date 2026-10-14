@@ -4,8 +4,8 @@ use tokio::sync::Semaphore;
 
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
-    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, DecisionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
+    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
@@ -190,6 +190,13 @@ where
             agent_analysis_policy,
             agent_analysis_desired_versions,
         }
+    }
+
+    /// Sets the HTTP status that hard-budget rejections carry.
+    #[must_use]
+    pub fn with_budget_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
+        self.budget_guard = self.budget_guard.with_exceeded_status(status);
+        self
     }
 
     #[must_use]
@@ -395,7 +402,7 @@ where
         request_id: &str,
         requested_model_key: &str,
         resolved_model_key: &str,
-        request: &DecisionsRequest,
+        request: &Value,
         request_headers: &std::collections::BTreeMap<String, String>,
         request_tags: RequestTags,
     ) -> RequestLogContext {
@@ -461,12 +468,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn log_non_stream_failure(
+    pub async fn log_failure(
         &self,
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
+        stream: bool,
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
@@ -477,11 +485,12 @@ where
         let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
-            .log_non_stream_failure(
+            .log_failure(
                 auth,
                 context,
                 provider_key,
                 icon_metadata,
+                stream,
                 latency_ms,
                 gateway_error,
                 attempts,
@@ -1769,13 +1778,14 @@ mod tests {
         GatewayError, GatewayModel, IdentityRepository, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderBatchResult, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError,
-        RoutePlanner, RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord,
-        TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, OpenAiCompatDecisionsApi,
+        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
+        PricingLimits, PricingModalities, PricingProvenance, ProviderBatchResult,
+        ProviderCapabilities, ProviderConnection, ProviderRepository, ProviderRequestContext,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+        RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -3033,6 +3043,63 @@ mod tests {
             gateway_core::PricingResolution::ConfiguredOverride { pricing }
                 if pricing == route.pricing_override.expect("pricing override")
         ));
+    }
+
+    #[tokio::test]
+    async fn openai_decisions_usage_is_priced_input_only_with_cached_tokens() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.provider_key = "openai-prod".to_string();
+        route.upstream_model = "gpt-6-luna".to_string();
+        route.compatibility.openai_compat = Some(OpenAiCompatRouteCompatibility {
+            decisions_api: Some(OpenAiCompatDecisionsApi::OpenAi),
+            ..Default::default()
+        });
+        // Decisions bill input only, so the route override zeroes output.
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::ZERO,
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: None,
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_openai_decisions_usage",
+                Some(json!({
+                    "input_tokens": 120_000,
+                    "input_tokens_details": {"cached_tokens": 100_000, "cache_write_tokens": 0},
+                    "output_tokens": 2_000,
+                    "output_tokens_details": {"reasoning_tokens": 1_500},
+                    "total_tokens": 122_000
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("decisions usage should be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(recorded.uncached_input_tokens, Some(20_000));
+        assert_eq!(recorded.cache_read_tokens, Some(100_000));
+        assert_eq!(recorded.cache_write_tokens, Some(0));
+        // 20k uncached at $1/M plus 100k cached at $0.10/M; output is free.
+        assert_eq!(recorded.cost_usd, Some(0.03));
+
+        let events = repo.events.lock().expect("events lock");
+        let event = events.first().expect("usage event");
+        assert_eq!(event.completion_tokens, Some(2_000));
+        assert_eq!(
+            event.provider_usage["output_tokens_details"]["reasoning_tokens"],
+            1_500
+        );
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(300));
     }
 
     #[tokio::test]

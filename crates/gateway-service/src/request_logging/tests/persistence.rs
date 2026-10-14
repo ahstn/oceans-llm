@@ -300,11 +300,12 @@ async fn embeddings_provider_error_log_records_failure_payload_and_attempt() {
         GatewayError::Provider(ProviderError::Transport("connection reset".to_string()));
 
     let wrote = logging
-        .log_non_stream_failure(
+        .log_failure(
             &auth,
             &context,
             "vertex-prod",
             sample_icon_metadata(),
+            false,
             90,
             &gateway_error,
             vec![attempt],

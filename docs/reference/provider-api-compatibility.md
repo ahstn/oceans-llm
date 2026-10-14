@@ -18,6 +18,7 @@ The gateway currently exposes:
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 - `POST /v1/decisions`
+- `POST /v1/systemone`
 - `POST /api/v1/batches`
 
 The Responses and Decisions APIs are first-class API families. Neither is translated through Chat Completions.
@@ -31,7 +32,7 @@ The Responses and Decisions APIs are first-class API families. Neither is transl
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers and native Vertex text-embedding routes | `crates/gateway-providers/src/openai_compat.rs`, `crates/gateway-providers/src/vertex/embeddings.rs` | OpenAI-compatible providers receive the OpenAI-shaped request. Vertex text embeddings use a provider-specific `:predict` mapper with explicit local validation. |
-| System One Decisions | Supported for native TypeSafe and OpenRouter | `crates/gateway-providers/src/typesafe.rs`, `crates/gateway-providers/src/openai_compat/decisions.rs` | Uses one typed contract with provider-specific paths: `/v1/systemone` for TypeSafe and `/api/alpha/decisions` for OpenRouter. |
+| Decisions (System One and OpenAI formats) | Supported for native TypeSafe, OpenAI-format `openai_compat` routes, and the alpha route | `crates/gateway-core/src/protocol/decisions/`, `crates/gateway-providers/src/typesafe.rs`, `crates/gateway-providers/src/openai_compat/decisions.rs` | Callers send either format. A neutral core request is translated into each route's format, and responses come back in the caller's format. |
 | Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/anthropic_compat.rs`, `crates/gateway-providers/src/vertex/anthropic_request.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex and `anthropic_compat` providers. |
 | Durable batches | Supported for providers with a configured batch adapter | `crates/gateway/src/http/batches.rs` and provider-specific batch adapters | The outer `endpoint` selects Chat Completions, Responses, or Embeddings. Chat and Responses item bodies use the same model effort policy as synchronous requests and are validated before persistence. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
@@ -43,7 +44,7 @@ This matrix is about current execution support, not provider marketing claims.
 
 | Provider type | Chat Completions | Responses | Embeddings | Decisions |
 | --- | --- | --- | --- | --- |
-| `openai_compat` | Supported. Route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses path. | Supported. | Supported only for OpenRouter routes with `compatibility.openrouter.api: decisions`. |
+| `openai_compat` | Supported. Route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses path. | Supported. | Supported for routes with `compatibility.openai_compat.decisions_api: openai` (OpenAI format) or `compatibility.openrouter.api: decisions` (System One format). |
 | `gcp_cloud_run_openai_compat` | Supported with Cloud Run ID-token auth. | Supported when the service exposes Responses. | Supported when the service exposes embeddings. | Not enabled by route validation. |
 | `anthropic_compat` | Supported through native Anthropic Messages translation. | Not implemented. | Not implemented. | Not implemented. |
 | `gcp_vertex` | Supported for configured Google and Anthropic publisher routes. | Not implemented. | Supported for explicit supported Google text-embedding routes. | Not implemented. |
@@ -121,18 +122,35 @@ Runtime Converse compatibility also accepts optional `supports_strict_tools`. Wh
 
 ## Decisions API
 
-The public `POST /v1/decisions` request mirrors the TypeSafe System One shape. It carries `model`, `state`, and a map of typed `questions`. The gateway preserves the typed body, replaces the public model with the selected upstream model, applies route `extra_body`, and validates that every requested question receives an answer with the same type.
+`POST /v1/decisions` accepts two request formats and picks one from the body:
+
+| Format | Detected by | Questions | Answers |
+| --- | --- | --- | --- |
+| System One | `state` | Map of named `noul`, `choice`, and `score` questions | Map keyed by question name |
+| OpenAI Decisions | `input` | Ordered list of `predicate`, `choice`, and `score` questions | Ordered list, including `refusal` answers |
+
+A body with both `input` and `state`, or with neither, returns 400 with a message that names the problem. `POST /v1/systemone` accepts the System One format only.
+
+Both formats translate into one core request. Each provider route receives the format it speaks, and the response is returned in the caller's format. When both sides use the same format, Oceans returns the upstream body unchanged except for the public model name. The gateway replaces the public model with the selected upstream model, applies route `extra_body`, and checks that every requested question receives an answer of the matching type.
 
 Provider routing is explicit:
 
-| Route | Upstream path | Upstream model example |
-| --- | --- | --- |
-| Native `typesafe` | `/v1/systemone` | `jev-latest` |
-| OpenRouter `openai_compat` with `compatibility.openrouter.api: decisions` | `/api/alpha/decisions` | `typesafe/jev-1.13` |
+| Route | Upstream format | Upstream path | Upstream model example |
+| --- | --- | --- | --- |
+| Native `typesafe` | System One | `/v1/systemone` | `jev-latest` |
+| `openai_compat` with `compatibility.openai_compat.decisions_api: openai` | OpenAI | `{base_url}/decisions` | `gpt-6-luna` |
+| `openai_compat` alpha route with `compatibility.openrouter.api: decisions` | System One | `/api/alpha/decisions` | `typesafe/jev-1.13` |
 
-The shared adapter default is `/v1/decisions` for future compatible providers. Current config validation enables Decisions only for the two routes above.
+Some inputs cannot be translated to every format. When a model has routes in both formats, Oceans selects only among the routes whose format can carry the request. When no route can, Oceans returns 400 before calling the upstream:
 
-OpenRouter provider policy remains optional for Decisions. When configured, Oceans sends it as the upstream `provider` object. Native TypeSafe does not receive OpenRouter policy.
+- `safety_identifier` is sent to OpenAI-format routes only.
+- System One routes do not accept image inputs.
+- OpenAI-format routes need at least two options for every `choice` question.
+- OpenAI-format routes accept at most 200 questions and 128 images.
+
+When System One questions are sent to OpenAI, they are ordered by key, and `noul` criteria are added to the predicate instructions. OpenAI questions without a `name`, or whose `name` repeats an earlier question's, get the positional key `question_{index}` internally. Answers keep the caller's original `name`, including `null`. If an answer rendered for an OpenAI caller has no reported confidence, Oceans uses the probability of the selected option or nearest score level.
+
+Alpha-route provider policy remains optional. When configured, Oceans sends it as the upstream `provider` object. Native TypeSafe and OpenAI-format routes do not receive it.
 
 ## Effective Capabilities
 

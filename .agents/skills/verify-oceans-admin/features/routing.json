@@ -158,6 +158,7 @@
         "crates/gateway-service/src/{service,route_planner,model_resolution,model_access,authenticator}.rs",
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/inference.rs",
+        "crates/gateway/src/http/handlers/decisions.rs",
         "crates/gateway/src/http/request_body.rs",
         "crates/gateway/src/http/request_tracing.rs",
         "crates/gateway/src/http/response_cache.rs",
@@ -399,6 +400,8 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/guardrails.tsx",
+        "crates/admin-ui/web/src/routes/guardrails.tsx",
+        "crates/admin-ui/web/src/components/guardrails/settings/**",
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
@@ -498,6 +501,8 @@
         "crates/admin-ui/web/src/routes/account/**",
         "crates/gateway/src/http/mcp_oauth.rs",
         "crates/gateway/src/http/mcp_oauth/**",
+        "crates/gateway/src/http/mcp_gateway/credentials.rs",
+        "crates/gateway/src/http/mcp_gateway/credentials/**",
         "crates/gateway-service/src/mcp_oauth.rs"
       ]
     },

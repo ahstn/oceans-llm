@@ -161,7 +161,7 @@ Inbound credential contract details live in [Identity and Access](../../access/i
 
 Phase 2 supports Streamable HTTP only.
 
-Discovery initializes the configured server URL over Streamable HTTP, sends the MCP protocol version header, and accepts JSON or `text/event-stream` JSON-RPC responses. Tool input schemas are normalized into canonical JSON before hashing. Non-object input schemas are rejected and recorded as discovery failures.
+Discovery initializes the configured server URL over Streamable HTTP with protocol version 2025-06-18, the first version where a tool has a top-level `title` and an `outputSchema`. Later requests send the version the server chose in the MCP protocol version header. For a server that picks an older version, discovery reads the title from `annotations.title`. Discovery accepts JSON or `text/event-stream` JSON-RPC responses. Tool input schemas are normalized into canonical JSON before hashing. Non-object input schemas are rejected and recorded as discovery failures.
 
 Discovery status is the server health signal for this slice. Do not add a separate ping health check or discovery-run history UI until the product needs those distinct diagnostics.
 

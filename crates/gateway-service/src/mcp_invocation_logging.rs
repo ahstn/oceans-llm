@@ -67,6 +67,8 @@ pub struct McpInvocationLogInput {
     pub tool_id: Option<Uuid>,
     pub tool_display_key: String,
     pub tool_display_name: String,
+    /// MCP JSON-RPC method being logged, such as `tools/call` or `resources/read`.
+    pub mcp_method: String,
     pub status: McpToolInvocationStatus,
     pub policy_result: McpToolPolicyResult,
     pub latency_ms: Option<i64>,
@@ -141,6 +143,7 @@ where
             arguments_payload_redacted: payload.is_some(),
             result_payload_redacted: payload.is_some(),
             metadata: input.metadata,
+            mcp_method: input.mcp_method,
             occurred_at: input.occurred_at,
         };
 

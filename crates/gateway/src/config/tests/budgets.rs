@@ -167,3 +167,66 @@ budgets:
         "unexpected error: {error_text}"
     );
 }
+
+#[test]
+fn budget_exceeded_status_defaults_to_422() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(&config_path, "budgets: {}\n");
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    assert_eq!(config.budgets.exceeded_status_code.as_u16(), 422);
+}
+
+#[test]
+fn budget_exceeded_status_accepts_allowlisted_codes() {
+    for code in [402, 422, 429] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!("budgets:\n  exceeded_status_code: {code}\n"),
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        assert_eq!(config.budgets.exceeded_status_code.as_u16(), code);
+    }
+}
+
+#[test]
+fn budget_exceeded_status_rejects_codes_outside_allowlist() {
+    for code in ["400", "403", "500"] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!("budgets:\n  exceeded_status_code: {code}\n"),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("exceeded_status_code must be one of 402, 422 or 429"),
+            "unexpected error for {code}: {error_text}"
+        );
+    }
+}
+
+#[test]
+fn budget_exceeded_status_rejects_non_numeric_values() {
+    for value in ["\"422\"", "abc", "-1"] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!("budgets:\n  exceeded_status_code: {value}\n"),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("budgets.exceeded_status_code"),
+            "unexpected error for {value}: {error_text}"
+        );
+    }
+}

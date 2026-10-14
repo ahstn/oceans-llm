@@ -33,20 +33,21 @@ use crate::{
         McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
         McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
         McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolTokenEstimateRecord,
-        McpToolsetRecord, McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
-        McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
-        NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
-        ProviderUserCredentialStatusRecord, RefreshMcpOauthCredentialBindingRecord,
-        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
-        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
-        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
-        SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolProjection,
+        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
+        ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
+        NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
+        NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, ProviderUserCredentialRecord, ProviderUserCredentialStatusRecord,
+        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
+        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
+        SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
         UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
         UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
@@ -54,7 +55,10 @@ use crate::{
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::core::{ChatRequest, DecisionsRequest, EmbeddingsRequest, ResponsesRequest},
+    protocol::{
+        core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
+        decisions::{DecisionsRequest, ProviderDecisionsResponse},
+    },
 };
 
 #[async_trait]
@@ -1083,7 +1087,16 @@ pub trait McpAccessRepository: Send + Sync {
         &self,
         subjects: &[McpGrantSubject],
         mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError>;
+
+    /// Whether any subject holds an active grant on at least one active tool of
+    /// the server, directly or through an active toolset.
+    async fn has_mcp_server_grant(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+    ) -> Result<bool, StoreError>;
 
     async fn resolve_mcp_catalog_access_for_subjects(
         &self,
@@ -1406,7 +1419,7 @@ pub trait ProviderClient: Send + Sync {
         &self,
         request: &DecisionsRequest,
         context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
         let _ = (request, context);
         Err(ProviderError::NotImplemented(format!(
             "{} does not support decisions",

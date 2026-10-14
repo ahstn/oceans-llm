@@ -8,7 +8,8 @@ Workspace connections lets any signed-in user link or unlink their own account o
 - `connections-empty` shows `No OAuth servers are available` when there is no active oauth_obo server.
 - `connections-connect` starts the provider consent flow with `Connect` or `Reconnect`.
 - `connections-disconnect` removes the user's binding with `Disconnect`.
-- `connections-callback` shows a toast for `?oauth=connected` or `?oauth_error=<code>`.
+- `connections-callback` shows a toast for `?oauth=connected` or `?oauth_error=<code>`. The callback also returns `?server=<server_id>`, and the success toast then names the server, such as `Google Drive connected`.
+- `connections-connect-link` handles `?connect=<server_key>`, the `connect_url` that MCP clients receive with `credential_required` and `credential_expired`. It drops the parameter, then starts consent for that server. A connected server shows `<name> is already connected`. A connection that no longer matches the server's provider, resource, or required scopes lists as `Expired`, so the link starts consent again; an unknown server shows `No workspace connection is available for MCP server <key>.`; an unavailable server shows its availability error.
 
 ## How to get to it (user POV)
 
@@ -26,7 +27,8 @@ Preconditions:
 - **API parity.** From the browser context, fetch `/api/v1/mcp/oauth/connections`. It returns an empty list, which matches the empty state.
 - **Non-admin reach.** In a new browser context, sign in as `ben@platform.local` with `localdemo123` and open `/admin/account/connections`. The same empty state renders, so the page is not gated by permissions.
 - **Error callback.** Open `/admin/account/connections?oauth_error=access_denied`. An error toast appears and the page stays on the empty state.
-- **Connect and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a Google entry under `mcp.oauth.providers`, a registered oauth_obo server, and interactive Google consent. Report them as skipped and name that unmet precondition.
+- **Connect link, unknown server.** Open `/admin/account/connections?connect=google_drive`. The toast `No workspace connection is available for MCP server google_drive.` appears, the URL drops the `connect` parameter, and the browser does not leave the page.
+- **Connect, connect link and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a Google entry under `mcp.oauth.providers`, a registered oauth_obo server, and interactive Google consent. Report them as skipped and name that unmet precondition.
 - **Proof.** Capture the card, the alert, and the API response.
 
 ## Gotchas
@@ -36,3 +38,4 @@ Preconditions:
 - `Disconnect` acts only on the signed-in user's own binding. It is not an admin view of other users.
 - The status badge capitalizes the status from the API, so compare statuses case-insensitively.
 - Do not record the OAuth `state`, codes, or tokens in evidence.
+- The `connect_url` itself is built by the gateway. `http::mcp_gateway::credentials::tests` and `aggregate::tests::missing_oauth_credential_returns_the_connect_url` prove the URL, the message, and that no secrets appear. `src/test/routes/account-connections-route.test.tsx` proves the page side with a stubbed consent redirect.

@@ -267,6 +267,7 @@ mod tests {
             name: "search".to_string(),
             description: None,
             input_schema: json!({"type": "object"}),
+            ..McpTool::default()
         }]);
         assert_eq!(
             serde_json::to_value(response).expect("tools list response"),

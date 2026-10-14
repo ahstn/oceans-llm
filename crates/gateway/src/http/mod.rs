@@ -3,6 +3,8 @@ pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
 pub mod batches;
+#[cfg(test)]
+mod budget_status_tests;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;
@@ -74,6 +76,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
         .route("/v1/decisions", post(v1_decisions))
+        .route("/v1/systemone", post(v1_systemone))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
         .layer(middleware::from_fn(request_body::observe_request_body));
 

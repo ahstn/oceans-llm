@@ -2705,6 +2705,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "mcp_method",
+            "in": "query",
+            "description": "MCP JSON-RPC method, such as `tools/call` or `resources/read`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -14647,6 +14659,36 @@
           }
         }
       },
+      "McpToolAnnotationsView": {
+        "type": "object",
+        "description": "Behaviour hints declared by the upstream server. A missing value means the\nserver did not declare the hint. Hints are not verified by the gateway.",
+        "properties": {
+          "destructive_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "idempotent_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "open_world_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "read_only_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
       "McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -14721,6 +14763,7 @@
           "server_display_name",
           "tool_display_key",
           "tool_display_name",
+          "mcp_method",
           "status",
           "policy_result",
           "has_payload",
@@ -14759,6 +14802,10 @@
               "null"
             ],
             "format": "int64"
+          },
+          "mcp_method": {
+            "type": "string",
+            "description": "MCP JSON-RPC method this row records, such as `tools/call`,\n`resources/read`, or `prompts/get`. Unparseable requests use `invalid`."
           },
           "mcp_tool_invocation_id": {
             "type": "string"
@@ -14840,6 +14887,7 @@
           "upstream_name",
           "display_name",
           "input_schema",
+          "annotations",
           "schema_hash",
           "schema_version",
           "is_active",
@@ -14847,6 +14895,9 @@
           "last_discovered_at"
         ],
         "properties": {
+          "annotations": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView"
+          },
           "deactivated_at": {
             "type": [
               "string",
@@ -14875,6 +14926,9 @@
           "last_discovered_at": {
             "type": "string"
           },
+          "output_schema": {
+            "description": "Schema of the tool's structured result, when the upstream declares one."
+          },
           "schema_hash": {
             "type": "string"
           },
@@ -14884,6 +14938,13 @@
           },
           "server_id": {
             "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable title declared by the upstream server."
           },
           "upstream_name": {
             "type": "string"
