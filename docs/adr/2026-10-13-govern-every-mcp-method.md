@@ -20,10 +20,10 @@ As a result, any valid API key could call `resources/read`, `prompts/get`, or `c
 `parse_mcp_rpc_request` now returns one of these variants:
 
 - `ToolsList` or `ToolsCall`, which keep their existing per-tool handling.
-- `Lifecycle`, which covers `initialize`, `ping`, `logging/setLevel`, notifications without an `id`, client replies to server requests (`jsonrpc: "2.0"`, an `id`, and exactly one of `result` or `error`), and `DELETE` session termination. These are forwarded.
+- `Lifecycle`, which covers `initialize`, `ping`, `logging/setLevel`, the client notifications `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, and `notifications/roots/list_changed` sent without an `id`, client replies to server requests (`jsonrpc: "2.0"`, an `id`, and exactly one of `result` or `error`), and `DELETE` session termination. These are forwarded.
 - `EventStream`, which is a `GET` that opens the server-to-client stream.
 - `Governed`, which covers the five resources methods, `prompts/list`, `prompts/get`, and `completion/complete`.
-- `Unknown`, which is any other method, including a `notifications/*` method sent with an `id`.
+- `Unknown`, which is any other method, including any other `notifications/*` name and a client notification sent with an `id`.
 
 `Unknown` methods get HTTP 403 with JSON-RPC code `-32601`, and the gateway logs them with error code `mcp_method_not_allowed`. A request echoes its `id`. A notification gets the same status and an error body without an `id`, as the transport allows for a message the server does not accept. Logged method names are truncated to 256 characters. A `POST` with an empty body gets HTTP 400 instead of being forwarded.
 

@@ -64,8 +64,6 @@ Each discovered tool row is collapsed by default. The collapsed row shows:
 
 - selector checkbox
 - tool name
-- hint badges the upstream server declares: **Read-only**, **Destructive**,
-  **Idempotent**, and **Open world**
 - description, truncated when long
 - active/inactive status
 
@@ -74,6 +72,8 @@ Expand a row to inspect:
 - stable Oceans tool id
 - upstream tool name
 - display title, when the server declares one
+- hint badges the upstream server declares: **Read-only**, **Destructive**,
+  **Idempotent**, and **Open world**
 - schema version
 - persisted JSON input schema
 - output schema, when the server declares one

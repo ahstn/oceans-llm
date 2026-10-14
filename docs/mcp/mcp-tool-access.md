@@ -83,7 +83,7 @@ Resources, prompts, and completions can return server data just as tools can, so
 
 | Method | Gateway behavior |
 | --- | --- |
-| `initialize`, `ping`, `logging/setLevel`, `notifications/*` (no `id`), client replies to server requests, `DELETE` (end session) | Forwarded. These carry no server data. |
+| `initialize`, `ping`, `logging/setLevel`, `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, `notifications/roots/list_changed` (no `id`), client replies to server requests, `DELETE` (end session) | Forwarded. These carry no server data. |
 | `tools/list`, `tools/call` | Filtered and checked per tool, as described above. |
 | `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `completion/complete` | Forwarded only when the caller has at least one effective grant on the server. Otherwise the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a policy-denied invocation with error code `mcp_server_not_granted`. |
 | `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. The stream is not logged per call. |

@@ -107,8 +107,13 @@ impl GovernedMcpMethod {
 fn is_lifecycle_method(method: &str, has_id: bool) -> bool {
     match method {
         "initialize" | "ping" | "logging/setLevel" => true,
-        // Notifications never get a response, so they cannot return server data.
-        method => !has_id && method.starts_with("notifications/"),
+        // The notifications a client sends to a server. They never get a response, so
+        // they cannot return server data. Other names go through deny-by-default.
+        "notifications/initialized"
+        | "notifications/cancelled"
+        | "notifications/progress"
+        | "notifications/roots/list_changed" => !has_id,
+        _ => false,
     }
 }
 

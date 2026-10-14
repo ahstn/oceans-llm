@@ -85,6 +85,8 @@ mod method_classification {
             json!({"jsonrpc": "2.0", "id": 3, "method": "logging/setLevel", "params": {"level": "info"}}),
             json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
             json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progressToken": 1, "progress": 1}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/roots/list_changed"}),
             json!({"jsonrpc": "2.0", "id": "server-1", "result": {"roots": []}}),
         ] {
             assert!(
@@ -171,6 +173,14 @@ mod method_classification {
                 json!({"jsonrpc": "2.0", "id": 2, "method": "notifications/resources/read"})
             ),
             McpRpcRequest::Unknown { .. }
+        ));
+        // Only the notifications MCP defines for clients are forwarded.
+        assert!(matches!(
+            classify(
+                Method::POST,
+                json!({"jsonrpc": "2.0", "method": "notifications/vendor/delete_all"})
+            ),
+            McpRpcRequest::Unknown { id: None, .. }
         ));
     }
 
