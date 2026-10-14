@@ -3049,6 +3049,65 @@ mod tests {
         assert!(body.ends_with("\n\ndata: [DONE]\n\n"));
     }
 
+    /// Runs a real `guard_stream` ahead of the logging wrapper, as `stream_response` does
+    /// when inference guardrails are enabled, over OpenRouter's stream shape: a comment
+    /// line, one event per chunk, and a final usage event that still carries a choice.
+    #[tokio::test]
+    async fn priced_stream_adds_cost_after_inference_guardrails_buffer_the_stream() {
+        let (_guard_directory, mut app_state) = crate::http::test_support::app_state().await;
+        Arc::make_mut(&mut app_state.guardrail_config)
+            .default
+            .enabled = true;
+        let mut prompt = json!({"messages": [{"role": "user", "content": "hello"}]});
+        let guard_context = crate::http::inference_guardrails::guard_prompt(
+            &app_state,
+            "stream-guarded-cost-test",
+            "fast/openrouter/upstream".into(),
+            &mut prompt,
+        )
+        .await
+        .expect("guard prompt");
+        assert!(guard_context.enabled);
+
+        let upstream: ProviderStream = Box::pin(stream::iter(
+            [
+                ": OPENROUTER PROCESSING\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"index\":0,\"native_finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500,\"cost\":0.00002627,\"is_byok\":false}}\n\n",
+                "data: [DONE]\n\n",
+            ]
+            .map(|event| Ok(Bytes::from_static(event.as_bytes()))),
+        ));
+        let Ok(guarded) =
+            crate::http::inference_guardrails::guard_stream(&app_state, &guard_context, upstream)
+                .await
+        else {
+            panic!("guard stream");
+        };
+
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let (_context, state) = harness.logging_state("stream-guarded-cost-test", guarded);
+        let body = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| String::from_utf8(chunk.expect("ok").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        let usage = body
+            .split("\n\n")
+            .filter_map(|event| event.strip_prefix("data: "))
+            .filter(|data| *data != "[DONE]")
+            .map(|data| serde_json::from_str::<Value>(data).expect("json event"))
+            .find(|event| event.get("usage").is_some())
+            .expect("usage event");
+        assert_eq!(usage["usage"]["total_tokens"], 1500);
+        assert_eq!(usage["usage"]["cost"], 0.00002627);
+        assert_eq!(usage["usage"]["oceans"]["cost"], "0.0105");
+        assert!(body.starts_with(": OPENROUTER PROCESSING\n\n"));
+        assert!(body.ends_with("\n\ndata: [DONE]\n\n"));
+    }
+
     #[tokio::test]
     async fn priced_stream_does_not_hold_content_that_carries_usage() {
         let mut harness = StreamTestHarness::new().await;
