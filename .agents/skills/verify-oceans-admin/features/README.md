@@ -67,7 +67,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
-- [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4-flash-0731`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
+- [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4.1-flash`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
 - [Guardrails](./guardrails.md) covers effective policy cards, decision filters, and a free evaluate-endpoint decision.
