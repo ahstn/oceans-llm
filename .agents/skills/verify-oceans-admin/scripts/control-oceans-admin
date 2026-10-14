@@ -70,7 +70,8 @@ require_command lsof
 
 activate_mise() {
   local mise_bin
-  mise_bin="$(resolve_mise)"
+  # Cleanup runs with errexit suspended, so stop here instead of evaluating an empty command.
+  mise_bin="$(resolve_mise)" || return 1
   eval "$("$mise_bin" activate bash)"
 }
 
@@ -127,17 +128,24 @@ redact_log() {
   mv "$redacted_log" "$log_file"
 }
 
+# `daemons status` fails until the daemon is registered; `daemons ls` reports it either way.
 rustfs_identity() {
-  mise -E rustfs daemons status rustfs --json | mise exec -- bun -e '
-    const state = await Bun.stdin.json();
-    console.log([state.status, state.pid ?? "-", state.port?.[0] ?? "-"].join(" "));
+  mise -E rustfs daemons ls --json | mise exec -- bun -e '
+    const state = (await Bun.stdin.json()).find(daemon => daemon.name === "rustfs");
+    if (!state) throw new Error("mise does not define a rustfs daemon for this checkout");
+    console.log([state.status, state.pid ?? "-", state.port ?? "-"].join(" "));
   '
 }
 
 prepare_skills() {
-  local daemon_status daemon_pid daemon_port setup_status=0
-  read -r daemon_status daemon_pid daemon_port < <(rustfs_identity)
-  if [[ "$daemon_pid" == "-" && "$daemon_status" != "stopped" ]]; then
+  local identity daemon_status daemon_pid daemon_port setup_status=0
+  identity="$(rustfs_identity)" || {
+    echo "Could not read the RustFS daemon state from mise." >&2
+    return 1
+  }
+  read -r daemon_status daemon_pid daemon_port <<<"$identity"
+  # `available` is a daemon that is registered or defined but has never started here.
+  if [[ "$daemon_pid" == "-" && "$daemon_status" != "stopped" && "$daemon_status" != "available" ]]; then
     echo "RustFS is changing state; wait for it to stop or become ready before launch." >&2
     return 1
   fi
