@@ -121,6 +121,14 @@ mod tests {
             name: None,
             extra: BTreeMap::new(),
         };
+        // `tool_configuration` is nested in each server entry, so the
+        // top-level allowlist keeps it with `mcp_servers`.
+        let mcp_servers = json!([{
+            "type": "url",
+            "url": "https://mcp.example.test/sse",
+            "name": "docs",
+            "tool_configuration": {"enabled": true, "allowed_tools": ["search"]},
+        }]);
         let request = CoreChatRequest {
             model: "claude".to_string(),
             messages: vec![message("system", "Be brief."), message("user", "hi")],
@@ -128,6 +136,7 @@ mod tests {
             extra: BTreeMap::from([
                 ("max_tokens".to_string(), json!(1024)),
                 ("temperature".to_string(), json!(0.5)),
+                ("mcp_servers".to_string(), mcp_servers.clone()),
             ]),
         };
         let context = ProviderRequestContext {
@@ -159,6 +168,7 @@ mod tests {
                 "model": "claude-sonnet-4-6",
                 "messages": [{"role": "user", "content": "hi"}],
                 "system": [{"type": "text", "text": "Be brief."}],
+                "mcp_servers": mcp_servers,
             })
         );
     }
