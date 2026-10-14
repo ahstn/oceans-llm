@@ -4,7 +4,7 @@ Guardrails is a platform-admin-only view of the privacy-safe history of guardrai
 
 ## Sub-features
 
-- `guardrails-summary` shows the `Decisions`, `Denied`, `Transformed`, and `p95 latency` tiles for the current filters, and `Action mix by phase` for the decisions on this page.
+- `guardrails-summary` shows four tiles and `Action mix by phase`. Only `Decisions` counts every decision that matches the filters. `Denied`, `Transformed`, `p95 latency`, and the phase mix cover only the decisions on the current page, so they differ from filter-wide totals once more than one page matches.
 - `guardrails-decisions` lists `Decision events` with UTC time, action badge, phase, reason and pack/rule, evaluator, and latency.
 - `guardrails-filter` narrows decisions by `Request ID`, `Evaluator`, phase, and action through URL search (`request_id`, `evaluator`, `phase`, `action`).
 - `guardrails-detail` opens a decision sheet titled with its phase and action badge, showing `Reason`, `Rule`, `Evaluator`, `Scope`, `Latency`, `Transformed`, `Decision`, and `Request` when the decision is request-linked.
@@ -31,12 +31,12 @@ Preconditions:
 - **Detail.** Select the row. The sheet title reads `Harness pre-tool` with an `Audit` badge, and `Reason`, `Rule`, `Evaluator`, and `Decision` (the decision ID) match the row.
 - **Clear.** Choose `Clear` in the toolbar. It appears only while a filter is set. The URL search empties, `Action` returns to `All`, and the phase button is no longer pressed. The `Clear evaluator` and `Clear request id` buttons inside the text fields remove only that one filter.
 - **Policy.** Choose `Configure`. `Guardrail Settings` shows the `gateway.yaml` preview. With the default config it reads `enabled: true`, `mode: audit`, the configured packs, `managed_checks: []`, and `stream_buffer_bytes: 4194304`.
-- **API parity.** With the same session, fetch `GET /api/v1/admin/guardrails/decisions` with the same filter query and `GET /api/v1/admin/guardrails/policies`. `data.total` must match the `Decisions` tile and the pager. The `decision_id` values must match the rows and the detail sheet. `data.default` must match the YAML preview.
+- **API parity.** With the same session, fetch `GET /api/v1/admin/guardrails/decisions` with the same filter query and `GET /api/v1/admin/guardrails/policies`. `data.total` must match the `Decisions` tile and the pager. The `decision_id` values must match the rows and the detail sheet. In `data.default`, compare `enabled`, `mode`, `packs`, `managed_checks`, `stream_buffer_bytes`, `stream_buffer_timeout_ms`, and `secret_redaction` with the preview's default block. `scope` and `overridden_fields` exist only in the API, and the top-level `managed_checks` definitions are not part of the preview.
 - **Proof.** Capture the unfiltered view, the filtered table, the detail sheet, and the settings preview. Record the decision ID and filter query.
 
 ## Gotchas
 
-- There is no apply button. `Request ID` and `Evaluator` apply on Enter. The `Action` group and the phase buttons apply on click. The URL changes before the table re-renders, so wait for the `Decisions` tile or the pager to change before you compare it with the API. The text fields, `Action` group, and `Clear` are disabled until the new page loads.
+- There is no apply button. `Request ID` and `Evaluator` apply on Enter. The `Action` group and the phase buttons apply on click. The URL changes before the table re-renders. The text fields, the `Action` group, and `Clear` are disabled until the new page loads, so wait for the URL and for those controls to be enabled again before you compare with the API. Do not wait for the `Decisions` tile or pager to change: on a fresh run with one decision, every filter in this recipe leaves them at `1` and `1–1 of 1`.
 - `Evaluator` matches the evaluator name (`built_in` for the packaged rules), not a pack such as `core.filesystem`. A pack name returns `No guardrail decisions`. Clicking an evaluator cell also filters by it.
 - The `Action` group is a single-select toggle group (`All`, `Allow`, `Audit`, `Transformed`, `Deny`), so each option has role `radio`. This page has no phase select. Phase filtering uses the `Action mix by phase` buttons, whose counts cover only the current page.
 - Field-level `Clear evaluator` and `Clear request id` buttons also start with `Clear`. Select the toolbar button by its exact name.
