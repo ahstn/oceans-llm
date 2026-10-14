@@ -3,6 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use gateway_core::{
     AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError, IdentityRepository,
     McpAccessRepository, McpAccessResolution, McpGrantSubject, McpToolGrantSubjectKind,
+    McpToolProjection,
 };
 use uuid::Uuid;
 
@@ -24,11 +25,26 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
     ) -> Result<McpAccessResolution, GatewayError> {
         let subjects = self.grant_subjects(auth).await?;
         Ok(self
             .repo
-            .resolve_mcp_access_for_subjects(&subjects, mcp_server_id)
+            .resolve_mcp_access_for_subjects(&subjects, mcp_server_id, projection)
+            .await?)
+    }
+
+    /// Whether the key may reach the server at all: it holds a grant on at
+    /// least one of the server's active tools.
+    pub async fn has_server_grant(
+        &self,
+        auth: &AuthenticatedApiKey,
+        mcp_server_id: Uuid,
+    ) -> Result<bool, GatewayError> {
+        let subjects = self.grant_subjects(auth).await?;
+        Ok(self
+            .repo
+            .has_mcp_server_grant(&subjects, mcp_server_id)
             .await?)
     }
 
@@ -39,7 +55,7 @@ where
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, GatewayError> {
         let resolution = self
-            .effective_tools_for_api_key(auth, Some(mcp_server_id))
+            .effective_tools_for_api_key(auth, Some(mcp_server_id), McpToolProjection::Access)
             .await?;
         Ok(resolution
             .allowed_tools

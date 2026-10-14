@@ -20,7 +20,8 @@ use axum::{
 use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpToolInvocationStatus,
-    McpToolPolicyResult, OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
+    McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope, ProviderError,
+    auth::extract_bearer_token,
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
@@ -151,7 +152,11 @@ async fn dispatch_mcp_request(
     match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
             let access_resolution = match access
-                .effective_tools_for_api_key(auth, Some(server.mcp_server_id))
+                .effective_tools_for_api_key(
+                    auth,
+                    Some(server.mcp_server_id),
+                    McpToolProjection::Access,
+                )
                 .await
             {
                 Ok(resolution) => resolution,

@@ -2010,6 +2010,16 @@ pub struct UpsertMcpToolGrantRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// Which tool columns an access resolution loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpToolProjection {
+    /// Identity, schema and lifecycle columns. `metadata` is left empty because
+    /// authorization only needs to know which tools are granted.
+    Access,
+    /// Also loads the title, annotations and output schema.
+    Full,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpAccessResolution {
     pub allowed_tools: Vec<ExternalMcpToolRecord>,

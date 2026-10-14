@@ -34,7 +34,7 @@ MCP tasks are the first such method family. A `tools/call` with a `task` param r
 
 ### 2. Resources, prompts, and completions need a server grant
 
-Grants are per tool, and resources and prompts have no grant model of their own. A governed method is forwarded only when `effective_tools_for_api_key` returns at least one allowed tool on the server. This is the same resolution that `tools/list` filtering uses. Without a grant, the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a `policy_denied` record with error code `mcp_server_not_granted`.
+Grants are per tool, and resources and prompts have no grant model of their own. A governed method is forwarded only when the caller holds a grant on at least one active tool on the server, directly or through an active toolset. This uses the same grant rules as `tools/list` filtering, but `has_mcp_server_grant` runs it as a single `EXISTS` query per grant subject rather than loading the full tool list on every resource read. Without a grant, the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a `policy_denied` record with error code `mcp_server_not_granted`.
 
 The `GET` event stream can carry resource update notifications, so it needs the same grant. It is long-lived, so it is not logged per call.
 

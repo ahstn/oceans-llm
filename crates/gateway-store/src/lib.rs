@@ -55,6 +55,7 @@ mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod mcp_access;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;

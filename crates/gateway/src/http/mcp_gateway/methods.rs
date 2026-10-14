@@ -44,10 +44,9 @@ async fn server_has_grant(
     auth: &AuthenticatedApiKey,
     server: &ExternalMcpServerRecord,
 ) -> Result<bool, GatewayError> {
-    let resolution = McpAccess::new(state.store.clone())
-        .effective_tools_for_api_key(auth, Some(server.mcp_server_id))
-        .await?;
-    Ok(!resolution.allowed_tools.is_empty())
+    McpAccess::new(state.store.clone())
+        .has_server_grant(auth, server.mcp_server_id)
+        .await
 }
 
 fn server_not_granted_response(id: Option<&Value>) -> Response<Body> {
