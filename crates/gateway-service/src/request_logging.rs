@@ -47,6 +47,9 @@ use tool_cardinality::shallow_tool_count_from_request_body;
 #[cfg(test)]
 use attempts::truncate_attempt_error_detail;
 
+/// Request log metadata key naming the headers that supplied the credential, tags and session.
+pub const REQUEST_LOG_HEADER_SOURCES_KEY: &str = "header_sources";
+
 #[derive(Debug, Clone)]
 pub struct RequestLogContext {
     pub request_log_id: Uuid,
@@ -65,6 +68,7 @@ pub struct RequestLogContext {
     pub(crate) started_at: OffsetDateTime,
     pub(crate) analysis_metadata: PassiveRequestMetadata,
     pub(crate) analysis_payload_permitted: bool,
+    header_sources: Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -318,6 +322,7 @@ where
             started_at: OffsetDateTime::now_utc(),
             analysis_metadata: prepared.analysis_metadata,
             analysis_payload_permitted: prepared.analysis_payload_permitted,
+            header_sources: request_header_sources(input.request_headers),
         }
     }
 
@@ -616,12 +621,18 @@ where
             });
         }
 
-        let metadata = request_log_metadata(
+        let mut metadata = request_log_metadata(
             context.operation,
             summary.stream,
             &summary.icon_metadata,
             &self.payload_policy,
         );
+        if !context.header_sources.is_empty() {
+            metadata.insert(
+                REQUEST_LOG_HEADER_SOURCES_KEY.to_string(),
+                Value::Object(context.header_sources.clone()),
+            );
+        }
         let has_payload = self.payload_policy.should_capture_payloads()
             && context.request_json.is_some()
             && response_json.is_some();
@@ -712,6 +723,37 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         completion_tokens,
         total_tokens,
     }
+}
+
+/// Records which request header supplied the gateway credential, the bespoke tags and the
+/// canonical routing session, so alias headers stay visible in request logs. Values are never
+/// recorded, only header names; several names are joined with `+`.
+fn request_header_sources(headers: &BTreeMap<String, String>) -> Map<String, Value> {
+    let mut sources = Map::new();
+    // The request has already authenticated, so the most permissive inference policy names the
+    // header the handler accepted.
+    let credential = gateway_core::resolve_gateway_credential(
+        gateway_core::CredentialHeaderPolicy::BearerOrXApiKey,
+        |name| Ok(headers.get(name).map(String::as_str)),
+    );
+    if let Ok(Some(credential)) = credential {
+        sources.insert("credential".to_string(), Value::from(credential.source));
+    }
+    let present = |names: &[&str]| -> Option<String> {
+        let present = names
+            .iter()
+            .filter(|name| headers.contains_key(**name))
+            .copied()
+            .collect::<Vec<_>>();
+        (!present.is_empty()).then(|| present.join("+"))
+    };
+    if let Some(tags) = present(&["x-oceans-tags", "x-litellm-tags"]) {
+        sources.insert("tags".to_string(), Value::String(tags));
+    }
+    if let Some(session) = present(&crate::client_session::CANONICAL_SESSION_HEADERS) {
+        sources.insert("session".to_string(), Value::String(session));
+    }
+    sources
 }
 
 fn request_log_metadata(

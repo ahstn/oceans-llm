@@ -1,6 +1,6 @@
 # Client Harness Configuration
 
-`See also`: [Model Routing and APIs](model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md)
+`See also`: [Model Routing and APIs](model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Client Request Headers](../reference/client-request-headers.md)
 
 ![Model Config Page](../public/images/screenshot-model-client-config-opencode.jpeg)
 
@@ -75,6 +75,20 @@ The Codex tab emits `config.toml` content for the user-level Codex configuration
 Oceans includes Codex only when the selection contains one Responses-capable model. The generated TOML uses the selected gateway model id, configured gateway base URL, Oceans provider id/name, and gateway API-key environment variable. It also sets `wire_api = "responses"`, disables OpenAI auth for the proxy provider, disables analytics, and disables OTEL prompt logging. The generator omits `model_reasoning_effort` unless the model has an explicit Codex default, so Codex can use the selected model's default when that metadata is unknown. A gateway `max_reasoning_effort` value is an enforcement ceiling and does not become a client default.
 
 Responses-compatible Bedrock routes can still support only a subset of OpenAI-hosted tools. For example, Bedrock Mantle GPT-5.5 is usable through Codex over the Responses API but does not support the OpenAI-hosted `image_generation` tool; see [Provider API Compatibility](../reference/provider-api-compatibility.md#hosted-responses-tools).
+
+## Existing LiteLLM Header Configuration
+
+Clients already configured to send `x-litellm-*` headers can point at Oceans without removing them:
+
+| Client header | Oceans behavior |
+| --- | --- |
+| `x-litellm-api-key` | Gateway API key, with or without `Bearer `. It takes precedence over `Authorization` and `x-api-key`. |
+| `x-litellm-tags` | Comma-separated request tags, merged with `x-oceans-tags`. |
+| `x-litellm-session-id` | Routing session id, equivalent to `x-oceans-session-id`. |
+
+This helps Claude Code installs that send an upstream OAuth token in `Authorization` and the gateway key in a custom header such as `ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer <key>"`. The gateway authenticates with `x-litellm-api-key` and ignores the unrelated `Authorization` value. Oceans does not forward either header upstream.
+
+See [Client Request Headers](../reference/client-request-headers.md) for precedence, conflicts, and tag mapping.
 
 ## Budgets And Access
 

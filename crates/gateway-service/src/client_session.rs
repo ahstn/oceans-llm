@@ -81,6 +81,11 @@ pub(crate) struct RoutingSession {
     pub value: String,
 }
 
+/// Headers that carry the canonical Oceans routing session. `x-litellm-session-id` is an
+/// alias for `x-oceans-session-id`; when both are sent they must agree.
+pub(crate) const CANONICAL_SESSION_HEADERS: [&str; 2] =
+    ["x-oceans-session-id", "x-litellm-session-id"];
+
 /// The canonical header selects the Oceans namespace, but must agree with any recognized
 /// harness session identifier. Unlike passive analysis, malformed IDs reject routing.
 pub(crate) fn extract_routing_session(
@@ -99,11 +104,12 @@ pub(crate) fn extract_routing_session(
             SessionCorrelationLimitation::MalformedCandidate,
         ));
     }
-    let canonical = resolve_session(header_observations(
-        headers,
-        "x-oceans-session-id",
-        body.policy,
-    ));
+    let canonical = resolve_session(
+        CANONICAL_SESSION_HEADERS
+            .iter()
+            .flat_map(|name| header_observations(headers, name, body.policy))
+            .collect(),
+    );
     let harness = extract_session(body, headers, harness_key, &metadata);
     if let Some(limitation) = canonical.limitation.or(harness.limitation) {
         return Err(invalid_routing_session(limitation));

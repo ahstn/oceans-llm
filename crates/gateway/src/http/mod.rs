@@ -3,6 +3,7 @@ pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
 pub mod batches;
+mod credentials;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;

@@ -49,6 +49,14 @@ fn redacts_nested_sensitive_json_keys() {
 fn header_redaction_keeps_non_sensitive_values() {
     assert_eq!(redact_header_value("x-trace-id", "trace-1"), "trace-1");
     assert_eq!(redact_header_value("authorization", "secret"), "[REDACTED]");
+    assert_eq!(
+        redact_header_value("X-LiteLLM-API-Key", "secret"),
+        "[REDACTED]"
+    );
+    assert_eq!(
+        redact_header_value("x-oceans-api-key", "secret"),
+        "[REDACTED]"
+    );
 }
 
 #[test]

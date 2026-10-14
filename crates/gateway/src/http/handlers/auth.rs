@@ -4,10 +4,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use super::{
-    AppError, AppState, AuthenticatedApiKey, anthropic_error_response,
-    extract_anthropic_authorization_header, extract_authorization_header,
-};
+use gateway_core::CredentialHeaderPolicy;
+
+use super::{AppError, AppState, AuthenticatedApiKey, anthropic_error_response};
+use crate::http::credentials::authenticate_gateway_key;
 
 // A parts extractor runs before Json, so rejected callers never buffer a body.
 pub struct InferenceAuth(pub AuthenticatedApiKey);
@@ -20,14 +20,12 @@ impl FromRequestParts<AppState> for InferenceAuth {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let anthropic = matches!(parts.uri.path(), "/v1/messages" | "/messages");
-        let authorization = if anthropic {
-            extract_anthropic_authorization_header(&parts.headers)
+        let policy = if anthropic {
+            CredentialHeaderPolicy::BearerOrXApiKey
         } else {
-            extract_authorization_header(&parts.headers).map(str::to_owned)
+            CredentialHeaderPolicy::Bearer
         };
-        state
-            .service
-            .authenticate(authorization.as_deref())
+        authenticate_gateway_key(state, &parts.headers, policy)
             .await
             .map(Self)
             .map_err(|error| {

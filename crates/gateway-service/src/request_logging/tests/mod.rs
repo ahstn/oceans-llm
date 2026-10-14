@@ -351,6 +351,7 @@ fn policy_with_redaction_paths(paths: &[&str]) -> RequestLogPayloadPolicy {
 
 mod attempts;
 mod harness;
+mod header_sources;
 mod measurement;
 mod persistence;
 mod stream;

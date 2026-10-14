@@ -20,16 +20,16 @@ use axum::{
     extract::{Extension, State},
     http::{
         HeaderMap, HeaderValue, StatusCode,
-        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
+        header::{CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
 };
 use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
-    CoreRequestRequirements, DecisionsRequest, EmbeddingsRequest, GatewayError, ProviderClient,
-    ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptRecord,
-    RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
+    CoreRequestRequirements, CredentialHeaderPolicy, DecisionsRequest, EmbeddingsRequest,
+    GatewayError, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_decisions_request_to_core, openai_embeddings_request_to_core,
@@ -47,6 +47,7 @@ use tracing::{Span, field};
 
 use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
+    credentials::authenticate_gateway_key,
     error::AppError,
     inference_guardrails::{
         GuardStreamError, InferenceGuardContext, guard_model_response, guard_prompt, guard_stream,
@@ -128,10 +129,8 @@ pub async fn v1_model_metadata(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<gateway_service::model_metadata::ModelMetadataResponse>, AppError> {
-    let auth = state
-        .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
-        .await?;
+    let auth =
+        authenticate_gateway_key(&state, &headers, CredentialHeaderPolicy::BearerOrXApiKey).await?;
     Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
 }
 
@@ -139,10 +138,8 @@ pub async fn v1_models(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<gateway_service::model_metadata::ModelsListResponse>, AppError> {
-    let auth = state
-        .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
-        .await?;
+    let auth =
+        authenticate_gateway_key(&state, &headers, CredentialHeaderPolicy::BearerOrXApiKey).await?;
     Ok(Json(state.service.models_list_for_api_key(&auth).await?))
 }
 
@@ -2381,22 +2378,6 @@ async fn finalize_successful_usage_accounting_from_parts(
     }
 }
 
-fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-}
-
-fn extract_anthropic_authorization_header(headers: &HeaderMap) -> Option<String> {
-    if let Some(value) = extract_authorization_header(headers) {
-        return Some(value.to_string());
-    }
-    headers
-        .get("x-api-key")
-        .and_then(|value| value.to_str().ok())
-        .map(|value| format!("Bearer {value}"))
-}
-
 fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<String, AppError> {
     let Some(Extension(request_id)) = request_id else {
         tracing::error!("canonical request id extension was missing from provider handler");
@@ -2440,7 +2421,7 @@ mod tests {
     use async_trait::async_trait;
     use axum::Extension;
     use axum::body::{Bytes, to_bytes};
-    use axum::http::{HeaderMap, HeaderValue};
+    use axum::http::HeaderValue;
     use futures_util::{StreamExt, stream};
     use gateway_core::protocol::openai::ChatMessage;
     use gateway_core::{
@@ -2462,8 +2443,8 @@ mod tests {
     };
     use super::{
         LoggingBodyStreamState, anthropic_error_response, api_health, build_provider_context,
-        canonical_request_id, extract_anthropic_authorization_header, request_log_icon_metadata,
-        split_partial_provider_error, wrap_stream_with_request_logging,
+        canonical_request_id, request_log_icon_metadata, split_partial_provider_error,
+        wrap_stream_with_request_logging,
     };
     use crate::http::request_tracing::StreamTrace;
     use crate::http::test_support::seed_stream_cancellation_test;
@@ -3128,17 +3109,6 @@ mod tests {
         };
 
         assert_eq!(value, "req-provided");
-    }
-
-    #[test]
-    fn anthropic_authorization_accepts_x_api_key() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-api-key", HeaderValue::from_static("gw-test-key"));
-
-        assert_eq!(
-            extract_anthropic_authorization_header(&headers).as_deref(),
-            Some("Bearer gw-test-key")
-        );
     }
 
     #[test]
