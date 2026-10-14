@@ -1,0 +1,33 @@
+crates/gateway-core/src/error.rs
+  s_13e300ce4bf1eb::t_fe139cc6e9eccc 137-138,174,217,294,317-325
+crates/gateway/src/http/handlers.rs
+  s_13e300ce4bf1eb::t_186db1beebe3d6 15
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_13e300ce4bf1eb::t_1325fa5b383267 7-8,11-12,34-81,120-128,277-300
+crates/gateway/src/http/handlers/route_tests.rs
+  s_13e300ce4bf1eb::t_ef49ee088bbd3c 288-322
+crates/gateway/src/http/state.rs
+  s_13e300ce4bf1eb::t_a0ef4407b2109c 10,43
+crates/gateway/src/http/test_support.rs
+  s_13e300ce4bf1eb::t_25c006b625fa9d 56
+crates/gateway/src/main.rs
+  s_13e300ce4bf1eb::t_2dccb2d5f8e38a 321
+docs/configuration/model-routing-and-api-behavior.md
+  s_13e300ce4bf1eb::t_743359ec82215b 418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc0642f83e9c659a7e6dec44e6adcaf396393042",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
