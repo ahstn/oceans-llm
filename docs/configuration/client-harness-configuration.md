@@ -21,7 +21,7 @@ The snippets use the gateway model ids shown in the Models table. Users still cr
 
 By default, snippets use the local development gateway base URL `http://127.0.0.1:3000`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway URL users can reach, for example `https://api.oceans-llm.com`.
 
-Base URL can change depending on API format and client harness. Experiment with adding or removing `/v1` if requests initially fail.
+The gateway accepts inference requests with or without the `/v1` prefix. `/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`, `/messages`, and `/messages/count_tokens` behave the same as their `/v1` forms. A harness configured with either the gateway root or the `/v1` base URL therefore reaches the same endpoints. Do not add `/v1` twice, as in `https://api.oceans-llm.com/v1/v1`.
 
 For a gateway hosted at `https://api.oceans-llm.com`, generated client configs use:
 
@@ -64,7 +64,7 @@ The Claude Code tab emits `.claude/settings.json` content with the SchemaStore C
 - `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the matching default model class variable
 - `modelOverrides`, mapping Claude Code's Anthropic model ids to the selected gateway model ids
 
-Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. OpenCode and Pi still use the OpenAI-compatible `/v1` base URL, grouped by client API style when needed.
+Claude Code appends Anthropic endpoints such as `/v1/messages`, `/v1/messages/count_tokens`, and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. Token counting returns a real count only when the selected route's provider has an upstream count API; other routes return `501 not_implemented_error`. See [Anthropic Messages token counting](model-routing-and-api-behavior.md#anthropic-messages-token-counting). OpenCode and Pi still use the OpenAI-compatible `/v1` base URL, grouped by client API style when needed.
 
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 

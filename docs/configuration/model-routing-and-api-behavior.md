@@ -18,7 +18,11 @@ The gateway exposes these authenticated endpoints:
 | `POST /v1/systemone` | Decisions, in the System One format only | `decisions: true` |
 | `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
 | `POST /messages` | Anthropic Messages compatibility alias | Chat-capable route with provider support |
+| `POST /v1/messages/count_tokens` | Anthropic Messages token counting | Chat-capable route whose provider has an upstream count API |
+| `POST /messages/count_tokens` | Anthropic Messages token counting alias | Chat-capable route whose provider has an upstream count API |
 | `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses, or Embeddings items | Capability matching the batch `endpoint` |
+
+Clients whose base URL stops at the gateway root can drop the `/v1` prefix. `POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` share the handler, authentication, and body limit of their `/v1` endpoint. These aliases sit beside the admin UI (served under `/admin` by default) and the `/api/*` admin and batch routes without overlapping them. `/v1/model-metadata` and `/api/v1/batches` have no unversioned alias.
 
 Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
 
@@ -396,6 +400,25 @@ Visibility does not guarantee that a route can execute every API family. A model
 `POST /v1/messages` and `POST /messages` accept Anthropic Messages-compatible requests. The gateway supports Anthropic-style `x-api-key` authentication and returns Anthropic-compatible JSON or server-sent events.
 
 Messages support still depends on the selected provider and route. Disable unsupported tools, vision, or other features so the request fails before provider execution.
+
+### Anthropic Messages token counting
+
+`POST /v1/messages/count_tokens` and `POST /messages/count_tokens` accept a Messages request body and return `{"input_tokens": N}`. They use the same authentication (`Authorization` or `x-api-key`), model resolution, model grants, reasoning-effort ceiling, and route selection as `POST /v1/messages`. Errors use the Anthropic error envelope.
+
+The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking`, and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `temperature`, `stop_sequences`, `store`, and `stream`, and replaces the caller's `max_tokens` with a valid limit that leaves room for any thinking budget, so settings that only shape generation never fail a count. The route's prompt guardrails run exactly as they do for Messages before the request leaves the gateway: secrets are redacted, and a prompt that Messages would deny is denied here too. Guardrail decisions are recorded under the count's request ID.
+
+| Selected route | Upstream count API |
+| --- | --- |
+| `anthropic_compat` | `POST /v1/messages/count_tokens` on the provider base URL |
+| `gcp_vertex` with an `anthropic/*` upstream model | `count-tokens:rawPredict` on the Anthropic publisher |
+| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens`, which needs the `bedrock:CountTokens` [IAM action](../providers/aws-bedrock.md#token-counting-permissions). It supports only some models and Regions; see [the Bedrock limits](../providers/aws-bedrock.md#token-counting-permissions) |
+| Any other route | None. Returns `501 not_implemented_error` |
+
+The gateway never estimates a count. When the selected route has no upstream count API, the response is a 501 whose message names the provider key, provider type, and upstream model. A 404 would wrongly suggest the endpoint does not exist.
+
+Counting generates no output, so it is not billed or logged as a request. It writes no usage-ledger row, does not check or charge budgets, creates no request log, and is not counted in the gateway request metrics. Because counts are free to the caller, each API key may have at most 8 counts in flight on each gateway instance. A further concurrent count is rejected before route selection with a 429 `rate_limit_error`, and a slot frees as soon as an earlier count finishes. Anthropic SDKs retry 429 responses with backoff. Counts are visible in traces as the `count_tokens` provider operation under the `/v1/messages/count_tokens` route, and as an `anthropic count_tokens request completed` log event with the input token count and whether guardrails were enabled.
+
+Route selection runs exactly as it does for Messages, so a count matches the route the next Messages request would most likely use. A count does not refresh session affinity. With `round_robin` routing, a count still advances the rotation, so the next Messages request can land on a different route than the one that was counted.
 
 ### Responses
 

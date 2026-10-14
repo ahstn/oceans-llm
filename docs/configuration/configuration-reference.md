@@ -94,7 +94,7 @@ models:
     benchmark_model_id: anthropic/claude-sonnet-4.6
     routes:
       - provider: bedrock
-        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+        upstream_model: us.anthropic.claude-sonnet-4-6
 ```
 
 `benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.

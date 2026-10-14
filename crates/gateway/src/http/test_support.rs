@@ -53,6 +53,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         admin_permissions: Arc::new(PermissionsConfig::default().resolve().expect("permissions")),
         leaderboard_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         harness_usage_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
+        count_tokens_limiter: Arc::default(),
     };
     (directory, state)
 }
