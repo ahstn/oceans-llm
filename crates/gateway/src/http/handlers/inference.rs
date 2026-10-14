@@ -119,12 +119,17 @@ impl<'a> InferenceRequest<'a> {
             )
             .await
         {
-            self.state.metrics.record_chat_request(&ChatRequestMetric {
-                labels: labels.clone(),
-                status_code: i64::from(error.http_status_code()),
-                outcome: error.error_type(),
-                latency_seconds: latency_seconds_since(self.request_started_at),
-            });
+            record_guarded_pre_provider_failure(
+                self.state,
+                self.auth,
+                &self.request_log_context,
+                &route,
+                icon_metadata,
+                self.request_started_at,
+                &labels,
+                &error,
+            )
+            .await;
             return Err(AppError(error));
         }
 

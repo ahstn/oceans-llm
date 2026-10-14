@@ -40,6 +40,7 @@ The live request path is single-route in this slice.
 8. The budget guard runs after model policy and capability enforcement, before provider execution.
    - hard-limit rejection returns `422 budget_exceeded` by default (`budgets.exceeded_status_code` can set `402` or `429`)
    - no provider call occurs on this path
+   - when the request-log [payload and owner policy](../operations/observability-and-request-logs.md#payload-policy) records the request, the rejection writes a summary row with the returned status, `error_code = budget_exceeded`, and no provider attempts
 9. Route compatibility metadata is passed into the provider adapter.
 10. The provider adapter applies any declared compatibility transforms to the outbound provider request.
 11. The first eligible route executes.
@@ -183,7 +184,7 @@ These failures look similar from far away, but they mean different things.
 - The message names the budget's cadence and scope kind (`user`, `service account` or `user+model`) and says that retrying will not succeed until the window resets or an administrator raises the limit. It does not include budget ids or other principals' data.
 - The OpenAI and Anthropic Python SDKs do not retry the default `422`; they do retry `429`. Check other clients before choosing `429`.
 - No provider call occurs on this path.
-- Observability records this as a request outcome rather than as provider execution.
+- Observability records this as a request outcome rather than as provider execution: a `budget_error` request metric and, when the request-log payload and owner policy records the request, a summary row with the returned status, `error_code = budget_exceeded`, and no attempts. This holds for `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, and `/v1/decisions`. Batch creation enforces the same budget but writes no request-log row for any outcome.
 
 ### `unpriced`
 

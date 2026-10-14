@@ -399,6 +399,8 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/guardrails.tsx",
+        "crates/admin-ui/web/src/routes/guardrails.tsx",
+        "crates/admin-ui/web/src/components/guardrails/settings/**",
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",

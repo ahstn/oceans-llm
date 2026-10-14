@@ -272,7 +272,7 @@ async fn execute_decisions(
     );
     redact_typed_request(&state, &request_id, &route_key, &mut core_request).await?;
 
-    state
+    if let Err(error) = state
         .service
         .enforce_pre_provider_budget(
             &auth,
@@ -281,7 +281,21 @@ async fn execute_decisions(
             Some(route.upstream_model.as_str()),
             OffsetDateTime::now_utc(),
         )
-        .await?;
+        .await
+    {
+        record_guarded_pre_provider_failure(
+            &state,
+            &auth,
+            &request_log_context,
+            &route,
+            icon_metadata,
+            request_started_at,
+            &labels,
+            &error,
+        )
+        .await;
+        return Err(AppError(error));
+    }
 
     let mut context = build_provider_context(
         &request_id,

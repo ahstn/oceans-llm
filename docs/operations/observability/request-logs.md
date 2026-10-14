@@ -57,7 +57,9 @@ Registry-backed execution uses stable external MCP server/tool ids for invocatio
 
 ## Failure Reading
 
-Pre-provider request-log outcomes such as `budget_error`, `invalid_request`, and `no_routes_available` can produce summary rows with no provider attempts. The `budget_error` outcome corresponds to the caller-facing `budget_exceeded` error code. Provider-backed failures can include one or more request-attempt rows once retry/fallback execution exists.
+Pre-provider request-log outcomes such as `budget_error`, `invalid_request`, and `no_routes_available` can produce summary rows with no provider attempts. The `budget_error` outcome corresponds to the caller-facing `budget_exceeded` error code, which is what the row stores in `error_code`.
+
+A hard-budget rejection on `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, or `/v1/decisions` writes one summary row when the request-log [payload and owner policy](../observability-and-request-logs.md#payload-policy) records the request. The row has the status the caller received (the `budget_exceeded` HTTP status), `error_code = budget_exceeded`, the resolved model and provider, and no provider attempts. Search by the request ID or filter by model to find it. Batch creation (`POST /v1/batches`) enforces the same budget but does not write request-log rows for any outcome; use the Batches page for those. Provider-backed failures can include one or more request-attempt rows once retry/fallback execution exists.
 
 Missing detail rows return `404 not_found`.
 

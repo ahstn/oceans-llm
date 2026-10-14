@@ -452,13 +452,17 @@ where
         .await
     }
 
+    /// Logs a request that failed without a streamed response body. `stream` records
+    /// what the caller requested, so a streaming request rejected before dispatch keeps
+    /// its stream flag.
     #[allow(clippy::too_many_arguments)]
-    pub async fn log_non_stream_failure(
+    pub async fn log_failure(
         &self,
         api_key: &AuthenticatedApiKey,
         context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
+        stream: bool,
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<RequestAttemptRecord>,
@@ -486,7 +490,7 @@ where
             RequestLogSummary::failure(
                 provider_key.to_string(),
                 icon_metadata,
-                false,
+                stream,
                 latency_ms,
                 gateway_error.http_status_code().into(),
                 gateway_error.error_code().to_string(),
