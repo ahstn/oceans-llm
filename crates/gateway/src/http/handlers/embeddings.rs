@@ -16,8 +16,7 @@ pub async fn v1_embeddings(
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
-    let model = openai_embeddings_request_to_core(&request).model;
-    let resolved = state.service.resolve_request(&auth, &model).await?;
+    let resolved = state.service.resolve_request(&auth, &request.model).await?;
     let requested_model = resolved.selection.requested_model.model_key.clone();
     let resolved_model = resolved.selection.execution_model.model_key.clone();
 
