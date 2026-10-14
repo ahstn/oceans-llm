@@ -43,5 +43,5 @@ Preconditions:
 - Tag filtering requires both key and value. The UI keeps a partial pair out of the URL, but the API still returns 400 for `tag_key` without `tag_value` (or the reverse).
 - `Add filter` and `Clear` appear only once a chip exists. A field that already has a chip is disabled in the `Filter by` menu. Remove one chip with its `Remove <Field> filter` button.
 - Request rows use virtualization on desktop. Locate visible content or scroll the table viewport before selecting an off-screen row.
-- A budget rejection is logged only when the key's owner has `request_logging_enabled: true` (Gina does). Batch creation (`POST /v1/batches`) enforces the same budget but writes no request-log row.
+- A budget rejection writes a row under the same policy as any request: `request_logging.payloads.capture_mode` must not be `disabled`, and a user-owned key's owner must have `request_logging_enabled: true` (Gina does). Service-account keys always log. Batch creation (`POST /v1/batches`) enforces the same budget but writes no request-log row.
 - `demo-req-016` has a request-ID deep link to MCP Invocations but no seeded invocation row. Prove the retained query, not a non-empty destination result.

@@ -461,12 +461,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn log_non_stream_failure(
+    pub async fn log_failure(
         &self,
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
+        stream: bool,
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
@@ -477,11 +478,12 @@ where
         let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
-            .log_non_stream_failure(
+            .log_failure(
                 auth,
                 context,
                 provider_key,
                 icon_metadata,
+                stream,
                 latency_ms,
                 gateway_error,
                 attempts,

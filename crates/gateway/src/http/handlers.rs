@@ -1564,12 +1564,13 @@ async fn record_guarded_pre_provider_failure(
     labels: &ChatMetricLabels<'_>,
     error: &GatewayError,
 ) {
-    best_effort_log_non_stream_failure(
+    best_effort_log_failure(
         &state.service,
         auth,
         request_log_context,
         &route.provider_key,
         icon_metadata,
+        labels.stream,
         latency_ms_since(request_started_at),
         error,
         Vec::new(),
@@ -2152,12 +2153,39 @@ async fn best_effort_log_non_stream_failure(
     gateway_error: &GatewayError,
     attempts: Vec<RequestAttemptRecord>,
 ) {
+    best_effort_log_failure(
+        service,
+        auth,
+        context,
+        provider_key,
+        icon_metadata,
+        false,
+        latency_ms,
+        gateway_error,
+        attempts,
+    )
+    .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn best_effort_log_failure(
+    service: &std::sync::Arc<AppGatewayService>,
+    auth: &AuthenticatedApiKey,
+    context: &gateway_service::RequestLogContext,
+    provider_key: &str,
+    icon_metadata: RequestLogIconMetadata,
+    stream: bool,
+    latency_ms: i64,
+    gateway_error: &GatewayError,
+    attempts: Vec<RequestAttemptRecord>,
+) {
     if let Err(error) = service
-        .log_non_stream_failure(
+        .log_failure(
             auth,
             context,
             provider_key,
             icon_metadata,
+            stream,
             latency_ms,
             gateway_error,
             attempts,

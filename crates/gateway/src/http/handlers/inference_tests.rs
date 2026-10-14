@@ -265,12 +265,15 @@ async fn inference_endpoints_log_stream_start_failure_without_charging() {
 
 #[tokio::test]
 async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
-    for endpoint in [
-        Endpoint::Chat,
-        Endpoint::Responses,
-        Endpoint::Messages,
-        Endpoint::Embeddings,
-        Endpoint::Decisions,
+    for (endpoint, stream) in [
+        (Endpoint::Chat, false),
+        (Endpoint::Chat, true),
+        (Endpoint::Responses, false),
+        (Endpoint::Responses, true),
+        (Endpoint::Messages, false),
+        (Endpoint::Messages, true),
+        (Endpoint::Embeddings, false),
+        (Endpoint::Decisions, false),
     ] {
         let (_directory, state, provider) = setup().await;
         let auth = state
@@ -294,7 +297,7 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             )
             .await
             .unwrap();
-        let error = endpoint.call(state.clone(), false).await.unwrap_err();
+        let error = endpoint.call(state.clone(), stream).await.unwrap_err();
         assert_eq!(
             error.0.error_code(),
             "budget_exceeded",
@@ -320,6 +323,11 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
         );
         assert_eq!(detail.log.error_code.as_deref(), Some("budget_exceeded"));
         assert_eq!(detail.log.provider_key, "vertex");
+        assert_eq!(
+            detail.log.metadata["stream"],
+            Value::Bool(stream),
+            "{endpoint:?} keeps the requested stream flag"
+        );
         assert!(
             detail.attempts.is_empty(),
             "{endpoint:?} budget rejection must not record a provider attempt"
