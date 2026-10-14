@@ -1,0 +1,53 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_13e300ce4bf1eb::t_032f57a87118d1 49-53,107,209
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_7334f6fed281d0::t_58aca223dfb4b4 11,17
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_63939a3786d9af::t_efadd062232a71 30-32,59
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_13e300ce4bf1eb::t_17b1de13b88ae5 9,42
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_7334f6fed281d0::t_3c17f10d25055e 401-402
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_7334f6fed281d0::t_b097fcb9f5c9db 60,310,322-334,390-392,524
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_7334f6fed281d0::t_0cf19f9d790795 7,32-35,37,45,63,65-66
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_13e300ce4bf1eb::t_07fbf1b87243a4 2-3,6-34,36-39,83,142,170,176-177,224-227
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  s_7334f6fed281d0::t_f3cc50e550541c 10,115-147
+mise.rustfs.toml
+  s_13e300ce4bf1eb::t_0c99872dd2d730 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29cf283d84429bf948d1b5feea584b1b9e9dd02a",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7334f6fed281d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f11e804-9fa0-4aa6-9c92-53590c872573",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
