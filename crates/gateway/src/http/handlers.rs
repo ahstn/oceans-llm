@@ -2973,6 +2973,28 @@ mod tests {
         assert!(last.ends_with("\n\ndata: [DONE]\n\n"));
     }
 
+    /// Inference guardrails buffer the upstream stream and emit it as one chunk.
+    #[tokio::test]
+    async fn priced_stream_adds_cost_when_the_whole_stream_is_one_chunk() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\ndata: [DONE]\n\n",
+        ))]));
+        let (_context, state) = harness.logging_state("stream-one-chunk-cost-test", upstream);
+        let chunks: Vec<Bytes> = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| chunk.expect("ok"))
+            .collect();
+
+        assert_eq!(chunks.len(), 1);
+        let body = std::str::from_utf8(&chunks[0]).expect("utf8");
+        assert!(body.starts_with("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"));
+        assert!(body.contains(r#""total_tokens":1500,"oceans":{"cost":"0.0105"}}"#));
+        assert!(body.ends_with("\n\ndata: [DONE]\n\n"));
+    }
+
     #[tokio::test]
     async fn priced_stream_does_not_hold_content_that_carries_usage() {
         let mut harness = StreamTestHarness::new().await;
