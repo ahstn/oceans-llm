@@ -1,0 +1,14 @@
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  h_2f452a9c375069 73-74,131,133-136,141-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "171449e270e03914b7a03b06631858ca68949021",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
