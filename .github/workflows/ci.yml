@@ -49,10 +49,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise, Rust, Bun, and Node.js
+      - name: Setup mise, Rust, Bun, Node.js, and uv
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          install_args: rust bun node
+          install_args: rust bun node uv
 
       - name: Cache Cargo artifacts
         uses: ./.github/actions/rust-cache
@@ -75,6 +75,9 @@ jobs:
         env:
           POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
         run: mise run //crates/gateway-store:smoke:postgres
+
+      - name: Parse gateway streams with the official SDKs
+        run: mise run //tests/sdk-compat:test
 
       - name: Run end-to-end contract tests
         run: mise run //ui:e2e

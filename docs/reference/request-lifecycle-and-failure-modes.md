@@ -14,6 +14,7 @@ This page is the cross-cutting view. Neighboring docs own their own policy slice
 - Pricing resolution: [../crates/gateway-service/src/pricing_catalog.rs](../../crates/gateway-service/src/pricing_catalog.rs)
 - Request logging: [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
 - Ledger writes: [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
+- Response headers: [../crates/gateway/src/http/response_headers.rs](../../crates/gateway/src/http/response_headers.rs)
 
 ## Request Path
 
@@ -218,6 +219,48 @@ That separation matters in two common cases:
 - a request can be logged even when a later accounting step hits a rough edge
 
 For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure. Chat Completions streams usually expose usage at top level. Responses streams expose usage on completed response events as `response.usage`. Bedrock streaming is normalized to OpenAI-compatible SSE before this logging path; see [AWS Bedrock](../providers/aws-bedrock.md) for adapter-specific frame and error mapping details. Bedrock Claude reasoning deltas are preserved as explicit provider metadata, not as normal `delta.content`, so request-log payload policy controls whether that debug metadata is stored. Stored stream events can be capped by payload policy without weakening usage or provider-error parsing.
+
+## Response Headers
+
+Inference responses tell the caller which route served the request and what it cost, so clients do not need to query request logs or the admin API. These headers are set on `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, and `/v1/decisions`. For the headers callers send, see [Client Request Headers](client-request-headers.md).
+
+| Header | Type | When present |
+| --- | --- | --- |
+| `x-request-id` | string | Every response. Echoes the caller's value or the generated id. |
+| `x-oceans-model` | string | Once a route is selected, including on errors after selection. The resolved execution model key, after alias and `tag:` resolution. |
+| `x-oceans-route-id` | UUID string | Once a route is selected, including on errors after selection. |
+| `x-oceans-provider` | string | Once a route is selected, including on errors after selection. The configured provider key. |
+| `x-oceans-attempt-count` | integer | Successful responses. The number of upstream provider attempts. Currently always `1`. |
+| `x-oceans-response-cost-usd` | decimal string, 4 decimal places | Successful non-streaming responses whose usage was priced. |
+| `Retry-After` | delta-seconds or HTTP date | `429` and `503` errors caused by an upstream `429` or `503` that sent a valid `Retry-After`. |
+
+The cost is the same value written to the usage ledger and shown as the request log's cost for the same `x-request-id`. When pricing is `unpriced` or usage is `usage_missing`, the request log shows no cost and the header is omitted rather than reported as `0.0000`.
+
+Headers never contain provider credentials, provider base URLs, or upstream error bodies. Oceans does not set `x-litellm-*` or other third-party-prefixed response headers.
+
+### Streaming responses
+
+Streaming responses carry `x-oceans-model`, `x-oceans-route-id`, `x-oceans-provider`, and `x-oceans-attempt-count` on the initial response. The cost is not known until the stream ends, so it is added to the final usage object instead of a header:
+
+| API | Usage object | Cost field |
+| --- | --- | --- |
+| Chat Completions | final chunk `usage` | `usage.oceans.cost` |
+| Responses | `response.completed` event `response.usage` | `response.usage.oceans.cost` |
+| Anthropic Messages | `message_delta` event `usage` | `usage.oceans.cost` |
+
+The value uses the same decimal-string format as `x-oceans-response-cost-usd`, for example `"oceans": {"cost": "0.0012"}`. It is added only when the stream ends normally and the usage was priced. The gateway re-serializes the event that carries the cost, so its JSON keys may be in a different order from the upstream event. Other events pass through unchanged.
+
+The `oceans` object is an extra field on an existing usage object. Unmodified OpenAI and Anthropic SDKs parse these streams, including Python clients with strict response validation. `tests/sdk-compat` checks this with fixtures generated from gateway output.
+
+### Errors
+
+Error responses include `x-request-id`. If a route was selected before the failure, they also include `x-oceans-model`, `x-oceans-route-id`, and `x-oceans-provider`. Errors that happen before route selection, such as authentication, model-access, or `no_routes_available` failures, carry no route headers.
+
+When an upstream provider returns `429` or `503` with a `Retry-After` header, Oceans forwards the value unchanged. Values that are not delta-seconds or an HTTP date are dropped. Gateway-originated `503` responses, such as `no_routes_available`, do not set `Retry-After` because the gateway has no cooldown that would give the value meaning. Pre-provider `budget_exceeded` responses do not set it either.
+
+### Browser clients
+
+The gateway does not configure CORS. Browser clients that call it through a proxy which adds CORS headers must list the headers above in `Access-Control-Expose-Headers` to read them.
 
 ## Known Rough Edges
 

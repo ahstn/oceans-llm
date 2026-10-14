@@ -523,6 +523,7 @@ async fn fetch_metadata_server_token(
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after: None,
         });
     }
 
@@ -555,6 +556,7 @@ async fn fetch_metadata_server_id_token(
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after: None,
         });
     }
 
@@ -611,6 +613,7 @@ async fn parse_oauth_token_response(
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after: None,
         });
     }
 
@@ -635,6 +638,7 @@ async fn parse_oauth_id_token_response(
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after: None,
         });
     }
 

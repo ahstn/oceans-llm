@@ -1,0 +1,29 @@
+# Official OpenAI and Anthropic SDK parsing checks for gateway streams.
+# From the repo root: `mise run //tests/sdk-compat:<task>`.
+
+[tools]
+uv = "0.12.23"
+
+[tasks.install]
+description = "Install SDK compatibility test dependencies"
+sources = ["package-lock.json", "package.json"]
+outputs = ["node_modules/.package-lock.json"]
+run = "npm ci"
+
+[tasks.typecheck]
+description = "Typecheck the SDK compatibility tests"
+depends = ["install"]
+run = "npm run typecheck"
+
+[tasks.node]
+description = "Parse the gateway stream fixtures with the official Node SDKs"
+depends = ["install"]
+run = "npm test"
+
+[tasks.python]
+description = "Parse the gateway stream fixtures with the official Python SDKs"
+run = "uv run --no-project --with openai==3.31.0 --with anthropic==1.14.0 python -I python/check_sdk_compat.py"
+
+[tasks.test]
+description = "Run the Node and Python SDK compatibility checks"
+depends = ["typecheck", "node", "python"]

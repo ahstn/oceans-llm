@@ -176,11 +176,13 @@ impl VertexProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = crate::http::upstream_retry_after(status, response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                retry_after,
             });
         }
         serde_json::from_str(&text)
@@ -320,11 +322,13 @@ impl ProviderClient for VertexProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = crate::http::upstream_retry_after(status, response.headers());
         if !status.is_success() {
             let body = response.text().await.map_err(map_reqwest_error)?;
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                retry_after,
             });
         }
 
@@ -383,6 +387,7 @@ impl ProviderClient for VertexProvider {
                 }
             };
             let status = response.status();
+            let retry_after = crate::http::upstream_retry_after(status, response.headers());
             let text = match response.text().await {
                 Ok(text) => text,
                 Err(error) => {
@@ -398,6 +403,7 @@ impl ProviderClient for VertexProvider {
                     ProviderError::UpstreamHttp {
                         status: status.as_u16(),
                         body: text,
+                        retry_after,
                     },
                     &outputs,
                     false,

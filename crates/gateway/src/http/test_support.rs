@@ -1,8 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use gateway_core::{
-    BudgetCadence, Money4, ProviderCapabilities, RouteCompatibility, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, hash_gateway_key_secret,
+    BudgetCadence, Money4, ProviderCapabilities, RouteCompatibility, RoutePricingOverride,
+    SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam,
+    hash_gateway_key_secret,
 };
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
 use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
@@ -60,6 +61,25 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
 /// Seeds the `fast` model on a `vertex` route, reachable with the
 /// `gwk_streamtest.cancel-secret` API key.
 pub async fn seed_stream_cancellation_test(store: &AnyStore) {
+    seed_fast_route(store, None).await;
+}
+
+/// Seeds the same `fast` route as [`seed_stream_cancellation_test`], priced at
+/// $3 per million input tokens and $15 per million output tokens.
+pub async fn seed_priced_fast_route(store: &AnyStore) {
+    seed_fast_route(
+        store,
+        Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(30_000),
+            output_cost_per_million_tokens: Money4::from_scaled(150_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        }),
+    )
+    .await;
+}
+
+async fn seed_fast_route(store: &AnyStore, pricing_override: Option<RoutePricingOverride>) {
     store
         .seed_from_inputs(
             &[SeedProvider {
@@ -84,7 +104,7 @@ pub async fn seed_stream_cancellation_test(store: &AnyStore) {
                     weight: 1.0,
                     enabled: true,
                     context_window_tokens: None,
-                    pricing_override: None,
+                    pricing_override,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
                     capabilities: ProviderCapabilities::all_enabled(),

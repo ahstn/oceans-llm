@@ -143,14 +143,36 @@ pub async fn execute_json_request(
         .await
         .map_err(map_reqwest_error)?;
     let status = response.status();
+    let retry_after = upstream_retry_after(status, response.headers());
     let text = response.text().await.map_err(map_reqwest_error)?;
     if !status.is_success() {
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            retry_after,
         });
     }
     serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
+}
+
+/// The upstream `Retry-After` on a 429 or 503 response, for the gateway to pass through.
+/// Only delta-seconds and HTTP-date values are kept, so nothing else from the upstream
+/// response reaches the client.
+pub fn upstream_retry_after(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+) -> Option<String> {
+    if !matches!(status.as_u16(), 429 | 503) {
+        return None;
+    }
+    let value = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    let is_delta_seconds =
+        !value.is_empty() && value.len() <= 10 && value.bytes().all(|byte| byte.is_ascii_digit());
+    (is_delta_seconds || httpdate::parse_http_date(value).is_ok()).then(|| value.to_string())
 }
 
 pub async fn execute_request(
@@ -437,5 +459,37 @@ pub(crate) mod tests {
                 .expect("url");
 
         assert_eq!(safe_url(&url), "https://example.com/v1/responses");
+    }
+
+    #[test]
+    fn upstream_retry_after_keeps_valid_values_on_429_and_503() {
+        let headers = |value: &str| {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(reqwest::header::RETRY_AFTER, value.parse().unwrap());
+            headers
+        };
+        let date = "Wed, 21 Oct 2026 07:28:00 GMT";
+        for status in [429, 503] {
+            let status = reqwest::StatusCode::from_u16(status).unwrap();
+            assert_eq!(
+                upstream_retry_after(status, &headers(" 30 ")),
+                Some("30".to_string())
+            );
+            assert_eq!(
+                upstream_retry_after(status, &headers(date)),
+                Some(date.to_string())
+            );
+            for invalid in ["", "-1", "1.5", "soon", "12345678901"] {
+                assert_eq!(upstream_retry_after(status, &headers(invalid)), None);
+            }
+            assert_eq!(
+                upstream_retry_after(status, &reqwest::header::HeaderMap::new()),
+                None
+            );
+        }
+        assert_eq!(
+            upstream_retry_after(reqwest::StatusCode::BAD_GATEWAY, &headers("30")),
+            None
+        );
     }
 }

@@ -96,6 +96,10 @@ pub(super) async fn select_provider_route(
                 })?;
             tracing::debug!(route_id = %selected.route.id, affinity_reused = selected.reused,
             "provider route selected");
+            crate::http::response_headers::record_route(
+                &resolved.selection.execution_model.model_key,
+                &selected.route,
+            );
             // Eligibility was checked against this immutable request's provider registry.
             let provider = state
                 .providers

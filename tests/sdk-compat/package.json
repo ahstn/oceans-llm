@@ -1,0 +1,17 @@
+{
+  "name": "@oceans-llm/sdk-compat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
+    "@types/node": "24.10.1",
+    "openai": "7.32.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

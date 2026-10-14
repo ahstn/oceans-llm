@@ -55,6 +55,7 @@ use crate::http::{
     },
     request_tags::extract_request_tags,
     request_tracing::{StreamTrace, provider_operation_span, trace_provider_operation},
+    response_headers,
     state::{AppGatewayService, AppState},
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
@@ -451,6 +452,11 @@ fn anthropic_error_response(error: GatewayError) -> Response {
     }))
     .into_response();
     *response.status_mut() = status;
+    if let Some(retry_after) = crate::http::error::upstream_retry_after(&error) {
+        response
+            .headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, retry_after);
+    }
     response
 }
 
@@ -1238,6 +1244,7 @@ async fn guarded_provider_error_attempt(
         ProviderError::UpstreamHttp {
             status: http_status,
             body,
+            retry_after,
         } if guard_context.enabled => {
             let mut payload = json!({ "text": body });
             if let Err(error) = guard_model_response(state, guard_context, &mut payload).await {
@@ -1264,6 +1271,7 @@ async fn guarded_provider_error_attempt(
                     .and_then(Value::as_str)
                     .unwrap_or("upstream request failed")
                     .to_string(),
+                retry_after,
             }
         }
         error => error,
@@ -1412,6 +1420,10 @@ struct LoggingBodyStreamState {
     saw_terminal_event: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
+    /// A usage-only chunk held back until the next chunk shows whether it is the last.
+    held_usage_chunk: Option<axum::body::Bytes>,
+    pending: std::collections::VecDeque<Result<axum::body::Bytes, std::io::Error>>,
+    cost_usd: Option<gateway_core::Money4>,
 }
 
 impl LoggingBodyStreamState {
@@ -1806,6 +1818,9 @@ async fn anthropic_messages_stream_response(
         saw_terminal_event: false,
         collector: state.service.new_stream_response_collector(),
         stream_trace,
+        held_usage_chunk: None,
+        pending: Default::default(),
+        cost_usd: None,
     });
 
     Response::builder()
@@ -1820,117 +1835,166 @@ async fn anthropic_messages_stream_response(
         })
 }
 
+/// Holds a usage-only chunk until the next chunk shows whether it is the last
+/// usage report. When the stream then completes cleanly, the priced cost is added
+/// to that chunk's usage object. Chunks carrying output are never delayed.
 fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
     futures_stream::unfold(state, |mut state| async move {
-        if state.finished {
-            return None;
-        }
-
-        match state.upstream.next().await {
-            Some(Ok(chunk)) => {
-                let observation = state.collector.observe_chunk(chunk.as_ref());
-                let ends_stream = observation.ends_stream;
-                state.saw_terminal_event |= observation.has_terminal_event;
-                state.stream_trace.observe_chunk(chunk.len(), observation);
-                // A completed Responses event promises a usable continuation ID.
-                // Stop before forwarding it if its origin cannot be persisted.
-                if observation.has_terminal_event
-                    && state.collector.failure().is_none()
-                    && let Some(receipt) = state.routing_receipt.as_mut()
-                    && let Err(error) = receipt
-                        .persist_response_origin(
-                            state.service.store().as_ref(),
-                            state.collector.response_id(),
-                        )
-                        .await
-                {
-                    let result = finalize_stream(&mut state, Some(error))
-                        .await
-                        .map(|()| chunk)
-                        .map_err(|error| std::io::Error::other(error.to_string()));
-                    return Some((result, state));
-                }
-                if ends_stream && let Err(error) = finalize_stream(&mut state, None).await {
-                    return Some((Err(std::io::Error::other(error.to_string())), state));
-                }
-
-                Some((Ok(chunk), state))
+        loop {
+            if let Some(item) = state.pending.pop_front() {
+                return Some((item, state));
             }
-            Some(Err(error)) => {
-                state.finished = true;
-                state.collector.finish();
-                state
-                    .stream_trace
-                    .finish("stream_transport_error", Some("stream_transport_error"));
-                let error_message = error.to_string();
-                let retryable = error.is_retryable();
-                let gateway_error = GatewayError::from(error);
-                // The provider may have billed tokens before the transport failed.
-                if state.collector.usage().is_some() {
-                    account_stream_usage(&mut state).await;
-                }
-                tracing::warn!(
-                    request_id = %state.request_log_context.request_id,
-                    provider_key = %state.provider_key,
-                    termination_reason = "stream_transport_error",
-                    "chat completion stream terminated with transport error"
-                );
-                best_effort_log_stream_result(
-                    &state.service,
-                    &state.auth,
-                    &state.request_log_context,
-                    gateway_service::StreamLogResultInput {
-                        provider_key: state.provider_key.clone(),
-                        icon_metadata: state.icon_metadata.clone(),
-                        latency_ms: latency_ms_since(state.started_at),
-                        collector: state.collector.clone(),
-                        failure: Some(gateway_service::StreamFailureSummary {
-                            status_code: gateway_error.http_status_code().into(),
-                            error_code: gateway_error.error_code().to_string(),
-                        }),
-                        attempts: vec![gateway_service::build_request_attempt(
-                            &state.request_log_context,
-                            &state.route,
-                            1,
-                            true,
-                            state.attempt_started_at,
-                            gateway_service::offset_now(),
-                            gateway_service::RequestAttemptOutcome {
-                                status: RequestAttemptStatus::StreamError,
-                                status_code: Some(gateway_error.http_status_code().into()),
-                                error_code: Some(gateway_error.error_code().to_string()),
-                                error_detail: Some(error_message.clone()),
-                                retryable,
-                                produced_final_response: false,
-                            },
-                        )],
-                    },
-                )
-                .await;
-                state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels: state.metric_labels(),
-                    status_code: i64::from(gateway_error.http_status_code()),
-                    outcome: gateway_error.error_type(),
-                    latency_seconds: latency_seconds_since(state.started_at),
-                });
-                state.metrics.record_tool_cardinality(
-                    &state.metric_labels(),
-                    state.request_log_context.operation,
-                    &RequestToolCardinality {
-                        invoked_tool_count: Some(state.collector.invoked_tool_count()),
-                        ..state.request_log_context.tool_cardinality
-                    },
-                );
-                Some((Err(std::io::Error::other(error_message)), state))
+            if state.finished {
+                return None;
             }
-            None => match finalize_stream(&mut state, None).await {
-                Ok(()) => None,
-                Err(error) => Some((Err(std::io::Error::other(error.to_string())), state)),
-            },
+            match state.upstream.next().await {
+                Some(Ok(chunk)) => {
+                    let observation = state.collector.observe_chunk(chunk.as_ref());
+                    let ends_stream = observation.ends_stream;
+                    state.saw_terminal_event |= observation.has_terminal_event;
+                    state.stream_trace.observe_chunk(chunk.len(), observation);
+                    // A completed Responses event promises a usable continuation ID.
+                    // Stop before forwarding it if its origin cannot be persisted.
+                    if observation.has_terminal_event
+                        && state.collector.failure().is_none()
+                        && let Some(receipt) = state.routing_receipt.as_mut()
+                        && let Err(error) = receipt
+                            .persist_response_origin(
+                                state.service.store().as_ref(),
+                                state.collector.response_id(),
+                            )
+                            .await
+                    {
+                        release_held_usage_chunk(&mut state, false);
+                        let result = finalize_stream(&mut state, Some(error))
+                            .await
+                            .map(|()| chunk)
+                            .map_err(|error| std::io::Error::other(error.to_string()));
+                        state.pending.push_back(result);
+                        continue;
+                    }
+                    if ends_stream {
+                        let result = finalize_stream(&mut state, None).await;
+                        release_held_usage_chunk(&mut state, result.is_ok());
+                        state.pending.push_back(
+                            result
+                                .map(|()| chunk)
+                                .map_err(|error| std::io::Error::other(error.to_string())),
+                        );
+                        continue;
+                    }
+                    release_held_usage_chunk(&mut state, false);
+                    if observation.has_usage && !observation.has_output {
+                        state.held_usage_chunk = Some(chunk);
+                    } else {
+                        state.pending.push_back(Ok(chunk));
+                    }
+                }
+                Some(Err(error)) => {
+                    release_held_usage_chunk(&mut state, false);
+                    let error = fail_stream_on_transport_error(&mut state, error).await;
+                    state.pending.push_back(Err(error));
+                }
+                None => {
+                    let result = finalize_stream(&mut state, None).await;
+                    release_held_usage_chunk(&mut state, result.is_ok());
+                    if let Err(error) = result {
+                        state
+                            .pending
+                            .push_back(Err(std::io::Error::other(error.to_string())));
+                    }
+                }
+            }
         }
     })
+}
+
+/// Forwards the held usage chunk, adding the stream's cost when it completed cleanly.
+fn release_held_usage_chunk(state: &mut LoggingBodyStreamState, completed: bool) {
+    let Some(chunk) = state.held_usage_chunk.take() else {
+        return;
+    };
+    let cost = state
+        .cost_usd
+        .filter(|_| completed && state.collector.failure().is_none());
+    let chunk = cost
+        .and_then(|cost| response_headers::with_stream_cost(&chunk, cost))
+        .unwrap_or(chunk);
+    state.pending.push_back(Ok(chunk));
+}
+
+/// Logs and accounts a stream that failed in transport, returning the error to forward.
+async fn fail_stream_on_transport_error(
+    state: &mut LoggingBodyStreamState,
+    error: ProviderError,
+) -> std::io::Error {
+    state.finished = true;
+    state.collector.finish();
+    state
+        .stream_trace
+        .finish("stream_transport_error", Some("stream_transport_error"));
+    let error_message = error.to_string();
+    let retryable = error.is_retryable();
+    let gateway_error = GatewayError::from(error);
+    // The provider may have billed tokens before the transport failed.
+    if state.collector.usage().is_some() {
+        account_stream_usage(state).await;
+    }
+    tracing::warn!(
+        request_id = %state.request_log_context.request_id,
+        provider_key = %state.provider_key,
+        termination_reason = "stream_transport_error",
+        "chat completion stream terminated with transport error"
+    );
+    best_effort_log_stream_result(
+        &state.service,
+        &state.auth,
+        &state.request_log_context,
+        gateway_service::StreamLogResultInput {
+            provider_key: state.provider_key.clone(),
+            icon_metadata: state.icon_metadata.clone(),
+            latency_ms: latency_ms_since(state.started_at),
+            collector: state.collector.clone(),
+            failure: Some(gateway_service::StreamFailureSummary {
+                status_code: gateway_error.http_status_code().into(),
+                error_code: gateway_error.error_code().to_string(),
+            }),
+            attempts: vec![gateway_service::build_request_attempt(
+                &state.request_log_context,
+                &state.route,
+                1,
+                true,
+                state.attempt_started_at,
+                gateway_service::offset_now(),
+                gateway_service::RequestAttemptOutcome {
+                    status: RequestAttemptStatus::StreamError,
+                    status_code: Some(gateway_error.http_status_code().into()),
+                    error_code: Some(gateway_error.error_code().to_string()),
+                    error_detail: Some(error_message.clone()),
+                    retryable,
+                    produced_final_response: false,
+                },
+            )],
+        },
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels: state.metric_labels(),
+        status_code: i64::from(gateway_error.http_status_code()),
+        outcome: gateway_error.error_type(),
+        latency_seconds: latency_seconds_since(state.started_at),
+    });
+    state.metrics.record_tool_cardinality(
+        &state.metric_labels(),
+        state.request_log_context.operation,
+        &RequestToolCardinality {
+            invoked_tool_count: Some(state.collector.invoked_tool_count()),
+            ..state.request_log_context.tool_cardinality
+        },
+    );
+    std::io::Error::other(error_message)
 }
 
 async fn finalize_stream(
@@ -2047,7 +2111,7 @@ async fn finalize_stream(
 /// is `None` when the provider reported nothing; the row is then unpriced.
 async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
     let labels = state.metric_labels();
-    finalize_successful_usage_accounting_from_parts(
+    let usage = finalize_successful_usage_accounting_from_parts(
         &state.service,
         &state.metrics,
         UsageAccountingContext {
@@ -2061,6 +2125,7 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
         state.collector.usage().cloned(),
     )
     .await;
+    state.cost_usd = usage.as_ref().and_then(response_headers::billable_cost);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2335,13 +2400,16 @@ async fn finalize_successful_usage_accounting(
     context: UsageAccountingContext<'_>,
     provider_usage: Option<Value>,
 ) {
-    finalize_successful_usage_accounting_from_parts(
+    if let Some(usage) = finalize_successful_usage_accounting_from_parts(
         &state.service,
         &state.metrics,
         context,
         provider_usage,
     )
-    .await;
+    .await
+    {
+        response_headers::record_cost(&usage);
+    }
 }
 
 async fn finalize_successful_usage_accounting_from_parts(
@@ -2349,7 +2417,7 @@ async fn finalize_successful_usage_accounting_from_parts(
     metrics: &crate::observability::GatewayMetrics,
     context: UsageAccountingContext<'_>,
     provider_usage: Option<Value>,
-) {
+) -> Option<gateway_service::RecordedChatUsage> {
     match service
         .record_chat_usage(
             context.auth,
@@ -2361,7 +2429,10 @@ async fn finalize_successful_usage_accounting_from_parts(
         )
         .await
     {
-        Ok(usage) => record_usage_metrics_from_ref(metrics, &context.labels, &usage),
+        Ok(usage) => {
+            record_usage_metrics_from_ref(metrics, &context.labels, &usage);
+            Some(usage)
+        }
         Err(error) => {
             tracing::warn!(
                 request_id = %context.request_id,
@@ -2374,6 +2445,7 @@ async fn finalize_successful_usage_accounting_from_parts(
                 "post-success usage accounting failed"
             );
             metrics.record_usage_record_failure(&context.labels, context.operation);
+            None
         }
     }
 }
@@ -2628,6 +2700,9 @@ mod tests {
                     &self.provider,
                     Instant::now(),
                 ),
+                held_usage_chunk: None,
+                pending: Default::default(),
+                cost_usd: None,
             };
             (context, state)
         }
@@ -2695,7 +2770,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_stream_forwards_trailing_usage_before_completion() {
+    async fn terminal_stream_forwards_trailing_usage_after_logging_it() {
         let harness = StreamTestHarness::new().await;
         let request_id = "stream-terminal-test";
         let upstream: ProviderStream = Box::pin(stream::iter([
@@ -2731,7 +2806,15 @@ mod tests {
                 .windows(b"prompt_tokens".len())
                 .any(|window| { window == b"prompt_tokens" })
         );
-        assert_eq!(harness.metrics.test_snapshot().requests, 0);
+        // The final usage chunk waits for the stream to be logged so it can carry the
+        // cost. This route is unpriced, so the chunk is forwarded unchanged.
+        assert_eq!(harness.metrics.test_snapshot().requests, 1);
+        assert_eq!(
+            usage_chunk,
+            Bytes::from_static(
+                b"data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n"
+            )
+        );
         assert_eq!(
             body_stream
                 .next()
@@ -2764,6 +2847,171 @@ mod tests {
             .await
             .expect("read completed usage ledger");
         assert!(ledger.is_some());
+    }
+
+    async fn collect_stream(state: LoggingBodyStreamState) -> Vec<Result<Bytes, String>> {
+        wrap_stream_with_request_logging(state)
+            .map(|item| item.map_err(|error| error.to_string()))
+            .collect()
+            .await
+    }
+
+    fn priced_route(harness: &mut StreamTestHarness) {
+        harness.route.pricing_override = Some(gateway_core::RoutePricingOverride {
+            input_cost_per_million_tokens: gateway_core::Money4::from_scaled(30_000),
+            output_cost_per_million_tokens: gateway_core::Money4::from_scaled(150_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+    }
+
+    fn sse_json(chunk: &Bytes) -> Value {
+        let text = std::str::from_utf8(chunk).expect("utf8 chunk");
+        let data = text
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .expect("data line");
+        serde_json::from_str(data).expect("json data")
+    }
+
+    #[tokio::test]
+    async fn priced_stream_adds_the_ledger_cost_to_the_final_usage_chunk() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let request_id = "stream-cost-test";
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":1,\"total_tokens\":1001}}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\n",
+            )),
+            Ok(Bytes::from_static(b"data: [DONE]\n\n")),
+        ]));
+        let (_context, state) = harness.logging_state(request_id, upstream);
+        let chunks = collect_stream(state).await;
+
+        assert_eq!(chunks.len(), 4);
+        let chunks: Vec<Bytes> = chunks.into_iter().map(|chunk| chunk.expect("ok")).collect();
+        // Chunks with output are never rewritten, even when they carry usage.
+        assert_eq!(sse_json(&chunks[0]).pointer("/usage/oceans"), None);
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(request_id, &harness.ownership_scope_key())
+            .await
+            .expect("read usage ledger")
+            .expect("usage ledger row");
+        assert_eq!(
+            ledger.pricing_status,
+            gateway_core::UsagePricingStatus::Priced
+        );
+        assert_eq!(ledger.computed_cost_usd.format_4dp(), "0.0105");
+        let usage = sse_json(&chunks[2]);
+        assert_eq!(usage["usage"]["total_tokens"], 1500);
+        assert_eq!(usage["usage"]["oceans"]["cost"], "0.0105");
+        assert_eq!(chunks[3], Bytes::from_static(b"data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn priced_messages_stream_adds_cost_to_message_delta() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(
+                b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1000,\"output_tokens\":1}}}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":1000,\"output_tokens\":500}}\n\n",
+            )),
+            Ok(Bytes::from_static(
+                b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            )),
+        ]));
+        let (_context, state) = harness.logging_state("stream-messages-cost-test", upstream);
+        let chunks: Vec<Bytes> = collect_stream(state)
+            .await
+            .into_iter()
+            .map(|chunk| chunk.expect("ok"))
+            .collect();
+
+        assert_eq!(chunks.len(), 4);
+        // An earlier usage report is released unchanged once more events follow.
+        assert_eq!(sse_json(&chunks[0]).pointer("/message/usage/oceans"), None);
+        assert!(chunks[2].starts_with(b"event: message_delta\n"));
+        assert_eq!(sse_json(&chunks[2])["usage"]["oceans"]["cost"], "0.0105");
+        assert!(chunks[3].starts_with(b"event: message_stop\n"));
+    }
+
+    /// The SDK compatibility suite in `tests/sdk-compat` parses these fixtures with the
+    /// official SDKs. Removing the cost and replaying each fixture through the stream
+    /// wrapper must give back the fixture byte for byte, so the SDKs see gateway output.
+    /// Set `UPDATE_SDK_COMPAT_FIXTURES=1` to rewrite the fixtures from that output.
+    #[tokio::test]
+    async fn sdk_compat_fixtures_match_gateway_output() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/sdk-compat/fixtures");
+        for name in ["chat_completions", "responses", "messages"] {
+            let expected = std::fs::read_to_string(fixtures.join(format!("{name}.sse")))
+                .expect("read fixture");
+            let upstream = expected
+                .replace(r#""oceans":{"cost":"0.0012"},"#, "")
+                .replace(r#","oceans":{"cost":"0.0012"}"#, "");
+            let events: Vec<Result<Bytes, ProviderError>> = upstream
+                .split_inclusive("\n\n")
+                .map(|event| Ok(Bytes::from(event.to_string())))
+                .collect();
+
+            let mut harness = StreamTestHarness::new().await;
+            // 5 input tokens at $200/M plus 2 output tokens at $100/M is $0.0012.
+            harness.route.pricing_override = Some(gateway_core::RoutePricingOverride {
+                input_cost_per_million_tokens: gateway_core::Money4::from_scaled(2_000_000),
+                output_cost_per_million_tokens: gateway_core::Money4::from_scaled(1_000_000),
+                cache_read_cost_per_million_tokens: None,
+                cache_write_cost_per_million_tokens: None,
+            });
+            let (_context, state) = harness.logging_state(
+                &format!("sdk-compat-{name}"),
+                Box::pin(stream::iter(events)),
+            );
+            let output: String = collect_stream(state)
+                .await
+                .into_iter()
+                .map(|chunk| String::from_utf8(chunk.expect("ok").to_vec()).expect("utf8"))
+                .collect();
+            assert!(
+                output.contains(r#""oceans":{"cost":"0.0012"}"#),
+                "{name}: no cost in gateway output"
+            );
+            if std::env::var_os("UPDATE_SDK_COMPAT_FIXTURES").is_some() {
+                std::fs::write(fixtures.join(format!("{name}.sse")), &output)
+                    .expect("write fixture");
+            } else {
+                assert_eq!(output, expected, "{name}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_error_releases_held_usage_without_cost() {
+        let mut harness = StreamTestHarness::new().await;
+        priced_route(&mut harness);
+        let usage = b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\n";
+        let upstream: ProviderStream = Box::pin(stream::iter([
+            Ok(Bytes::from_static(usage)),
+            Err(ProviderError::Transport("connection reset".to_string())),
+        ]));
+        let (_context, state) = harness.logging_state("stream-held-error-test", upstream);
+        let chunks = collect_stream(state).await;
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], Ok(Bytes::from_static(usage)));
+        assert!(chunks[1].is_err());
     }
 
     #[tokio::test]
@@ -3117,6 +3365,7 @@ mod tests {
             source: Box::new(ProviderError::UpstreamHttp {
                 status: 429,
                 body: "quota exhausted".to_string(),
+                retry_after: None,
             }),
             provider_usage: Some(json!({"prompt_tokens": 4, "total_tokens": 4})),
         });
@@ -3126,7 +3375,7 @@ mod tests {
             Some(Some(json!({"prompt_tokens": 4, "total_tokens": 4})))
         );
         match source {
-            ProviderError::UpstreamHttp { status, body } => {
+            ProviderError::UpstreamHttp { status, body, .. } => {
                 assert_eq!(status, 429);
                 assert_eq!(body, "quota exhausted");
             }

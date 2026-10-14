@@ -1967,6 +1967,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "gateway-core",
+ "httpdate",
  "jsonwebtoken",
  "reqwest 0.13.5",
  "serde",

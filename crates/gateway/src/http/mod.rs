@@ -24,6 +24,7 @@ mod request_body;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
+mod response_headers;
 pub mod review_agent;
 pub mod skills;
 pub mod spend;
@@ -69,7 +70,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/embeddings", post(v1_embeddings))
         .route("/v1/decisions", post(v1_decisions))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
-        .layer(middleware::from_fn(request_body::observe_request_body));
+        .layer(middleware::from_fn(request_body::observe_request_body))
+        .layer(middleware::from_fn(
+            response_headers::attach_response_headers,
+        ));
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
