@@ -1,0 +1,25 @@
+crates/gateway/src/http/handlers/decisions_tests.rs
+  s_afa09f3100be21::t_977851da2c7e07 4,160,169-173,210,213,231,237,251,257,289,295
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_afa09f3100be21::t_cea778fdc6b732 316-319
+crates/gateway/src/observability.rs
+  s_afa09f3100be21::t_e2144fcd431009 108,116-118,122,262-276
+docs/configuration/model-routing-and-api-behavior.md
+  s_afa09f3100be21::t_4aa4e3166d0695 446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e280ce8174cc2e8e4f8bbc4451333bcb9ae4501",
+  "prompts": {},
+  "sessions": {
+    "s_afa09f3100be21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a1b48887-58c7-4881-83a8-3da60c283b74",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
