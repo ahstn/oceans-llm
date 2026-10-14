@@ -246,10 +246,7 @@ function ToolDisclosureRow({
             onChange={onToggleTool}
           />
           <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="truncate font-medium">{tool.display_name}</span>
-              <ToolAnnotationBadges tool={tool} />
-            </div>
+            <div className="truncate font-medium">{tool.display_name}</div>
             {description ? (
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
@@ -295,6 +292,14 @@ function ToolDisclosureRow({
                 <div className="min-w-0 md:col-span-3">
                   <dt className="text-subtle-foreground text-xs font-medium">Title</dt>
                   <dd className="mt-1 truncate">{tool.title}</dd>
+                </div>
+              ) : null}
+              {toolAnnotationBadges(tool.annotations).length > 0 ? (
+                <div className="min-w-0 md:col-span-3">
+                  <dt className="text-subtle-foreground text-xs font-medium">Hints</dt>
+                  <dd className="mt-1">
+                    <ToolAnnotationBadges tool={tool} />
+                  </dd>
                 </div>
               ) : null}
             </dl>

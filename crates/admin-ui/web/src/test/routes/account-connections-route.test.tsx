@@ -123,14 +123,43 @@ describe('ConnectionsPage connect links', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('names the server the OAuth callback returned from', async () => {
+  it('handles a second link to the same server after the first was consumed', async () => {
+    routeMock.useLoaderData.mockReturnValue([connection()])
+    routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
+    connectMock.mockRejectedValue(new Error('consent failed'))
+    const { ConnectionsPage } = await import('@/routes/account/connections')
+
+    const { rerender } = render(<ConnectionsPage />)
+    await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(1))
+
+    routeMock.useSearch.mockReturnValue({})
+    rerender(<ConnectionsPage />)
+    routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
+    rerender(<ConnectionsPage />)
+
+    await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('names the server the OAuth callback returned from and toasts once', async () => {
     routeMock.useLoaderData.mockReturnValue([connection({ status: 'connected' })])
     routeMock.useSearch.mockReturnValue({ oauth: 'connected', server: 'server-1' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
-    render(<ConnectionsPage />)
+    const { rerender } = render(<ConnectionsPage />)
 
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Google Drive connected'))
-    expect(navigateMock).not.toHaveBeenCalled()
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ replace: true }))
+    const { search } = navigateMock.mock.calls[0][0]
+    expect(search({ oauth: 'connected', server: 'server-1' })).toEqual({
+      oauth: undefined,
+      oauth_error: undefined,
+      server: undefined,
+    })
+
+    // A loader refresh, such as the one after a disconnect, must not repeat the toast.
+    routeMock.useSearch.mockReturnValue({})
+    routeMock.useLoaderData.mockReturnValue([connection({ status: 'disconnected' })])
+    rerender(<ConnectionsPage />)
+    expect(toastMock.success).toHaveBeenCalledTimes(1)
   })
 })

@@ -45,6 +45,7 @@ export function ConnectionsPage() {
   const connections = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
+  const navigate = useNavigate()
   const [pendingServerId, setPendingServerId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -56,8 +57,21 @@ export function ConnectionsPage() {
       )
     } else if (search.oauth_error) {
       toast.error(connectionErrorMessage(search.oauth_error))
+    } else {
+      return
     }
-  }, [connections, search.oauth, search.oauth_error, search.server])
+    // Drop the callback result so a later loader refresh does not repeat the toast.
+    void navigate({
+      to: '/account/connections',
+      search: (previous: ConnectionsSearch) => ({
+        ...previous,
+        oauth: undefined,
+        oauth_error: undefined,
+        server: undefined,
+      }),
+      replace: true,
+    })
+  }, [connections, navigate, search.oauth, search.oauth_error, search.server])
 
   useConnectRequest(search.connect, connections, connect)
 
@@ -191,7 +205,12 @@ function useConnectRequest(
   const handledKey = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!serverKey || handledKey.current === serverKey) return
+    if (!serverKey) {
+      // The parameter was dropped, so a later link to the same server is a new request.
+      handledKey.current = null
+      return
+    }
+    if (handledKey.current === serverKey) return
     handledKey.current = serverKey
     void navigate({
       to: '/account/connections',

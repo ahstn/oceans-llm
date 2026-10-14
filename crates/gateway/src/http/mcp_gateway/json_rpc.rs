@@ -135,8 +135,12 @@ pub(super) fn parse_mcp_rpc_request(
     };
     let id = object.get("id").cloned();
     let Some(method) = object.get("method").and_then(Value::as_str) else {
-        // A client reply to a server-initiated request (sampling, elicitation, roots).
-        if id.is_some() && (object.contains_key("result") || object.contains_key("error")) {
+        // A client reply to a server-initiated request (sampling, elicitation, roots)
+        // carries an id and exactly one of `result` or `error`.
+        let is_reply = id.is_some()
+            && object.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+            && object.contains_key("result") != object.contains_key("error");
+        if is_reply {
             return Ok(McpRpcRequest::Lifecycle);
         }
         return Err(GatewayError::InvalidRequest(
@@ -202,6 +206,27 @@ pub(super) fn mcp_jsonrpc_error_response(
     let body = json!({
         "jsonrpc": "2.0",
         "id": id.cloned().unwrap_or(Value::Null),
+        "error": {
+            "code": code,
+            "message": message,
+        }
+    });
+    let mut response = (status, Json(body)).into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response
+}
+
+/// Rejects a notification. The transport requires an HTTP error status, and
+/// the JSON-RPC error it may carry has no `id` because none was sent.
+pub(super) fn mcp_notification_error_response(
+    status: StatusCode,
+    code: i64,
+    message: &str,
+) -> Response<Body> {
+    let body = json!({
+        "jsonrpc": "2.0",
         "error": {
             "code": code,
             "message": message,

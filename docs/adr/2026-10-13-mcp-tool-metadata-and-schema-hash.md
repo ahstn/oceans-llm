@@ -30,7 +30,7 @@ Normalization trims the title and drops it when it is empty. It drops `outputSch
 
 ### 2. Include them in the schema hash
 
-`tool_schema_hash` hashes a canonical envelope of `inputSchema`, `title`, `annotations`, and `outputSchema`. Members that are absent are left out of the envelope. When a tool declares none of the three, the hash is the input-schema hash used before, so those tools keep their hash.
+`tool_schema_hash` hashes a canonical envelope of `inputSchema`, `title`, `annotations`, and `outputSchema`. Members that are absent are left out of the envelope. The envelope hash is prefixed with a fixed domain tag, so an input schema that happens to look like an envelope cannot share a hash with a tool that declares metadata. When a tool declares none of the three, the hash is the input-schema hash used before, so those tools keep their hash.
 
 The existing drift rules apply. A new hash bumps `schema_version`, and `call_tool` rejects a stale caller-supplied `schema_hash` with `tool_schema_changed`.
 

@@ -630,7 +630,8 @@ pub fn normalize_tools(tools: Vec<McpTool>) -> Result<Vec<NormalizedMcpTool>, Mc
 ///
 /// A tool that declares no title, annotations, or output schema hashes its
 /// input schema alone, so hashes recorded before these members were stored
-/// stay the same. Otherwise the hash covers all of them.
+/// stay the same. Otherwise the hash covers all of them, with a prefix so an
+/// input schema shaped like the envelope cannot produce the same hash.
 pub fn tool_schema_hash(
     input_schema: &Value,
     title: Option<&str>,
@@ -654,16 +655,25 @@ pub fn tool_schema_hash(
     if let Some(output_schema) = output_schema {
         envelope.insert("outputSchema".to_string(), output_schema.clone());
     }
-    schema_hash(&Value::Object(envelope))
+    prefixed_hash(TOOL_DEFINITION_HASH_PREFIX, &Value::Object(envelope))
 }
 
+const TOOL_DEFINITION_HASH_PREFIX: &[u8] = b"mcp-tool-definition-v1\0";
+
 pub fn schema_hash(value: &Value) -> Result<String, McpClientError> {
+    prefixed_hash(b"", value)
+}
+
+fn prefixed_hash(prefix: &[u8], value: &Value) -> Result<String, McpClientError> {
     let canonical = serde_json::to_vec(&canonicalize_json(value)).map_err(|error| {
         McpClientError::InvalidResponse {
             message: error.to_string(),
         }
     })?;
-    let digest = Sha256::digest(canonical);
+    let digest = Sha256::new()
+        .chain_update(prefix)
+        .chain_update(canonical)
+        .finalize();
     Ok(format!("sha256:{digest:x}"))
 }
 
@@ -1009,6 +1019,27 @@ mod tests {
             tool.schema_hash,
             schema_hash(&json!({"type": "object"})).expect("hash")
         );
+    }
+
+    #[test]
+    fn an_envelope_shaped_input_schema_does_not_share_a_metadata_hash() {
+        let with_title = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            title: Some("Search".to_string()),
+            input_schema: json!({"type": "object"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+        let envelope_shaped = normalize_tools(vec![McpTool {
+            name: "search".to_string(),
+            input_schema: json!({"inputSchema": {"type": "object"}, "title": "Search"}),
+            ..McpTool::default()
+        }])
+        .expect("normalize")
+        .remove(0);
+
+        assert_ne!(with_title.schema_hash, envelope_shaped.schema_hash);
     }
 
     #[test]

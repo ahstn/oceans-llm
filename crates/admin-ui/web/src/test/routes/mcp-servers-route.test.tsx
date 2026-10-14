@@ -281,7 +281,12 @@ describe('ServersTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
     await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    // Collapsed rows keep to the name, description and status; hints show when expanded.
+    expect(screen.queryByTestId('mcp-tool-annotations')).not.toBeInTheDocument()
 
+    for (const name of ['query_docs', 'delete_page', 'plain']) {
+      fireEvent.click(screen.getByRole('button', { name: `Show ${name} schema` }))
+    }
     const [readBadges, deleteBadges] = screen.getAllByTestId('mcp-tool-annotations')
     expect(within(readBadges).getByText('Read-only')).toBeInTheDocument()
     expect(within(readBadges).getByText('Idempotent')).toBeInTheDocument()
@@ -291,7 +296,6 @@ describe('ServersTab', () => {
     expect(within(deleteBadges).getByText('Open world')).toBeInTheDocument()
     expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(2)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show query_docs schema' }))
     expect(screen.getByText('Query documentation')).toBeInTheDocument()
     expect(screen.getByText('Output schema')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-tool-output-schema-code')).toHaveTextContent('answer')

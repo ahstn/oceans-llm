@@ -167,7 +167,7 @@ export function McpInvocationsPage() {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="mcp-filter-tool">Tool</FieldLabel>
+              <FieldLabel htmlFor="mcp-filter-tool">Target</FieldLabel>
               <Input
                 id="mcp-filter-tool"
                 data-testid="mcp-filter-tool"
@@ -335,7 +335,7 @@ export function McpInvocationsPage() {
                     <TableHead>Owner Context</TableHead>
                     <TableHead>Server</TableHead>
                     <TableHead>Method</TableHead>
-                    <TableHead>Tool</TableHead>
+                    <TableHead>Target</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Policy</TableHead>
                     <TableHead>Latency</TableHead>
@@ -445,7 +445,7 @@ function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
         <DetailRow label="Team" value={invocation.team_id ?? 'n/a'} mono />
         <DetailRow label="Server" value={invocation.server_display_key} mono />
         <DetailRow label="Method" value={invocation.mcp_method} mono />
-        <DetailRow label="Tool" value={invocation.tool_display_key} mono />
+        <DetailRow label="Target" value={invocation.tool_display_key} mono />
         <DetailRow label="Occurred At" value={invocation.occurred_at} />
         <DetailRow label="Latency" value={formatLatency(invocation.latency_ms)} />
         <DetailRow

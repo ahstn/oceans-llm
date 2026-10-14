@@ -175,6 +175,20 @@ mod method_classification {
     }
 
     #[test]
+    fn malformed_client_replies_are_rejected() {
+        for body in [
+            json!({"id": "server-1", "result": {}}),
+            json!({"jsonrpc": "1.0", "id": "server-1", "result": {}}),
+            json!({"jsonrpc": "2.0", "id": "server-1", "result": {}, "error": {"code": 1}}),
+        ] {
+            assert!(
+                parse_mcp_rpc_request(&Method::POST, body.to_string().as_bytes()).is_err(),
+                "{body} should be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn unknown_method_names_are_truncated() {
         let McpRpcRequest::Unknown { method, .. } = classify(
             Method::POST,
@@ -642,6 +656,19 @@ mod proxy_policy {
             logged[0].error_code.as_deref(),
             Some("mcp_method_not_allowed")
         );
+
+        // A rejected notification keeps the error status, and its error has no id.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "vendor/event"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none());
+        assert_eq!(body["error"]["code"], -32601);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

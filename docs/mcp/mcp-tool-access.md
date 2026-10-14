@@ -94,7 +94,7 @@ Grants are per tool, and resources and prompts have no grant model of their own.
 
 The gateway applies result guardrails to `resources/read` and `prompts/get` responses, including finite `text/event-stream` responses, in the same way as `tools/call` results. List and completion results are not result-guarded, which matches `tools/list`. Resource and prompt requests are not checked against request guardrails.
 
-Each governed call is recorded on the MCP Invocations page. The `Method` column holds the JSON-RPC method. For `resources/read` and the resource subscription methods, the tool column shows the resource URI; for `prompts/get` it shows the prompt name.
+Each governed call is recorded on the MCP Invocations page. The `Method` column holds the JSON-RPC method. The `Target` column shows the tool name for `tools/call`, the resource URI for `resources/read` and the resource subscription methods, and the prompt name for `prompts/get`.
 
 Before this change, the direct proxy forwarded every method other than `tools/list` and `tools/call` once it had resolved the upstream credential, without checking grants, guardrails, or logging. Any valid API key could read resources and prompts from any active server. See [Govern every MCP method on the direct proxy](../adr/2026-10-13-govern-every-mcp-method.md).
 

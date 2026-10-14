@@ -22,7 +22,7 @@ use super::{
     credentials::upstream_auth_error_response,
     guarded_outcome_log_fields,
     guardrails::{enforce_direct_mcp_result, guardrail_decision_metadata},
-    json_rpc::{GovernedMcpMethod, mcp_jsonrpc_error_response},
+    json_rpc::{GovernedMcpMethod, mcp_jsonrpc_error_response, mcp_notification_error_response},
     mcp_error_response, tool_invocation_log_input,
     upstream::proxy_upstream,
 };
@@ -249,10 +249,16 @@ pub(super) async fn deny_unknown_method(
             ),
         )
         .await;
-    mcp_jsonrpc_error_response(
-        StatusCode::FORBIDDEN,
-        id.as_ref(),
-        METHOD_NOT_FOUND_CODE,
-        &format!("MCP method `{method}` is not allowed through the gateway"),
-    )
+    let message = format!("MCP method `{method}` is not allowed through the gateway");
+    match id {
+        Some(id) => mcp_jsonrpc_error_response(
+            StatusCode::FORBIDDEN,
+            Some(&id),
+            METHOD_NOT_FOUND_CODE,
+            &message,
+        ),
+        None => {
+            mcp_notification_error_response(StatusCode::FORBIDDEN, METHOD_NOT_FOUND_CODE, &message)
+        }
+    }
 }
