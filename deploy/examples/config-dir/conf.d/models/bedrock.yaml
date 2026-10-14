@@ -1,0 +1,26 @@
+providers:
+  bedrock-us-east-1:
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+
+models:
+  claude-sonnet-4.6:
+    description: Claude Sonnet on AWS Bedrock
+    route:
+      provider: bedrock-us-east-1
+      upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+      # Capabilities follow from the api_style: no Responses API, no streaming, no json_schema.
+      compatibility:
+        aws_bedrock:
+          api_style: runtime_anthropic_invoke
+
+  gpt-oss-120b:
+    description: OpenAI GPT OSS on AWS Bedrock
+    route:
+      provider: bedrock-us-east-1
+      upstream_model: gpt-oss-120b
+      # openai_base_path defaults to /openai/v1 on bedrock-runtime.
+      compatibility:
+        aws_bedrock:
+          api_style: runtime_openai_chat

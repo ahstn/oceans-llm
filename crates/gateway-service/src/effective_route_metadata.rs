@@ -2,8 +2,7 @@ use gateway_client_config::ApiFormat;
 use gateway_core::{
     AwsBedrockApiStyle, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
-    vertex_route_capabilities_for_upstream_model,
+    ProviderCapabilities, ProviderConnection, route_provider_capabilities,
 };
 use time::OffsetDateTime;
 
@@ -71,6 +70,8 @@ pub struct EffectiveRouteMetadata {
     pub display_name: Option<String>,
     pub pricing: Option<EffectiveRoutePricing>,
     pub pricing_source: Option<EffectiveMetadataSource>,
+    /// Catalog pricing for the route even when a configured override wins.
+    pub catalog_pricing: Option<EffectiveRoutePricing>,
     pub catalog_limits: PricingLimits,
     pub limits: PricingLimits,
     pub context_source: Option<EffectiveMetadataSource>,
@@ -105,14 +106,7 @@ where
     let catalog_source = catalog_record
         .as_ref()
         .map(|record| EffectiveMetadataSource::catalog(&record.provenance));
-    let pricing = if let Some(pricing) = &route.pricing_override {
-        Some(EffectiveRoutePricing {
-            input_cost_per_million_tokens: Some(pricing.input_cost_per_million_tokens),
-            output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
-            cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
-            cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
-        })
-    } else if catalog_pricing_supported {
+    let catalog_pricing = if catalog_pricing_supported {
         catalog_record.as_ref().map(|record| EffectiveRoutePricing {
             input_cost_per_million_tokens: record.input_cost_per_million_tokens,
             output_cost_per_million_tokens: record.output_cost_per_million_tokens,
@@ -121,6 +115,16 @@ where
         })
     } else {
         None
+    };
+    let pricing = if let Some(pricing) = &route.pricing_override {
+        Some(EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(pricing.input_cost_per_million_tokens),
+            output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
+            cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
+            cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
+        })
+    } else {
+        catalog_pricing.clone()
     };
     let pricing_source = if route.pricing_override.is_some() {
         Some(EffectiveMetadataSource::configured_override())
@@ -147,6 +151,7 @@ where
             .map(|record| record.display_name.clone()),
         pricing,
         pricing_source,
+        catalog_pricing,
         catalog_limits,
         limits,
         context_source,
@@ -200,61 +205,11 @@ pub(crate) fn provider_capabilities(
     provider: &ProviderConnection,
     route: Option<&ModelRoute>,
 ) -> ProviderCapabilities {
-    match provider.provider_type.as_str() {
-        "openai_compat" | "gcp_cloud_run_openai_compat" => {
-            let mut capabilities = ProviderCapabilities::openai_compat_baseline();
-            if route.is_some_and(|route| {
-                route
-                    .compatibility
-                    .openrouter
-                    .as_ref()
-                    .is_some_and(|openrouter| openrouter.api.is_decisions())
-            }) {
-                capabilities.decisions = true;
-            }
-            capabilities
-        }
-        "anthropic_compat" => ProviderCapabilities {
-            chat_completions: true,
-            responses: false,
-            stream: true,
-            embeddings: false,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: false,
-            developer_role: false,
-        },
-        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(
-            route.map(|route| route.upstream_model.as_str()),
-        ),
-        "github_copilot" => github_copilot_route_capabilities(
-            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
-        ),
-        "aws_bedrock" => ProviderCapabilities {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: false,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        },
-        "typesafe" => ProviderCapabilities {
-            chat_completions: false,
-            responses: false,
-            stream: false,
-            embeddings: false,
-            decisions: true,
-            tools: false,
-            vision: false,
-            json_schema: false,
-            developer_role: false,
-        },
-        _ => ProviderCapabilities::all_enabled(),
-    }
+    route_provider_capabilities(
+        &provider.provider_type,
+        ProviderCapabilities::for_provider_type(&provider.provider_type),
+        route,
+    )
 }
 
 /// The client-facing format a route's upstream speaks natively, when the provider type

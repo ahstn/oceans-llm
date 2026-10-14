@@ -258,6 +258,165 @@ pub(crate) mod tests {
         }
     }
 
+    /// A batch keeps its route row through reseeding. Renaming that route keeps its
+    /// (model, provider, upstream, priority), so the reseed must reuse the surviving row
+    /// instead of inserting a second row that the unique key rejects.
+    async fn exercise_batch_referenced_route_rename<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let mut models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                route_key: None,
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::openai_compat_baseline(),
+                compatibility: RouteCompatibility::default(),
+            }],
+            allowlist: None,
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        let seed = |models: Vec<SeedModel>| {
+            let providers = providers.clone();
+            let api_keys = api_keys.clone();
+            async move {
+                store
+                    .seed_from_inputs(
+                        &providers,
+                        &models,
+                        &api_keys,
+                        &seed_api_key_service_accounts(),
+                        &[],
+                        &[],
+                        &seed_api_key_teams(),
+                        &[],
+                    )
+                    .await
+            }
+        };
+        seed(models.clone()).await.expect("seed unnamed route");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("seeded key");
+        let model = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("query models")
+            .into_iter()
+            .next()
+            .expect("seeded model");
+        let route = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("query routes")
+            .into_iter()
+            .next()
+            .expect("seeded route");
+        let batch_id = Uuid::new_v4();
+        let now = OffsetDateTime::now_utc();
+        store
+            .insert_batch(&NewBatchJob {
+                job: BatchJobRecord {
+                    batch_id,
+                    idempotency_key: "rename-idempotency".to_string(),
+                    request_hash: "rename-request-hash".to_string(),
+                    api_key_id: api_key.id,
+                    user_id: api_key.owner_user_id,
+                    team_id: api_key.owner_team_id,
+                    service_account_id: api_key.owner_service_account_id,
+                    model_id: model.id,
+                    model_key: model.model_key.clone(),
+                    resolved_model_key: model.model_key.clone(),
+                    route_id: route.id,
+                    provider_key: route.provider_key.clone(),
+                    upstream_model: route.upstream_model.clone(),
+                    endpoint: BatchEndpoint::Responses,
+                    status: BatchStatus::Queued,
+                    provider_batch_id: None,
+                    request_count: 1,
+                    completed_count: 0,
+                    failed_count: 0,
+                    cost_usd: None,
+                    pricing_status: BatchPricingStatus::Pending,
+                    provider_usage: None,
+                    error: None,
+                    created_at: now,
+                    submitted_at: None,
+                    completed_at: None,
+                    updated_at: now,
+                    next_poll_at: None,
+                    lease_owner: None,
+                    lease_expires_at: None,
+                    provider_context: ProviderRequestContext {
+                        request_id: batch_id.to_string(),
+                        model_key: model.model_key.clone(),
+                        provider_key: route.provider_key.clone(),
+                        upstream_model: route.upstream_model.clone(),
+                        owner_user_id: None,
+                        expected_provider_credential_id: None,
+                        extra_headers: route.extra_headers.clone(),
+                        extra_body: route.extra_body.clone(),
+                        request_headers: BTreeMap::new(),
+                        compatibility: route.compatibility.clone(),
+                    },
+                    pricing_snapshot: None,
+                },
+                items: vec![NewBatchItem {
+                    batch_item_id: Uuid::new_v4(),
+                    custom_id: "rename-item".to_string(),
+                    request_body: json!({"input": "keep route history"}),
+                }],
+            })
+            .await
+            .expect("insert batch");
+
+        // Config now names the route, which changes its derived identity.
+        models[0].routes[0].route_key = Some("openai-prod".to_string());
+        seed(models).await.expect("reseed renamed route");
+
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after rename");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].id, route.id);
+        assert!(routes[0].enabled);
+        let batch = store
+            .get_batch(batch_id, BatchAccessScope::All)
+            .await
+            .expect("batch after rename");
+        assert_eq!(batch.route_id, route.id);
+    }
+
     async fn exercise_managed_service_account_seed<S>(store: &S)
     where
         S: GatewayStore + Sync,
@@ -4050,6 +4209,45 @@ pub(crate) mod tests {
             .expect("status after retry");
         assert_eq!(applied_status.pending_count(), 0);
         assert!(applied_status.entries.iter().all(|entry| entry.applied));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn seed_reuses_batch_referenced_route_after_rename() {
+        let temp = tempdir().expect("tempdir");
+        let db_path = temp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_batch_referenced_route_rename(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_reuses_batch_referenced_route_after_rename() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres route rename seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_batch_referenced_route_rename(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]

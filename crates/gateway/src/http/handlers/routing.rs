@@ -8,7 +8,7 @@ use axum::http::HeaderMap;
 
 use gateway_core::{
     AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, ProviderCapabilities,
-    ProviderClient, ProviderUserCredentialRepository, vertex_route_capabilities_for_upstream_model,
+    ProviderClient, ProviderUserCredentialRepository,
 };
 
 use gateway_service::{
@@ -241,27 +241,11 @@ pub(super) fn route_effective_provider_capabilities(
     provider: &dyn ProviderClient,
     route: &gateway_core::ModelRoute,
 ) -> ProviderCapabilities {
-    if provider.provider_type() == "gcp_vertex" {
-        return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
-    }
-    if provider.provider_type() == "github_copilot" {
-        return gateway_core::github_copilot_route_capabilities(
-            route.compatibility.github_copilot.as_ref(),
-        );
-    }
-    if provider.provider_type() == "openai_compat"
-        && route
-            .compatibility
-            .openrouter
-            .as_ref()
-            .is_some_and(|openrouter| openrouter.api.is_decisions())
-    {
-        let mut capabilities = provider.capabilities();
-        capabilities.decisions = true;
-        return capabilities;
-    }
-
-    provider.capabilities()
+    gateway_core::route_provider_capabilities(
+        provider.provider_type(),
+        provider.capabilities(),
+        Some(route),
+    )
 }
 
 fn supports_requirements(

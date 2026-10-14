@@ -1,0 +1,34 @@
+# Providers and models from ConfigMaps the chart does not create, for example with Kustomize:
+#
+#   configMapGenerator:
+#     - name: oceans-models-openai
+#       files: [conf.d/models/openai.yaml]
+#     - name: oceans-models-shared
+#       files: [conf.d/models/multi-provider.yaml]
+#
+# Each ConfigMap mounts at /app/conf.d/<name>/, and the gateway reads every YAML file below
+# /app/conf.d. A provider or model id defined in two files fails validation. The ConfigMaps must
+# exist before install because the migration hook loads the config too.
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+secrets:
+  existingSecret:
+    name: oceans-llm-env
+
+seedConfigJob:
+  enabled: true
+
+gateway:
+  configDir:
+    configMaps:
+      - oceans-models-openai
+      - oceans-models-shared
+  config:
+    database:
+      kind: postgres
+      url: env.POSTGRES_URL

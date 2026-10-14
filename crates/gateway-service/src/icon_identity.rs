@@ -218,6 +218,9 @@ fn infer_provider_icon_key(
     if provider_type == Some("typesafe") {
         return ProviderIconKey::TypeSafe;
     }
+    if provider_type == Some("aws_bedrock") {
+        return ProviderIconKey::AWS;
+    }
 
     if let Some(base_url) = provider_config
         .and_then(|config| config.get("base_url"))

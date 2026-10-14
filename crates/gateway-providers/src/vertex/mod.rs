@@ -220,7 +220,7 @@ impl ProviderClient for VertexProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::with_dimensions(true, true, false, true, true, true, true)
+        ProviderCapabilities::gcp_vertex_baseline()
     }
 
     fn batch_capabilities(&self) -> BatchCapabilities {

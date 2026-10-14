@@ -345,14 +345,30 @@ impl PostgresStore {
             }
 
             for (route_index, route) in model.routes.iter().enumerate() {
-                let route_id = route_uuid(
-                    &model.model_key,
-                    route.route_key.as_deref(),
-                    &route.provider_key,
-                    &route.upstream_model,
-                    route.priority,
-                    route_index,
-                );
+                // A batch-referenced route survives the delete above. When its identity
+                // changed but its (model, provider, upstream, priority) did not, reuse its id
+                // so the unique key does not reject the replacement.
+                let existing_route_id: Option<String> = sqlx::query_scalar(
+                    "SELECT id FROM model_routes WHERE model_id = $1 AND provider_key = $2 AND upstream_model = $3 AND priority = $4 LIMIT 1",
+                )
+                .bind(model_id.to_string())
+                .bind(route.provider_key.as_str())
+                .bind(route.upstream_model.as_str())
+                .bind(route.priority)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+                let route_id = match existing_route_id {
+                    Some(raw) => parse_uuid(&raw)?,
+                    None => route_uuid(
+                        &model.model_key,
+                        route.route_key.as_deref(),
+                        &route.provider_key,
+                        &route.upstream_model,
+                        route.priority,
+                        route_index,
+                    ),
+                };
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;

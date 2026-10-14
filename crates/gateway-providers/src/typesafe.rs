@@ -104,17 +104,7 @@ impl ProviderClient for TypeSafeProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            chat_completions: false,
-            responses: false,
-            stream: false,
-            embeddings: false,
-            decisions: true,
-            tools: false,
-            vision: false,
-            json_schema: false,
-            developer_role: false,
-        }
+        ProviderCapabilities::decisions_only()
     }
 
     async fn chat_completions(

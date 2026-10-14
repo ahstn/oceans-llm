@@ -2624,6 +2624,63 @@ impl ProviderCapabilities {
     }
 
     #[must_use]
+    pub const fn anthropic_compat_baseline() -> Self {
+        Self {
+            chat_completions: true,
+            responses: false,
+            stream: true,
+            embeddings: false,
+            decisions: false,
+            tools: true,
+            vision: true,
+            json_schema: false,
+            developer_role: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn aws_bedrock_baseline() -> Self {
+        Self {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            decisions: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn gcp_vertex_baseline() -> Self {
+        Self::with_dimensions(true, true, false, true, true, true, true)
+    }
+
+    #[must_use]
+    pub const fn decisions_only() -> Self {
+        Self {
+            decisions: true,
+            ..Self::none()
+        }
+    }
+
+    /// Capabilities a provider type can serve before route-specific narrowing.
+    #[must_use]
+    pub fn for_provider_type(provider_type: &str) -> Self {
+        match provider_type {
+            "openai_compat" | "gcp_cloud_run_openai_compat" => Self::openai_compat_baseline(),
+            "anthropic_compat" => Self::anthropic_compat_baseline(),
+            "gcp_vertex" => Self::gcp_vertex_baseline(),
+            "aws_bedrock" => Self::aws_bedrock_baseline(),
+            "github_copilot" => Self::none(),
+            "typesafe" => Self::decisions_only(),
+            _ => Self::all_enabled(),
+        }
+    }
+
+    #[must_use]
     pub const fn all_enabled() -> Self {
         Self {
             chat_completions: true,
@@ -2722,6 +2779,40 @@ pub fn vertex_route_capabilities_for_upstream_model(
 
     ProviderCapabilities::chat_only_streaming()
 }
+/// Narrows a provider's capabilities to what one route's upstream model and compatibility
+/// profile can serve. Request routing passes the live provider client's capabilities as `base`;
+/// model metadata passes [`ProviderCapabilities::for_provider_type`].
+#[must_use]
+pub fn route_provider_capabilities(
+    provider_type: &str,
+    base: ProviderCapabilities,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    match provider_type {
+        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(
+            route.map(|route| route.upstream_model.as_str()),
+        ),
+        "github_copilot" => github_copilot_route_capabilities(
+            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
+        ),
+        "openai_compat" | "gcp_cloud_run_openai_compat"
+            if route.is_some_and(|route| {
+                route
+                    .compatibility
+                    .openrouter
+                    .as_ref()
+                    .is_some_and(|openrouter| openrouter.api.is_decisions())
+            }) =>
+        {
+            ProviderCapabilities {
+                decisions: true,
+                ..base
+            }
+        }
+        _ => base,
+    }
+}
+
 #[must_use]
 pub fn github_copilot_route_capabilities(
     compatibility: Option<&GitHubCopilotRouteCompatibility>,

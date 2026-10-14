@@ -60,6 +60,20 @@ pub struct BatchUsageInput<'a> {
     pub occurred_at: OffsetDateTime,
 }
 
+fn pricing_override_matches_catalog(
+    configured: &gateway_core::RoutePricingOverride,
+    catalog: &crate::EffectiveRoutePricing,
+) -> bool {
+    catalog.input_cost_per_million_tokens == Some(configured.input_cost_per_million_tokens)
+        && catalog.output_cost_per_million_tokens == Some(configured.output_cost_per_million_tokens)
+        && configured
+            .cache_read_cost_per_million_tokens
+            .is_none_or(|rate| catalog.cache_read_cost_per_million_tokens == Some(rate))
+        && configured
+            .cache_write_cost_per_million_tokens
+            .is_none_or(|rate| catalog.cache_write_cost_per_million_tokens == Some(rate))
+}
+
 #[derive(Debug)]
 struct RouteContextOverrideConflict {
     route_id: Uuid,
@@ -768,6 +782,44 @@ where
             conflict.configured_context,
             conflict.catalog_context,
         )))
+    }
+
+    /// Logs route overrides that only repeat the catalog, so admins can delete them and let
+    /// future catalog updates apply.
+    pub async fn warn_on_redundant_route_overrides(&self) -> Result<(), GatewayError> {
+        let now = OffsetDateTime::now_utc();
+        for model in self.store.list_models().await? {
+            for route in self.store.list_routes_for_model(model.id).await? {
+                if route.pricing_override.is_none() && route.context_window_tokens.is_none() {
+                    continue;
+                }
+                let metadata = self.resolve_route_metadata(&route, now).await?;
+                if let (Some(configured), Some(catalog)) = (
+                    route.pricing_override.as_ref(),
+                    metadata.catalog_pricing.as_ref(),
+                ) && pricing_override_matches_catalog(configured, catalog)
+                {
+                    warn!(
+                        model_key = %model.model_key,
+                        provider_key = %route.provider_key,
+                        upstream_model = %route.upstream_model,
+                        "route pricing_override equals the catalog price; remove it to follow catalog updates"
+                    );
+                }
+                if route.context_window_tokens.is_some()
+                    && route.context_window_tokens == metadata.catalog_limits.context
+                {
+                    warn!(
+                        model_key = %model.model_key,
+                        provider_key = %route.provider_key,
+                        upstream_model = %route.upstream_model,
+                        context_window_tokens = route.context_window_tokens,
+                        "route context_window_tokens equals the catalog context; remove it to follow catalog updates"
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
@@ -3297,5 +3349,44 @@ mod tests {
             .expect("combined unpriced reason");
         assert!(reason.starts_with("invalid_cache_token_usage:"));
         assert!(reason.contains(";pricing_unavailable:"));
+    }
+}
+
+#[cfg(test)]
+mod redundant_override_tests {
+    use gateway_core::{Money4, RoutePricingOverride};
+
+    use super::pricing_override_matches_catalog;
+    use crate::EffectiveRoutePricing;
+
+    fn money(value: &str) -> Money4 {
+        Money4::from_decimal_str(value).expect("money")
+    }
+
+    #[test]
+    fn pricing_override_matches_only_identical_catalog_rates() {
+        let configured = RoutePricingOverride {
+            input_cost_per_million_tokens: money("0.15"),
+            output_cost_per_million_tokens: money("0.60"),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        };
+        let mut catalog = EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(money("0.1500")),
+            output_cost_per_million_tokens: Some(money("0.6000")),
+            cache_read_cost_per_million_tokens: Some(money("0.01")),
+            cache_write_cost_per_million_tokens: None,
+        };
+        assert!(pricing_override_matches_catalog(&configured, &catalog));
+
+        catalog.output_cost_per_million_tokens = Some(money("0.64"));
+        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+
+        let with_cache = RoutePricingOverride {
+            cache_read_cost_per_million_tokens: Some(money("0.02")),
+            ..configured
+        };
+        catalog.output_cost_per_million_tokens = Some(money("0.60"));
+        assert!(!pricing_override_matches_catalog(&with_cache, &catalog));
     }
 }

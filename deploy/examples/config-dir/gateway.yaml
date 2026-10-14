@@ -1,0 +1,12 @@
+# Main config for the config-directory example. Run it with:
+#
+#   gateway --config deploy/examples/config-dir/gateway.yaml \
+#     --config-dir deploy/examples/config-dir/conf.d config render --show-sources
+#
+# Fragments under conf.d/ may only add `providers` and `models`. Everything else stays here.
+server:
+  bind: 0.0.0.0:8080
+
+database:
+  kind: libsql
+  path: ./gateway.db

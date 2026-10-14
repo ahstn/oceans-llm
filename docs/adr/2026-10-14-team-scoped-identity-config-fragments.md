@@ -2,6 +2,7 @@
 
 - Date: 2026-10-14
 - Status: Proposed
+- Partly implemented by: [2026-10-15 Model and Provider Config Fragments](2026-10-15-model-and-provider-config-fragments.md), which ships the `--config-dir` loader for `providers` and `models` and mounts each fragment ConfigMap in its own directory instead of one projected volume
 - Builds On:
   - [2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md](2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md)
   - [2026-07-02-service-account-config-and-managed-api-key-secrets.md](2026-07-02-service-account-config-and-managed-api-key-secrets.md)

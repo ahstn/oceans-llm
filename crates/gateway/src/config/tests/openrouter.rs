@@ -366,6 +366,7 @@ models:
           vision: false
           json_schema: false
           developer_role: false
+          decisions: false
         compatibility:
           openrouter:
             api: decisions

@@ -139,6 +139,57 @@ providers:
 }
 
 #[test]
+fn infers_pricing_provider_id_from_well_known_hosts() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  openrouter:
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+  opencode-zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  explicit:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let pricing_ids = config
+        .seed_providers()
+        .expect("seed providers")
+        .into_iter()
+        .map(|provider| {
+            (
+                provider.provider_key,
+                provider.config["pricing_provider_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pricing_ids,
+        [
+            ("openai-prod".to_string(), "openai".to_string()),
+            ("openrouter".to_string(), "openrouter".to_string()),
+            ("opencode-zen".to_string(), "opencode".to_string()),
+            ("explicit".to_string(), "openrouter".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn rejects_openai_compat_without_pricing_provider_id() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
@@ -147,9 +198,9 @@ fn rejects_openai_compat_without_pricing_provider_id() {
         &config_path,
         r#"
 providers:
-  - id: openai-prod
+  - id: self-hosted
     type: openai_compat
-    base_url: https://api.openai.com/v1
+    base_url: https://llm.example.com/v1
 "#,
     );
 
