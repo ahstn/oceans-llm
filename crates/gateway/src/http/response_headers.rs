@@ -10,7 +10,7 @@
 //! before usage is known. The stream wrapper writes the cost into the final usage event
 //! instead, using [`with_stream_cost`].
 
-use std::{cell::RefCell, future::Future, ops::Range};
+use std::{cell::RefCell, collections::HashMap, future::Future, ops::Range};
 
 use axum::{
     body::Bytes,
@@ -23,7 +23,7 @@ use gateway_core::{ModelRoute, Money4, find_sse_delimiter};
 use gateway_service::RecordedChatUsage;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
-use serde_json::{Map, Value, json, value::RawValue};
+use serde_json::{json, value::RawValue};
 use uuid::Uuid;
 
 pub(crate) const X_OCEANS_MODEL: HeaderName = HeaderName::from_static("x-oceans-model");
@@ -243,16 +243,21 @@ impl UsageEvent<'_> {
     fn render_with_cost(&self, cost_usd: Money4) -> Option<String> {
         let Range { start, end } = self.usage.clone();
         let data = &self.data;
-        let mut fields = serde_json::from_str::<Map<String, Value>>(&data[start..end]).ok()?;
+        let upstream = &data[start..end];
+        let fields = serde_json::from_str::<HashMap<String, &RawValue>>(upstream).ok()?;
         let cost = json!({ "cost": cost_usd.format_4dp() });
-        // Append to the upstream text so the rest of the event passes through byte for
-        // byte. An existing `oceans` field (from a chained gateway) is replaced instead.
-        let usage = if fields.contains_key("oceans") {
-            fields.insert("oceans".to_string(), cost);
-            Value::Object(fields).to_string()
+        // Splice into the upstream text so the rest of the event passes through byte for
+        // byte. An existing `oceans` value (from a chained gateway) is replaced in place.
+        let usage = if let Some(existing) = fields.get("oceans").map(|raw| raw.get()) {
+            let at = (existing.as_ptr() as usize).checked_sub(upstream.as_ptr() as usize)?;
+            let after = upstream.get(at + existing.len()..)?;
+            format!("{}{cost}{after}", &upstream[..at])
         } else {
             let separator = if fields.is_empty() { "" } else { "," };
-            format!("{}{separator}\"oceans\":{cost}}}", &data[start..end - 1])
+            format!(
+                "{}{separator}\"oceans\":{cost}}}",
+                &upstream[..upstream.len() - 1]
+            )
         };
         let payload = [&data[..start], &usage, &data[end..]].concat();
 
@@ -309,6 +314,7 @@ mod endpoint_tests;
 mod tests {
     use axum::{Json, http::StatusCode, response::IntoResponse};
     use gateway_core::UsagePricingStatus;
+    use serde_json::Value;
 
     use super::*;
 
@@ -487,6 +493,11 @@ mod tests {
             (
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"9.0000\"}}}\n\n",
                 "data: {\"usage\":{\"oceans\":{\"cost\":\"0.0012\"}}}\n\n",
+            ),
+            // A chained gateway's `oceans` value is replaced where it is; keys keep their order.
+            (
+                "data: {\"usage\":{\"z\":1,\"oceans\": {\"cost\":\"9.0000\",\"x\":[]} ,\"a\":2}}\n\n",
+                "data: {\"usage\":{\"z\":1,\"oceans\": {\"cost\":\"0.0012\"} ,\"a\":2}}\n\n",
             ),
             // Comments and other fields are kept where they were.
             (
