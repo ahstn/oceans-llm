@@ -12,7 +12,7 @@
 
 ## Context
 
-When a hard budget rejected a request, the gateway returned HTTP 429 with `type: budget_error` and `code: budget_exceeded`. Clients treat 429 as "slow down and try again". The OpenAI and Anthropic Python SDKs retry 429 with backoff by default (see [Verification](#verification)), and agent tools built on them inherit that behavior. A budget window does not reset for hours or days, so these retries cannot succeed. They add latency to a failure that is already final. In tools that retry for a long time, they also hide the real cause behind a timeout or a generic "rate limited" message.
+When a hard budget rejected a request, the gateway returned HTTP 429 with `type: budget_error` and `code: budget_exceeded`. Clients treat 429 as "slow down and try again". The OpenAI and Anthropic Python SDKs retry 429 with backoff by default (see [Verification](#verification)), and agent tools that use these SDKs with default retry settings inherit that behavior. A budget window does not reset for hours or days, so these retries cannot succeed. They add latency to a failure that is already final. In tools that retry for a long time, they also hide the real cause behind a timeout or a generic "rate limited" message.
 
 The budget check runs before any provider call, so the retries cost no provider spend. They still add gateway load, and they leave users unsure why their tool stalled.
 
@@ -64,7 +64,7 @@ It does not include budget ids, ownership keys or other principals' identifiers.
 
 Benefits:
 
-- the tested SDKs, and agent tools built on them, fail fast with a clear message instead of retrying a request that cannot succeed;
+- the tested SDKs, and agent tools that use them with default retry settings, fail fast with a clear message instead of retrying a request that cannot succeed;
 - 429 again means only "rate limited" for callers of this gateway;
 - admins whose clients depend on the old behavior can opt out with a single setting.
 

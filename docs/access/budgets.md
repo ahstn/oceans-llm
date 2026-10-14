@@ -48,7 +48,7 @@ Hard budgets reject new chargeable traffic when the active window is already at 
 
 The pre-provider check reads recorded spend; it does not reserve the cost of in-flight requests. Every request that starts while the window still has headroom is admitted, so a hard budget can be exceeded by the combined cost of all requests in flight at the moment the cap is reached. For a caller that sends one request at a time that is one request's cost; for a caller running N requests concurrently it is up to N requests' cost. Set the cap with that headroom in mind.
 
-The status is 422 rather than 429 because SDKs commonly retry 429. The OpenAI and Anthropic Python SDKs, for example, retry 429 but not 422, so they stop at a request that cannot succeed until the window resets. Callers can tell a budget rejection from a request-validation 422 by `error.type` or `error.code`. To change the status, set `budgets.exceeded_status_code` to `402`, `422` (the default) or `429`. Use `429` only for clients that were built to back off on budget errors. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md).
+The status is 422 rather than 429 because the OpenAI and Anthropic Python SDKs retry 429 but not 422 with their default settings, so they stop at a request that cannot succeed until the window resets. Callers can tell a budget rejection from a request-validation 422 by `error.type` or `error.code`. To change the status, set `budgets.exceeded_status_code` to `402`, `422` (the default) or `429`. Use `429` only for clients that were built to back off on budget errors. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md).
 
 ```yaml
 budgets:
