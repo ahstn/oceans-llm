@@ -1,0 +1,27 @@
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_009ff6129e63cc::t_55b39e4dc60591 110-116
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_009ff6129e63cc::t_c5eb033634e418 88-89,177-184
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_009ff6129e63cc::t_9a0e0338e8ec94 23,26
+docs/configuration/mcp-servers.md
+  s_009ff6129e63cc::t_38f5ab31c67cfa 75-76
+docs/mcp/mcp-tool-access.md
+  s_009ff6129e63cc::t_c5a2e4ae55f9db 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b6e8d8fe0ffe105bb71ec50926105a55133cd9c",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
