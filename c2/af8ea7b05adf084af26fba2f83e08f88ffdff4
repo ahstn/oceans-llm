@@ -1,0 +1,23 @@
+crates/gateway-mcp/src/lib.rs
+  s_009ff6129e63cc::t_e4b93894388391 19-22,215,244,248-252,297,301-305,610-621,908,1030-1047
+crates/gateway-mcp/tests/streamable_http.rs
+  s_009ff6129e63cc::t_d9b36ba6e83690 1-5,14-16,179-235
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_009ff6129e63cc::t_f086d7f98fd50b 164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2af8ea7b05adf084af26fba2f83e08f88ffdff4",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
