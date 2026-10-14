@@ -45,6 +45,9 @@ This means:
 
 - the budget guard runs before provider execution in [../../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs),
 - a `budget_exceeded` rejection returns `429` and stops before any provider call,
+
+  > Superseded by [2026-10-14 budget exhaustion returns 422](2026-10-14-budget-exceeded-status-code.md): the default status is now `422`, configurable with `budgets.exceeded_status_code`. The pre-provider, request-outcome contract here still holds.
+
 - observability records that path as a bounded request outcome such as `budget_error`,
 - we do not keep or reintroduce compatibility shims that imply a provider attempt happened when it did not.
 

@@ -1,7 +1,10 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::domain::Money4;
+use crate::{
+    budgets::{BudgetExceededStatus, BudgetScopeKind},
+    domain::{BudgetCadence, Money4},
+};
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -114,13 +117,20 @@ pub enum GatewayError {
     Route(#[from] RouteError),
     #[error(transparent)]
     Provider(#[from] ProviderError),
+    /// The message names only the caller's own scope kind and cadence; the
+    /// scope key stays out of it so it can be logged without echoing ids.
     #[error(
-        "budget exceeded for ownership scope `{ownership_scope}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
+        "{} {} budget exhausted: spent ${projected_cost_usd} of the ${limit_usd} limit. Retrying will not succeed until the budget window resets or an administrator raises the limit",
+        .cadence.as_str(),
+        .scope_kind.label()
     )]
     BudgetExceeded {
         ownership_scope: String,
+        scope_kind: BudgetScopeKind,
+        cadence: BudgetCadence,
         projected_cost_usd: Money4,
         limit_usd: Money4,
+        status: BudgetExceededStatus,
     },
     #[error("request_id `{request_id}` has already been recorded for this owner")]
     DuplicateUsageRecord { request_id: String },
@@ -169,7 +179,7 @@ impl GatewayError {
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::ServiceAccountBudgetRequired)
             | Self::Auth(AuthError::InsufficientPrivileges) => 403,
-            Self::BudgetExceeded { .. } => 429,
+            Self::BudgetExceeded { status, .. } => status.as_u16(),
             Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => 400,
             Self::BatchUsageConflict { .. } => 500,
@@ -301,6 +311,55 @@ impl GatewayError {
 #[cfg(test)]
 mod tests {
     use super::{AuthError, GatewayError};
+    use crate::{BudgetCadence, BudgetExceededStatus, BudgetScopeKind, Money4};
+
+    fn budget_exceeded(status: BudgetExceededStatus) -> GatewayError {
+        GatewayError::BudgetExceeded {
+            ownership_scope: "budget:v1:user:00000000-0000-0000-0000-000000000001:model:x"
+                .to_string(),
+            scope_kind: BudgetScopeKind::UserModel,
+            cadence: BudgetCadence::Weekly,
+            projected_cost_usd: Money4::from_scaled(400_000),
+            limit_usd: Money4::from_scaled(400_000),
+            status,
+        }
+    }
+
+    #[test]
+    fn budget_exceeded_defaults_to_422_and_differs_from_validation_errors() {
+        let budget = budget_exceeded(BudgetExceededStatus::default());
+        let validation = GatewayError::UnprocessableEntity("bad".to_string());
+
+        assert_eq!(budget.http_status_code(), 422);
+        assert_eq!(validation.http_status_code(), 422);
+        assert_eq!(budget.error_type(), "budget_error");
+        assert_eq!(budget.error_code(), "budget_exceeded");
+        assert_ne!(budget.error_type(), validation.error_type());
+        assert_ne!(budget.error_code(), validation.error_code());
+    }
+
+    #[test]
+    fn budget_exceeded_uses_the_configured_status() {
+        for status in [
+            BudgetExceededStatus::PaymentRequired,
+            BudgetExceededStatus::TooManyRequests,
+        ] {
+            assert_eq!(budget_exceeded(status).http_status_code(), status.as_u16());
+        }
+    }
+
+    #[test]
+    fn budget_exceeded_message_names_scope_and_cadence_without_ids() {
+        let message = budget_exceeded(BudgetExceededStatus::default()).to_string();
+
+        assert!(
+            message.starts_with("weekly user+model budget exhausted"),
+            "{message}"
+        );
+        assert!(message.contains("$40.0000"), "{message}");
+        assert!(!message.contains("budget:v1"), "{message}");
+        assert!(!message.contains("00000000-0000"), "{message}");
+    }
 
     #[test]
     fn service_account_budget_required_is_auth_forbidden() {

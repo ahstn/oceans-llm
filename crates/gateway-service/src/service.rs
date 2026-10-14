@@ -4,9 +4,9 @@ use tokio::sync::Semaphore;
 
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
-    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, DecisionsRequest, GatewayError, GatewayModel, IdentityRepository,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
+    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
+    BudgetRepository, ChatCompletionsRequest, DecisionsRequest, GatewayError, GatewayModel,
+    IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -190,6 +190,13 @@ where
             agent_analysis_policy,
             agent_analysis_desired_versions,
         }
+    }
+
+    /// Sets the HTTP status that hard-budget rejections carry.
+    #[must_use]
+    pub fn with_budget_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
+        self.budget_guard = self.budget_guard.with_exceeded_status(status);
+        self
     }
 
     #[must_use]
