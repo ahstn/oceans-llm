@@ -5,6 +5,9 @@
 //! nothing, so it writes no usage-ledger row, charges no budget and creates no
 //! request log. It is visible in traces as the `count_tokens` provider operation.
 use super::*;
+use axum::extract::rejection::JsonRejection;
+
+use crate::http::request_body::DEFAULT_MAX_BYTES;
 
 const COUNT_TOKENS_ROUTE: &str = "/v1/messages/count_tokens";
 /// Generation-only controls. They never change the count, and the inference
@@ -21,20 +24,36 @@ const GENERATION_FIELDS: &[&str] = &[
     "service_tier",
     "user",
 ];
-/// `max_tokens` used when a count omits it. Upstream count APIs ignore it, but
-/// Bedrock wraps a full InvokeModel body, which requires one.
-const DEFAULT_COUNT_MAX_TOKENS: u64 = 4096;
+/// Baseline `max_tokens` sent with every count. Upstream count APIs ignore it, but
+/// Bedrock wraps a full InvokeModel body, which requires a valid one.
+const COUNT_MAX_TOKENS: u64 = 4096;
 
 pub async fn v1_messages_count_tokens(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<AnthropicMessagesRequest>,
+    request: Result<Json<AnthropicMessagesRequest>, JsonRejection>,
 ) -> Response {
+    // Anthropic clients parse every failure as an error envelope, including a body
+    // that is not valid JSON or has the wrong shape.
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return anthropic_error_response(json_rejection_error(&rejection)),
+    };
     match count_tokens_inner(state, request_id, headers, auth, request).await {
         Ok(response) => response,
         Err(error) => anthropic_error_response(error.0),
+    }
+}
+
+fn json_rejection_error(rejection: &JsonRejection) -> GatewayError {
+    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        GatewayError::PayloadTooLarge {
+            limit_bytes: DEFAULT_MAX_BYTES,
+        }
+    } else {
+        GatewayError::InvalidRequest(rejection.body_text())
     }
 }
 
@@ -142,17 +161,16 @@ async fn count_tokens_inner(
 /// Shapes a Messages request so every count mapper accepts it.
 ///
 /// A count never streams, so a stray `stream: true` must not narrow eligibility.
-/// Generation controls are dropped, and `max_tokens` is always set: it takes
-/// `max_completion_tokens` when only that is present, and otherwise a default
-/// that leaves room for a manual thinking budget.
+/// Generation controls are dropped, and the caller's output limit is replaced: a
+/// limit cannot change the count, but Bedrock validates it, so `0` or a value below
+/// a manual thinking budget would fail. The replacement leaves room for that budget.
 fn prepare_count_request(request: &mut CoreChatRequest) {
     request.stream = false;
-    for field in GENERATION_FIELDS {
+    for field in GENERATION_FIELDS
+        .iter()
+        .chain(&["max_tokens", "max_completion_tokens"])
+    {
         request.extra.remove(*field);
-    }
-    let max_completion_tokens = request.extra.remove("max_completion_tokens");
-    if request.extra.contains_key("max_tokens") {
-        return;
     }
     let thinking_budget = request
         .extra
@@ -160,9 +178,10 @@ fn prepare_count_request(request: &mut CoreChatRequest) {
         .and_then(|thinking| thinking.get("budget_tokens"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    let max_tokens = max_completion_tokens
-        .unwrap_or_else(|| json!(DEFAULT_COUNT_MAX_TOKENS.max(thinking_budget.saturating_add(1))));
-    request.extra.insert("max_tokens".to_string(), max_tokens);
+    let max_tokens = COUNT_MAX_TOKENS.max(thinking_budget.saturating_add(1));
+    request
+        .extra
+        .insert("max_tokens".to_string(), json!(max_tokens));
 }
 
 /// A route without an upstream count API returns a typed 501 naming the route,
@@ -195,16 +214,17 @@ mod tests {
     }
 
     #[test]
-    fn prepare_defaults_max_tokens_above_a_thinking_budget() {
+    fn prepare_sets_max_tokens_above_a_thinking_budget() {
         let mut without = request(json!({"temperature": 0.2}));
         prepare_count_request(&mut without);
         assert!(!without.stream);
         assert_eq!(
             serde_json::to_value(&without.extra).unwrap(),
-            json!({"max_tokens": DEFAULT_COUNT_MAX_TOKENS})
+            json!({"max_tokens": COUNT_MAX_TOKENS})
         );
 
         let mut thinking = request(json!({
+            "max_tokens": 2048,
             "thinking": {"type": "enabled", "budget_tokens": 10_000},
         }));
         prepare_count_request(&mut thinking);
@@ -212,19 +232,18 @@ mod tests {
     }
 
     #[test]
-    fn prepare_prefers_max_tokens_over_max_completion_tokens() {
-        let mut only_completion = request(json!({"max_completion_tokens": 512}));
-        prepare_count_request(&mut only_completion);
-        assert_eq!(
-            serde_json::to_value(&only_completion.extra).unwrap(),
-            json!({"max_tokens": 512})
-        );
-
-        let mut conflicting = request(json!({"max_tokens": 64, "max_completion_tokens": 512}));
-        prepare_count_request(&mut conflicting);
-        assert_eq!(
-            serde_json::to_value(&conflicting.extra).unwrap(),
-            json!({"max_tokens": 64})
-        );
+    fn prepare_replaces_unusable_caller_limits() {
+        for extra in [
+            json!({"max_tokens": 0}),
+            json!({"max_completion_tokens": 0}),
+            json!({"max_tokens": 64, "max_completion_tokens": 512}),
+        ] {
+            let mut request = request(extra);
+            prepare_count_request(&mut request);
+            assert_eq!(
+                serde_json::to_value(&request.extra).unwrap(),
+                json!({"max_tokens": COUNT_MAX_TOKENS})
+            );
+        }
     }
 }

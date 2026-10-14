@@ -132,7 +132,10 @@ impl ProviderClient for RecordingProvider {
         ] {
             assert!(!request.extra.contains_key(dropped), "{dropped} is dropped");
         }
-        assert_eq!(request.extra["max_tokens"], 1024);
+        assert_eq!(
+            request.extra["max_tokens"], 4096,
+            "caller limit is replaced"
+        );
         assert_eq!(context.upstream_model, "fast-upstream");
         Ok(json!({"input_tokens": 7}))
     }
@@ -376,6 +379,34 @@ async fn count_tokens_rejects_missing_credentials_with_anthropic_envelope() {
 
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(body["type"], "error");
+    assert!(provider.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn count_tokens_rejects_malformed_bodies_with_anthropic_envelope() {
+    let (_directory, _state, provider, router) = setup(true).await;
+
+    for body in [
+        Body::from("{not json"),
+        Body::from(json!({"messages": []}).to_string()),
+        Body::from(json!({"model": 7, "messages": []}).to_string()),
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/messages/count_tokens")
+            .header("content-type", "application/json")
+            .header("authorization", BEARER)
+            .body(body)
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).expect("JSON error body");
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["type"], "error");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+    }
     assert!(provider.calls.lock().unwrap().is_empty());
 }
 

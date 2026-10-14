@@ -404,13 +404,13 @@ Messages support still depends on the selected provider and route. Disable unsup
 
 `POST /v1/messages/count_tokens` and `POST /messages/count_tokens` accept a Messages request body and return `{"input_tokens": N}`. They use the same authentication (`Authorization` or `x-api-key`), model resolution, model grants, reasoning-effort ceiling, and route selection as `POST /v1/messages`. Errors use the Anthropic error envelope.
 
-The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking`, and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `temperature`, `stop_sequences`, `store`, and `stream`, and always sends a valid `max_tokens`, so settings that only shape generation never fail a count. The route's prompt guardrails run exactly as they do for Messages before the request leaves the gateway: secrets are redacted, and a prompt that Messages would deny is denied here too. Guardrail decisions are recorded under the count's request ID.
+The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking`, and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `temperature`, `stop_sequences`, `store`, and `stream`, and replaces the caller's `max_tokens` with a valid limit that leaves room for any thinking budget, so settings that only shape generation never fail a count. The route's prompt guardrails run exactly as they do for Messages before the request leaves the gateway: secrets are redacted, and a prompt that Messages would deny is denied here too. Guardrail decisions are recorded under the count's request ID.
 
 | Selected route | Upstream count API |
 | --- | --- |
 | `anthropic_compat` | `POST /v1/messages/count_tokens` on the provider base URL |
 | `gcp_vertex` with an `anthropic/*` upstream model | `count-tokens:rawPredict` on the Anthropic publisher |
-| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens` |
+| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens`, which needs the `bedrock:CountTokens` [IAM action](../providers/aws-bedrock.md#token-counting-permissions) |
 | Any other route | None. Returns `501 not_implemented_error` |
 
 The gateway never estimates a count. When the selected route has no upstream count API, the response is a 501 whose message names the provider key, provider type, and upstream model. A 404 would wrongly suggest the endpoint does not exist.

@@ -83,6 +83,22 @@ For production service workloads:
 - keep gateway API-key ownership and budgets in Oceans LLM; keep AWS permission boundaries in IAM
 - rotate static credentials outside the gateway and restart or reload the affected runtime path when they change
 
+### Token counting permissions
+
+`POST /v1/messages/count_tokens` on a `runtime_anthropic_invoke` or `runtime_converse` route calls Bedrock Runtime `CountTokens`. That API needs its own IAM action, `bedrock:CountTokens`. A role that can run `InvokeModel` still gets `AccessDenied` on every count without it.
+
+`CountTokens` accepts foundation model IDs only. The gateway strips a geo or global profile prefix before counting, so `us.anthropic.claude-sonnet-4-6` is counted as `anthropic.claude-sonnet-4-6`. Grant the action on the foundation-model resource, not the inference profile:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "bedrock:CountTokens",
+  "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6"
+}
+```
+
+Use the provider's `region` in the ARN. Leave the action out if clients do not count tokens. The gateway then returns the Bedrock error for each count, and inference is unaffected.
+
 ## Model Identity
 
 Use Bedrock Runtime model identities as `upstream_model` values. The value can be a base model ID, a geo or global inference profile ID, or a Bedrock ARN accepted by the Bedrock Runtime operation.
