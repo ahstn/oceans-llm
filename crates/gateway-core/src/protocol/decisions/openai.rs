@@ -10,7 +10,8 @@ use serde_json::Value;
 use super::{
     DecisionAnswer, DecisionChoiceOption, DecisionChoiceValue, DecisionOutcome, DecisionQuestion,
     DecisionQuestionKind, DecisionScoreLevel, DecisionsInput, DecisionsInputMessage,
-    DecisionsRequest, DecisionsResponse, DecisionsUsage, check_probability, value_to_text,
+    DecisionsRequest, DecisionsResponse, DecisionsUsage, check_probability,
+    check_probability_count, value_to_text,
 };
 
 /// Maximum number of questions in one OpenAI Decisions request.
@@ -93,33 +94,43 @@ pub struct OpenAiDecisionsResponse {
     pub usage: OpenAiDecisionsUsage,
 }
 
-/// One answer. `name` echoes the question's name, or `null` when unnamed.
+/// One answer. `name` echoes the question's name, or `null` when unnamed;
+/// the field is required, so an upstream that omits it fails as shape drift.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum OpenAiDecisionAnswer {
     Predicate {
-        #[serde(default)]
+        #[serde(deserialize_with = "required_nullable")]
         name: Option<String>,
         probability: f64,
     },
     Choice {
-        #[serde(default)]
+        #[serde(deserialize_with = "required_nullable")]
         name: Option<String>,
         choice: DecisionChoiceValue,
         confidence: f64,
         probabilities: Vec<OpenAiChoiceProbability>,
     },
     Score {
-        #[serde(default)]
+        #[serde(deserialize_with = "required_nullable")]
         name: Option<String>,
         score: f64,
         confidence: f64,
         probabilities: Vec<OpenAiScoreProbability>,
     },
     Refusal {
-        #[serde(default)]
+        #[serde(deserialize_with = "required_nullable")]
         name: Option<String>,
     },
+}
+
+/// `Option` fields are implicitly optional in serde; `deserialize_with`
+/// makes the key required while still accepting `null`.
+fn required_nullable<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::deserialize(deserializer)
 }
 
 impl OpenAiDecisionAnswer {
@@ -233,9 +244,6 @@ fn openai_input_to_core(input: &OpenAiDecisionsInput) -> Result<DecisionsInput, 
     let input = match input {
         OpenAiDecisionsInput::Text(text) => DecisionsInput::Text(text.clone()),
         OpenAiDecisionsInput::Messages(messages) => {
-            if messages.is_empty() {
-                return Err("decisions request `input` cannot be an empty list".to_string());
-            }
             if let Some(message) = messages.iter().find(|message| message.role != "user") {
                 return Err(format!(
                     "decisions input messages must have role `user`, got `{}`",
@@ -486,6 +494,7 @@ fn openai_answer_to_core(
                 ));
             }
             check_probability(key, "confidence", *confidence)?;
+            check_probability_count(key, probabilities.len(), options.len())?;
             let mut typed = Vec::with_capacity(probabilities.len());
             for entry in probabilities {
                 if !known(&entry.value) {
@@ -519,6 +528,7 @@ fn openai_answer_to_core(
                 ));
             }
             check_probability(key, "confidence", *confidence)?;
+            check_probability_count(key, probabilities.len(), levels.len())?;
             let mut indexed = Vec::with_capacity(probabilities.len());
             for entry in probabilities {
                 if entry.value > max {
@@ -884,6 +894,24 @@ mod tests {
     }
 
     #[test]
+    fn accepts_an_empty_message_list() {
+        let empty: OpenAiDecisionsRequest = serde_json::from_value(json!({
+            "model": "gpt-6-luna",
+            "input": [],
+            "questions": [{"type": "predicate", "instructions": "q"}]
+        }))
+        .expect("parses");
+        let core = openai_decisions_request_to_core(&empty).expect("translates");
+        assert!(core.validation_error().is_none());
+        assert_eq!(
+            core_decisions_request_to_openai(&core)
+                .expect("round trips")
+                .input,
+            OpenAiDecisionsInput::Messages(vec![])
+        );
+    }
+
+    #[test]
     fn positional_keys_avoid_given_names() {
         let request: OpenAiDecisionsRequest = serde_json::from_value(json!({
             "model": "gpt-6-luna",
@@ -1065,6 +1093,18 @@ mod tests {
             .expect("usage")
             .remove("total_tokens");
 
+        // `name` is required but nullable: `null` parses, omission does not.
+        let mut missing_name = valid.clone();
+        missing_name["answers"][2]
+            .as_object_mut()
+            .expect("score answer")
+            .remove("name");
+        let mut extra_probabilities = valid.clone();
+        extra_probabilities["answers"][2]["probabilities"]
+            .as_array_mut()
+            .expect("probabilities")
+            .push(json!({"value": 0, "label": "Calm", "probability": 0.0}));
+
         for invalid in [
             missing_answer,
             wrong_name,
@@ -1074,6 +1114,8 @@ mod tests {
             out_of_range_score,
             bad_probability,
             missing_usage,
+            missing_name,
+            extra_probabilities,
         ] {
             assert!(openai_decisions_response_to_core(&invalid, &request).is_err());
         }

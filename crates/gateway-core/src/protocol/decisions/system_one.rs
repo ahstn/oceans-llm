@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::{
     DecisionAnswer, DecisionChoiceOption, DecisionChoiceValue, DecisionOutcome, DecisionQuestion,
     DecisionQuestionKind, DecisionScoreLevel, DecisionsInput, DecisionsRequest, DecisionsResponse,
-    DecisionsUsage, NoulCriteria, check_probability, value_to_text,
+    DecisionsUsage, NoulCriteria, check_probability, check_probability_count, value_to_text,
 };
 
 /// System One request body.
@@ -292,7 +292,11 @@ fn system_one_answer_to_core(
 ) -> Result<DecisionAnswer, String> {
     let key = &question.key;
     match (&question.kind, answer) {
-        (_, SystemOneDecisionAnswer::Refusal { .. }) => Ok(DecisionAnswer::Refusal),
+        // Refusal is an OpenAI concept rendered for System One callers; a
+        // System One upstream never sends one, so treat it as shape drift.
+        (_, SystemOneDecisionAnswer::Refusal { .. }) => Err(format!(
+            "decisions answer `{key}` is a refusal, which System One upstreams do not send"
+        )),
         (DecisionQuestionKind::Predicate { .. }, SystemOneDecisionAnswer::Noul { noul, .. }) => {
             check_probability(key, "noul probability", *noul)?;
             Ok(DecisionAnswer::Predicate { probability: *noul })
@@ -317,6 +321,7 @@ fn system_one_answer_to_core(
                     "decisions answer `{key}` selected unknown choice `{choice}`"
                 ));
             };
+            check_probability_count(key, probabilities.len(), options.len())?;
             let mut typed = Vec::with_capacity(probabilities.len());
             for (label, probability) in probabilities {
                 check_probability(key, &format!("probability for `{label}`"), *probability)?;
@@ -351,6 +356,7 @@ fn system_one_answer_to_core(
                     "decisions answer `{key}` has score {score}, expected 0..={max}"
                 ));
             }
+            check_probability_count(key, probabilities.len(), levels.len())?;
             let mut indexed = Vec::with_capacity(probabilities.len());
             for (label, probability) in probabilities {
                 check_probability(key, &format!("probability for `{label}`"), *probability)?;
@@ -642,6 +648,8 @@ mod tests {
             .as_object_mut()
             .expect("answers")
             .remove("frustration");
+        let mut refusal = valid.clone();
+        refusal["answers"]["is_urgent"] = json!({"type": "refusal"});
 
         for invalid in [
             wrong_type,
@@ -657,9 +665,20 @@ mod tests {
             invalid_choice_confidence,
             invalid_score_confidence,
             missing_answer,
+            refusal,
         ] {
             assert!(system_one_decisions_response_to_core(&invalid, &request).is_err());
         }
+
+        // Oversized probability maps fail on length before any per-entry scan.
+        let mut oversized = valid.clone();
+        oversized["answers"]["department"]["probabilities"] = (0..300)
+            .map(|index| (format!("option_{index}"), json!(0.0)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let error = system_one_decisions_response_to_core(&oversized, &request)
+            .expect_err("oversized probabilities");
+        assert!(error.contains("reports 300 probabilities"), "{error}");
     }
 
     #[test]

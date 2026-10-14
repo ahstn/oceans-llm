@@ -451,6 +451,23 @@ pub(crate) fn check_probability(key: &str, label: &str, probability: f64) -> Res
     }
 }
 
+/// Each option or level appears at most once, so a longer probability list is
+/// malformed. Checking the length first keeps validation bounded by the
+/// request's own option count, whatever the upstream sends.
+pub(crate) fn check_probability_count(
+    key: &str,
+    reported: usize,
+    allowed: usize,
+) -> Result<(), String> {
+    if reported <= allowed {
+        Ok(())
+    } else {
+        Err(format!(
+            "decisions answer `{key}` reports {reported} probabilities for {allowed} options"
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

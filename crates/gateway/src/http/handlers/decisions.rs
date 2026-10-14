@@ -126,8 +126,18 @@ fn retain_representable_routes(
     routes: &mut Vec<ModelRoute>,
     request: &CoreDecisionsRequest,
 ) -> Result<(), GatewayError> {
-    let system_one_error = core_decisions_request_to_system_one(request).err();
-    let openai_error = core_decisions_request_to_openai(request).err();
+    // Translate only for formats some candidate route speaks.
+    let uses = |format| {
+        routes
+            .iter()
+            .any(|route| route.compatibility.decisions_wire_format() == format)
+    };
+    let system_one_error = uses(DecisionsWireFormat::SystemOne)
+        .then(|| core_decisions_request_to_system_one(request).err())
+        .flatten();
+    let openai_error = uses(DecisionsWireFormat::OpenAi)
+        .then(|| core_decisions_request_to_openai(request).err())
+        .flatten();
     let mut first_error = None;
     routes.retain(|route| {
         let error = match route.compatibility.decisions_wire_format() {

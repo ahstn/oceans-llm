@@ -91,7 +91,7 @@ OpenAI published a Decisions API with its own request format: an `input` (a stri
 - **Score indices:** OpenAI reports `score` as a 0-based index into the levels. The System One `score` field is read the same way.
 - **Bounds:** OpenAI requests are limited to 1–200 questions, 2–255 choices, 2–10 score levels and 128 images. Core validation still applies the 1–255 choice bound and 2–10 score-level bound to both formats.
 - **Confidence when rendering for OpenAI callers:** System One answers carry no confidence. The renderer uses the reported confidence if present, then the probability of the selected choice (or of the nearest score level), and 1.0 as a last resort.
-- **Upstream checks:** OpenAI answers must arrive in request order, with matching names and types. A `refusal` is allowed for any question. Shape drift fails as a provider transport error.
+- **Upstream checks:** OpenAI answers must arrive in request order, with matching names and types. Every answer must include `name`, which may be `null`. A `refusal` is allowed for any question. System One upstreams cannot send a `refusal`; the gateway only renders one for System One callers when an OpenAI upstream refuses. A probability list cannot be longer than the question's options or levels. Shape drift fails as a provider transport error.
 
 ### Accounting
 
