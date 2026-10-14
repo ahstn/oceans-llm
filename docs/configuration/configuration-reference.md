@@ -1175,7 +1175,7 @@ Compatibility metadata is separate from capabilities. Capabilities decide whethe
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
-`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe` and an OpenRouter route with `compatibility.openrouter.api: decisions`.
+`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`.
 
 Vertex embedding-only route:
 
@@ -1313,6 +1313,7 @@ OpenAI-compatible profile defaults:
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+| `decisions_api` | unset | `openai` |
 
 `empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. When an empty array is omitted, neutral `tool_choice` values (`auto`, `none`, or `null`) are omitted with it; `required` and named choices are rejected locally because no tool can satisfy them. `preserve_with_tool_history` omits an otherwise empty array but retains it and `tool_choice` when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
@@ -1330,7 +1331,9 @@ OpenRouter policy fields:
 
 `compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. `api: decisions` can omit all provider policy fields. Other OpenRouter profiles must set at least one provider policy field. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
 
-The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
+`decisions_api: openai` makes the route send the OpenAI Decisions format to `{base_url}/decisions`. It requires an `openai_compat` provider and `capabilities.decisions: true`, and it cannot be combined with `compatibility.openrouter`. See [Model Routing and APIs](model-routing-and-api-behavior.md#decisions) for an example route.
+
+The other `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 

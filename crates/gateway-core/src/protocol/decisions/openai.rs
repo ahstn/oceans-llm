@@ -503,6 +503,13 @@ fn openai_answer_to_core(
                         entry.value.to_value()
                     ));
                 }
+                // Bounded by the option count checked above.
+                if typed.iter().any(|(value, _)| value == &entry.value) {
+                    return Err(format!(
+                        "decisions answer `{key}` repeats probability for choice {}",
+                        entry.value.to_value()
+                    ));
+                }
                 check_probability(key, "choice probability", entry.probability)?;
                 typed.push((entry.value.clone(), entry.probability));
             }
@@ -534,6 +541,12 @@ fn openai_answer_to_core(
                 if entry.value > max {
                     return Err(format!(
                         "decisions answer `{key}` reports probability for level {}, expected 0..={max}",
+                        entry.value
+                    ));
+                }
+                if indexed.iter().any(|(level, _)| *level == entry.value) {
+                    return Err(format!(
+                        "decisions answer `{key}` repeats probability for level {}",
                         entry.value
                     ));
                 }
@@ -1104,6 +1117,13 @@ mod tests {
             .as_array_mut()
             .expect("probabilities")
             .push(json!({"value": 0, "label": "Calm", "probability": 0.0}));
+        // Same length as the options, but one value repeated and one missing.
+        let mut repeated_choice = valid.clone();
+        repeated_choice["answers"][1]["probabilities"][2] =
+            json!({"value": "billing", "probability": 0.05});
+        let mut repeated_level = valid.clone();
+        repeated_level["answers"][2]["probabilities"][1] =
+            json!({"value": 0, "label": "Calm", "probability": 0.7});
 
         for invalid in [
             missing_answer,
@@ -1116,6 +1136,8 @@ mod tests {
             missing_usage,
             missing_name,
             extra_probabilities,
+            repeated_choice,
+            repeated_level,
         ] {
             assert!(openai_decisions_response_to_core(&invalid, &request).is_err());
         }
