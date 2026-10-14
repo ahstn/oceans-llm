@@ -1,0 +1,47 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_009ff6129e63cc::t_b6c7a8fdf470ee 500-501
+crates/admin-ui/web/src/routes/account/connections.tsx
+  s_009ff6129e63cc::t_a488fe40875b98 48,60-61,63-74,208-213
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_009ff6129e63cc::t_28005e319f545e 249,297-304
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_009ff6129e63cc::t_6fdb321216cd66 170,338,448
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  s_009ff6129e63cc::t_ab099527abae58 126-143,148,151-163
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_009ff6129e63cc::t_2113f7cd8a4217 284-285,287-289
+crates/gateway-mcp/src/lib.rs
+  s_009ff6129e63cc::t_53ae074ef1812b 633-634,658,661-662,664-667,673-676,1024-1044
+crates/gateway-service/src/mcp_token_overhead.rs
+  s_009ff6129e63cc::t_8e527d4c8a1956 11,173-174,176,180-191,196-247
+crates/gateway-store/migrations/V57__mcp_invocation_method.sql
+  s_009ff6129e63cc::t_63a15b097b0d27 7,9-14
+crates/gateway-store/migrations/postgres/V57__mcp_invocation_method.sql
+  s_009ff6129e63cc::t_2c06af8c9dd420 7,9-14
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_009ff6129e63cc::t_b0393eda8bf45e 138-143,211-231
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_009ff6129e63cc::t_03d965d2a11e46 25,252-263
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_009ff6129e63cc::t_cf10a7a19415f9 177-190,659-671
+docs/mcp/mcp-invocations.md
+  s_009ff6129e63cc::t_49314eb373e487 15-16,24,40
+docs/mcp/mcp-tool-access.md
+  s_009ff6129e63cc::t_7972e0fa4197f3 97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c95c28f87f45c8514ef4c4988a9fbf4fb0e696ef",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
