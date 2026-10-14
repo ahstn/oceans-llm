@@ -62,6 +62,22 @@ Request outcomes are emitted once per request with bounded labels. Important exa
 - `invalid_request` for capability mismatch
 - `upstream_error` for upstream execution or stream failure
 
+### Decisions Request Metrics
+
+`POST /v1/decisions` and `POST /v1/systemone` record `gateway.decisions.requests` and `gateway.decisions.request.duration` instead of the chat request metrics. Decisions requests never stream and carry no tools, so they have no `stream` label and no tool-cardinality samples.
+
+The gateway records one sample per request once the model resolves, whether the request succeeds or fails. That covers requests with no compatible route, budget rejections, and provider failures, including a failure after billable upstream usage. Requests that fail authentication, body parsing, or model resolution record no sample.
+
+Labels:
+
+- `http.route`: `/v1/decisions` or `/v1/systemone`
+- `request_format`: the caller's format, `openai` or `system_one`
+- `requested_model` and `resolved_model`
+- `provider`: the selected provider key, or `unavailable` when no route was selected
+- `http.response.status_code` and `outcome`: `success`, or the error type such as `invalid_request_error`, `budget_error` or `upstream_error`
+
+Decisions token, cost, and usage-record totals still go to the `gateway.chat.tokens`, `gateway.chat.cost.usd`, and `gateway.chat.usage_records` metrics, like every other priced request. See [ADR: Decisions Request Metrics](../adr/2026-10-14-decisions-request-metrics.md).
+
 ## Tagging and Attribution
 
 The request-log surface records caller-supplied request tags for filtering and attribution. The tag header contract, validation rules, examples, and identity tag guidance live in [Tagging](tagging.md).

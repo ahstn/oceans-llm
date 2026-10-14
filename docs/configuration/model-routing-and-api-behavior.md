@@ -443,7 +443,7 @@ models:
 
 `decisions_api` requires an `openai_compat` provider and `capabilities.decisions: true`. It cannot be combined with `compatibility.openrouter`. Decisions pricing for `gpt-6-luna` is input-only, so the route override sets output to zero. Use OpenAI's published input and cached-input rates.
 
-Oceans selects only routes whose format can carry the request. When none can, it returns 400 before the upstream call. `safety_identifier` works only on OpenAI-format routes, and System One routes reject image inputs. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting.
+Oceans selects only routes whose format can carry the request. When none can, it returns 400 before the upstream call. `safety_identifier` works only on OpenAI-format routes, and System One routes reject image inputs. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting. Decisions requests have their own request metrics instead of the chat request metrics; see [Decisions Request Metrics](../operations/observability-and-request-logs.md#decisions-request-metrics) for what they record.
 
 See [TypeSafe](../providers/typesafe.md) for the System One request shape and [Provider API Compatibility](../reference/provider-api-compatibility.md#decisions-api) for the translation rules.
 

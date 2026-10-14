@@ -26,6 +26,8 @@ use gateway_service::RecordedChatUsage;
 pub struct GatewayMetrics {
     requests: Counter<u64>,
     request_duration: Histogram<f64>,
+    decisions_requests: Counter<u64>,
+    decisions_request_duration: Histogram<f64>,
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     tool_cardinality: Histogram<u64>,
@@ -65,6 +67,23 @@ pub struct ChatRequestMetric<'a> {
     pub latency_seconds: f64,
 }
 
+/// One Decisions API request. Decisions has its own request metric rather
+/// than `gateway.chat.requests`: it never streams, carries no tools, and has
+/// two routes, so the chat labels (`stream`, the fixed chat `http.route`) and
+/// the tool-cardinality histogram do not describe it.
+#[derive(Debug, Clone)]
+pub struct DecisionsRequestMetric<'a> {
+    pub http_route: &'a str,
+    /// The caller's wire format: `openai` or `system_one`.
+    pub request_format: &'a str,
+    pub requested_model: &'a str,
+    pub resolved_model: &'a str,
+    pub provider_key: &'a str,
+    pub status_code: i64,
+    pub outcome: &'a str,
+    pub latency_seconds: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct McpToolInvocationMetric<'a> {
     pub status: &'a str,
@@ -86,6 +105,7 @@ pub struct McpDiscoveryRefreshMetric<'a> {
 struct TestMetricCounters {
     requests: Mutex<u64>,
     request_outcomes: Mutex<BTreeMap<String, u64>>,
+    decisions_requests: Mutex<BTreeMap<TestDecisionsRequest, u64>>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -93,6 +113,19 @@ struct TestMetricCounters {
 pub struct TestMetricSnapshot {
     pub requests: u64,
     pub request_outcomes: BTreeMap<String, u64>,
+    /// Sample counts per label set, so debug builds stay bounded by label
+    /// cardinality rather than by traffic.
+    pub decisions_requests: BTreeMap<TestDecisionsRequest, u64>,
+}
+
+#[cfg(any(test, debug_assertions))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TestDecisionsRequest {
+    pub http_route: String,
+    pub request_format: String,
+    pub provider_key: String,
+    pub status_code: i64,
+    pub outcome: String,
 }
 
 impl Default for GatewayMetrics {
@@ -114,6 +147,15 @@ impl GatewayMetrics {
                 .f64_histogram("gateway.chat.request.duration")
                 .with_unit("s")
                 .with_description("Chat completion request duration in seconds")
+                .build(),
+            decisions_requests: meter
+                .u64_counter("gateway.decisions.requests")
+                .with_description("Total Decisions API requests")
+                .build(),
+            decisions_request_duration: meter
+                .f64_histogram("gateway.decisions.request.duration")
+                .with_unit("s")
+                .with_description("Decisions API request duration in seconds")
                 .build(),
             tokens: meter
                 .u64_counter("gateway.chat.tokens")
@@ -198,6 +240,39 @@ impl GatewayMetrics {
                 .lock()
                 .expect("request outcomes lock");
             *outcomes.entry(metric.outcome.to_string()).or_default() += 1;
+        }
+    }
+
+    pub fn record_decisions_request(&self, metric: &DecisionsRequestMetric<'_>) {
+        let attrs = [
+            KeyValue::new("requested_model", metric.requested_model.to_string()),
+            KeyValue::new("resolved_model", metric.resolved_model.to_string()),
+            KeyValue::new("provider", metric.provider_key.to_string()),
+            KeyValue::new("http.route", metric.http_route.to_string()),
+            KeyValue::new("http.method", "POST"),
+            KeyValue::new("http.response.status_code", metric.status_code),
+            KeyValue::new("request_format", metric.request_format.to_string()),
+            KeyValue::new("outcome", metric.outcome.to_string()),
+        ];
+
+        self.decisions_requests.add(1, &attrs);
+        self.decisions_request_duration
+            .record(metric.latency_seconds, &attrs);
+        #[cfg(any(test, debug_assertions))]
+        {
+            *self
+                .test_counters
+                .decisions_requests
+                .lock()
+                .expect("decisions requests lock")
+                .entry(TestDecisionsRequest {
+                    http_route: metric.http_route.to_string(),
+                    request_format: metric.request_format.to_string(),
+                    provider_key: metric.provider_key.to_string(),
+                    status_code: metric.status_code,
+                    outcome: metric.outcome.to_string(),
+                })
+                .or_default() += 1;
         }
     }
 
@@ -349,6 +424,12 @@ impl GatewayMetrics {
                 .request_outcomes
                 .lock()
                 .expect("request outcomes lock")
+                .clone(),
+            decisions_requests: self
+                .test_counters
+                .decisions_requests
+                .lock()
+                .expect("decisions requests lock")
                 .clone(),
         }
     }

@@ -1,5 +1,7 @@
 mod auth;
 mod decisions;
+#[cfg(test)]
+mod decisions_tests;
 mod inference;
 #[cfg(test)]
 mod inference_tests;

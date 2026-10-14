@@ -11,6 +11,7 @@ use gateway_core::{
 use serde::Deserialize;
 
 use super::*;
+use crate::observability::DecisionsRequestMetric;
 
 pub async fn v1_decisions(
     State(state): State<AppState>,
@@ -175,6 +176,8 @@ fn render_caller_response(
     normalize_response_model(body, requested_model_key)
 }
 
+/// Every exit after model resolution records one `gateway.decisions.requests`
+/// sample, including rejections before any route is chosen.
 async fn execute_decisions(
     state: AppState,
     request_id: Option<Extension<RequestId>>,
@@ -183,19 +186,87 @@ async fn execute_decisions(
     call: DecisionsCall,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
-    let request_span = Span::current();
     let request_id = canonical_request_id(request_id)?;
-    let mut core_request = parse_decisions_request(&call.body, call.format).map_err(AppError)?;
-    let requirements = core_request.requirements();
-    let mut resolved = state
+    let core_request = parse_decisions_request(&call.body, call.format).map_err(AppError)?;
+    let resolved = state
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    let requested_model = resolved.selection.requested_model.model_key.clone();
+    let resolved_model = resolved.selection.execution_model.model_key.clone();
+
+    let mut selected_provider = None;
+    let result = dispatch_decisions(
+        &state,
+        &headers,
+        &auth,
+        &call,
+        ResolvedDecisions {
+            request_id,
+            request_started_at,
+            core_request,
+            resolved,
+        },
+        &mut selected_provider,
+    )
+    .await;
+
+    let (status_code, outcome) = match &result {
+        Ok(response) => (i64::from(response.status().as_u16()), "success"),
+        Err(AppError(error)) => (i64::from(error.http_status_code()), error.error_type()),
+    };
+    state
+        .metrics
+        .record_decisions_request(&DecisionsRequestMetric {
+            http_route: call.route_path,
+            request_format: metric_request_format(call.format),
+            requested_model: &requested_model,
+            resolved_model: &resolved_model,
+            provider_key: selected_provider.as_deref().unwrap_or("unavailable"),
+            status_code,
+            outcome,
+            latency_seconds: latency_seconds_since(request_started_at),
+        });
+    result
+}
+
+const fn metric_request_format(format: DecisionsWireFormat) -> &'static str {
+    match format {
+        DecisionsWireFormat::OpenAi => "openai",
+        DecisionsWireFormat::SystemOne => "system_one",
+    }
+}
+
+struct ResolvedDecisions {
+    request_id: String,
+    request_started_at: Instant,
+    core_request: CoreDecisionsRequest,
+    resolved: gateway_service::ResolvedGatewayRequest,
+}
+
+/// Routes and executes a resolved request. `selected_provider` is set once a
+/// route is chosen, so the caller can label the request metric on any exit.
+async fn dispatch_decisions(
+    state: &AppState,
+    headers: &HeaderMap,
+    auth: &AuthenticatedApiKey,
+    call: &DecisionsCall,
+    request: ResolvedDecisions,
+    selected_provider: &mut Option<String>,
+) -> Result<Response, AppError> {
+    let ResolvedDecisions {
+        request_id,
+        request_started_at,
+        mut core_request,
+        mut resolved,
+    } = request;
+    let request_span = Span::current();
+    let requirements = core_request.requirements();
     let route_count = resolved.routes.len();
     retain_representable_routes(&mut resolved.routes, &core_request).map_err(AppError)?;
-    record_request_span_fields(&request_span, &auth, &resolved, false, call.route_path);
-    let request_headers = extract_request_headers(&headers);
-    let request_tags = extract_request_tags(&headers)?;
+    record_request_span_fields(&request_span, auth, &resolved, false, call.route_path);
+    let request_headers = extract_request_headers(headers);
+    let request_tags = extract_request_tags(headers)?;
     let mut request_log_context = state.service.begin_decisions_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
@@ -205,10 +276,10 @@ async fn execute_decisions(
         request_tags,
     );
     let (eligible_route_count, selected) = select_provider_route(
-        &state,
+        state,
         &resolved,
         requirements,
-        &headers,
+        headers,
         &core_request.extra,
         &request_headers,
         RoutingEndpoint::Decisions,
@@ -236,6 +307,7 @@ async fn execute_decisions(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
+    *selected_provider = Some(route.provider_key.clone());
     record_provider_execution_span_fields(
         &request_span,
         &route.provider_key,
@@ -248,8 +320,8 @@ async fn execute_decisions(
         &resolved.selection.requested_model.model_key,
     );
     best_effort_record_mcp_request_telemetry(
-        &state,
-        &auth,
+        state,
+        auth,
         &mut request_log_context,
         &route,
         resolved.provider_connections.get(&route.provider_key),
@@ -270,12 +342,12 @@ async fn execute_decisions(
         &route.provider_key,
         &route.upstream_model,
     );
-    redact_typed_request(&state, &request_id, &route_key, &mut core_request).await?;
+    redact_typed_request(state, &request_id, &route_key, &mut core_request).await?;
 
     if let Err(error) = state
         .service
         .enforce_pre_provider_budget(
-            &auth,
+            auth,
             &request_id,
             Some(resolved.selection.execution_model.id),
             Some(route.upstream_model.as_str()),
@@ -283,15 +355,18 @@ async fn execute_decisions(
         )
         .await
     {
-        record_guarded_pre_provider_failure(
-            &state,
-            &auth,
+        // A summary row with no attempts. The request metric is recorded by
+        // `execute_decisions`, so skip the chat metrics the shared
+        // pre-provider failure helper would add.
+        best_effort_log_non_stream_failure(
+            &state.service,
+            auth,
             &request_log_context,
-            &route,
+            &route.provider_key,
             icon_metadata,
-            request_started_at,
-            &labels,
+            latency_ms_since(request_started_at),
             &error,
+            Vec::new(),
         )
         .await;
         return Err(AppError(error));
@@ -301,7 +376,7 @@ async fn execute_decisions(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &route,
-        &auth,
+        auth,
         request_headers,
     );
     context.expected_provider_credential_id = expected_provider_credential_id;
@@ -310,7 +385,7 @@ async fn execute_decisions(
     let provider_execution_span = provider_operation_span(
         &request_id,
         "decisions",
-        &auth,
+        auth,
         &resolved,
         &route,
         provider.as_ref(),
@@ -327,9 +402,9 @@ async fn execute_decisions(
             let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
             if let Some(provider_usage) = partial_provider_usage {
                 finalize_successful_usage_accounting(
-                    &state,
+                    state,
                     UsageAccountingContext {
-                        auth: &auth,
+                        auth,
                         model: &resolved.selection.execution_model,
                         route: &route,
                         request_id: &request_id,
@@ -352,7 +427,7 @@ async fn execute_decisions(
             );
             best_effort_log_non_stream_failure(
                 &state.service,
-                &auth,
+                auth,
                 &request_log_context,
                 &route.provider_key,
                 icon_metadata.clone(),
@@ -375,9 +450,9 @@ async fn execute_decisions(
     // Price the upstream's own usage report: it carries the cached and
     // reasoning token details, whatever shape the caller receives.
     finalize_successful_usage_accounting(
-        &state,
+        state,
         UsageAccountingContext {
-            auth: &auth,
+            auth,
             model: &resolved.selection.execution_model,
             route: &route,
             request_id: &request_id,
@@ -389,7 +464,7 @@ async fn execute_decisions(
     .await;
     best_effort_log_non_stream_success(
         &state.service,
-        &auth,
+        auth,
         &request_log_context,
         &route.provider_key,
         icon_metadata,
