@@ -345,8 +345,14 @@ async fn guard_sse_payload(
         let streamed_arguments =
             (!fragments.arguments.is_empty()).then_some(fragments.arguments.as_str());
         let streamed_replacement = if let Some(arguments) = streamed_arguments {
-            let replacement =
-                guard_stream_tool_arguments(state, context, fragments, arguments).await?;
+            let replacement = guard_stream_tool_arguments(
+                state,
+                context,
+                &fragments.name,
+                fragments.shell_command_locations,
+                arguments,
+            )
+            .await?;
             if let Some(replacement) = &replacement {
                 replace_stream_arguments(
                     &mut blocks,
@@ -360,16 +366,26 @@ async fn guard_sse_payload(
         } else {
             None
         };
-        for (arguments, location) in &fragments.terminal_arguments {
-            let replacement = if streamed_arguments == Some(arguments.as_str()) {
+        for terminal in &fragments.terminal_arguments {
+            let name = terminal.name.as_deref().unwrap_or(&fragments.name);
+            let replacement = if name == fragments.name
+                && streamed_arguments == Some(terminal.arguments.as_str())
+            {
                 streamed_replacement.clone()
             } else {
-                guard_stream_tool_arguments(state, context, fragments, arguments).await?
+                guard_stream_tool_arguments(
+                    state,
+                    context,
+                    name,
+                    fragments.shell_command_locations,
+                    &terminal.arguments,
+                )
+                .await?
             };
             if let Some(replacement) = replacement {
                 replace_stream_arguments(
                     &mut blocks,
-                    std::slice::from_ref(location),
+                    std::slice::from_ref(&terminal.location),
                     &replacement,
                     fragments.shell_command_locations,
                     false,
@@ -444,15 +460,16 @@ async fn guard_sse_payload(
 async fn guard_stream_tool_arguments(
     state: &AppState,
     context: &InferenceGuardContext,
-    fragments: &ToolCallFragments,
+    name: &str,
+    shell_command_locations: bool,
     argument_text: &str,
 ) -> Result<Option<String>, GatewayError> {
     let arguments = serde_json::from_str(argument_text)
         .unwrap_or_else(|_| Value::String(argument_text.to_string()));
-    let payload = shell_command(&fragments.name, &arguments)
+    let payload = shell_command(name, &arguments)
         .map(|command| EvaluationPayload::ShellCommand { command })
         .unwrap_or_else(|| EvaluationPayload::ToolCall {
-            name: fragments.name.clone(),
+            name: name.to_string(),
             arguments: arguments.clone(),
         });
     let mut input = EvaluationInput::new(GuardPhase::GeneratedToolCall, payload);
@@ -471,7 +488,7 @@ async fn guard_stream_tool_arguments(
     let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments) else {
         return Ok(None);
     };
-    let replacement = if fragments.shell_command_locations {
+    let replacement = if shell_command_locations {
         arguments
             .get("command")
             .and_then(Value::as_str)
@@ -634,9 +651,17 @@ enum StreamLine {
 struct ToolCallFragments {
     name: String,
     arguments: String,
-    terminal_arguments: Vec<(String, (usize, String))>,
+    terminal_arguments: Vec<TerminalArguments>,
     argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
+}
+
+/// A complete copy of a call's arguments, such as `response.output_item.done`. A snapshot that
+/// names its tool is guarded under that name, so a later snapshot cannot rename an earlier one.
+struct TerminalArguments {
+    name: Option<String>,
+    arguments: String,
+    location: (usize, String),
 }
 
 fn collect_stream_tool_fragments(
@@ -662,7 +687,10 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 let event_type = object.get("type").and_then(Value::as_str);
                 let fragments = output.entry(key).or_default();
-                fragments.name = name;
+                let terminal = event_type == Some("response.output_item.done");
+                if !terminal || fragments.name.is_empty() {
+                    fragments.name.clone_from(&name);
+                }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
                 fragments.shell_command_locations |= shell_call;
@@ -673,10 +701,12 @@ fn collect_stream_tool_fragments(
                 } else {
                     format!("{pointer}/item/arguments")
                 };
-                if event_type == Some("response.output_item.done") {
-                    fragments
-                        .terminal_arguments
-                        .push((arguments, (event_index, argument_pointer)));
+                if terminal {
+                    fragments.terminal_arguments.push(TerminalArguments {
+                        name: Some(name),
+                        arguments,
+                        location: (event_index, argument_pointer),
+                    });
                 } else {
                     if fragments.arguments.is_empty() {
                         fragments.arguments = arguments;
@@ -774,10 +804,11 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
-                    fragments.terminal_arguments.push((
-                        arguments.to_string(),
-                        (event_index, format!("{pointer}/arguments")),
-                    ));
+                    fragments.terminal_arguments.push(TerminalArguments {
+                        name: None,
+                        arguments: arguments.to_string(),
+                        location: (event_index, format!("{pointer}/arguments")),
+                    });
                 }
             }
 
@@ -793,7 +824,9 @@ fn collect_stream_tool_fragments(
                 // A whole tool call inside an event (such as `response.completed`) is a
                 // snapshot of the call, not a delta, so it is guarded on its own.
                 let fragments = output.entry(key).or_default();
-                fragments.name = name;
+                if fragments.name.is_empty() {
+                    fragments.name.clone_from(&name);
+                }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
                 fragments.shell_command_locations |= shell_call;
@@ -804,9 +837,11 @@ fn collect_stream_tool_fragments(
                 } else {
                     format!("{pointer}/arguments")
                 };
-                fragments
-                    .terminal_arguments
-                    .push((arguments, (event_index, argument_pointer)));
+                fragments.terminal_arguments.push(TerminalArguments {
+                    name: Some(name),
+                    arguments,
+                    location: (event_index, argument_pointer),
+                });
                 return;
             }
 
@@ -1616,7 +1651,7 @@ mod tests {
             fragments["item-1"]
                 .terminal_arguments
                 .iter()
-                .all(|(arguments, _)| arguments == "{\"cmd\":\"git reset --hard\"}")
+                .all(|terminal| terminal.arguments == "{\"cmd\":\"git reset --hard\"}")
         );
     }
 
@@ -1651,7 +1686,7 @@ mod tests {
         );
         assert_eq!(fragments["item-1"].terminal_arguments.len(), 1);
         assert_eq!(
-            fragments["item-1"].terminal_arguments[0].0,
+            fragments["item-1"].terminal_arguments[0].arguments,
             "{\"cmd\":\"echo safe\"}"
         );
     }
@@ -1917,6 +1952,43 @@ mod tests {
         .expect_err("deny mode rejects an unparseable stream");
 
         assert!(error.to_string().contains("invalid SSE JSON"));
+    }
+
+    #[tokio::test]
+    async fn guards_each_terminal_snapshot_under_its_own_tool_name() {
+        let (_directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.mode = gateway_guardrails::PolicyMode::Deny;
+        policy.packs = vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack id")];
+        let item = |name: &str, arguments: &str| json!({"id": "fc_1", "type": "function_call", "call_id": "call_1", "name": name, "arguments": arguments});
+        // A later snapshot with a different tool name must not rename the destructive call.
+        let stream = [
+            json!({"type": "response.output_item.added", "output_index": 0, "item": item("bash", "")}),
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": item("bash", "{\"command\":\"rm -rf /tmp/work\"}"),
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"id": "resp_1", "output": [item("wiki_search", "{\"query\":\"oceans\"}")]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("event: {}\ndata: {event}", event["type"].as_str().unwrap()))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let error =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect_err("the bash snapshot is guarded as bash");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected a guardrail denial, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
     }
 
     #[tokio::test]
