@@ -185,7 +185,11 @@ pub async fn update_mcp_server(
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    let before = server_before_summary(&state, server_id).await?;
+    let before_server = state
+        .store
+        .get_external_mcp_server(server_id)
+        .await?
+        .map(map_server);
     let service = McpRegistryService::new(state.store.clone());
     let server = service
         .update_server(
@@ -201,15 +205,28 @@ pub async fn update_mcp_server(
         )
         .await?;
     let server = map_server(server);
-    state
-        .audit()
-        .record(
-            &meta.user_context(&actor),
-            server_event(actions::MCP_SERVER_UPDATED, &server)
-                .before(before)
-                .after(server_audit_summary(&server)),
-        )
-        .await;
+    // Saving the server unchanged is not a change, so it records nothing. The
+    // comparison uses the unredacted settings, so rotating a credential inside
+    // the URL still counts even though the stored summary hides it.
+    let changed = before_server
+        .as_ref()
+        .is_none_or(|before| server_settings(before) != server_settings(&server));
+    if changed {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                server_event(actions::MCP_SERVER_UPDATED, &server)
+                    .before(
+                        before_server
+                            .as_ref()
+                            .map(server_audit_summary)
+                            .unwrap_or(serde_json::Value::Null),
+                    )
+                    .after(server_audit_summary(&server)),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
@@ -504,21 +521,23 @@ pub async fn update_mcp_toolset(
         description: request.description,
         updated_at: OffsetDateTime::now_utc(),
     };
-    let toolset = state
-        .audit()
-        .audited(
-            &meta.user_context(&actor),
-            state.store.update_mcp_toolset(&record),
-            |toolset| {
+    let toolset = state.store.update_mcp_toolset(&record).await?;
+    let after = serde_json::json!({
+        "display_name": toolset.display_name,
+        "description": toolset.description,
+    });
+    // Saving the tool set's details unchanged is not a change, so it records nothing.
+    if before != after {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
                 toolset_event(actions::MCP_TOOLSET_UPDATED, &map_toolset(toolset.clone()))
                     .before(before)
-                    .after(serde_json::json!({
-                        "display_name": toolset.display_name,
-                        "description": toolset.description,
-                    }))
-            },
-        )
-        .await?;
+                    .after(after),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpToolsetPayload {
         toolset: map_toolset(toolset),
     })))
