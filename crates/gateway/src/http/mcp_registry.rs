@@ -636,10 +636,19 @@ pub async fn replace_mcp_toolset_tools(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED, targets::MCP_TOOLSET)
-                    .target(toolset_id)
-                    .before(serde_json::json!({ "tool_ids": before }))
-                    .after(serde_json::json!({ "tool_ids": after })),
+                // Labelled like the other tool set entries, so it stays readable
+                // after the tool set is renamed or disabled.
+                match state.store.get_mcp_toolset(toolset_id).await? {
+                    Some(toolset) => {
+                        toolset_event(actions::MCP_TOOLSET_TOOLS_REPLACED, &map_toolset(toolset))
+                    }
+                    None => {
+                        AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED, targets::MCP_TOOLSET)
+                            .target(toolset_id)
+                    }
+                }
+                .before(serde_json::json!({ "tool_ids": before }))
+                .after(serde_json::json!({ "tool_ids": after })),
             )
             .await;
     }
