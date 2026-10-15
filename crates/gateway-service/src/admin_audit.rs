@@ -832,9 +832,16 @@ fn scrub_provider_tokens_in(text: String) -> String {
     }
 }
 
-fn redact_summary(value: Value) -> Value {
+/// Every stored value goes through both passes: the audit checks, then the
+/// guardrail provider-token rules.
+fn sanitize(value: Value) -> Value {
     let mut value = redact_audit_value(value);
     scrub_provider_tokens(&mut value);
+    value
+}
+
+fn redact_summary(value: Value) -> Value {
+    let value = sanitize(value);
     let size = serde_json::to_vec(&value).map_or(0, |bytes| bytes.len());
     if size > MAX_SUMMARY_BYTES {
         serde_json::json!({ "truncated": true, "bytes": size })
@@ -858,7 +865,7 @@ fn redact_metadata(metadata: Map<String, Value>) -> Value {
         && let Value::Object(truncated) = &mut value
     {
         for (key, kept) in reserved {
-            let kept = redact_audit_value(kept);
+            let kept = sanitize(kept);
             let small = serde_json::to_vec(&kept)
                 .is_ok_and(|bytes| bytes.len() <= MAX_RESERVED_METADATA_BYTES);
             if small && !kept.is_object() && !kept.is_array() {
@@ -1285,6 +1292,22 @@ mod tests {
         assert!(!text.contains(&hub_token), "{text}");
         assert_eq!(redacted["name"], "Tickets");
         assert!(!redact_label(format!("server {router_key}")).contains(&router_key));
+    }
+
+    #[test]
+    fn reserved_metadata_kept_after_truncation_is_scrubbed_too() {
+        let router_key = format!("sk-or-v1-{}", "0123456789abcdef".repeat(4));
+        let mut metadata = Map::new();
+        metadata.insert("request_id".to_string(), json!(format!("req {router_key}")));
+        metadata.insert("outcome".to_string(), json!("partial"));
+        metadata.insert(
+            "requested".to_string(),
+            json!("x".repeat(MAX_SUMMARY_BYTES)),
+        );
+        let kept = redact_metadata(metadata);
+        assert_eq!(kept["truncated"], json!(true));
+        assert_eq!(kept["outcome"], json!("partial"));
+        assert!(!kept.to_string().contains(&router_key), "{kept}");
     }
 
     #[test]
