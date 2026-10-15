@@ -353,6 +353,26 @@ where
         Ok(output)
     }
 
+    /// Like [`AdminAudit::audited`], for a mutation that reports whether it changed
+    /// anything. `Ok(false)` is a no-op, such as revoking a grant that is already
+    /// inactive, and records nothing.
+    pub async fn audited_change<E, Fut, F>(
+        &self,
+        context: &AuditContext,
+        mutation: Fut,
+        describe: F,
+    ) -> Result<bool, E>
+    where
+        Fut: Future<Output = Result<bool, E>>,
+        F: FnOnce() -> AuditEvent,
+    {
+        let changed = mutation.await?;
+        if changed {
+            self.record(context, describe()).await;
+        }
+        Ok(changed)
+    }
+
     /// Like [`AdminAudit::audited`], for a mutation made of several writes that are
     /// not in one transaction. If it fails after `progress` reports a write that
     /// landed, the change is partly applied, so `partial` describes it and the entry
@@ -716,6 +736,21 @@ mod tests {
         assert_eq!(records[0].target_id.as_deref(), Some("team-1"));
         assert_eq!(records[0].metadata["outcome"], json!("partial"));
         assert_eq!(records[0].metadata["error"], json!("tags failed"));
+    }
+
+    #[tokio::test]
+    async fn audited_change_skips_no_op_mutations() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for changed in [false, true] {
+            let result: Result<bool, ()> = audit
+                .audited_change(&context(), async move { Ok(changed) }, || {
+                    AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT)
+                })
+                .await;
+            assert_eq!(result, Ok(changed));
+        }
+        assert_eq!(repo.records.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

@@ -344,6 +344,15 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let (status, body) = harness
+        .admin(
+            Method::DELETE,
+            "/api/v1/admin/mcp/grants",
+            Some(grant.clone()),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Revoking an already-revoked grant changes nothing, so it records nothing.
+    let (status, body) = harness
         .admin(Method::DELETE, "/api/v1/admin/mcp/grants", Some(grant))
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");

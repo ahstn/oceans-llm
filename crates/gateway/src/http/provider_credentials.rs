@@ -218,16 +218,15 @@ pub async fn delete_identity_user_provider_credential(
     let service = ProviderCredentialService::new(state.store.clone());
     let deleted = state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
             service.delete(&provider_key, user_id),
-            |deleted| {
+            || {
                 provider_credential_event(
                     actions::PROVIDER_CREDENTIAL_DELETED,
                     user_id,
                     &provider_key,
                 )
-                .meta("changed", deleted)
             },
         )
         .await?;

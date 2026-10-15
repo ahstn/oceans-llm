@@ -477,16 +477,15 @@ pub async fn disable_identity_service_account(
         require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
     state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
             state
                 .store
                 .disable_service_account(service_account_id, OffsetDateTime::now_utc()),
-            |changed| {
+            || {
                 service_account_event(actions::SERVICE_ACCOUNT_DISABLED, &account)
                     .before(serde_json::json!({ "status": account.status.as_str() }))
                     .after(serde_json::json!({ "status": "disabled" }))
-                    .meta("changed", changed)
             },
         )
         .await?;

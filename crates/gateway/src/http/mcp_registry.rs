@@ -731,7 +731,7 @@ pub async fn revoke_mcp_grant(
     );
     state
         .audit()
-        .audited(&meta.user_context(&actor), revoke, |revoked| {
+        .audited_change(&meta.user_context(&actor), revoke, || {
             let event = AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT);
             match grant_id {
                 Some(grant_id) => event.target(grant_id),
@@ -743,7 +743,6 @@ pub async fn revoke_mcp_grant(
                 "target_kind": target_kind.as_str(),
                 "target_id": request.target_id,
             }))
-            .meta("changed", revoked)
         })
         .await?;
     Ok(Json(envelope(McpGrantsPayload { items: Vec::new() })))
@@ -857,16 +856,15 @@ pub async fn revoke_mcp_credential_binding(
     let service = McpCredentialService::new(state.store.clone());
     state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
             service.revoke_binding(credential_binding_id),
-            |revoked| {
+            || {
                 AuditEvent::new(
                     actions::MCP_CREDENTIAL_BINDING_REVOKED,
                     targets::MCP_CREDENTIAL_BINDING,
                 )
                 .target(credential_binding_id)
-                .meta("changed", revoked)
             },
         )
         .await?;

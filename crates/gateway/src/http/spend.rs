@@ -537,16 +537,15 @@ pub async fn deactivate_budget(
         .map(|budget| budget_to_settings_view(&budget));
     let deactivated = state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
             state
                 .store
                 .deactivate_active_budget(&scope, OffsetDateTime::now_utc()),
-            |deactivated| {
+            || {
                 AuditEvent::new(actions::BUDGET_DEACTIVATED, targets::BUDGET)
                     .target(&scope_key)
                     .before(&before)
-                    .meta("changed", deactivated)
             },
         )
         .await?;

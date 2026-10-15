@@ -461,7 +461,7 @@ pub async fn revoke_mcp_oauth_connection(
         let revoke = credentials.revoke_binding(binding.credential_binding_id);
         state
             .audit()
-            .audited(&meta.user_context(&user), revoke, |revoked| {
+            .audited_change(&meta.user_context(&user), revoke, || {
                 AuditEvent::new(
                     actions::MCP_CREDENTIAL_BINDING_REVOKED,
                     targets::MCP_CREDENTIAL_BINDING,
@@ -470,7 +470,6 @@ pub async fn revoke_mcp_oauth_connection(
                 .label(owner_scope_key.clone())
                 .meta("operation", "oauth_disconnect")
                 .meta("mcp_server_id", server_id)
-                .meta("changed", revoked)
             })
             .await?;
     }
