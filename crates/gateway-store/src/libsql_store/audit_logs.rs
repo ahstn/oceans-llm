@@ -6,13 +6,10 @@ use gateway_core::{
 
 use super::{LibsqlStore, to_query_error};
 use crate::audit_logs::{
-    AuditLogFilter, AuditLogRow, finish_page, parse_json, parse_optional_json,
+    AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql, parse_json,
+    parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
-
-const AUDIT_LOG_COLUMNS: &str = "id, ts, actor_kind, actor_user_id, actor_api_key_id, \
-    actor_label, action, object_type, object_id, target_label, before_json, after_json, \
-    details_json, request_ip, user_agent";
 
 fn decode(row: &libsql::Row) -> Result<AuditLogRecord, StoreError> {
     let actor_kind: String = row.get(2).map_err(to_query_error)?;
@@ -88,37 +85,14 @@ impl AuditLogRepository for LibsqlStore {
 
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {
         let filter = AuditLogFilter::from_query(query)?;
-        let sql = format!(
-            r#"
-            SELECT {AUDIT_LOG_COLUMNS}
-            FROM audit_logs
-            WHERE (?1 IS NULL OR actor_user_id = ?1)
-              AND (?2 IS NULL OR action = ?2)
-              AND (?3 IS NULL OR object_type = ?3)
-              AND (?4 IS NULL OR object_id = ?4)
-              AND (?5 IS NULL OR ts >= ?5)
-              AND (?6 IS NULL OR ts <= ?6)
-              AND (?7 IS NULL OR ts < ?7 OR (ts = ?7 AND id < ?8))
-            ORDER BY ts DESC, id DESC
-            LIMIT ?9
-            "#
-        );
+        let (sql, binds) = list_sql(&filter, |index| format!("?{index}"));
+        let params = binds.into_iter().map(|bind| match bind {
+            AuditLogBind::Text(value) => libsql::Value::Text(value),
+            AuditLogBind::Int(value) => libsql::Value::Integer(value),
+        });
         let mut rows = self
             .connection
-            .query(
-                &sql,
-                libsql::params![
-                    filter.actor_user_id,
-                    filter.action,
-                    filter.target_type,
-                    filter.target_id,
-                    filter.start_ms,
-                    filter.end_ms,
-                    filter.cursor_ts,
-                    filter.cursor_id,
-                    filter.fetch_limit,
-                ],
-            )
+            .query(&sql, libsql::params_from_iter(params))
             .await
             .map_err(to_query_error)?;
         let mut items = Vec::new();
@@ -145,5 +119,64 @@ mod tests {
             .await
             .expect("store");
         crate::audit_logs::exercise_audit_log_store(&store).await;
+    }
+
+    #[tokio::test]
+    async fn filtered_pages_read_the_matching_index_in_page_order() {
+        let temporary = tempdir().expect("tempdir");
+        let database_path = temporary.path().join("gateway.db");
+        run_migrations(&database_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(database_path.to_str().expect("database path"))
+            .await
+            .expect("store");
+        let cases = [
+            (
+                AuditLogQuery {
+                    action: Some("api_key.created".to_string()),
+                    ..Default::default()
+                },
+                "audit_logs_action_idx",
+            ),
+            (
+                AuditLogQuery {
+                    target_type: Some("team".to_string()),
+                    target_id: Some("t-1".to_string()),
+                    cursor: Some(gateway_core::AuditLogCursor {
+                        occurred_at_ms: 1,
+                        id: 1,
+                    }),
+                    ..Default::default()
+                },
+                "audit_logs_target_idx",
+            ),
+            (AuditLogQuery::default(), "audit_logs_ts_idx"),
+        ];
+        for (query, index) in cases {
+            let filter = AuditLogFilter::from_query(&query).expect("filter");
+            let (sql, binds) = list_sql(&filter, |position| format!("?{position}"));
+            let params = binds.into_iter().map(|bind| match bind {
+                AuditLogBind::Text(value) => libsql::Value::Text(value),
+                AuditLogBind::Int(value) => libsql::Value::Integer(value),
+            });
+            let mut rows = store
+                .connection
+                .query(
+                    &format!("EXPLAIN QUERY PLAN {sql}"),
+                    libsql::params_from_iter(params),
+                )
+                .await
+                .expect("query plan");
+            let mut plan = String::new();
+            while let Some(row) = rows.next().await.expect("plan row") {
+                let detail: String = row.get(3).expect("plan detail");
+                plan.push_str(&detail);
+                plan.push('\n');
+            }
+            assert!(plan.contains(index), "expected {index} in plan:\n{plan}");
+            assert!(
+                !plan.contains("TEMP B-TREE"),
+                "page order needs no sort:\n{plan}"
+            );
+        }
     }
 }

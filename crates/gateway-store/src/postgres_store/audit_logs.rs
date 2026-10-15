@@ -7,7 +7,8 @@ use sqlx::{Row, postgres::PgRow};
 
 use super::{PostgresStore, to_query_error};
 use crate::audit_logs::{
-    AuditLogFilter, AuditLogRow, finish_page, parse_json, parse_optional_json,
+    AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql, parse_json,
+    parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
 
@@ -77,38 +78,21 @@ impl AuditLogRepository for PostgresStore {
 
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {
         let filter = AuditLogFilter::from_query(query)?;
-        let items = sqlx::query(
-            r#"
-            SELECT id, ts, actor_kind, actor_user_id, actor_api_key_id, actor_label, action,
-                   object_type, object_id, target_label, before_json, after_json, details_json,
-                   request_ip, user_agent
-            FROM audit_logs
-            WHERE ($1::text IS NULL OR actor_user_id = $1)
-              AND ($2::text IS NULL OR action = $2)
-              AND ($3::text IS NULL OR object_type = $3)
-              AND ($4::text IS NULL OR object_id = $4)
-              AND ($5::bigint IS NULL OR ts >= $5)
-              AND ($6::bigint IS NULL OR ts <= $6)
-              AND ($7::bigint IS NULL OR ts < $7 OR (ts = $7 AND id < $8))
-            ORDER BY ts DESC, id DESC
-            LIMIT $9
-            "#,
-        )
-        .bind(filter.actor_user_id)
-        .bind(filter.action)
-        .bind(filter.target_type)
-        .bind(filter.target_id)
-        .bind(filter.start_ms)
-        .bind(filter.end_ms)
-        .bind(filter.cursor_ts)
-        .bind(filter.cursor_id)
-        .bind(filter.fetch_limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_query_error)?
-        .iter()
-        .map(decode)
-        .collect::<Result<Vec<_>, _>>()?;
+        let (sql, binds) = list_sql(&filter, |index| format!("${index}"));
+        let mut statement = sqlx::query(&sql);
+        for bind in binds {
+            statement = match bind {
+                AuditLogBind::Text(value) => statement.bind(value),
+                AuditLogBind::Int(value) => statement.bind(value),
+            };
+        }
+        let items = statement
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .iter()
+            .map(decode)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(finish_page(items, filter.page_size))
     }
 }

@@ -88,6 +88,73 @@ fn lower_bound_millis(value: time::OffsetDateTime) -> Result<i64, StoreError> {
     }
 }
 
+/// A bind value for the generated list query.
+pub(crate) enum AuditLogBind {
+    Text(String),
+    Int(i64),
+}
+
+/// The list query's `SELECT ... WHERE ... ORDER BY ... LIMIT` with only the
+/// filters in use, so each backend can serve it from the matching
+/// `(column, ts, id)` index in page order instead of scanning past unused
+/// `IS NULL` branches. `placeholder` renders the n-th (1-based) bind marker.
+pub(crate) fn list_sql(
+    filter: &AuditLogFilter,
+    placeholder: impl Fn(usize) -> String,
+) -> (String, Vec<AuditLogBind>) {
+    let mut conditions = Vec::new();
+    let mut binds = Vec::new();
+    let mut push = |condition: &str, bind: AuditLogBind, binds: &mut Vec<AuditLogBind>| {
+        binds.push(bind);
+        conditions.push(condition.replace('?', &placeholder(binds.len())));
+    };
+    for (column, value) in [
+        ("actor_user_id", &filter.actor_user_id),
+        ("action", &filter.action),
+        ("object_type", &filter.target_type),
+        ("object_id", &filter.target_id),
+    ] {
+        if let Some(value) = value {
+            push(
+                &format!("{column} = ?"),
+                AuditLogBind::Text(value.clone()),
+                &mut binds,
+            );
+        }
+    }
+    if let Some(start) = filter.start_ms {
+        push("ts >= ?", AuditLogBind::Int(start), &mut binds);
+    }
+    if let Some(end) = filter.end_ms {
+        push("ts <= ?", AuditLogBind::Int(end), &mut binds);
+    }
+    if let (Some(cursor_ts), Some(cursor_id)) = (filter.cursor_ts, filter.cursor_id) {
+        binds.push(AuditLogBind::Int(cursor_ts));
+        let ts_marker = placeholder(binds.len());
+        binds.push(AuditLogBind::Int(cursor_id));
+        let id_marker = placeholder(binds.len());
+        conditions.push(format!("(ts, id) < ({ts_marker}, {id_marker})"));
+    }
+    binds.push(AuditLogBind::Int(filter.fetch_limit));
+    let limit_marker = placeholder(binds.len());
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+    (
+        format!(
+            "SELECT {AUDIT_LOG_COLUMNS} FROM audit_logs {where_clause} \
+             ORDER BY ts DESC, id DESC LIMIT {limit_marker}"
+        ),
+        binds,
+    )
+}
+
+pub(crate) const AUDIT_LOG_COLUMNS: &str = "id, ts, actor_kind, actor_user_id, \
+    actor_api_key_id, actor_label, action, object_type, object_id, target_label, \
+    before_json, after_json, details_json, request_ip, user_agent";
+
 pub(crate) fn finish_page(mut items: Vec<AuditLogRecord>, page_size: usize) -> AuditLogPage {
     let has_more = items.len() > page_size;
     items.truncate(page_size);
