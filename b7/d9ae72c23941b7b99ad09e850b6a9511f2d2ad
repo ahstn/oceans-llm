@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/routes/rate-limits.tsx
+  s_56409892e094a0::t_3ed22291355609 44,46,58,72-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7d9ae72c23941b7b99ad09e850b6a9511f2d2ad",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
