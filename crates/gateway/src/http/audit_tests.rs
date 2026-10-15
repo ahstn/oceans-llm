@@ -328,7 +328,8 @@ async fn identity_changes_are_audited_without_invite_links() {
 async fn budget_changes_record_before_and_after() {
     let harness = Harness::new().await;
     let (user_id, _) = harness.user(GlobalRole::User).await;
-    for amount in ["10.00", "25.00"] {
+    // Saving the same settings again records nothing.
+    for amount in ["10.00", "25.00", "25.00"] {
         let (status, body) = harness
             .admin(
                 Method::PUT,

@@ -37,7 +37,7 @@ Each entry shows:
 | Rate limits | `rate_limit_policy.created`, `rate_limit_policy.updated`, `rate_limit_policy.deleted` |
 | Other | `pricing_catalog.refreshed`, `review_agent_repository.created`, `.updated`, `.disabled`, `.reactivated` |
 
-A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository or MCP server, removing a member another request already removed, signing out twice with the same session, or saving a rate-limit policy or service account unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
+A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository or MCP server, removing a member another request already removed, signing out twice with the same session, or saving a user, team, budget, rate-limit policy or service account unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
 
 An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
 

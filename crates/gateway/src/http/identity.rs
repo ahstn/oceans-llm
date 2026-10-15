@@ -636,10 +636,14 @@ pub async fn update_identity_team(
             &meta.user_context(&actor),
             &progress,
             update,
+            // Saving the team unchanged is not a change, so it records nothing.
             |view| {
-                team_event(actions::TEAM_UPDATED, view)
-                    .before(team_summary(&before))
-                    .after(team_summary(view))
+                let (before, after) = (team_summary(&before), team_summary(view));
+                (before != after).then(|| {
+                    team_event(actions::TEAM_UPDATED, view)
+                        .before(before)
+                        .after(after)
+                })
             },
             |progress, error| {
                 partial_event(actions::TEAM_UPDATED, targets::TEAM, progress, error)
@@ -1206,10 +1210,14 @@ pub async fn update_identity_user(
             &meta.user_context(&actor),
             &progress,
             update,
+            // Saving the user unchanged is not a change, so it records nothing.
             |updated| {
-                user_event(actions::USER_UPDATED, &identity_user.user)
-                    .before(user_summary(&identity_user))
-                    .after(user_summary(updated))
+                let (before, after) = (user_summary(&identity_user), user_summary(updated));
+                (before != after).then(|| {
+                    user_event(actions::USER_UPDATED, &identity_user.user)
+                        .before(before)
+                        .after(after)
+                })
             },
             |_, error| {
                 user_event(actions::USER_UPDATED, &identity_user.user)
