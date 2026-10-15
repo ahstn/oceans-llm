@@ -369,9 +369,11 @@ pub async fn reveal_api_key_secret(
         .audited(
             &meta.user_context(&actor),
             service.reveal_api_key_secret(api_key_id),
-            |_| {
+            |result| {
                 AuditEvent::new(actions::API_KEY_SECRET_REVEALED, targets::API_KEY)
                     .target(api_key_id)
+                    .label(result.name.clone())
+                    .meta("owner_kind", result.owner_kind.as_str())
             },
         )
         .await?;

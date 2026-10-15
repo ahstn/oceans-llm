@@ -111,6 +111,9 @@ pub struct UpdateAdminApiKeyInput {
 
 pub struct RevealAdminApiKeySecretResult {
     pub raw_key: String,
+    /// The key's name and owner kind, for the audit entry; never the secret.
+    pub name: String,
+    pub owner_kind: ApiKeyOwnerKind,
 }
 
 impl<R> AdminApiKeyService<R>
@@ -494,7 +497,11 @@ where
             .touch_api_key_secret_material_retrieved(api_key_id, OffsetDateTime::now_utc())
             .await?;
 
-        Ok(RevealAdminApiKeySecretResult { raw_key })
+        Ok(RevealAdminApiKeySecretResult {
+            raw_key,
+            name: api_key.name,
+            owner_kind: api_key.owner_kind,
+        })
     }
 
     pub async fn update_api_key(
