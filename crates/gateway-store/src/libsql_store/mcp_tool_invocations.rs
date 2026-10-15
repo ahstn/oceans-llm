@@ -74,11 +74,7 @@ impl McpToolInvocationRepository for LibsqlStore {
         payload: Option<&McpToolInvocationPayloadRecord>,
     ) -> Result<(), StoreError> {
         let metadata_json = serialize_json(&invocation.metadata)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         tx.execute(
             r#"

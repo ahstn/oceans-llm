@@ -51,3 +51,15 @@ Guarded streams add latency because the gateway cannot release partial output be
 Hash-only default records reduce forensic detail. Operators who need payloads must enable the existing capture policy and accept its redaction and retention controls.
 
 Built-in packs cannot cover provider-specific tool names without aliases. Structured selectors therefore support documented aliases while retaining stable generic rule identities.
+
+## Amendment: audit mode never stops an operation
+
+On 2026-10-15, audit mode became strictly non-blocking. Rejecting an operation is now reserved for `deny` mode:
+
+- A managed check's `fail_closed` disposition converts a failure to a deny only in `deny` mode.
+- A deterministic evaluator failure, such as generated tool arguments that are not a JSON object (`tool_call.malformed_arguments`), fails closed in `deny` mode.
+- In `audit` mode, every evaluator failure is recorded as a `fail_open` audit decision, and the operation continues.
+
+Guarded streams are still buffered at the HTTP boundary before any bytes are released. The change covers streams that cannot be inspected: a provider stream or direct MCP result that exceeds `stream_buffer_bytes`, an MCP result still open after `stream_buffer_timeout_ms`, or content that is not parseable. `deny` mode rejects these as before. `audit` mode releases them unchanged, including bytes already buffered, and records one `stream_buffer` audit decision with `failure_disposition: fail_open`. A result body that fails mid-read is an upstream failure in both modes, not an uninspectable result.
+
+Audit mode is the rollout step before `deny`. It exists to show what `deny` would stop, so letting it block on an inspection failure made audit rollouts unsafe without adding evidence. The [gateway guardrails operations guide](../operations/gateway-guardrails.md) holds the current status codes and reason codes.

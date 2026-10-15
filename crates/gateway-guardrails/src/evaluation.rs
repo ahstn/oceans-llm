@@ -64,6 +64,8 @@ pub enum EvaluationError {
     InvalidTransformation,
     #[error("guarded stream exceeded the configured buffer")]
     StreamBufferExceeded,
+    #[error("guarded stream did not complete within the buffer timeout")]
+    StreamBufferTimeout,
     #[error("guarded stream could not be parsed")]
     UnparseableStream,
 }
@@ -80,6 +82,7 @@ impl EvaluationError {
             Self::MissingEvaluator(_) => "managed.missing_evaluator",
             Self::InvalidTransformation => "managed.invalid_transformation",
             Self::StreamBufferExceeded => "stream.buffer_exceeded",
+            Self::StreamBufferTimeout => "stream.buffer_timeout",
             Self::UnparseableStream => "stream.unparseable",
         };
         ReasonCode::new(code).expect("static reason code is valid")

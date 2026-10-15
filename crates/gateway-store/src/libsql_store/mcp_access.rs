@@ -286,11 +286,7 @@ impl McpAccessRepository for LibsqlStore {
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             "DELETE FROM mcp_toolset_tools WHERE toolset_id = ?1",
             [toolset_id.to_string()],

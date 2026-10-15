@@ -170,6 +170,11 @@ guardrails:
   model_routes:
     audit-fast/openai-e2e/gpt-4o-mini:
       mode: audit
+  mcp_servers:
+    notion-e2e-audit:
+      mode: audit
+      stream_buffer_bytes: 65536
+      stream_buffer_timeout_ms: 1000
   managed_checks:
     model-armor-e2e:
       kind: google_model_armor
@@ -298,13 +303,17 @@ UI_PID=$!
 
 (
   cd "$ROOT_DIR"
-  ADMIN_UI_UPSTREAM="http://127.0.0.1:${E2E_UI_PORT}" \
-  GATEWAY_CONFIG="$CONFIG_PATH" \
-  GATEWAY_IDENTITY_TOKEN_SECRET="local-dev-identity-secret" \
-  OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="$E2E_API_KEY_SECRET_ENCRYPTION_KEY" \
-  AGENT_ANALYSIS_ENABLED="${AGENT_ANALYSIS_ENABLED:-true}" \
-  AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}" \
-    "$E2E_GATEWAY_BIN"
+  export ADMIN_UI_UPSTREAM="http://127.0.0.1:${E2E_UI_PORT}"
+  export GATEWAY_CONFIG="$CONFIG_PATH"
+  export GATEWAY_IDENTITY_TOKEN_SECRET="local-dev-identity-secret"
+  export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="$E2E_API_KEY_SECRET_ENCRYPTION_KEY"
+  export AGENT_ANALYSIS_ENABLED="${AGENT_ANALYSIS_ENABLED:-true}"
+  export AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED="${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}"
+  # The audit-mode guardrail override names this MCP server, so it must exist at startup.
+  "$E2E_GATEWAY_BIN" migrate --apply
+  "$MISE_BIN" exec -- node scripts/register-e2e-mcp-server.mjs \
+    "$DB_PATH" notion-e2e-audit "http://127.0.0.1:${E2E_UPSTREAM_PORT}/mcp"
+  exec "$E2E_GATEWAY_BIN"
 ) >"$GATEWAY_LOG" 2>&1 &
 GATEWAY_PID=$!
 

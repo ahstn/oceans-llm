@@ -12,7 +12,10 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::http::{
-    guardrail_events::{record_guardrail_decisions_in_background, record_guardrail_evaluation},
+    guardrail_events::{
+        record_guardrail_decisions_in_background, record_guardrail_evaluation,
+        uninspected_content_hash,
+    },
     state::AppState,
 };
 const PROMPT_TEXT_FIELDS: &[&str] = &[
@@ -230,19 +233,12 @@ fn release_uninspected_stream(
 ) -> bool {
     let policy = PolicyResolver::new(&state.guardrail_config)
         .resolve(PolicyTarget::ModelRoute(&context.route_key));
-    let content_hash = format!(
-        "sha256:{:x}",
-        content
-            .iter()
-            .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
-            .finalize()
-    );
     let decision = uninspected_content_decision(
         &policy,
         GuardPhase::ModelResponse,
         "stream_buffer",
         error,
-        content_hash,
+        uninspected_content_hash(content),
     );
     let released = decision.action != DecisionAction::Deny;
     record_guardrail_decisions_in_background(
@@ -2318,6 +2314,123 @@ mod tests {
             panic!("expected a guardrail denial, got {error:?}");
         };
         assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+
+    #[tokio::test]
+    async fn guards_each_terminal_snapshot_under_its_own_tool_name() {
+        let (_directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.mode = gateway_guardrails::PolicyMode::Deny;
+        policy.packs = vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack id")];
+        let item = |name: &str, arguments: &str| json!({"id": "fc_1", "type": "function_call", "call_id": "call_1", "name": name, "arguments": arguments});
+        // A later snapshot with a different tool name must not rename the destructive call.
+        let stream = [
+            json!({"type": "response.output_item.added", "output_index": 0, "item": item("bash", "")}),
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": item("bash", "{\"command\":\"rm -rf /tmp/work\"}"),
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"id": "resp_1", "output": [item("wiki_search", "{\"query\":\"oceans\"}")]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("event: {}\ndata: {event}", event["type"].as_str().unwrap()))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let error =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect_err("the bash snapshot is guarded as bash");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected a guardrail denial, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+
+    #[tokio::test]
+    async fn rewrites_each_terminal_snapshot_in_its_own_call_shape() {
+        use gateway_guardrails::{
+            ContentTransformation, FailureDisposition, GuardrailEngine, ManagedCheckConfig,
+            ManagedCheckKind, ManagedEvaluator, ManagedOutcome, ManagedService, ReasonCode,
+            test_utils::StubManagedEvaluator,
+        };
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.enabled = true;
+        config.default.managed_checks = vec!["mask".into()];
+        config.managed_checks.insert(
+            "mask".into(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::GoogleModelArmor,
+                phases: [GuardPhase::GeneratedToolCall].into(),
+                timeout_ms: 1_000,
+                failure_disposition: FailureDisposition::FailOpen,
+                max_content_bytes: 4_096,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        // The shell snapshot is allowed; the function snapshot's arguments are masked.
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([(
+                "mask".into(),
+                Arc::new(StubManagedEvaluator::new(
+                    "mask",
+                    ManagedService::GoogleModelArmor,
+                    [
+                        Ok(ManagedOutcome::Allow {
+                            reason_code: ReasonCode::new("test.allow").unwrap(),
+                            metadata: Default::default(),
+                        }),
+                        Ok(ManagedOutcome::Transformed {
+                            transformation: ContentTransformation::new(
+                                "{\"query\":\"[masked]\"}".into(),
+                            ),
+                            reason_code: ReasonCode::new("test.masked").unwrap(),
+                            metadata: Default::default(),
+                        }),
+                    ],
+                )) as Arc<dyn ManagedEvaluator>,
+            )]),
+        ));
+        let stream = [
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {"id": "fc_1", "type": "shell_call", "action": {"command": ["echo hi"]}},
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"id": "resp_1", "output": [{
+                    "id": "fc_1",
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "wiki_search",
+                    "arguments": "{\"query\":\"private-query\"}",
+                }]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("event: {}\ndata: {event}", event["type"].as_str().unwrap()))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let guarded =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect("the masked stream is released");
+
+        let guarded = String::from_utf8(guarded).expect("UTF-8");
+        assert!(!guarded.contains("private-query"), "{guarded}");
+        assert!(guarded.contains("[masked]"), "{guarded}");
+        assert!(guarded.contains("echo hi"), "{guarded}");
     }
 
     #[tokio::test]
