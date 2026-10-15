@@ -270,6 +270,30 @@ mod tests {
             ),
             (
                 AuditLogQuery {
+                    actor_user_id: Some(uuid::Uuid::nil()),
+                    target_type: Some("team".to_string()),
+                    ..Default::default()
+                },
+                "audit_logs_actor_type_idx",
+            ),
+            (
+                AuditLogQuery {
+                    target_id: Some("t-1".to_string()),
+                    ..Default::default()
+                },
+                "audit_logs_object_id_idx",
+            ),
+            (
+                AuditLogQuery {
+                    actor_user_id: Some(uuid::Uuid::nil()),
+                    target_id: Some("t-1".to_string()),
+                    ..Default::default()
+                },
+                "audit_logs_object_id_idx",
+            ),
+            (
+                AuditLogQuery {
+                    action: Some("team.updated".to_string()),
                     target_id: Some("t-1".to_string()),
                     ..Default::default()
                 },

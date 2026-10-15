@@ -32,6 +32,10 @@ CREATE INDEX IF NOT EXISTS audit_logs_action_idx
 -- An action's prefix is its target type, so action + target type needs no index.
 CREATE INDEX IF NOT EXISTS audit_logs_actor_action_idx
   ON audit_logs (actor_user_id, action, ts DESC, id DESC);
+-- An actor's changes to one kind of target. A target ID is selective on its own,
+-- so combinations with one use the object_id index below.
+CREATE INDEX IF NOT EXISTS audit_logs_actor_type_idx
+  ON audit_logs (actor_user_id, object_type, ts DESC, id DESC);
 CREATE INDEX IF NOT EXISTS audit_logs_object_id_idx
   ON audit_logs (object_id, ts DESC, id DESC);
 -- Target type alone needs its own ordered index: the target index above puts
