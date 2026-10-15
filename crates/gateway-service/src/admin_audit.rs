@@ -23,6 +23,9 @@ use crate::redaction::is_sensitive_json_key;
 
 pub const AUDIT_REDACTED: &str = "[REDACTED]";
 
+/// Target labels longer than this are truncated.
+const MAX_LABEL_CHARS: usize = 256;
+
 /// Serialized summaries larger than this are replaced with a size marker.
 const MAX_SUMMARY_BYTES: usize = 16 * 1024;
 
@@ -271,7 +274,7 @@ impl AuditEvent {
             action: self.action,
             target_type: self.target_type,
             target_id: self.target_id,
-            target_label: self.target_label,
+            target_label: self.target_label.map(redact_label),
             before: self.before.map(redact_summary),
             after: self.after.map(redact_summary),
             metadata: redact_summary(Value::Object(self.metadata)),
@@ -448,11 +451,28 @@ fn is_flag(value: &Value) -> bool {
 fn looks_like_credential(text: &str) -> bool {
     let trimmed = text.trim_start();
     let lower = trimmed.get(..7).unwrap_or(trimmed).to_ascii_lowercase();
-    // A full gateway key is `gwk_<public id>.<secret>`; the bare `gwk_<public id>` prefix is a
-    // display identifier and stays readable.
-    (trimmed.starts_with("gwk_") && trimmed.contains('.'))
+    // A full gateway key is `gwk_<public id>.<secret>`, anywhere in the text; the bare
+    // `gwk_<public id>` prefix is a display identifier and stays readable. Invite links
+    // carry their token in the path.
+    text.split(|character: char| character.is_whitespace() || character == '"')
+        .any(|word| word.starts_with("gwk_") && word.contains('.'))
+        || text.contains("/invite/")
         || lower.starts_with("bearer ")
         || lower.starts_with("basic ")
+}
+
+/// Labels are user-entered names, so they get the same credential check as summary
+/// strings and a length cap.
+fn redact_label(label: String) -> String {
+    if looks_like_credential(&label) {
+        return AUDIT_REDACTED.to_string();
+    }
+    if label.chars().count() > MAX_LABEL_CHARS {
+        let mut truncated: String = label.chars().take(MAX_LABEL_CHARS).collect();
+        truncated.push('…');
+        return truncated;
+    }
+    label
 }
 
 fn redact_summary(value: Value) -> Value {
@@ -641,6 +661,34 @@ mod tests {
                 "password": null,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn target_labels_are_redacted_and_capped() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for label in [
+            "ci gwk_0f3c9a.s3cr3t".to_string(),
+            "https://gateway.example/admin/invite/abc".to_string(),
+            "x".repeat(MAX_LABEL_CHARS + 10),
+            "gwk_0f3c9a".to_string(),
+        ] {
+            audit
+                .record(
+                    &context(),
+                    AuditEvent::new(actions::API_KEY_CREATED, targets::API_KEY).label(label),
+                )
+                .await;
+        }
+        let records = repo.records.lock().unwrap();
+        let labels: Vec<_> = records
+            .iter()
+            .map(|record| record.target_label.clone().unwrap())
+            .collect();
+        assert_eq!(labels[0], AUDIT_REDACTED);
+        assert_eq!(labels[1], AUDIT_REDACTED);
+        assert_eq!(labels[2].chars().count(), MAX_LABEL_CHARS + 1);
+        assert_eq!(labels[3], "gwk_0f3c9a");
     }
 
     #[tokio::test]
