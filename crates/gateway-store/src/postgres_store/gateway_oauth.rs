@@ -473,7 +473,7 @@ impl GatewayOauthRepository for PostgresStore {
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
-        aggregate_resource: &str,
+        aggregate_resource: Option<&str>,
         now: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
@@ -490,7 +490,7 @@ impl GatewayOauthRepository for PostgresStore {
                  JOIN user_sessions s ON s.session_id = lg.user_session_id
                  JOIN users u ON u.user_id = lg.user_id
                  WHERE lg.user_id = $1 AND lg.revoked_at IS NULL
-                   AND (lg.resource = $4
+                   AND ($4 IS NULL OR lg.resource = $4
                         OR substr(lg.resource, 1, length($4) + 1) = $4 || '/')
                    AND s.revoked_at IS NULL AND s.expires_at > $2
                    AND u.status = 'active'

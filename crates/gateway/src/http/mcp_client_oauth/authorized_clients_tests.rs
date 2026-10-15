@@ -159,7 +159,7 @@ async fn users_list_and_disconnect_their_authorized_clients() {
 }
 
 #[tokio::test]
-async fn listing_requires_a_session_and_reports_a_disabled_feature() {
+async fn listing_requires_a_session_and_reports_a_disabled_feature_with_no_clients() {
     let harness = Harness::new().await;
     let (status, _) = send(
         &harness.router,
@@ -334,27 +334,42 @@ async fn revocation_while_oauth_is_disabled_survives_re_enabling() {
     let harness = Harness::new().await;
     let first = harness.issue_tokens(&[]).await;
     let second = harness.issue_tokens(&[]).await;
-    let grant_id = harness
-        .state
-        .store
-        .list_live_gateway_oauth_grants_for_user(
-            harness.user_id,
-            "https://oceans.example.com/mcp",
-            OffsetDateTime::now_utc(),
-            100,
-        )
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|grant| grant.grant_id)
-        .next()
-        .unwrap();
     let admin = session_cookie(&harness, "admin@example.com", GlobalRole::PlatformAdmin).await;
 
-    // Turn the feature off; revocation must still be recorded.
+    // Turn the feature off. The dormant clients still list, for the user and
+    // for admins, so they can be found and revoked.
     let mut disabled = harness.state.clone();
     disabled.mcp_client_oauth = None;
     let disabled_router = crate::http::build_router(disabled, admin_ui::AdminUiConfig::default());
+    let (status, mine) = send(
+        &disabled_router,
+        Request::builder()
+            .uri("/api/v1/me/authorized-mcp-clients")
+            .header(COOKIE, &harness.cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_eq!(mine["enabled"], false);
+    let items = mine["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["resource_kind"], "aggregate");
+    let grant_id = items[0]["grant_id"].as_str().unwrap().to_string();
+    let (status, listed) = send(
+        &disabled_router,
+        Request::builder()
+            .uri(format!(
+                "/api/v1/admin/mcp/authorized-clients?user_id={}",
+                harness.user_id
+            ))
+            .header(COOKIE, &admin)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert_eq!(listed["items"].as_array().unwrap().len(), 2);
     let (status, body) = send(
         &disabled_router,
         Request::builder()

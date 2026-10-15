@@ -470,14 +470,14 @@ pub trait GatewayOauthRepository: Send + Sync {
     /// The user's grants that still work at `now`: not revoked, an active
     /// user, a live approving session, and at least one unexpired, unconsumed
     /// token. This mirrors the liveness check token validation applies.
-    /// Only grants bound to `aggregate_resource` or one of its per-server
-    /// resources count, so grants from a previous issuer cannot fill the
-    /// page. Newest first, at most `limit` grants; token history is
-    /// aggregated only for the grants returned.
+    /// With `aggregate_resource`, only grants bound to it or one of its
+    /// per-server resources count, so grants from a previous issuer cannot
+    /// fill the page; `None` lists grants for any issuer. Newest first, at
+    /// most `limit` grants.
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
-        aggregate_resource: &str,
+        aggregate_resource: Option<&str>,
         now: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError>;

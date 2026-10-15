@@ -14,6 +14,8 @@ use time::OffsetDateTime;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use gateway_service::mcp_client_oauth::MAX_LISTED_AUTHORIZED_CLIENTS;
+
 use super::{consent::scope_description, oauth_service, require_active_session};
 use crate::http::{
     admin_auth::require_platform_admin,
@@ -46,6 +48,8 @@ pub struct AuthorizedMcpClientView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthorizedMcpClientsView {
     /// Whether OAuth sign-in for MCP clients is enabled on this gateway.
+    /// While it is disabled, `items` still lists clients that would work
+    /// again if it were re-enabled.
     pub enabled: bool,
     /// The newest authorized clients, at most 100.
     pub items: Vec<AuthorizedMcpClientView>,
@@ -195,11 +199,7 @@ async fn authorized_clients_view(
     user_id: Uuid,
 ) -> Result<AuthorizedMcpClientsView, AppError> {
     let Some(service) = oauth_service(state) else {
-        return Ok(AuthorizedMcpClientsView {
-            enabled: false,
-            items: Vec::new(),
-            has_more: false,
-        });
+        return dormant_clients_view(state, user_id).await;
     };
     let listed = service
         .authorized_clients(user_id, OffsetDateTime::now_utc())
@@ -213,6 +213,40 @@ async fn authorized_clients_view(
         enabled: true,
         items,
         has_more: listed.has_more,
+    })
+}
+
+/// While OAuth is disabled no issuer is configured, so every live grant is
+/// listed. These grants work again if OAuth is re-enabled, so users and
+/// admins must still be able to find and revoke them.
+async fn dormant_clients_view(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<AuthorizedMcpClientsView, AppError> {
+    let mut grants = state
+        .store
+        .list_live_gateway_oauth_grants_for_user(
+            user_id,
+            None,
+            OffsetDateTime::now_utc(),
+            MAX_LISTED_AUTHORIZED_CLIENTS + 1,
+        )
+        .await?;
+    let has_more = grants.len() > MAX_LISTED_AUTHORIZED_CLIENTS as usize;
+    grants.truncate(MAX_LISTED_AUTHORIZED_CLIENTS as usize);
+    let items = grants
+        .into_iter()
+        .filter_map(|grant| {
+            let resource = url::Url::parse(&grant.resource)
+                .ok()
+                .and_then(|url| McpOauthResource::from_path(url.path()))?;
+            Some(authorized_client_view(grant, resource))
+        })
+        .collect();
+    Ok(AuthorizedMcpClientsView {
+        enabled: false,
+        items,
+        has_more,
     })
 }
 

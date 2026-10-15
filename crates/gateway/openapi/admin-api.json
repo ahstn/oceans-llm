@@ -10352,7 +10352,7 @@
         "properties": {
           "enabled": {
             "type": "boolean",
-            "description": "Whether OAuth sign-in for MCP clients is enabled on this gateway."
+            "description": "Whether OAuth sign-in for MCP clients is enabled on this gateway.\nWhile it is disabled, `items` still lists clients that would work\nagain if it were re-enabled."
           },
           "has_more": {
             "type": "boolean",

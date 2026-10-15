@@ -50,6 +50,17 @@ describe('AuthorizedMcpClientsCard', () => {
     expect(screen.queryByTestId('authorized-mcp-clients')).not.toBeInTheDocument()
   })
 
+  it('keeps clients disconnectable while OAuth sign-in is off', async () => {
+    const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
+    render(
+      <AuthorizedMcpClientsCard clients={{ enabled: false, has_more: false, items: [client()] }} />,
+    )
+    expect(screen.getByTestId('authorized-mcp-clients-dormant')).toHaveTextContent(
+      'They will work again if it is turned back on.',
+    )
+    expect(screen.getAllByRole('button', { name: 'Disconnect Editor' }).length).toBeGreaterThan(0)
+  })
+
   it('shows an empty state', async () => {
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
     render(<AuthorizedMcpClientsCard clients={{ enabled: true, has_more: false, items: [] }} />)

@@ -2759,7 +2759,11 @@ export interface components {
             server_key?: string | null;
         };
         AuthorizedMcpClientsView: {
-            /** @description Whether OAuth sign-in for MCP clients is enabled on this gateway. */
+            /**
+             * @description Whether OAuth sign-in for MCP clients is enabled on this gateway.
+             *     While it is disabled, `items` still lists clients that would work
+             *     again if it were re-enabled.
+             */
             enabled: boolean;
             /** @description More clients are authorized than `items` lists. */
             has_more: boolean;

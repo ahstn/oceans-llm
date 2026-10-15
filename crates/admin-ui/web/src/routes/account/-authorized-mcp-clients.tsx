@@ -25,14 +25,16 @@ const utcFormatter = new Intl.DateTimeFormat('en-US', {
 
 /**
  * MCP clients the user allowed through OAuth sign-in. Hidden when the
- * gateway does not offer OAuth sign-in for MCP clients.
+ * gateway does not offer OAuth sign-in for MCP clients and none are left.
  */
 export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpClientsView }) {
   const router = useRouter()
   const [pendingGrantId, setPendingGrantId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  if (!clients.enabled) return null
+  // While OAuth sign-in is off, still show clients that would work again if
+  // it were turned back on, so they can be disconnected.
+  if (!clients.enabled && clients.items.length === 0) return null
 
   function disconnect(client: AuthorizedMcpClientView) {
     setPendingGrantId(client.grant_id)
@@ -61,7 +63,8 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
           Times are UTC.
         </CardDescription>
       </CardHeader>
-      <CardContent className="min-w-0">
+      <CardContent className="flex min-w-0 flex-col gap-3">
+        {clients.enabled ? null : <DormantClientsNote />}
         {clients.items.length === 0 ? (
           <p className="text-muted-foreground text-sm">No MCP clients are authorized.</p>
         ) : (
@@ -132,7 +135,7 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
             </div>
             {clients.has_more ? (
               <p
-                className="text-muted-foreground mt-3 text-sm"
+                className="text-muted-foreground text-sm"
                 data-testid="authorized-mcp-clients-more"
               >
                 Showing your {clients.items.length} most recent clients. Disconnect some to see
@@ -143,6 +146,16 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/** OAuth sign-in is off, but these clients would work again if it came back. */
+function DormantClientsNote() {
+  return (
+    <p className="text-muted-foreground text-sm" data-testid="authorized-mcp-clients-dormant">
+      OAuth sign-in for MCP clients is turned off, so these clients cannot connect now. They will
+      work again if it is turned back on. Disconnect any you no longer use.
+    </p>
   )
 }
 

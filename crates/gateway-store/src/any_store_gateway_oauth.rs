@@ -149,7 +149,7 @@ impl GatewayOauthRepository for AnyStore {
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
-        aggregate_resource: &str,
+        aggregate_resource: Option<&str>,
         now: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {

@@ -208,6 +208,8 @@ A consumed code or refresh token is the only record that links a replay to its g
 
 A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval.
 
+Turning `mcp.client_oauth` off stops all OAuth access, but it does not revoke anything. Grants come back if the feature is turned on again. Listing and revoking authorized clients therefore keep working while it is off, both on the account page and through the admin API. With no issuer configured, the listing shows every live grant.
+
 ## Trade-offs
 
 - Signing out of the admin UI also disconnects the MCP clients that session approved. That is the guarantee #441 asks for, but it can surprise someone who signs out to switch accounts. The consent page says so.

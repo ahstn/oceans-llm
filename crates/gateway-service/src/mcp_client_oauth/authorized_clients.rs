@@ -41,7 +41,7 @@ where
             .repo
             .list_live_gateway_oauth_grants_for_user(
                 user_id,
-                &self.settings.resource_uri(&McpOauthResource::Aggregate),
+                Some(&self.settings.resource_uri(&McpOauthResource::Aggregate)),
                 now,
                 MAX_LISTED_AUTHORIZED_CLIENTS + 1,
             )
