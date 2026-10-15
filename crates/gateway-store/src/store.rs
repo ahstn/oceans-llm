@@ -314,7 +314,7 @@ pub trait GatewayStore:
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
@@ -1834,7 +1834,7 @@ impl GatewayStore for AnyStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, revoke_user_session(session_id, revoked_at))
     }
 

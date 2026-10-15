@@ -856,12 +856,13 @@ pub async fn logout_current_session(
                     label: None,
                 },
             };
+            // A concurrent logout with the same cookie may already have revoked it.
             state
                 .audit()
-                .audited(
+                .audited_change(
                     &meta.context(actor),
                     state.store.revoke_user_session(session_id, now),
-                    |_| {
+                    || {
                         let event = AuditEvent::new(actions::SESSION_REVOKED, targets::SESSION)
                             .target(session_id)
                             .meta("reason", "logout");

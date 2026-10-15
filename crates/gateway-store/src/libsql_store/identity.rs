@@ -1652,8 +1652,9 @@ impl LibsqlStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let revoked = self
+            .connection
             .execute(
                 r#"
                 UPDATE user_sessions
@@ -1665,7 +1666,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(revoked > 0)
     }
 
     pub async fn get_user_oidc_auth(

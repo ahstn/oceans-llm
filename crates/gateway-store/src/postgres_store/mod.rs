@@ -577,7 +577,7 @@ impl GatewayStore for PostgresStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_user_session(self, session_id, revoked_at).await
     }
 

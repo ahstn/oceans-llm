@@ -6128,10 +6128,19 @@ pub(crate) mod tests {
             )
             .await
             .expect("create second session");
-        store
-            .revoke_user_session(session.session_id, now)
-            .await
-            .expect("revoke one session");
+        assert!(
+            store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke one session")
+        );
+        // A second logout with the same cookie changes nothing.
+        assert!(
+            !store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke it again")
+        );
         assert!(
             store
                 .get_user_session(session.session_id)
