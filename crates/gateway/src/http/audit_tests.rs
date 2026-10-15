@@ -371,8 +371,16 @@ async fn budget_changes_record_before_and_after() {
         .collect();
     assert_eq!(budget_entries.len(), 2);
     // Newest first: the second write saw the first as its before state.
-    assert_eq!(budget_entries[0]["before"]["amount_usd"], "10.0000");
-    assert_eq!(budget_entries[0]["after"]["amount_usd"], "25.0000");
+    assert_eq!(
+        budget_entries[0]["before"]["settings"]["amount_usd"],
+        "10.0000"
+    );
+    assert_eq!(
+        budget_entries[0]["after"]["settings"]["amount_usd"],
+        "25.0000"
+    );
+    // The owner is part of the summary, so taking over a config budget is visible.
+    assert_eq!(budget_entries[0]["after"]["source"]["kind"], "manual");
     assert_eq!(budget_entries[1]["before"], Value::Null);
     assert_admin_actor(budget_entries[0], harness.admin_id);
 }

@@ -470,7 +470,7 @@ pub async fn upsert_budget(
         .store
         .get_active_budget_by_scope(&scope)
         .await?
-        .map(|budget| budget_to_settings_view(&budget));
+        .map(|budget| budget_audit_summary(&budget));
     // The store decides in one statement whether the save changed anything, so a
     // concurrent edit cannot turn a real change into a skipped one. Saving over a
     // config budget changes its owner to manual, which counts as a change.
@@ -487,7 +487,7 @@ pub async fn upsert_budget(
                     .target(&budget.scope_key)
                     .meta("budget_id", budget.budget_id)
                     .before(&before)
-                    .after(budget_to_settings_view(&budget)),
+                    .after(budget_audit_summary(&budget)),
             )
             .await;
     }
@@ -615,6 +615,15 @@ pub async fn list_budget_alert_history(
         page_size: history.page_size,
         total: history.total,
     })))
+}
+
+/// Settings plus owner, so a save that only takes ownership of a config budget
+/// shows what changed.
+fn budget_audit_summary(record: &BudgetRecord) -> serde_json::Value {
+    serde_json::json!({
+        "settings": budget_to_settings_view(record),
+        "source": budget_source_to_view(&record.source),
+    })
 }
 
 pub(super) fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {
