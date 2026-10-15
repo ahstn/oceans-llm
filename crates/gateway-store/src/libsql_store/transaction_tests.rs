@@ -197,3 +197,29 @@ async fn waiting_for_the_write_lock_does_not_block_the_runtime() {
         .expect("the waiter gets the write lock once it is free");
     transaction.rollback().await.expect("waiter rollback");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn shared_cache_memory_store_serializes_transactions() {
+    let store = Arc::new(
+        LibsqlStore::new_local(":memory:")
+            .await
+            .expect("memory store"),
+    );
+    let holder = store
+        .begin_transaction()
+        .await
+        .expect("holding transaction");
+    let waiter = tokio::spawn({
+        let store = store.clone();
+        async move { store.begin_transaction().await }
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    holder.commit().await.expect("holder commit");
+
+    let transaction = waiter
+        .await
+        .expect("waiter task")
+        .expect("a shared-cache lock is retried until it is free");
+    transaction.rollback().await.expect("waiter rollback");
+}

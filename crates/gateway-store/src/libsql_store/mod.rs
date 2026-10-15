@@ -153,9 +153,13 @@ impl LibsqlStore {
                 .await
             {
                 Ok(transaction) => break transaction,
+                // A shared-cache (`:memory:`) store reports a competing writer as
+                // `SQLITE_LOCKED` instead of `SQLITE_BUSY`.
                 Err(libsql::Error::SqliteFailure(code, _))
-                    if code & 0xff == libsql::ffi::SQLITE_BUSY
-                        && tokio::time::Instant::now() < deadline =>
+                    if matches!(
+                        code & 0xff,
+                        libsql::ffi::SQLITE_BUSY | libsql::ffi::SQLITE_LOCKED
+                    ) && tokio::time::Instant::now() < deadline =>
                 {
                     tokio::time::sleep(retry_delay).await;
                     retry_delay = (retry_delay * 2).min(Duration::from_millis(50));
