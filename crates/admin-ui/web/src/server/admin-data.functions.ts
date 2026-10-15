@@ -936,24 +936,81 @@ export const getRateLimitPolicies = createServerFn({ method: 'GET' }).handler(as
   return listRateLimitPolicies()
 })
 
-export const addRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createRateLimitPolicy>[0] }) => {
+type RateLimitPolicyInput = Parameters<typeof createRateLimitPolicy>[0]
+
+const rateLimitEnums = {
+  operation: ['inference', 'count_tokens', 'mcp_tool_call'],
+  scope_kind: ['global', 'api_key', 'user', 'team'],
+  metric: ['requests', 'tokens'],
+  period: ['minute', 'hour', 'day', 'month'],
+} as const
+
+function requiredEnum<K extends keyof typeof rateLimitEnums>(
+  input: Record<string, unknown>,
+  key: K,
+): (typeof rateLimitEnums)[K][number] {
+  const value = requiredString(input, key)
+  const allowed: readonly string[] = rateLimitEnums[key]
+  if (!allowed.includes(value)) throw new Error(`${key} must be one of ${allowed.join(', ')}`)
+  return value as (typeof rateLimitEnums)[K][number]
+}
+
+function optionalId(input: Record<string, unknown>, key: string): string | null {
+  const value = input[key]
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${key} must be a string`)
+  return value.trim() || null
+}
+
+// Shape checks only; the gateway owns the scope, filter, and name rules.
+function validateRateLimitPolicyInput(data: unknown): RateLimitPolicyInput {
+  const input = requireObject(data, 'Rate limit policy')
+  const limit = input.limit
+  if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error('limit must be a positive integer')
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new Error('enabled must be a boolean')
+  }
+  return {
+    name: requiredString(input, 'name').trim(),
+    operation: requiredEnum(input, 'operation'),
+    scope_kind: requiredEnum(input, 'scope_kind'),
+    scope_id: optionalId(input, 'scope_id'),
+    model_key: optionalId(input, 'model_key'),
+    mcp_server_id: optionalId(input, 'mcp_server_id'),
+    metric: requiredEnum(input, 'metric'),
+    period: requiredEnum(input, 'period'),
+    limit,
+    enabled: input.enabled ?? true,
+  }
+}
+
+function validateRateLimitPolicyId(data: unknown): { policyId: string } {
+  const input = requireObject(data, 'Rate limit policy reference')
+  return { policyId: requiredString(input, 'policyId').trim() }
+}
+
+export const addRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator(validateRateLimitPolicyInput)
+  .handler(async ({ data }) => {
     return createRateLimitPolicy(data)
-  },
-)
+  })
 
-export const saveRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: { policyId: string; input: Parameters<typeof updateRateLimitPolicy>[1] }
-  }) => {
+export const saveRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator((data: unknown) => {
+    const input = requireObject(data, 'Rate limit policy update')
+    return {
+      ...validateRateLimitPolicyId(input),
+      input: validateRateLimitPolicyInput(input.input),
+    }
+  })
+  .handler(async ({ data }) => {
     return updateRateLimitPolicy(data.policyId, data.input)
-  },
-)
+  })
 
-export const removeRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { policyId: string } }) => {
+export const removeRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator(validateRateLimitPolicyId)
+  .handler(async ({ data }) => {
     return deleteRateLimitPolicy(data.policyId)
-  },
-)
+  })

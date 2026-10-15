@@ -18,7 +18,14 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import {
   Table,
   TableBody,
@@ -102,6 +109,11 @@ export function RateLimitsPage() {
                   Requests are limited only by budgets. Add a rate limit to cap traffic.
                 </EmptyDescription>
               </EmptyHeader>
+              <EmptyContent>
+                <Button size="sm" variant="outline" onClick={() => setEditing('new')}>
+                  Add the first rate limit
+                </Button>
+              </EmptyContent>
             </Empty>
           ) : (
             <PolicyList policies={policies} onEdit={setEditing} onDelete={setDeleting} />

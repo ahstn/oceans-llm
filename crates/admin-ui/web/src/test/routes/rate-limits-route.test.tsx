@@ -171,6 +171,8 @@ describe('RateLimitsPage', () => {
   it('shows an empty state without policies', () => {
     renderPage([])
     expect(screen.getByText('No rate limits')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add the first rate limit' }))
+    expect(screen.getByRole('heading', { name: 'New rate limit' })).toBeTruthy()
   })
 
   it('creates a policy with the default per-key minute limit', async () => {
