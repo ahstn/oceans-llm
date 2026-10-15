@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_af4ccbd37c05c0::t_89c3bdebaed10a 119,429-430
+Cargo.lock
+  s_af4ccbd37c05c0::t_838cc63343dbf8 10,1857,1903-1912
+Cargo.toml
+  s_af4ccbd37c05c0::t_5cdbfff24c3ca2 6,25
+crates/admin-ui/Cargo.toml
+  s_af4ccbd37c05c0::t_bc0a0f794709c2 8
+crates/admin-ui/src/lib.rs
+  s_af4ccbd37c05c0::t_6b279d2af8a8ce 17,29
+crates/admin-ui/src/proxy.rs
+  s_af4ccbd37c05c0::t_b48d4595ab2a04 17-19,326,357,373,406
+crates/gateway-client-ip/Cargo.toml
+  s_af4ccbd37c05c0::t_cbc61a8697fc5f 1-10
+crates/gateway-client-ip/src/lib.rs
+  s_af4ccbd37c05c0::t_1bc309dc146307 1,9-13,21,137
+crates/gateway/Cargo.toml
+  s_af4ccbd37c05c0::t_fea70d26de0b7c 16
+crates/gateway/src/http/audit.rs
+  s_af4ccbd37c05c0::t_f85d7259711bb1 12,398
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_078744f5e394cf 9
+crates/gateway/src/http/client_ip.rs
+  s_af4ccbd37c05c0::t_326eb60a695d32 3-4,6
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_142d3b24d02c1c 62,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2432fd049d6182622b2cab5e4354e1916e593f05",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
