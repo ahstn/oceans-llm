@@ -1,5 +1,5 @@
 use super::*;
-use crate::shared::{parse_uuid, same_model_access};
+use crate::shared::{ensure_active_for_update, parse_uuid, same_model_access};
 use gateway_core::ApiKeyModelAccess;
 
 #[async_trait]
@@ -242,7 +242,7 @@ impl AdminApiKeyRepository for LibsqlStore {
 
         let mut rows = tx
             .query(
-                "SELECT owner_kind, model_grant_mode FROM api_keys WHERE id = ?1 LIMIT 1",
+                "SELECT owner_kind, model_grant_mode, status FROM api_keys WHERE id = ?1 LIMIT 1",
                 [api_key_id.to_string()],
             )
             .await
@@ -252,7 +252,9 @@ impl AdminApiKeyRepository for LibsqlStore {
         };
         let owner_kind: String = row.get(0).map_err(to_query_error)?;
         let current_mode: String = row.get(1).map_err(to_query_error)?;
+        let status: String = row.get(2).map_err(to_query_error)?;
         drop(rows);
+        ensure_active_for_update(&status)?;
         let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?;

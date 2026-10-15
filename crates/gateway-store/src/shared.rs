@@ -236,6 +236,18 @@ pub(crate) fn same_model_access(
     current.model_grant_mode == model_grant_mode && current_ids == requested
 }
 
+/// A revoke can commit after the caller checked the key; checked again under the
+/// replacement's lock, a revoked key's access is never rewritten.
+pub(crate) fn ensure_active_for_update(status: &str) -> Result<(), StoreError> {
+    if status == gateway_core::ApiKeyStatus::Active.as_str() {
+        Ok(())
+    } else {
+        Err(StoreError::Conflict(
+            "revoked api keys cannot be updated".to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

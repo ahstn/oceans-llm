@@ -431,6 +431,18 @@ pub(crate) mod tests {
             .revoke_api_key(api_key.id, disabled_at)
             .await
             .expect("revoke managed key");
+        // The access replacement rechecks the status under its lock, so a revoke
+        // that lands first leaves the key's grants alone.
+        assert!(matches!(
+            store
+                .replace_api_key_model_access(
+                    api_key.id,
+                    gateway_core::ApiKeyModelGrantMode::Explicit,
+                    &[],
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
 
         store
             .seed_from_inputs(

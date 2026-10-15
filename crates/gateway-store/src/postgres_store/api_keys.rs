@@ -1,5 +1,5 @@
 use super::*;
-use crate::shared::{parse_uuid, same_model_access};
+use crate::shared::{ensure_active_for_update, parse_uuid, same_model_access};
 use gateway_core::ApiKeyModelAccess;
 
 #[async_trait]
@@ -196,7 +196,7 @@ impl AdminApiKeyRepository for PostgresStore {
         // Locking the key row serializes replacements, so the access read here is
         // the access this replacement overwrites.
         let row = sqlx::query(
-            "SELECT owner_kind, model_grant_mode FROM api_keys WHERE id = $1 FOR UPDATE",
+            "SELECT owner_kind, model_grant_mode, status FROM api_keys WHERE id = $1 FOR UPDATE",
         )
         .bind(api_key_id.to_string())
         .fetch_optional(&mut *tx)
@@ -205,6 +205,8 @@ impl AdminApiKeyRepository for PostgresStore {
         .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
         let owner_kind: String = row.try_get(0).map_err(to_query_error)?;
         let current_mode: String = row.try_get(1).map_err(to_query_error)?;
+        let status: String = row.try_get(2).map_err(to_query_error)?;
+        ensure_active_for_update(&status)?;
         let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?;
