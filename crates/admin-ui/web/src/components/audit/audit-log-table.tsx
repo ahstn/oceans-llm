@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useTable, type ColumnDef } from '@tanstack/react-table'
 
-import { SearchField } from '@/components/guardrails/decision-toolbar'
-import { INNER_PANEL } from '@/components/guardrails/inner-panel'
+import { INNER_PANEL } from '@/components/shared/inner-panel'
+import { SearchField } from '@/components/shared/search-field'
 import {
   DataGrid,
   DataGridContainer,

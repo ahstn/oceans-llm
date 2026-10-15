@@ -36,7 +36,7 @@ import {
 } from './decision-meta'
 import { DecisionSheet } from './decision-sheet'
 import { DecisionPager, DecisionToolbar, type DashboardProps } from './decision-toolbar'
-import { INNER_PANEL } from './inner-panel'
+import { INNER_PANEL } from '@/components/shared/inner-panel'
 
 /** Dashboard grid: KPI cards and an action-by-phase breakdown above the decision grid. */
 export function GuardrailsDashboard(props: DashboardProps) {
