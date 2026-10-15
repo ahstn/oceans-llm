@@ -478,7 +478,7 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
-        self.wait_for_pending_charges().await;
+        let pending_charge_timed_out = !self.wait_for_pending_charges().await;
         let set = self.policies().await;
         if !set.complete {
             // Admin policies are unknown, so this request may be one they
@@ -511,7 +511,12 @@ impl RateLimiter {
         if matched.is_empty() {
             return Ok(RateLimitDecision::Unlimited);
         }
-        if self.token_writes_failing(now)
+        // In `closed` mode a token check cannot trust a counter whose pending
+        // charge has not landed, any more than one whose write failed.
+        let token_counters_stale = self.token_writes_failing(now)
+            || (pending_charge_timed_out
+                && self.settings.failure_mode == RateLimitFailureMode::Closed);
+        if token_counters_stale
             && matched
                 .iter()
                 .any(|(policy, _)| policy.metric == RateLimitMetric::Tokens)
@@ -656,9 +661,11 @@ impl RateLimiter {
         });
     }
 
-    async fn wait_for_pending_charges(&self) {
+    /// Waits for this replica's detached token charges. Returns false when
+    /// they were still pending at the timeout.
+    async fn wait_for_pending_charges(&self) -> bool {
         if self.pending_charges.load(Ordering::SeqCst) == 0 {
-            return;
+            return true;
         }
         let drained = async {
             loop {
@@ -671,12 +678,13 @@ impl RateLimiter {
                 notified.await;
             }
         };
-        if tokio::time::timeout(PENDING_CHARGE_WAIT, drained)
+        let finished = tokio::time::timeout(PENDING_CHARGE_WAIT, drained)
             .await
-            .is_err()
-        {
+            .is_ok();
+        if !finished {
             tracing::warn!("checking rate limits before a pending token charge finished");
         }
+        finished
     }
 
     async fn add_tokens(

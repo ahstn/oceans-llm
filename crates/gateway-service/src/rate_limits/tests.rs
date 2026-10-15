@@ -996,3 +996,36 @@ async fn a_slow_failing_token_write_still_starts_a_full_hold() {
     let error = harness.limiter.check(&subject).await.unwrap_err();
     assert_eq!(error.http_status_code(), 503);
 }
+
+#[tokio::test]
+async fn closed_mode_rejects_token_checks_when_a_pending_charge_times_out() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let harness = Harness::with_mode(
+        MemoryStore {
+            add_gate: Some(gate.clone()),
+            ..MemoryStore::default()
+        },
+        vec![config(
+            "user tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::User,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )],
+        RateLimitFailureMode::Closed,
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+
+    // The charge never lands within the wait, so the counter cannot be trusted.
+    harness.limiter.record_tokens_detached(&subject, 400);
+    let error = harness.limiter.check(&subject).await.unwrap_err();
+    assert_eq!(error.http_status_code(), 503);
+
+    // Once it lands, checks read the charged counter again.
+    gate.add_permits(1);
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus { remaining: 600, .. })
+    ));
+}

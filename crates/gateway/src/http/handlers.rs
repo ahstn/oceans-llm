@@ -375,6 +375,24 @@ async fn v1_messages_inner(
     {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
+            // Usage the provider reported before failing still counts, as on
+            // the decisions and embeddings paths.
+            let (error, partial_provider_usage) = split_partial_provider_error(error);
+            if let Some(provider_usage) = partial_provider_usage {
+                finalize_successful_usage_accounting(
+                    &state,
+                    UsageAccountingContext {
+                        auth: &auth,
+                        model: &resolved.selection.execution_model,
+                        route: &route,
+                        request_id: &request_id,
+                        labels: labels.clone(),
+                        operation: "anthropic_messages",
+                    },
+                    provider_usage,
+                )
+                .await;
+            }
             let (error, attempt) = guarded_provider_error_attempt(
                 &state,
                 &guard_context,

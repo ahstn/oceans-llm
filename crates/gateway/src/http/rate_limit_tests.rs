@@ -32,6 +32,8 @@ const API_KEY: &str = "gwk_streamtest.cancel-secret";
 #[derive(Default)]
 struct CountingProvider {
     calls: AtomicUsize,
+    /// When set, chat fails after reporting usage, as a cut-off upstream does.
+    fail_with_partial_usage: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -58,6 +60,14 @@ impl ProviderClient for CountingProvider {
         _context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_with_partial_usage.load(Ordering::SeqCst) {
+            return Err(ProviderError::PartialUsage {
+                source: Box::new(ProviderError::Transport("connection reset".to_string())),
+                provider_usage: Some(
+                    json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
+                ),
+            });
+        }
         Ok(json!({
             "id": "chatcmpl-rate-limit",
             "object": "chat.completion",
@@ -530,4 +540,49 @@ async fn rejected_requests_keep_one_request_metric_sample_per_route() {
         ),
         1
     );
+}
+
+#[tokio::test]
+async fn partial_usage_on_a_failed_request_is_charged_to_token_limits() {
+    let harness = harness(vec![policy(
+        "team tokens",
+        RateLimitOperation::Inference,
+        RateLimitScopeKind::Team,
+        RateLimitMetric::Tokens,
+        RateLimitPeriod::Hour,
+        100,
+    )])
+    .await;
+    harness
+        .provider
+        .fail_with_partial_usage
+        .store(true, Ordering::SeqCst);
+    let chat_messages = json!([{"role": "user", "content": "hello"}]);
+    for (path, body) in [
+        (
+            "/v1/chat/completions",
+            json!({"model": "fast", "messages": chat_messages}),
+        ),
+        (
+            "/v1/messages",
+            json!({"model": "fast", "max_tokens": 16, "messages": chat_messages}),
+        ),
+    ] {
+        let reply = harness.post(path, body).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::BAD_GATEWAY,
+            "{path}: {}",
+            reply.body
+        );
+    }
+
+    // Both failures reported 15 tokens each before failing.
+    harness
+        .provider
+        .fail_with_partial_usage
+        .store(false, Ordering::SeqCst);
+    let next = harness.chat().await;
+    assert_eq!(next.status, StatusCode::OK);
+    assert_eq!(next.header("x-ratelimit-remaining"), Some("70"));
 }
