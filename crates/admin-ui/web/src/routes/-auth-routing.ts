@@ -51,10 +51,11 @@ export function buildRedirectTarget(pathname: string, search: Record<string, unk
 
 /**
  * Users with any page access land on their profile, ahead of the configured default page.
- * Users with no pages still go to `/no-access`, which explains how to get access.
+ * Platform admins do too, since role-only pages such as the Audit Log stay open to them.
+ * Other users with no pages still go to `/no-access`, which explains how to get access.
  */
 export function defaultSignedInPath(session: AuthSessionView) {
-  if (session.permissions.pages.length > 0) return PROFILE_PATH
+  if (session.permissions.pages.length > 0 || isPlatformAdminSession(session)) return PROFILE_PATH
   const defaultPage = session.permissions.default_page
   return (defaultPage && getAdminPagePath(defaultPage)) || '/no-access'
 }
@@ -74,7 +75,9 @@ export function canAccessSignedInPath(session: AuthSessionView, path: string) {
   const pathname = normalizeAdminPath(path.split(/[?#]/, 1)[0])
   if (pathname === '/') return true
   if (isPersonalPath(pathname)) return true
-  if (pathname === '/no-access') return session.permissions.pages.length === 0
+  if (pathname === '/no-access') {
+    return session.permissions.pages.length === 0 && !isPlatformAdminSession(session)
+  }
   const platformAdminOnly = isPlatformAdminOnlyPath(pathname)
   if (platformAdminOnly && !isPlatformAdminSession(session)) return false
   const page = getAdminPageForPath(pathname)
