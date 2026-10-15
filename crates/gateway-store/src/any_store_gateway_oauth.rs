@@ -89,11 +89,11 @@ impl GatewayOauthRepository for AnyStore {
         dispatch!(self, create_gateway_oauth_grant(grant))
     }
 
-    async fn create_gateway_oauth_token(
+    async fn create_gateway_oauth_tokens(
         &self,
-        token: &GatewayOauthTokenRecord,
+        tokens: &[GatewayOauthTokenRecord],
     ) -> Result<(), StoreError> {
-        dispatch!(self, create_gateway_oauth_token(token))
+        dispatch!(self, create_gateway_oauth_tokens(tokens))
     }
 
     async fn get_gateway_oauth_token_context(

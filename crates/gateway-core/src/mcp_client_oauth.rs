@@ -406,9 +406,10 @@ pub trait GatewayOauthRepository: Send + Sync {
         grant: &GatewayOauthGrantRecord,
     ) -> Result<(), StoreError>;
 
-    async fn create_gateway_oauth_token(
+    /// Stores `tokens` in one transaction: either all of them or none.
+    async fn create_gateway_oauth_tokens(
         &self,
-        token: &GatewayOauthTokenRecord,
+        tokens: &[GatewayOauthTokenRecord],
     ) -> Result<(), StoreError>;
 
     async fn get_gateway_oauth_token_context(

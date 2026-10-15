@@ -361,12 +361,17 @@ impl GatewayOauthRepository for LibsqlStore {
         Ok(())
     }
 
-    async fn create_gateway_oauth_token(
+    async fn create_gateway_oauth_tokens(
         &self,
-        token: &GatewayOauthTokenRecord,
+        tokens: &[GatewayOauthTokenRecord],
     ) -> Result<(), StoreError> {
-        self.connection
-            .execute(
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_write_error)?;
+        for token in tokens {
+            tx.execute(
                 "INSERT INTO gateway_oauth_tokens (
                     token_hash, grant_id, token_kind, scope, expires_at, created_at, consumed_at
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -382,6 +387,8 @@ impl GatewayOauthRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
+        }
+        tx.commit().await.map_err(to_write_error)?;
         Ok(())
     }
 

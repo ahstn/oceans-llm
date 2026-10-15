@@ -337,25 +337,29 @@ impl GatewayOauthRepository for PostgresStore {
         Ok(())
     }
 
-    async fn create_gateway_oauth_token(
+    async fn create_gateway_oauth_tokens(
         &self,
-        token: &GatewayOauthTokenRecord,
+        tokens: &[GatewayOauthTokenRecord],
     ) -> Result<(), StoreError> {
-        sqlx::query(
-            "INSERT INTO gateway_oauth_tokens (
-                token_hash, grant_id, token_kind, scope, expires_at, created_at, consumed_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        )
-        .bind(&token.token_hash)
-        .bind(token.grant_id.to_string())
-        .bind(token.kind.as_str())
-        .bind(&token.scope)
-        .bind(token.expires_at.unix_timestamp())
-        .bind(token.created_at.unix_timestamp())
-        .bind(token.consumed_at.map(OffsetDateTime::unix_timestamp))
-        .execute(&self.pool)
-        .await
-        .map_err(to_write_error)?;
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        for token in tokens {
+            sqlx::query(
+                "INSERT INTO gateway_oauth_tokens (
+                    token_hash, grant_id, token_kind, scope, expires_at, created_at, consumed_at
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            )
+            .bind(&token.token_hash)
+            .bind(token.grant_id.to_string())
+            .bind(token.kind.as_str())
+            .bind(&token.scope)
+            .bind(token.expires_at.unix_timestamp())
+            .bind(token.created_at.unix_timestamp())
+            .bind(token.consumed_at.map(OffsetDateTime::unix_timestamp))
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
+        }
+        tx.commit().await.map_err(to_write_error)?;
         Ok(())
     }
 

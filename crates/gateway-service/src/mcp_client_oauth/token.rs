@@ -231,20 +231,38 @@ where
         let refresh_scope = client
             .allows_grant_type("refresh_token")
             .then_some(grant.scope.as_str());
-        let response = self
-            .issue_tokens(
-                grant.grant_id,
-                &grant.scope,
-                refresh_scope,
-                session.expires_at,
-                now,
-            )
-            .await?;
-        if !self
-            .repo
-            .consume_gateway_oauth_authorization_code(authorization.request_id, grant.grant_id, now)
-            .await?
-        {
+        let issued = async {
+            let response = self
+                .issue_tokens(
+                    grant.grant_id,
+                    &grant.scope,
+                    refresh_scope,
+                    session.expires_at,
+                    now,
+                )
+                .await?;
+            let consumed = self
+                .repo
+                .consume_gateway_oauth_authorization_code(
+                    authorization.request_id,
+                    grant.grant_id,
+                    now,
+                )
+                .await?;
+            Ok::<_, OauthError>((response, consumed))
+        }
+        .await;
+        let (response, consumed) = match issued {
+            Ok(issued) => issued,
+            Err(error) => {
+                // The client never received these tokens, and the code stays
+                // redeemable, so a retry would start a second grant. End this
+                // one so nothing is left half issued.
+                self.abandon_grant(grant.grant_id, now).await;
+                return Err(error);
+            }
+        };
+        if !consumed {
             // A concurrent request redeemed the code first: this is a replay,
             // so neither grant may survive.
             self.revoke_code_grant(Some(grant.grant_id), now).await?;
@@ -257,6 +275,16 @@ where
             return Err(invalid_code());
         }
         Ok(response)
+    }
+
+    async fn abandon_grant(&self, grant_id: Uuid, now: OffsetDateTime) {
+        if let Err(error) = self
+            .repo
+            .revoke_gateway_oauth_grant(grant_id, "issue_failed", now)
+            .await
+        {
+            tracing::warn!(error = %error, %grant_id, "could not revoke a half-issued MCP OAuth grant");
+        }
     }
 
     async fn revoke_code_grant(
@@ -373,35 +401,37 @@ where
         session_expires_at: OffsetDateTime,
         now: OffsetDateTime,
     ) -> Result<TokenResponse, OauthError> {
+        let record = |raw: &str, kind, scope: &str, expires_at| GatewayOauthTokenRecord {
+            token_hash: oauth_token_hash(raw),
+            grant_id,
+            kind,
+            scope: scope.to_string(),
+            expires_at,
+            created_at: now,
+            consumed_at: None,
+        };
         let access_token = generate_token(OAUTH_ACCESS_TOKEN_PREFIX);
         let access_expires_at = (now + self.settings.access_token_ttl()).min(session_expires_at);
-        self.store_token(
+        let mut records = vec![record(
             &access_token,
-            grant_id,
             GatewayOauthTokenKind::Access,
             access_scope,
             access_expires_at,
-            now,
-        )
-        .await?;
-        let refresh_token = match refresh_scope {
-            Some(scope) => {
-                let refresh_token = generate_token(OAUTH_REFRESH_TOKEN_PREFIX);
-                let refresh_expires_at =
-                    (now + self.settings.refresh_token_ttl()).min(session_expires_at);
-                self.store_token(
-                    &refresh_token,
-                    grant_id,
-                    GatewayOauthTokenKind::Refresh,
-                    scope,
-                    refresh_expires_at,
-                    now,
-                )
-                .await?;
-                Some(refresh_token)
-            }
-            None => None,
-        };
+        )];
+        let refresh_token = refresh_scope.map(|scope| {
+            let refresh_token = generate_token(OAUTH_REFRESH_TOKEN_PREFIX);
+            let refresh_expires_at =
+                (now + self.settings.refresh_token_ttl()).min(session_expires_at);
+            records.push(record(
+                &refresh_token,
+                GatewayOauthTokenKind::Refresh,
+                scope,
+                refresh_expires_at,
+            ));
+            refresh_token
+        });
+        // One transaction, so a failure never leaves half a pair behind.
+        self.repo.create_gateway_oauth_tokens(&records).await?;
         Ok(TokenResponse {
             access_token,
             token_type: "Bearer",
@@ -409,29 +439,6 @@ where
             refresh_token,
             scope: access_scope.to_string(),
         })
-    }
-
-    async fn store_token(
-        &self,
-        raw: &str,
-        grant_id: Uuid,
-        kind: GatewayOauthTokenKind,
-        scope: &str,
-        expires_at: OffsetDateTime,
-        now: OffsetDateTime,
-    ) -> Result<(), OauthError> {
-        self.repo
-            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
-                token_hash: oauth_token_hash(raw),
-                grant_id,
-                kind,
-                scope: scope.to_string(),
-                expires_at,
-                created_at: now,
-                consumed_at: None,
-            })
-            .await?;
-        Ok(())
     }
 }
 
