@@ -512,29 +512,27 @@ test('releases uninspectable MCP results unchanged in audit mode', async ({
     expect(body).toContain(fixture.marker)
     expect(body).not.toContain('guardrail_policy_denied')
 
-    const decisionsResponse = await request.get(
-      `${root}/api/v1/admin/guardrails/decisions?request_id=${requestId}&evaluator=stream_buffer`,
-      { headers: { cookie } },
-    )
-    expect(decisionsResponse.status()).toBe(200)
-    const decisions = (await decisionsResponse.json()) as {
-      data: {
-        items: Array<{
-          phase: string
-          action: string
-          reason_code: string
-          failure_disposition: string | null
-        }>
-      }
-    }
-    expect(decisions.data.items).toEqual([
-      expect.objectContaining({
-        phase: 'mcp_result',
-        action: 'audit',
-        reason_code: fixture.reason,
-        failure_disposition: 'fail_open',
-      }),
-    ])
+    // The audit decision is persisted in the background after the result is released.
+    await expect
+      .poll(async () => {
+        const decisionsResponse = await request.get(
+          `${root}/api/v1/admin/guardrails/decisions?request_id=${requestId}&evaluator=stream_buffer`,
+          { headers: { cookie } },
+        )
+        expect(decisionsResponse.status()).toBe(200)
+        const decisions = (await decisionsResponse.json()) as {
+          data: { items: Array<Record<string, unknown>> }
+        }
+        return decisions.data.items
+      })
+      .toEqual([
+        expect.objectContaining({
+          phase: 'mcp_result',
+          action: 'audit',
+          reason_code: fixture.reason,
+          failure_disposition: 'fail_open',
+        }),
+      ])
   }
 })
 

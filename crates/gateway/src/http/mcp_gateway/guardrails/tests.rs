@@ -210,28 +210,36 @@ async fn guarded_state(
 
 /// Returns `action:reason_code:failure_disposition` for each `stream_buffer` decision.
 async fn stream_buffer_decisions(state: &AppState) -> Vec<String> {
-    state
-        .store
-        .list_guardrail_decisions(&GuardrailDecisionQuery {
-            page: 1,
-            page_size: 10,
-            phase: Some("mcp_result".into()),
-            evaluator: Some("stream_buffer".into()),
-            ..Default::default()
-        })
-        .await
-        .expect("decisions")
-        .items
-        .iter()
-        .map(|item| {
-            format!(
-                "{}:{}:{}",
-                item.action,
-                item.reason_code,
-                item.failure_disposition.as_deref().unwrap_or("none")
-            )
-        })
-        .collect()
+    // Audit releases persist their decision in the background, so wait for the write.
+    for _ in 0..50 {
+        let items = state
+            .store
+            .list_guardrail_decisions(&GuardrailDecisionQuery {
+                page: 1,
+                page_size: 10,
+                phase: Some("mcp_result".into()),
+                evaluator: Some("stream_buffer".into()),
+                ..Default::default()
+            })
+            .await
+            .expect("decisions")
+            .items;
+        if !items.is_empty() {
+            return items
+                .iter()
+                .map(|item| {
+                    format!(
+                        "{}:{}:{}",
+                        item.action,
+                        item.reason_code,
+                        item.failure_disposition.as_deref().unwrap_or("none")
+                    )
+                })
+                .collect();
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Vec::new()
 }
 
 async fn enforce(state: &AppState, upstream: Response<Body>) -> (Response<Body>, bool) {

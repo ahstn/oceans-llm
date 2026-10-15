@@ -21,7 +21,9 @@ use super::{
     json_rpc::{mcp_jsonrpc_error_response, mcp_request_id},
 };
 use crate::http::{
-    guardrail_events::{record_guardrail_evaluation, uninspected_content_decision},
+    guardrail_events::{
+        record_guardrail_decisions, record_guardrail_evaluation, uninspected_content_decision,
+    },
     state::AppState,
 };
 
@@ -161,8 +163,7 @@ pub(super) async fn enforce_direct_mcp_result(
                 mcp_tool_invocation_id,
                 failure.reason_code(),
                 &prefix,
-            )
-            .await;
+            );
             let Some(evaluation) = released else {
                 return (failure.response(id), None, true);
             };
@@ -224,8 +225,7 @@ pub(super) async fn enforce_direct_mcp_result(
                 mcp_tool_invocation_id,
                 "stream.unparseable",
                 &bytes,
-            )
-            .await;
+            );
             match released {
                 Some(evaluation) => (
                     Response::from_parts(parts, Body::from(bytes)),
@@ -323,7 +323,7 @@ async fn buffer_mcp_result(body: Body, policy: &EffectivePolicy) -> BufferedMcpR
 /// Records an audit decision for an MCP result the guard cannot inspect. Returns the
 /// evaluation when the policy is in audit mode, which releases the result unchanged instead
 /// of failing the call; deny mode returns `None` and the caller rejects the result.
-async fn release_uninspected_result(
+fn release_uninspected_result(
     state: &AppState,
     policy: &EffectivePolicy,
     request_id: &str,
@@ -348,13 +348,21 @@ async fn release_uninspected_result(
             result: Value::Null,
         },
     };
-    record_guardrail_evaluation(
-        state,
-        Some(request_id),
-        Some(mcp_tool_invocation_id),
-        &evaluation,
-    )
-    .await;
+    // Persisting on a background task keeps the released result from waiting on the store.
+    let (state, request_id, decisions) = (
+        state.clone(),
+        request_id.to_string(),
+        evaluation.decisions.clone(),
+    );
+    tokio::spawn(async move {
+        record_guardrail_decisions(
+            &state,
+            Some(&request_id),
+            Some(mcp_tool_invocation_id),
+            &decisions,
+        )
+        .await;
+    });
     Some(evaluation)
 }
 
