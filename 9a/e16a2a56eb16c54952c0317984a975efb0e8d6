@@ -1,0 +1,31 @@
+crates/gateway-core/src/traits.rs
+  s_af4ccbd37c05c0::t_e284d0b53a1b40 193-195,201-207
+crates/gateway-service/src/review_agent.rs
+  s_af4ccbd37c05c0::t_00a494da870f28 109-110,115-121
+crates/gateway-store/src/any_store_review_agent.rs
+  s_af4ccbd37c05c0::t_ebb48344f6fcfb 123-129
+crates/gateway-store/src/lib.rs
+  s_af4ccbd37c05c0::t_6716f7524d9050 1016,1024-1025,1033
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_af4ccbd37c05c0::t_1b3370c5fe1573 409-420,423-426,428-436
+crates/gateway-store/src/postgres_store/review_agent.rs
+  s_af4ccbd37c05c0::t_74f05ccba7b671 356-367,369,371,373-384,386-402
+crates/gateway/src/http/review_agent.rs
+  s_af4ccbd37c05c0::t_5dae248216b899 709-710,716,718,723-727
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ae16a2a56eb16c54952c0317984a975efb0e8d6",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
