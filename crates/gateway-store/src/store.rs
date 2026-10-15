@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
-    ApiKeyRepository, AuthMode, BatchRepository, BudgetAlertRepository, BudgetRecord,
-    BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
+    ApiKeyRepository, AuditLogRepository, AuthMode, BatchRepository, BudgetAlertRepository,
+    BudgetRecord, BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
     IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord,
     McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
     McpUpstreamCredentialRepository, MembershipRole, ModelRepository, Money4,
@@ -45,6 +45,7 @@ impl StoreConnectionOptions {
 pub trait GatewayStore:
     ApiKeyRepository
     + AdminApiKeyRepository
+    + AuditLogRepository
     + BatchRepository
     + ModelRepository
     + RoutingRepository

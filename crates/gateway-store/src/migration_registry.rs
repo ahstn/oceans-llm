@@ -335,6 +335,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
         postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
     },
+    MigrationManifest {
+        version: 59,
+        name: "admin_audit_log",
+        checksum: "V59__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V59__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__admin_audit_log.sql"),
+    },
 ];
 
 #[cfg(test)]

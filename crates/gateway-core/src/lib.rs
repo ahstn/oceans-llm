@@ -1,4 +1,5 @@
 pub mod agent_analysis;
+pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
@@ -30,6 +31,10 @@ pub use agent_session_analysis::{
     ReliabilityDiagnostics, RequestAttemptFact, ScoreMaturity, SessionEfficiencyComponents,
     SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
     ToolInvocationFact, ToolServerDiagnostics,
+};
+pub use audit::{
+    AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
+    AuditLogRepository, DEFAULT_AUDIT_LOG_PAGE_SIZE, MAX_AUDIT_LOG_PAGE_SIZE, NewAuditLogRecord,
 };
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,

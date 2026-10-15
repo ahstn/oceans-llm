@@ -4,6 +4,7 @@
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
+mod any_store_audit_logs;
 mod any_store_batches;
 mod any_store_guardrail_decisions;
 mod any_store_mcp_access;
@@ -15,6 +16,7 @@ mod any_store_provider_user_credentials;
 mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
+mod audit_logs;
 mod budget_batch;
 mod budget_increases;
 mod libsql_store;

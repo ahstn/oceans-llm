@@ -1,0 +1,210 @@
+//! Backend-neutral helpers shared by the libsql and PostgreSQL audit log stores.
+
+use gateway_core::{
+    AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord, NewAuditLogRecord,
+    StoreError,
+};
+use serde_json::Value;
+
+use crate::shared::datetime_to_unix_millis;
+
+/// Column values for one insert, already converted to their stored form.
+pub(crate) struct AuditLogRow {
+    pub ts: i64,
+    pub actor_kind: &'static str,
+    pub actor_user_id: Option<String>,
+    pub actor_api_key_id: Option<String>,
+    pub before_json: Option<String>,
+    pub after_json: Option<String>,
+    pub details_json: String,
+}
+
+impl AuditLogRow {
+    pub(crate) fn from_record(record: &NewAuditLogRecord) -> Result<Self, StoreError> {
+        // Only API key actors carry a key reference; the column has a foreign key.
+        let actor_api_key_id = match record.actor.kind {
+            AuditActorKind::ApiKey => record.actor.api_key_id.map(|id| id.to_string()),
+            AuditActorKind::User | AuditActorKind::System => None,
+        };
+        Ok(Self {
+            ts: datetime_to_unix_millis(record.occurred_at)?,
+            actor_kind: record.actor.kind.as_str(),
+            actor_user_id: record.actor.user_id.map(|id| id.to_string()),
+            actor_api_key_id,
+            before_json: record.before.as_ref().map(to_json).transpose()?,
+            after_json: record.after.as_ref().map(to_json).transpose()?,
+            details_json: to_json(&record.metadata)?,
+        })
+    }
+}
+
+/// Bind values for a list query. `None` disables that filter.
+pub(crate) struct AuditLogFilter {
+    pub actor_user_id: Option<String>,
+    pub action: Option<String>,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub start_ms: Option<i64>,
+    pub end_ms: Option<i64>,
+    pub cursor_ts: Option<i64>,
+    pub cursor_id: Option<i64>,
+    pub page_size: usize,
+    /// One more than the page size, so the store can tell whether another page exists.
+    pub fetch_limit: i64,
+}
+
+impl AuditLogFilter {
+    pub(crate) fn from_query(query: &AuditLogQuery) -> Result<Self, StoreError> {
+        let page_size = query.effective_limit();
+        Ok(Self {
+            actor_user_id: query.actor_user_id.map(|id| id.to_string()),
+            action: query.action.clone(),
+            target_type: query.target_type.clone(),
+            target_id: query.target_id.clone(),
+            start_ms: query
+                .occurred_at_start
+                .map(datetime_to_unix_millis)
+                .transpose()?,
+            end_ms: query
+                .occurred_at_end
+                .map(datetime_to_unix_millis)
+                .transpose()?,
+            cursor_ts: query.cursor.map(|cursor| cursor.occurred_at_ms),
+            cursor_id: query.cursor.map(|cursor| cursor.id),
+            page_size: page_size as usize,
+            fetch_limit: i64::from(page_size) + 1,
+        })
+    }
+}
+
+pub(crate) fn finish_page(mut items: Vec<AuditLogRecord>, page_size: usize) -> AuditLogPage {
+    let has_more = items.len() > page_size;
+    items.truncate(page_size);
+    let next_cursor = if has_more {
+        items.last().map(|last| AuditLogCursor {
+            occurred_at_ms: datetime_to_unix_millis(last.occurred_at).unwrap_or_default(),
+            id: last.id,
+        })
+    } else {
+        None
+    };
+    AuditLogPage { items, next_cursor }
+}
+
+fn to_json(value: &Value) -> Result<String, StoreError> {
+    serde_json::to_string(value).map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
+pub(crate) fn parse_json(raw: &str) -> Result<Value, StoreError> {
+    serde_json::from_str(raw).map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
+pub(crate) fn parse_optional_json(raw: Option<&str>) -> Result<Option<Value>, StoreError> {
+    raw.map(parse_json).transpose()
+}
+
+/// Shared contract test, run against each backend.
+#[cfg(test)]
+pub(crate) async fn exercise_audit_log_store(store: &impl gateway_core::AuditLogRepository) {
+    use gateway_core::{AuditActor, AuditLogQuery};
+    use serde_json::json;
+    use time::{Duration, OffsetDateTime};
+    use uuid::Uuid;
+
+    let admin = Uuid::new_v4();
+    let base = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+    let record = |action: &str, target_type: &str, offset_ms: i64| NewAuditLogRecord {
+        occurred_at: base + Duration::milliseconds(offset_ms),
+        actor: AuditActor::user(admin, "admin@example.test"),
+        action: action.to_string(),
+        target_type: target_type.to_string(),
+        target_id: Some(format!("{target_type}-{offset_ms}")),
+        target_label: Some("Label".to_string()),
+        before: Some(json!({ "status": "active" })),
+        after: Some(json!({ "status": "disabled" })),
+        metadata: json!({ "request_id": "req-1" }),
+        request_ip: Some("203.0.113.9".to_string()),
+        user_agent: Some("tests".to_string()),
+    };
+    // Two entries share a millisecond, so the cursor has to break ties on id.
+    let inputs = [
+        record("team.created", "team", 0),
+        record("team.updated", "team", 5),
+        record("team.updated", "team", 5),
+        record("api_key.revoked", "api_key", 9),
+    ];
+    let mut ids = Vec::new();
+    for input in &inputs {
+        ids.push(
+            store
+                .insert_audit_log(input)
+                .await
+                .expect("insert audit log"),
+        );
+    }
+
+    let everything = store
+        .list_audit_logs(&AuditLogQuery::default())
+        .await
+        .expect("list audit logs");
+    assert_eq!(everything.next_cursor, None);
+    let newest = &everything.items[0];
+    assert_eq!(newest.id, ids[3]);
+    assert_eq!(newest.occurred_at, inputs[3].occurred_at);
+    assert_eq!(newest.actor, inputs[3].actor);
+    assert_eq!(newest.before, inputs[3].before);
+    assert_eq!(newest.after, inputs[3].after);
+    assert_eq!(newest.metadata, inputs[3].metadata);
+    assert_eq!(newest.request_ip, inputs[3].request_ip);
+    assert_eq!(newest.user_agent, inputs[3].user_agent);
+    assert_eq!(
+        everything
+            .items
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![ids[3], ids[2], ids[1], ids[0]]
+    );
+
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = store
+            .list_audit_logs(&AuditLogQuery {
+                target_type: Some("team".to_string()),
+                cursor,
+                limit: 1,
+                ..Default::default()
+            })
+            .await
+            .expect("page");
+        seen.extend(page.items.iter().map(|item| item.id));
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(seen, vec![ids[2], ids[1], ids[0]]);
+
+    let filtered = store
+        .list_audit_logs(&AuditLogQuery {
+            actor_user_id: Some(admin),
+            action: Some("team.updated".to_string()),
+            target_id: Some("team-5".to_string()),
+            occurred_at_start: Some(base + Duration::milliseconds(5)),
+            occurred_at_end: Some(base + Duration::milliseconds(5)),
+            ..Default::default()
+        })
+        .await
+        .expect("filtered");
+    assert_eq!(filtered.items.len(), 2);
+
+    let nobody = store
+        .list_audit_logs(&AuditLogQuery {
+            actor_user_id: Some(Uuid::new_v4()),
+            ..Default::default()
+        })
+        .await
+        .expect("other actor");
+    assert!(nobody.items.is_empty());
+}
