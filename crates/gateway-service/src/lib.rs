@@ -84,9 +84,10 @@ pub use mcp_catalog::{
     parse_tool_address, tool_address,
 };
 pub use mcp_client_oauth::{
-    AuthorizationParams, AuthorizationRejection, ClientCredentials, ClientRegistrationRequest,
-    ClientRegistrationResponse, McpClientOauthService, McpClientOauthSettings,
-    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
+    AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
+    ClientRegistrationRequest, ClientRegistrationResponse, McpClientOauthService,
+    McpClientOauthSettings, McpClientOauthSettingsError, OauthError, PendingAuthorization,
+    TokenRequest, TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,

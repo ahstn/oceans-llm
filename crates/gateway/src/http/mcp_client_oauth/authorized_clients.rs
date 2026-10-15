@@ -47,7 +47,10 @@ pub struct AuthorizedMcpClientView {
 pub struct AuthorizedMcpClientsView {
     /// Whether OAuth sign-in for MCP clients is enabled on this gateway.
     pub enabled: bool,
+    /// The newest authorized clients, at most 100.
     pub items: Vec<AuthorizedMcpClientView>,
+    /// More clients are authorized than `items` lists.
+    pub has_more: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -195,18 +198,21 @@ async fn authorized_clients_view(
         return Ok(AuthorizedMcpClientsView {
             enabled: false,
             items: Vec::new(),
+            has_more: false,
         });
     };
-    let grants = service
+    let listed = service
         .authorized_clients(user_id, OffsetDateTime::now_utc())
         .await?;
-    let items = grants
+    let items = listed
+        .clients
         .into_iter()
         .map(|(grant, resource)| authorized_client_view(grant, resource))
         .collect();
     Ok(AuthorizedMcpClientsView {
         enabled: true,
         items,
+        has_more: listed.has_more,
     })
 }
 

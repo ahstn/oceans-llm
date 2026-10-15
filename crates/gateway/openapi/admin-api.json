@@ -10346,18 +10346,24 @@
         "type": "object",
         "required": [
           "enabled",
-          "items"
+          "items",
+          "has_more"
         ],
         "properties": {
           "enabled": {
             "type": "boolean",
             "description": "Whether OAuth sign-in for MCP clients is enabled on this gateway."
           },
+          "has_more": {
+            "type": "boolean",
+            "description": "More clients are authorized than `items` lists."
+          },
           "items": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AuthorizedMcpClientView"
-            }
+            },
+            "description": "The newest authorized clients, at most 100."
           }
         }
       },

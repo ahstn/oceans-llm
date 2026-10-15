@@ -2761,6 +2761,9 @@ export interface components {
         AuthorizedMcpClientsView: {
             /** @description Whether OAuth sign-in for MCP clients is enabled on this gateway. */
             enabled: boolean;
+            /** @description More clients are authorized than `items` lists. */
+            has_more: boolean;
+            /** @description The newest authorized clients, at most 100. */
             items: components["schemas"]["AuthorizedMcpClientView"][];
         };
         BatchCallerResponse: {

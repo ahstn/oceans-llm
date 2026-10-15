@@ -15,6 +15,7 @@ mod validation;
 use std::sync::Arc;
 
 pub use authorization::{AuthorizationParams, AuthorizationRejection, PendingAuthorization};
+pub use authorized_clients::{AuthorizedClients, MAX_LISTED_AUTHORIZED_CLIENTS};
 pub use error::OauthError;
 pub use registration::{ClientRegistrationRequest, ClientRegistrationResponse};
 pub use secrets::oauth_token_hash;

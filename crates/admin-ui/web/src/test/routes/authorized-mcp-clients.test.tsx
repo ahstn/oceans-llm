@@ -46,13 +46,13 @@ describe('AuthorizedMcpClientsCard', () => {
 
   it('renders nothing when OAuth sign-in is disabled', async () => {
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
-    render(<AuthorizedMcpClientsCard clients={{ enabled: false, items: [] }} />)
+    render(<AuthorizedMcpClientsCard clients={{ enabled: false, has_more: false, items: [] }} />)
     expect(screen.queryByTestId('authorized-mcp-clients')).not.toBeInTheDocument()
   })
 
   it('shows an empty state', async () => {
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
-    render(<AuthorizedMcpClientsCard clients={{ enabled: true, items: [] }} />)
+    render(<AuthorizedMcpClientsCard clients={{ enabled: true, has_more: false, items: [] }} />)
     expect(screen.getByText('No MCP clients are authorized.')).toBeInTheDocument()
   })
 
@@ -62,6 +62,7 @@ describe('AuthorizedMcpClientsCard', () => {
       <AuthorizedMcpClientsCard
         clients={{
           enabled: true,
+          has_more: false,
           items: [
             client(),
             client({
@@ -87,15 +88,29 @@ describe('AuthorizedMcpClientsCard', () => {
     )
   })
 
+  it('says when older clients are not listed', async () => {
+    const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
+    render(
+      <AuthorizedMcpClientsCard clients={{ enabled: true, has_more: true, items: [client()] }} />,
+    )
+    expect(screen.getByTestId('authorized-mcp-clients-more')).toHaveTextContent(
+      'Showing your 1 most recent clients.',
+    )
+  })
+
   it('disconnects a client and refreshes the list', async () => {
     disconnectMock.mockResolvedValue(undefined)
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
-    render(<AuthorizedMcpClientsCard clients={{ enabled: true, items: [client()] }} />)
+    render(
+      <AuthorizedMcpClientsCard clients={{ enabled: true, has_more: false, items: [client()] }} />,
+    )
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Disconnect Editor' })[0])
 
     await waitFor(() =>
-      expect(disconnectMock).toHaveBeenCalledWith({ data: { grantId: 'grant-1' } }),
+      expect(disconnectMock).toHaveBeenCalledWith({
+        data: { grantId: 'grant-1' },
+      }),
     )
     await waitFor(() => expect(invalidateMock).toHaveBeenCalled())
     expect(toastMock.success).toHaveBeenCalledWith('Editor disconnected')
@@ -104,7 +119,9 @@ describe('AuthorizedMcpClientsCard', () => {
   it('reports a failed disconnect', async () => {
     disconnectMock.mockRejectedValue(new Error('authorized MCP client was not found'))
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
-    render(<AuthorizedMcpClientsCard clients={{ enabled: true, items: [client()] }} />)
+    render(
+      <AuthorizedMcpClientsCard clients={{ enabled: true, has_more: false, items: [client()] }} />,
+    )
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Disconnect Editor' })[0])
 

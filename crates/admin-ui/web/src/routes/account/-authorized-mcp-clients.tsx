@@ -38,7 +38,9 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
     setPendingGrantId(client.grant_id)
     startTransition(async () => {
       try {
-        await disconnectAuthorizedMcpClient({ data: { grantId: client.grant_id } })
+        await disconnectAuthorizedMcpClient({
+          data: { grantId: client.grant_id },
+        })
         await router.invalidate()
         toast.success(`${clientName(client)} disconnected`)
       } catch (error) {
@@ -128,6 +130,15 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                 </TableBody>
               </Table>
             </div>
+            {clients.has_more ? (
+              <p
+                className="text-muted-foreground mt-3 text-sm"
+                data-testid="authorized-mcp-clients-more"
+              >
+                Showing your {clients.items.length} most recent clients. Disconnect some to see
+                older ones.
+              </p>
+            ) : null}
           </>
         )}
       </CardContent>

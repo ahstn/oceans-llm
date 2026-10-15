@@ -108,6 +108,7 @@ async fn users_list_and_disconnect_their_authorized_clients() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["enabled"], true);
+    assert_eq!(body["has_more"], false);
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["client_name"], "Test Editor");
@@ -183,7 +184,10 @@ async fn listing_requires_a_session_and_reports_a_disabled_feature() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"enabled": false, "items": []}));
+    assert_eq!(
+        body,
+        json!({"enabled": false, "items": [], "has_more": false})
+    );
 }
 
 #[tokio::test]
@@ -319,7 +323,10 @@ async fn grants_from_a_previous_issuer_are_not_listed() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"enabled": true, "items": []}));
+    assert_eq!(
+        body,
+        json!({"enabled": true, "items": [], "has_more": false})
+    );
 }
 
 #[tokio::test]
@@ -330,7 +337,7 @@ async fn revocation_while_oauth_is_disabled_survives_re_enabling() {
     let grant_id = harness
         .state
         .store
-        .list_live_gateway_oauth_grants_for_user(harness.user_id, OffsetDateTime::now_utc())
+        .list_live_gateway_oauth_grants_for_user(harness.user_id, OffsetDateTime::now_utc(), 100)
         .await
         .unwrap()
         .into_iter()

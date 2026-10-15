@@ -574,7 +574,7 @@ where
 
     // Newest first; the last token issued counts as the latest activity.
     let listed = store
-        .list_live_gateway_oauth_grants_for_user(owner, now)
+        .list_live_gateway_oauth_grants_for_user(owner, now, 100)
         .await
         .unwrap();
     assert_eq!(
@@ -590,6 +590,15 @@ where
     assert_eq!(listed[0].expires_at, now + 2 * hour);
     assert_eq!(listed[1].expires_at, now + hour);
 
+    // The limit keeps the newest grants, with their own token aggregates.
+    let page = store
+        .list_live_gateway_oauth_grants_for_user(owner, now, 1)
+        .await
+        .unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].grant_id, second);
+    assert_eq!(page[0].expires_at, now + 2 * hour);
+
     // A user cannot revoke someone else's grant.
     assert!(
         !store
@@ -604,7 +613,7 @@ where
             .unwrap()
     );
     let listed = store
-        .list_live_gateway_oauth_grants_for_user(owner, now)
+        .list_live_gateway_oauth_grants_for_user(owner, now, 100)
         .await
         .unwrap();
     assert_eq!(listed.len(), 1);
@@ -616,7 +625,7 @@ where
         .unwrap();
     assert!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now)
+            .list_live_gateway_oauth_grants_for_user(other, now, 100)
             .await
             .unwrap()
             .is_empty()
@@ -627,7 +636,7 @@ where
         .unwrap();
     assert_eq!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now)
+            .list_live_gateway_oauth_grants_for_user(other, now, 100)
             .await
             .unwrap()
             .len(),
@@ -638,7 +647,7 @@ where
     store.revoke_user_session(other_session, now).await.unwrap();
     assert!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now)
+            .list_live_gateway_oauth_grants_for_user(other, now, 100)
             .await
             .unwrap()
             .is_empty()

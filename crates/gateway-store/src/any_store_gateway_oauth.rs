@@ -150,8 +150,12 @@ impl GatewayOauthRepository for AnyStore {
         &self,
         user_id: Uuid,
         now: OffsetDateTime,
+        limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
-        dispatch!(self, list_live_gateway_oauth_grants_for_user(user_id, now))
+        dispatch!(
+            self,
+            list_live_gateway_oauth_grants_for_user(user_id, now, limit)
+        )
     }
 
     async fn revoke_gateway_oauth_grant_for_user(

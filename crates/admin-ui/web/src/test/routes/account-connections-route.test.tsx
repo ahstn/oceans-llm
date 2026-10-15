@@ -9,7 +9,11 @@ const routeMock = {
 }
 const navigateMock = vi.fn()
 const connectMock = vi.fn()
-const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -28,7 +32,10 @@ vi.mock('@/server/admin-data.functions', () => ({
 }))
 
 function loaderData(connections: McpOauthConnectionView[]) {
-  return { connections, authorizedClients: { enabled: false, items: [] } }
+  return {
+    connections,
+    authorizedClients: { enabled: false, has_more: false, items: [] },
+  }
 }
 
 function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthConnectionView {
@@ -69,13 +76,17 @@ describe('ConnectionsPage connect links', () => {
   it('starts the OAuth flow for the named server and drops the parameter', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://accounts.example/consent',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 
     await waitFor(() =>
-      expect(connectMock).toHaveBeenCalledWith({ data: { serverId: 'server-1' } }),
+      expect(connectMock).toHaveBeenCalledWith({
+        data: { serverId: 'server-1' },
+      }),
     )
     await waitFor(() => expect(assignMock).toHaveBeenCalledWith('https://accounts.example/consent'))
     expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ replace: true }))
@@ -89,7 +100,9 @@ describe('ConnectionsPage connect links', () => {
   it('reconnects an expired connection', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'expired' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://accounts.example/consent',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
@@ -112,7 +125,11 @@ describe('ConnectionsPage connect links', () => {
 
   it('reports unknown and unavailable servers instead of starting the flow', async () => {
     routeMock.useLoaderData.mockReturnValue(
-      loaderData([connection({ availability_error: 'OAuth provider `google` is not configured' })]),
+      loaderData([
+        connection({
+          availability_error: 'OAuth provider `google` is not configured',
+        }),
+      ]),
     )
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
@@ -157,7 +174,10 @@ describe('ConnectionsPage callbacks and discovered servers', () => {
 
   it('names the server the OAuth callback returned from and toasts once', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
-    routeMock.useSearch.mockReturnValue({ oauth: 'connected', server: 'server-1' })
+    routeMock.useSearch.mockReturnValue({
+      oauth: 'connected',
+      server: 'server-1',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     const { rerender } = render(<ConnectionsPage />)
@@ -192,7 +212,9 @@ describe('ConnectionsPage callbacks and discovered servers', () => {
       ]),
     )
     routeMock.useSearch.mockReturnValue({ connect: 'linear' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://auth.linear.example/authorize' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://auth.linear.example/authorize',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
@@ -200,7 +222,9 @@ describe('ConnectionsPage callbacks and discovered servers', () => {
     expect(screen.getByText('linear · via auth.linear.example')).toBeTruthy()
     expect(screen.getByText('Provider default')).toBeTruthy()
     await waitFor(() =>
-      expect(connectMock).toHaveBeenCalledWith({ data: { serverId: 'server-2' } }),
+      expect(connectMock).toHaveBeenCalledWith({
+        data: { serverId: 'server-2' },
+      }),
     )
     await waitFor(() =>
       expect(assignMock).toHaveBeenCalledWith('https://auth.linear.example/authorize'),

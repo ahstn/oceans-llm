@@ -495,31 +495,38 @@ impl GatewayOauthRepository for LibsqlStore {
         &self,
         user_id: Uuid,
         now: OffsetDateTime,
+        limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
         let mut rows = self
             .connection
             .query(
                 "SELECT g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
-                    g.created_at, tk.last_issued_at, tk.usable_until
-             FROM gateway_oauth_grants g
+                    g.created_at,
+                    MAX(t.created_at) AS last_issued_at,
+                    MAX(CASE WHEN t.consumed_at IS NULL THEN t.expires_at END) AS usable_until
+             FROM (
+                 SELECT lg.grant_id
+                 FROM gateway_oauth_grants lg
+                 JOIN user_sessions s ON s.session_id = lg.user_session_id
+                 JOIN users u ON u.user_id = lg.user_id
+                 WHERE lg.user_id = ?1 AND lg.revoked_at IS NULL
+                   AND s.revoked_at IS NULL AND s.expires_at > ?2
+                   AND u.status = 'active'
+                   AND EXISTS (
+                       SELECT 1 FROM gateway_oauth_tokens lt
+                       WHERE lt.grant_id = lg.grant_id
+                         AND lt.consumed_at IS NULL AND lt.expires_at > ?2
+                   )
+                 ORDER BY lg.created_at DESC, lg.grant_id
+                 LIMIT ?3
+             ) page
+             JOIN gateway_oauth_grants g ON g.grant_id = page.grant_id
              JOIN gateway_oauth_clients c ON c.client_id = g.client_id
-             JOIN user_sessions s ON s.session_id = g.user_session_id
-             JOIN users u ON u.user_id = g.user_id
-             JOIN (
-                 SELECT t.grant_id,
-                        MAX(t.created_at) AS last_issued_at,
-                        MAX(CASE WHEN t.consumed_at IS NULL THEN t.expires_at END) AS usable_until
-                 FROM gateway_oauth_tokens t
-                 JOIN gateway_oauth_grants tg ON tg.grant_id = t.grant_id
-                 WHERE tg.user_id = ?1 AND tg.revoked_at IS NULL
-                 GROUP BY t.grant_id
-             ) tk ON tk.grant_id = g.grant_id
-             WHERE g.user_id = ?1 AND g.revoked_at IS NULL
-               AND s.revoked_at IS NULL AND s.expires_at > ?2
-               AND u.status = 'active'
-               AND tk.usable_until > ?2
+             JOIN gateway_oauth_tokens t ON t.grant_id = g.grant_id
+             GROUP BY g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
+                      g.created_at
              ORDER BY g.created_at DESC, g.grant_id",
-                libsql::params![user_id.to_string(), now.unix_timestamp()],
+                libsql::params![user_id.to_string(), now.unix_timestamp(), i64::from(limit)],
             )
             .await
             .map_err(to_query_error)?;
