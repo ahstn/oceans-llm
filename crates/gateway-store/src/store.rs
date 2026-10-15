@@ -874,6 +874,14 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, deactivate_active_budget(scope, updated_at))
     }
 
+    async fn deactivate_active_budget_returning(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(self, deactivate_active_budget_returning(scope, updated_at))
+    }
+
     async fn deactivate_active_budget_by_source(
         &self,
         scope: &gateway_core::BudgetScope,

@@ -400,6 +400,14 @@ mod tests {
             unimplemented!("not exercised by guard tests")
         }
 
+        async fn deactivate_active_budget_returning(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            unimplemented!("not exercised by guard tests")
+        }
+
         async fn deactivate_active_budget_by_source(
             &self,
             _scope: &BudgetScope,

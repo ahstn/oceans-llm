@@ -261,8 +261,20 @@ impl BudgetRepository for PostgresStore {
         scope: &BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
+        Ok(self
+            .deactivate_active_budget_returning(scope, updated_at)
+            .await?
+            .is_some())
+    }
+
+    async fn deactivate_active_budget_returning(
+        &self,
+        scope: &BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
         let source = BudgetSource::manual_deactivated();
-        let updated = sqlx::query(
+        // `RETURNING` gives the budget this call deactivated, with its settings.
+        let row = sqlx::query(
             r#"
             UPDATE budgets
             SET is_active = 0,
@@ -271,17 +283,19 @@ impl BudgetRepository for PostgresStore {
                 source_key = $4
             WHERE scope_key = $2
               AND is_active = 1
+            RETURNING budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
             "#,
         )
         .bind(updated_at.unix_timestamp())
         .bind(scope.scope_key())
         .bind(source.kind.as_str())
         .bind(source.key)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(to_query_error)?
-        .rows_affected();
-        Ok(updated > 0)
+        .map_err(to_query_error)?;
+        row.as_ref().map(decode_budget_record).transpose()
     }
 
     async fn deactivate_active_budget_by_source(

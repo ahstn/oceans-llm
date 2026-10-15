@@ -536,25 +536,24 @@ pub async fn deactivate_budget(
     }
     let scope_key = scope.scope_key();
 
-    let before = state
-        .store
-        .get_active_budget_by_scope(&scope)
-        .await?
-        .map(|budget| budget_to_settings_view(&budget));
+    // The update returns the budget it deactivated, so `before` holds the settings
+    // that were actually turned off, even if a save landed just before.
     let deactivated = state
-        .audit()
-        .audited_change(
-            &meta.user_context(&actor),
-            state
-                .store
-                .deactivate_active_budget(&scope, OffsetDateTime::now_utc()),
-            || {
+        .store
+        .deactivate_active_budget_returning(&scope, OffsetDateTime::now_utc())
+        .await?;
+    if let Some(budget) = &deactivated {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
                 AuditEvent::new(actions::BUDGET_DEACTIVATED, targets::BUDGET)
                     .target(&scope_key)
-                    .before(&before)
-            },
-        )
-        .await?;
+                    .before(budget_to_settings_view(budget)),
+            )
+            .await;
+    }
+    let deactivated = deactivated.is_some();
     Ok(Json(envelope(DeactivateBudgetResultView {
         scope: scope_to_view(&scope),
         scope_key,

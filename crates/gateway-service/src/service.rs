@@ -2266,6 +2266,14 @@ mod tests {
             Ok(false)
         }
 
+        async fn deactivate_active_budget_returning(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
+        }
+
         async fn deactivate_active_budget_by_source(
             &self,
             _scope: &BudgetScope,
