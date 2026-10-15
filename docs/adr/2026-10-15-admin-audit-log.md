@@ -59,7 +59,7 @@ Labels are snapshots, so entries stay readable after the user, key or resource i
 
 ### Request IP
 
-The gateway serves with `ConnectInfo`. Client addresses are resolved by `admin_ui::client_ip::resolve_client_ip`, configured by `server.trusted_proxies` and shared with request policy. `X-Forwarded-For` is read only when the peer is a configured trusted proxy, so a client that connects directly cannot pick its own address.
+The gateway serves with `ConnectInfo`. Client addresses are resolved by `gateway_client_ip::resolve_client_ip`, configured by `server.trusted_proxies` and shared with request policy. `X-Forwarded-For` is read only when the peer is a configured trusted proxy, so a client that connects directly cannot pick its own address.
 
 The browser always reaches the admin UI through the gateway's own admin proxy, the edge its connection reaches:
 
@@ -68,7 +68,7 @@ The browser always reaches the admin UI through the gateway's own admin proxy, t
 - `resolve_audit_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the client resolved through the trusted proxies.
 - When `GATEWAY_IDENTITY_TOKEN_SECRET` is unset, its development fallback is public, so the key is a random per-process value instead. Signed addresses then only verify on the replica that signed them, and other replicas record the direct peer.
 
-Behind a load balancer, list it in `server.trusted_proxies` and both admin UI changes and direct API calls record the browser. Without that, they record the balancer's address. The resolver lives in the admin UI crate because the gateway depends on it, so both the proxy and the gateway can share one implementation.
+Behind a load balancer, list it in `server.trusted_proxies` and both admin UI changes and direct API calls record the browser. Without that, they record the balancer's address. The resolver and the sign and verify primitives live in the `gateway-client-ip` crate, which both the gateway and the admin UI proxy depend on, so the contract between them has one owner.
 
 ### Redaction
 

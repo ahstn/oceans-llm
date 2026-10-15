@@ -1,6 +1,6 @@
 //! Client IP resolution through trusted proxies.
 //!
-//! The resolver lives in `admin_ui::client_ip` so the admin UI proxy can resolve
-//! the client the same way before it signs the address.
+//! The resolver lives in `gateway_client_ip`, which the admin UI proxy also uses,
+//! so both resolve the client the same way.
 
-pub use admin_ui::client_ip::{TrustedProxies, resolve_client_ip};
+pub use gateway_client_ip::{TrustedProxies, resolve_client_ip};

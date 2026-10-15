@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use admin_ui::client_ip::{CLIENT_IP_HEADER, verify_client_ip};
+use gateway_client_ip::{CLIENT_IP_HEADER, verify_client_ip};
 
 use axum::{
     Json,
@@ -394,8 +394,8 @@ fn invalid_request(message: &str) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use admin_ui::client_ip::sign_client_ip;
     use axum::http::HeaderValue;
+    use gateway_client_ip::sign_client_ip;
 
     use super::*;
 

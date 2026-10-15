@@ -14,10 +14,9 @@ use axum::{
 use serde_json::json;
 use tracing::warn;
 
-use crate::{
-    AdminUiConfig,
-    client_ip::{CLIENT_IP_HEADER, TrustedProxies, resolve_client_ip, sign_client_ip},
-};
+use gateway_client_ip::{CLIENT_IP_HEADER, TrustedProxies, resolve_client_ip, sign_client_ip};
+
+use crate::AdminUiConfig;
 
 #[derive(Clone)]
 struct ProxyState {
@@ -324,7 +323,7 @@ mod tests {
             },
         );
         let forged =
-            crate::client_ip::sign_client_ip(b"guessed", "198.51.100.1".parse().unwrap(), 0);
+            gateway_client_ip::sign_client_ip(b"guessed", "198.51.100.1".parse().unwrap(), 0);
         for peer in [Some("203.0.113.9:5000"), None] {
             let mut request = Request::builder()
                 .uri("/admin/models")
@@ -355,7 +354,7 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
         assert_eq!(
-            crate::client_ip::verify_client_ip(&key, &signed, now),
+            gateway_client_ip::verify_client_ip(&key, &signed, now),
             "203.0.113.9".parse().ok()
         );
         assert_eq!(header(1), None, "a forged header must not pass through");
@@ -371,7 +370,7 @@ mod tests {
             AdminUiConfig {
                 upstream,
                 client_ip_signing_key: Some(key.clone()),
-                trusted_proxies: crate::client_ip::TrustedProxies::new(vec![
+                trusted_proxies: gateway_client_ip::TrustedProxies::new(vec![
                     "10.0.0.0/8".parse().unwrap(),
                 ]),
                 ..AdminUiConfig::default()
@@ -404,7 +403,7 @@ mod tests {
                 .find(|(name, _)| name == CLIENT_IP_HEADER)
                 .map(|(_, value)| value.clone())
                 .expect("signed client ip");
-            crate::client_ip::verify_client_ip(&key, &value, now)
+            gateway_client_ip::verify_client_ip(&key, &value, now)
         };
         assert_eq!(signed(0), "203.0.113.9".parse().ok());
         assert_eq!(signed(1), "198.51.100.4".parse().ok());

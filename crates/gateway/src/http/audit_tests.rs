@@ -2,11 +2,11 @@
 //! the router, that failed mutations write none, and that secrets never land in
 //! an entry.
 
-use admin_ui::client_ip::{CLIENT_IP_HEADER, sign_client_ip};
 use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header::COOKIE},
 };
+use gateway_client_ip::{CLIENT_IP_HEADER, sign_client_ip};
 use gateway_core::{AuthMode, GlobalRole, IdentityRepository, UserStatus};
 use gateway_store::GatewayStore;
 use serde_json::{Value, json};

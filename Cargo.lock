@@ -7,13 +7,11 @@ name = "admin-ui"
 version = "0.39.0"
 dependencies = [
  "axum 0.8.9",
- "hmac 0.12.1",
+ "gateway-client-ip",
  "http-body-util",
- "ipnet",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tokio",
  "tower 0.5.3",
  "tracing",
@@ -1856,6 +1854,7 @@ dependencies = [
  "cron",
  "futures-util",
  "gateway-client-config",
+ "gateway-client-ip",
  "gateway-core",
  "gateway-guardrails",
  "gateway-mcp",
@@ -1899,6 +1898,16 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "gateway-client-ip"
+version = "0.39.0"
+dependencies = [
+ "hmac 0.12.1",
+ "http 1.5.0",
+ "ipnet",
+ "sha2 0.10.9",
 ]
 
 [[package]]

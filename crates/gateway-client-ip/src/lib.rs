@@ -1,4 +1,4 @@
-//! Client address resolution and the signed record of it for admin UI requests.
+//! The client address contract shared by the gateway and its admin UI proxy.
 //!
 //! [`resolve_client_ip`] finds the client behind configured trusted proxies.
 //! The socket peer is the client unless it is a trusted proxy; only then is
@@ -6,19 +6,19 @@
 //! cannot pick its own address by sending the header directly. The gateway
 //! uses it for request policy and audit entries.
 //!
-//! The gateway's admin UI proxy is the edge the browser's connection reaches.
-//! It resolves the client this way and signs the address into
-//! [`CLIENT_IP_HEADER`]; the admin UI server forwards the header on its gateway
-//! API calls, and the gateway trusts it only when the signature is valid and
-//! fresh.
+//! The admin UI proxy is the edge the browser's connection reaches. It resolves
+//! the client this way and signs the address into [`CLIENT_IP_HEADER`]; the
+//! admin UI server forwards the header on its gateway API calls, and the gateway
+//! trusts it only when [`verify_client_ip`] accepts the signature as valid and
+//! fresh. Keeping both halves here gives the contract one owner.
 
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
 
-use axum::http::HeaderMap;
 use hmac::{Hmac, Mac};
+use http::HeaderMap;
 use ipnet::IpNet;
 use sha2::Sha256;
 
@@ -134,7 +134,7 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::HeaderValue;
+    use http::HeaderValue;
 
     use super::*;
 
