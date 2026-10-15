@@ -357,16 +357,16 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
+    let mut evaluated = EvaluatedToolArguments::new();
     for fragments in tool_fragments.values() {
-        let streamed_arguments = (!fragments.name.is_empty() && !fragments.arguments.is_empty())
-            .then_some(fragments.arguments.as_str());
-        let streamed_replacement = if let Some(arguments) = streamed_arguments {
+        if !fragments.name.is_empty() && !fragments.arguments.is_empty() {
             let replacement = guard_stream_tool_arguments(
                 state,
                 context,
+                &mut evaluated,
                 &fragments.name,
                 fragments.shell_command_locations,
-                arguments,
+                &fragments.arguments,
             )
             .await?;
             if let Some(replacement) = &replacement {
@@ -378,29 +378,21 @@ async fn guard_sse_payload(
                     true,
                 );
             }
-            replacement
-        } else {
-            None
-        };
+        }
         for terminal in &fragments.terminal_arguments {
             let name = terminal.name.as_deref().unwrap_or(&fragments.name);
             if name.is_empty() {
                 continue;
             }
-            let replacement = if name == fragments.name
-                && streamed_arguments == Some(terminal.arguments.as_str())
-            {
-                streamed_replacement.clone()
-            } else {
-                guard_stream_tool_arguments(
-                    state,
-                    context,
-                    name,
-                    fragments.shell_command_locations,
-                    &terminal.arguments,
-                )
-                .await?
-            };
+            let replacement = guard_stream_tool_arguments(
+                state,
+                context,
+                &mut evaluated,
+                name,
+                fragments.shell_command_locations,
+                &terminal.arguments,
+            )
+            .await?;
             if let Some(replacement) = replacement {
                 replace_stream_arguments(
                     &mut blocks,
@@ -476,15 +468,42 @@ async fn guard_sse_payload(
     Ok(rendered.into_bytes())
 }
 
+/// Replacements already decided for a tool call, keyed by tool name, shell-command shape,
+/// and canonical arguments. Providers repeat the same call in deltas and up to three
+/// terminal snapshots, and each distinct call should cost one evaluation.
+type EvaluatedToolArguments = BTreeMap<(String, bool, String), Option<String>>;
+
 async fn guard_stream_tool_arguments(
     state: &AppState,
     context: &InferenceGuardContext,
+    evaluated: &mut EvaluatedToolArguments,
     name: &str,
     shell_command_locations: bool,
     argument_text: &str,
 ) -> Result<Option<String>, GatewayError> {
-    let arguments = serde_json::from_str(argument_text)
-        .unwrap_or_else(|_| Value::String(argument_text.to_string()));
+    let parsed = serde_json::from_str::<Value>(argument_text);
+    let canonical = parsed
+        .as_ref()
+        .map_or_else(|_| argument_text.to_string(), Value::to_string);
+    let key = (name.to_string(), shell_command_locations, canonical);
+    if let Some(replacement) = evaluated.get(&key) {
+        return Ok(replacement.clone());
+    }
+    let arguments = parsed.unwrap_or_else(|_| Value::String(argument_text.to_string()));
+    let replacement =
+        evaluate_stream_tool_arguments(state, context, name, shell_command_locations, arguments)
+            .await?;
+    evaluated.insert(key, replacement.clone());
+    Ok(replacement)
+}
+
+async fn evaluate_stream_tool_arguments(
+    state: &AppState,
+    context: &InferenceGuardContext,
+    name: &str,
+    shell_command_locations: bool,
+    arguments: Value,
+) -> Result<Option<String>, GatewayError> {
     let payload = shell_command(name, &arguments)
         .map(|command| EvaluationPayload::ShellCommand { command })
         .unwrap_or_else(|| EvaluationPayload::ToolCall {
@@ -1996,6 +2015,54 @@ mod tests {
         .expect_err("deny mode rejects an unparseable stream");
 
         assert!(error.to_string().contains("invalid SSE JSON"));
+    }
+
+    #[tokio::test]
+    async fn evaluates_repeated_terminal_snapshots_once() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
+        let item = |arguments: &str| {
+            json!({
+                "id": "fc_1",
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "wiki_search",
+                "arguments": arguments,
+            })
+        };
+        let stream = [
+            json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "fc_1",
+                "arguments": "{\"query\": \"oceans\"}",
+            }),
+            json!({"type": "response.output_item.done", "item": item("{\"query\":\"oceans\"}")}),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [item("{\"query\": \"oceans\"}")]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("data: {event}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+            .await
+            .expect("allowed");
+
+        let decisions = state
+            .store
+            .list_guardrail_decisions(&GuardrailDecisionQuery {
+                page: 1,
+                page_size: 10,
+                request_id: Some("request-1".into()),
+                evaluator: Some("built_in".into()),
+                ..Default::default()
+            })
+            .await
+            .expect("decisions")
+            .items;
+        assert_eq!(decisions.len(), 1, "one evaluation for one tool call");
     }
 
     #[tokio::test]
