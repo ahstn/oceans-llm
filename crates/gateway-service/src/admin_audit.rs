@@ -592,9 +592,11 @@ fn looks_encoded(word: &str) -> bool {
 /// `password=hunter2`, `?api_key=…` or `Authorization: Basic …`.
 fn has_secret_assignment(text: &str) -> bool {
     text.match_indices(['=', ':']).any(|(index, _)| {
-        // `password = hunter2` puts spaces between the name and the separator.
+        // `password = hunter2` puts spaces between the name and the separator,
+        // and `{"password":"hunter2"}` a closing quote.
         let name = text[..index]
             .trim_end()
+            .trim_end_matches(['"', '\''])
             .rsplit(|character: char| {
                 !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
             })
@@ -979,6 +981,7 @@ mod tests {
             "quoted": "config has password=\"hunter2\"",
             "single_quoted": "set api_key = 'secret' here",
             "empty_quoted": "password=\"\" means none",
+            "json_config": "config={\"password\":\"hunter2\"}",
             "encoded_query": "see https://example.test/?api%5Fkey=hunter2",
             "encoded_path": "docs at https://example.test/guides/100%25-uptime",
             "header_note": "send Authorization: Bearer abc",
@@ -1023,6 +1026,7 @@ mod tests {
                 "quoted": AUDIT_REDACTED,
                 "single_quoted": AUDIT_REDACTED,
                 "empty_quoted": "password=\"\" means none",
+                "json_config": AUDIT_REDACTED,
                 "encoded_query": AUDIT_REDACTED,
                 "encoded_path": "docs at https://example.test/guides/100%25-uptime",
                 "header_note": AUDIT_REDACTED,
