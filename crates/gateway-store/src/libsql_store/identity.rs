@@ -424,11 +424,7 @@ impl LibsqlStore {
         updated_at: OffsetDateTime,
     ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1054,8 +1050,7 @@ impl LibsqlStore {
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        let connection = self.transaction_connection().await?;
-        let tx = connection.transaction().await.map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1156,11 +1151,7 @@ impl LibsqlStore {
         user_id: Uuid,
         updated_at: OffsetDateTime,
     ) -> Result<UserStatus, StoreError> {
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1294,11 +1285,7 @@ impl LibsqlStore {
         role: MembershipRole,
         updated_at: OffsetDateTime,
     ) -> Result<MembershipRole, StoreError> {
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1553,8 +1540,7 @@ impl LibsqlStore {
         redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         // Dropping the transaction without committing rolls every write back.
-        let connection = self.transaction_connection().await?;
-        let tx = connection.transaction().await.map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let claimed = tx
             .execute(
                 r#"

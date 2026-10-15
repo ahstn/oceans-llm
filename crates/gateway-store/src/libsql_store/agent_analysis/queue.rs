@@ -19,11 +19,7 @@ impl AgentAnalysisQueueRepository for LibsqlStore {
         now: OffsetDateTime,
         lease_expires_at: OffsetDateTime,
     ) -> Result<Option<AgentAnalysisQueueRecord>, StoreError> {
-        let transaction = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let transaction = self.begin_transaction().await?;
         transaction
             .execute(
                 "UPDATE agent_analysis_recompute_queue SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL, last_error = 'lease attempts exhausted', completed_at = ?1, updated_at = ?1 WHERE status = 'leased' AND lease_expires_at <= ?1 AND attempts >= max_attempts",

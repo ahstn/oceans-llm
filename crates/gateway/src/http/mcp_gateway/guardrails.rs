@@ -1,22 +1,32 @@
 use std::{borrow::Cow, time::Duration};
 
 use axum::{
-    body::{Body, Bytes, to_bytes},
+    body::{Body, Bytes},
     http::{Response, StatusCode},
 };
+use futures_util::{
+    StreamExt,
+    stream::{self, BoxStream},
+};
+use gateway_core::{GatewayError, ProviderError};
 use gateway_guardrails::{
-    DecisionAction, EvaluationInput, EvaluationPayload, GuardrailEvaluation, McpCall,
-    PolicyResolver, PolicyTarget,
+    DecisionAction, EffectivePolicy, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, McpCall, PolicyMode, PolicyResolver, PolicyTarget,
 };
 use serde_json::{Map, Value, json};
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout_at};
 use uuid::Uuid;
 
 use super::{
     GUARDRAIL_POLICY_DENIED_CODE,
     json_rpc::{mcp_jsonrpc_error_response, mcp_request_id},
 };
-use crate::http::{guardrail_events::record_guardrail_evaluation, state::AppState};
+use crate::http::{
+    guardrail_events::{
+        record_guardrail_decisions, record_guardrail_evaluation, uninspected_content_decision,
+    },
+    state::AppState,
+};
 
 pub(super) async fn evaluate_mcp_call(
     state: &AppState,
@@ -34,7 +44,7 @@ pub(super) async fn evaluate_mcp_call(
             &policy,
             &state.guardrail_config,
             EvaluationInput::new(
-                gateway_guardrails::GuardPhase::McpCall,
+                GuardPhase::McpCall,
                 EvaluationPayload::McpCall {
                     call: McpCall {
                         server: server.to_string(),
@@ -65,7 +75,7 @@ pub(super) async fn evaluate_mcp_result(
             &policy,
             &state.guardrail_config,
             EvaluationInput::new(
-                gateway_guardrails::GuardPhase::McpResult,
+                GuardPhase::McpResult,
                 EvaluationPayload::McpResult {
                     server: server.to_string(),
                     tool: tool.to_string(),
@@ -132,49 +142,49 @@ pub(super) async fn enforce_direct_mcp_result(
     id: Option<&Value>,
     mcp_tool_invocation_id: Uuid,
     response: Response<Body>,
-) -> (Response<Body>, Option<GuardrailEvaluation>, bool) {
+) -> Result<GuardedMcpResult, GatewayError> {
     let policy =
         PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
     if !policy.enabled {
-        return (response, None, false);
+        return Ok((response, None, false));
     }
     let (mut parts, body) = response.into_parts();
-    let buffer_timeout = Duration::from_millis(policy.stream_buffer_timeout_ms);
-    let bytes = match timeout(buffer_timeout, to_bytes(body, policy.stream_buffer_bytes)).await {
-        Ok(Ok(bytes)) => bytes,
-        Ok(Err(_)) => {
-            return (
-                mcp_jsonrpc_error_response(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    id,
-                    GUARDRAIL_POLICY_DENIED_CODE,
-                    "MCP result exceeded the configured guardrail buffer",
-                ),
-                None,
-                true,
+    let request_id = mcp_request_id(&id.cloned());
+    let bytes = match buffer_mcp_result(body, &policy).await? {
+        BufferedMcpResult::Complete(bytes) => bytes,
+        BufferedMcpResult::Partial {
+            failure,
+            prefix,
+            rest,
+        } => {
+            let released = release_uninspected_result(
+                state,
+                &policy,
+                &request_id,
+                mcp_tool_invocation_id,
+                failure.reason_code(),
+                &prefix,
             );
-        }
-        Err(_) => {
-            return (
-                mcp_jsonrpc_error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    id,
-                    GUARDRAIL_POLICY_DENIED_CODE,
-                    "MCP result did not complete within the guardrail buffer timeout",
-                ),
-                None,
-                true,
-            );
+            let Some(evaluation) = released else {
+                return Ok((failure.response(id), None, true));
+            };
+            // The consumed prefix is replayed ahead of the unread remainder, so the caller
+            // receives the upstream result unchanged.
+            let body = stream::iter([Ok(Bytes::from(prefix))]).chain(rest);
+            return Ok((
+                Response::from_parts(parts, Body::from_stream(body)),
+                Some(evaluation),
+                false,
+            ));
         }
     };
-    let request_id = mcp_request_id(&id.cloned());
-    let output = if parts
+    let event_stream = parts
         .headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("text/event-stream"))
-    {
-        match guard_mcp_sse_result(
+        .is_some_and(|value| value.starts_with("text/event-stream"));
+    let guarded = if event_stream {
+        guard_mcp_sse_result(
             state,
             &request_id,
             mcp_tool_invocation_id,
@@ -183,85 +193,234 @@ pub(super) async fn enforce_direct_mcp_result(
             &bytes,
         )
         .await
-        {
-            Ok((output, evaluation)) => (output, evaluation),
-            Err(evaluation) => {
-                let response = evaluation.as_ref().map_or_else(
-                    || {
-                        mcp_jsonrpc_error_response(
-                            StatusCode::FORBIDDEN,
-                            id,
-                            GUARDRAIL_POLICY_DENIED_CODE,
-                            "MCP result was not valid guarded SSE",
-                        )
-                    },
-                    |evaluation| guardrail_denied_response(id, evaluation),
-                );
-                return (response, evaluation, true);
-            }
-        }
     } else {
-        let mut parsed = serde_json::from_slice::<Value>(&bytes)
-            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
-        let Ok((payload_field, result_payload)) = guarded_mcp_payload(&parsed) else {
-            return (
-                mcp_jsonrpc_error_response(
-                    StatusCode::FORBIDDEN,
-                    id,
-                    GUARDRAIL_POLICY_DENIED_CODE,
-                    "MCP result was not a valid guarded response",
-                ),
-                None,
-                true,
-            );
-        };
-        let evaluation = evaluate_mcp_result(
+        guard_mcp_json_result(
             state,
-            Some(&request_id),
-            Some(mcp_tool_invocation_id),
+            &request_id,
+            mcp_tool_invocation_id,
             server,
             tool,
-            result_payload,
+            &bytes,
+        )
+        .await
+    };
+    Ok(match guarded {
+        Ok((output, evaluation)) => {
+            parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+            (
+                Response::from_parts(parts, Body::from(output)),
+                evaluation,
+                false,
+            )
+        }
+        Err(Some(evaluation)) => (
+            guardrail_denied_response(id, &evaluation),
+            Some(evaluation),
+            true,
+        ),
+        Err(None) => {
+            let released = release_uninspected_result(
+                state,
+                &policy,
+                &request_id,
+                mcp_tool_invocation_id,
+                "stream.unparseable",
+                &bytes,
+            );
+            match released {
+                Some(evaluation) => (
+                    Response::from_parts(parts, Body::from(bytes)),
+                    Some(evaluation),
+                    false,
+                ),
+                None => (
+                    mcp_jsonrpc_error_response(
+                        StatusCode::FORBIDDEN,
+                        id,
+                        GUARDRAIL_POLICY_DENIED_CODE,
+                        if event_stream {
+                            "MCP result was not valid guarded SSE"
+                        } else {
+                            "MCP result was not a valid guarded response"
+                        },
+                    ),
+                    None,
+                    true,
+                ),
+            }
+        }
+    })
+}
+
+/// The guarded response, the result evaluation when one ran, and whether the result was denied.
+pub(super) type GuardedMcpResult = (Response<Body>, Option<GuardrailEvaluation>, bool);
+
+/// An upstream MCP result read into memory for inspection.
+enum BufferedMcpResult {
+    Complete(Bytes),
+    /// Reading stopped before the end. `prefix` holds every byte consumed so far and `rest`
+    /// the remainder, starting with any chunk that was read but not buffered.
+    Partial {
+        failure: BufferFailure,
+        prefix: Vec<u8>,
+        rest: BoxStream<'static, Result<Bytes, axum::Error>>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BufferFailure {
+    Exceeded,
+    TimedOut,
+}
+
+impl BufferFailure {
+    fn reason_code(self) -> &'static str {
+        match self {
+            Self::Exceeded => "stream.buffer_exceeded",
+            Self::TimedOut => "stream.buffer_timeout",
+        }
+    }
+
+    fn response(self, id: Option<&Value>) -> Response<Body> {
+        let (status, message) = match self {
+            Self::Exceeded => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "MCP result exceeded the configured guardrail buffer",
+            ),
+            Self::TimedOut => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "MCP result did not complete within the guardrail buffer timeout",
+            ),
+        };
+        mcp_jsonrpc_error_response(status, id, GUARDRAIL_POLICY_DENIED_CODE, message)
+    }
+}
+
+/// Reads the result within the policy's buffer size and timeout. Unlike `to_bytes`, a result
+/// that stops short keeps what was consumed, so audit mode can still release all of it. A body
+/// that fails mid-read is an upstream failure, not an uninspectable result, so it is an error.
+async fn buffer_mcp_result(
+    body: Body,
+    policy: &EffectivePolicy,
+) -> Result<BufferedMcpResult, GatewayError> {
+    let deadline = Instant::now() + Duration::from_millis(policy.stream_buffer_timeout_ms);
+    let mut upstream = body.into_data_stream();
+    let mut buffered = Vec::new();
+    let (failure, unbuffered) = loop {
+        match timeout_at(deadline, upstream.next()).await {
+            Ok(None) => return Ok(BufferedMcpResult::Complete(Bytes::from(buffered))),
+            Ok(Some(Ok(chunk)))
+                if buffered.len().saturating_add(chunk.len()) <= policy.stream_buffer_bytes =>
+            {
+                buffered.extend_from_slice(&chunk);
+            }
+            Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(Ok(chunk))),
+            // The upstream error can carry its URL, so it is not passed through.
+            Ok(Some(Err(_))) => {
+                return Err(ProviderError::Transport(
+                    "MCP upstream response body failed".to_string(),
+                )
+                .into());
+            }
+            Err(_) => break (BufferFailure::TimedOut, None),
+        }
+    };
+    Ok(BufferedMcpResult::Partial {
+        failure,
+        prefix: buffered,
+        rest: stream::iter(unbuffered).chain(upstream).boxed(),
+    })
+}
+
+/// Records an audit decision for an MCP result the guard cannot inspect. Returns the
+/// evaluation when the policy is in audit mode, which releases the result unchanged instead
+/// of failing the call; deny mode returns `None` and the caller rejects the result.
+fn release_uninspected_result(
+    state: &AppState,
+    policy: &EffectivePolicy,
+    request_id: &str,
+    mcp_tool_invocation_id: Uuid,
+    reason_code: &'static str,
+    content: &[u8],
+) -> Option<GuardrailEvaluation> {
+    if policy.mode != PolicyMode::Audit {
+        return None;
+    }
+    let evaluation = GuardrailEvaluation {
+        action: DecisionAction::Audit,
+        decisions: vec![uninspected_content_decision(
+            GuardPhase::McpResult,
+            policy.scope.clone(),
+            reason_code,
+            content,
+        )],
+        output: EvaluationPayload::McpResult {
+            server: String::new(),
+            tool: String::new(),
+            result: Value::Null,
+        },
+    };
+    // Persisting on a background task keeps the released result from waiting on the store.
+    let (state, request_id, decisions) = (
+        state.clone(),
+        request_id.to_string(),
+        evaluation.decisions.clone(),
+    );
+    tokio::spawn(async move {
+        record_guardrail_decisions(
+            &state,
+            Some(&request_id),
+            Some(mcp_tool_invocation_id),
+            &decisions,
         )
         .await;
-        if evaluation.denied() {
-            return (
-                guardrail_denied_response(id, &evaluation),
-                Some(evaluation),
-                true,
-            );
-        }
-        let output = if evaluation
-            .decisions
-            .iter()
-            .any(|decision| decision.transformed)
-        {
-            match &evaluation.output {
-                EvaluationPayload::McpResult { result, .. } => {
-                    if let Some(payload_field) = payload_field
-                        && let Some(slot) = parsed.get_mut(payload_field)
-                    {
-                        *slot = result.clone();
-                        serde_json::to_vec(&parsed)
-                            .map(Bytes::from)
-                            .unwrap_or(bytes)
-                    } else {
-                        serde_json::to_vec(result).map(Bytes::from).unwrap_or(bytes)
-                    }
-                }
-                _ => bytes,
-            }
-        } else {
-            bytes
-        };
-        (output, Some(evaluation))
-    };
-    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
-    (
-        Response::from_parts(parts, Body::from(output.0)),
-        output.1,
-        false,
+    });
+    Some(evaluation)
+}
+
+async fn guard_mcp_json_result(
+    state: &AppState,
+    request_id: &str,
+    mcp_tool_invocation_id: Uuid,
+    server: &str,
+    tool: &str,
+    bytes: &Bytes,
+) -> Result<(Bytes, Option<GuardrailEvaluation>), Option<GuardrailEvaluation>> {
+    let mut parsed = serde_json::from_slice::<Value>(bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(bytes).into_owned()));
+    let (payload_field, result_payload) = guarded_mcp_payload(&parsed).map_err(|()| None)?;
+    let evaluation = evaluate_mcp_result(
+        state,
+        Some(request_id),
+        Some(mcp_tool_invocation_id),
+        server,
+        tool,
+        result_payload,
     )
+    .await;
+    if evaluation.denied() {
+        return Err(Some(evaluation));
+    }
+    if !evaluation
+        .decisions
+        .iter()
+        .any(|decision| decision.transformed)
+    {
+        return Ok((bytes.clone(), Some(evaluation)));
+    }
+    let output = match &evaluation.output {
+        EvaluationPayload::McpResult { result, .. } => if let Some(payload_field) = payload_field
+            && let Some(slot) = parsed.get_mut(payload_field)
+        {
+            *slot = result.clone();
+            serde_json::to_vec(&parsed).map(Bytes::from)
+        } else {
+            serde_json::to_vec(result).map(Bytes::from)
+        }
+        .unwrap_or_else(|_| bytes.clone()),
+        _ => bytes.clone(),
+    };
+    Ok((output, Some(evaluation)))
 }
 
 async fn guard_mcp_sse_result(

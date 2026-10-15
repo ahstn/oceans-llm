@@ -51,7 +51,7 @@ impl AuditLogRepository for LibsqlStore {
         let row = AuditLogRow::from_record(record)?;
         // A connection of its own: on the shared one this insert could join, and be
         // rolled back with, another request's open transaction.
-        let connection = self.transaction_connection().await?;
+        let connection = self.own_connection().await?;
         let mut rows = connection
             .query(
                 r#"

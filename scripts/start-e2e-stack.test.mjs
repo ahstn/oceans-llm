@@ -16,7 +16,7 @@ async function fixture(t, stackStatus, awsStatus) {
   const bin = path.join(directory, 'bin')
   await mkdir(bin)
   for (const [name, body] of Object.entries({
-    mise: 'case "$*" in *"bun run build"*) exit 0;; *) exec sleep 30;; esac',
+    mise: 'case "$*" in *"bun run build"*|*register-e2e-mcp-server*) exit 0;; *) exec sleep 30;; esac',
     curl: 'exit 0',
     aws: 'printf "%s\\n" "$*" >"$CLEANUP_TEST_DIRECTORY/aws-arguments"; echo "fixture object cleanup started" >&2; sleep 0.1; exit "$CLEANUP_TEST_AWS_STATUS"',
     gateway: stackStatus === 'signal' ? 'exec sleep 30' : `exit ${stackStatus}`,

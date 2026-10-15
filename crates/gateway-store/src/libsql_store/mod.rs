@@ -27,8 +27,10 @@ mod skills;
 #[cfg(test)]
 mod skills_tests;
 mod support;
+#[cfg(test)]
+mod transaction_tests;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -95,17 +97,22 @@ use crate::{
 
 use support::*;
 
+/// How long a libSQL connection waits for a lock another connection holds.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct LibsqlStore {
     database: Arc<libsql::Database>,
     connection: Arc<libsql::Connection>,
     routing_workers: Arc<tokio::sync::Semaphore>,
+    shared_cache: bool,
 }
 
 impl LibsqlStore {
     pub async fn new_local(path: &str) -> anyhow::Result<Self> {
         // Named memory databases share their schema across this store's connections.
-        let database_path = if path == ":memory:" {
+        let shared_cache = path == ":memory:";
+        let database_path = if shared_cache {
             format!("file:oceans-{}?mode=memory&cache=shared", Uuid::new_v4())
         } else {
             path.to_string()
@@ -115,30 +122,85 @@ impl LibsqlStore {
             .await
             .with_context(|| format!("failed building local libsql database at `{path}`"))?;
         let connection = db.connect().context("failed opening libsql connection")?;
-        Self::configure_connection(&connection)
+        Self::configure_connection(&connection, shared_cache)
             .await
             .context("failed configuring LibSQL connection")?;
         Ok(Self {
             database: Arc::new(db),
             connection: Arc::new(connection),
             routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            shared_cache,
         })
     }
 
-    /// A connection of its own for a transaction. On the shared connection, an
-    /// unrelated request's statements would join the transaction, or its `BEGIN`
-    /// would fail while another request's transaction is open.
-    pub(super) async fn transaction_connection(&self) -> Result<libsql::Connection, StoreError> {
+    /// Begins a write transaction on a connection of its own. Most store calls share
+    /// `self.connection` (skills, routing, and rate limits open their own), so a transaction
+    /// there would fail with "cannot start a transaction within a transaction" whenever another
+    /// request already holds one, and would pull that request's statements into this
+    /// transaction's commit or rollback. `IMMEDIATE` takes the
+    /// write lock at `BEGIN` instead of failing on a later read-to-write upgrade.
+    pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
+        let connection = self.own_connection().await?;
+        // Local libSQL calls are synchronous, so SQLite's busy handler would park a Tokio
+        // worker for up to the busy timeout while another writer holds the lock. Wait for the
+        // write lock asynchronously instead, then restore the handler: once this transaction
+        // holds the lock, only its commit waits, and only for readers to finish.
+        connection
+            .busy_timeout(Duration::ZERO)
+            .map_err(to_query_error)?;
+        let deadline = tokio::time::Instant::now() + BUSY_TIMEOUT;
+        let mut retry_delay = Duration::from_millis(1);
+        // The transaction holds its own handle to the connection and closes it when dropped.
+        let transaction = loop {
+            match connection
+                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .await
+            {
+                Ok(transaction) => break transaction,
+                // A shared-cache (`:memory:`) store reports a competing writer as
+                // `SQLITE_LOCKED` instead of `SQLITE_BUSY`.
+                Err(libsql::Error::SqliteFailure(code, _))
+                    if matches!(
+                        code & 0xff,
+                        libsql::ffi::SQLITE_BUSY | libsql::ffi::SQLITE_LOCKED
+                    ) && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(Duration::from_millis(50));
+                }
+                Err(error) => return Err(to_query_error(error)),
+            }
+        };
+        connection
+            .busy_timeout(BUSY_TIMEOUT)
+            .map_err(to_query_error)?;
+        Ok(transaction)
+    }
+
+    /// Opens a connection separate from the shared one, configured the same way.
+    pub(super) async fn own_connection(&self) -> Result<libsql::Connection, StoreError> {
         let connection = self.database.connect().map_err(to_query_error)?;
-        Self::configure_connection(&connection)
+        Self::configure_connection(&connection, self.shared_cache)
             .await
             .map_err(to_query_error)?;
         Ok(connection)
     }
 
-    async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    async fn configure_connection(
+        connection: &libsql::Connection,
+        shared_cache: bool,
+    ) -> libsql::Result<()> {
+        connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.execute("PRAGMA foreign_keys = ON", ()).await?;
+        if shared_cache {
+            // Shared-cache connections lock tables, and the busy timeout does not cover those
+            // locks: a cursor still open on one connection would make another connection's
+            // transaction fail at its first write with `SQLITE_LOCKED`. Uncommitted reads take
+            // no table read locks, at the cost of dirty reads in the in-memory mode only.
+            connection
+                .execute("PRAGMA read_uncommitted = 1", ())
+                .await?;
+        }
         Ok(())
     }
 

@@ -265,11 +265,7 @@ impl McpRegistryRepository for LibsqlStore {
         let auth_config_json = serialize_json(&input.auth_config)?;
         // An immediate transaction holds the write lock, so the server read here is
         // exactly the one this update replaces.
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let existing = load_server(&tx, input.mcp_server_id).await?;
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
@@ -394,11 +390,7 @@ impl McpRegistryRepository for LibsqlStore {
         tools: &[UpsertExternalMcpToolRecord],
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -520,11 +512,7 @@ impl McpRegistryRepository for LibsqlStore {
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

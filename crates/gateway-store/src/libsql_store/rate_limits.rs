@@ -170,11 +170,7 @@ impl RateLimitRepository for LibsqlStore {
     ) -> Result<Option<Updated<RateLimitPolicyRecord>>, StoreError> {
         // An immediate transaction holds the write lock, so the policy read here is
         // exactly the one this update replaces.
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 &format!(

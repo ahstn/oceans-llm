@@ -15,6 +15,22 @@ function chatRequest(user?: string, stream = false) {
   }
 }
 
+const mcpHeaders = {
+  authorization: `Bearer ${gatewayApiKey}`,
+  'content-type': 'application/json',
+  accept: 'application/json, text/event-stream',
+  'mcp-protocol-version': '2025-11-25',
+}
+
+function call(name: string, arguments_: Record<string, unknown>, id: number | string) {
+  return {
+    jsonrpc: '2.0',
+    id,
+    method: 'tools/call',
+    params: { name, arguments: arguments_ },
+  }
+}
+
 async function upstreamRequestCount(request: APIRequestContext) {
   const response = await request.get(`${upstreamRoot}/__admin/requests`)
   expect(response.status()).toBe(200)
@@ -35,6 +51,54 @@ async function requestLogCount(
   expect(response.status()).toBe(200)
   const payload = (await response.json()) as { data: { total: number } }
   return payload.data.total
+}
+
+/** Discovers the mock Notion MCP server's tools and grants each one to the E2E key. */
+async function grantMcpServerTools(
+  request: APIRequestContext,
+  root: string,
+  cookie: string,
+  serverId: string,
+) {
+  const adminHeaders = { cookie, 'content-type': 'application/json' }
+  const keysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
+    headers: { cookie },
+  })
+  expect(keysResponse.status()).toBe(200)
+  const keys = (await keysResponse.json()) as {
+    data: {
+      items: Array<{ name: string; owner_id: string; owner_kind: string }>
+    }
+  }
+  const key = keys.data.items.find((item) => item.name === 'E2E Contract Key')
+  expect(key).toBeDefined()
+  const refreshResponse = await request.post(
+    `${root}/api/v1/admin/mcp/servers/${serverId}/discovery-refresh`,
+    { headers: adminHeaders },
+  )
+  expect(refreshResponse.status(), await refreshResponse.text()).toBe(200)
+  const refresh = await refreshResponse.json()
+  expect(refresh.data.status, JSON.stringify(refresh)).toBe('success')
+  const catalogResponse = await request.get(`${root}/api/v1/admin/mcp/servers/${serverId}/tools`, {
+    headers: { cookie },
+  })
+  expect(catalogResponse.status()).toBe(200)
+  const catalog = (await catalogResponse.json()) as {
+    data: { items: Array<{ id: string }> }
+  }
+  expect(catalog.data.items).toHaveLength(2)
+  for (const tool of catalog.data.items) {
+    const grantResponse = await request.put(`${root}/api/v1/admin/mcp/grants`, {
+      headers: adminHeaders,
+      data: {
+        subject_kind: key!.owner_kind,
+        subject_id: key!.owner_id,
+        target_kind: 'tool',
+        target_id: tool.id,
+      },
+    })
+    expect(grantResponse.status(), await grantResponse.text()).toBe(200)
+  }
 }
 
 test('guards prompt, non-stream response, and buffered stream boundaries', async ({
@@ -185,6 +249,22 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
     expect(body).not.toContain('rm -rf')
     expect(body).not.toContain('{not-json')
   }
+
+  const auditOversizedStream = await request.post(`${root}/v1/chat/completions`, {
+    headers,
+    data: { ...chatRequest('guardrail-e2e-oversize-stream', true), model: 'audit-fast' },
+  })
+  expect(auditOversizedStream.status()).toBe(200)
+  const auditOversizedBody = await auditOversizedStream.text()
+  expect(auditOversizedBody.length).toBeGreaterThan(4 * 1024 * 1024)
+  expect(auditOversizedBody).toContain('data: [DONE]')
+
+  const auditMalformedStream = await request.post(`${root}/v1/chat/completions`, {
+    headers,
+    data: { ...chatRequest('guardrail-e2e-malformed-tool-call', true), model: 'audit-fast' },
+  })
+  expect(auditMalformedStream.status()).toBe(200)
+  expect(await auditMalformedStream.text()).toContain('{not-json')
 })
 
 test('keeps decision filters synchronized with browser navigation', async ({
@@ -217,10 +297,9 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
 }) => {
   const root = baseURL ?? 'http://127.0.0.1:38080'
   const cookie = await ensureAdminSession(page, request, root)
-  const adminHeaders = { cookie, 'content-type': 'application/json' }
   const serverKey = `notion-e2e-${Date.now()}`
   const createResponse = await request.post(`${root}/api/v1/admin/mcp/servers`, {
-    headers: adminHeaders,
+    headers: { cookie, 'content-type': 'application/json' },
     data: {
       server_key: serverKey,
       display_name: 'Notion E2E',
@@ -233,59 +312,7 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
   const created = (await createResponse.json()) as {
     data: { server: { id: string } }
   }
-  const serverId = created.data.server.id
-
-  const keysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
-    headers: { cookie },
-  })
-  expect(keysResponse.status()).toBe(200)
-  const keys = (await keysResponse.json()) as {
-    data: {
-      items: Array<{ name: string; owner_id: string; owner_kind: string }>
-    }
-  }
-  const key = keys.data.items.find((item) => item.name === 'E2E Contract Key')
-  expect(key).toBeDefined()
-  const refreshResponse = await request.post(
-    `${root}/api/v1/admin/mcp/servers/${serverId}/discovery-refresh`,
-    { headers: adminHeaders },
-  )
-  expect(refreshResponse.status(), await refreshResponse.text()).toBe(200)
-  const refresh = await refreshResponse.json()
-  expect(refresh.data.status, JSON.stringify(refresh)).toBe('success')
-  const catalogResponse = await request.get(`${root}/api/v1/admin/mcp/servers/${serverId}/tools`, {
-    headers: { cookie },
-  })
-  expect(catalogResponse.status()).toBe(200)
-  const catalog = (await catalogResponse.json()) as {
-    data: { items: Array<{ id: string }> }
-  }
-  expect(catalog.data.items).toHaveLength(2)
-  for (const tool of catalog.data.items) {
-    const grantResponse = await request.put(`${root}/api/v1/admin/mcp/grants`, {
-      headers: adminHeaders,
-      data: {
-        subject_kind: key!.owner_kind,
-        subject_id: key!.owner_id,
-        target_kind: 'tool',
-        target_id: tool.id,
-      },
-    })
-    expect(grantResponse.status(), await grantResponse.text()).toBe(200)
-  }
-
-  const mcpHeaders = {
-    authorization: `Bearer ${gatewayApiKey}`,
-    'content-type': 'application/json',
-    accept: 'application/json, text/event-stream',
-    'mcp-protocol-version': '2025-11-25',
-  }
-  const call = (name: string, arguments_: Record<string, unknown>, id: number | string) => ({
-    jsonrpc: '2.0',
-    id,
-    method: 'tools/call',
-    params: { name, arguments: arguments_ },
-  })
+  await grantMcpServerTools(request, root, cookie, created.data.server.id)
 
   await request.delete(`${upstreamRoot}/__admin/mcp-executions`)
   const safeDirect = await request.post(`${root}/mcp/${serverKey}`, {
@@ -423,6 +450,90 @@ test('uses one deny path for direct and aggregate MCP calls before execution', a
     executions: unknown[]
   }
   expect(executions.executions).toHaveLength(0)
+})
+
+test('releases uninspectable MCP results unchanged in audit mode', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const root = baseURL ?? 'http://127.0.0.1:38080'
+  const cookie = await ensureAdminSession(page, request, root)
+  // The E2E stack registers this server before startup and configures it in audit mode with
+  // a 64 KiB, 1 s result buffer.
+  const serverKey = 'notion-e2e-audit'
+  const serversResponse = await request.get(`${root}/api/v1/admin/mcp/servers`, {
+    headers: { cookie },
+  })
+  expect(serversResponse.status()).toBe(200)
+  const servers = (await serversResponse.json()) as {
+    data: { items: Array<{ id: string; server_key: string }> }
+  }
+  const server = servers.data.items.find((item) => item.server_key === serverKey)
+  expect(server, JSON.stringify(servers)).toBeDefined()
+  await grantMcpServerTools(request, root, cookie, server!.id)
+  const runId = Date.now()
+  const fixtures = [
+    {
+      query: 'guardrail-e2e-result-oversize',
+      marker: 'guardrail-e2e-oversize:',
+      reason: 'stream.buffer_exceeded',
+      contentType: 'application/json',
+    },
+    {
+      query: 'guardrail-e2e-result-slow',
+      marker: ': guardrail-e2e-slow',
+      reason: 'stream.buffer_timeout',
+      contentType: 'text/event-stream',
+    },
+    {
+      query: 'guardrail-e2e-result-invalid-sse',
+      marker: 'data: guardrail-e2e-invalid-sse',
+      reason: 'stream.unparseable',
+      contentType: 'text/event-stream',
+    },
+    {
+      query: 'guardrail-e2e-result-invalid-json-rpc',
+      marker: 'both result and error',
+      reason: 'stream.unparseable',
+      contentType: 'application/json',
+    },
+  ]
+
+  for (const fixture of fixtures) {
+    const requestId = `${fixture.query}-${runId}`
+    const response = await request.post(`${root}/mcp/${serverKey}`, {
+      headers: mcpHeaders,
+      data: call('search', { query: fixture.query }, requestId),
+    })
+    const body = await response.text()
+    expect(response.status(), body.slice(0, 200)).toBe(200)
+    expect(response.headers()['content-type']).toContain(fixture.contentType)
+    expect(body).toContain(fixture.marker)
+    expect(body).not.toContain('guardrail_policy_denied')
+
+    // The audit decision is persisted in the background after the result is released.
+    await expect
+      .poll(async () => {
+        const decisionsResponse = await request.get(
+          `${root}/api/v1/admin/guardrails/decisions?request_id=${requestId}&evaluator=stream_buffer`,
+          { headers: { cookie } },
+        )
+        expect(decisionsResponse.status()).toBe(200)
+        const decisions = (await decisionsResponse.json()) as {
+          data: { items: Array<Record<string, unknown>> }
+        }
+        return decisions.data.items
+      })
+      .toEqual([
+        expect.objectContaining({
+          phase: 'mcp_result',
+          action: 'audit',
+          reason_code: fixture.reason,
+          failure_disposition: 'fail_open',
+        }),
+      ])
+  }
 })
 
 test('denies destructive shell execution and exposes only privacy-safe decision data', async ({

@@ -275,11 +275,7 @@ impl McpAccessRepository for LibsqlStore {
         &self,
         input: &UpdateMcpToolsetRecord,
     ) -> Result<Updated<McpToolsetRecord>, StoreError> {
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let existing = find_toolset(&tx, input.toolset_id)
             .await?
             .filter(|toolset| toolset.status != McpToolsetStatus::Disabled)
@@ -345,11 +341,7 @@ impl McpAccessRepository for LibsqlStore {
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
     ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let existing = toolset_tools_on(&tx, toolset_id).await?;
         if same_tool_ids(&existing, tool_ids) {
             tx.commit().await.map_err(to_write_error)?;

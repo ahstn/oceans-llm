@@ -86,6 +86,7 @@
         "scripts/*sync-model-metadata.py",
         "scripts/copilot-*",
         "scripts/mock-openai-upstream.mjs",
+        "scripts/register-e2e-mcp-server.mjs",
         "scripts/start-e2e-stack.sh"
       ]
     }

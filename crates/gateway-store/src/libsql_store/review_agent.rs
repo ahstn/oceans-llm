@@ -348,11 +348,7 @@ impl ReviewAgentRepository for LibsqlStore {
         input: &UpdateReviewAgentRepositoryRecord,
     ) -> Result<Updated<ReviewAgentRepositoryRecord>, StoreError> {
         let settings_json = serialize_json(&input.settings_json)?;
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let existing = load_repository(&tx, input.repository_id).await?;
         if crate::shared::review_agent_repository_matches(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
@@ -415,11 +411,7 @@ impl ReviewAgentRepository for LibsqlStore {
     > {
         // An immediate transaction holds the write lock, so the status read here is
         // the one this call replaces. Only a different status is written.
-        let connection = self.transaction_connection().await?;
-        let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         let existing = load_repository(&tx, repository_id).await?;
         if existing.status == status {
             tx.commit().await.map_err(to_write_error)?;

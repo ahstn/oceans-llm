@@ -147,15 +147,17 @@ pub(super) async fn handle_governed_request(
     )
     .await
     {
-        Ok(response) if request.method.guards_result() => Ok(enforce_direct_mcp_result(
-            state,
-            &upstream.server.server_key,
-            mcp_method,
-            request.id.as_ref(),
-            mcp_tool_invocation_id,
-            response,
-        )
-        .await),
+        Ok(response) if request.method.guards_result() => {
+            enforce_direct_mcp_result(
+                state,
+                &upstream.server.server_key,
+                mcp_method,
+                request.id.as_ref(),
+                mcp_tool_invocation_id,
+                response,
+            )
+            .await
+        }
         Ok(response) => Ok((response, None, false)),
         Err(error) => Err(error),
     };
