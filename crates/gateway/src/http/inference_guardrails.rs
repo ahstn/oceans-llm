@@ -357,14 +357,16 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
-    merge_call_id_aliases(&mut tool_fragments);
-    for fragments in tool_fragments.values() {
-        let mut evaluated = EvaluatedToolArguments::new();
+    let owners = call_id_owners(&tool_fragments);
+    let mut evaluated_by_call = BTreeMap::<&str, EvaluatedToolArguments>::new();
+    for (key, fragments) in &tool_fragments {
+        let call = owners.get(key.as_str()).copied().unwrap_or(key);
+        let evaluated = evaluated_by_call.entry(call).or_default();
         if !fragments.name.is_empty() && !fragments.arguments.is_empty() {
             let replacement = guard_stream_tool_arguments(
                 state,
                 context,
-                &mut evaluated,
+                evaluated,
                 &fragments.name,
                 fragments.shell_command_locations,
                 &fragments.arguments,
@@ -388,7 +390,7 @@ async fn guard_sse_payload(
             let replacement = guard_stream_tool_arguments(
                 state,
                 context,
-                &mut evaluated,
+                evaluated,
                 name,
                 terminal.shell_command,
                 &terminal.arguments,
@@ -703,33 +705,20 @@ struct ToolCallFragments {
     call_id: Option<String>,
 }
 
-/// Responses providers can key a call's terminal snapshots by `call_id` alone while its
-/// deltas use the item `id`. Folds those snapshots into the call they belong to, so they
-/// are evaluated with it.
-fn merge_call_id_aliases(calls: &mut BTreeMap<String, ToolCallFragments>) {
-    let aliases = calls
-        .iter()
-        .filter_map(|(key, call)| {
-            let call_id = call.call_id.as_ref()?;
-            (call_id != key).then(|| (call_id.clone(), key.clone()))
-        })
-        .collect::<Vec<_>>();
-    for (alias, key) in aliases {
-        let Some(snapshots) = calls.get(&alias) else {
-            continue;
-        };
-        if !snapshots.arguments.is_empty() || !snapshots.argument_locations.is_empty() {
-            continue;
+/// Responses providers can key some of a call's events by `call_id` alone while others
+/// use the item `id`. Maps each such `call_id` key to the `id` key of the call it belongs
+/// to, so both share one evaluation cache. Each keeps its own locations and encoding.
+fn call_id_owners(calls: &BTreeMap<String, ToolCallFragments>) -> BTreeMap<&str, &str> {
+    let mut owners = BTreeMap::new();
+    for (key, call) in calls {
+        if let Some(call_id) = call.call_id.as_deref()
+            && call_id != key
+            && calls.contains_key(call_id)
+        {
+            owners.entry(call_id).or_insert(key.as_str());
         }
-        let snapshots = calls.remove(&alias).expect("alias was just found");
-        let call = calls
-            .get_mut(&key)
-            .expect("alias target is a collected call");
-        if call.name.is_empty() {
-            call.name = snapshots.name;
-        }
-        call.terminal_arguments.extend(snapshots.terminal_arguments);
     }
+    owners
 }
 
 struct TerminalArguments {
@@ -2157,6 +2146,41 @@ mod tests {
             tool_call_evaluation_count(&stream).await,
             1,
             "snapshots keyed by call_id belong to the call streamed under its item id"
+        );
+    }
+
+    fn shell_call_added(id: Option<&str>, command: &str) -> Value {
+        let mut item = json!({
+            "type": "shell_call",
+            "call_id": "call_1",
+            "action": {"command": [command]},
+        });
+        if let Some(id) = id {
+            item["id"] = json!(id);
+        }
+        json!({"type": "response.output_item.added", "item": item})
+    }
+
+    #[tokio::test]
+    async fn shares_evaluations_between_complete_call_id_aliases() {
+        let same = sse_events(&[
+            shell_call_added(Some("sc_1"), "ls"),
+            shell_call_added(None, "ls"),
+        ]);
+        let different = sse_events(&[
+            shell_call_added(Some("sc_1"), "ls"),
+            shell_call_added(None, "pwd"),
+        ]);
+
+        assert_eq!(
+            tool_call_evaluation_count(&same).await,
+            1,
+            "one call carried under its id and its call_id"
+        );
+        assert_eq!(
+            tool_call_evaluation_count(&different).await,
+            2,
+            "distinct arguments of one call are each evaluated"
         );
     }
 
