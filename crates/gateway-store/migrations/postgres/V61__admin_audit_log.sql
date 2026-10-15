@@ -12,6 +12,9 @@ ALTER TABLE audit_logs ADD COLUMN after_json TEXT;
 ALTER TABLE audit_logs ADD COLUMN request_ip TEXT;
 ALTER TABLE audit_logs ADD COLUMN user_agent TEXT;
 
+-- Rows written before this migration name only an API key; keep that actor.
+UPDATE audit_logs SET actor_kind = 'api_key' WHERE actor_api_key_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS audit_logs_ts_idx
   ON audit_logs (ts DESC, id DESC);
 CREATE INDEX IF NOT EXISTS audit_logs_actor_user_idx

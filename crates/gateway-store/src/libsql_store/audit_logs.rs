@@ -127,6 +127,63 @@ mod tests {
     use crate::run_migrations;
 
     #[tokio::test]
+    async fn the_migration_keeps_legacy_api_key_actors() {
+        use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
+
+        let temporary = tempdir().expect("tempdir");
+        let database_path = temporary.path().join("gateway.db");
+        let database = libsql::Builder::new_local(database_path.to_str().expect("database path"))
+            .build()
+            .await
+            .expect("database");
+        let connection = database.connect().expect("connection");
+        let apply = |below: i64, at_least: i64| {
+            MIGRATION_REGISTRY
+                .iter()
+                .filter(move |migration| {
+                    i64::from(migration.version) >= at_least && i64::from(migration.version) < below
+                })
+                .map(|migration| migration.sql_for(MigrationBackend::Libsql))
+        };
+        for sql in apply(61, 0) {
+            connection
+                .execute_batch(sql)
+                .await
+                .expect("earlier migration");
+        }
+        // The legacy row only needs a key id, not a key.
+        connection
+            .execute("PRAGMA foreign_keys = OFF", ())
+            .await
+            .expect("pragma");
+        connection
+            .execute(
+                "INSERT INTO audit_logs (ts, actor_api_key_id, action, object_type, details_json) \
+                 VALUES (1, 'legacy-key', 'legacy.action', 'api_key', '{}'), \
+                        (2, NULL, 'legacy.system', 'api_key', '{}')",
+                (),
+            )
+            .await
+            .expect("legacy rows");
+        for sql in apply(62, 61) {
+            connection
+                .execute_batch(sql)
+                .await
+                .expect("audit migration");
+        }
+
+        let mut rows = connection
+            .query("SELECT actor_kind FROM audit_logs ORDER BY ts", ())
+            .await
+            .expect("query");
+        let mut kinds = Vec::new();
+        while let Some(row) = rows.next().await.expect("row") {
+            kinds.push(row.get::<String>(0).expect("actor kind"));
+        }
+        assert_eq!(kinds, ["api_key", "system"]);
+    }
+
+    #[tokio::test]
     async fn audit_logs_round_trip_filter_and_page() {
         let temporary = tempdir().expect("tempdir");
         let database_path = temporary.path().join("gateway.db");
