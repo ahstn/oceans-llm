@@ -368,8 +368,10 @@ impl AuditEvent {
         occurred_at: OffsetDateTime,
     ) -> NewAuditLogRecord {
         if let Some(request_id) = &context.request_id {
-            self.metadata
-                .insert("request_id".to_string(), Value::String(request_id.clone()));
+            self.metadata.insert(
+                "request_id".to_string(),
+                Value::String(capped_scalar(request_id, MAX_REQUEST_ID_CHARS)),
+            );
         }
         NewAuditLogRecord {
             occurred_at,
@@ -386,7 +388,10 @@ impl AuditEvent {
             after: self.after.map(redact_summary),
             metadata: redact_metadata(self.metadata),
             request_ip: context.request_ip.clone(),
-            user_agent: context.user_agent.clone().map(redact_scalar),
+            user_agent: context
+                .user_agent
+                .as_deref()
+                .map(|user_agent| capped_scalar(user_agent, MAX_USER_AGENT_CHARS)),
         }
     }
 }
@@ -816,6 +821,20 @@ fn is_secret_decoded_segment(segment: &str) -> bool {
         .all(|character| character.is_ascii_alphabetic());
     let unbroken_digits = segment.chars().all(|character| character.is_ascii_digit());
     token_charset && (mixed || unbroken_letters || unbroken_digits)
+}
+
+const MAX_USER_AGENT_CHARS: usize = 512;
+/// Callers can supply `x-request-id`; bound it so it cannot crowd out the rest of
+/// an entry's metadata under the summary size cap.
+const MAX_REQUEST_ID_CHARS: usize = 128;
+
+/// A caller-supplied header value, redacted and then capped. Capping first could cut
+/// a credential short enough that the detectors no longer recognise what is left.
+fn capped_scalar(text: &str, max_chars: usize) -> String {
+    redact_scalar(text.to_string())
+        .chars()
+        .take(max_chars)
+        .collect()
 }
 
 /// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
@@ -1295,6 +1314,45 @@ mod tests {
         let records = repo.records.lock().unwrap();
         assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
         assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
+    }
+
+    #[tokio::test]
+    async fn header_values_are_redacted_before_they_are_capped() {
+        let router_key = format!("sk-or-v1-{}", "0123456789abcdef".repeat(4));
+        // The key straddles each cap, so capping first would keep most of it.
+        let request_id = format!("{} {router_key}", "r".repeat(MAX_REQUEST_ID_CHARS - 20));
+        let user_agent = format!("{} {router_key}", "u".repeat(MAX_USER_AGENT_CHARS - 20));
+        let repo = Arc::new(RecordingRepo::default());
+        let context = AuditContext::new(AuditActor::user(Uuid::nil(), "a@example.com"))
+            .with_request(None, Some(user_agent), Some(request_id));
+        AdminAudit::new(repo.clone())
+            .record(&context, AuditEvent::new(actions::TEAM_CREATED))
+            .await;
+        let records = repo.records.lock().unwrap();
+        let stored_user_agent = records[0].user_agent.clone().unwrap_or_default();
+        let stored_request_id = records[0].metadata["request_id"]
+            .as_str()
+            .unwrap_or_default();
+        for stored in [stored_user_agent.as_str(), stored_request_id] {
+            assert!(!stored.contains("sk-or-v1-0123"), "{stored}");
+        }
+        assert!(stored_user_agent.chars().count() <= MAX_USER_AGENT_CHARS);
+        assert!(stored_request_id.chars().count() <= MAX_REQUEST_ID_CHARS);
+    }
+
+    #[tokio::test]
+    async fn long_request_ids_are_capped() {
+        let repo = Arc::new(RecordingRepo::default());
+        let context = AuditContext::new(AuditActor::user(Uuid::nil(), "a@example.com"))
+            .with_request(None, None, Some("r".repeat(10_000)));
+        AdminAudit::new(repo.clone())
+            .record(&context, AuditEvent::new(actions::TEAM_CREATED))
+            .await;
+        let records = repo.records.lock().unwrap();
+        assert_eq!(
+            records[0].metadata["request_id"],
+            json!("r".repeat(MAX_REQUEST_ID_CHARS))
+        );
     }
 
     #[test]

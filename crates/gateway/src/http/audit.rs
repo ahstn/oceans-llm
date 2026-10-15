@@ -36,11 +36,6 @@ use crate::http::{
     state::AppState,
 };
 
-const MAX_USER_AGENT_CHARS: usize = 512;
-/// Callers can supply `x-request-id`; bound it so it cannot crowd out the rest of
-/// an entry's metadata under the summary size cap.
-const MAX_REQUEST_ID_CHARS: usize = 128;
-
 /// Where an admin request came from. Extracting it never fails.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuditRequestMeta {
@@ -69,10 +64,9 @@ impl AuditRequestMeta {
                 now_unix_secs(),
             )
             .map(|ip| ip.to_string()),
-            user_agent: header_text(headers, "user-agent")
-                .map(|value| value.chars().take(MAX_USER_AGENT_CHARS).collect()),
-            request_id: header_text(headers, "x-request-id")
-                .map(|value| value.chars().take(MAX_REQUEST_ID_CHARS).collect()),
+            // Kept whole: the audit boundary redacts credentials, then caps the length.
+            user_agent: header_text(headers, "user-agent"),
+            request_id: header_text(headers, "x-request-id"),
         }
     }
 
@@ -432,17 +426,6 @@ mod tests {
             peer
         );
         assert_eq!(&*client_ip_signing_key_for("configured"), b"configured");
-    }
-
-    #[test]
-    fn request_ids_are_bounded() {
-        let meta = AuditRequestMeta::from_parts(
-            None,
-            &headers(&[("x-request-id", "r".repeat(10_000))]),
-            KEY,
-            &none(),
-        );
-        assert_eq!(meta.request_id.unwrap().len(), MAX_REQUEST_ID_CHARS);
     }
 
     #[test]
