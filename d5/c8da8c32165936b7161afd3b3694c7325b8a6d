@@ -1,0 +1,31 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_56409892e094a0::t_d28c677d838594 471
+crates/admin-ui/web/src/routes/rate-limits/-policy-dialog.tsx
+  s_56409892e094a0::t_b4f731291c103a 14,36,241,245,257-258,260
+crates/admin-ui/web/src/routes/rate-limits/-policy-model.ts
+  s_56409892e094a0::t_8426fed005befb 106,112-116
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  s_56409892e094a0::t_97ecc25c8f6916 235-240
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  s_56409892e094a0::t_411833c94ff2c2 174-181,183-190
+crates/gateway-store/src/rate_limit_tests.rs
+  s_56409892e094a0::t_625eeb9dd62438 109-165,360-361,366-373
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_56409892e094a0::t_b181c8d9eafd6f 60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d5c8da8c32165936b7161afd3b3694c7325b8a6d",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
