@@ -118,11 +118,30 @@ where
             decided_at: None,
             consumed_at: None,
         };
-        self.repo
+        match self
+            .repo
             .create_gateway_oauth_authorization_request(&record)
             .await
-            .map_err(|error| reject(error.into()))?;
-        Ok(request_id)
+        {
+            Ok(()) => Ok(request_id),
+            // Cleanup can delete a long-unused client between the lookup
+            // above and this insert, which then fails its foreign key. That
+            // is the outcome cleanup intended, so report an expired
+            // registration rather than a server error.
+            Err(StoreError::Conflict(_)) if self.client_was_removed(&client.client_id).await => {
+                Err(AuthorizationRejection::Display(OauthError::invalid_client(
+                    "client registration has expired; register the client again",
+                )))
+            }
+            Err(error) => Err(reject(error.into())),
+        }
+    }
+
+    async fn client_was_removed(&self, client_id: &str) -> bool {
+        matches!(
+            self.repo.get_gateway_oauth_client(client_id).await,
+            Ok(None)
+        )
     }
 
     async fn validate_authorization_params(

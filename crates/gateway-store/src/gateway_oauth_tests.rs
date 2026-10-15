@@ -661,6 +661,35 @@ where
             .unwrap()
             .is_none()
     );
+    // An authorization that loaded the client just before cleanup removed it
+    // fails its foreign key; the service maps this conflict to an expired
+    // registration.
+    let late = GatewayOauthAuthorizationRequestRecord {
+        request_id: Uuid::new_v4(),
+        client_id: "unused-old".to_string(),
+        redirect_uri: "http://127.0.0.1/callback".to_string(),
+        redirect_uri_supplied: true,
+        state: None,
+        code_challenge: "challenge".to_string(),
+        resource: "https://oceans.example.com/mcp".to_string(),
+        scope: "mcp:aggregate".to_string(),
+        status: GatewayOauthAuthorizationStatus::Pending,
+        user_id: None,
+        user_session_id: None,
+        code_hash: None,
+        code_expires_at: None,
+        grant_id: None,
+        expires_at: now + Duration::minutes(10),
+        created_at: now,
+        decided_at: None,
+        consumed_at: None,
+    };
+    assert!(matches!(
+        store
+            .create_gateway_oauth_authorization_request(&late)
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
     assert!(
         store
             .get_gateway_oauth_client("unused-active")
