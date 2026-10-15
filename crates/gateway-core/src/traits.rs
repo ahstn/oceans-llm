@@ -1421,7 +1421,11 @@ pub trait RateLimitRepository: Send + Sync {
     ) -> Result<bool, StoreError>;
 
     /// Returns `false` when the policy does not exist.
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError>;
+    /// Deletes the policy and returns it as it was, or `None` when it was missing.
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError>;
 
     /// Charges every counter if all of them admit the request, and none of
     /// them otherwise. Observations are returned in `charges` order.

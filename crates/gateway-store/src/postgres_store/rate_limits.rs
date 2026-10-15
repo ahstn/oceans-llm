@@ -146,13 +146,19 @@ impl RateLimitRepository for PostgresStore {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError> {
-        let result = sqlx::query("DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = $1")
-            .bind(policy_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(to_query_error)?;
-        Ok(result.rows_affected() > 0)
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError> {
+        // `RETURNING` gives the policy this call removed, as it was at deletion.
+        let row = sqlx::query(&format!(
+            "DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = $1 RETURNING {POLICY_COLUMNS}"
+        ))
+        .bind(policy_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        row.as_ref().map(decode).transpose()
     }
 
     async fn consume_rate_limits(

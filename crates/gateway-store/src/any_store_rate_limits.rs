@@ -55,7 +55,10 @@ impl RateLimitRepository for AnyStore {
         }
     }
 
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError> {
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError> {
         match self {
             Self::Libsql(store) => store.delete_rate_limit_policy(policy_id).await,
             Self::Postgres(store) => store.delete_rate_limit_policy(policy_id).await,

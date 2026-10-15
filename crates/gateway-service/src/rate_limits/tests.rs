@@ -88,11 +88,16 @@ impl RateLimitRepository for MemoryStore {
         Ok(true)
     }
 
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError> {
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError> {
         let mut policies = self.policies.lock().unwrap();
-        let before = policies.len();
-        policies.retain(|policy| policy.rate_limit_policy_id != policy_id);
-        Ok(policies.len() < before)
+        let removed = policies
+            .iter()
+            .position(|policy| policy.rate_limit_policy_id == policy_id)
+            .map(|index| policies.remove(index));
+        Ok(removed)
     }
 
     async fn consume_rate_limits(

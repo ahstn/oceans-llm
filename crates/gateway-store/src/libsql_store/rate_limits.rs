@@ -195,16 +195,27 @@ impl RateLimitRepository for LibsqlStore {
         Ok(changed > 0)
     }
 
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError> {
-        let changed = self
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError> {
+        // `RETURNING` gives the policy this call removed, as it was at deletion.
+        let mut rows = self
             .connection
-            .execute(
-                "DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = ?1",
+            .query(
+                &format!(
+                    "DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = ?1 RETURNING {POLICY_COLUMNS}"
+                ),
                 [policy_id.to_string()],
             )
             .await
             .map_err(to_query_error)?;
-        Ok(changed > 0)
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode)
+            .transpose()
     }
 
     async fn consume_rate_limits(

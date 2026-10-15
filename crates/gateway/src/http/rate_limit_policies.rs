@@ -267,19 +267,22 @@ pub async fn delete_rate_limit_policy(
 ) -> Result<Json<Envelope<RateLimitPolicyView>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
     let policy_id = parse_id(&policy_id, "policy_id")?;
-    let limiter = state.service.rate_limiter();
-    let before = limiter.get_admin_policy(policy_id).await?;
-    let view = admin_policy_view(&state, &before).await?;
-    limiter.delete_admin_policy(policy_id).await?;
+    // The delete returns the policy it removed, so the entry and the response
+    // show what was actually deleted, even if a save landed just before.
+    let deleted = state
+        .service
+        .rate_limiter()
+        .delete_admin_policy(policy_id)
+        .await?;
     state
         .audit()
         .record(
             &meta.user_context(&actor),
-            policy_event(actions::RATE_LIMIT_POLICY_DELETED, &before)
-                .before(policy_summary(&before)),
+            policy_event(actions::RATE_LIMIT_POLICY_DELETED, &deleted)
+                .before(policy_summary(&deleted)),
         )
         .await;
-    Ok(Json(envelope(view)))
+    Ok(Json(envelope(admin_policy_view(&state, &deleted).await?)))
 }
 
 fn policy_event(action: &str, policy: &RateLimitPolicyRecord) -> AuditEvent {

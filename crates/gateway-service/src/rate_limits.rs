@@ -1004,18 +1004,22 @@ impl RateLimiter {
         Ok(policy)
     }
 
-    pub async fn delete_admin_policy(&self, policy_id: Uuid) -> Result<(), GatewayError> {
-        if !self
+    /// Deletes the policy and returns it as it was when deleted.
+    pub async fn delete_admin_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<RateLimitPolicyRecord, GatewayError> {
+        let Some(deleted) = self
             .admin_store()?
             .delete_rate_limit_policy(policy_id)
             .await?
-        {
+        else {
             return Err(GatewayError::Store(StoreError::NotFound(format!(
                 "rate limit policy `{policy_id}`"
             ))));
-        }
+        };
         self.invalidate();
-        Ok(())
+        Ok(deleted)
     }
 
     /// Fails when a config policy shares its name with an admin policy, or

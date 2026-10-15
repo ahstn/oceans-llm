@@ -254,17 +254,20 @@ async fn exercise_policies<S: RateLimitRepository>(store: &S) {
             .is_empty()
     );
 
-    assert!(
+    assert_eq!(
         store
             .delete_rate_limit_policy(first.rate_limit_policy_id)
             .await
             .expect("delete")
+            .map(|policy| policy.rate_limit_policy_id),
+        Some(first.rate_limit_policy_id)
     );
     assert!(
-        !store
+        store
             .delete_rate_limit_policy(first.rate_limit_policy_id)
             .await
             .expect("delete again")
+            .is_none()
     );
     assert!(
         !store
