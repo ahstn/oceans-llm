@@ -4,9 +4,9 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, DecisionId, DecisionRecord, EvaluationInput, EvaluationPayload,
-    FailureDisposition, GuardPhase, GuardrailEvaluation, PolicyMode, PolicyResolver, PolicyTarget,
-    ReasonCode, redact_prompt_secrets,
+    DecisionAction, DecisionRecord, EvaluationError, EvaluationInput, EvaluationPayload,
+    GuardPhase, GuardrailEvaluation, PolicyResolver, PolicyTarget, redact_prompt_secrets,
+    uninspected_content_decision,
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -188,7 +188,7 @@ pub async fn guard_stream(
             if release_uninspected_stream(
                 state,
                 context,
-                "stream.buffer_exceeded",
+                EvaluationError::StreamBufferExceeded,
                 &[&buffered, &chunk],
             ) {
                 let inspected = stream::iter([Ok(Bytes::from(buffered)), Ok(chunk)]);
@@ -218,41 +218,34 @@ pub async fn guard_stream(
     )))
 }
 
-/// Records an audit decision for a provider stream the guard cannot inspect, and returns
-/// whether the policy is in audit mode, which releases the stream unchanged instead of
-/// failing the request.
+/// Records the guardrail decision for a provider stream the guard cannot inspect, and
+/// returns whether that decision releases the stream unchanged instead of failing the
+/// request. `gateway-guardrails` owns the mode semantics: audit mode releases it.
 fn release_uninspected_stream(
     state: &AppState,
     context: &InferenceGuardContext,
-    reason_code: &'static str,
+    error: EvaluationError,
     content: &[&[u8]],
 ) -> bool {
     let policy = PolicyResolver::new(&state.guardrail_config)
         .resolve(PolicyTarget::ModelRoute(&context.route_key));
-    if policy.mode != PolicyMode::Audit {
+    let content_hash = format!(
+        "sha256:{:x}",
+        content
+            .iter()
+            .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
+            .finalize()
+    );
+    let decision = uninspected_content_decision(
+        &policy,
+        GuardPhase::ModelResponse,
+        "stream_buffer",
+        error,
+        content_hash,
+    );
+    if decision.action == DecisionAction::Deny {
         return false;
     }
-    let decision = DecisionRecord {
-        decision_id: DecisionId::new(),
-        phase: GuardPhase::ModelResponse,
-        scope: policy.scope,
-        evaluator: "stream_buffer".to_string(),
-        managed_service: None,
-        managed_metadata: None,
-        action: DecisionAction::Audit,
-        reason_code: ReasonCode::new(reason_code).expect("static reason code is valid"),
-        matched_rule: None,
-        latency_micros: 0,
-        failure_disposition: Some(FailureDisposition::FailOpen),
-        transformed: false,
-        content_hash: format!(
-            "sha256:{:x}",
-            content
-                .iter()
-                .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
-                .finalize()
-        ),
-    };
     record_guardrail_decisions_in_background(
         state,
         vec![(context.request_id.clone(), vec![decision])],
@@ -267,7 +260,14 @@ async fn guard_sse_payload(
 ) -> Result<Vec<u8>, GatewayError> {
     let source = match std::str::from_utf8(payload) {
         Ok(source) => source,
-        Err(_) if release_uninspected_stream(state, context, "stream.unparseable", &[payload]) => {
+        Err(_)
+            if release_uninspected_stream(
+                state,
+                context,
+                EvaluationError::UnparseableStream,
+                &[payload],
+            ) =>
+        {
             return Ok(payload.to_vec());
         }
         Err(error) => {
@@ -315,7 +315,7 @@ async fn guard_sse_payload(
                         if release_uninspected_stream(
                             state,
                             context,
-                            "stream.unparseable",
+                            EvaluationError::UnparseableStream,
                             &[source.as_bytes()],
                         ) =>
                     {
