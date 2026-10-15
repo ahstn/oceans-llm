@@ -6,7 +6,7 @@
 
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use admin_ui::client_ip::{CLIENT_IP_HEADER, verify_client_ip};
@@ -106,10 +106,31 @@ impl AppState {
     }
 
     /// Key shared with the admin UI proxy for signing the browser's address.
+    ///
+    /// A configured identity secret is shared by every replica, so a request the
+    /// proxy signed on one replica verifies on another. The development fallback
+    /// secret is public, so it is never used; a random per-process key replaces it.
     #[must_use]
     pub fn client_ip_signing_key(&self) -> Arc<[u8]> {
-        Arc::from(self.identity_token_secret.as_bytes())
+        client_ip_signing_key_for(&self.identity_token_secret)
     }
+}
+
+/// The fallback used when `GATEWAY_IDENTITY_TOKEN_SECRET` is unset. It is public.
+pub const DEV_IDENTITY_TOKEN_SECRET: &str = "local-dev-identity-secret";
+
+fn client_ip_signing_key_for(identity_token_secret: &str) -> Arc<[u8]> {
+    static PROCESS_KEY: OnceLock<Arc<[u8]>> = OnceLock::new();
+    if identity_token_secret.is_empty() || identity_token_secret == DEV_IDENTITY_TOKEN_SECRET {
+        return PROCESS_KEY
+            .get_or_init(|| {
+                let mut key = Uuid::new_v4().as_bytes().to_vec();
+                key.extend_from_slice(Uuid::new_v4().as_bytes());
+                Arc::from(key)
+            })
+            .clone();
+    }
+    Arc::from(identity_token_secret.as_bytes())
 }
 
 /// Resolves the client address for an audit entry: the address the admin UI
@@ -305,6 +326,24 @@ mod tests {
             headers.insert(*name, HeaderValue::from_str(value).unwrap());
         }
         headers
+    }
+
+    #[test]
+    fn the_public_development_secret_never_signs_client_addresses() {
+        let key = client_ip_signing_key_for(DEV_IDENTITY_TOKEN_SECRET);
+        assert_ne!(&*key, DEV_IDENTITY_TOKEN_SECRET.as_bytes());
+        assert_eq!(key, client_ip_signing_key_for(""));
+        let forged = sign_client_ip(
+            DEV_IDENTITY_TOKEN_SECRET.as_bytes(),
+            "198.51.100.1".parse().unwrap(),
+            NOW,
+        );
+        let peer = "10.0.0.5".parse().ok();
+        assert_eq!(
+            resolve_client_ip(peer, &headers(&[(CLIENT_IP_HEADER, forged)]), &key, NOW),
+            peer
+        );
+        assert_eq!(&*client_ip_signing_key_for("configured"), b"configured");
     }
 
     #[test]

@@ -729,7 +729,7 @@ fn env_u64(key: &str, default: u64) -> u64 {
 
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
-        .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+        .unwrap_or_else(|_| gateway::http::audit::DEV_IDENTITY_TOKEN_SECRET.to_string())
 }
 
 #[cfg(test)]
