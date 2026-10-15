@@ -1,0 +1,45 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_4743c3bdc4d116::t_74649cee314279 553
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  s_4743c3bdc4d116::t_1f3ef886d1041c 18-19,94-101
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  s_af4ccbd37c05c0::t_857b1f9d05d871 50-58,60-67,152-156
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_e3104daa9211fb 354-356,471-472,488-491
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_af4ccbd37c05c0::t_bfd13116083cea 439,461-465,478-529,534-535,539,544-549,555,590-591,626-629,639-645
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_29d0f669b7ab0d 153,509-510,516-517,579-584
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_b2496eba01db75 153,486-487,493-494,547-552
+crates/gateway/src/http/mcp_client_oauth/authorized_clients.rs
+  s_4743c3bdc4d116::t_1a1f9fa244bb04 40-41,229
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_af4ccbd37c05c0::t_fad4f59428ca1d 2748-2751
+crates/gateway/openapi/admin-api.json
+  s_af4ccbd37c05c0::t_43794cdc087e57 10316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b011fc595ce93a199858f0c3c13435095b02a3c2",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
