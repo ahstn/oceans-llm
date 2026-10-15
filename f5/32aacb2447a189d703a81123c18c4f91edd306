@@ -1,0 +1,71 @@
+crates/admin-ui/web/src/routes/oauth/consent.tsx
+  s_4743c3bdc4d116::t_8305c3b40a24e0 107,130
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  s_4743c3bdc4d116::t_f3dde596747c40 34,79
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_f42c282dc1aec2 231-233
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_e70cfb72c032a0 19
+crates/gateway-service/src/mcp_client_oauth/authorization.rs
+  s_4743c3bdc4d116::t_530136eed4202f 15,54-56,105,228-230,237,252,262
+crates/gateway-service/src/mcp_client_oauth/error.rs
+  s_4743c3bdc4d116::t_2be872f310e34c 63-66,77
+crates/gateway-service/src/mcp_client_oauth/registration.rs
+  s_4743c3bdc4d116::t_743cd1ea60db1d 11-14,101-109
+crates/gateway-service/src/mcp_client_oauth/secrets.rs
+  s_4743c3bdc4d116::t_12fb45d437dc8c 1-2,5-12,14,16,18-19,24,26-28,30-31,35-56,98-100,104
+crates/gateway-service/src/mcp_client_oauth/token.rs
+  s_4743c3bdc4d116::t_b6b1a991a467a5 14,131-133,159,162-172,175,190-195,215-217,219,223-224,234-272,288,317-327,334,340,355,376,389,425
+crates/gateway-service/src/mcp_client_oauth/validation.rs
+  s_4743c3bdc4d116::t_b42d1edc17f512 8,27
+crates/gateway-store/migrations/V61__gateway_oauth_authorization.sql
+  s_4743c3bdc4d116::t_31810d439ca1c3 27-28,73-75
+crates/gateway-store/migrations/postgres/V61__gateway_oauth_authorization.sql
+  s_4743c3bdc4d116::t_7d45e7759c1ea1 27-28,73-75
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_4743c3bdc4d116::t_61d7dd3ba994d2 131
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_27ce4b2bbc5258 16,82,207,230
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_cf64574eff8861 16,82,191,211
+crates/gateway/src/http/mcp_client_oauth/consent.rs
+  s_4743c3bdc4d116::t_72bbbd8e9e88ac 50-52,173
+crates/gateway/src/http/mcp_client_oauth/lifecycle_tests.rs
+  s_4743c3bdc4d116::t_84cfa0a5115d9d 10,77
+crates/gateway/src/http/mcp_client_oauth/registration_tests.rs
+  s_4743c3bdc4d116::t_925bb6da1ad723 100,130
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_af4ccbd37c05c0::t_1917c8f70b0b80 93,128,148
+docs/mcp/mcp-client-setup.md
+  s_af4ccbd37c05c0::t_353c263196ccee 118
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_4743c3bdc4d116::t_b5d8f5bf170ed1 4200-4204
+crates/gateway/openapi/admin-api.json
+  s_4743c3bdc4d116::t_078e2ae191dbf5 16150,16180-16183
+crates/gateway/src/http/mcp_client_oauth/flow_tests.rs
+  s_4743c3bdc4d116::t_f6167fec6f904f 16,258,289,335,381,423,583-772
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f532aacb2447a189d703a81123c18c4f91edd306",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
