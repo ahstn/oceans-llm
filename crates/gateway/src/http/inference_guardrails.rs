@@ -185,7 +185,12 @@ pub async fn guard_stream(
         };
         collector.observe_chunk(&chunk);
         if buffered.len().saturating_add(chunk.len()) > context.stream_buffer_bytes {
-            if release_uninspected_stream(state, context, "stream.buffer_exceeded", &buffered) {
+            if release_uninspected_stream(
+                state,
+                context,
+                "stream.buffer_exceeded",
+                &[&buffered, &chunk],
+            ) {
                 let inspected = stream::iter([Ok(Bytes::from(buffered)), Ok(chunk)]);
                 return Ok(Box::pin(inspected.chain(upstream)));
             }
@@ -220,7 +225,7 @@ fn release_uninspected_stream(
     state: &AppState,
     context: &InferenceGuardContext,
     reason_code: &'static str,
-    content: &[u8],
+    content: &[&[u8]],
 ) -> bool {
     let policy = PolicyResolver::new(&state.guardrail_config)
         .resolve(PolicyTarget::ModelRoute(&context.route_key));
@@ -240,7 +245,13 @@ fn release_uninspected_stream(
         latency_micros: 0,
         failure_disposition: Some(FailureDisposition::FailOpen),
         transformed: false,
-        content_hash: format!("sha256:{:x}", Sha256::digest(content)),
+        content_hash: format!(
+            "sha256:{:x}",
+            content
+                .iter()
+                .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
+                .finalize()
+        ),
     };
     record_guardrail_decisions_in_background(
         state,
@@ -256,7 +267,7 @@ async fn guard_sse_payload(
 ) -> Result<Vec<u8>, GatewayError> {
     let source = match std::str::from_utf8(payload) {
         Ok(source) => source,
-        Err(_) if release_uninspected_stream(state, context, "stream.unparseable", payload) => {
+        Err(_) if release_uninspected_stream(state, context, "stream.unparseable", &[payload]) => {
             return Ok(payload.to_vec());
         }
         Err(error) => {
@@ -305,7 +316,7 @@ async fn guard_sse_payload(
                             state,
                             context,
                             "stream.unparseable",
-                            source.as_bytes(),
+                            &[source.as_bytes()],
                         ) =>
                     {
                         return Ok(source.as_bytes().to_vec());
@@ -347,14 +358,17 @@ async fn guard_sse_payload(
     }
 
     for fragments in tool_fragments.values() {
-        if fragments.name.is_empty() {
-            continue;
-        }
-        let streamed_arguments =
-            (!fragments.arguments.is_empty()).then_some(fragments.arguments.as_str());
+        let streamed_arguments = (!fragments.name.is_empty() && !fragments.arguments.is_empty())
+            .then_some(fragments.arguments.as_str());
         let streamed_replacement = if let Some(arguments) = streamed_arguments {
-            let replacement =
-                guard_stream_tool_arguments(state, context, fragments, arguments).await?;
+            let replacement = guard_stream_tool_arguments(
+                state,
+                context,
+                &fragments.name,
+                fragments.shell_command_locations,
+                arguments,
+            )
+            .await?;
             if let Some(replacement) = &replacement {
                 replace_stream_arguments(
                     &mut blocks,
@@ -368,16 +382,29 @@ async fn guard_sse_payload(
         } else {
             None
         };
-        for (arguments, location) in &fragments.terminal_arguments {
-            let replacement = if streamed_arguments == Some(arguments.as_str()) {
+        for terminal in &fragments.terminal_arguments {
+            let name = terminal.name.as_deref().unwrap_or(&fragments.name);
+            if name.is_empty() {
+                continue;
+            }
+            let replacement = if name == fragments.name
+                && streamed_arguments == Some(terminal.arguments.as_str())
+            {
                 streamed_replacement.clone()
             } else {
-                guard_stream_tool_arguments(state, context, fragments, arguments).await?
+                guard_stream_tool_arguments(
+                    state,
+                    context,
+                    name,
+                    fragments.shell_command_locations,
+                    &terminal.arguments,
+                )
+                .await?
             };
             if let Some(replacement) = replacement {
                 replace_stream_arguments(
                     &mut blocks,
-                    std::slice::from_ref(location),
+                    std::slice::from_ref(&terminal.location),
                     &replacement,
                     fragments.shell_command_locations,
                     false,
@@ -452,15 +479,16 @@ async fn guard_sse_payload(
 async fn guard_stream_tool_arguments(
     state: &AppState,
     context: &InferenceGuardContext,
-    fragments: &ToolCallFragments,
+    name: &str,
+    shell_command_locations: bool,
     argument_text: &str,
 ) -> Result<Option<String>, GatewayError> {
     let arguments = serde_json::from_str(argument_text)
         .unwrap_or_else(|_| Value::String(argument_text.to_string()));
-    let payload = shell_command(&fragments.name, &arguments)
+    let payload = shell_command(name, &arguments)
         .map(|command| EvaluationPayload::ShellCommand { command })
         .unwrap_or_else(|| EvaluationPayload::ToolCall {
-            name: fragments.name.clone(),
+            name: name.to_string(),
             arguments: arguments.clone(),
         });
     let mut input = EvaluationInput::new(GuardPhase::GeneratedToolCall, payload);
@@ -479,7 +507,7 @@ async fn guard_stream_tool_arguments(
     let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments) else {
         return Ok(None);
     };
-    let replacement = if fragments.shell_command_locations {
+    let replacement = if shell_command_locations {
         arguments
             .get("command")
             .and_then(Value::as_str)
@@ -638,13 +666,23 @@ enum StreamLine {
     Other(String),
 }
 
+/// The tool calls in one guarded stream, keyed by call identity. `name` and `arguments`
+/// are reconstructed from the streamed deltas. Each terminal snapshot keeps the name from
+/// its own event, so a snapshot can never change the name the deltas are evaluated under.
 #[derive(Default)]
 struct ToolCallFragments {
     name: String,
     arguments: String,
-    terminal_arguments: Vec<(String, (usize, String))>,
+    terminal_arguments: Vec<TerminalArguments>,
     argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
+}
+
+struct TerminalArguments {
+    /// `None` when the event carries no name, such as `function_call_arguments.done`.
+    name: Option<String>,
+    arguments: String,
+    location: (usize, String),
 }
 
 fn collect_stream_tool_fragments(
@@ -670,7 +708,9 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 let event_type = object.get("type").and_then(Value::as_str);
                 let fragments = output.entry(key).or_default();
-                fragments.name = name;
+                if fragments.name.is_empty() {
+                    fragments.name.clone_from(&name);
+                }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
                 fragments.shell_command_locations |= shell_call;
@@ -682,9 +722,11 @@ fn collect_stream_tool_fragments(
                     format!("{pointer}/item/arguments")
                 };
                 if event_type == Some("response.output_item.done") {
-                    fragments
-                        .terminal_arguments
-                        .push((arguments, (event_index, argument_pointer)));
+                    fragments.terminal_arguments.push(TerminalArguments {
+                        name: Some(name),
+                        arguments,
+                        location: (event_index, argument_pointer),
+                    });
                 } else {
                     if fragments.arguments.is_empty() {
                         fragments.arguments = arguments;
@@ -782,10 +824,11 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
-                    fragments.terminal_arguments.push((
-                        arguments.to_string(),
-                        (event_index, format!("{pointer}/arguments")),
-                    ));
+                    fragments.terminal_arguments.push(TerminalArguments {
+                        name: None,
+                        arguments: arguments.to_string(),
+                        location: (event_index, format!("{pointer}/arguments")),
+                    });
                 }
             }
 
@@ -801,7 +844,9 @@ fn collect_stream_tool_fragments(
                 // A whole tool call inside an event (such as `response.completed`) is a
                 // snapshot of the call, not a delta, so it is guarded on its own.
                 let fragments = output.entry(key).or_default();
-                fragments.name = name;
+                if fragments.name.is_empty() {
+                    fragments.name.clone_from(&name);
+                }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
                 fragments.shell_command_locations |= shell_call;
@@ -812,9 +857,11 @@ fn collect_stream_tool_fragments(
                 } else {
                     format!("{pointer}/arguments")
                 };
-                fragments
-                    .terminal_arguments
-                    .push((arguments, (event_index, argument_pointer)));
+                fragments.terminal_arguments.push(TerminalArguments {
+                    name: Some(name),
+                    arguments,
+                    location: (event_index, argument_pointer),
+                });
                 return;
             }
 
@@ -1624,7 +1671,7 @@ mod tests {
             fragments["item-1"]
                 .terminal_arguments
                 .iter()
-                .all(|(arguments, _)| arguments == "{\"cmd\":\"git reset --hard\"}")
+                .all(|terminal| terminal.arguments == "{\"cmd\":\"git reset --hard\"}")
         );
     }
 
@@ -1659,13 +1706,22 @@ mod tests {
         );
         assert_eq!(fragments["item-1"].terminal_arguments.len(), 1);
         assert_eq!(
-            fragments["item-1"].terminal_arguments[0].0,
+            fragments["item-1"].terminal_arguments[0].arguments,
             "{\"cmd\":\"echo safe\"}"
         );
     }
 
     fn responses_function_call_stream(name: &str, completed_arguments: &str) -> String {
-        let item = |arguments: &str| {
+        responses_tool_call_stream(name, "{\"query\":\"oceans\"}", name, completed_arguments)
+    }
+
+    fn responses_tool_call_stream(
+        name: &str,
+        streamed_arguments: &str,
+        completed_name: &str,
+        completed_arguments: &str,
+    ) -> String {
+        let item = |name: &str, arguments: &str| {
             json!({
                 "id": "fc_1",
                 "type": "function_call",
@@ -1674,35 +1730,36 @@ mod tests {
                 "arguments": arguments,
             })
         };
+        let (first_delta, second_delta) = streamed_arguments.split_at(streamed_arguments.len() / 2);
         [
             json!({"type": "response.created", "response": {"id": "resp_1", "output": []}}),
-            json!({"type": "response.output_item.added", "output_index": 0, "item": item("")}),
+            json!({"type": "response.output_item.added", "output_index": 0, "item": item(name, "")}),
             json!({
                 "type": "response.function_call_arguments.delta",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "delta": "{\"query\":",
+                "delta": first_delta,
             }),
             json!({
                 "type": "response.function_call_arguments.delta",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "delta": "\"oceans\"}",
+                "delta": second_delta,
             }),
             json!({
                 "type": "response.function_call_arguments.done",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "arguments": "{\"query\":\"oceans\"}",
+                "arguments": streamed_arguments,
             }),
             json!({
                 "type": "response.output_item.done",
                 "output_index": 0,
-                "item": item("{\"query\":\"oceans\"}"),
+                "item": item(name, streamed_arguments),
             }),
             json!({
                 "type": "response.completed",
-                "response": {"id": "resp_1", "output": [item(completed_arguments)]},
+                "response": {"id": "resp_1", "output": [item(completed_name, completed_arguments)]},
             }),
         ]
         .iter()
@@ -1800,7 +1857,7 @@ mod tests {
         (directory, state)
     }
 
-    async fn recorded_stream_decisions(state: &AppState) -> Vec<String> {
+    async fn recorded_stream_decisions(state: &AppState) -> Vec<(String, String)> {
         // Stream failure decisions are written in the background, so wait for the write.
         for _ in 0..100 {
             let items = state
@@ -1818,7 +1875,12 @@ mod tests {
             if !items.is_empty() {
                 return items
                     .iter()
-                    .map(|item| format!("{}:{}", item.action, item.reason_code))
+                    .map(|item| {
+                        (
+                            format!("{}:{}", item.action, item.reason_code),
+                            item.content_hash.clone(),
+                        )
+                    })
                     .collect();
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -1860,9 +1922,14 @@ mod tests {
         };
 
         assert_eq!(collect_stream(stream).await, chunks.concat());
+        let consumed = chunks[..2].concat();
         assert_eq!(
             recorded_stream_decisions(&state).await,
-            ["audit:stream.buffer_exceeded"]
+            [(
+                "audit:stream.buffer_exceeded".to_string(),
+                format!("sha256:{:x}", Sha256::digest(consumed.as_bytes())),
+            )],
+            "the hash covers the chunk that overflowed the buffer"
         );
     }
 
@@ -1894,8 +1961,12 @@ mod tests {
                 .expect("audit mode releases an unparseable stream");
 
         assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
+        let decisions = recorded_stream_decisions(&state).await;
         assert_eq!(
-            recorded_stream_decisions(&state).await,
+            decisions
+                .iter()
+                .map(|(decision, _)| decision.as_str())
+                .collect::<Vec<_>>(),
             ["audit:stream.unparseable"]
         );
     }
@@ -1925,6 +1996,25 @@ mod tests {
         .expect_err("deny mode rejects an unparseable stream");
 
         assert!(error.to_string().contains("invalid SSE JSON"));
+    }
+
+    #[tokio::test]
+    async fn snapshot_tool_name_does_not_rename_streamed_arguments() {
+        let (_directory, mut state) = stream_state(gateway_guardrails::PolicyMode::Deny).await;
+        Arc::make_mut(&mut state.guardrail_config).default.packs =
+            vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack id")];
+        let command = "{\"command\":\"rm -rf /tmp/work\"}";
+        let stream = responses_tool_call_stream("bash", command, "wiki_search", command);
+
+        let error =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect_err("streamed bash arguments are evaluated as bash");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected a guardrail denial, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
     }
 
     #[tokio::test]

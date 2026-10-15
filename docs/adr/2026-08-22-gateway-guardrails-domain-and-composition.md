@@ -6,6 +6,8 @@ Date: 2026-08-22
 
 Accepted
 
+> **Supersession note (2026-10-15):** Audit mode never stops an operation. The failure handling below applies only in `deny` mode. In `audit` mode, every failure is recorded as a `fail_open` audit decision and the operation continues. That covers `fail_closed` managed checks and deterministic evaluator failures such as `tool_call.malformed_arguments`. A guarded stream that cannot be inspected, because it exceeds the buffer or is not parseable SSE, is released unchanged in `audit` mode and rejected in `deny` mode. See [Gateway Guardrails](../operations/gateway-guardrails.md) and [PR #512](https://github.com/ahstn/oceans-llm/pull/512). The original decision remains below as history.
+
 ## Decision
 
 Oceans uses `crates/gateway-guardrails` as the primary domain boundary for guardrails. The crate owns protocol-neutral policy types, effective-policy resolution, guard phases, decisions, deterministic pack evaluation, structured MCP selectors, managed evaluator interfaces, managed-service adapters, and ordered composition.
@@ -24,7 +26,7 @@ Each operation follows one order:
 6. Stop on any managed deny.
 7. Return the final original or transformed value with the ordered decision chain.
 
-`audit` records a matching decision and permits the operation. `deny` records and stops it. Managed failures have a per-check disposition. The default is `fail_open`, which permits the operation and emits an audit decision. `fail_closed` converts the failure to a deny in `deny` mode. Timeouts and content-size failures use the same disposition. A deterministic evaluator failure, such as generated tool arguments that are not a JSON object (`tool_call.malformed_arguments`), fails closed in `deny` mode. In `audit` mode every failure is recorded as a `fail_open` audit decision, because audit mode never stops an operation.
+`audit` records a matching decision and permits the operation. `deny` records and stops it. Managed failures have a per-check disposition. The default is `fail_open`, which permits the operation and emits an audit decision. `fail_closed` converts the failure to a deny. Timeouts and content-size failures use the same disposition.
 
 Decision records retain only privacy-safe metadata by default: decision ID, phase, effective scope, evaluator or managed service, pack and rule identity, action, stable reason code, latency, failure disposition, transformation flag, and SHA-256 content hash. Raw prompts, commands, tool arguments, and results follow the existing explicit payload-capture and redaction policy. Managed-service assessment metadata must not add raw content to default records.
 
@@ -36,7 +38,7 @@ Built-in packs have stable IDs and semantic versions. Shell evaluation uses a co
 
 The built-in patterns and fixtures are clean-room work derived from the confirmed product contract and public command or provider documentation. No Destructive Command Guard source code or rule definition was copied.
 
-Gateway HTTP paths own canonical protocol adaptation and enforcement. Guarded streams must be buffered at the HTTP boundary before any bytes are released. A stream that cannot be inspected, because it exceeds the buffer or is not parseable SSE, is rejected in `deny` mode. In `audit` mode it is released unchanged with a `fail_open` audit decision. Persistence repositories store decision metadata after evaluation. Harness adapters call the authenticated gateway endpoint immediately before process creation.
+Gateway HTTP paths own canonical protocol adaptation and enforcement. Guarded streams must be buffered at the HTTP boundary before any bytes are released. Persistence repositories store decision metadata after evaluation. Harness adapters call the authenticated gateway endpoint immediately before process creation.
 
 ## Rationale
 
