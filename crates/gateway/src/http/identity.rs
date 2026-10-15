@@ -13,6 +13,10 @@ use gateway_core::{
     OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
     UserSessionRecord, UserStatus, validate_entity_tags,
 };
+use gateway_service::{
+    AuditEvent,
+    admin_audit::{actions, targets},
+};
 use gateway_store::{AnyStore, GatewayStore};
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
@@ -48,7 +52,11 @@ use crate::{
             TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
             UpdateUserRequest, envelope, format_timestamp,
         },
+        audit::AuditRequestMeta,
         error::AppError,
+        identity_audit::{
+            service_account_event, team_event, team_summary, user_event, user_summary,
+        },
         identity_lifecycle::{
             ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
             ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
@@ -324,10 +332,11 @@ pub async fn list_identity_service_accounts(
 pub async fn create_identity_service_account(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateServiceAccountRequest>,
 ) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
     let team_id = parse_uuid(&request.team_id)?;
-    require_active_admin_or_team_manager(&state, &headers, Some(team_id)).await?;
+    let actor = require_active_admin_or_team_manager(&state, &headers, Some(team_id)).await?;
 
     let name = request.name.trim();
     if name.is_empty() {
@@ -349,8 +358,21 @@ pub async fn create_identity_service_account(
 
     let key = generate_unique_service_account_key(&state.store, team_id, name).await?;
     let account = state
-        .store
-        .create_service_account_with_tags(team_id, &key, name, &tags, OffsetDateTime::now_utc())
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.create_service_account_with_tags(
+                team_id,
+                &key,
+                name,
+                &tags,
+                OffsetDateTime::now_utc(),
+            ),
+            |account| {
+                service_account_event(actions::SERVICE_ACCOUNT_CREATED, account)
+                    .after(service_account_view(account, &team))
+            },
+        )
         .await?;
     Ok(Json(envelope(service_account_view(&account, &team))))
 }
@@ -366,6 +388,7 @@ pub async fn create_identity_service_account(
 pub async fn update_identity_service_account(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(service_account_id): Path<String>,
     Json(request): Json<UpdateServiceAccountRequest>,
 ) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
@@ -379,7 +402,8 @@ pub async fn update_identity_service_account(
                 "service account not found".to_string(),
             ))
         })?;
-    require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
+    let actor =
+        require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
 
     let name = request.name.trim();
     if name.is_empty() {
@@ -392,9 +416,21 @@ pub async fn update_identity_service_account(
         None => account.tags.clone(),
     };
     let now = OffsetDateTime::now_utc();
+    let before = serde_json::json!({ "name": account.service_account_name, "tags": entity_tag_views(&account.tags) });
     state
-        .store
-        .update_service_account_profile(service_account_id, name, &tags, now)
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state
+                .store
+                .update_service_account_profile(service_account_id, name, &tags, now),
+            |()| {
+                service_account_event(actions::SERVICE_ACCOUNT_UPDATED, &account)
+                    .label(name)
+                    .before(before)
+                    .after(serde_json::json!({ "name": name, "tags": entity_tag_views(&tags) }))
+            },
+        )
         .await?;
     let account = state
         .store
@@ -423,6 +459,7 @@ pub async fn update_identity_service_account(
 pub async fn disable_identity_service_account(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(service_account_id): Path<String>,
 ) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
     let service_account_id = parse_uuid(&service_account_id)?;
@@ -435,10 +472,22 @@ pub async fn disable_identity_service_account(
                 "service account not found".to_string(),
             ))
         })?;
-    require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
+    let actor =
+        require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
     state
-        .store
-        .disable_service_account(service_account_id, OffsetDateTime::now_utc())
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state
+                .store
+                .disable_service_account(service_account_id, OffsetDateTime::now_utc()),
+            |changed| {
+                service_account_event(actions::SERVICE_ACCOUNT_DISABLED, &account)
+                    .before(serde_json::json!({ "status": account.status.as_str() }))
+                    .after(serde_json::json!({ "status": "disabled" }))
+                    .meta("changed", changed)
+            },
+        )
         .await?;
     let account = state
         .store
@@ -467,9 +516,10 @@ pub async fn disable_identity_service_account(
 pub async fn create_identity_team(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateTeamRequest>,
 ) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let name = request.name.trim();
     if name.is_empty() {
@@ -484,21 +534,28 @@ pub async fn create_identity_team(
     let tags = parse_entity_tag_views(&request.tags, "team tags")?;
 
     let team_key = generate_unique_team_key(&state.store, name).await?;
-    let team = state.store.create_team(&team_key, name).await?;
-    state
-        .store
-        .update_team_tags(team.team_id, &tags, OffsetDateTime::now_utc())
-        .await?;
-    for user_id in selected_admin_ids {
+    let create = async {
+        let team = state.store.create_team(&team_key, name).await?;
         state
             .store
-            .assign_team_membership(user_id, team.team_id, MembershipRole::Admin)
+            .update_team_tags(team.team_id, &tags, OffsetDateTime::now_utc())
             .await?;
-    }
+        for user_id in selected_admin_ids {
+            state
+                .store
+                .assign_team_membership(user_id, team.team_id, MembershipRole::Admin)
+                .await?;
+        }
+        reload_team_view(&state.store, team.team_id).await
+    };
+    let view = state
+        .audit()
+        .audited(&meta.user_context(&actor), create, |view| {
+            team_event(actions::TEAM_CREATED, view).after(view)
+        })
+        .await?;
 
-    Ok(Json(envelope(
-        reload_team_view(&state.store, team.team_id).await?,
-    )))
+    Ok(Json(envelope(view)))
 }
 
 #[utoipa::path(
@@ -512,10 +569,11 @@ pub async fn create_identity_team(
 pub async fn update_identity_team(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(team_id): Path<String>,
     Json(request): Json<UpdateTeamRequest>,
 ) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let team_id = parse_uuid(&team_id)?;
     let existing_team = state
@@ -539,14 +597,24 @@ pub async fn update_identity_team(
         None => existing_team.tags,
     };
 
+    let before = reload_team_view(&state.store, team_id).await?;
     let now = OffsetDateTime::now_utc();
-    state.store.update_team_name(team_id, name, now).await?;
-    state.store.update_team_tags(team_id, &tags, now).await?;
-    sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
+    let update = async {
+        state.store.update_team_name(team_id, name, now).await?;
+        state.store.update_team_tags(team_id, &tags, now).await?;
+        sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
+        reload_team_view(&state.store, team_id).await
+    };
+    let view = state
+        .audit()
+        .audited(&meta.user_context(&actor), update, |view| {
+            team_event(actions::TEAM_UPDATED, view)
+                .before(team_summary(&before))
+                .after(team_summary(view))
+        })
+        .await?;
 
-    Ok(Json(envelope(
-        reload_team_view(&state.store, team_id).await?,
-    )))
+    Ok(Json(envelope(view)))
 }
 
 #[utoipa::path(
@@ -560,10 +628,11 @@ pub async fn update_identity_team(
 pub async fn add_identity_team_members(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(team_id): Path<String>,
     Json(request): Json<AddTeamMembersRequest>,
 ) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let team_id = parse_uuid(&team_id)?;
     state
@@ -608,16 +677,26 @@ pub async fn add_identity_team_members(
         ))));
     }
 
-    for user_id in assignable_user_ids {
-        state
-            .store
-            .assign_team_membership(user_id, team_id, MembershipRole::Member)
-            .await?;
-    }
+    let added_user_ids = assignable_user_ids.clone();
+    let add = async {
+        for user_id in assignable_user_ids {
+            state
+                .store
+                .assign_team_membership(user_id, team_id, MembershipRole::Member)
+                .await?;
+        }
+        reload_team_view(&state.store, team_id).await
+    };
+    let view = state
+        .audit()
+        .audited(&meta.user_context(&actor), add, |view| {
+            team_event(actions::TEAM_MEMBERS_ADDED, view)
+                .meta("user_ids", &added_user_ids)
+                .meta("role", MembershipRole::Member.as_str())
+        })
+        .await?;
 
-    Ok(Json(envelope(
-        reload_team_view(&state.store, team_id).await?,
-    )))
+    Ok(Json(envelope(view)))
 }
 
 #[utoipa::path(
@@ -647,6 +726,7 @@ pub async fn get_auth_session(
 pub async fn login_with_password(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<PasswordLoginRequest>,
 ) -> Result<Response, AppError> {
     let invalid_credentials = || AppError(GatewayError::Auth(AuthError::InvalidCredentials));
@@ -677,8 +757,15 @@ pub async fn login_with_password(
     let session_view = build_auth_session_view(&state, user.clone()).await?;
 
     let now = OffsetDateTime::now_utc();
-    let session_cookie =
-        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
+    let session_cookie = issue_session_cookie(
+        &state,
+        &user,
+        now,
+        session_cookie_secure(&headers),
+        &meta,
+        "password",
+    )
+    .await?;
     let mut response = Json(envelope(session_view)).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
@@ -693,6 +780,7 @@ pub async fn login_with_password(
 pub async fn logout_current_session(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
 ) -> Result<Response, AppError> {
     if let Some(current_session) = resolve_session_cookie(&state, &headers).await? {
         let now = OffsetDateTime::now_utc();
@@ -700,9 +788,31 @@ pub async fn logout_current_session(
             && current_session.session.expires_at > now
             && current_session.session.token_hash == token_hash(&current_session.raw_token)
         {
-            state
+            let session_id = current_session.session.session_id;
+            let user = state
                 .store
-                .revoke_user_session(current_session.session.session_id, now)
+                .get_user_by_id(current_session.session.user_id)
+                .await?;
+            let actor = match &user {
+                Some(user) => gateway_core::AuditActor::user(user.user_id, user.email.clone()),
+                None => gateway_core::AuditActor {
+                    kind: gateway_core::AuditActorKind::User,
+                    user_id: Some(current_session.session.user_id),
+                    api_key_id: None,
+                    label: None,
+                },
+            };
+            state
+                .audit()
+                .audited(
+                    &meta.context(actor),
+                    state.store.revoke_user_session(session_id, now),
+                    |_| {
+                        AuditEvent::new(actions::SESSION_REVOKED, targets::SESSION)
+                            .target(session_id)
+                            .meta("reason", "logout")
+                    },
+                )
                 .await?;
         }
     }
@@ -725,6 +835,7 @@ pub async fn logout_current_session(
 pub async fn change_password(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<ChangePasswordRequest>,
 ) -> Result<Json<Envelope<AuthSessionView>>, AppError> {
     if request.new_password.len() < 8 {
@@ -769,6 +880,13 @@ pub async fn change_password(
         .store
         .update_user_must_change_password(user.user_id, false, now)
         .await?;
+    state
+        .audit()
+        .record(
+            &meta.user_context(&user),
+            user_event(actions::USER_PASSWORD_CHANGED, &user),
+        )
+        .await;
 
     let refreshed_user = state
         .store
@@ -791,9 +909,10 @@ pub async fn change_password(
 pub async fn create_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateUserRequest>,
 ) -> Result<Json<Envelope<CreateUserResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let origin = request_origin(&headers);
     let name = request.name.trim();
@@ -877,13 +996,16 @@ pub async fn create_identity_user(
         )
         .await?;
 
-    let response = build_onboarding_response(
-        &state,
-        &origin,
-        created_at,
-        reload_identity_user(&state.store, user.user_id).await?,
-    )
-    .await?;
+    let identity_user = reload_identity_user(&state.store, user.user_id).await?;
+    let after = user_summary(&identity_user);
+    let response = build_onboarding_response(&state, &origin, created_at, identity_user).await?;
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            user_event(actions::USER_CREATED, &user).after(after),
+        )
+        .await;
 
     Ok(Json(envelope(response)))
 }
@@ -899,6 +1021,7 @@ pub async fn create_identity_user(
 pub async fn update_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(user_id): Path<String>,
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
@@ -981,6 +1104,17 @@ pub async fn update_identity_user(
     .await?;
     sync_identity_user_membership(&state.store, &identity_user, requested_membership, now).await?;
 
+    let updated = reload_identity_user(&state.store, user_id).await?;
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            user_event(actions::USER_UPDATED, &identity_user.user)
+                .before(user_summary(&identity_user))
+                .after(user_summary(&updated)),
+        )
+        .await;
+
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
@@ -994,6 +1128,7 @@ pub async fn update_identity_user(
 pub async fn deactivate_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(user_id): Path<String>,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
@@ -1013,6 +1148,16 @@ pub async fn deactivate_identity_user(
         .store
         .revoke_password_invitations_for_user(user_id, now)
         .await?;
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            user_event(actions::USER_DEACTIVATED, &user)
+                .before(serde_json::json!({ "status": user.status.as_str() }))
+                .after(serde_json::json!({ "status": UserStatus::Disabled.as_str() }))
+                .meta("sessions_revoked", true),
+        )
+        .await;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
@@ -1027,9 +1172,10 @@ pub async fn deactivate_identity_user(
 pub async fn reactivate_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(user_id): Path<String>,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let user_id = parse_uuid(&user_id)?;
     let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
@@ -1041,8 +1187,16 @@ pub async fn reactivate_identity_user(
         user_has_auth_proof(&state.store, &identity_user).await?,
     );
     state
-        .store
-        .update_user_status(user_id, next_status, now)
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.update_user_status(user_id, next_status, now),
+            |_| {
+                user_event(actions::USER_REACTIVATED, &identity_user.user)
+                    .before(serde_json::json!({ "status": identity_user.user.status.as_str() }))
+                    .after(serde_json::json!({ "status": next_status.as_str() }))
+            },
+        )
         .await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
@@ -1058,9 +1212,10 @@ pub async fn reactivate_identity_user(
 pub async fn reset_identity_user_onboarding(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(user_id): Path<String>,
 ) -> Result<Json<Envelope<CreateUserResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let user_id = parse_uuid(&user_id)?;
     let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
@@ -1122,8 +1277,17 @@ pub async fn reset_identity_user_onboarding(
         .update_user_status(user_id, UserStatus::Invited, now)
         .await?;
     let origin = request_origin(&headers);
+    let previous_status = identity_user.user.status;
     let identity_user = reload_identity_user(&state.store, user_id).await?;
+    let event = user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
+        .before(serde_json::json!({ "status": previous_status.as_str() }))
+        .after(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
+        .meta("auth_mode", identity_user.user.auth_mode.as_str());
     let response = build_onboarding_response(&state, &origin, now, identity_user).await?;
+    state
+        .audit()
+        .record(&meta.user_context(&actor), event)
+        .await;
 
     Ok(Json(envelope(response)))
 }
@@ -1141,9 +1305,10 @@ pub async fn reset_identity_user_onboarding(
 pub async fn remove_identity_team_member(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path((team_id, user_id)): Path<(String, String)>,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let team_id = parse_uuid(&team_id)?;
     let user_id = parse_uuid(&user_id)?;
@@ -1156,7 +1321,23 @@ pub async fn remove_identity_team_member(
         )));
     }
 
-    state.store.remove_team_membership(team_id, user_id).await?;
+    state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.remove_team_membership(team_id, user_id),
+            |_| {
+                AuditEvent::new(actions::TEAM_MEMBER_REMOVED, targets::TEAM)
+                    .target(team_id)
+                    .label(identity_user.team_name.clone().unwrap_or_default())
+                    .meta("user_id", user_id)
+                    .meta("user_email", &identity_user.user.email)
+                    .before(serde_json::json!({
+                        "role": identity_user.membership_role.map(MembershipRole::as_str),
+                    }))
+            },
+        )
+        .await?;
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
@@ -1174,10 +1355,11 @@ pub async fn remove_identity_team_member(
 pub async fn transfer_identity_team_member(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path((team_id, user_id)): Path<(String, String)>,
     Json(request): Json<TransferTeamMemberRequest>,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let team_id = parse_uuid(&team_id)?;
     let user_id = parse_uuid(&user_id)?;
@@ -1205,15 +1387,28 @@ pub async fn transfer_identity_team_member(
         )));
     }
 
+    let transfer = state.store.transfer_team_membership(
+        user_id,
+        team_id,
+        destination_team_id,
+        destination_role,
+        OffsetDateTime::now_utc(),
+    );
     state
-        .store
-        .transfer_team_membership(
-            user_id,
-            team_id,
-            destination_team_id,
-            destination_role,
-            OffsetDateTime::now_utc(),
-        )
+        .audit()
+        .audited(&meta.user_context(&actor), transfer, |_| {
+            AuditEvent::new(actions::TEAM_MEMBER_TRANSFERRED, targets::USER)
+                .target(user_id)
+                .label(identity_user.user.email.clone())
+                .before(serde_json::json!({
+                    "team_id": team_id,
+                    "role": identity_user.membership_role.map(MembershipRole::as_str),
+                }))
+                .after(serde_json::json!({
+                    "team_id": destination_team_id,
+                    "role": destination_role.as_str(),
+                }))
+        })
         .await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
@@ -1229,9 +1424,10 @@ pub async fn transfer_identity_team_member(
 pub async fn regenerate_password_invite(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(user_id): Path<String>,
 ) -> Result<Json<Envelope<PasswordInviteResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
     let user_id = parse_uuid(&user_id)?;
     let user = state
@@ -1252,13 +1448,20 @@ pub async fn regenerate_password_invite(
     }
 
     let origin = request_origin(&headers);
-    let invitation = create_password_invite(
+    let invite = create_password_invite(
         &state.store,
         &state.identity_token_secret,
         &origin,
         user.user_id,
-    )
-    .await?;
+    );
+    // The invite URL carries the token, so only its expiry is recorded.
+    let invitation = state
+        .audit()
+        .audited(&meta.user_context(&actor), invite, |invitation| {
+            user_event(actions::USER_INVITE_ISSUED, &user)
+                .meta("expires_at", &invitation.expires_at)
+        })
+        .await?;
 
     Ok(Json(envelope(PasswordInviteResponse {
         user_id: user.user_id.to_string(),
@@ -1290,6 +1493,7 @@ pub async fn validate_password_invitation(
 )]
 pub async fn complete_password_invitation(
     State(state): State<AppState>,
+    meta: AuditRequestMeta,
     Path(token): Path<String>,
     Json(request): Json<CompleteInvitationRequest>,
 ) -> Result<Json<Envelope<CompleteInvitationResponse>>, AppError> {
@@ -1316,6 +1520,18 @@ pub async fn complete_password_invitation(
         .store
         .mark_password_invitation_consumed(invitation.invitation_id, now)
         .await?;
+    // Holding the invite token proves the user, so the entry is attributed to them.
+    if let Some(user) = state.store.get_user_by_id(invitation.user_id).await? {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&user),
+                user_event(actions::USER_INVITE_REDEEMED, &user)
+                    .meta("invitation_id", invitation.invitation_id)
+                    .after(serde_json::json!({ "status": UserStatus::Active.as_str() })),
+            )
+            .await;
+    }
 
     Ok(Json(envelope(CompleteInvitationResponse {
         status: "password_set",
@@ -1395,6 +1611,7 @@ pub async fn oidc_start(
 pub async fn oidc_callback(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, AppError> {
     if query.error.is_some() {
@@ -1532,13 +1749,22 @@ pub async fn oidc_callback(
     {
         return Ok(oidc_error_redirect("identity_conflict"));
     } else if provider.jit.enabled {
-        create_jit_oidc_user(&state, &provider, &subject, &email, now).await?
+        let user = create_jit_oidc_user(&state, &provider, &subject, &email, now).await?;
+        record_user_provisioned(&state, &meta, &user, "oidc", &provider.provider_key).await;
+        user
     } else {
         return Ok(oidc_error_redirect("unmatched_identity"));
     };
 
-    let session_cookie =
-        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
+    let session_cookie = issue_session_cookie(
+        &state,
+        &user,
+        now,
+        session_cookie_secure(&headers),
+        &meta,
+        "oidc",
+    )
+    .await?;
     let mut response = Redirect::temporary(&login_state.redirect_to).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
@@ -1626,6 +1852,7 @@ pub async fn oauth_start(
 pub async fn oauth_callback_github(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Query(query): Query<OauthCallbackQuery>,
 ) -> Result<Response, AppError> {
     if query.error.is_some() {
@@ -1775,13 +2002,22 @@ pub async fn oauth_callback_github(
     {
         return Ok(oidc_error_redirect("identity_conflict"));
     } else if provider.jit.enabled {
-        create_jit_oauth_user(&state, &provider, &subject, &email, now).await?
+        let user = create_jit_oauth_user(&state, &provider, &subject, &email, now).await?;
+        record_user_provisioned(&state, &meta, &user, "oauth", &provider.provider_key).await;
+        user
     } else {
         return Ok(oidc_error_redirect("unmatched_identity"));
     };
 
-    let session_cookie =
-        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
+    let session_cookie = issue_session_cookie(
+        &state,
+        &user,
+        now,
+        session_cookie_secure(&headers),
+        &meta,
+        "oauth",
+    )
+    .await?;
     let mut response = Redirect::temporary(&login_state.redirect_to).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
@@ -3106,27 +3342,56 @@ async fn load_valid_invitation(
     Ok(invitation)
 }
 
+/// Creates a session for `user` and records the sign-in. `method` is
+/// `password`, `oidc` or `oauth`.
 async fn issue_session_cookie(
     state: &AppState,
-    user_id: Uuid,
+    user: &UserRecord,
     now: OffsetDateTime,
     secure: bool,
+    meta: &AuditRequestMeta,
+    method: &str,
 ) -> Result<HeaderValue, AppError> {
     let session_id = Uuid::new_v4();
     let raw_token = signed_token("session", &state.identity_token_secret, session_id);
     let expires_at = now + Duration::days(SESSION_TTL_DAYS);
+    let session_token_hash = token_hash(&raw_token);
+    let create = state.store.create_user_session(
+        session_id,
+        user.user_id,
+        &session_token_hash,
+        expires_at,
+        now,
+    );
     state
-        .store
-        .create_user_session(
-            session_id,
-            user_id,
-            &token_hash(&raw_token),
-            expires_at,
-            now,
-        )
+        .audit()
+        .audited(&meta.user_context(user), create, |_| {
+            AuditEvent::new(actions::SESSION_CREATED, targets::SESSION)
+                .target(session_id)
+                .label(user.email.clone())
+                .meta("method", method)
+                .meta("expires_at", format_timestamp(expires_at))
+        })
         .await?;
 
     session_cookie_header(&raw_token, SESSION_TTL_SECONDS, secure)
+}
+
+async fn record_user_provisioned(
+    state: &AppState,
+    meta: &AuditRequestMeta,
+    user: &UserRecord,
+    method: &str,
+    provider_key: &str,
+) {
+    let event = user_event(actions::USER_PROVISIONED, user)
+        .meta("method", method)
+        .meta("provider_key", provider_key)
+        .after(serde_json::json!({
+            "global_role": user.global_role.as_str(),
+            "status": user.status.as_str(),
+        }));
+    state.audit().record(&meta.user_context(user), event).await;
 }
 
 fn expire_session_cookie(secure: bool) -> Result<HeaderValue, AppError> {

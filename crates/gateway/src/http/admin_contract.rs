@@ -2075,6 +2075,7 @@ pub struct AgentSessionDetailView {
         crate::http::guardrails::evaluate_guardrail,
         crate::http::guardrails::get_guardrail_policies,
         crate::http::guardrails::list_guardrail_decisions,
+        crate::http::audit::list_audit_logs,
         crate::http::mcp_registry::get_mcp_connection_info,
         crate::http::mcp_registry::list_recommended_mcp_servers,
         crate::http::mcp_registry::list_mcp_servers,

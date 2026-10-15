@@ -1,9 +1,9 @@
-use std::{error::Error as _, time::Duration};
+use std::{error::Error as _, net::SocketAddr, time::Duration};
 
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{
         HeaderMap, HeaderName, HeaderValue, Request, StatusCode, Uri,
         header::{CONNECTION, HOST, LOCATION},
@@ -89,6 +89,10 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
     let method = parts.method;
     let uri = parts.uri;
     let inbound_headers = parts.headers;
+    let peer = parts
+        .extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(address)| address.ip());
 
     let is_multipart = inbound_headers
         .get("content-type")
@@ -144,9 +148,12 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
 
     let connection_tokens = parse_connection_tokens(&inbound_headers);
     for (name, value) in &inbound_headers {
-        if should_forward_request_header(name, &connection_tokens) {
+        if name != X_FORWARDED_FOR && should_forward_request_header(name, &connection_tokens) {
             outbound = outbound.header(name, value);
         }
+    }
+    if let Some(forwarded_for) = forwarded_for_chain(&inbound_headers, peer) {
+        outbound = outbound.header(X_FORWARDED_FOR, forwarded_for);
     }
 
     if !body_bytes.is_empty() {
@@ -227,6 +234,24 @@ fn should_forward_request_header(name: &HeaderName, connection_tokens: &[HeaderN
     !is_hop_by_hop_header(name) && !connection_tokens.iter().any(|token| token == name)
 }
 
+const X_FORWARDED_FOR: &str = "x-forwarded-for";
+
+/// Appends the browser-facing peer to any inbound `X-Forwarded-For` chain, so the
+/// gateway API can attribute admin audit entries to the client address.
+fn forwarded_for_chain(headers: &HeaderMap, peer: Option<std::net::IpAddr>) -> Option<String> {
+    let mut chain: Vec<String> = headers
+        .get_all(X_FORWARDED_FOR)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if let Some(peer) = peer {
+        chain.push(peer.to_string());
+    }
+    (!chain.is_empty()).then(|| chain.join(", "))
+}
+
 fn should_forward_response_header(name: &HeaderName, connection_tokens: &[HeaderName]) -> bool {
     !is_hop_by_hop_header(name) && !connection_tokens.iter().any(|token| token == name)
 }
@@ -274,12 +299,31 @@ mod tests {
     use tokio::net::TcpListener;
     use tower::ServiceExt;
 
-    use super::{AdminUiConfig, mount_admin_ui};
+    use super::{AdminUiConfig, X_FORWARDED_FOR, forwarded_for_chain, mount_admin_ui};
 
     #[derive(Debug, Clone, Serialize)]
     struct CapturedRequest {
         path_and_query: String,
         headers: Vec<(String, String)>,
+    }
+
+    #[test]
+    fn forwarded_for_appends_the_peer_to_the_inbound_chain() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            X_FORWARDED_FOR,
+            HeaderValue::from_static("203.0.113.9, 10.0.0.2"),
+        );
+        let peer = "10.0.0.3".parse().ok();
+        assert_eq!(
+            forwarded_for_chain(&headers, peer).as_deref(),
+            Some("203.0.113.9, 10.0.0.2, 10.0.0.3")
+        );
+        assert_eq!(
+            forwarded_for_chain(&HeaderMap::new(), peer).as_deref(),
+            Some("10.0.0.3")
+        );
+        assert_eq!(forwarded_for_chain(&HeaderMap::new(), None), None);
     }
 
     #[tokio::test]

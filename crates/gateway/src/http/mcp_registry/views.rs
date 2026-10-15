@@ -362,6 +362,65 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
     }
 }
 
+/// Audit summary of a server. The auth config is already allowlisted by
+/// [`map_server`]; credentials and query strings are stripped from the URL.
+pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
+    let mut summary = serde_json::to_value(server).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut() {
+        for volatile in ["created_at", "updated_at", "last_discovery_at"] {
+            object.remove(volatile);
+        }
+        object.insert(
+            "server_url".to_string(),
+            Value::String(audit_safe_url(&server.server_url)),
+        );
+    }
+    summary
+}
+
+pub(super) fn audit_safe_url(raw: &str) -> String {
+    match url::Url::parse(raw) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.set_query(None);
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => "[unparseable]".to_string(),
+    }
+}
+
+impl McpServerView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn server_key(&self) -> &str {
+        &self.server_key
+    }
+}
+
+impl McpToolsetView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn toolset_key(&self) -> &str {
+        &self.toolset_key
+    }
+}
+
+impl McpCredentialBindingView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn owner_scope_key(&self) -> &str {
+        &self.owner_scope_key
+    }
+}
+
 pub(super) fn map_credential_binding(
     binding: RedactedMcpCredentialBinding,
 ) -> McpCredentialBindingView {

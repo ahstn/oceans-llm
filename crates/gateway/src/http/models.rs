@@ -5,8 +5,9 @@ use axum::{
 };
 use gateway_core::GlobalRole;
 use gateway_service::{
-    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, EffectiveMetadataSource,
-    EffectiveMetadataSourceKind,
+    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent,
+    EffectiveMetadataSource, EffectiveMetadataSourceKind,
+    admin_audit::{actions, targets},
 };
 
 use crate::http::{
@@ -18,6 +19,7 @@ use crate::http::{
         GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse,
         RefreshModelPricingCatalogResponse, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -153,10 +155,18 @@ pub async fn generate_model_client_configs(
 pub async fn refresh_model_pricing_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
 ) -> Result<Json<Envelope<RefreshModelPricingCatalogResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
-    state.service.refresh_pricing_catalog_now().await?;
+    state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.service.refresh_pricing_catalog_now(),
+            |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED, targets::PRICING_CATALOG),
+        )
+        .await?;
 
     Ok(Json(envelope(RefreshModelPricingCatalogResponse {
         refreshed: true,

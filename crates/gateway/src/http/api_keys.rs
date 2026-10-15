@@ -5,13 +5,14 @@ use axum::{
 };
 use gateway_core::{
     AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, GatewayError,
-    GlobalRole, IdentityRepository, MembershipRole, UserStatus,
+    GlobalRole, IdentityRepository, MembershipRole, ModelRepository, UserRecord, UserStatus,
 };
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
+    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditEvent,
     CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
     UpdateAdminApiKeyInput,
+    admin_audit::{actions, targets},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -22,6 +23,7 @@ use crate::{
     http::{
         admin_auth::require_authenticated_session,
         admin_contract::{Envelope, envelope, format_timestamp},
+        audit::AuditRequestMeta,
         error::AppError,
         state::AppState,
     },
@@ -181,21 +183,28 @@ pub async fn list_api_keys(
 pub async fn create_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<Json<Envelope<CreateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::CreateApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::CreateApiKey).await?;
     authorize_create_api_key(&state, &scope, &request).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let result = service
-        .create_api_key(CreateAdminApiKeyInput {
-            name: request.name,
-            owner_kind: request.owner_kind,
-            owner_user_id: request.owner_user_id,
-            owner_team_id: request.owner_team_id,
-            owner_service_account_id: request.owner_service_account_id,
-            model_grant_mode: request.model_grant_mode.as_str().to_string(),
-            model_keys: request.model_keys,
+    let create = service.create_api_key(CreateAdminApiKeyInput {
+        name: request.name,
+        owner_kind: request.owner_kind,
+        owner_user_id: request.owner_user_id,
+        owner_team_id: request.owner_team_id,
+        owner_service_account_id: request.owner_service_account_id,
+        model_grant_mode: request.model_grant_mode.as_str().to_string(),
+        model_keys: request.model_keys,
+    });
+    let result = state
+        .audit()
+        .audited(&meta.user_context(&actor), create, |result| {
+            api_key_event(actions::API_KEY_CREATED, &result.api_key)
+                .after(map_api_key_summary(result.api_key.clone()))
         })
         .await?;
 
@@ -213,22 +222,34 @@ pub async fn create_api_key(
 pub async fn update_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<Envelope<UpdateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::UpdateApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::UpdateApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
+    let before = api_key_model_access_summary(&state, api_key_id).await?;
     let service = AdminApiKeyService::new(state.store.clone());
-    let api_key = service
-        .update_api_key(
-            api_key_id,
-            UpdateAdminApiKeyInput {
-                model_grant_mode: request.model_grant_mode.as_str().to_string(),
-                model_keys: request.model_keys,
-            },
-        )
+    let update = service.update_api_key(
+        api_key_id,
+        UpdateAdminApiKeyInput {
+            model_grant_mode: request.model_grant_mode.as_str().to_string(),
+            model_keys: request.model_keys,
+        },
+    );
+    let api_key = state
+        .audit()
+        .audited(&meta.user_context(&actor), update, |api_key| {
+            api_key_event(actions::API_KEY_UPDATED, api_key)
+                .before(before)
+                .after(serde_json::json!({
+                    "model_grant_mode": api_key.model_grant_mode.as_str(),
+                    "model_keys": api_key.model_keys,
+                }))
+        })
         .await?;
 
     Ok(Json(envelope(UpdateApiKeyResponse {
@@ -246,14 +267,26 @@ pub async fn update_api_key(
 pub async fn revoke_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevokeApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevokeApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::RevokeApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let api_key = service.revoke_api_key(api_key_id).await?;
+    let api_key = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.revoke_api_key(api_key_id),
+            |api_key| {
+                api_key_event(actions::API_KEY_REVOKED, api_key)
+                    .after(serde_json::json!({ "status": api_key.status.as_str() }))
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(RevokeApiKeyResponse {
         api_key: map_api_key_summary(api_key),
@@ -270,14 +303,27 @@ pub async fn revoke_api_key(
 pub async fn reveal_api_key_secret(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevealApiKeySecretResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevealApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::RevealApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_reveal_api_key_secret(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let result = service.reveal_api_key_secret(api_key_id).await?;
+    // The entry records that the secret was shown, never the secret itself.
+    let result = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.reveal_api_key_secret(api_key_id),
+            |_| {
+                AuditEvent::new(actions::API_KEY_SECRET_REVEALED, targets::API_KEY)
+                    .target(api_key_id)
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(map_reveal_result(result))))
 }
@@ -331,7 +377,7 @@ async fn require_api_key_action_scope(
     state: &AppState,
     headers: &HeaderMap,
     action: AdminAction,
-) -> Result<ApiKeyActionScope, AppError> {
+) -> Result<(UserRecord, ApiKeyActionScope), AppError> {
     let actor = require_authenticated_session(state, headers).await?;
     if actor.status != UserStatus::Active {
         return Err(insufficient_privileges());
@@ -340,11 +386,10 @@ async fn require_api_key_action_scope(
         let permissions = state
             .admin_permissions
             .for_group(AdminPermissionGroup::PlatformAdmins);
-        return permissions
-            .actions
-            .contains(&action)
-            .then_some(ApiKeyActionScope::Platform)
-            .ok_or_else(insufficient_privileges);
+        if !permissions.actions.contains(&action) {
+            return Err(insufficient_privileges());
+        }
+        return Ok((actor, ApiKeyActionScope::Platform));
     }
 
     let membership = state
@@ -371,10 +416,46 @@ async fn require_api_key_action_scope(
         return Err(insufficient_privileges());
     }
 
-    Ok(ApiKeyActionScope::User {
-        user_id: actor.user_id,
-        managed_team_id,
-    })
+    let user_id = actor.user_id;
+    Ok((
+        actor,
+        ApiKeyActionScope::User {
+            user_id,
+            managed_team_id,
+        },
+    ))
+}
+
+fn api_key_event(action: &str, api_key: &AdminApiKeySummary) -> AuditEvent {
+    AuditEvent::new(action, targets::API_KEY)
+        .target(api_key.id)
+        .label(api_key.name.clone())
+        .meta("owner_kind", api_key.owner_kind.as_str())
+        .meta("owner_id", api_key.owner_id)
+}
+
+async fn api_key_model_access_summary(
+    state: &AppState,
+    api_key_id: Uuid,
+) -> Result<serde_json::Value, AppError> {
+    let model_grant_mode = state
+        .store
+        .get_api_key_by_id(api_key_id)
+        .await?
+        .map(|api_key| api_key.model_grant_mode.as_str());
+    let model_keys: Vec<String> = state
+        .store
+        .list_models_for_api_keys(&[api_key_id])
+        .await?
+        .remove(&api_key_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|model| model.model_key)
+        .collect();
+    Ok(serde_json::json!({
+        "model_grant_mode": model_grant_mode,
+        "model_keys": model_keys,
+    }))
 }
 
 async fn authorize_reveal_api_key_secret(

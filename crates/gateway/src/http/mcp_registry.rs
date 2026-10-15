@@ -14,12 +14,14 @@ use gateway_client_config::{
     DEFAULT_GATEWAY_BASE_URL, normalize_gateway_base_url, render_mcp_client_configs,
 };
 use gateway_core::{
-    GatewayError, McpAccessRepository, McpGrantSubject, McpToolGrantSubjectKind, McpToolProjection,
-    NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
+    GatewayError, McpAccessRepository, McpGrantSubject, McpRegistryRepository,
+    McpToolGrantSubjectKind, McpToolProjection, NewMcpToolsetRecord, UpdateMcpToolsetRecord,
+    UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    CreateExternalMcpServerInput, McpCredentialService, McpRegistryService,
+    AuditEvent, CreateExternalMcpServerInput, McpCredentialService, McpRegistryService,
     UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
+    admin_audit::{actions, targets},
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -27,6 +29,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{Envelope, OpenAiErrorEnvelopeView, envelope},
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -132,9 +135,10 @@ pub async fn list_mcp_servers(
 pub async fn create_mcp_server(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let service = McpRegistryService::new(state.store.clone());
     let server = service
         .create_server(CreateExternalMcpServerInput {
@@ -149,9 +153,15 @@ pub async fn create_mcp_server(
             timeout_ms: request.timeout_ms,
         })
         .await?;
-    Ok(Json(envelope(McpServerPayload {
-        server: map_server(server),
-    })))
+    let server = map_server(server);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            server_event(actions::MCP_SERVER_CREATED, &server).after(server_audit_summary(&server)),
+        )
+        .await;
+    Ok(Json(envelope(McpServerPayload { server })))
 }
 
 #[utoipa::path(
@@ -169,11 +179,13 @@ pub async fn create_mcp_server(
 pub async fn update_mcp_server(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<String>,
     Json(request): Json<UpdateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    let before = server_before_summary(&state, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
     let server = service
         .update_server(
@@ -188,9 +200,17 @@ pub async fn update_mcp_server(
             },
         )
         .await?;
-    Ok(Json(envelope(McpServerPayload {
-        server: map_server(server),
-    })))
+    let server = map_server(server);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            server_event(actions::MCP_SERVER_UPDATED, &server)
+                .before(before)
+                .after(server_audit_summary(&server)),
+        )
+        .await;
+    Ok(Json(envelope(McpServerPayload { server })))
 }
 
 #[utoipa::path(
@@ -207,15 +227,24 @@ pub async fn update_mcp_server(
 pub async fn disable_mcp_server(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<String>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    let before = server_before_summary(&state, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
-    let server = service.disable_server(server_id).await?;
-    Ok(Json(envelope(McpServerPayload {
-        server: map_server(server),
-    })))
+    let server = map_server(service.disable_server(server_id).await?);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            server_event(actions::MCP_SERVER_DISABLED, &server)
+                .before(serde_json::json!({ "status": before["status"] }))
+                .after(serde_json::json!({ "status": "disabled" })),
+        )
+        .await;
+    Ok(Json(envelope(McpServerPayload { server })))
 }
 
 #[utoipa::path(
@@ -261,13 +290,14 @@ pub async fn list_mcp_server_tools(
     ),
     security(("session_cookie" = []))
 )]
-#[tracing::instrument(skip(state, headers), fields(mcp_server_id = %server_id))]
+#[tracing::instrument(skip(state, headers, meta), fields(mcp_server_id = %server_id))]
 pub async fn refresh_mcp_server_discovery(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<String>,
 ) -> Result<Json<Envelope<McpDiscoveryRefreshPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
     let service = McpRegistryService::new(state.store.clone());
     let started_at = Instant::now();
@@ -289,6 +319,19 @@ pub async fn refresh_mcp_server_discovery(
                     status,
                     latency_seconds,
                 });
+            // A refresh that reached the server but failed discovery still
+            // rewrote the server's discovery state, so it is audited too.
+            let event =
+                AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED, targets::MCP_SERVER)
+                    .target(server_id)
+                    .label(result.server.server_key.clone())
+                    .meta("status", status)
+                    .meta("error_summary", &result.error_summary)
+                    .after(serde_json::json!({ "tool_count": result.tools.len() }));
+            state
+                .audit()
+                .record(&meta.user_context(&actor), event)
+                .await;
             Ok(Json(envelope(map_discovery_result(result))))
         }
         Err(error) => {
@@ -338,17 +381,26 @@ pub async fn list_mcp_toolsets(
 pub async fn create_mcp_toolset(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateMcpToolsetRequest>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
+    let record = NewMcpToolsetRecord {
+        toolset_key: request.toolset_key,
+        display_name: request.display_name,
+        description: request.description,
+        created_at: OffsetDateTime::now_utc(),
+    };
     let toolset = state
-        .store
-        .create_mcp_toolset(&NewMcpToolsetRecord {
-            toolset_key: request.toolset_key,
-            display_name: request.display_name,
-            description: request.description,
-            created_at: OffsetDateTime::now_utc(),
-        })
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.create_mcp_toolset(&record),
+            |toolset| {
+                toolset_event(actions::MCP_TOOLSET_CREATED, &map_toolset(toolset.clone()))
+                    .after(map_toolset(toolset.clone()))
+            },
+        )
         .await?;
     Ok(Json(envelope(McpToolsetPayload {
         toolset: map_toolset(toolset),
@@ -365,18 +417,32 @@ pub async fn create_mcp_toolset(
 pub async fn update_mcp_toolset(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(toolset_id): Path<Uuid>,
     Json(request): Json<UpdateMcpToolsetRequest>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
+    let before = toolset_before_summary(&state, toolset_id).await?;
+    let record = UpdateMcpToolsetRecord {
+        toolset_id,
+        display_name: request.display_name,
+        description: request.description,
+        updated_at: OffsetDateTime::now_utc(),
+    };
     let toolset = state
-        .store
-        .update_mcp_toolset(&UpdateMcpToolsetRecord {
-            toolset_id,
-            display_name: request.display_name,
-            description: request.description,
-            updated_at: OffsetDateTime::now_utc(),
-        })
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.update_mcp_toolset(&record),
+            |toolset| {
+                toolset_event(actions::MCP_TOOLSET_UPDATED, &map_toolset(toolset.clone()))
+                    .before(before)
+                    .after(serde_json::json!({
+                        "display_name": toolset.display_name,
+                        "description": toolset.description,
+                    }))
+            },
+        )
         .await?;
     Ok(Json(envelope(McpToolsetPayload {
         toolset: map_toolset(toolset),
@@ -392,12 +458,22 @@ pub async fn update_mcp_toolset(
 pub async fn disable_mcp_toolset(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(toolset_id): Path<Uuid>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let toolset = state
-        .store
-        .disable_mcp_toolset(toolset_id, OffsetDateTime::now_utc())
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state
+                .store
+                .disable_mcp_toolset(toolset_id, OffsetDateTime::now_utc()),
+            |toolset| {
+                toolset_event(actions::MCP_TOOLSET_DISABLED, &map_toolset(toolset.clone()))
+                    .after(serde_json::json!({ "status": toolset.status.as_str() }))
+            },
+        )
         .await?;
     Ok(Json(envelope(McpToolsetPayload {
         toolset: map_toolset(toolset),
@@ -441,13 +517,38 @@ pub async fn list_mcp_toolset_tools(
 pub async fn replace_mcp_toolset_tools(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(toolset_id): Path<Uuid>,
     Json(request): Json<ReplaceMcpToolsetToolsRequest>,
 ) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
-    let tools = state
+    let actor = require_platform_admin(&state, &headers).await?;
+    let before: Vec<String> = state
         .store
-        .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
+        .list_mcp_toolset_tools(toolset_id)
+        .await?
+        .into_iter()
+        .map(|tool| tool.mcp_tool_id.to_string())
+        .collect();
+    let tools = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.replace_mcp_toolset_tools(
+                toolset_id,
+                &request.tool_ids,
+                OffsetDateTime::now_utc(),
+            ),
+            |tools| {
+                let after: Vec<String> = tools
+                    .iter()
+                    .map(|tool| tool.mcp_tool_id.to_string())
+                    .collect();
+                AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED, targets::MCP_TOOLSET)
+                    .target(toolset_id)
+                    .before(serde_json::json!({ "tool_ids": before }))
+                    .after(serde_json::json!({ "tool_ids": after }))
+            },
+        )
         .await?;
     Ok(Json(envelope(McpToolsetToolsPayload {
         tool_ids: tools
@@ -495,22 +596,32 @@ pub async fn list_mcp_grants(
 pub async fn upsert_mcp_grant(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpGrantRequest>,
 ) -> Result<Json<Envelope<McpGrantPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
-    let grant = state
-        .store
-        .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
-            subject_kind: parse_grant_subject_kind(&request.subject_kind)?,
-            subject_id: request.subject_id,
-            target_kind: parse_grant_target_kind(&request.target_kind)?,
-            target_id: request.target_id,
-            updated_at: OffsetDateTime::now_utc(),
-        })
-        .await?;
-    Ok(Json(envelope(McpGrantPayload {
-        grant: map_grant(grant),
-    })))
+    let actor = require_platform_admin(&state, &headers).await?;
+    let record = UpsertMcpToolGrantRecord {
+        subject_kind: parse_grant_subject_kind(&request.subject_kind)?,
+        subject_id: request.subject_id,
+        target_kind: parse_grant_target_kind(&request.target_kind)?,
+        target_id: request.target_id,
+        updated_at: OffsetDateTime::now_utc(),
+    };
+    let grant = map_grant(
+        state
+            .audit()
+            .audited(
+                &meta.user_context(&actor),
+                state.store.upsert_mcp_tool_grant(&record),
+                |grant| {
+                    AuditEvent::new(actions::MCP_GRANT_SET, targets::MCP_GRANT)
+                        .target(grant.grant_id)
+                        .after(map_grant(grant.clone()))
+                },
+            )
+            .await?,
+    );
+    Ok(Json(envelope(McpGrantPayload { grant })))
 }
 
 #[utoipa::path(
@@ -523,18 +634,31 @@ pub async fn upsert_mcp_grant(
 pub async fn revoke_mcp_grant(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpGrantRequest>,
 ) -> Result<Json<Envelope<McpGrantsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
+    let subject_kind = parse_grant_subject_kind(&request.subject_kind)?;
+    let target_kind = parse_grant_target_kind(&request.target_kind)?;
+    let revoke = state.store.revoke_mcp_tool_grant(
+        subject_kind,
+        request.subject_id,
+        target_kind,
+        request.target_id,
+        OffsetDateTime::now_utc(),
+    );
     state
-        .store
-        .revoke_mcp_tool_grant(
-            parse_grant_subject_kind(&request.subject_kind)?,
-            request.subject_id,
-            parse_grant_target_kind(&request.target_kind)?,
-            request.target_id,
-            OffsetDateTime::now_utc(),
-        )
+        .audit()
+        .audited(&meta.user_context(&actor), revoke, |revoked| {
+            AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT)
+                .before(serde_json::json!({
+                    "subject_kind": subject_kind.as_str(),
+                    "subject_id": request.subject_id,
+                    "target_kind": target_kind.as_str(),
+                    "target_id": request.target_id,
+                }))
+                .meta("changed", revoked)
+        })
         .await?;
     Ok(Json(envelope(McpGrantsPayload { items: Vec::new() })))
 }
@@ -588,9 +712,11 @@ pub async fn list_mcp_credential_bindings(
 pub async fn upsert_mcp_credential_binding(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpCredentialBindingRequest>,
 ) -> Result<Json<Envelope<McpCredentialBindingPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
+    let replaced = request.credential_binding_id.is_some();
     let service = McpCredentialService::new(state.store.clone());
     let binding = service
         .upsert_binding(UpsertMcpCredentialBindingInput {
@@ -608,9 +734,23 @@ pub async fn upsert_mcp_credential_binding(
             metadata: request.metadata,
         })
         .await?;
-    Ok(Json(envelope(McpCredentialBindingPayload {
-        binding: map_credential_binding(binding),
-    })))
+    // The service returns the binding without its secret; only that view is recorded.
+    let binding = map_credential_binding(binding);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            AuditEvent::new(
+                actions::MCP_CREDENTIAL_BINDING_SET,
+                targets::MCP_CREDENTIAL_BINDING,
+            )
+            .target(binding.id())
+            .label(binding.owner_scope_key().to_string())
+            .meta("operation", if replaced { "replace" } else { "create" })
+            .after(&binding),
+        )
+        .await;
+    Ok(Json(envelope(McpCredentialBindingPayload { binding })))
 }
 
 #[utoipa::path(
@@ -623,12 +763,27 @@ pub async fn upsert_mcp_credential_binding(
 pub async fn revoke_mcp_credential_binding(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(credential_binding_id): Path<String>,
 ) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let credential_binding_id = parse_uuid(&credential_binding_id, "credential_binding_id")?;
     let service = McpCredentialService::new(state.store.clone());
-    service.revoke_binding(credential_binding_id).await?;
+    state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.revoke_binding(credential_binding_id),
+            |revoked| {
+                AuditEvent::new(
+                    actions::MCP_CREDENTIAL_BINDING_REVOKED,
+                    targets::MCP_CREDENTIAL_BINDING,
+                )
+                .target(credential_binding_id)
+                .meta("changed", revoked)
+            },
+        )
+        .await?;
     Ok(Json(envelope(McpCredentialBindingsPayload {
         items: Vec::new(),
     })))
@@ -696,4 +851,47 @@ fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {
             "{field_name} must be a valid uuid"
         )))
     })
+}
+
+fn server_event(action: &str, server: &McpServerView) -> AuditEvent {
+    AuditEvent::new(action, targets::MCP_SERVER)
+        .target(server.id())
+        .label(server.server_key().to_string())
+}
+
+fn toolset_event(action: &str, toolset: &McpToolsetView) -> AuditEvent {
+    AuditEvent::new(action, targets::MCP_TOOLSET)
+        .target(toolset.id())
+        .label(toolset.toolset_key().to_string())
+}
+
+async fn server_before_summary(
+    state: &AppState,
+    server_id: Uuid,
+) -> Result<serde_json::Value, AppError> {
+    Ok(state
+        .store
+        .get_external_mcp_server(server_id)
+        .await?
+        .map(|server| server_audit_summary(&map_server(server)))
+        .unwrap_or(serde_json::Value::Null))
+}
+
+async fn toolset_before_summary(
+    state: &AppState,
+    toolset_id: Uuid,
+) -> Result<serde_json::Value, AppError> {
+    Ok(state
+        .store
+        .list_mcp_toolsets(true)
+        .await?
+        .into_iter()
+        .find(|toolset| toolset.toolset_id == toolset_id)
+        .map(|toolset| {
+            serde_json::json!({
+                "display_name": toolset.display_name,
+                "description": toolset.description,
+            })
+        })
+        .unwrap_or(serde_json::Value::Null))
 }

@@ -11,6 +11,10 @@ use gateway_core::{
     ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
     TokenUsageBuckets, UserStatus, budget_window_utc,
 };
+use gateway_service::{
+    AuditEvent,
+    admin_audit::{actions, targets},
+};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
@@ -30,6 +34,7 @@ use crate::http::{
         SpendReportQuery, SpendReportView, SpendTokenPointView, SpendTotalsView,
         UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
     state::AppState,
@@ -444,9 +449,10 @@ pub async fn list_spend_budgets(
 pub async fn upsert_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<UpsertBudgetRequest>,
 ) -> Result<Json<Envelope<UpsertBudgetResultView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let scope = parse_budget_scope(&request.scope)?;
     validate_budget_scope_exists(&state, &scope).await?;
     let cadence = parse_budget_cadence(&request.cadence)?;
@@ -460,9 +466,24 @@ pub async fn upsert_budget(
     };
     let now = OffsetDateTime::now_utc();
 
-    let budget = state
+    let before = state
         .store
-        .upsert_active_budget(&scope, &settings, now)
+        .get_active_budget_by_scope(&scope)
+        .await?
+        .map(|budget| budget_to_settings_view(&budget));
+    let budget = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.upsert_active_budget(&scope, &settings, now),
+            |budget| {
+                AuditEvent::new(actions::BUDGET_SET, targets::BUDGET)
+                    .target(&budget.scope_key)
+                    .meta("budget_id", budget.budget_id)
+                    .before(&before)
+                    .after(budget_to_settings_view(budget))
+            },
+        )
         .await?;
     let current_window_spend = current_window_spend(&state, &budget, now).await?;
     state
@@ -490,9 +511,10 @@ pub async fn upsert_budget(
 pub async fn deactivate_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<DeactivateBudgetRequest>,
 ) -> Result<Json<Envelope<DeactivateBudgetResultView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let scope = parse_budget_scope(&request.scope)?;
     if let BudgetScope::ServiceAccount { service_account_id } = scope
         && state
@@ -508,9 +530,25 @@ pub async fn deactivate_budget(
     }
     let scope_key = scope.scope_key();
 
-    let deactivated = state
+    let before = state
         .store
-        .deactivate_active_budget(&scope, OffsetDateTime::now_utc())
+        .get_active_budget_by_scope(&scope)
+        .await?
+        .map(|budget| budget_to_settings_view(&budget));
+    let deactivated = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state
+                .store
+                .deactivate_active_budget(&scope, OffsetDateTime::now_utc()),
+            |deactivated| {
+                AuditEvent::new(actions::BUDGET_DEACTIVATED, targets::BUDGET)
+                    .target(&scope_key)
+                    .before(&before)
+                    .meta("changed", deactivated)
+            },
+        )
         .await?;
     Ok(Json(envelope(DeactivateBudgetResultView {
         scope: scope_to_view(&scope),

@@ -2,6 +2,9 @@ pub mod admin_auth;
 pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
+pub mod audit;
+#[cfg(test)]
+mod audit_tests;
 pub mod batches;
 #[cfg(test)]
 mod budget_status_tests;
@@ -11,6 +14,7 @@ pub mod guardrail_events;
 pub mod guardrails;
 pub mod handlers;
 pub mod identity;
+mod identity_audit;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod inference_guardrails;
@@ -48,9 +52,9 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
-    review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
+    api_keys::*, audit::list_audit_logs, batches::*, guardrails::*, handlers::*, identity::*,
+    mcp_gateway::*, mcp_oauth::*, mcp_registry::*, models::*, observability::*, profile::*,
+    provider_credentials::*, review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -286,6 +290,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
             get(get_mcp_tool_invocation_detail),
         )
+        .route("/api/v1/admin/audit-logs", get(list_audit_logs))
         .route(
             "/api/v1/admin/guardrails/policies",
             get(get_guardrail_policies),

@@ -3,8 +3,13 @@ use axum::{
     extract::{FromRequestParts, Path, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION, request::Parts},
 };
-use gateway_core::{AuthError, GatewayError, IdentityRepository, UserStatus};
-use gateway_service::{ProviderCredentialService, ProviderCredentialStatus};
+use gateway_core::{
+    AuditActor, AuditActorKind, AuthError, GatewayError, IdentityRepository, UserStatus,
+};
+use gateway_service::{
+    AuditEvent, ProviderCredentialService, ProviderCredentialStatus,
+    admin_audit::{actions, targets},
+};
 use gateway_store::GatewayStore;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -16,6 +21,7 @@ use crate::http::{
         AdminProviderCredentialStatusView, Envelope, IdentityActionStatus,
         UpsertProviderCredentialRequest, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -48,7 +54,7 @@ impl From<ProviderCredentialStatus> for SelfProviderCredentialView {
 }
 
 // Authenticate before buffering a token, and never borrow a cookie's identity.
-pub struct ProviderCredentialUser(Uuid);
+pub struct ProviderCredentialUser(Uuid, AuditActor);
 
 impl FromRequestParts<AppState> for ProviderCredentialUser {
     type Rejection = AppError;
@@ -79,7 +85,13 @@ impl FromRequestParts<AppState> for ProviderCredentialUser {
         if user.status != UserStatus::Active {
             return Err(AuthError::InsufficientPrivileges.into());
         }
-        Ok(Self(user_id))
+        let actor = AuditActor {
+            kind: AuditActorKind::ApiKey,
+            user_id: Some(user_id),
+            api_key_id: Some(key.id),
+            label: Some(user.email),
+        };
+        Ok(Self(user_id, actor))
     }
 }
 
@@ -95,7 +107,7 @@ impl FromRequestParts<AppState> for ProviderCredentialUser {
 )]
 pub async fn list_my_provider_credentials(
     State(state): State<AppState>,
-    ProviderCredentialUser(user_id): ProviderCredentialUser,
+    ProviderCredentialUser(user_id, _): ProviderCredentialUser,
 ) -> Result<Json<Vec<SelfProviderCredentialView>>, AppError> {
     let service = ProviderCredentialService::new(state.store.clone());
     let mut credentials = Vec::with_capacity(state.copilot_user_provider_keys.len());
@@ -120,7 +132,8 @@ pub async fn list_my_provider_credentials(
 )]
 pub async fn set_my_provider_credential(
     State(state): State<AppState>,
-    ProviderCredentialUser(user_id): ProviderCredentialUser,
+    ProviderCredentialUser(user_id, actor): ProviderCredentialUser,
+    meta: AuditRequestMeta,
     Path(provider_key): Path<String>,
     input: Result<Json<SetMyProviderCredentialRequest>, JsonRejection>,
 ) -> Result<Json<SelfProviderCredentialView>, AppError> {
@@ -137,8 +150,14 @@ pub async fn set_my_provider_credential(
         }
     })?;
     ensure_copilot_user_provider(&state, &provider_key)?;
-    let status = ProviderCredentialService::new(state.store.clone())
-        .upsert(&provider_key, user_id, &input.token)
+    let service = ProviderCredentialService::new(state.store.clone());
+    let status = state
+        .audit()
+        .audited(
+            &meta.context(actor),
+            service.upsert(&provider_key, user_id, &input.token),
+            |_| provider_credential_event(actions::PROVIDER_CREDENTIAL_SET, user_id, &provider_key),
+        )
         .await?;
     Ok(Json(status.into()))
 }
@@ -155,17 +174,24 @@ pub async fn upsert_identity_user_provider_credential(
     State(state): State<AppState>,
     Path((user_id, provider_key)): Path<(Uuid, String)>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(input): Json<UpsertProviderCredentialRequest>,
 ) -> Result<Json<Envelope<AdminProviderCredentialStatusView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     ensure_copilot_user_provider(&state, &provider_key)?;
     if state.store.get_identity_user(user_id).await?.is_none() {
         return Err(AppError(GatewayError::InvalidRequest(format!(
             "user `{user_id}` does not exist"
         ))));
     }
-    let status = gateway_service::ProviderCredentialService::new(state.store.clone())
-        .upsert(&provider_key, user_id, &input.token)
+    let service = ProviderCredentialService::new(state.store.clone());
+    let status = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.upsert(&provider_key, user_id, &input.token),
+            |_| provider_credential_event(actions::PROVIDER_CREDENTIAL_SET, user_id, &provider_key),
+        )
         .await?;
     Ok(Json(envelope(AdminProviderCredentialStatusView {
         user_id: user_id.to_string(),
@@ -186,14 +212,37 @@ pub async fn delete_identity_user_provider_credential(
     State(state): State<AppState>,
     Path((user_id, provider_key)): Path<(Uuid, String)>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
 ) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
-    let deleted = gateway_service::ProviderCredentialService::new(state.store.clone())
-        .delete(&provider_key, user_id)
+    let actor = require_platform_admin(&state, &headers).await?;
+    let service = ProviderCredentialService::new(state.store.clone());
+    let deleted = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.delete(&provider_key, user_id),
+            |deleted| {
+                provider_credential_event(
+                    actions::PROVIDER_CREDENTIAL_DELETED,
+                    user_id,
+                    &provider_key,
+                )
+                .meta("changed", deleted)
+            },
+        )
         .await?;
     Ok(Json(envelope(IdentityActionStatus {
         status: if deleted { "deleted" } else { "not_found" },
     })))
+}
+
+/// The token itself is never part of the entry; the target names whose credential changed.
+fn provider_credential_event(action: &str, user_id: Uuid, provider_key: &str) -> AuditEvent {
+    AuditEvent::new(action, targets::PROVIDER_CREDENTIAL)
+        .target(format!("{user_id}/{provider_key}"))
+        .label(provider_key.to_string())
+        .meta("user_id", user_id)
+        .meta("provider_key", provider_key)
 }
 
 fn ensure_copilot_user_provider(state: &AppState, provider_key: &str) -> Result<(), AppError> {

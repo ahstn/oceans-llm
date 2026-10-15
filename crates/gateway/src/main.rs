@@ -329,9 +329,13 @@ async fn run_serve_with_store(
 
     tracing::info!(address = %bind_address, "gateway started");
 
-    axum::serve(listener, app)
-        .await
-        .context("gateway server stopped unexpectedly")?;
+    // Peer addresses feed the request IP on admin audit entries.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .context("gateway server stopped unexpectedly")?;
 
     Ok(())
 }
