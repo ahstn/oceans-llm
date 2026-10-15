@@ -637,7 +637,7 @@ pub async fn update_identity_team(
         };
         landed(state.store.update_team_name(team_id, name, now).await?);
         landed(state.store.update_team_tags(team_id, &tags, now).await?);
-        landed(sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?);
+        landed(sync_team_admins(&state.store, team_id, &selected_admin_ids, now, &progress).await?);
         Ok::<_, AppError>((reload_team_view(&state.store, team_id).await?, changed))
     };
     let (view, _) = state
@@ -1218,6 +1218,7 @@ pub async fn update_identity_user(
                 oidc_provider.as_ref(),
                 oauth_provider.as_ref(),
                 now,
+                &progress,
             )
             .await?,
         );
@@ -3223,12 +3224,22 @@ fn validate_team_admin_assignments(
     }
 }
 
+/// Records a write that changed something: the change counts, and progress marks
+/// that the mutation has partly landed, so a later failure still records it.
+fn note_step(progress: &AuditProgress, changed: &mut bool, step_changed: bool) {
+    if step_changed {
+        *changed = true;
+        progress.landed();
+    }
+}
+
 /// Returns whether any membership changed.
 async fn sync_team_admins(
     store: &AnyStore,
     team_id: Uuid,
     selected_admin_ids: &[Uuid],
     now: OffsetDateTime,
+    progress: &AuditProgress,
 ) -> Result<bool, AppError> {
     let mut changed = false;
     let selected_admin_ids: BTreeSet<_> = selected_admin_ids.iter().copied().collect();
@@ -3238,14 +3249,18 @@ async fn sync_team_admins(
         if membership.role == MembershipRole::Admin
             && !selected_admin_ids.contains(&membership.user_id)
         {
-            changed |= store
-                .update_team_membership_role(
-                    team_id,
-                    membership.user_id,
-                    MembershipRole::Member,
-                    now,
-                )
-                .await?;
+            note_step(
+                progress,
+                &mut changed,
+                store
+                    .update_team_membership_role(
+                        team_id,
+                        membership.user_id,
+                        MembershipRole::Member,
+                        now,
+                    )
+                    .await?,
+            );
         }
     }
 
@@ -3260,15 +3275,19 @@ async fn sync_team_admins(
                 if existing.role == MembershipRole::Admin
                     || existing.role == MembershipRole::Owner => {}
             Some(_) => {
-                changed |= store
-                    .update_team_membership_role(team_id, user_id, MembershipRole::Admin, now)
-                    .await?;
+                note_step(
+                    progress,
+                    &mut changed,
+                    store
+                        .update_team_membership_role(team_id, user_id, MembershipRole::Admin, now)
+                        .await?,
+                );
             }
             None => {
                 store
                     .assign_team_membership(user_id, team_id, MembershipRole::Admin)
                     .await?;
-                changed = true;
+                note_step(progress, &mut changed, true);
             }
         }
     }
@@ -3464,37 +3483,62 @@ async fn sync_identity_user_auth_mode(
     oidc_provider: Option<&OidcProviderRecord>,
     oauth_provider: Option<&OauthProviderRecord>,
     now: OffsetDateTime,
+    progress: &AuditProgress,
 ) -> Result<bool, AppError> {
     let mut changed = false;
     if user.user.auth_mode == AuthMode::Password && next_auth_mode != AuthMode::Password {
-        changed |= store.delete_user_password_auth(user.user.user_id).await?;
-        changed |= store
-            .revoke_password_invitations_for_user(user.user.user_id, now)
-            .await?;
+        note_step(
+            progress,
+            &mut changed,
+            store.delete_user_password_auth(user.user.user_id).await?,
+        );
+        note_step(
+            progress,
+            &mut changed,
+            store
+                .revoke_password_invitations_for_user(user.user.user_id, now)
+                .await?,
+        );
     }
 
     if let Some(current_provider_id) = user.oidc_provider_id.as_deref() {
         let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
         if next_auth_mode != AuthMode::Oidc || next_provider_id != Some(current_provider_id) {
-            changed |= store
-                .delete_user_oidc_auth(user.user.user_id, current_provider_id)
-                .await?;
+            note_step(
+                progress,
+                &mut changed,
+                store
+                    .delete_user_oidc_auth(user.user.user_id, current_provider_id)
+                    .await?,
+            );
         }
     }
 
     if let Some(current_provider_id) = user.oauth_provider_id.as_deref() {
         let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
         if next_auth_mode != AuthMode::Oauth || next_provider_id != Some(current_provider_id) {
-            changed |= store
-                .delete_user_oauth_auth(user.user.user_id, current_provider_id)
-                .await?;
+            note_step(
+                progress,
+                &mut changed,
+                store
+                    .delete_user_oauth_auth(user.user.user_id, current_provider_id)
+                    .await?,
+            );
         }
     }
 
     match next_auth_mode {
         AuthMode::Password => {
-            changed |= store.clear_user_oidc_link(user.user.user_id).await?;
-            changed |= store.clear_user_oauth_link(user.user.user_id).await?;
+            note_step(
+                progress,
+                &mut changed,
+                store.clear_user_oidc_link(user.user.user_id).await?,
+            );
+            note_step(
+                progress,
+                &mut changed,
+                store.clear_user_oauth_link(user.user.user_id).await?,
+            );
         }
         AuthMode::Oidc => {
             let provider = oidc_provider.ok_or_else(|| {
@@ -3502,10 +3546,18 @@ async fn sync_identity_user_auth_mode(
                     "oidc provider configuration is required".to_string(),
                 ))
             })?;
-            changed |= store.clear_user_oauth_link(user.user.user_id).await?;
-            changed |= store
-                .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
-                .await?;
+            note_step(
+                progress,
+                &mut changed,
+                store.clear_user_oauth_link(user.user.user_id).await?,
+            );
+            note_step(
+                progress,
+                &mut changed,
+                store
+                    .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
+                    .await?,
+            );
         }
         AuthMode::Oauth => {
             let provider = oauth_provider.ok_or_else(|| {
@@ -3513,10 +3565,18 @@ async fn sync_identity_user_auth_mode(
                     "oauth provider configuration is required".to_string(),
                 ))
             })?;
-            changed |= store.clear_user_oidc_link(user.user.user_id).await?;
-            changed |= store
-                .set_user_oauth_link(user.user.user_id, &provider.oauth_provider_id, now)
-                .await?;
+            note_step(
+                progress,
+                &mut changed,
+                store.clear_user_oidc_link(user.user.user_id).await?,
+            );
+            note_step(
+                progress,
+                &mut changed,
+                store
+                    .set_user_oauth_link(user.user.user_id, &provider.oauth_provider_id, now)
+                    .await?,
+            );
         }
     }
 
