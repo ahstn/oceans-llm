@@ -66,7 +66,7 @@ Summaries are built field by field from response views or domain records that ho
 
 - It redacts a value whose field name matches a request-log secret key, or contains `secret`, `password`, `token`, `authorization`, `cookie`, `private_key`, `api_key`, `ciphertext`, `nonce`, `key_material` or `invite_url`.
 - Names ending in `_id`, `_at`, `_kind`, `_mode`, `_type`, `_status`, `_count`, `_prefix`, `_ref` and similar suffixes describe a secret without holding it, so they are kept. Booleans and nulls are kept too.
-- It redacts any string that looks like a credential (`gwk_…`, `Bearer …`, `Basic …`), whatever its field name.
+- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
 - Each summary is capped at 16 KiB. A larger one is replaced with `{ "truncated": true, "bytes": n }`.
 
 The rules for specific actions are:

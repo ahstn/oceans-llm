@@ -381,7 +381,11 @@ fn is_flag(value: &Value) -> bool {
 fn looks_like_credential(text: &str) -> bool {
     let trimmed = text.trim_start();
     let lower = trimmed.get(..7).unwrap_or(trimmed).to_ascii_lowercase();
-    trimmed.starts_with("gwk_") || lower.starts_with("bearer ") || lower.starts_with("basic ")
+    // A full gateway key is `gwk_<public id>.<secret>`; the bare `gwk_<public id>` prefix is a
+    // display identifier and stays readable.
+    (trimmed.starts_with("gwk_") && trimmed.contains('.'))
+        || lower.starts_with("bearer ")
+        || lower.starts_with("basic ")
 }
 
 fn redact_summary(value: Value) -> Value {
@@ -502,6 +506,7 @@ mod tests {
             "client_secret": "s3cr3t",
             "headers": { "Authorization": "Bearer abc", "X-Trace": "ok" },
             "notes": ["gwk_leaked.value", "fine"],
+            "prefix": "gwk_0f3c9a",
             "invite_url": "https://gateway.example/invite/abc",
             "secret_configured": true,
             "secret_ref": "env/UPSTREAM_TOKEN",
@@ -518,6 +523,7 @@ mod tests {
                 "client_secret": AUDIT_REDACTED,
                 "headers": { "Authorization": AUDIT_REDACTED, "X-Trace": "ok" },
                 "notes": [AUDIT_REDACTED, "fine"],
+                "prefix": "gwk_0f3c9a",
                 "invite_url": AUDIT_REDACTED,
                 "secret_configured": true,
                 "secret_ref": "env/UPSTREAM_TOKEN",

@@ -808,9 +808,13 @@ pub async fn logout_current_session(
                     &meta.context(actor),
                     state.store.revoke_user_session(session_id, now),
                     |_| {
-                        AuditEvent::new(actions::SESSION_REVOKED, targets::SESSION)
+                        let event = AuditEvent::new(actions::SESSION_REVOKED, targets::SESSION)
                             .target(session_id)
-                            .meta("reason", "logout")
+                            .meta("reason", "logout");
+                        match &user {
+                            Some(user) => event.label(user.email.clone()),
+                            None => event,
+                        }
                     },
                 )
                 .await?;

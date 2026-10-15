@@ -180,6 +180,11 @@ async fn api_key_lifecycle_is_audited_without_the_raw_key() {
     assert_eq!(created_entry["target_id"], api_key_id);
     assert_eq!(created_entry["target_label"], "ci");
     assert_eq!(created_entry["after"]["status"], "active");
+    // The public display prefix stays readable; only the full key is a secret.
+    assert_eq!(
+        created_entry["after"]["prefix"],
+        created["data"]["api_key"]["prefix"]
+    );
 
     let revoked_entry = harness.entry("api_key.revoked").await;
     assert_eq!(revoked_entry["after"]["status"], "revoked");
