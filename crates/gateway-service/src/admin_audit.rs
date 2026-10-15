@@ -275,14 +275,27 @@ pub struct AuditEvent {
 impl AuditEvent {
     /// `action` must be one of [`actions`] and `target_type` the target type its
     /// prefix names, such as `user.updated` with `user`.
+    ///
+    /// Tests fail on anything else. A release build logs the mismatch and still
+    /// records the entry, because dropping it would lose a real change.
     #[must_use]
     pub fn new(action: &str, target_type: &str) -> Self {
-        debug_assert!(
-            action
+        let valid = actions::ALL.contains(&action)
+            && targets::ALL.contains(&target_type)
+            && action
                 .strip_prefix(target_type)
-                .is_some_and(|rest| rest.starts_with('.')),
-            "audit action `{action}` does not belong to target type `{target_type}`"
+                .is_some_and(|rest| rest.starts_with('.'));
+        debug_assert!(
+            valid,
+            "audit action `{action}` and target type `{target_type}` are not a known pair"
         );
+        if !valid {
+            tracing::error!(
+                audit_action = action,
+                audit_target_type = target_type,
+                "audit event uses an unknown action or target type"
+            );
+        }
         Self {
             action: action.to_string(),
             target_type: target_type.to_string(),
