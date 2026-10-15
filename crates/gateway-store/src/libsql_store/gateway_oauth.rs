@@ -600,10 +600,11 @@ impl GatewayOauthRepository for LibsqlStore {
 }
 
 impl LibsqlStore {
-    /// Repeats a cleanup statement until a batch comes back short.
+    /// Repeats a cleanup statement until a batch comes back short, or for at
+    /// most `PURGE_MAX_BATCHES` rounds; the next run continues a backlog.
     async fn purge_in_batches(&self, sql: &str, cutoff: i64) -> Result<u64, StoreError> {
         let mut total = 0;
-        loop {
+        for _ in 0..PURGE_MAX_BATCHES {
             let affected = self
                 .connection
                 .execute(sql, libsql::params![cutoff, PURGE_BATCH_SIZE])
@@ -611,9 +612,10 @@ impl LibsqlStore {
                 .map_err(to_write_error)?;
             total += affected;
             if affected < PURGE_BATCH_SIZE.unsigned_abs() {
-                return Ok(total);
+                break;
             }
         }
+        Ok(total)
     }
 }
 
@@ -666,3 +668,10 @@ const PURGE_BATCH_SIZE: i64 = 1000;
 /// Small in tests, so the shared store tests run several batches.
 #[cfg(test)]
 const PURGE_BATCH_SIZE: i64 = 2;
+/// Rounds each cleanup statement gets per run, bounding one run's work to
+/// 50,000 rows a step. A larger backlog drains over the following hours.
+#[cfg(not(test))]
+const PURGE_MAX_BATCHES: usize = 50;
+/// One round in tests, so the store tests see a backlog carried over.
+#[cfg(test)]
+const PURGE_MAX_BATCHES: usize = 1;

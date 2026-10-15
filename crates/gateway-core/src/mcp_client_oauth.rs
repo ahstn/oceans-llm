@@ -501,7 +501,8 @@ pub trait GatewayOauthRepository: Send + Sync {
     /// registered clients created before `unused_clients_before` that never
     /// received a grant and have no remaining authorization request. Grants
     /// are kept as an audit trail. Each step works in bounded batches, so a
-    /// backlog never becomes one long transaction.
+    /// backlog never becomes one long transaction, and a run does a bounded
+    /// number of batches; the next run continues where it stopped.
     ///
     /// A consumed code or refresh token is the only link from a replay to
     /// its grant, so rows of a grant that can still be live are kept: one

@@ -847,8 +847,14 @@ where
         .await
         .unwrap();
     assert_eq!((counts.tokens, counts.authorization_requests), (1, 1));
-    // The owner's four remaining grants retire together, over several batches.
-    assert_eq!(counts.retired_grants, 4);
+    // The owner's four remaining grants retire, but one run stops at its
+    // batch budget (one batch of two in tests) and the next run finishes.
+    assert_eq!(counts.retired_grants, 2);
+    let counts = store
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+        .await
+        .unwrap();
+    assert_eq!(counts.retired_grants, 2);
     assert!(
         store
             .list_live_gateway_oauth_grants_for_user(owner, None, now, 100)
