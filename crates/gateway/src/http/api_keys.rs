@@ -10,7 +10,7 @@ use gateway_core::{
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditEvent,
-    CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
+    AuditProgress, CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
     UpdateAdminApiKeyInput,
     admin_audit::{actions, targets},
 };
@@ -191,21 +191,43 @@ pub async fn create_api_key(
     authorize_create_api_key(&state, &scope, &request).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let create = service.create_api_key(CreateAdminApiKeyInput {
-        name: request.name,
-        owner_kind: request.owner_kind,
-        owner_user_id: request.owner_user_id,
-        owner_team_id: request.owner_team_id,
-        owner_service_account_id: request.owner_service_account_id,
-        model_grant_mode: request.model_grant_mode.as_str().to_string(),
-        model_keys: request.model_keys,
+    let requested_name = request.name.clone();
+    let requested = serde_json::json!({
+        "owner_kind": request.owner_kind,
+        "model_grant_mode": request.model_grant_mode.as_str(),
+        "model_keys": request.model_keys,
     });
+    let progress = AuditProgress::default();
+    let create = service.create_api_key(
+        CreateAdminApiKeyInput {
+            name: request.name,
+            owner_kind: request.owner_kind,
+            owner_user_id: request.owner_user_id,
+            owner_team_id: request.owner_team_id,
+            owner_service_account_id: request.owner_service_account_id,
+            model_grant_mode: request.model_grant_mode.as_str().to_string(),
+            model_keys: request.model_keys,
+        },
+        &progress,
+    );
     let result = state
         .audit()
-        .audited(&meta.user_context(&actor), create, |result| {
-            api_key_event(actions::API_KEY_CREATED, &result.api_key)
-                .after(map_api_key_summary(result.api_key.clone()))
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            create,
+            |result| {
+                api_key_event(actions::API_KEY_CREATED, &result.api_key)
+                    .after(map_api_key_summary(result.api_key.clone()))
+            },
+            // The key row exists but a later step failed; the service revokes the key
+            // when its secret material could not be stored.
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_CREATED, progress, error)
+                    .label(requested_name.clone())
+                    .meta("requested", &requested)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(map_create_result(result))))
@@ -233,23 +255,39 @@ pub async fn update_api_key(
 
     let before = api_key_model_access_summary(&state, api_key_id).await?;
     let service = AdminApiKeyService::new(state.store.clone());
+    let requested = serde_json::json!({
+        "model_grant_mode": request.model_grant_mode.as_str(),
+        "model_keys": request.model_keys,
+    });
+    let progress = AuditProgress::default();
     let update = service.update_api_key(
         api_key_id,
         UpdateAdminApiKeyInput {
             model_grant_mode: request.model_grant_mode.as_str().to_string(),
             model_keys: request.model_keys,
         },
+        &progress,
     );
     let api_key = state
         .audit()
-        .audited(&meta.user_context(&actor), update, |api_key| {
-            api_key_event(actions::API_KEY_UPDATED, api_key)
-                .before(before)
-                .after(serde_json::json!({
-                    "model_grant_mode": api_key.model_grant_mode.as_str(),
-                    "model_keys": api_key.model_keys,
-                }))
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            update,
+            |api_key| {
+                api_key_event(actions::API_KEY_UPDATED, api_key)
+                    .before(&before)
+                    .after(serde_json::json!({
+                        "model_grant_mode": api_key.model_grant_mode.as_str(),
+                        "model_keys": api_key.model_keys,
+                    }))
+            },
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_UPDATED, progress, error)
+                    .before(&before)
+                    .meta("requested", &requested)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(UpdateApiKeyResponse {
@@ -276,14 +314,20 @@ pub async fn revoke_api_key(
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
+    let progress = AuditProgress::default();
     let api_key = state
         .audit()
-        .audited(
+        .audited_steps(
             &meta.user_context(&actor),
-            service.revoke_api_key(api_key_id),
+            &progress,
+            service.revoke_api_key(api_key_id, &progress),
             |api_key| {
                 api_key_event(actions::API_KEY_REVOKED, api_key)
                     .after(serde_json::json!({ "status": api_key.status.as_str() }))
+            },
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_REVOKED, progress, error)
+                    .after(serde_json::json!({ "status": "revoked" }))
             },
         )
         .await?;
@@ -424,6 +468,19 @@ async fn require_api_key_action_scope(
             managed_team_id,
         },
     ))
+}
+
+/// A key change that failed after its first write landed; `progress` holds the key ID.
+fn partial_api_key_event(
+    action: &str,
+    progress: &AuditProgress,
+    error: &GatewayError,
+) -> AuditEvent {
+    let event = AuditEvent::new(action, targets::API_KEY).meta("error", error.error_code());
+    match progress.target_id() {
+        Some(api_key_id) => event.target(api_key_id),
+        None => event,
+    }
 }
 
 fn api_key_event(action: &str, api_key: &AdminApiKeySummary) -> AuditEvent {

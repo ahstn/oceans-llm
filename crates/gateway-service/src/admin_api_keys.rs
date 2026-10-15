@@ -14,7 +14,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret, hash_gateway_key_secret,
+    admin_audit::AuditProgress, decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret,
+    hash_gateway_key_secret,
 };
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
@@ -302,9 +303,12 @@ where
         })
     }
 
+    /// `progress` is marked once the key row is written, so an audit entry can
+    /// record a create that fails afterwards.
     pub async fn create_api_key(
         &self,
         request: CreateAdminApiKeyInput,
+        progress: &AuditProgress,
     ) -> Result<CreateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
@@ -381,6 +385,7 @@ where
                 created_at: now,
             })
             .await?;
+        progress.landed_on(api_key.id);
         if let Some(encrypted) = secret_material
             && let Err(error) = self
                 .repo
@@ -417,6 +422,7 @@ where
     pub async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
+        progress: &AuditProgress,
     ) -> Result<AdminApiKeySummary, GatewayError> {
         self.repo
             .get_api_key_by_id(api_key_id)
@@ -426,6 +432,7 @@ where
         self.repo
             .revoke_api_key(api_key_id, OffsetDateTime::now_utc())
             .await?;
+        progress.landed_on(api_key_id);
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
@@ -482,6 +489,7 @@ where
         &self,
         api_key_id: Uuid,
         request: UpdateAdminApiKeyInput,
+        progress: &AuditProgress,
     ) -> Result<AdminApiKeySummary, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
@@ -515,6 +523,7 @@ where
         self.repo
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
+        progress.landed_on(api_key.id);
 
         let mut api_key = api_key;
         api_key.model_grant_mode = model_grant_mode;

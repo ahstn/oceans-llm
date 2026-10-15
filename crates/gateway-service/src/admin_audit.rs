@@ -308,7 +308,8 @@ impl AuditProgress {
         self.target_id.get().map(String::as_str)
     }
 
-    fn has_landed(&self) -> bool {
+    #[must_use]
+    pub fn has_landed(&self) -> bool {
         self.landed.load(Ordering::SeqCst)
     }
 }

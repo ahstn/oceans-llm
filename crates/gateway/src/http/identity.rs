@@ -1908,9 +1908,22 @@ pub async fn oidc_callback(
     {
         return Ok(oidc_error_redirect("identity_conflict"));
     } else if provider.jit.enabled {
-        let user = create_jit_oidc_user(&state, &provider, &subject, &email, now).await?;
-        record_user_provisioned(&state, &meta, &user, "oidc", &provider.provider_key).await;
-        user
+        let progress = AuditProgress::default();
+        match create_jit_oidc_user(&state, &provider, &subject, &email, now, &progress).await {
+            Ok(user) => {
+                record_user_provisioned(&state, &meta, &user, "oidc", &provider.provider_key).await;
+                user
+            }
+            Err(error) => {
+                let provisioning = PartialProvisioning {
+                    email: &email,
+                    method: "oidc",
+                    provider_key: &provider.provider_key,
+                };
+                record_partial_provisioning(&state, &meta, &progress, &error, provisioning).await;
+                return Err(error);
+            }
+        }
     } else {
         return Ok(oidc_error_redirect("unmatched_identity"));
     };
@@ -2163,9 +2176,23 @@ pub async fn oauth_callback_github(
     {
         return Ok(oidc_error_redirect("identity_conflict"));
     } else if provider.jit.enabled {
-        let user = create_jit_oauth_user(&state, &provider, &subject, &email, now).await?;
-        record_user_provisioned(&state, &meta, &user, "oauth", &provider.provider_key).await;
-        user
+        let progress = AuditProgress::default();
+        match create_jit_oauth_user(&state, &provider, &subject, &email, now, &progress).await {
+            Ok(user) => {
+                record_user_provisioned(&state, &meta, &user, "oauth", &provider.provider_key)
+                    .await;
+                user
+            }
+            Err(error) => {
+                let provisioning = PartialProvisioning {
+                    email: &email,
+                    method: "oauth",
+                    provider_key: &provider.provider_key,
+                };
+                record_partial_provisioning(&state, &meta, &progress, &error, provisioning).await;
+                return Err(error);
+            }
+        }
     } else {
         return Ok(oidc_error_redirect("unmatched_identity"));
     };
@@ -2440,12 +2467,15 @@ fn github_email_domain(email: &str) -> Option<&str> {
         .and_then(|(_, domain)| (!domain.is_empty()).then_some(domain))
 }
 
+/// `progress` is marked once the user row exists, so a provisioning that fails
+/// afterwards can still be audited.
 async fn create_jit_oidc_user(
     state: &AppState,
     provider: &OidcProviderRecord,
     subject: &str,
     email: &str,
     now: OffsetDateTime,
+    progress: &AuditProgress,
 ) -> Result<UserRecord, AppError> {
     let name = email.split('@').next().unwrap_or(email);
     let jit_team = if let Some(membership) = provider.jit.membership.as_ref() {
@@ -2475,6 +2505,7 @@ async fn create_jit_oidc_user(
             UserStatus::Invited,
         )
         .await?;
+    progress.landed_on(user.user_id);
     state
         .store
         .seed_update_identity_user_profile(
@@ -2525,12 +2556,15 @@ async fn create_jit_oidc_user(
         .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))
 }
 
+/// `progress` is marked once the user row exists, so a provisioning that fails
+/// afterwards can still be audited.
 async fn create_jit_oauth_user(
     state: &AppState,
     provider: &OauthProviderRecord,
     subject: &str,
     email: &str,
     now: OffsetDateTime,
+    progress: &AuditProgress,
 ) -> Result<UserRecord, AppError> {
     let name = email.split('@').next().unwrap_or(email);
     let jit_team = if let Some(membership) = provider.jit.membership.as_ref() {
@@ -2560,6 +2594,7 @@ async fn create_jit_oauth_user(
             UserStatus::Invited,
         )
         .await?;
+    progress.landed_on(user.user_id);
     state
         .store
         .seed_update_identity_user_profile(
@@ -3553,6 +3588,37 @@ async fn record_sso_activation(
         .before(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
         .after(serde_json::json!({ "status": UserStatus::Active.as_str() }));
     state.audit().record(&meta.user_context(user), event).await;
+}
+
+struct PartialProvisioning<'a> {
+    email: &'a str,
+    method: &'a str,
+    provider_key: &'a str,
+}
+
+/// Records a JIT provisioning that created the user but failed on a later write.
+async fn record_partial_provisioning(
+    state: &AppState,
+    meta: &AuditRequestMeta,
+    progress: &AuditProgress,
+    error: &AppError,
+    provisioning: PartialProvisioning<'_>,
+) {
+    if !progress.has_landed() {
+        return;
+    }
+    let actor = gateway_core::AuditActor {
+        kind: gateway_core::AuditActorKind::User,
+        user_id: progress.target_id().and_then(|id| Uuid::parse_str(id).ok()),
+        api_key_id: None,
+        label: Some(provisioning.email.to_string()),
+    };
+    let event = partial_event(actions::USER_PROVISIONED, targets::USER, progress, error)
+        .label(provisioning.email)
+        .meta("method", provisioning.method)
+        .meta("provider_key", provisioning.provider_key)
+        .meta("outcome", "partial");
+    state.audit().record(&meta.context(actor), event).await;
 }
 
 async fn record_user_provisioned(
