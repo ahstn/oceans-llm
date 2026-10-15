@@ -54,6 +54,7 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
         <CardDescription>
           Clients you allowed to use Oceans MCP by signing in. They act as you with your MCP access,
           and stop working when you disconnect them or sign out of the session that approved them.
+          Times are UTC.
         </CardDescription>
       </CardHeader>
       <CardContent className="min-w-0">
@@ -70,8 +71,8 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                   <ClientIdentity client={client} />
                   <p className="text-subtle-foreground text-sm">{accessLabel(client)}</p>
                   <p className="text-muted-foreground text-xs">
-                    Last token {formatUtc(client.last_token_issued_at)} UTC · Expires{' '}
-                    {formatUtc(client.expires_at)} UTC
+                    Last token {formatUtc(client.last_token_issued_at)} · Expires{' '}
+                    {formatUtc(client.expires_at)}
                   </p>
                   <DisconnectButton
                     client={client}
@@ -95,10 +96,10 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                       Access
                     </TableHead>
                     <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Last token (UTC)
+                      Last token
                     </TableHead>
                     <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Expires (UTC)
+                      Expires
                     </TableHead>
                     <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                       Actions
