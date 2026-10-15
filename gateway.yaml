@@ -428,8 +428,20 @@ models:
       - provider: openrouter
         upstream_model: deepseek/deepseek-v4-pro
 
-  - id: deepseek-v4-flash-0731
+  - id: deepseek-v4.1-flash
     description: Low-cost OpenRouter model for generic live request verification
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4.1-flash
+
+  - id: claude-haiku-5.5
+    description: Claude Haiku 5.5 through OpenRouter for Anthropic Messages verification
+    routes:
+      - provider: openrouter
+        upstream_model: anthropic/claude-haiku-5.5
+
+  - id: deepseek-v4-flash-0731
+    description: Older pinned DeepSeek Flash; prefer deepseek-v4.1-flash
     routes:
       - provider: openrouter
         upstream_model: deepseek/deepseek-v4-flash-0731
@@ -486,7 +498,6 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-fable-5-1
-        context_window_tokens: 1000000
 
   - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock

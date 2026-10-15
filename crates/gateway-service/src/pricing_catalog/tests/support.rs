@@ -33,8 +33,9 @@ pub(super) use super::super::{
     PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
     PricingCatalogProviderDocument, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
     PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, build_model_pricing_record,
-    next_catalog_generation_at, normalize_bedrock_pricing_model_id, normalize_models_dev_money,
-    normalize_vertex_pricing_model_id, pricing_target_for_route, snapshot_is_already_synced,
+    catalog_model_id_fallback, load_vendored_fallback_snapshot, next_catalog_generation_at,
+    normalize_bedrock_pricing_model_id, normalize_models_dev_money, pricing_target_for_route,
+    snapshot_is_already_synced,
 };
 
 #[derive(Clone, Default)]

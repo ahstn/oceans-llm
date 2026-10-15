@@ -2246,6 +2246,75 @@ pub(crate) mod tests {
                 .expect("reject refresh after disconnect")
                 .is_none()
         );
+
+        // Registered OAuth clients: one per server, and concurrent writers converge.
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("get missing OAuth client")
+                .is_none()
+        );
+        let client = gateway_core::McpOauthClientRecord {
+            mcp_server_id: server.mcp_server_id,
+            issuer: "https://auth.example.com".to_string(),
+            redirect_uri: "https://gateway.example.com/api/v1/mcp/oauth/callback".to_string(),
+            client_id: "first-client".to_string(),
+            token_endpoint_auth_method: "client_secret_basic".to_string(),
+            secret_ciphertext: Some("ciphertext".to_string()),
+            secret_nonce: Some("nonce".to_string()),
+            secret_key_id: Some("env/OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY".to_string()),
+            client_secret_expires_at: Some(now + Duration::days(30)),
+            created_at: now,
+            updated_at: now,
+        };
+        let stored = store
+            .insert_mcp_oauth_client_if_absent(&client)
+            .await
+            .expect("insert OAuth client");
+        assert_eq!(stored.client_id, "first-client");
+        assert_eq!(
+            stored
+                .client_secret_expires_at
+                .map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::days(30)).unix_timestamp())
+        );
+        let losing_writer = gateway_core::McpOauthClientRecord {
+            client_id: "second-client".to_string(),
+            secret_ciphertext: None,
+            secret_nonce: None,
+            secret_key_id: None,
+            token_endpoint_auth_method: "none".to_string(),
+            ..client.clone()
+        };
+        assert_eq!(
+            store
+                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .await
+                .expect("insert racing OAuth client")
+                .client_id,
+            "first-client"
+        );
+        assert!(
+            !store
+                .delete_mcp_oauth_client(server.mcp_server_id, "second-client")
+                .await
+                .expect("delete other client")
+        );
+        assert!(
+            store
+                .delete_mcp_oauth_client(server.mcp_server_id, "first-client")
+                .await
+                .expect("delete stale client")
+        );
+        assert_eq!(
+            store
+                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .await
+                .expect("insert replacement client")
+                .secret_ciphertext,
+            None
+        );
     }
 
     async fn exercise_provider_user_credential_repository<S>(store: &S)

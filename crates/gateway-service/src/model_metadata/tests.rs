@@ -84,6 +84,25 @@ fn supplement_requires_explicit_provider_identity_and_never_mutates_billing_snap
     assert_eq!(before, serde_json::to_value(&snapshot.document).unwrap());
 }
 
+#[test]
+fn vertex_anthropic_routes_use_default_catalog_entries() {
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let mut fable = route();
+    fable.provider_key = "vertex".into();
+    fable.upstream_model = "anthropic/claude-fable-5-1".into();
+    fable.context_window_tokens = None;
+    let metadata = route_metadata(&fable, Some(&vertex_provider()), &snapshot);
+    assert_eq!(metadata.display_name.as_deref(), Some("Claude Fable 5.1"));
+    assert_eq!(metadata.limits.context, Some(1_000_000));
+    assert_eq!(metadata.pricing_source, Some("catalog"));
+    assert_eq!(metadata.pricing.unwrap().input.as_deref(), Some("10.0000"));
+
+    fable.upstream_model = "anthropic/claude-sonnet-4-5".into();
+    let dated_only = route_metadata(&fable, Some(&vertex_provider()), &snapshot);
+    assert!(dated_only.catalog_metadata.is_none());
+    assert!(dated_only.pricing.is_none());
+}
+
 struct BatchRepo {
     alias_reads: std::sync::atomic::AtomicUsize,
     models: Vec<GatewayModel>,

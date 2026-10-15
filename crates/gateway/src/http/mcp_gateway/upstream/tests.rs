@@ -49,6 +49,7 @@ impl TestUpstream {
                     disabled_at: None,
                 },
                 headers: None,
+                query_credential: None,
             },
             task,
         }
@@ -257,6 +258,51 @@ fn sse_rejects_malformed_envelopes_and_cannot_hide_tools_in_an_error_or_notifica
         assert_eq!(result["id"], 5);
         assert_eq!(result["result"]["tools"], json!([]));
     }
+}
+
+#[tokio::test]
+async fn query_credentials_reach_the_upstream_url_but_not_transport_errors() {
+    let router = Router::new().fallback(any(|uri: axum::http::Uri| async move {
+        Json(json!({"query": uri.query()}))
+    }));
+    let mut server = TestUpstream::start(router).await;
+    server.upstream.server.server_url =
+        format!("{}?tools=search", server.upstream.server.server_url);
+    server.upstream.query_credential = Some(gateway_mcp::McpQueryCredential::new(
+        "api_key",
+        "query-secret",
+    ));
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("HTTP client");
+
+    let response = proxy_buffered(
+        &client,
+        &Method::POST,
+        &HeaderMap::new(),
+        Bytes::new(),
+        &server.upstream,
+    )
+    .await
+    .expect("buffered proxy");
+    let echoed: Value = serde_json::from_slice(&response.body).expect("echo response");
+    assert_eq!(echoed["query"], "tools=search&api_key=query-secret");
+    assert!(!format!("{:?}", server.upstream).contains("query-secret"));
+
+    server.task.abort();
+    server.upstream.server.server_url = "http://127.0.0.1:0/mcp".into();
+    let error = proxy_upstream(
+        &client,
+        &Method::POST,
+        &HeaderMap::new(),
+        Bytes::new(),
+        &server.upstream,
+    )
+    .await
+    .expect_err("transport failure");
+    assert!(!error.to_string().contains("query-secret"));
+    assert!(!error.to_string().contains("api_key"));
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpOauthConnectionView } from '@/types/api'
@@ -37,6 +37,7 @@ function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthCo
     server_key: 'google_drive',
     display_name: 'Google Drive',
     provider_key: 'google',
+    provider_label: 'google',
     status: 'disconnected',
     required_scopes: ['https://www.googleapis.com/auth/drive.readonly'],
     granted_scopes: [],
@@ -167,5 +168,34 @@ describe('ConnectionsPage connect links', () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'disconnected' })]))
     rerender(<ConnectionsPage />)
     expect(toastMock.success).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows servers that use a discovered authorization server', async () => {
+    routeMock.useLoaderData.mockReturnValue(
+      loaderData([
+        connection({
+          server_id: 'server-2',
+          server_key: 'linear',
+          display_name: 'Linear',
+          provider_key: 'mcp_server',
+          provider_label: 'auth.linear.example',
+          required_scopes: [],
+        }),
+      ]),
+    )
+    routeMock.useSearch.mockReturnValue({ connect: 'linear' })
+    connectMock.mockResolvedValue({ authorization_url: 'https://auth.linear.example/authorize' })
+    const { ConnectionsPage } = await import('@/routes/account/connections')
+
+    render(<ConnectionsPage />)
+
+    expect(screen.getByText('linear · via auth.linear.example')).toBeTruthy()
+    expect(screen.getByText('Provider default')).toBeTruthy()
+    await waitFor(() =>
+      expect(connectMock).toHaveBeenCalledWith({ data: { serverId: 'server-2' } }),
+    )
+    await waitFor(() =>
+      expect(assignMock).toHaveBeenCalledWith('https://auth.linear.example/authorize'),
+    )
   })
 })

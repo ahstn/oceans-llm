@@ -61,9 +61,7 @@ export function ConnectionsPage() {
   useEffect(() => {
     if (search.oauth === 'connected') {
       const connection = connections.find((item) => item.server_id === search.server)
-      toast.success(
-        connection ? `${connection.display_name} connected` : 'Google Workspace connection saved',
-      )
+      toast.success(connection ? `${connection.display_name} connected` : 'Connection saved')
     } else if (search.oauth_error) {
       toast.error(connectionErrorMessage(search.oauth_error))
     } else {
@@ -94,7 +92,7 @@ export function ConnectionsPage() {
         window.location.assign(response.authorization_url)
       } catch (error) {
         setPendingServerId(null)
-        toast.error(error instanceof Error ? error.message : 'Unable to start Google consent')
+        toast.error(error instanceof Error ? error.message : 'Unable to start the connection')
       }
     })
   }
@@ -120,9 +118,9 @@ export function ConnectionsPage() {
         <CardHeader>
           <CardTitle>Workspace connections</CardTitle>
           <CardDescription>
-            Connect your Google account for MCP calls made with your user-owned Oceans API keys.
-            Oceans stores and refreshes the Google tokens. Client harnesses only receive your Oceans
-            endpoint and API key.
+            Connect your accounts on OAuth-protected MCP servers for calls made with your user-owned
+            Oceans API keys. Oceans stores and refreshes the tokens. Client harnesses only receive
+            your Oceans endpoint and API key.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -131,8 +129,8 @@ export function ConnectionsPage() {
         <Alert>
           <AlertTitle>No OAuth servers are available</AlertTitle>
           <AlertDescription>
-            A platform admin must register the recommended Google Drive or Google Docs MCP server
-            and configure its OAuth provider.
+            A platform admin must register an MCP server that uses per-user OAuth, such as the
+            recommended Google Drive server or any server that supports OAuth discovery.
           </AlertDescription>
         </Alert>
       ) : (
@@ -147,7 +145,9 @@ export function ConnectionsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <CardTitle>{connection.display_name}</CardTitle>
-                      <CardDescription>{connection.server_key}</CardDescription>
+                      <CardDescription>
+                        {connection.server_key} · via {connection.provider_label}
+                      </CardDescription>
                     </div>
                     <Badge variant={connected ? 'default' : 'secondary'}>
                       {formatStatus(connection.status)}
@@ -157,6 +157,9 @@ export function ConnectionsPage() {
                 <CardContent className="flex flex-col gap-4">
                   <div className="space-y-2">
                     <p className="text-muted-foreground text-sm">Requested scopes</p>
+                    {connection.required_scopes.length === 0 ? (
+                      <p className="text-xs">Provider default</p>
+                    ) : null}
                     <ul className="space-y-1 text-xs">
                       {connection.required_scopes.map((scope) => (
                         <li key={scope} className="font-mono break-all">
@@ -251,19 +254,19 @@ function formatUtcTimestamp(timestamp: string) {
 }
 
 function connectionActionLabel(status: McpOauthConnectionView['status'], pending: boolean) {
-  if (pending) return 'Opening Google…'
+  if (pending) return 'Opening sign-in…'
   return status === 'expired' ? 'Reconnect' : 'Connect'
 }
 
 function connectionErrorMessage(code: string) {
   switch (code) {
     case 'access_denied':
-      return 'Google access was denied.'
+      return 'Access was denied by the provider.'
     case 'state_expired':
       return 'The connection request expired. Start it again.'
     case 'state_invalid':
       return 'The connection request could not be verified. Start it again.'
     default:
-      return 'Google did not complete the connection.'
+      return 'The provider did not complete the connection.'
   }
 }
