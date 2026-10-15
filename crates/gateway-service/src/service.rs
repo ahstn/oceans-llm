@@ -20,9 +20,9 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
-    RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
-    ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
+    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RateLimiter,
+    RequestLogContext, RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging,
+    ResolvedGatewayRequest, ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
     StreamResponseCollector,
     admin_audit::AuditProgress,
     agent_analysis::{
@@ -105,6 +105,7 @@ pub struct GatewayService<S, P> {
     request_logging: RequestLogging<S>,
     mcp_invocation_logging: McpInvocationLogging<S>,
     planner: Arc<P>,
+    rate_limiter: Arc<RateLimiter>,
     agent_analysis_enabled: bool,
     agent_analysis_ingestion_limit: Arc<Semaphore>,
     agent_analysis_report_retention: Duration,
@@ -182,6 +183,7 @@ where
             request_logging,
             mcp_invocation_logging,
             planner,
+            rate_limiter: Arc::new(RateLimiter::disabled()),
             agent_analysis_enabled: false,
             agent_analysis_ingestion_limit: Arc::new(Semaphore::new(
                 AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS,
@@ -198,6 +200,18 @@ where
     pub fn with_budget_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
         self.budget_guard = self.budget_guard.with_exceeded_status(status);
         self
+    }
+
+    /// Enforces rate limits and quotas on the request path.
+    #[must_use]
+    pub fn with_rate_limiter(mut self, rate_limiter: Arc<RateLimiter>) -> Self {
+        self.rate_limiter = rate_limiter;
+        self
+    }
+
+    #[must_use]
+    pub fn rate_limiter(&self) -> &Arc<RateLimiter> {
+        &self.rate_limiter
     }
 
     #[must_use]

@@ -124,6 +124,7 @@ async fn call(state: &AppState) -> Result<Response, AppError> {
         State(state.clone()),
         request_id,
         HeaderMap::new(),
+        Default::default(),
         auth,
         Json(request),
     )

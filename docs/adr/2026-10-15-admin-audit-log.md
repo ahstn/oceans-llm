@@ -40,7 +40,7 @@ A failed audit insert is logged at `error` with the action, target and actor, an
 
 ### Record schema
 
-Migration `V60__admin_audit_log.sql` extends the baseline table on both backends:
+Migration `V61__admin_audit_log.sql` extends the baseline table on both backends:
 
 | Column | Meaning |
 |---|---|

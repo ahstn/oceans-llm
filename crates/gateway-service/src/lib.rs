@@ -27,6 +27,7 @@ pub mod model_resolution;
 mod payload_bounding;
 pub mod pricing_catalog;
 pub mod provider_credentials;
+pub mod rate_limits;
 pub mod redaction;
 pub mod request_logging;
 pub mod review_agent;
@@ -125,6 +126,10 @@ pub use pricing_catalog::{
 pub use provider_credentials::{
     PROVIDER_CREDENTIAL_KEY_ENV, PROVIDER_CREDENTIAL_KEY_ID, ProviderCredentialService,
     ProviderCredentialStatus,
+};
+pub use rate_limits::{
+    ConfiguredRateLimitPolicy, RateLimitDecision, RateLimitFailureMode, RateLimitPolicySource,
+    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimiter,
 };
 pub use redaction::{
     MAX_INLINE_REQUEST_BYTES, PayloadPath, PayloadSecretRedactor, RequestLogPayloadCaptureMode,

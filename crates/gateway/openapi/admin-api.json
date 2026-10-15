@@ -3232,6 +3232,144 @@
         ]
       }
     },
+    "/api/v1/admin/rate-limits": {
+      "get": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "list_rate_limit_policies",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPoliciesView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "create_rate_limit_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimitPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/rate-limits/{policy_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "delete_rate_limit_policy",
+        "parameters": [
+          {
+            "name": "policy_id",
+            "in": "path",
+            "description": "Rate-limit policy id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "update_rate_limit_policy",
+        "parameters": [
+          {
+            "name": "policy_id",
+            "in": "path",
+            "description": "Rate-limit policy id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimitPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/review-agent/repositories": {
       "get": {
         "tags": [
@@ -7536,6 +7674,7 @@
           "review_agent",
           "usage_costs",
           "spend_controls",
+          "rate_limits",
           "leaderboard",
           "agent_harnesses",
           "agent_sessions",
@@ -13603,6 +13742,128 @@
           }
         }
       },
+      "Envelope_RateLimitPoliciesView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "policies"
+            ],
+            "properties": {
+              "policies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RateLimitPolicyView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_RateLimitPolicyView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "name",
+              "source",
+              "operation",
+              "scope_kind",
+              "metric",
+              "period",
+              "limit",
+              "enabled"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`None` for config policies."
+              },
+              "limit": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "mcp_server_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "mcp_server_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "metric": {
+                "$ref": "#/components/schemas/RateLimitMetricView"
+              },
+              "model_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "operation": {
+                "$ref": "#/components/schemas/RateLimitOperationView"
+              },
+              "period": {
+                "$ref": "#/components/schemas/RateLimitPeriodView"
+              },
+              "scope_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope_kind": {
+                "$ref": "#/components/schemas/RateLimitScopeKindView"
+              },
+              "scope_label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The targeted user's email, team name or API key name."
+              },
+              "source": {
+                "$ref": "#/components/schemas/RateLimitPolicySourceView"
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_RecommendedMcpServersPayload": {
         "type": "object",
         "required": [
@@ -16337,6 +16598,202 @@
             }
           }
         }
+      },
+      "RateLimitMetricView": {
+        "type": "string",
+        "description": "`tokens` is only valid for `inference`.",
+        "enum": [
+          "requests",
+          "tokens"
+        ]
+      },
+      "RateLimitOperationView": {
+        "type": "string",
+        "description": "`inference` covers chat, responses, messages, embeddings and decisions.",
+        "enum": [
+          "inference",
+          "count_tokens",
+          "mcp_tool_call"
+        ]
+      },
+      "RateLimitPeriodView": {
+        "type": "string",
+        "description": "`minute` and `hour` slide; `day` and `month` are UTC calendar quotas.",
+        "enum": [
+          "minute",
+          "hour",
+          "day",
+          "month"
+        ]
+      },
+      "RateLimitPoliciesView": {
+        "type": "object",
+        "required": [
+          "policies"
+        ],
+        "properties": {
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateLimitPolicyView"
+            }
+          }
+        }
+      },
+      "RateLimitPolicyRequest": {
+        "type": "object",
+        "description": "The whole policy; `PATCH` replaces every field.",
+        "required": [
+          "name",
+          "operation",
+          "scope_kind",
+          "metric",
+          "period",
+          "limit"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mcp_server_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric": {
+            "$ref": "#/components/schemas/RateLimitMetricView"
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/RateLimitOperationView"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RateLimitPeriodView"
+          },
+          "scope_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_kind": {
+            "$ref": "#/components/schemas/RateLimitScopeKindView"
+          }
+        }
+      },
+      "RateLimitPolicySourceView": {
+        "type": "string",
+        "enum": [
+          "config",
+          "admin"
+        ]
+      },
+      "RateLimitPolicyView": {
+        "type": "object",
+        "required": [
+          "name",
+          "source",
+          "operation",
+          "scope_kind",
+          "metric",
+          "period",
+          "limit",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` for config policies."
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mcp_server_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mcp_server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric": {
+            "$ref": "#/components/schemas/RateLimitMetricView"
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/RateLimitOperationView"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RateLimitPeriodView"
+          },
+          "scope_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_kind": {
+            "$ref": "#/components/schemas/RateLimitScopeKindView"
+          },
+          "scope_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The targeted user's email, team name or API key name."
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateLimitPolicySourceView"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RateLimitScopeKindView": {
+        "type": "string",
+        "description": "Who shares a counter. Without `scope_id`, each principal of the kind\ngets its own counter.",
+        "enum": [
+          "global",
+          "api_key",
+          "user",
+          "team"
+        ]
       },
       "RecommendedMcpServerView": {
         "type": "object",

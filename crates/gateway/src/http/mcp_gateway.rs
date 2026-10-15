@@ -3,6 +3,7 @@ mod credentials;
 mod guardrails;
 mod json_rpc;
 mod methods;
+mod rate_limits;
 mod upstream;
 
 use std::{error::Error as _, time::Instant};
@@ -39,7 +40,7 @@ use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
@@ -68,6 +69,11 @@ pub async fn mcp_streamable_http_proxy(
     let method = request.method().clone();
     let has_query = request.uri().query().is_some();
     let headers = request.headers().clone();
+    let policy = request
+        .extensions()
+        .get::<RequestPolicyContext>()
+        .cloned()
+        .unwrap_or_default();
 
     let bearer_token = match extract_mcp_gateway_api_key(&headers) {
         Ok(token) => token,
@@ -107,6 +113,7 @@ pub async fn mcp_streamable_http_proxy(
 
     let response = dispatch_mcp_request(
         &state,
+        &policy,
         &auth,
         &server_key,
         &method,
@@ -128,8 +135,10 @@ pub async fn mcp_streamable_http_proxy(
 /// Every JSON-RPC method lands in exactly one branch. Anything the gateway does
 /// not recognise is denied, so new upstream capabilities stay closed until the
 /// gateway knows how to govern them.
+#[allow(clippy::too_many_arguments)]
 async fn dispatch_mcp_request(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     server_key: &str,
     method: &Method,
@@ -219,7 +228,8 @@ async fn dispatch_mcp_request(
             arguments,
         }) => {
             handle_tools_call(
-                state, auth, method, headers, body, server, started_at, id, tool_name, arguments,
+                state, policy, auth, method, headers, body, server, started_at, id, tool_name,
+                arguments,
             )
             .await
         }
@@ -307,6 +317,7 @@ fn body_read_exceeded_limit(error: &axum::Error) -> bool {
 #[allow(clippy::too_many_arguments)]
 async fn handle_tools_call(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     method: &Method,
     headers: &HeaderMap,
@@ -355,6 +366,50 @@ async fn handle_tools_call(
             "MCP tool is not granted for this API key",
         );
     };
+    match rate_limits::check_tool_call(state, policy, auth, &server).await {
+        Ok(None) => {}
+        Ok(Some(rejected)) => {
+            let mut log_input = tool_invocation_log_input(
+                &server,
+                "tools/call",
+                &id,
+                Some(mcp_tool_invocation_id),
+                Some(tool.mcp_tool_id),
+                &tool.upstream_name,
+                &tool.display_name,
+                McpToolInvocationStatus::PolicyDenied,
+                McpToolPolicyResult::Denied,
+                Some(rate_limits::RATE_LIMITED_ERROR_CODE.to_string()),
+                arguments,
+                None,
+                started_at,
+            );
+            log_input.metadata = rate_limits::rejection_metadata(&rejected);
+            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
+            return rate_limits::rejection_response(id.as_ref(), &rejected);
+        }
+        Err(error) => {
+            // The limiter cannot check the call in `closed` mode: a JSON-RPC
+            // error with the HTTP 503, as the aggregate route returns.
+            let log_input = tool_invocation_log_input(
+                &server,
+                "tools/call",
+                &id,
+                Some(mcp_tool_invocation_id),
+                Some(tool.mcp_tool_id),
+                &tool.upstream_name,
+                &tool.display_name,
+                McpToolInvocationStatus::GatewayError,
+                McpToolPolicyResult::NotEvaluated,
+                Some(error.error_code().to_string()),
+                arguments,
+                None,
+                started_at,
+            );
+            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
+            return rate_limits::unavailable_response(id.as_ref(), &error);
+        }
+    }
     let normalized_arguments = arguments.clone().unwrap_or_else(|| json!({}));
     let guardrail_request_id = mcp_request_id(&id);
     let guardrail_evaluation = evaluate_mcp_call(

@@ -17,6 +17,9 @@ import type {
   CreateApiKeyResult,
   CreateMcpServerInput,
   CreateMcpToolsetInput,
+  RateLimitPoliciesView,
+  RateLimitPolicyInput,
+  RateLimitPolicyView,
   UpdateApiKeyInput,
   UpdateApiKeyResult,
   CreateTeamInput,
@@ -1028,6 +1031,42 @@ export async function completeInvitation(
     await client.POST('/api/v1/auth/invitations/{token}/password', {
       params: { path: { token } },
       body: { password },
+    }),
+  )
+}
+
+export async function listRateLimitPolicies(): Promise<ApiEnvelope<RateLimitPoliciesView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/rate-limits'))
+}
+
+export async function createRateLimitPolicy(
+  input: RateLimitPolicyInput,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.POST('/api/v1/admin/rate-limits', { body: input }))
+}
+
+export async function updateRateLimitPolicy(
+  policyId: string,
+  input: RateLimitPolicyInput,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/rate-limits/{policy_id}', {
+      params: { path: { policy_id: policyId } },
+      body: input,
+    }),
+  )
+}
+
+export async function deleteRateLimitPolicy(
+  policyId: string,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.DELETE('/api/v1/admin/rate-limits/{policy_id}', {
+      params: { path: { policy_id: policyId } },
     }),
   )
 }

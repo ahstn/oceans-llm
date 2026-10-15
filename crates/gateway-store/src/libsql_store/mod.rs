@@ -18,6 +18,7 @@ mod models;
 mod pricing_catalog;
 mod provider_user_credentials;
 mod providers;
+mod rate_limits;
 mod request_logs;
 mod review_agent;
 mod routing;

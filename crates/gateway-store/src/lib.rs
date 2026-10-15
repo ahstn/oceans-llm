@@ -13,6 +13,7 @@ mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
+mod any_store_rate_limits;
 mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
@@ -24,6 +25,7 @@ mod migrate;
 mod migration_registry;
 mod postgres_store;
 mod pricing_sync;
+mod rate_limits;
 mod routing;
 mod seed;
 mod shared;
@@ -51,6 +53,9 @@ mod budget_increase_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;
+
+#[cfg(test)]
+mod rate_limit_tests;
 
 #[cfg(test)]
 mod skills_tests;

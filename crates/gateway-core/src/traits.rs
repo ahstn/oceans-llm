@@ -59,6 +59,10 @@ use crate::{
         core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
         decisions::{DecisionsRequest, ProviderDecisionsResponse},
     },
+    rate_limits::{
+        RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
+        RateLimitPolicyRecord,
+    },
 };
 
 #[async_trait]
@@ -1351,6 +1355,63 @@ pub trait PricingCatalogRepository: Send + Sync {
         self.resolve_model_pricing_at(pricing_provider_id, fallback_model_id, occurred_at)
             .await
     }
+}
+
+/// Rate-limit policies and their shared counters. Counters must be correct
+/// across gateway replicas, so `consume_rate_limits` is one atomic check.
+#[async_trait]
+pub trait RateLimitRepository: Send + Sync {
+    async fn list_rate_limit_policies(&self) -> Result<Vec<RateLimitPolicyRecord>, StoreError>;
+
+    /// Enabled policies only, for the request-path cache, so paused rows
+    /// never cost a refresh anything.
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        let mut policies = self.list_rate_limit_policies().await?;
+        policies.retain(|policy| policy.enabled);
+        Ok(policies)
+    }
+
+    async fn get_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError>;
+
+    /// Fails with `StoreError::Conflict` when the name is taken.
+    async fn insert_rate_limit_policy(
+        &self,
+        policy: &RateLimitPolicyRecord,
+    ) -> Result<(), StoreError>;
+
+    /// Returns `false` when the policy does not exist.
+    async fn update_rate_limit_policy(
+        &self,
+        policy: &RateLimitPolicyRecord,
+    ) -> Result<bool, StoreError>;
+
+    /// Returns `false` when the policy does not exist.
+    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError>;
+
+    /// Charges every counter if all of them admit the request, and none of
+    /// them otherwise. Observations are returned in `charges` order.
+    async fn consume_rate_limits(
+        &self,
+        charges: &[RateLimitCounterCharge],
+    ) -> Result<RateLimitConsumeResult, StoreError>;
+
+    /// Adds usage that is only known after a request finishes.
+    async fn add_rate_limit_usage(
+        &self,
+        increments: &[RateLimitCounterIncrement],
+    ) -> Result<(), StoreError>;
+
+    /// Deletes up to `limit` counter rows that expired before `now` (unix seconds).
+    async fn purge_expired_rate_limit_counters(
+        &self,
+        now: i64,
+        limit: i64,
+    ) -> Result<u64, StoreError>;
 }
 
 #[async_trait]

@@ -164,6 +164,8 @@ impl InferenceExecution<'_> {
         let &InferenceRequest {
             state,
             auth,
+            resolved,
+            request_id,
             request_started_at,
             ref request_log_context,
             ..
@@ -172,6 +174,24 @@ impl InferenceExecution<'_> {
         let guard_context = &self.guard_context;
         let icon_metadata = &self.icon_metadata;
         let labels = self.labels();
+        // Usage the provider reported before failing still counts, as on the
+        // decisions and embeddings paths.
+        let (error, partial_provider_usage) = split_partial_provider_error(error);
+        if let Some(provider_usage) = partial_provider_usage {
+            finalize_successful_usage_accounting(
+                state,
+                UsageAccountingContext {
+                    auth,
+                    model: &resolved.selection.execution_model,
+                    route,
+                    request_id,
+                    labels: labels.clone(),
+                    operation: request_log_context.operation,
+                },
+                provider_usage,
+            )
+            .await;
+        }
         let (error, attempt) = guarded_provider_error_attempt(
             state,
             guard_context,
