@@ -46,6 +46,10 @@ const SECRET_KEY_FRAGMENTS: &[&str] = &[
     "invite_url",
 ];
 
+/// Whole `_`-separated name segments that mark a secret, such as `github_pat`.
+/// Matched as segments so names like `path` stay readable.
+const SECRET_KEY_SEGMENTS: &[&str] = &["pat", "pwd", "passphrase"];
+
 /// Field-name suffixes that describe a secret without holding it, such as
 /// `api_key_id` or `token_expires_at`.
 const SAFE_KEY_SUFFIXES: &[&str] = &[
@@ -270,7 +274,10 @@ impl AuditEvent {
         }
         NewAuditLogRecord {
             occurred_at,
-            actor: context.actor.clone(),
+            actor: AuditActor {
+                label: context.actor.label.clone().map(redact_label),
+                ..context.actor.clone()
+            },
             action: self.action,
             target_type: self.target_type,
             target_id: self.target_id,
@@ -410,6 +417,22 @@ where
 #[must_use]
 pub fn redact_audit_value(value: Value) -> Value {
     match value {
+        // Key/value pairs such as entity tags name their field in `key`.
+        Value::Object(mut map) if is_key_value_pair(&map) => {
+            let sensitive = map
+                .get("key")
+                .and_then(Value::as_str)
+                .is_some_and(is_sensitive_audit_key);
+            if let Some(value) = map.remove("value") {
+                let value = if sensitive && !is_flag(&value) {
+                    Value::String(AUDIT_REDACTED.to_string())
+                } else {
+                    redact_audit_value(value)
+                };
+                map.insert("value".to_string(), value);
+            }
+            Value::Object(map)
+        }
         Value::Object(map) => Value::Object(
             map.into_iter()
                 .map(|(key, value)| {
@@ -443,7 +466,33 @@ pub fn is_sensitive_audit_key(key: &str) -> bool {
         || SECRET_KEY_FRAGMENTS
             .iter()
             .any(|fragment| normalized.contains(fragment))
+        || normalized
+            .split('_')
+            .any(|segment| SECRET_KEY_SEGMENTS.contains(&segment))
 }
+
+fn is_key_value_pair(map: &Map<String, Value>) -> bool {
+    map.len() == 2 && map.get("key").is_some_and(Value::is_string) && map.contains_key("value")
+}
+
+/// Prefixes of widely used provider tokens that carry no field name to judge by.
+const TOKEN_PREFIXES: &[&str] = &[
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "glpat-",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "sk-ant-",
+    "sk-proj-",
+    "sk_live_",
+    "rk_live_",
+    "AKIA",
+];
 
 fn is_flag(value: &Value) -> bool {
     matches!(value, Value::Bool(_) | Value::Null)
@@ -456,7 +505,12 @@ fn looks_like_credential(text: &str) -> bool {
     // `gwk_<public id>` prefix is a display identifier and stays readable. Invite links
     // carry their token in the path.
     text.split(|character: char| character.is_whitespace() || character == '"')
-        .any(|word| word.starts_with("gwk_") && word.contains('.'))
+        .any(|word| {
+            (word.starts_with("gwk_") && word.contains('.'))
+                || TOKEN_PREFIXES
+                    .iter()
+                    .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len() + 8)
+        })
         || text.contains("/invite/")
         || lower.starts_with("bearer ")
         || lower.starts_with("basic ")
@@ -643,6 +697,11 @@ mod tests {
             "secret_ref": "env/UPSTREAM_TOKEN",
             "access_token_expires_at": "2026-10-15T00:00:00Z",
             "password": null,
+            "tags": [
+                { "key": "github_pat", "value": "plain-looking-value" },
+                { "key": "team", "value": "platform" },
+            ],
+            "pat": "ghp_0123456789abcdefghij",
         }));
         assert_eq!(
             redacted,
@@ -660,6 +719,11 @@ mod tests {
                 "secret_ref": "env/UPSTREAM_TOKEN",
                 "access_token_expires_at": "2026-10-15T00:00:00Z",
                 "password": null,
+                "tags": [
+                    { "key": "github_pat", "value": AUDIT_REDACTED },
+                    { "key": "team", "value": "platform" },
+                ],
+                "pat": AUDIT_REDACTED,
             })
         );
     }
@@ -690,6 +754,25 @@ mod tests {
         assert_eq!(labels[1], AUDIT_REDACTED);
         assert_eq!(labels[2].chars().count(), MAX_LABEL_CHARS + 1);
         assert_eq!(labels[3], "gwk_0f3c9a");
+    }
+
+    #[tokio::test]
+    async fn actor_labels_are_redacted_and_capped() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        let context = AuditContext::new(AuditActor::user(
+            Uuid::nil(),
+            "gwk_0f3c9a.s3cr3t@example.com",
+        ));
+        audit
+            .record(
+                &context,
+                AuditEvent::new(actions::TEAM_CREATED, targets::TEAM),
+            )
+            .await;
+        let records = repo.records.lock().unwrap();
+        assert_eq!(records[0].actor.label.as_deref(), Some(AUDIT_REDACTED));
+        assert_eq!(records[0].actor.user_id, Some(Uuid::nil()));
     }
 
     #[tokio::test]
