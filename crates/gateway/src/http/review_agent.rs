@@ -429,15 +429,7 @@ pub async fn update_review_agent_repository(
     // The store writes nothing when the repository already matches, so a resave
     // records nothing. The previous record is read under the write lock.
     if let Some(before) = update.previous.map(map_repository) {
-        // A status change here is the same transition the disable and reactivate
-        // endpoints record, so it gets their action.
-        let action = if before.status == repository.status {
-            actions::REVIEW_AGENT_REPOSITORY_UPDATED
-        } else if repository.status == ReviewAgentRepositoryStatus::Disabled.as_str() {
-            actions::REVIEW_AGENT_REPOSITORY_DISABLED
-        } else {
-            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
-        };
+        let action = patch_action(&before.status, &repository.status);
         state
             .audit()
             .record(
@@ -740,6 +732,21 @@ async fn set_repository_status_handler(
         .record(&meta.user_context(&actor), event)
         .await;
     Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
+}
+
+/// The action for a PATCH. Moving to disabled or back to active is the same
+/// transition the disable and reactivate endpoints record, so it gets their action.
+/// Anything else, archiving included, is an update whose summaries show the status.
+fn patch_action(before_status: &str, after_status: &str) -> AuditAction {
+    if before_status == after_status {
+        actions::REVIEW_AGENT_REPOSITORY_UPDATED
+    } else if after_status == ReviewAgentRepositoryStatus::Disabled.as_str() {
+        actions::REVIEW_AGENT_REPOSITORY_DISABLED
+    } else if after_status == ReviewAgentRepositoryStatus::Active.as_str() {
+        actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+    } else {
+        actions::REVIEW_AGENT_REPOSITORY_UPDATED
+    }
 }
 
 fn repository_event(action: AuditAction, repository: &ReviewAgentRepositoryView) -> AuditEvent {
@@ -1196,6 +1203,31 @@ fn insufficient_privileges() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn patch_actions_name_each_status_transition() {
+        assert_eq!(
+            patch_action("active", "disabled"),
+            actions::REVIEW_AGENT_REPOSITORY_DISABLED
+        );
+        assert_eq!(
+            patch_action("disabled", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+        );
+        // Archiving is neither: it is recorded as an update showing the status.
+        assert_eq!(
+            patch_action("active", "archived"),
+            actions::REVIEW_AGENT_REPOSITORY_UPDATED
+        );
+        assert_eq!(
+            patch_action("archived", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+        );
+        assert_eq!(
+            patch_action("active", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_UPDATED
+        );
+    }
 
     #[test]
     fn repository_audit_summary_keeps_only_settings_json_keys() {
