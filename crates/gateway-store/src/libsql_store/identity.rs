@@ -1257,6 +1257,8 @@ impl LibsqlStore {
         Ok(None)
     }
 
+    /// Moves the membership to another team. Returns the role it had before the
+    /// move, read under the same write lock.
     pub async fn transfer_team_membership(
         &self,
         user_id: Uuid,
@@ -1264,9 +1266,12 @@ impl LibsqlStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         let connection = self.transaction_connection().await?;
-        let tx = connection.transaction().await.map_err(to_query_error)?;
+        let tx = connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_write_error)?;
         let mut rows = tx
             .query(
                 r#"
@@ -1286,6 +1291,7 @@ impl LibsqlStore {
             ));
         };
         let existing_role: String = row.get(0).map_err(to_query_error)?;
+        drop(rows);
         if existing_role == MembershipRole::Owner.as_str() {
             return Err(StoreError::Conflict(
                 "owner memberships cannot be removed or transferred".to_string(),
@@ -1320,7 +1326,7 @@ impl LibsqlStore {
             ));
         }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        decode_moved_role(&existing_role)
     }
 
     pub async fn get_user_password_auth(
@@ -2336,4 +2342,8 @@ impl IdentityRepository for LibsqlStore {
 fn decode_removed_role(role: &str) -> Result<MembershipRole, StoreError> {
     MembershipRole::from_db(role)
         .ok_or_else(|| StoreError::Serialization(format!("unsupported membership role `{role}`")))
+}
+
+fn decode_moved_role(role: &str) -> Result<MembershipRole, StoreError> {
+    decode_removed_role(role)
 }

@@ -227,7 +227,7 @@ pub trait GatewayStore:
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<MembershipRole, StoreError>;
     async fn get_user_password_auth(
         &self,
         user_id: Uuid,
@@ -1706,7 +1706,7 @@ impl GatewayStore for AnyStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         dispatch_store!(
             self,
             transfer_team_membership(user_id, from_team_id, to_team_id, role, updated_at)

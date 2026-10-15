@@ -1129,6 +1129,8 @@ impl PostgresStore {
         Ok(None)
     }
 
+    /// Moves the membership to another team. Returns the role it had before the
+    /// move, read under the same write lock.
     pub async fn transfer_team_membership(
         &self,
         user_id: Uuid,
@@ -1136,7 +1138,7 @@ impl PostgresStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         let exists = sqlx::query(
             r#"
@@ -1144,7 +1146,7 @@ impl PostgresStore {
             FROM team_memberships
             WHERE user_id = $1
               AND team_id = $2
-            LIMIT 1
+            FOR UPDATE
             "#,
         )
         .bind(user_id.to_string())
@@ -1190,7 +1192,7 @@ impl PostgresStore {
             ));
         }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        decode_moved_role(&existing_role)
     }
 
     pub async fn get_user_password_auth(
@@ -2086,4 +2088,8 @@ impl IdentityRepository for PostgresStore {
 fn decode_removed_role(role: &str) -> Result<MembershipRole, StoreError> {
     MembershipRole::from_db(role)
         .ok_or_else(|| StoreError::Serialization(format!("unsupported membership role `{role}`")))
+}
+
+fn decode_moved_role(role: &str) -> Result<MembershipRole, StoreError> {
+    decode_removed_role(role)
 }

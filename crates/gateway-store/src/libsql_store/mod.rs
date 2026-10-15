@@ -465,7 +465,7 @@ impl GatewayStore for LibsqlStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         Self::transfer_team_membership(self, user_id, from_team_id, to_team_id, role, updated_at)
             .await
     }

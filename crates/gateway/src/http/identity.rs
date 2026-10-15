@@ -1591,13 +1591,14 @@ pub async fn transfer_identity_team_member(
     );
     state
         .audit()
-        .audited(&meta.user_context(&actor), transfer, |_| {
+        // The store returns the role it moved, read under the transfer's write lock.
+        .audited(&meta.user_context(&actor), transfer, |moved_role| {
             AuditEvent::new(actions::USER_TEAM_TRANSFERRED)
                 .target(user_id)
                 .label(identity_user.user.email.clone())
                 .before(serde_json::json!({
                     "team_id": team_id,
-                    "role": identity_user.membership_role.map(MembershipRole::as_str),
+                    "role": moved_role.as_str(),
                 }))
                 .after(serde_json::json!({
                     "team_id": destination_team_id,
