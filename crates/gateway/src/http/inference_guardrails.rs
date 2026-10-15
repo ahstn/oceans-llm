@@ -470,10 +470,10 @@ async fn guard_sse_payload(
 }
 
 /// Replacements already decided for one tool call, keyed by tool name, shell-command shape,
-/// and canonical arguments. Providers repeat a call in its deltas and up to three terminal
-/// snapshots, and each call should cost one evaluation per distinct argument set. Distinct
-/// calls never share an entry, even with identical arguments.
-type EvaluatedToolArguments = BTreeMap<(String, bool, String), Option<String>>;
+/// and a digest of the canonical arguments. Providers repeat a call in its deltas and up to
+/// three terminal snapshots, and each call should cost one evaluation per distinct argument
+/// set. Distinct calls never share an entry, even with identical arguments.
+type EvaluatedToolArguments = BTreeMap<(String, bool, [u8; 32]), Option<String>>;
 
 async fn guard_stream_tool_arguments(
     state: &AppState,
@@ -484,10 +484,11 @@ async fn guard_stream_tool_arguments(
     argument_text: &str,
 ) -> Result<Option<String>, GatewayError> {
     let parsed = serde_json::from_str::<Value>(argument_text);
-    let canonical = parsed
-        .as_ref()
-        .map_or_else(|_| argument_text.to_string(), Value::to_string);
-    let key = (name.to_string(), shell_command_locations, canonical);
+    let canonical = match &parsed {
+        Ok(value) => Sha256::digest(value.to_string()),
+        Err(_) => Sha256::digest(argument_text),
+    };
+    let key = (name.to_string(), shell_command_locations, canonical.into());
     if let Some(replacement) = evaluated.get(&key) {
         return Ok(replacement.clone());
     }
@@ -785,10 +786,11 @@ fn collect_stream_tool_fragments(
                     });
                 } else {
                     fragments.shell_command_locations |= shell_call;
-                    if fragments.arguments.is_empty() {
+                    // An added item usually opens an empty call that deltas fill in. When it
+                    // already carries the whole call, as a shell call's command does, it is
+                    // released with those arguments, so a rewrite must reach it too.
+                    if fragments.arguments.is_empty() && !arguments.is_empty() {
                         fragments.arguments = arguments;
-                    }
-                    if event_type != Some("response.output_item.added") {
                         fragments
                             .argument_locations
                             .push((event_index, argument_pointer));
@@ -2239,15 +2241,21 @@ mod tests {
                 .await
                 .expect("masked");
 
-        let completed = String::from_utf8(guarded)
+        let events = String::from_utf8(guarded)
             .expect("UTF-8")
             .split("\n\n")
-            .nth(1)
-            .and_then(|block| block.strip_prefix("data: "))
-            .map(|data| serde_json::from_str::<Value>(data).expect("JSON"))
-            .expect("completed event");
+            .map(|block| {
+                let data = block.strip_prefix("data: ").expect("data line");
+                serde_json::from_str::<Value>(data).expect("JSON")
+            })
+            .collect::<Vec<_>>();
         assert_eq!(
-            completed["response"]["output"][0]["arguments"], "{\"command\":\"masked-cmd\"}",
+            events[0]["item"]["action"]["command"],
+            json!(["masked-cmd"]),
+            "the added item carrying the command is rewritten too"
+        );
+        assert_eq!(
+            events[1]["response"]["output"][0]["arguments"], "{\"command\":\"masked-cmd\"}",
             "a function-call snapshot keeps JSON arguments after a shell-call delta"
         );
     }
