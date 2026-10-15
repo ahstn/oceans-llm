@@ -420,10 +420,13 @@ pub fn redact_audit_value(value: Value) -> Value {
     match value {
         // Key/value pairs such as entity tags name their field in `key`.
         Value::Object(mut map) if is_key_value_pair(&map) => {
-            let sensitive = map
-                .get("key")
-                .and_then(Value::as_str)
-                .is_some_and(is_secret_name);
+            let key = map.get("key").and_then(Value::as_str).unwrap_or_default();
+            // A token pasted in as a key is itself the secret.
+            let key_is_credential = looks_like_credential(key);
+            let sensitive = key_is_credential || is_secret_name(key);
+            if key_is_credential {
+                map.insert("key".to_string(), Value::String(AUDIT_REDACTED.to_string()));
+            }
             if let Some(value) = map.remove("value") {
                 let value = if sensitive && !is_flag(&value) {
                     Value::String(AUDIT_REDACTED.to_string())
@@ -507,24 +510,49 @@ fn is_flag(value: &Value) -> bool {
 }
 
 fn looks_like_credential(text: &str) -> bool {
-    let trimmed = text.trim_start();
-    let lower = trimmed.get(..7).unwrap_or(trimmed).to_ascii_lowercase();
-    // A full gateway key is `gwk_<public id>.<secret>`, anywhere in the text; the bare
-    // `gwk_<public id>` prefix is a display identifier and stays readable. Invite links
-    // carry their token in the path.
-    // Split at anything that cannot be part of a token, so `token=gwk_…` and
-    // `(ghp_…)` are checked from the token's first character.
-    text.split(|character: char| {
-        !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-'))
-    })
-    .any(|word| {
-        (word.starts_with("gwk_") && word.contains('.'))
-            || TOKEN_PREFIXES
-                .iter()
-                .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len() + 8)
-    }) || text.contains("/invite/")
-        || lower.starts_with("bearer ")
-        || lower.starts_with("basic ")
+    // Split at anything that cannot be part of a token, so `token=gwk_…`,
+    // `(ghp_…)` and `auth=Bearer …` are checked from the token's first character.
+    let words: Vec<&str> = text
+        .split(|character: char| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-'))
+        })
+        .filter(|word| !word.is_empty())
+        .collect();
+    let scheme_with_value = words.windows(2).any(|pair| {
+        (pair[0].eq_ignore_ascii_case("bearer") || pair[0].eq_ignore_ascii_case("basic"))
+            && pair[1].len() >= 8
+    });
+    // A full gateway key is `gwk_<public id>.<secret>`; the bare `gwk_<public id>`
+    // prefix is a display identifier and stays readable. Invite links carry their
+    // token in the path.
+    scheme_with_value || text.contains("/invite/") || words.iter().any(|word| is_token_word(word))
+}
+
+fn is_token_word(word: &str) -> bool {
+    (word.starts_with("gwk_") && word.contains('.'))
+        || TOKEN_PREFIXES
+            .iter()
+            .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len() + 8)
+}
+
+/// Whether a URL path segment looks like an embedded credential: a known token
+/// shape, or a long random-looking value. UUIDs are identifiers and are kept.
+#[must_use]
+pub fn is_secret_path_segment(segment: &str) -> bool {
+    if is_token_word(segment) || looks_like_credential(segment) {
+        return true;
+    }
+    if uuid::Uuid::parse_str(segment).is_ok() {
+        return false;
+    }
+    segment.len() >= 32
+        && segment
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+        && segment.chars().any(|character| character.is_ascii_digit())
+        && segment
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
 }
 
 /// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
@@ -724,10 +752,13 @@ mod tests {
             "tags": [
                 { "key": "github_pat", "value": "plain-looking-value" },
                 { "key": "password_ref", "value": "hunter2" },
+                { "key": "glpat-0123456789abcdefghij", "value": "x" },
                 { "key": "team", "value": "platform" },
             ],
             "pat": "ghp_0123456789abcdefghij",
             "description": "rotate token=gwk_0f3c9a.s3cr3t soon",
+            "auth_note": "use auth=Bearer supersecret123 here",
+            "plan_name": "Basic tier",
             "comment": "see (ghp_0123456789abcdefghij)",
             "path": "/srv/data",
         }));
@@ -750,10 +781,13 @@ mod tests {
                 "tags": [
                     { "key": "github_pat", "value": AUDIT_REDACTED },
                     { "key": "password_ref", "value": AUDIT_REDACTED },
+                    { "key": AUDIT_REDACTED, "value": AUDIT_REDACTED },
                     { "key": "team", "value": "platform" },
                 ],
                 "pat": AUDIT_REDACTED,
                 "description": AUDIT_REDACTED,
+                "auth_note": AUDIT_REDACTED,
+                "plan_name": "Basic tier",
                 "comment": AUDIT_REDACTED,
                 "path": "/srv/data",
             })
@@ -786,6 +820,19 @@ mod tests {
         assert_eq!(labels[1], AUDIT_REDACTED);
         assert_eq!(labels[2].chars().count(), MAX_LABEL_CHARS + 1);
         assert_eq!(labels[3], "gwk_0f3c9a");
+    }
+
+    #[test]
+    fn secret_path_segments_are_detected_but_identifiers_kept() {
+        assert!(is_secret_path_segment("gwk_0f3c9a.s3cr3t"));
+        assert!(is_secret_path_segment(
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
+        ));
+        assert!(!is_secret_path_segment(
+            "6f1c9a2e-0d5b-4c1e-9f7a-1b2c3d4e5f60"
+        ));
+        assert!(!is_secret_path_segment("mcp"));
+        assert!(!is_secret_path_segment("v1"));
     }
 
     #[tokio::test]

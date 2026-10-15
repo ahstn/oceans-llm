@@ -439,6 +439,8 @@ pub(super) fn credential_binding_audit_summary(binding: &McpCredentialBindingVie
     summary
 }
 
+const AUDIT_REDACTED_SEGMENT: &str = "REDACTED";
+
 pub(super) fn audit_safe_url(raw: &str) -> String {
     match url::Url::parse(raw) {
         Ok(mut url) => {
@@ -446,6 +448,21 @@ pub(super) fn audit_safe_url(raw: &str) -> String {
             let _ = url.set_password(None);
             url.set_query(None);
             url.set_fragment(None);
+            // Some servers take a token as a path segment, e.g. `/connect/<token>`.
+            let segments: Option<Vec<String>> = url.path_segments().map(|segments| {
+                segments
+                    .map(|segment| {
+                        if gateway_service::is_secret_path_segment(segment) {
+                            AUDIT_REDACTED_SEGMENT.to_string()
+                        } else {
+                            segment.to_string()
+                        }
+                    })
+                    .collect()
+            });
+            if let (Some(segments), Ok(mut path)) = (segments, url.path_segments_mut()) {
+                path.clear().extend(segments);
+            }
             url.to_string()
         }
         Err(_) => "[unparseable]".to_string(),
@@ -732,5 +749,17 @@ mod audit_summary_tests {
         assert_eq!(url["secret_ref"], "https://vault.example/v1/secret/mcp");
         let plain = credential_binding_audit_summary(&binding("env/OCEANS_MCP_DISCOVERY_X"));
         assert_eq!(plain["secret_ref"], "env/OCEANS_MCP_DISCOVERY_X");
+    }
+
+    #[test]
+    fn url_path_tokens_are_redacted_and_ordinary_paths_kept() {
+        assert_eq!(
+            audit_safe_url("https://mcp.example/connect/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8/sse"),
+            "https://mcp.example/connect/REDACTED/sse"
+        );
+        assert_eq!(
+            audit_safe_url("https://mcp.example/v1/mcp"),
+            "https://mcp.example/v1/mcp"
+        );
     }
 }
