@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/-auth-routing.ts
+  s_af4ccbd37c05c0::t_28f8f5a5750f6b 54-55,58,78-80
+crates/admin-ui/web/src/test/routes/auth-routing.test.ts
+  s_af4ccbd37c05c0::t_49979f80e3685e 64-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e01f7d6735d4dc4f44ab0a7b595d99b7cd33d26e",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
