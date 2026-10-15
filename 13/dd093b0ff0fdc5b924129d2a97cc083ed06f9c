@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_af4ccbd37c05c0::t_9e66b6b12f7851 182-183,192-194,196-200,1714-1716,1724,1746-1748,1751,1753,1775-1779
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_af4ccbd37c05c0::t_6e49f720e5f0c2 162-163,172-174,176-180,1597-1599,1607,1629-1631,1650,1653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13dd093b0ff0fdc5b924129d2a97cc083ed06f9c",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
