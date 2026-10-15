@@ -95,7 +95,7 @@ Prove backend gateway routing and generated-tool guardrails through OpenRouter:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive backend-gateway
 ```
 
-The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4-flash-0731`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
+The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4.1-flash`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
 
 Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
 
@@ -120,7 +120,7 @@ Read [features/skills.md](./features/skills.md) before launch. This proof drives
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
 
-Use [features/live-llm-requests.md](./features/live-llm-requests.md) for the exact recipe. Prefer `deepseek-v4-flash-0731` through OpenRouter for generic request-path changes. For Bedrock-specific request-path testing, use gateway model `gpt-oss-120b-bedrock`, which routes to Bedrock Mantle model `openai.gpt-oss-120b`. Do not use `openai.gpt-5.6-luna`; it is not enabled for this AWS account. Run both providers only when provider parity is the behavior under test.
+Use [features/live-llm-requests.md](./features/live-llm-requests.md) for the exact recipe. Prefer `deepseek-v4.1-flash` through OpenRouter for generic request-path changes, and `claude-haiku-5.5` through OpenRouter for `/v1/messages` changes. Keep every canary at `max_tokens` 4096 or less. For Bedrock-specific request-path testing, use gateway model `gpt-oss-120b-bedrock`, which routes to Bedrock Mantle model `openai.gpt-oss-120b`. Do not use `openai.gpt-5.6-luna`; it is not enabled for this AWS account. Run both providers only when provider parity is the behavior under test.
 
 Keep each prompt synthetic and small. Limit the output, create a temporary gateway API key with access only to the selected model, and revoke it after the proof. Never print or save raw gateway or provider credentials. For Bedrock Responses requests, set `store: false` unless stored-response behavior is the subject of the test.
 

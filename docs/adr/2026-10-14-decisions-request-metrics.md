@@ -36,4 +36,12 @@ Decisions requests record their own metric pair, `gateway.decisions.requests` an
 
 ## Follow-up
 
-- `/v1/embeddings` has the same gap. It records no request metric on success, provider failure or the no-route exit, but it does record `gateway.chat.requests` and tool cardinality on a guardrail block (and on a budget rejection since #481). Fixing it means moving those existing series, so it needs its own change. That change should reuse this pattern, either with a dedicated embeddings metric or by turning this metric into a shared non-chat request metric with an `operation` label.
+- **Resolved: `/v1/embeddings` gets a dedicated metric pair.** Embeddings recorded no request metric on success, provider failure or the no-route exit. It recorded `gateway.chat.requests` and tool cardinality only on a guardrail block, and on a budget rejection since #481, always under the chat route. It now records `gateway.embeddings.requests` and `gateway.embeddings.request.duration` with the same coverage and labels as Decisions, minus `request_format`, and no longer emits chat request or tool-cardinality samples. See [Embeddings Request Metrics](../operations/observability-and-request-logs.md#embeddings-request-metrics).
+
+  We chose a dedicated pair over one shared non-chat request metric with an `operation` label, for these reasons:
+
+  - Embeddings has no `request_format`. A shared metric would carry a label that is empty for every embeddings sample.
+  - Embeddings latency depends on input batch size, and Decisions latency on question count. One histogram would blend the two, so each operation's percentiles would need an `operation` filter to mean anything.
+  - The two metrics already match the chat metric's naming, `gateway.<operation>.requests`, so dashboards query them the same way.
+
+  The cost is one more pair to add up for total inference traffic. If a third non-chat operation needs a request metric, reconsider a shared `operation`-labelled metric then.

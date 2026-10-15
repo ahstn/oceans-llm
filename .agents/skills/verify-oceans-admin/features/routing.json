@@ -159,6 +159,7 @@
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/inference.rs",
         "crates/gateway/src/http/handlers/decisions.rs",
+        "crates/gateway/src/http/handlers/embeddings.rs",
         "crates/gateway/src/http/request_body.rs",
         "crates/gateway/src/http/request_tracing.rs",
         "crates/gateway/src/http/response_cache.rs",

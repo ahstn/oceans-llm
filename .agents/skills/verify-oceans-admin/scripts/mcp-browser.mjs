@@ -177,7 +177,7 @@ export async function createAccess(ui, primary, candidates, verifyNoMcpGrant) {
   await page.goto(`${baseURL}/admin/api-keys`, { waitUntil: "networkidle" });
   const catalog = await adminJson(page, "/api/v1/admin/api-keys");
   const owner = catalog.users.find((item) => item.email === "admin@local") ?? catalog.users[0];
-  const model = catalog.models.find((item) => item.key === "deepseek-v4-flash-0731") ?? catalog.models[0];
+  const model = catalog.models.find((item) => item.key === "deepseek-v4.1-flash") ?? catalog.models[0];
   if (!owner || !model) throw new Error("No owner or constrained model is available for temporary key");
   const keyName = `MCP verification ${scope.key}`;
   if (catalog.items.some((item) => item.name === keyName)) throw new Error("Verification API key name already exists; rerun the driver for a new attempt scope");
