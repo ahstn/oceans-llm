@@ -12,11 +12,13 @@ ALTER TABLE audit_logs ADD COLUMN after_json TEXT;
 ALTER TABLE audit_logs ADD COLUMN request_ip TEXT;
 ALTER TABLE audit_logs ADD COLUMN user_agent TEXT;
 
--- Rows written before this migration name only an API key; keep that actor.
-UPDATE audit_logs SET actor_kind = 'api_key' WHERE actor_api_key_id IS NOT NULL;
--- They also stored `ts` in seconds. Any value below 10^11 is seconds (as
--- milliseconds it would be before 1973), so convert it to milliseconds.
-UPDATE audit_logs SET ts = ts * 1000 WHERE ts < 100000000000;
+-- Rows written before this migration name only an API key, and stored `ts` in
+-- seconds. Keep the key actor, and convert any `ts` below 10^11 (as milliseconds
+-- it would be before 1973) to milliseconds, in one pass over the table.
+UPDATE audit_logs
+SET actor_kind = CASE WHEN actor_api_key_id IS NOT NULL THEN 'api_key' ELSE actor_kind END,
+    ts = CASE WHEN ts < 100000000000 THEN ts * 1000 ELSE ts END
+WHERE actor_api_key_id IS NOT NULL OR ts < 100000000000;
 
 CREATE INDEX IF NOT EXISTS audit_logs_ts_idx
   ON audit_logs (ts DESC, id DESC);
