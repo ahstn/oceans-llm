@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::{VertexProvider, map_google_request, normalize_google_response, parse_upstream_model};
-use crate::http::map_reqwest_error;
+use crate::http::{map_reqwest_error, upstream_retry_after};
 
 impl VertexProvider {
     pub(super) fn batch_capabilities_impl(&self) -> BatchCapabilities {
@@ -523,12 +523,13 @@ impl VertexProvider {
         }
         let response = builder.send().await.map_err(map_reqwest_error)?;
         let status = response.status();
+        let retry_after = upstream_retry_after(status, response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
-                retry_after: None,
+                retry_after,
             });
         }
         if text.is_empty() {
@@ -992,6 +993,51 @@ mod tests {
         assert!(matches!(
             error,
             ProviderError::UpstreamHttp { status: 307, .. }
+        ));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn vertex_batch_errors_keep_upstream_retry_after() {
+        let app = Router::new().fallback(get(|| async {
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [("retry-after", "30")],
+                "slow down",
+            )
+                .into_response()
+        }));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let api_host = format!("http://{}", listener.local_addr().expect("local address"));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let provider = vertex_provider(&api_host);
+        let context = ProviderRequestContext {
+            request_id: "batch-1".to_string(),
+            model_key: "analysis".to_string(),
+            provider_key: "vertex".to_string(),
+            upstream_model: "google/gemini-test".to_string(),
+            owner_user_id: None,
+            expected_provider_credential_id: None,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+            compatibility: RouteCompatibility::default(),
+        };
+
+        let error = provider
+            .load_vertex_batch(
+                "projects/project/locations/us-central1/batchPredictionJobs/123",
+                &context,
+            )
+            .await
+            .expect_err("rate limited response");
+
+        assert!(matches!(
+            error,
+            ProviderError::UpstreamHttp { status: 429, retry_after: Some(ref value), .. }
+                if value == "30"
         ));
         server.abort();
     }

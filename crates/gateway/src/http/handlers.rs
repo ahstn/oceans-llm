@@ -1422,8 +1422,9 @@ struct LoggingBodyStreamState {
     stream_trace: StreamTrace,
     /// A usage-only chunk held back until a later chunk shows whether it is the last.
     held_usage_chunk: Option<axum::body::Bytes>,
-    /// Events with neither output nor usage that arrived after the held usage chunk.
-    held_after_usage: Vec<axum::body::Bytes>,
+    /// Events with neither output nor usage that arrived after the held usage chunk,
+    /// joined in order.
+    held_after_usage: bytes::BytesMut,
     /// Buffers an incomplete trailing event, so every chunk handled holds whole events.
     framer: gateway_core::SseEventFramer,
     pending: std::collections::VecDeque<Result<axum::body::Bytes, std::io::Error>>,
@@ -1823,7 +1824,7 @@ async fn anthropic_messages_stream_response(
         collector: state.service.new_stream_response_collector(),
         stream_trace,
         held_usage_chunk: None,
-        held_after_usage: Vec::new(),
+        held_after_usage: bytes::BytesMut::new(),
         framer: gateway_core::SseEventFramer::default(),
         pending: Default::default(),
         cost_usd: None,
@@ -1917,13 +1918,9 @@ fn wrap_stream_with_request_logging(
                             state.pending.push_back(Ok(chunk));
                             continue;
                         }
-                        let held_bytes: usize = state
-                            .held_after_usage
-                            .iter()
-                            .map(axum::body::Bytes::len)
-                            .sum();
-                        if held_bytes + chunk.len() <= MAX_BYTES_HELD_AFTER_USAGE {
-                            state.held_after_usage.push(chunk);
+                        if state.held_after_usage.len() + chunk.len() <= MAX_BYTES_HELD_AFTER_USAGE
+                        {
+                            state.held_after_usage.extend_from_slice(&chunk);
                             continue;
                         }
                     }
@@ -1986,9 +1983,10 @@ fn release_held_usage_chunk(state: &mut LoggingBodyStreamState, completed: bool)
         .and_then(|cost| response_headers::with_stream_cost(&chunk, cost))
         .unwrap_or(chunk);
     state.pending.push_back(Ok(chunk));
-    state
-        .pending
-        .extend(state.held_after_usage.drain(..).map(Ok));
+    if !state.held_after_usage.is_empty() {
+        let held = state.held_after_usage.split().freeze();
+        state.pending.push_back(Ok(held));
+    }
 }
 
 /// The priced cost to report in the stream, once it has completed without failure.
@@ -2777,7 +2775,7 @@ mod tests {
                     Instant::now(),
                 ),
                 held_usage_chunk: None,
-                held_after_usage: Vec::new(),
+                held_after_usage: bytes::BytesMut::new(),
                 framer: gateway_core::SseEventFramer::default(),
                 pending: Default::default(),
                 cost_usd: None,

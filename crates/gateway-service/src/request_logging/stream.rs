@@ -364,8 +364,14 @@ fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
     Some(usage)
 }
 
+/// The zero usage the Messages stream adapter writes when the upstream sent none: the
+/// placeholder on `message_start` and the fallback on the final `message_delta`.
 fn is_synthetic_anthropic_zero_usage(value: &Value, usage: &Value) -> bool {
-    value.get("type").and_then(Value::as_str) == Some("message_delta")
+    let event_type = value.get("type").and_then(Value::as_str);
+    if event_type == Some("message_start") {
+        return *usage == json!({ "input_tokens": 0, "output_tokens": 0 });
+    }
+    event_type == Some("message_delta")
         && value
             .get("delta")
             .and_then(|delta| delta.get("stop_reason"))

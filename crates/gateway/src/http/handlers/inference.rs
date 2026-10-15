@@ -304,7 +304,7 @@ impl InferenceExecution<'_> {
             collector: state.service.new_stream_response_collector(),
             stream_trace,
             held_usage_chunk: None,
-            held_after_usage: Vec::new(),
+            held_after_usage: bytes::BytesMut::new(),
             framer: gateway_core::SseEventFramer::default(),
             pending: Default::default(),
             cost_usd: None,
