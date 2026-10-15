@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub use authorization::{AuthorizationParams, AuthorizationRejection, PendingAuthorization};
 pub use error::OauthError;
 pub use registration::{ClientRegistrationRequest, ClientRegistrationResponse};
-pub use secrets::oauth_secret_hash;
+pub use secrets::oauth_token_hash;
 pub use settings::{
     DEFAULT_ACCESS_TOKEN_TTL_SECONDS, DEFAULT_REFRESH_TOKEN_TTL_SECONDS, McpClientOauthSettings,
     McpClientOauthSettingsError,

@@ -47,9 +47,9 @@ pub struct OauthAuthorizationRequestView {
     pub redirect_uri: String,
     /// The host the browser returns to; the consent screen must show it.
     pub redirect_host: String,
-    /// Every registered redirect URI is on this device, so the client's
-    /// identity cannot be verified.
-    pub loopback_redirect_only: bool,
+    /// The code goes to a URI on this device, so the client's identity
+    /// cannot be verified.
+    pub redirect_is_loopback: bool,
     pub resource: String,
     pub resource_kind: OauthResourceKind,
     pub server_key: Option<String>,
@@ -170,7 +170,7 @@ fn authorization_request_view(pending: PendingAuthorization) -> OauthAuthorizati
         client_uri: pending.client.client_uri,
         redirect_host: redirect_host(&pending.request.redirect_uri),
         redirect_uri: pending.request.redirect_uri,
-        loopback_redirect_only: pending.loopback_redirect_only,
+        redirect_is_loopback: pending.redirect_is_loopback,
         resource: pending.request.resource,
         resource_kind,
         server_key,

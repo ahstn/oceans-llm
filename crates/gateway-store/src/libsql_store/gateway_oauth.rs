@@ -13,7 +13,7 @@ const CLIENT_COLUMNS: &str = "client_id, registration_kind, client_name, client_
     software_id, software_version, created_at, updated_at";
 const REQUEST_COLUMNS: &str = "request_id, client_id, redirect_uri, state, code_challenge, \
     resource, scope, status, user_id, user_session_id, code_hash, code_expires_at, grant_id, \
-    expires_at, created_at, decided_at, consumed_at";
+    expires_at, created_at, decided_at, consumed_at, redirect_uri_supplied";
 
 fn decode_json_list(raw: &str, field: &str) -> Result<Vec<String>, StoreError> {
     serde_json::from_str(raw)
@@ -79,6 +79,7 @@ fn decode_request(row: &libsql::Row) -> Result<GatewayOauthAuthorizationRequestR
         created_at: unix_to_datetime(row.get(14).map_err(to_query_error)?)?,
         decided_at: optional_time(row.get(15).map_err(to_query_error)?)?,
         consumed_at: optional_time(row.get(16).map_err(to_query_error)?)?,
+        redirect_uri_supplied: row.get::<i64>(17).map_err(to_query_error)? == 1,
     })
 }
 
@@ -203,7 +204,7 @@ impl GatewayOauthRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let sql = format!(
             "INSERT INTO gateway_oauth_authorization_requests ({REQUEST_COLUMNS})
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"
         );
         self.connection
             .execute(
@@ -226,6 +227,7 @@ impl GatewayOauthRepository for LibsqlStore {
                     request.created_at.unix_timestamp(),
                     request.decided_at.map(OffsetDateTime::unix_timestamp),
                     request.consumed_at.map(OffsetDateTime::unix_timestamp),
+                    i64::from(request.redirect_uri_supplied),
                 ],
             )
             .await

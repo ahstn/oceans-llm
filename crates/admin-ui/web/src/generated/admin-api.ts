@@ -4195,13 +4195,13 @@ export interface components {
             client_name?: string | null;
             client_uri?: string | null;
             expires_at: string;
-            /**
-             * @description Every registered redirect URI is on this device, so the client's
-             *     identity cannot be verified.
-             */
-            loopback_redirect_only: boolean;
             /** @description The host the browser returns to; the consent screen must show it. */
             redirect_host: string;
+            /**
+             * @description The code goes to a URI on this device, so the client's identity
+             *     cannot be verified.
+             */
+            redirect_is_loopback: boolean;
             redirect_uri: string;
             request_id: string;
             resource: string;

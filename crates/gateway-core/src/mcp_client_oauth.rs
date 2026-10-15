@@ -228,6 +228,9 @@ pub struct GatewayOauthAuthorizationRequestRecord {
     pub request_id: Uuid,
     pub client_id: String,
     pub redirect_uri: String,
+    /// Whether the client sent `redirect_uri`; the token request must then
+    /// repeat it exactly (RFC 6749 section 4.1.3).
+    pub redirect_uri_supplied: bool,
     pub state: Option<String>,
     pub code_challenge: String,
     /// Canonical resource URI.

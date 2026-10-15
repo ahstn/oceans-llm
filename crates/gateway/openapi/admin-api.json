@@ -16147,7 +16147,7 @@
           "client_id",
           "redirect_uri",
           "redirect_host",
-          "loopback_redirect_only",
+          "redirect_is_loopback",
           "resource",
           "resource_kind",
           "scopes",
@@ -16173,13 +16173,13 @@
           "expires_at": {
             "type": "string"
           },
-          "loopback_redirect_only": {
-            "type": "boolean",
-            "description": "Every registered redirect URI is on this device, so the client's\nidentity cannot be verified."
-          },
           "redirect_host": {
             "type": "string",
             "description": "The host the browser returns to; the consent screen must show it."
+          },
+          "redirect_is_loopback": {
+            "type": "boolean",
+            "description": "The code goes to a URI on this device, so the client's identity\ncannot be verified."
           },
           "redirect_uri": {
             "type": "string"

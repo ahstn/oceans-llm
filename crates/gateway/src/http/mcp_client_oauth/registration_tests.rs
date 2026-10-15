@@ -97,7 +97,7 @@ async fn public_client_registers_and_completes_the_code_flow() {
         .await;
     let (_, view) = harness.consent(&request_id).await;
     assert_eq!(view["client_name"], "Registered Editor");
-    assert_eq!(view["loopback_redirect_only"], true);
+    assert_eq!(view["redirect_is_loopback"], true);
     let code = harness.approve(&request_id).await;
     let (status, token) = harness.exchange_code(client_id, &code).await;
     assert_eq!(status, StatusCode::OK, "{token}");
@@ -127,6 +127,7 @@ async fn omitted_auth_method_registers_a_confidential_client() {
             &[
                 ("grant_type", "authorization_code"),
                 ("code", &code),
+                ("redirect_uri", REDIRECT_URI),
                 ("code_verifier", CODE_VERIFIER),
             ],
             Some(&basic),

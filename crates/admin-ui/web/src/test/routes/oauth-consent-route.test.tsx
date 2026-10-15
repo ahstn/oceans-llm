@@ -31,7 +31,7 @@ function request(
     client_uri: null,
     redirect_uri: 'https://editor.example.com/callback',
     redirect_host: 'editor.example.com',
-    loopback_redirect_only: false,
+    redirect_is_loopback: false,
     resource: 'https://oceans.example.com/mcp',
     resource_kind: 'aggregate',
     server_key: null,
@@ -76,7 +76,7 @@ describe('OauthConsentPage', () => {
     routeMock.useLoaderData.mockReturnValue({
       status: 'ready',
       request: request({
-        loopback_redirect_only: true,
+        redirect_is_loopback: true,
         redirect_host: '127.0.0.1:43123',
         resource_kind: 'server',
         server_key: 'github',

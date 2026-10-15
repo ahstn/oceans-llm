@@ -5,7 +5,7 @@ use gateway_core::{
 };
 use time::OffsetDateTime;
 
-use super::{McpClientOauthService, secrets::oauth_secret_hash};
+use super::{McpClientOauthService, secrets::oauth_token_hash};
 
 impl<R> McpClientOauthService<R>
 where
@@ -24,7 +24,7 @@ where
     ) -> Result<AuthenticatedApiKey, GatewayError> {
         let context = self
             .repo
-            .get_gateway_oauth_token_context(&oauth_secret_hash(raw.trim()))
+            .get_gateway_oauth_token_context(&oauth_token_hash(raw.trim()))
             .await?
             .filter(|context| {
                 context.token.kind == GatewayOauthTokenKind::Access

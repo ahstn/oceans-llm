@@ -60,6 +60,10 @@ impl OauthError {
         Self::new("invalid_client_metadata", description)
     }
 
+    pub fn temporarily_unavailable(description: impl Into<String>) -> Self {
+        Self::new("temporarily_unavailable", description)
+    }
+
     pub fn server_error(description: impl Into<String>) -> Self {
         Self::new("server_error", description)
     }
@@ -70,6 +74,7 @@ impl OauthError {
         match self.error {
             "invalid_client" => 401,
             "server_error" => 500,
+            "temporarily_unavailable" => 503,
             _ => 400,
         }
     }

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS gateway_oauth_authorization_requests (
   request_id TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
   redirect_uri TEXT NOT NULL,
+  -- 1 when the client sent redirect_uri; the token request must then repeat it.
+  redirect_uri_supplied INTEGER NOT NULL DEFAULT 1,
   state TEXT,
   code_challenge TEXT NOT NULL,
   resource TEXT NOT NULL,
@@ -67,6 +69,9 @@ CREATE INDEX IF NOT EXISTS gateway_oauth_grants_user_idx
 
 CREATE INDEX IF NOT EXISTS gateway_oauth_grants_session_idx
   ON gateway_oauth_grants (user_session_id);
+
+CREATE INDEX IF NOT EXISTS gateway_oauth_grants_client_idx
+  ON gateway_oauth_grants (client_id);
 
 CREATE TABLE IF NOT EXISTS gateway_oauth_tokens (
   token_hash TEXT PRIMARY KEY,

@@ -7,7 +7,7 @@ use axum::{
 use gateway_core::{
     AuthMode, GatewayOauthClientAuthMethod, GatewayOauthRepository, GlobalRole, UserStatus,
 };
-use gateway_service::mcp_client_oauth::oauth_secret_hash;
+use gateway_service::mcp_client_oauth::oauth_token_hash;
 use gateway_store::GatewayStore;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -74,7 +74,7 @@ impl Harness {
     pub async fn grant_revoked_reason(&self, token: &str) -> Option<String> {
         self.state
             .store
-            .get_gateway_oauth_token_context(&oauth_secret_hash(token))
+            .get_gateway_oauth_token_context(&oauth_token_hash(token))
             .await
             .unwrap()
             .expect("token")

@@ -13,7 +13,7 @@ use gateway_core::{
     AuthMode, GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository,
     GlobalRole, UserStatus, hash_gateway_key_secret,
 };
-use gateway_service::mcp_client_oauth::oauth_secret_hash;
+use gateway_service::mcp_client_oauth::oauth_token_hash;
 use gateway_store::GatewayStore;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -255,7 +255,7 @@ async fn code_flow_issues_an_audience_bound_access_token() {
     assert_eq!(status, StatusCode::OK, "{view}");
     assert_eq!(view["client_name"], "Test Editor");
     assert_eq!(view["redirect_host"], "127.0.0.1:43123");
-    assert_eq!(view["loopback_redirect_only"], false);
+    assert_eq!(view["redirect_is_loopback"], true);
     assert_eq!(view["resource"], "https://oceans.example.com/mcp");
     assert_eq!(view["resource_kind"], "aggregate");
     assert_eq!(view["scopes"][0]["scope"], "mcp:aggregate");
@@ -286,7 +286,7 @@ async fn code_flow_issues_an_audience_bound_access_token() {
     let context = harness
         .state
         .store
-        .get_gateway_oauth_token_context(&oauth_secret_hash(access_token))
+        .get_gateway_oauth_token_context(&oauth_token_hash(access_token))
         .await
         .unwrap()
         .expect("stored token");
@@ -332,9 +332,7 @@ async fn reused_code_fails_and_revokes_the_grant_it_created() {
     let context = harness
         .state
         .store
-        .get_gateway_oauth_token_context(&oauth_secret_hash(
-            token["access_token"].as_str().unwrap(),
-        ))
+        .get_gateway_oauth_token_context(&oauth_token_hash(token["access_token"].as_str().unwrap()))
         .await
         .unwrap()
         .unwrap();
@@ -380,6 +378,7 @@ async fn token_exchange_checks_pkce_client_resource_and_session() {
                 ("grant_type", "authorization_code"),
                 ("client_id", "editor"),
                 ("code", &code),
+                ("redirect_uri", REDIRECT_URI),
                 ("code_verifier", CODE_VERIFIER),
                 ("resource", "https://oceans.example.com/v1/chat/completions"),
             ],
@@ -421,6 +420,7 @@ async fn confidential_clients_must_authenticate_with_their_registered_method() {
     let form = [
         ("grant_type", "authorization_code"),
         ("code", code.as_str()),
+        ("redirect_uri", REDIRECT_URI),
         ("code_verifier", CODE_VERIFIER),
     ];
 
@@ -579,4 +579,194 @@ async fn unsupported_grant_types_are_rejected() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error["error"], "unsupported_grant_type");
+}
+
+#[tokio::test]
+async fn token_exchange_requires_the_redirect_uri_sent_at_authorize() {
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    let request_id = harness.start(&harness.authorize_query("editor", &[])).await;
+    let code = harness.approve(&request_id).await;
+    let (status, _, error) = harness
+        .token(
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", "editor"),
+                ("code", &code),
+                ("code_verifier", CODE_VERIFIER),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["error"], "invalid_grant");
+    assert_eq!(
+        error["error_description"],
+        "redirect_uri does not match the authorization request"
+    );
+    // The failed attempt did not consume the code.
+    let (status, token) = harness.exchange_code("editor", &code).await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+}
+
+#[tokio::test]
+async fn omitted_redirect_uri_may_stay_omitted_at_the_token_endpoint() {
+    let harness = Harness::new().await;
+    let now = OffsetDateTime::now_utc();
+    harness
+        .state
+        .store
+        .create_gateway_oauth_client(&GatewayOauthClientRecord {
+            client_id: "web-app".to_string(),
+            registration_kind: "dynamic".to_string(),
+            client_name: Some("Web app".to_string()),
+            client_uri: None,
+            logo_uri: None,
+            redirect_uris: vec!["https://web.example.com/callback".to_string()],
+            grant_types: vec!["authorization_code".to_string()],
+            token_endpoint_auth_method: GatewayOauthClientAuthMethod::None,
+            client_secret_hash: None,
+            software_id: None,
+            software_version: None,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .unwrap();
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("response_type", "code")
+        .append_pair("client_id", "web-app")
+        .append_pair("state", "client-state")
+        .append_pair("code_challenge", &code_challenge(CODE_VERIFIER))
+        .append_pair("code_challenge_method", "S256")
+        .finish();
+    let request_id = harness.start(&query).await;
+    let (_, view) = harness.consent(&request_id).await;
+    assert_eq!(view["redirect_is_loopback"], false);
+    let code = harness.approve(&request_id).await;
+    let (status, _, token) = harness
+        .token(
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", "web-app"),
+                ("code", &code),
+                ("code_verifier", CODE_VERIFIER),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+}
+
+#[tokio::test]
+async fn only_the_issuing_client_with_its_verifier_can_trigger_replay_revocation() {
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    harness
+        .register_client("attacker", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    let request_id = harness.start(&harness.authorize_query("editor", &[])).await;
+    let code = harness.approve(&request_id).await;
+    let (status, token) = harness.exchange_code("editor", &code).await;
+    assert_eq!(status, StatusCode::OK);
+    let access = oauth_token_hash(token["access_token"].as_str().unwrap());
+
+    // A leaked code replayed by another client, or without the verifier.
+    let (_, error) = harness.exchange_code("attacker", &code).await;
+    assert_eq!(error["error"], "invalid_grant");
+    let (_, _, error) = harness
+        .token(
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", "editor"),
+                ("code", &code),
+                ("redirect_uri", REDIRECT_URI),
+                (
+                    "code_verifier",
+                    "wrong-verifier-wrong-verifier-wrong-verifier-x",
+                ),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(error["error"], "invalid_grant");
+    let context = harness
+        .state
+        .store
+        .get_gateway_oauth_token_context(&access)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        context.grant.revoked_at, None,
+        "the victim's grant survives"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_redemption_leaves_no_live_grant() {
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    let request_id = harness.start(&harness.authorize_query("editor", &[])).await;
+    let code = harness.approve(&request_id).await;
+    let (first, second) = tokio::join!(
+        harness.exchange_code("editor", &code),
+        harness.exchange_code("editor", &code)
+    );
+    let outcomes = [first, second];
+    let issued: Vec<&Value> = outcomes
+        .iter()
+        .filter(|(status, _)| *status == StatusCode::OK)
+        .map(|(_, body)| body)
+        .collect();
+    assert!(issued.len() <= 1, "a code redeems at most once");
+    assert!(
+        outcomes
+            .iter()
+            .any(|(_, body)| body["error"] == "invalid_grant")
+    );
+    // Whichever request won, the replay revoked its grant.
+    for token in issued {
+        let context = harness
+            .state
+            .store
+            .get_gateway_oauth_token_context(&oauth_token_hash(
+                token["access_token"].as_str().unwrap(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            context.grant.revoked_reason.as_deref(),
+            Some("authorization_code_replayed")
+        );
+    }
+}
+
+#[tokio::test]
+async fn loopback_warning_follows_the_selected_redirect_uri() {
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    // The client registers both an HTTPS and a loopback URI.
+    let https = harness.authorize_query("editor", &[]).replace(
+        &url::form_urlencoded::byte_serialize(REDIRECT_URI.as_bytes()).collect::<String>(),
+        &url::form_urlencoded::byte_serialize(b"https://editor.example.com/oauth/callback")
+            .collect::<String>(),
+    );
+    let request_id = harness.start(&https).await;
+    let (_, view) = harness.consent(&request_id).await;
+    assert_eq!(view["redirect_is_loopback"], false);
+    assert_eq!(view["redirect_host"], "editor.example.com");
+
+    let request_id = harness.start(&harness.authorize_query("editor", &[])).await;
+    let (_, view) = harness.consent(&request_id).await;
+    assert_eq!(view["redirect_is_loopback"], true);
 }
