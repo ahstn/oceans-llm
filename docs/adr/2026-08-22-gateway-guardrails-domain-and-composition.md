@@ -24,7 +24,7 @@ Each operation follows one order:
 6. Stop on any managed deny.
 7. Return the final original or transformed value with the ordered decision chain.
 
-`audit` records a matching decision and permits the operation. `deny` records and stops it. Managed failures have a per-check disposition. The default is `fail_open`, which permits the operation and emits an audit decision. `fail_closed` converts the failure to a deny. Timeouts and content-size failures use the same disposition.
+`audit` records a matching decision and permits the operation. `deny` records and stops it. Managed failures have a per-check disposition. The default is `fail_open`, which permits the operation and emits an audit decision. `fail_closed` converts the failure to a deny in `deny` mode. Timeouts and content-size failures use the same disposition. A deterministic evaluator failure, such as generated tool arguments that are not a JSON object (`tool_call.malformed_arguments`), fails closed in `deny` mode. In `audit` mode every failure is recorded as a `fail_open` audit decision, because audit mode never stops an operation.
 
 Decision records retain only privacy-safe metadata by default: decision ID, phase, effective scope, evaluator or managed service, pack and rule identity, action, stable reason code, latency, failure disposition, transformation flag, and SHA-256 content hash. Raw prompts, commands, tool arguments, and results follow the existing explicit payload-capture and redaction policy. Managed-service assessment metadata must not add raw content to default records.
 
@@ -36,7 +36,7 @@ Built-in packs have stable IDs and semantic versions. Shell evaluation uses a co
 
 The built-in patterns and fixtures are clean-room work derived from the confirmed product contract and public command or provider documentation. No Destructive Command Guard source code or rule definition was copied.
 
-Gateway HTTP paths own canonical protocol adaptation and enforcement. Guarded streams must be buffered at the HTTP boundary before any bytes are released. Persistence repositories store decision metadata after evaluation. Harness adapters call the authenticated gateway endpoint immediately before process creation.
+Gateway HTTP paths own canonical protocol adaptation and enforcement. Guarded streams must be buffered at the HTTP boundary before any bytes are released. A stream that cannot be inspected, because it exceeds the buffer or is not parseable SSE, is rejected in `deny` mode. In `audit` mode it is released unchanged with a `fail_open` audit decision. Persistence repositories store decision metadata after evaluation. Harness adapters call the authenticated gateway endpoint immediately before process creation.
 
 ## Rationale
 

@@ -185,6 +185,22 @@ test('guards prompt, non-stream response, and buffered stream boundaries', async
     expect(body).not.toContain('rm -rf')
     expect(body).not.toContain('{not-json')
   }
+
+  const auditOversizedStream = await request.post(`${root}/v1/chat/completions`, {
+    headers,
+    data: { ...chatRequest('guardrail-e2e-oversize-stream', true), model: 'audit-fast' },
+  })
+  expect(auditOversizedStream.status()).toBe(200)
+  const auditOversizedBody = await auditOversizedStream.text()
+  expect(auditOversizedBody.length).toBeGreaterThan(4 * 1024 * 1024)
+  expect(auditOversizedBody).toContain('data: [DONE]')
+
+  const auditMalformedStream = await request.post(`${root}/v1/chat/completions`, {
+    headers,
+    data: { ...chatRequest('guardrail-e2e-malformed-tool-call', true), model: 'audit-fast' },
+  })
+  expect(auditMalformedStream.status()).toBe(200)
+  expect(await auditMalformedStream.text()).toContain('{not-json')
 })
 
 test('keeps decision filters synchronized with browser navigation', async ({

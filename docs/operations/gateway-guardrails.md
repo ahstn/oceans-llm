@@ -23,6 +23,8 @@ Supported phases are:
 
 A guarded stream is buffered up to `stream_buffer_bytes`. The gateway releases no guarded bytes before the final decision. Streams for disabled policies keep their normal streaming behavior.
 
+Some provider streams cannot be inspected: a stream larger than `stream_buffer_bytes`, or one that is not UTF-8 SSE with JSON data. In `deny` mode the gateway rejects them, with `413` for an oversize stream and `500` for an unparseable one. In `audit` mode it releases the stream unchanged and records a `stream_buffer` audit decision with `failure_disposition: fail_open` and reason `stream.buffer_exceeded` or `stream.unparseable`. Managed-check masks are not applied to a released stream.
+
 A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default `120000`, maximum `600000`). An upstream MCP tool that holds its event stream open past that bound is answered with `504` and a JSON-RPC guardrail error instead of holding the caller connection open.
 
 ## Built-in packs
@@ -205,7 +207,9 @@ For a least-privilege custom role, include `modelarmor.templates.useToSanitizeUs
 
 ## Failures and transformations
 
-`failure_disposition` defaults to `fail_open`. A timeout, unavailable service, rate limit, malformed response, or content-size failure then permits the operation and records an audit decision. Set `fail_closed` only after the managed service has met its availability target. Fail-closed converts the managed failure to a deny.
+`failure_disposition` defaults to `fail_open`. A timeout, unavailable service, rate limit, malformed response, or content-size failure then permits the operation and records an audit decision. Set `fail_closed` only after the managed service has met its availability target. In `deny` mode, fail-closed converts the managed failure to a deny. In `audit` mode, every failure is recorded as a `fail_open` audit decision and the operation continues.
+
+Generated tool arguments that are not a JSON object, such as a call truncated by the output limit, cannot be checked against the packs. They record `tool_call.malformed_arguments`. Deny mode stops the call, and audit mode records it and lets it through.
 
 Allowed masked or sanitized text is passed to the next check and then to the caller or upstream service. The gateway rejects a transformation that cannot preserve the protocol payload shape.
 
@@ -228,7 +232,7 @@ Run `mise run guardrail-release-gate` before an audit-to-deny change. The gate u
 | --- | --- | --- |
 | OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses prompts | Audit-mode managed intervention reaches the provider; an allowed mask reaches the provider in protocol-valid form | Deny mode returns the stable policy error and the mock provider request count remains zero |
 | Non-stream model response | Safe text reaches the caller | A destructive generated tool call returns the stable policy error without executable arguments |
-| Stream model response | Safe SSE is released after the final decision | Split, parallel, malformed, and destructive tool-call fixtures release no guarded stream bytes; an oversize stream returns `413` with a bounded JSON error |
+| Stream model response | Safe SSE is released after the final decision | Split, parallel, malformed, and destructive tool-call fixtures release no guarded stream bytes; in deny mode, an oversize stream returns `413` with a bounded JSON error |
 | Direct MCP call and result | Safe calls execute; managed result masking preserves JSON | Deterministic and managed call denies leave the upstream execution count at zero |
 | Aggregate MCP call and result | Safe calls execute; managed result masking preserves the aggregate response | The aggregate policy-denied JSON-RPC result leaves the upstream execution count at zero |
 | Pi and OpenCode | Allow and audit decisions retain the decision ID | The pre-tool hook rejects before the shell implementation or process handoff runs |
@@ -239,7 +243,7 @@ The load budgets are release gates, not sizing promises for every deployment:
 - Deterministic evaluation: 10,000 local pack evaluations must finish within two seconds.
 - Managed concurrency: 64 concurrent 20 ms managed evaluations must finish within two seconds. Each managed call still has its configured `timeout_ms`; the release fixture uses 1,000 ms.
 - Managed request body: each check rejects content above `max_content_bytes`; the documented default is 256 KiB.
-- Guarded response memory: each stream buffers at most `stream_buffer_bytes`; the release stack uses 4 MiB and verifies that overflow releases only a small JSON error.
+- Guarded response memory: each stream buffers at most `stream_buffer_bytes`; the release stack uses 4 MiB and verifies that overflow in deny mode releases only a small JSON error.
 - MCP request body: the gateway rejects a body above 4 MiB before dispatch.
 - Event persistence: 100 privacy-safe LibSQL decision records must insert and list within five seconds. PostgreSQL runs the same metadata, filter, ordering, and pagination contract when `TEST_POSTGRES_URL` is set.
 

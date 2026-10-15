@@ -4,10 +4,12 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
-    GuardrailEvaluation, PolicyResolver, PolicyTarget, redact_prompt_secrets,
+    DecisionAction, DecisionId, DecisionRecord, EvaluationInput, EvaluationPayload,
+    FailureDisposition, GuardPhase, GuardrailEvaluation, PolicyMode, PolicyResolver, PolicyTarget,
+    ReasonCode, redact_prompt_secrets,
 };
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
 use crate::http::{
     guardrail_events::{record_guardrail_decisions_in_background, record_guardrail_evaluation},
@@ -183,6 +185,10 @@ pub async fn guard_stream(
         };
         collector.observe_chunk(&chunk);
         if buffered.len().saturating_add(chunk.len()) > context.stream_buffer_bytes {
+            if release_uninspected_stream(state, context, "stream.buffer_exceeded", &buffered) {
+                let inspected = stream::iter([Ok(Bytes::from(buffered)), Ok(chunk)]);
+                return Ok(Box::pin(inspected.chain(upstream)));
+            }
             collector.finish();
             return Err(Box::new(GuardStreamError {
                 error: GatewayError::PayloadTooLarge {
@@ -207,14 +213,58 @@ pub async fn guard_stream(
     )))
 }
 
+/// Records an audit decision for a provider stream the guard cannot inspect, and returns
+/// whether the policy is in audit mode, which releases the stream unchanged instead of
+/// failing the request.
+fn release_uninspected_stream(
+    state: &AppState,
+    context: &InferenceGuardContext,
+    reason_code: &'static str,
+    content: &[u8],
+) -> bool {
+    let policy = PolicyResolver::new(&state.guardrail_config)
+        .resolve(PolicyTarget::ModelRoute(&context.route_key));
+    if policy.mode != PolicyMode::Audit {
+        return false;
+    }
+    let decision = DecisionRecord {
+        decision_id: DecisionId::new(),
+        phase: GuardPhase::ModelResponse,
+        scope: policy.scope,
+        evaluator: "stream_buffer".to_string(),
+        managed_service: None,
+        managed_metadata: None,
+        action: DecisionAction::Audit,
+        reason_code: ReasonCode::new(reason_code).expect("static reason code is valid"),
+        matched_rule: None,
+        latency_micros: 0,
+        failure_disposition: Some(FailureDisposition::FailOpen),
+        transformed: false,
+        content_hash: format!("sha256:{:x}", Sha256::digest(content)),
+    };
+    record_guardrail_decisions_in_background(
+        state,
+        vec![(context.request_id.clone(), vec![decision])],
+    );
+    true
+}
+
 async fn guard_sse_payload(
     state: &AppState,
     context: &InferenceGuardContext,
     payload: &[u8],
 ) -> Result<Vec<u8>, GatewayError> {
-    let source = std::str::from_utf8(payload).map_err(|error| {
-        GatewayError::Internal(format!("provider stream was not UTF-8: {error}"))
-    })?;
+    let source = match std::str::from_utf8(payload) {
+        Ok(source) => source,
+        Err(_) if release_uninspected_stream(state, context, "stream.unparseable", payload) => {
+            return Ok(payload.to_vec());
+        }
+        Err(error) => {
+            return Err(GatewayError::Internal(format!(
+                "provider stream was not UTF-8: {error}"
+            )));
+        }
+    };
     let separator = if source.contains("\r\n") {
         "\r\n"
     } else {
@@ -248,7 +298,20 @@ async fn guard_sse_payload(
             } else if payload == "[DONE]" {
                 StreamLine::Done
             } else {
-                let value = parse_guarded_sse_json(&payload)?;
+                let value = match parse_guarded_sse_json(&payload) {
+                    Ok(value) => value,
+                    Err(_)
+                        if release_uninspected_stream(
+                            state,
+                            context,
+                            "stream.unparseable",
+                            source.as_bytes(),
+                        ) =>
+                    {
+                        return Ok(source.as_bytes().to_vec());
+                    }
+                    Err(error) => return Err(error),
+                };
                 let mut pointers = Vec::new();
                 collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
                 if let Some(error) = value.get("error") {
@@ -735,11 +798,11 @@ fn collect_stream_tool_fragments(
                     .or_else(|| object.get("call_id"))
                     .map(identity_key)
                     .unwrap_or_else(|| "default".to_string());
+                // A whole tool call inside an event (such as `response.completed`) is a
+                // snapshot of the call, not a delta, so it is guarded on its own.
                 let fragments = output.entry(key).or_default();
-                fragments.name.push_str(&name);
-                fragments
-                    .arguments
-                    .push_str(&serialized_arguments(&arguments));
+                fragments.name = name;
+                let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
                 fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
@@ -750,8 +813,8 @@ fn collect_stream_tool_fragments(
                     format!("{pointer}/arguments")
                 };
                 fragments
-                    .argument_locations
-                    .push((event_index, argument_pointer));
+                    .terminal_arguments
+                    .push((arguments, (event_index, argument_pointer)));
                 return;
             }
 
@@ -1599,6 +1662,295 @@ mod tests {
             fragments["item-1"].terminal_arguments[0].0,
             "{\"cmd\":\"echo safe\"}"
         );
+    }
+
+    fn responses_function_call_stream(name: &str, completed_arguments: &str) -> String {
+        let item = |arguments: &str| {
+            json!({
+                "id": "fc_1",
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": name,
+                "arguments": arguments,
+            })
+        };
+        [
+            json!({"type": "response.created", "response": {"id": "resp_1", "output": []}}),
+            json!({"type": "response.output_item.added", "output_index": 0, "item": item("")}),
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": "fc_1",
+                "output_index": 0,
+                "delta": "{\"query\":",
+            }),
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": "fc_1",
+                "output_index": 0,
+                "delta": "\"oceans\"}",
+            }),
+            json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "fc_1",
+                "output_index": 0,
+                "arguments": "{\"query\":\"oceans\"}",
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": item("{\"query\":\"oceans\"}"),
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"id": "resp_1", "output": [item(completed_arguments)]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("event: {}\ndata: {event}", event["type"].as_str().unwrap()))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+    }
+
+    async fn built_in_guardrail_state() -> (tempfile::TempDir, crate::http::state::AppState) {
+        let (directory, mut state) = crate::http::test_support::app_state().await;
+        state.guardrail_engine = Arc::new(gateway_guardrails::GuardrailEngine::deterministic_only(
+            Arc::new(gateway_guardrails::BuiltInEvaluator),
+        ));
+        (directory, state)
+    }
+
+    #[test]
+    fn keeps_responses_completed_snapshot_out_of_streamed_arguments() {
+        let stream = responses_function_call_stream("wiki_search", "{\"query\":\"oceans\"}");
+        let mut fragments = BTreeMap::new();
+        for (event_index, block) in stream.split("\n\n").enumerate() {
+            let data = block.split_once("data: ").expect("data line").1;
+            let event = serde_json::from_str(data).expect("event JSON");
+            collect_stream_tool_fragments(&event, "", event_index, &mut fragments);
+        }
+
+        let call = &fragments["fc_1"];
+        assert_eq!(call.name, "wiki_search");
+        assert_eq!(call.arguments, "{\"query\":\"oceans\"}");
+        assert_eq!(
+            call.terminal_arguments.len(),
+            3,
+            "done, item done, completed"
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_mode_allows_streamed_responses_function_call() {
+        let (_directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.packs = vec![gateway_guardrails::PackId::new("core.shell").expect("pack id")];
+        let context = super::InferenceGuardContext {
+            route_key: "openai/gpt".into(),
+            request_id: "request-1".into(),
+            associated_prompt: None,
+            enabled: true,
+            stream_buffer_bytes: 1 << 20,
+        };
+        let stream = responses_function_call_stream("wiki_search", "{\"query\":\"oceans\"}");
+
+        let guarded = super::guard_sse_payload(&state, &context, stream.as_bytes())
+            .await
+            .expect("a well-formed streamed tool call is allowed");
+
+        assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
+    }
+
+    #[tokio::test]
+    async fn audit_mode_releases_uninspectable_streamed_tool_call() {
+        let (_directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        let context = super::InferenceGuardContext {
+            route_key: "openai/gpt".into(),
+            request_id: "request-1".into(),
+            associated_prompt: None,
+            enabled: true,
+            stream_buffer_bytes: 1 << 20,
+        };
+        let stream = responses_function_call_stream("wiki_search", "{\"query\":");
+
+        let guarded = super::guard_sse_payload(&state, &context, stream.as_bytes())
+            .await
+            .expect("audit mode records malformed arguments without blocking");
+
+        assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
+    }
+
+    fn stream_guard_context(stream_buffer_bytes: usize) -> super::InferenceGuardContext {
+        super::InferenceGuardContext {
+            route_key: "openai/gpt".into(),
+            request_id: "request-1".into(),
+            associated_prompt: None,
+            enabled: true,
+            stream_buffer_bytes,
+        }
+    }
+
+    async fn stream_state(mode: gateway_guardrails::PolicyMode) -> (tempfile::TempDir, AppState) {
+        let (directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.mode = mode;
+        (directory, state)
+    }
+
+    async fn recorded_stream_decisions(state: &AppState) -> Vec<String> {
+        // Stream failure decisions are written in the background, so wait for the write.
+        for _ in 0..100 {
+            let items = state
+                .store
+                .list_guardrail_decisions(&GuardrailDecisionQuery {
+                    page: 1,
+                    page_size: 10,
+                    request_id: Some("request-1".into()),
+                    evaluator: Some("stream_buffer".into()),
+                    ..Default::default()
+                })
+                .await
+                .expect("decisions")
+                .items;
+            if !items.is_empty() {
+                return items
+                    .iter()
+                    .map(|item| format!("{}:{}", item.action, item.reason_code))
+                    .collect();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        Vec::new()
+    }
+
+    fn chunked_stream(chunks: &[&'static str]) -> gateway_core::ProviderStream {
+        Box::pin(futures_util::stream::iter(
+            chunks
+                .iter()
+                .map(|chunk| Ok(axum::body::Bytes::from_static(chunk.as_bytes())))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    async fn collect_stream(stream: gateway_core::ProviderStream) -> String {
+        use futures_util::StreamExt;
+        let chunks = stream
+            .map(|chunk| chunk.expect("stream chunk"))
+            .collect::<Vec<_>>()
+            .await;
+        String::from_utf8(chunks.concat()).expect("UTF-8")
+    }
+
+    #[tokio::test]
+    async fn audit_mode_passes_oversized_stream_through_unchanged() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
+        let chunks = [
+            "data: {\"a\":1}\n\n",
+            "data: {\"b\":2}\n\n",
+            "data: [DONE]\n\n",
+        ];
+
+        let Ok(stream) =
+            super::guard_stream(&state, &stream_guard_context(20), chunked_stream(&chunks)).await
+        else {
+            panic!("audit mode releases an oversized stream");
+        };
+
+        assert_eq!(collect_stream(stream).await, chunks.concat());
+        assert_eq!(
+            recorded_stream_decisions(&state).await,
+            ["audit:stream.buffer_exceeded"]
+        );
+    }
+
+    #[tokio::test]
+    async fn deny_mode_rejects_oversized_stream() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Deny).await;
+        let chunks = ["data: {\"a\":1}\n\n", "data: {\"b\":2}\n\n"];
+
+        let Err(failure) =
+            super::guard_stream(&state, &stream_guard_context(20), chunked_stream(&chunks)).await
+        else {
+            panic!("deny mode rejects an oversized stream");
+        };
+
+        assert!(matches!(
+            failure.error,
+            GatewayError::PayloadTooLarge { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn audit_mode_passes_unparseable_stream_through_unchanged() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
+        let stream = "data: {\"a\":1}\n\ndata: not-json\n\ndata: [DONE]\n\n";
+
+        let guarded =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect("audit mode releases an unparseable stream");
+
+        assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
+        assert_eq!(
+            recorded_stream_decisions(&state).await,
+            ["audit:stream.unparseable"]
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_mode_passes_non_utf8_stream_through_unchanged() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
+        let stream = b"data: \xff\n\n".as_slice();
+
+        let guarded = super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream)
+            .await
+            .expect("audit mode releases a non-UTF-8 stream");
+
+        assert_eq!(guarded, stream);
+    }
+
+    #[tokio::test]
+    async fn deny_mode_rejects_unparseable_stream() {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Deny).await;
+
+        let error = super::guard_sse_payload(
+            &state,
+            &stream_guard_context(1 << 20),
+            b"data: not-json\n\n",
+        )
+        .await
+        .expect_err("deny mode rejects an unparseable stream");
+
+        assert!(error.to_string().contains("invalid SSE JSON"));
+    }
+
+    #[tokio::test]
+    async fn denies_completed_snapshot_that_differs_from_streamed_arguments() {
+        let (_directory, mut state) = built_in_guardrail_state().await;
+        let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+        policy.enabled = true;
+        policy.mode = gateway_guardrails::PolicyMode::Deny;
+        policy.packs = vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack id")];
+        let context = super::InferenceGuardContext {
+            route_key: "openai/gpt".into(),
+            request_id: "request-1".into(),
+            associated_prompt: None,
+            enabled: true,
+            stream_buffer_bytes: 1 << 20,
+        };
+        let stream = responses_function_call_stream("bash", "{\"command\":\"rm -rf /tmp/work\"}");
+
+        let error = super::guard_sse_payload(&state, &context, stream.as_bytes())
+            .await
+            .expect_err("the terminal snapshot is evaluated on its own");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected a guardrail denial, got {error:?}");
+        };
+        assert_ne!(reason_code, "tool_call.malformed_arguments");
     }
 
     #[test]
