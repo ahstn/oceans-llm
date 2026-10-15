@@ -850,6 +850,12 @@ where
         let now = OffsetDateTime::now_utc();
         let mut providers =
             std::collections::HashMap::<String, Option<gateway_core::ProviderConnection>>::new();
+        // The checks read only catalog values, which depend on the provider, upstream model,
+        // and extra_body billing modifiers, so routes sharing those reuse one lookup.
+        let mut catalog = std::collections::HashMap::<
+            (String, String, String),
+            (Option<crate::EffectiveRoutePricing>, Option<i64>),
+        >::new();
         let mut scan = RouteOverrideScan::default();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
@@ -865,31 +871,43 @@ where
                     let provider = self.store.get_provider_by_key(&route.provider_key).await?;
                     providers.insert(route.provider_key.clone(), provider);
                 }
-                let provider = providers.get(&route.provider_key).and_then(Option::as_ref);
-                let metadata = match resolve_effective_route_metadata(
-                    self.store.as_ref(),
-                    provider,
-                    &route,
-                    now,
-                )
-                .await
-                {
-                    Ok(metadata) => metadata,
-                    // A context override must be checked, so its lookup failure stays fatal.
-                    Err(error) if route.context_window_tokens.is_some() => return Err(error),
-                    Err(error) => {
-                        warn!(
-                            error = %error,
-                            model_key = %model.model_key,
-                            provider_key = %route.provider_key,
-                            upstream_model = %route.upstream_model,
-                            "skipping redundant route override check; route metadata lookup failed"
-                        );
-                        continue;
+                let catalog_key = (
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                    Value::Object(route.extra_body.clone()).to_string(),
+                );
+                if !catalog.contains_key(&catalog_key) {
+                    let provider = providers.get(&route.provider_key).and_then(Option::as_ref);
+                    match resolve_effective_route_metadata(
+                        self.store.as_ref(),
+                        provider,
+                        &route,
+                        now,
+                    )
+                    .await
+                    {
+                        Ok(metadata) => {
+                            catalog.insert(
+                                catalog_key.clone(),
+                                (metadata.catalog_pricing, metadata.catalog_limits.context),
+                            );
+                        }
+                        // A context override must be checked, so its lookup failure stays fatal.
+                        Err(error) if route.context_window_tokens.is_some() => return Err(error),
+                        Err(error) => {
+                            warn!(
+                                error = %error,
+                                model_key = %model.model_key,
+                                provider_key = %route.provider_key,
+                                upstream_model = %route.upstream_model,
+                                "skipping redundant route override check; route metadata lookup failed"
+                            );
+                            continue;
+                        }
                     }
-                };
-
-                let catalog_context = metadata.catalog_limits.context;
+                }
+                let (catalog_pricing, catalog_context) = &catalog[&catalog_key];
+                let catalog_context = *catalog_context;
                 if let (Some(configured), Some(catalog)) =
                     (route.context_window_tokens, catalog_context)
                     && configured > catalog
@@ -906,7 +924,7 @@ where
                     continue;
                 }
                 let pricing = matches!(
-                    (route.pricing_override.as_ref(), metadata.catalog_pricing.as_ref()),
+                    (route.pricing_override.as_ref(), catalog_pricing.as_ref()),
                     (Some(configured), Some(catalog))
                         if pricing_override_matches_catalog(configured, catalog)
                 );
@@ -2212,6 +2230,7 @@ mod tests {
         provider: Option<ProviderConnection>,
         pricing: Option<ModelPricingRecord>,
         pricing_lookup_fails: bool,
+        pricing_lookups: Arc<std::sync::atomic::AtomicUsize>,
     }
 
     struct PassThroughPlanner;
@@ -2530,6 +2549,8 @@ mod tests {
             _pricing_model_id: &str,
             _occurred_at: OffsetDateTime,
         ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            self.pricing_lookups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if self.pricing_lookup_fails {
                 return Err(StoreError::Unavailable(
                     "pricing catalog unavailable".to_string(),
@@ -2786,6 +2807,42 @@ mod tests {
             .validate_route_overrides()
             .await
             .expect_err("a context override must still be checked against the catalog");
+    }
+
+    #[tokio::test]
+    async fn startup_override_check_looks_up_each_catalog_target_once() {
+        let model_id = Uuid::new_v4();
+        let mut first = vertex_embedding_route(model_id);
+        first.upstream_model = "gpt-5".to_string();
+        first.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let mut second = first.clone();
+        second.id = Uuid::new_v4();
+        let mut other_target = first.clone();
+        other_target.id = Uuid::new_v4();
+        other_target.upstream_model = "gpt-5-mini".to_string();
+        let lookups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model(model_id)],
+                provider: Some(openai_provider(&first.provider_key)),
+                routes: vec![first, second, other_target],
+                pricing: Some(pricing_record(Some(64_000))),
+                pricing_lookups: lookups.clone(),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        service
+            .validate_route_overrides()
+            .await
+            .expect("pricing-only overrides cannot block startup");
+        assert_eq!(lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

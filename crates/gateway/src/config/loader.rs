@@ -292,9 +292,10 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
 
 const REDACTED: &str = "<redacted>";
 
-/// Replaces values that can carry credentials, so rendered output is safe to paste into logs:
-/// `literal.` secret references, every header value, and URL credentials (userinfo and query
-/// values). `env.` and
+/// Replaces values that can carry credentials. Rendered output still contains identity data,
+/// such as user emails, so it is not anonymized:
+/// `literal.` secret references, every header value, and URL credentials (userinfo, query
+/// values, and fragments). `env.` and
 /// `file.` references name where a secret lives without containing it, so they stay visible.
 fn redact_secrets(value: &mut Value, in_headers: bool) {
     match value {
@@ -326,9 +327,9 @@ fn redact_secrets(value: &mut Value, in_headers: bool) {
     }
 }
 
-/// Returns the URL with its username, password, and every query value redacted, or `None` when
-/// the text is not a URL or carries none of them. Query strings on endpoint URLs are rare and
-/// often hold API keys, so all values are redacted rather than guessing parameter names.
+/// Returns the URL with its username, password, every query value, and its fragment redacted,
+/// or `None` when the text is not a URL or carries none of them. Query strings on endpoint URLs
+/// are rare and often hold API keys, so all values are redacted rather than guessing names.
 fn redact_url_credentials(text: &str) -> Option<String> {
     let mut url = url::Url::parse(text).ok()?;
     if url.cannot_be_a_base() {
@@ -349,6 +350,10 @@ fn redact_url_credentials(text: &str) -> Option<String> {
         url.query_pairs_mut()
             .clear()
             .extend_pairs(keys.iter().map(|key| (key.as_str(), REDACTED)));
+        changed = true;
+    }
+    if url.fragment().is_some() {
+        url.set_fragment(Some(REDACTED));
         changed = true;
     }
     changed.then(|| url.to_string())

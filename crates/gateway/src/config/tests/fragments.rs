@@ -247,6 +247,10 @@ providers:
     type: openai_compat
     base_url: https://token-secret@llm.example.net/v1
     pricing_provider_id: openai
+  fragment-token:
+    type: openai_compat
+    base_url: https://llm.example.org/v1#fragment-secret
+    pricing_provider_id: openai
 "#,
     );
     write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
@@ -259,6 +263,7 @@ providers:
         ("header value", "org-secret"),
         ("URL query value", "query-secret"),
         ("URL username", "token-secret"),
+        ("URL fragment", "fragment-secret"),
     ] {
         assert!(!rendered.contains(secret), "{case} was not redacted");
     }
