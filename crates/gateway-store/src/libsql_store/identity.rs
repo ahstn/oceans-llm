@@ -1000,11 +1000,7 @@ impl LibsqlStore {
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1099,11 +1095,7 @@ impl LibsqlStore {
         user_id: Uuid,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1222,11 +1214,7 @@ impl LibsqlStore {
         role: MembershipRole,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"

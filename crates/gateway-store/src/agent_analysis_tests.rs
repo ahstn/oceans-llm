@@ -272,6 +272,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         linked.get::<String>(3).expect("analysis coverage"),
         r#"{"request_metadata":true}"#
     );
+    // Store writes commit on their own connection, which this open read would block.
+    drop((linked, linked_rows));
     let observation_set = AgentObservationSetRecord {
         observation_set_id: Uuid::new_v4(),
         agent_session_id: session.agent_session_id,

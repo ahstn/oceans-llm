@@ -26,6 +26,8 @@ mod skills;
 #[cfg(test)]
 mod skills_tests;
 mod support;
+#[cfg(test)]
+mod transaction_tests;
 
 use std::sync::Arc;
 
@@ -122,6 +124,24 @@ impl LibsqlStore {
             connection: Arc::new(connection),
             routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
         })
+    }
+
+    /// Begins a write transaction on a connection of its own. Every store call shares
+    /// `self.connection`, so a transaction there would fail with "cannot start a transaction
+    /// within a transaction" whenever another request already holds one, and would pull that
+    /// request's statements into this transaction's commit or rollback. `IMMEDIATE` takes the
+    /// write lock at `BEGIN`, where the busy timeout applies, instead of failing on a later
+    /// read-to-write upgrade.
+    pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
+        let connection = self.database.connect().map_err(to_query_error)?;
+        Self::configure_connection(&connection)
+            .await
+            .map_err(to_query_error)?;
+        // The transaction holds its own handle to the connection and closes it when dropped.
+        connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_query_error)
     }
 
     async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {

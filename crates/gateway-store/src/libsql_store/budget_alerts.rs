@@ -134,11 +134,7 @@ impl BudgetAlertRepository for LibsqlStore {
         alert: &BudgetAlertRecord,
         deliveries: &[BudgetAlertDeliveryRecord],
     ) -> Result<bool, StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         let inserted = tx
             .execute(
@@ -335,11 +331,7 @@ impl BudgetAlertRepository for LibsqlStore {
         claimed_at: OffsetDateTime,
     ) -> Result<Vec<BudgetAlertDispatchTask>, StoreError> {
         let limit = i64::from(limit.clamp(1, 200));
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         let mut rows = tx
             .query(
