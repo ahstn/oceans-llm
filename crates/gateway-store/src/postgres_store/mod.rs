@@ -418,7 +418,7 @@ impl GatewayStore for PostgresStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         Self::remove_team_membership(self, team_id, user_id).await
     }
 

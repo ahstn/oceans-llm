@@ -1063,10 +1063,29 @@ impl PostgresStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
-        let row = sqlx::query(
+    ) -> Result<Option<MembershipRole>, StoreError> {
+        let removed = sqlx::query(
             r#"
-            SELECT role
+            DELETE FROM team_memberships
+            WHERE team_id = $1
+              AND user_id = $2
+              AND role <> 'owner'
+            RETURNING role
+            "#,
+        )
+        .bind(team_id.to_string())
+        .bind(user_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if let Some(row) = removed {
+            let role: String = row.try_get(0).map_err(to_query_error)?;
+            return decode_removed_role(&role).map(Some);
+        }
+
+        let remaining = sqlx::query(
+            r#"
+            SELECT 1
             FROM team_memberships
             WHERE team_id = $1
               AND user_id = $2
@@ -1078,30 +1097,12 @@ impl PostgresStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(to_query_error)?;
-        let Some(row) = row else {
-            return Ok(false);
-        };
-        let role: String = row.try_get(0).map_err(to_query_error)?;
-        if role == MembershipRole::Owner.as_str() {
+        if remaining.is_some() {
             return Err(StoreError::Conflict(
                 "owner memberships cannot be removed or transferred".to_string(),
             ));
         }
-
-        let result = sqlx::query(
-            r#"
-            DELETE FROM team_memberships
-            WHERE team_id = $1
-              AND user_id = $2
-            "#,
-        )
-        .bind(team_id.to_string())
-        .bind(user_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_write_error)?;
-
-        Ok(result.rows_affected() > 0)
+        Ok(None)
     }
 
     pub async fn transfer_team_membership(
@@ -2053,4 +2054,9 @@ impl IdentityRepository for PostgresStore {
             .map(decode_team_membership_record)
             .collect::<Result<Vec<_>, _>>()
     }
+}
+
+fn decode_removed_role(role: &str) -> Result<MembershipRole, StoreError> {
+    MembershipRole::from_db(role)
+        .ok_or_else(|| StoreError::Serialization(format!("unsupported membership role `{role}`")))
 }

@@ -6114,11 +6114,12 @@ pub(crate) mod tests {
             .expect("platform admin");
         let now = OffsetDateTime::now_utc();
 
-        assert!(
-            !store
+        assert_eq!(
+            store
                 .remove_team_membership(source_team.team_id, member.user_id)
                 .await
-                .expect("remove non-member")
+                .expect("remove non-member"),
+            None
         );
 
         store
@@ -6148,11 +6149,12 @@ pub(crate) mod tests {
         assert_eq!(transferred_membership.team_id, destination_team.team_id);
         assert_eq!(transferred_membership.role, MembershipRole::Member);
 
-        assert!(
+        assert_eq!(
             store
                 .remove_team_membership(destination_team.team_id, member.user_id)
                 .await
-                .expect("remove transferred member")
+                .expect("remove transferred member"),
+            Some(MembershipRole::Member)
         );
         assert!(
             store

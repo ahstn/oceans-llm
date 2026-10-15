@@ -340,6 +340,17 @@ async fn identity_changes_are_audited_without_invite_links() {
     assert_eq!(statuses, [StatusCode::OK, StatusCode::BAD_REQUEST]);
     let redeemed = harness.entry("user.invite_redeemed").await;
     assert_eq!(redeemed["after"]["status"], "active");
+
+    // The removal records the role the delete removed; a repeat changes nothing.
+    let member_path = format!("/api/v1/admin/identity/teams/{team_id}/members/{user_id}");
+    let (status, body) = harness.admin(Method::DELETE, &member_path, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _) = harness.admin(Method::DELETE, &member_path, None).await;
+    assert_ne!(status, StatusCode::OK);
+    let removed = harness.entry("team.member_removed").await;
+    assert_eq!(removed["target_id"], team_id);
+    assert_eq!(removed["before"]["role"], "member");
+    assert_eq!(removed["metadata"]["user_id"], user_id);
 }
 
 #[tokio::test]

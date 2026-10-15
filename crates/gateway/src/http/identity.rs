@@ -1497,24 +1497,23 @@ pub async fn remove_identity_team_member(
         )));
     }
 
-    // A concurrent removal of the same membership may already have deleted it.
-    state
-        .audit()
-        .audited_change(
-            &meta.user_context(&actor),
-            state.store.remove_team_membership(team_id, user_id),
-            || {
+    // A concurrent removal of the same membership may already have deleted it,
+    // so the recorded role is the one the delete itself removed.
+    let removed = state.store.remove_team_membership(team_id, user_id).await?;
+    if let Some(role) = removed {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
                 AuditEvent::new(actions::TEAM_MEMBER_REMOVED, targets::TEAM)
                     .target(team_id)
                     .label(identity_user.team_name.clone().unwrap_or_default())
                     .meta("user_id", user_id)
                     .meta("user_email", &identity_user.user.email)
-                    .before(serde_json::json!({
-                        "role": identity_user.membership_role.map(MembershipRole::as_str),
-                    }))
-            },
-        )
-        .await?;
+                    .before(serde_json::json!({ "role": role.as_str() })),
+            )
+            .await;
+    }
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 

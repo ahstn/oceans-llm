@@ -1182,12 +1182,31 @@ impl LibsqlStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         let mut rows = self
             .connection
             .query(
                 r#"
-                SELECT role
+                DELETE FROM team_memberships
+                WHERE team_id = ?1
+                  AND user_id = ?2
+                  AND role <> 'owner'
+                RETURNING role
+                "#,
+                libsql::params![team_id.to_string(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let role: String = row.get(0).map_err(to_query_error)?;
+            return decode_removed_role(&role).map(Some);
+        }
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT 1
                 FROM team_memberships
                 WHERE team_id = ?1
                   AND user_id = ?2
@@ -1197,29 +1216,12 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_query_error)?;
-        let Some(row) = rows.next().await.map_err(to_query_error)? else {
-            return Ok(false);
-        };
-        let current_role: String = row.get(0).map_err(to_query_error)?;
-        if current_role == MembershipRole::Owner.as_str() {
+        if rows.next().await.map_err(to_query_error)?.is_some() {
             return Err(StoreError::Conflict(
                 "owner memberships cannot be removed or transferred".to_string(),
             ));
         }
-
-        let removed = self
-            .connection
-            .execute(
-                r#"
-                DELETE FROM team_memberships
-                WHERE team_id = ?1
-                  AND user_id = ?2
-                "#,
-                libsql::params![team_id.to_string(), user_id.to_string()],
-            )
-            .await
-            .map_err(to_write_error)?;
-        Ok(removed > 0)
+        Ok(None)
     }
 
     pub async fn transfer_team_membership(
@@ -2293,4 +2295,9 @@ impl IdentityRepository for LibsqlStore {
 
         Ok(memberships)
     }
+}
+
+fn decode_removed_role(role: &str) -> Result<MembershipRole, StoreError> {
+    MembershipRole::from_db(role)
+        .ok_or_else(|| StoreError::Serialization(format!("unsupported membership role `{role}`")))
 }

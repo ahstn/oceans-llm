@@ -219,7 +219,7 @@ pub trait GatewayStore:
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<MembershipRole>, StoreError>;
     async fn transfer_team_membership(
         &self,
         user_id: Uuid,
@@ -1695,7 +1695,7 @@ impl GatewayStore for AnyStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         dispatch_store!(self, remove_team_membership(team_id, user_id))
     }
 
