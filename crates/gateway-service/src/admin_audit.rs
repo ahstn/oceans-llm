@@ -713,6 +713,21 @@ fn looks_like_credential_as_written(text: &str) -> bool {
         || words.iter().any(|word| is_token_word(word))
 }
 
+/// Whether `Bearer` or `Basic` is followed by any value. Summaries allow short
+/// values after them, because descriptions use phrases such as "Basic tier"; a
+/// header value carries no such prose, so there any value after a scheme counts.
+fn has_auth_scheme_value(text: &str) -> bool {
+    let words: Vec<&str> = text
+        .split(|character: char| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-'))
+        })
+        .filter(|word| !word.is_empty())
+        .collect();
+    words
+        .windows(2)
+        .any(|pair| pair[0].eq_ignore_ascii_case("bearer") || pair[0].eq_ignore_ascii_case("basic"))
+}
+
 /// A digit or a capital after the first letter, as in `dTpw` (`u:p` in base64).
 fn looks_encoded(word: &str) -> bool {
     word.chars().any(|character| character.is_ascii_digit())
@@ -839,7 +854,7 @@ fn capped_scalar(text: &str, max_chars: usize) -> String {
 
 /// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
 fn redact_scalar(text: String) -> String {
-    if looks_like_credential(&text) {
+    if looks_like_credential(&text) || has_auth_scheme_value(&text) {
         AUDIT_REDACTED.to_string()
     } else {
         scrub_provider_tokens_in(text)
@@ -1338,6 +1353,28 @@ mod tests {
         }
         assert!(stored_user_agent.chars().count() <= MAX_USER_AGENT_CHARS);
         assert!(stored_request_id.chars().count() <= MAX_REQUEST_ID_CHARS);
+    }
+
+    #[tokio::test]
+    async fn short_auth_scheme_values_in_headers_are_redacted() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for (user_agent, request_id) in [("Basic aaaa", "Bearer secret"), ("curl/8.0", "req-42")] {
+            let context = AuditContext::new(AuditActor::user(Uuid::nil(), "a@example.com"))
+                .with_request(
+                    None,
+                    Some(user_agent.to_string()),
+                    Some(request_id.to_string()),
+                );
+            audit
+                .record(&context, AuditEvent::new(actions::TEAM_CREATED))
+                .await;
+        }
+        let records = repo.records.lock().unwrap();
+        assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
+        assert_eq!(records[0].metadata["request_id"], json!(AUDIT_REDACTED));
+        assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
+        assert_eq!(records[1].metadata["request_id"], json!("req-42"));
     }
 
     #[tokio::test]
