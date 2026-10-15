@@ -94,7 +94,11 @@ Every expiry is capped at the approving session's `expires_at`. A token family n
 
 ### 4. Audience binding (RFC 8707)
 
-Both the authorization and token requests accept `resource`. If it is missing, the gateway uses `{issuer}/mcp`. The gateway normalizes the value with a URL parser, which lowercases the scheme and host and strips a trailing slash. It must then equal `{issuer}/mcp` or `{issuer}/mcp/{server_key}` for an active server. Any other value returns `invalid_target`. The token request's `resource` must match the value that was authorized.
+Both the authorization and token requests accept `resource`. The gateway normalizes the value with a URL parser, which lowercases the scheme and host and strips a trailing slash. It must then equal `{issuer}/mcp` or `{issuer}/mcp/{server_key}` for an active server. Any other value returns `invalid_target`.
+
+- **Authorization request without `resource`:** the gateway uses `{issuer}/mcp`.
+- **Token request with `resource`:** the value must equal the authorized resource.
+- **Token request without `resource`:** the token is bound to the resource that was authorized, so it never gets a wider audience than the user approved. The MCP spec requires clients to send `resource` on both requests, but RFC 8707 makes it optional at the token endpoint. Rejecting an omission would break clients that send it only at authorization, without improving security.
 
 At request time, the token's resource must cover the route:
 
