@@ -1,5 +1,6 @@
 use gateway_core::{
     GatewayError, GatewayOauthGrantSummary, GatewayOauthPurgeCounts, GatewayOauthRepository,
+    McpOauthResource,
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -14,16 +15,26 @@ impl<R> McpClientOauthService<R>
 where
     R: GatewayOauthRepository,
 {
-    /// The MCP clients `user_id` has authorized that can still get tokens.
+    /// The MCP clients `user_id` has authorized that can still get tokens,
+    /// each with the resource it is bound to.
+    ///
+    /// Grants issued under a previous issuer are left out: their resource no
+    /// longer parses, and token validation already rejects them.
     pub async fn authorized_clients(
         &self,
         user_id: Uuid,
         now: OffsetDateTime,
-    ) -> Result<Vec<GatewayOauthGrantSummary>, GatewayError> {
+    ) -> Result<Vec<(GatewayOauthGrantSummary, McpOauthResource)>, GatewayError> {
         Ok(self
             .repo
             .list_live_gateway_oauth_grants_for_user(user_id, now)
-            .await?)
+            .await?
+            .into_iter()
+            .filter_map(|grant| {
+                let resource = self.settings.parse_resource(&grant.resource)?;
+                Some((grant, resource))
+            })
+            .collect())
     }
 
     /// Disconnects one authorized client. Returns `false` when the grant is

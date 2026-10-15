@@ -467,8 +467,9 @@ pub trait GatewayOauthRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<u64, StoreError>;
 
-    /// The user's grants that still work at `now`: not revoked, with a live
-    /// approving session and at least one unexpired, unconsumed token.
+    /// The user's grants that still work at `now`: not revoked, an active
+    /// user, a live approving session, and at least one unexpired, unconsumed
+    /// token. This mirrors the liveness check token validation applies.
     /// Newest first.
     async fn list_live_gateway_oauth_grants_for_user(
         &self,

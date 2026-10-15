@@ -609,6 +609,31 @@ where
         .unwrap();
     assert_eq!(listed.len(), 1);
 
+    // A disabled user's grants stop listing even if revoking them never ran.
+    store
+        .update_user_status(other, UserStatus::Disabled, now)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .list_live_gateway_oauth_grants_for_user(other, now)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    store
+        .update_user_status(other, UserStatus::Active, now)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .list_live_gateway_oauth_grants_for_user(other, now)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
     // Grants whose approving session ended no longer list.
     store.revoke_user_session(other_session, now).await.unwrap();
     assert!(

@@ -477,21 +477,24 @@ impl GatewayOauthRepository for PostgresStore {
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
         let rows = sqlx::query(
             "SELECT g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
-                    g.created_at,
-                    COALESCE(
-                        (SELECT MAX(t.created_at) FROM gateway_oauth_tokens t
-                         WHERE t.grant_id = g.grant_id),
-                        g.created_at
-                    ),
-                    (SELECT MAX(t.expires_at) FROM gateway_oauth_tokens t
-                     WHERE t.grant_id = g.grant_id AND t.consumed_at IS NULL)
+                    g.created_at, tk.last_issued_at, tk.usable_until
              FROM gateway_oauth_grants g
              JOIN gateway_oauth_clients c ON c.client_id = g.client_id
              JOIN user_sessions s ON s.session_id = g.user_session_id
+             JOIN users u ON u.user_id = g.user_id
+             JOIN (
+                 SELECT t.grant_id,
+                        MAX(t.created_at) AS last_issued_at,
+                        MAX(CASE WHEN t.consumed_at IS NULL THEN t.expires_at END) AS usable_until
+                 FROM gateway_oauth_tokens t
+                 JOIN gateway_oauth_grants tg ON tg.grant_id = t.grant_id
+                 WHERE tg.user_id = $1 AND tg.revoked_at IS NULL
+                 GROUP BY t.grant_id
+             ) tk ON tk.grant_id = g.grant_id
              WHERE g.user_id = $1 AND g.revoked_at IS NULL
                AND s.revoked_at IS NULL AND s.expires_at > $2
-               AND (SELECT MAX(t.expires_at) FROM gateway_oauth_tokens t
-                    WHERE t.grant_id = g.grant_id AND t.consumed_at IS NULL) > $2
+               AND u.status = 'active'
+               AND tk.usable_until > $2
              ORDER BY g.created_at DESC, g.grant_id",
         )
         .bind(user_id.to_string())

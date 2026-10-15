@@ -293,3 +293,31 @@ async fn cleanup_removes_registered_clients_that_never_got_a_grant() {
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn grants_from_a_previous_issuer_are_not_listed() {
+    let harness = Harness::new().await;
+    harness.issue_tokens(&[]).await;
+    let mut state = harness.state.clone();
+    state.mcp_client_oauth = Some(std::sync::Arc::new(
+        gateway_service::McpClientOauthSettings::new(
+            "https://new-origin.example.com",
+            3600,
+            86400,
+            true,
+        )
+        .unwrap(),
+    ));
+    let router = crate::http::build_router(state, admin_ui::AdminUiConfig::default());
+    let (status, body) = send(
+        &router,
+        Request::builder()
+            .uri("/api/v1/me/authorized-mcp-clients")
+            .header(COOKIE, &harness.cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"enabled": true, "items": []}));
+}

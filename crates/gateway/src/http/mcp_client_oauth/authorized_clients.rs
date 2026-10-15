@@ -190,10 +190,7 @@ async fn authorized_clients_view(
         .await?;
     let items = grants
         .into_iter()
-        .map(|grant| {
-            let resource = service.settings().parse_resource(&grant.resource);
-            authorized_client_view(grant, resource)
-        })
+        .map(|(grant, resource)| authorized_client_view(grant, resource))
         .collect();
     Ok(AuthorizedMcpClientsView {
         enabled: true,
@@ -203,11 +200,11 @@ async fn authorized_clients_view(
 
 fn authorized_client_view(
     grant: GatewayOauthGrantSummary,
-    resource: Option<McpOauthResource>,
+    resource: McpOauthResource,
 ) -> AuthorizedMcpClientView {
     let (resource_kind, server_key) = match resource {
-        Some(McpOauthResource::Server(server_key)) => (OauthResourceKind::Server, Some(server_key)),
-        _ => (OauthResourceKind::Aggregate, None),
+        McpOauthResource::Server(server_key) => (OauthResourceKind::Server, Some(server_key)),
+        McpOauthResource::Aggregate => (OauthResourceKind::Aggregate, None),
     };
     AuthorizedMcpClientView {
         grant_id: grant.grant_id.to_string(),

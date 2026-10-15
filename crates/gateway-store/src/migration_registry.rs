@@ -365,6 +365,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V62__mcp_aggregate_session_oauth_grants.sql"
         ),
     },
+    MigrationManifest {
+        version: 63,
+        name: "gateway_oauth_cleanup_indexes",
+        checksum: "V63__gateway_oauth_cleanup_indexes.sql",
+        libsql_sql: include_str!("../migrations/V63__gateway_oauth_cleanup_indexes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V63__gateway_oauth_cleanup_indexes.sql"),
+    },
 ];
 
 #[cfg(test)]
