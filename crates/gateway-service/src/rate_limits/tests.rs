@@ -19,6 +19,10 @@ struct MemoryStore {
     counters: Mutex<HashMap<(String, i64), i64>>,
     fail: bool,
     fail_list: std::sync::atomic::AtomicBool,
+    fail_add: std::sync::atomic::AtomicBool,
+    /// When set, a policy list reads the rows, then waits for a permit.
+    list_gate: Option<Arc<tokio::sync::Semaphore>>,
+    list_started: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -27,7 +31,13 @@ impl RateLimitRepository for MemoryStore {
         if self.fail_list.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(StoreError::Unavailable("down".to_string()));
         }
-        Ok(self.policies.lock().unwrap().clone())
+        let rows = self.policies.lock().unwrap().clone();
+        if let Some(gate) = &self.list_gate {
+            self.list_started
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            gate.acquire().await.unwrap().forget();
+        }
+        Ok(rows)
     }
 
     async fn get_rate_limit_policy(
@@ -123,6 +133,9 @@ impl RateLimitRepository for MemoryStore {
         &self,
         increments: &[RateLimitCounterIncrement],
     ) -> Result<(), StoreError> {
+        if self.fail_add.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(StoreError::Unavailable("read only".to_string()));
+        }
         let mut counters = self.counters.lock().unwrap();
         for increment in increments {
             *counters
@@ -556,7 +569,7 @@ async fn admin_changes_apply_on_the_next_check_and_validate_shape() {
 }
 
 #[tokio::test]
-async fn an_unloadable_policy_set_fails_closed_and_open_uses_config_only() {
+async fn an_unloadable_policy_set_follows_the_failure_mode() {
     let unloadable = || MemoryStore {
         fail_list: std::sync::atomic::AtomicBool::new(true),
         ..MemoryStore::default()
@@ -579,12 +592,13 @@ async fn an_unloadable_policy_set_fails_closed_and_open_uses_config_only() {
     let error = closed.limiter.check(&subject).await.unwrap_err();
     assert_eq!(error.http_status_code(), 503);
 
-    // Open: config policies still apply.
+    // Open: admitted without limits or headers, as for any store failure,
+    // even though a config policy would match.
     let open = Harness::new(unloadable(), config_policy());
-    assert!(matches!(
+    assert_eq!(
         open.limiter.check(&subject).await.unwrap(),
-        RateLimitDecision::Admitted(RateLimitStatus { remaining: 4, .. })
-    ));
+        RateLimitDecision::StoreUnavailable
+    );
 }
 
 #[tokio::test]
@@ -690,6 +704,152 @@ async fn editing_a_policy_period_starts_fresh_counters() {
         .map(|(key, _)| key.clone())
         .collect();
     assert_eq!(keys.len(), 2);
-    assert!(keys.iter().any(|key| key.contains(":minute:requests|")));
-    assert!(keys.iter().any(|key| key.contains(":day:requests|")));
+    assert!(
+        keys.iter()
+            .any(|key| key.contains(":inference:minute:requests:any|"))
+    );
+    assert!(
+        keys.iter()
+            .any(|key| key.contains(":inference:day:requests:any|"))
+    );
+}
+
+#[tokio::test]
+async fn editing_a_policy_traffic_filter_starts_fresh_counters() {
+    let harness = Harness::new(MemoryStore::default(), Vec::new());
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let mut fast_only = admin_policy("model", RateLimitScopeKind::Global, 1);
+    fast_only.model_key = Some("fast".to_string());
+    let policy = harness
+        .limiter
+        .create_admin_policy(fast_only)
+        .await
+        .unwrap();
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Rejected(_)
+    ));
+
+    // `fast-v2` is the subject's resolved model, so the policy still matches,
+    // but it now counts different traffic and starts empty.
+    harness
+        .limiter
+        .update_admin_policy(RateLimitPolicyRecord {
+            model_key: Some("fast-v2".to_string()),
+            ..policy.clone()
+        })
+        .await
+        .unwrap();
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+
+    // Moving it to another operation also starts fresh counters.
+    harness
+        .limiter
+        .update_admin_policy(RateLimitPolicyRecord {
+            operation: RateLimitOperation::CountTokens,
+            model_key: Some("fast-v2".to_string()),
+            ..policy
+        })
+        .await
+        .unwrap();
+    let counts = RateLimitSubject {
+        operation: RateLimitOperation::CountTokens,
+        ..subject
+    };
+    assert!(matches!(
+        harness.limiter.check(&counts).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_refresh_that_started_before_an_admin_change_is_not_cached() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let harness = Arc::new(Harness::new(
+        MemoryStore {
+            list_gate: Some(gate.clone()),
+            ..MemoryStore::default()
+        },
+        Vec::new(),
+    ));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+
+    // A check starts a refresh, reads the (empty) rows and stalls.
+    let refreshing = {
+        let harness = Arc::clone(&harness);
+        tokio::spawn(async move { harness.limiter.check(&subject).await.unwrap() })
+    };
+    while !harness
+        .store
+        .list_started
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        tokio::task::yield_now().await;
+    }
+    // An admin creates a policy meanwhile, then the stale refresh finishes.
+    harness
+        .limiter
+        .create_admin_policy(admin_policy("new", RateLimitScopeKind::Global, 5))
+        .await
+        .unwrap();
+    gate.add_permits(10);
+    assert_eq!(refreshing.await.unwrap(), RateLimitDecision::Unlimited);
+
+    // The stale snapshot was not published: the next check sees the policy.
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(ref status) if status.policy_name == "new"
+    ));
+}
+
+#[tokio::test]
+async fn closed_mode_rejects_token_traffic_after_a_failed_usage_write() {
+    let harness = Harness::with_mode(
+        MemoryStore {
+            fail_add: std::sync::atomic::AtomicBool::new(true),
+            ..MemoryStore::default()
+        },
+        vec![config(
+            "user tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::User,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )],
+        RateLimitFailureMode::Closed,
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+
+    // The write fails, so the read-only check alone would keep admitting.
+    harness.limiter.record_tokens(&subject, 400).await;
+    let error = harness.limiter.check(&subject).await.unwrap_err();
+    assert_eq!(error.http_status_code(), 503);
+
+    // Once the hold lapses and writes work again, traffic flows.
+    harness
+        .store
+        .fail_add
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    harness.advance(5);
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+    harness.limiter.record_tokens(&subject, 400).await;
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus { remaining: 600, .. })
+    ));
 }

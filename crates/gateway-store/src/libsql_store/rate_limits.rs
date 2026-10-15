@@ -192,9 +192,16 @@ impl RateLimitRepository for LibsqlStore {
         charges: &[RateLimitCounterCharge],
     ) -> Result<RateLimitConsumeResult, StoreError> {
         let charges = charges.to_vec();
+        // Only request charges write. A check made only of token charges reads,
+        // so it takes a deferred transaction and no writer lock.
+        let behavior = if charges.iter().any(|charge| charge.cost > 0) {
+            libsql::TransactionBehavior::Immediate
+        } else {
+            libsql::TransactionBehavior::Deferred
+        };
         self.run_routing_operation(move |connection| async move {
             let transaction = connection
-                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .transaction_with_behavior(behavior)
                 .await
                 .map_err(to_query_error)?;
             let mut observations = vec![
@@ -249,7 +256,7 @@ impl RateLimitRepository for LibsqlStore {
         &self,
         increments: &[RateLimitCounterIncrement],
     ) -> Result<(), StoreError> {
-        let increments: Vec<_> = increments
+        let mut increments: Vec<_> = increments
             .iter()
             .filter(|increment| increment.amount > 0)
             .cloned()
@@ -257,10 +264,20 @@ impl RateLimitRepository for LibsqlStore {
         if increments.is_empty() {
             return Ok(());
         }
+        increments.sort_by(|left, right| {
+            (left.counter_key.as_str(), left.window.start)
+                .cmp(&(right.counter_key.as_str(), right.window.start))
+        });
         self.run_routing_operation(move |connection| async move {
+            // All or nothing, so one response is never charged to only some
+            // of its policies.
+            let transaction = connection
+                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .await
+                .map_err(to_query_error)?;
             for increment in &increments {
                 add_amount(
-                    &connection,
+                    &transaction,
                     &increment.counter_key,
                     increment.window.start,
                     increment.amount,
@@ -268,7 +285,7 @@ impl RateLimitRepository for LibsqlStore {
                 )
                 .await?;
             }
-            Ok(())
+            transaction.commit().await.map_err(to_query_error)
         })
         .await
     }

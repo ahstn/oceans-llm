@@ -200,19 +200,32 @@ impl RateLimitRepository for PostgresStore {
         &self,
         increments: &[RateLimitCounterIncrement],
     ) -> Result<(), StoreError> {
-        for increment in increments.iter().filter(|increment| increment.amount > 0) {
-            // Single-statement upserts: no transaction, so no lock is held
-            // across counters.
+        // All or nothing, so one response is never charged to only some of
+        // its policies. Rows are taken in the same order `consume_rate_limits`
+        // uses, so the two cannot deadlock.
+        let mut increments: Vec<_> = increments
+            .iter()
+            .filter(|increment| increment.amount > 0)
+            .collect();
+        if increments.is_empty() {
+            return Ok(());
+        }
+        increments.sort_by(|left, right| {
+            (left.counter_key.as_str(), left.window.start)
+                .cmp(&(right.counter_key.as_str(), right.window.start))
+        });
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        for increment in increments {
             sqlx::query(ADD_AMOUNT)
                 .bind(&increment.counter_key)
                 .bind(increment.window.start)
                 .bind(increment.amount)
                 .bind(increment.window.expires_at())
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(to_query_error)?;
         }
-        Ok(())
+        tx.commit().await.map_err(to_query_error)
     }
 
     async fn purge_expired_rate_limit_counters(

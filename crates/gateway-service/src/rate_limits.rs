@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicI64, Ordering},
+        atomic::{AtomicI64, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -282,13 +282,26 @@ impl ActivePolicy {
         {
             return None;
         }
-        // The period and metric are part of the identity, so editing either
-        // starts fresh counters instead of reusing rows sized for the old window.
+        // Everything that decides what a counter counts is part of its
+        // identity: the operation, traffic filter, period and metric. Editing
+        // any of them starts fresh counters instead of reusing rows that
+        // counted other traffic or were sized for another window.
         let policy = match &self.source {
             RateLimitPolicySource::Config => format!("config:{}", self.name),
             RateLimitPolicySource::Admin(id) => format!("policy:{id}"),
         };
-        let policy = format!("{policy}:{}:{}", self.period.as_str(), self.metric.as_str());
+        let filter = match (&self.model_key, &self.mcp_server) {
+            (Some(model_key), _) => format!("model={model_key}"),
+            (None, Some(ServerFilter::Id(id))) => format!("server={id}"),
+            (None, Some(ServerFilter::Key(key))) => format!("server-key={key}"),
+            (None, None) => "any".to_string(),
+        };
+        let policy = format!(
+            "{policy}:{}:{}:{}:{filter}",
+            self.operation.as_str(),
+            self.period.as_str(),
+            self.metric.as_str()
+        );
         Some(match principal {
             Some(principal) => format!("{policy}|{}:{principal}", self.scope_kind.as_str()),
             None => format!("{policy}|global"),
@@ -334,6 +347,9 @@ struct PolicyCache {
 
 /// How long an incomplete policy set is reused before the store is retried.
 const INCOMPLETE_POLICY_RETRY: Duration = Duration::from_secs(1);
+/// In `closed` mode, how long token policies reject after a token usage write
+/// failed. Once it lapses, admitted requests probe the store again.
+const TOKEN_WRITE_FAILURE_HOLD_SECONDS: i64 = 5;
 
 type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
@@ -343,7 +359,12 @@ pub struct RateLimiter {
     config_policies: Vec<ActivePolicy>,
     cache: RwLock<Option<PolicyCache>>,
     refresh: tokio::sync::Mutex<()>,
+    /// Bumped by every invalidation, so a refresh that started earlier cannot
+    /// publish the snapshot it read before an admin change.
+    generation: AtomicU64,
     last_purge: AtomicI64,
+    /// Unix seconds of the last failed token usage write, or 0.
+    token_write_failed_at: AtomicI64,
     clock: Clock,
 }
 
@@ -380,7 +401,9 @@ impl RateLimiter {
             config_policies,
             cache: RwLock::new(None),
             refresh: tokio::sync::Mutex::new(()),
+            generation: AtomicU64::new(0),
             last_purge: AtomicI64::new(0),
+            token_write_failed_at: AtomicI64::new(0),
             clock: Arc::new(OffsetDateTime::now_utc),
         }
     }
@@ -407,8 +430,9 @@ impl RateLimiter {
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
         let set = self.policies().await;
-        if !set.complete && self.settings.failure_mode == RateLimitFailureMode::Closed {
-            // Admin policies are unknown, so this request may be one they limit.
+        if !set.complete {
+            // Admin policies are unknown, so this request may be one they
+            // limit: follow the failure mode as for any other store failure.
             return self.store_failure(
                 subject.operation,
                 StoreError::Unavailable("rate limit policies could not be loaded".to_string()),
@@ -436,6 +460,16 @@ impl RateLimiter {
             .collect();
         if matched.is_empty() {
             return Ok(RateLimitDecision::Unlimited);
+        }
+        if self.token_writes_failing(now)
+            && matched
+                .iter()
+                .any(|(policy, _)| policy.metric == RateLimitMetric::Tokens)
+        {
+            return self.store_failure(
+                subject.operation,
+                StoreError::Unavailable("token usage could not be recorded".to_string()),
+            );
         }
         let Some(store) = &self.store else {
             return Ok(RateLimitDecision::Unlimited);
@@ -557,9 +591,25 @@ impl RateLimiter {
         if increments.is_empty() {
             return;
         }
-        if let Err(error) = store.add_rate_limit_usage(&increments).await {
-            tracing::warn!(error = %error, "recording rate-limited token usage failed");
+        match store.add_rate_limit_usage(&increments).await {
+            Ok(()) => self.token_write_failed_at.store(0, Ordering::Relaxed),
+            Err(error) => {
+                tracing::warn!(error = %error, "recording rate-limited token usage failed");
+                self.token_write_failed_at
+                    .store(finished_at.unix_timestamp().max(1), Ordering::Relaxed);
+            }
         }
+    }
+
+    /// Whether `closed` mode should reject token-limited traffic because a
+    /// recent token usage write failed, so unrecorded usage cannot keep
+    /// passing a check that only reads the counter.
+    fn token_writes_failing(&self, now: OffsetDateTime) -> bool {
+        if self.settings.failure_mode != RateLimitFailureMode::Closed {
+            return false;
+        }
+        let failed_at = self.token_write_failed_at.load(Ordering::Relaxed);
+        failed_at != 0 && now.unix_timestamp() - failed_at < TOKEN_WRITE_FAILURE_HOLD_SECONDS
     }
 
     fn maybe_purge(&self, store: &Arc<dyn RateLimitRepository>, now: OffsetDateTime) {
@@ -596,6 +646,7 @@ impl RateLimiter {
         if let Some(set) = self.cached(false) {
             return set;
         }
+        let generation = self.generation.load(Ordering::Acquire);
         let mut policies = self.config_policies.clone();
         let mut complete = true;
         if let Some(store) = &self.store {
@@ -609,7 +660,7 @@ impl RateLimiter {
                 Err(error) => {
                     tracing::warn!(error = %error, "loading rate limit policies failed");
                     if let Some(stale) = self.cached(true).filter(|set| set.complete) {
-                        self.store_cache(stale.clone());
+                        self.store_cache(stale.clone(), generation);
                         return stale;
                     }
                     complete = false;
@@ -617,7 +668,7 @@ impl RateLimiter {
             }
         }
         let set = PolicySet::new(policies, complete);
-        self.store_cache(set.clone());
+        self.store_cache(set.clone(), generation);
         set
     }
 
@@ -639,11 +690,17 @@ impl RateLimiter {
             .map(|cache| cache.set.clone())
     }
 
-    fn store_cache(&self, set: PolicySet) {
-        *self
+    /// Publishes a loaded set unless an invalidation happened since the load
+    /// began; the caller still uses its set, and the next check reloads.
+    fn store_cache(&self, set: PolicySet, generation: u64) {
+        let mut cache = self
             .cache
             .write()
-            .unwrap_or_else(|poison| poison.into_inner()) = Some(PolicyCache {
+            .unwrap_or_else(|poison| poison.into_inner());
+        if self.generation.load(Ordering::Acquire) != generation {
+            return;
+        }
+        *cache = Some(PolicyCache {
             loaded_at: Instant::now(),
             set,
         });
@@ -652,10 +709,12 @@ impl RateLimiter {
     /// Makes the next check reload policies. Other replicas pick changes up
     /// within `policy_refresh`.
     pub fn invalidate(&self) {
-        *self
+        let mut cache = self
             .cache
             .write()
-            .unwrap_or_else(|poison| poison.into_inner()) = None;
+            .unwrap_or_else(|poison| poison.into_inner());
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        *cache = None;
     }
 
     fn admin_store(&self) -> Result<&Arc<dyn RateLimitRepository>, GatewayError> {

@@ -35,7 +35,7 @@ A specific policy can tighten a default for one principal, but it cannot raise i
 
 Token counts are only known once a response finishes. A `tokens` policy rejects a request once its window is already used up, then charges the response's `total_tokens` after it completes. The charge is written before the response is returned, so requests sent one after another always see earlier usage. Only concurrent requests can each pass the check before the others are charged, so a token limit can be exceeded by up to one response per request in flight.
 
-Token limits count the usage the provider reports, the same usage budgets charge. That includes partial usage from a request that failed or a stream that ended in an error after reporting usage, because the provider consumed those tokens. Requests that report no usage and batch jobs are not charged.
+Token limits count the usage the provider reports, the same usage budgets charge. That includes partial usage from a request that failed, from a stream that ended in an error, and from a stream the client cancelled after usage was reported, because the provider consumed those tokens. A response's usage is charged to all of its token policies or to none. Requests that report no usage and batch jobs are not charged.
 
 ## Configure
 
@@ -74,7 +74,7 @@ Config policies cannot name a specific key, user, or team. Policy names must be 
 
 Platform admins manage more policies on the **Rate Limits** page in the admin UI (page id `rate_limits`), or through `GET`/`POST /api/v1/admin/rate-limits` and `PATCH`/`DELETE /api/v1/admin/rate-limits/{policy_id}`. Admin policies can target one key, user, team, or MCP server, and can be paused without deleting them. Config policies appear on the same page, read-only.
 
-An admin change applies on the replica that handled it straight away, and on every other replica within `policy_refresh_seconds`. Changing a policy's period or metric starts its counters from zero; changing the limit keeps them.
+An admin change applies on the replica that handled it straight away, and on every other replica within `policy_refresh_seconds`. Changing a policy's operation, model or MCP server filter, period, or metric starts its counters from zero; changing the limit or name keeps them.
 
 ### Recommended defaults
 
@@ -132,7 +132,9 @@ Counter rows expire one window after the window ends. Each replica deletes up to
 `rate_limits.failure_mode` controls what happens if a counter check fails:
 
 - `open` (default): the request is admitted without rate-limit headers, and the gateway logs a warning.
-- `closed`: the request is rejected with `503`. This also applies when a replica has never loaded the admin policies, because it cannot tell which of them a request would match.
+- `closed`: the request is rejected with `503`. After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
+
+Both modes treat a replica that has never loaded the admin policies, and cannot, as a store failure: it cannot tell which policies a request would match. A replica that loaded them before keeps enforcing that set.
 
 API-key authentication uses the same database, so most requests fail anyway when it is down. Failing open keeps a counter-only problem, such as lock contention, from becoming an outage.
 

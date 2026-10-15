@@ -1065,7 +1065,50 @@ impl Drop for LoggingBodyStreamState {
             .finish("client_cancelled", Some("client_cancelled"));
         record_cancelled_stream_metrics(self);
         spawn_cancelled_stream_log(self);
+        spawn_cancelled_stream_token_charge(self);
     }
+}
+
+/// A cancelled stream skips usage accounting, but usage the provider already
+/// reported still counts against token limits, so cancelling a stream cannot
+/// be used to dodge them.
+fn spawn_cancelled_stream_token_charge(state: &LoggingBodyStreamState) {
+    let usage = gateway_service::request_logging::usage_summary_from_value(state.collector.usage());
+    let Some(total_tokens) = chargeable_tokens(
+        usage.total_tokens,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+    ) else {
+        return;
+    };
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let service = state.service.clone();
+    let auth = state.auth.clone();
+    let requested_model = state.requested_model_key.clone();
+    let resolved_model = state.resolved_model_key.clone();
+    runtime.spawn(async move {
+        let model_keys = [requested_model.as_str(), resolved_model.as_str()];
+        let subject =
+            RateLimitSubject::new(RateLimitOperation::Inference, &auth).with_models(&model_keys);
+        service
+            .rate_limiter()
+            .record_tokens(&subject, total_tokens)
+            .await;
+    });
+}
+
+/// The tokens a token limit charges: the reported total, or prompt plus
+/// completion when no total is reported. `None` when there is nothing to charge.
+fn chargeable_tokens(
+    total_tokens: Option<i64>,
+    prompt_tokens: Option<i64>,
+    completion_tokens: Option<i64>,
+) -> Option<i64> {
+    total_tokens
+        .or_else(|| Some(prompt_tokens.unwrap_or(0) + completion_tokens.unwrap_or(0)))
+        .filter(|tokens| *tokens > 0)
 }
 
 fn record_cancelled_stream_metrics(state: &LoggingBodyStreamState) {
@@ -2051,10 +2094,11 @@ async fn charge_rate_limit_tokens(
     context: &UsageAccountingContext<'_>,
     usage: &gateway_service::RecordedChatUsage,
 ) {
-    let total_tokens = usage
-        .total_tokens
-        .or_else(|| Some(usage.prompt_tokens.unwrap_or(0) + usage.completion_tokens.unwrap_or(0)));
-    let Some(total_tokens) = total_tokens.filter(|tokens| *tokens > 0) else {
+    let Some(total_tokens) = chargeable_tokens(
+        usage.total_tokens,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+    ) else {
         return;
     };
     let model_keys = [
@@ -2447,6 +2491,64 @@ mod tests {
             .await
             .expect("read usage ledger");
         assert!(ledger.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_stream_charges_reported_usage_to_token_limits() {
+        let harness = StreamTestHarness::new().await;
+        let limiter = Arc::new(gateway_service::RateLimiter::new(
+            Arc::new(harness.store.clone()),
+            gateway_service::RateLimitSettings {
+                config_policies: vec![gateway_service::ConfiguredRateLimitPolicy {
+                    name: "key tokens".to_string(),
+                    operation: gateway_core::RateLimitOperation::Inference,
+                    scope_kind: gateway_core::RateLimitScopeKind::ApiKey,
+                    model_key: None,
+                    mcp_server_key: None,
+                    metric: gateway_core::RateLimitMetric::Tokens,
+                    period: gateway_core::RateLimitPeriod::Hour,
+                    limit: 1_000,
+                }],
+                ..Default::default()
+            },
+        ));
+        let service = Arc::new(
+            GatewayService::new(
+                Arc::new(harness.store.clone()),
+                Arc::new(WeightedRoutePlanner::default()),
+            )
+            .with_rate_limiter(limiter.clone()),
+        );
+        // Usage arrives early, as Anthropic-style streams report input usage
+        // up front; the client then disconnects.
+        let upstream: ProviderStream = Box::pin(stream::iter([Ok(Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}],\"usage\":{\"prompt_tokens\":40,\"completion_tokens\":2,\"total_tokens\":42}}\n\n",
+        ))]));
+        let (_, mut state) = harness.logging_state("stream-cancel-tokens", upstream);
+        state.service = service;
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
+        assert!(body_stream.next().await.is_some());
+        drop(body_stream);
+
+        let models = ["fast"];
+        let subject = gateway_service::RateLimitSubject::new(
+            gateway_core::RateLimitOperation::Inference,
+            &harness.auth,
+        )
+        .with_models(&models);
+        let remaining = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let decision = limiter.check(&subject).await.expect("check");
+                let remaining = decision.status().map(|status| status.remaining);
+                if remaining != Some(1_000) {
+                    break remaining;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled stream charged its usage");
+        assert_eq!(remaining, Some(958));
     }
 
     #[tokio::test]
