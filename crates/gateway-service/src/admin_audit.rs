@@ -545,9 +545,11 @@ fn looks_like_credential(text: &str) -> bool {
         })
         .filter(|word| !word.is_empty())
         .collect();
+    // `Bearer` and `Basic` also start ordinary phrases such as "bearer token" or
+    // "Basic tier", so a short value counts only when it looks encoded.
     let scheme_with_value = words.windows(2).any(|pair| {
         (pair[0].eq_ignore_ascii_case("bearer") || pair[0].eq_ignore_ascii_case("basic"))
-            && pair[1].len() >= 8
+            && (pair[1].len() >= 8 || looks_encoded(pair[1]))
     });
     // A full gateway key is `gwk_<public id>.<secret>`; the bare `gwk_<public id>`
     // prefix is a display identifier and stays readable. Invite links carry their
@@ -555,7 +557,36 @@ fn looks_like_credential(text: &str) -> bool {
     scheme_with_value
         || text.contains("/invite/")
         || has_url_userinfo(text)
+        || has_secret_assignment(text)
         || words.iter().any(|word| is_token_word(word))
+}
+
+/// A digit or a capital after the first letter, as in `dTpw` (`u:p` in base64).
+fn looks_encoded(word: &str) -> bool {
+    word.chars().any(|character| character.is_ascii_digit())
+        || word
+            .chars()
+            .skip(1)
+            .any(|character| character.is_ascii_uppercase())
+}
+
+/// Whether the text assigns a value to a secret-looking name, such as
+/// `password=hunter2`, `?api_key=…` or `Authorization: Basic …`.
+fn has_secret_assignment(text: &str) -> bool {
+    text.match_indices(['=', ':']).any(|(index, _)| {
+        let name = text[..index]
+            .rsplit(|character: char| {
+                !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+            })
+            .next()
+            .unwrap_or_default();
+        let has_value = text[index + 1..]
+            .trim_start()
+            .chars()
+            .next()
+            .is_some_and(|character| !matches!(character, '&' | ';' | ',' | '"' | '\''));
+        !name.is_empty() && has_value && is_secret_name(name)
+    })
 }
 
 /// Whether the text holds a URL with userinfo, such as `https://user:pass@host`
@@ -920,6 +951,12 @@ mod tests {
             "mcp_note": "mirror at https://alice:hunter2@mcp.example/sse",
             "repo_note": "clone https://x-token@git.example/acme/api",
             "profile": "https://social.example/@alice and bob@example.com",
+            "query_note": "see https://example.test/?api_key=hunter2",
+            "setup": "set password=hunter2 first",
+            "header_note": "send Authorization: Bearer abc",
+            "basic_note": "use Basic dTpw",
+            "requirements": "requires a bearer token",
+            "rotation": "token rotation is weekly",
         }));
         assert_eq!(
             redacted,
@@ -952,6 +989,12 @@ mod tests {
                 "mcp_note": AUDIT_REDACTED,
                 "repo_note": AUDIT_REDACTED,
                 "profile": "https://social.example/@alice and bob@example.com",
+                "query_note": AUDIT_REDACTED,
+                "setup": AUDIT_REDACTED,
+                "header_note": AUDIT_REDACTED,
+                "basic_note": AUDIT_REDACTED,
+                "requirements": "requires a bearer token",
+                "rotation": "token rotation is weekly",
             })
         );
     }
