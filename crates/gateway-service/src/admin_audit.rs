@@ -134,6 +134,58 @@ pub mod actions {
     pub const RATE_LIMIT_POLICY_CREATED: &str = "rate_limit_policy.created";
     pub const RATE_LIMIT_POLICY_UPDATED: &str = "rate_limit_policy.updated";
     pub const RATE_LIMIT_POLICY_DELETED: &str = "rate_limit_policy.deleted";
+
+    /// Every action, so tests can check each one names a known target type.
+    pub const ALL: &[&str] = &[
+        API_KEY_CREATED,
+        API_KEY_UPDATED,
+        API_KEY_REVOKED,
+        API_KEY_SECRET_REVEALED,
+        USER_CREATED,
+        USER_UPDATED,
+        USER_DEACTIVATED,
+        USER_REACTIVATED,
+        USER_ONBOARDING_RESET,
+        USER_INVITE_ISSUED,
+        USER_INVITE_REDEEMED,
+        USER_PASSWORD_CHANGED,
+        USER_PROVISIONED,
+        USER_TEAM_TRANSFERRED,
+        PROVIDER_CREDENTIAL_SET,
+        PROVIDER_CREDENTIAL_DELETED,
+        SESSION_CREATED,
+        SESSION_REVOKED,
+        TEAM_CREATED,
+        TEAM_UPDATED,
+        TEAM_MEMBERS_ADDED,
+        TEAM_MEMBER_REMOVED,
+        SERVICE_ACCOUNT_CREATED,
+        SERVICE_ACCOUNT_UPDATED,
+        SERVICE_ACCOUNT_DISABLED,
+        BUDGET_SET,
+        BUDGET_DEACTIVATED,
+        BUDGET_INCREASE_CREATED,
+        MCP_SERVER_CREATED,
+        MCP_SERVER_UPDATED,
+        MCP_SERVER_DISABLED,
+        MCP_SERVER_DISCOVERY_REFRESHED,
+        MCP_TOOLSET_CREATED,
+        MCP_TOOLSET_UPDATED,
+        MCP_TOOLSET_DISABLED,
+        MCP_TOOLSET_TOOLS_REPLACED,
+        MCP_GRANT_SET,
+        MCP_GRANT_REVOKED,
+        MCP_CREDENTIAL_BINDING_SET,
+        MCP_CREDENTIAL_BINDING_REVOKED,
+        PRICING_CATALOG_REFRESHED,
+        REVIEW_AGENT_REPOSITORY_CREATED,
+        REVIEW_AGENT_REPOSITORY_UPDATED,
+        REVIEW_AGENT_REPOSITORY_DISABLED,
+        REVIEW_AGENT_REPOSITORY_REACTIVATED,
+        RATE_LIMIT_POLICY_CREATED,
+        RATE_LIMIT_POLICY_UPDATED,
+        RATE_LIMIT_POLICY_DELETED,
+    ];
 }
 
 /// Target resource types. An action's prefix names its target type.
@@ -220,8 +272,16 @@ pub struct AuditEvent {
 }
 
 impl AuditEvent {
+    /// `action` must be one of [`actions`] and `target_type` the target type its
+    /// prefix names, such as `user.updated` with `user`.
     #[must_use]
     pub fn new(action: &str, target_type: &str) -> Self {
+        debug_assert!(
+            action
+                .strip_prefix(target_type)
+                .is_some_and(|rest| rest.starts_with('.')),
+            "audit action `{action}` does not belong to target type `{target_type}`"
+        );
         Self {
             action: action.to_string(),
             target_type: target_type.to_string(),
@@ -1180,6 +1240,23 @@ mod tests {
         let records = repo.records.lock().unwrap();
         assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
         assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
+    }
+
+    #[test]
+    fn every_action_names_a_known_target_type() {
+        for action in actions::ALL {
+            let (target_type, verb) = action.split_once('.').expect("action has a target prefix");
+            assert!(targets::ALL.contains(&target_type), "{action}");
+            assert!(!verb.is_empty(), "{action}");
+        }
+        for target_type in targets::ALL {
+            assert!(
+                actions::ALL
+                    .iter()
+                    .any(|action| action.starts_with(&format!("{target_type}."))),
+                "{target_type} has no actions"
+            );
+        }
     }
 
     #[tokio::test]
