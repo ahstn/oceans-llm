@@ -16,9 +16,10 @@ Every libSQL transaction runs on a connection of its own. `LibsqlStore::begin_tr
 ## Implementation
 
 - Store code never calls `.transaction()` on `self.connection`. New transactions use `begin_transaction`, or a dedicated connection as skills and routing already do.
-- `IMMEDIATE` takes the write lock at `BEGIN`, where the busy timeout waits for it. A deferred transaction that reads and then writes can get `SQLITE_BUSY` straight away when it tries to upgrade its lock while another connection is writing.
+- `IMMEDIATE` takes the write lock at `BEGIN`. A deferred transaction that reads and then writes can get `SQLITE_BUSY` straight away when it tries to upgrade its lock while another connection is writing.
+- Local libSQL calls are synchronous, so SQLite's busy handler would park a Tokio worker while it waits for the lock, and a burst of waiting writers could starve the runtime, including the task that holds the lock. `begin_transaction` therefore turns the busy handler off for `BEGIN IMMEDIATE`, retries `SQLITE_BUSY` with an async backoff until the same five-second deadline, and then restores the busy timeout. Once the transaction holds the write lock, only its commit can wait, and only for readers on other connections to finish.
 - A statement on the shared connection keeps a read lock until it is finalized, which in libSQL means until both its `Rows` and every `Row` from it are dropped. A transaction on another connection cannot commit while that lock is held. So a function that reads through the shared connection must finish those reads before it commits a transaction. `purge_request_logs_older_than` scopes its reads for this reason.
-- `libsql_store::transaction_tests` covers a transaction started while the shared connection is inside one, concurrent transactions, and a write that waits for another transaction's lock.
+- `libsql_store::transaction_tests` covers a transaction started while the shared connection is inside one, concurrent transactions, a write that waits for another transaction's lock, and a wait for the lock on a single-threaded runtime.
 
 ## Rationale
 

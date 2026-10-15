@@ -29,7 +29,7 @@ mod support;
 #[cfg(test)]
 mod transaction_tests;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -96,6 +96,9 @@ use crate::{
 
 use support::*;
 
+/// How long a libSQL connection waits for a lock another connection holds.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct LibsqlStore {
     database: Arc<libsql::Database>,
@@ -130,15 +133,39 @@ impl LibsqlStore {
     /// `self.connection`, so a transaction there would fail with "cannot start a transaction
     /// within a transaction" whenever another request already holds one, and would pull that
     /// request's statements into this transaction's commit or rollback. `IMMEDIATE` takes the
-    /// write lock at `BEGIN`, where the busy timeout applies, instead of failing on a later
-    /// read-to-write upgrade.
+    /// write lock at `BEGIN` instead of failing on a later read-to-write upgrade.
     pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
+        let connection = self.own_connection().await?;
+        // Local libSQL calls are synchronous, so SQLite's busy handler would park a Tokio
+        // worker for up to the busy timeout while another writer holds the lock. Wait for the
+        // write lock asynchronously instead, then restore the handler: once this transaction
+        // holds the lock, only its commit waits, and only for readers to finish.
+        connection
+            .busy_timeout(Duration::ZERO)
+            .map_err(to_query_error)?;
+        let deadline = tokio::time::Instant::now() + BUSY_TIMEOUT;
+        let mut retry_delay = Duration::from_millis(1);
         // The transaction holds its own handle to the connection and closes it when dropped.
-        self.own_connection()
-            .await?
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_query_error)
+        let transaction = loop {
+            match connection
+                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .await
+            {
+                Ok(transaction) => break transaction,
+                Err(libsql::Error::SqliteFailure(code, _))
+                    if code & 0xff == libsql::ffi::SQLITE_BUSY
+                        && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(Duration::from_millis(50));
+                }
+                Err(error) => return Err(to_query_error(error)),
+            }
+        };
+        connection
+            .busy_timeout(BUSY_TIMEOUT)
+            .map_err(to_query_error)?;
+        Ok(transaction)
     }
 
     /// Opens a connection separate from the shared one, configured the same way.
@@ -151,7 +178,7 @@ impl LibsqlStore {
     }
 
     async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.execute("PRAGMA foreign_keys = ON", ()).await?;
         Ok(())
     }

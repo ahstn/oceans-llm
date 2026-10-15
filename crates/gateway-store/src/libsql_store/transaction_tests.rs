@@ -115,3 +115,28 @@ async fn concurrent_store_transactions_do_not_nest() {
             .expect("concurrent claims each run their own transaction");
     }
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn waiting_for_the_write_lock_does_not_block_the_runtime() {
+    let (_directory, store) = fixture().await;
+    let store = Arc::new(store);
+    let holder = store
+        .begin_transaction()
+        .await
+        .expect("holding transaction");
+    let waiter = tokio::spawn({
+        let store = store.clone();
+        async move { store.begin_transaction().await }
+    });
+
+    // On one thread, a blocking wait would keep this task from committing until the waiter
+    // gave up with "database is locked".
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    holder.commit().await.expect("holder commit");
+
+    let transaction = waiter
+        .await
+        .expect("waiter task")
+        .expect("the waiter gets the write lock once it is free");
+    transaction.rollback().await.expect("waiter rollback");
+}
