@@ -55,7 +55,7 @@ export function AuditEntrySheet({
                 <Mono>{entry.target_id ?? '—'}</Mono>
               </Fact>
               <Fact label="Actor">{actorLabel(entry)}</Fact>
-              <Fact label="Via">{actorKindLabel(entry.actor.kind)}</Fact>
+              <Fact label="Actor type">{actorKindLabel(entry.actor.kind)}</Fact>
               {entry.actor.user_id ? (
                 <Fact label="Actor ID">
                   <Mono>{entry.actor.user_id}</Mono>

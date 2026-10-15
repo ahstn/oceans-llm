@@ -4,7 +4,7 @@ Audit Log is a read-only, platform-admin-only view of administrator changes to t
 
 ## Sub-features
 
-- `audit-log-list` lists entries newest first with UTC time, a `Change` column (target type plus an action badge such as `Created` or `Revoked`), `Target` label and ID, `Actor` with `Session` or `API key`, and `IP address`.
+- `audit-log-list` lists entries newest first with UTC time, a `Change` column (target type plus an action badge such as `Created` or `Revoked`), `Target` label and ID, `Actor` with `User`, `API key` or `System` beneath the name, and `IP address`.
 - `audit-log-filter` narrows entries through URL search: the `Target type` select, and `Action`, `Target ID` and `Actor user ID` search fields that apply on Enter. Choosing an actor name in a row filters by that actor.
 - `audit-log-page` pages with an opaque cursor: `Older` appears while more entries exist, and `Newest` returns to the first page.
 - `audit-log-detail` opens a sheet when a row is chosen. It shows the action, target, actor, IP address, user agent, and `Before`, `After` and `Details` JSON blocks.

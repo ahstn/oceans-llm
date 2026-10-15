@@ -50,8 +50,13 @@ export function actorLabel(entry: AuditLogSummaryView) {
   return entry.actor.user_id ?? 'Unknown actor'
 }
 
+/**
+ * The kind of actor. A user acts through a session, an invitation link or an
+ * identity provider callback, and the entry does not say which, so the label
+ * names the actor rather than the channel.
+ */
 export function actorKindLabel(kind: string) {
   if (kind === 'api_key') return 'API key'
   if (kind === 'system') return 'System'
-  return 'Session'
+  return 'User'
 }

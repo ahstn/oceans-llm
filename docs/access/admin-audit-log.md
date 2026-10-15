@@ -14,7 +14,7 @@ Each entry shows:
 - **Time** in UTC.
 - **Change**: the target type and action, for example `MCP server` and `Updated`.
 - **Target**: the resource's name and ID when the change was made.
-- **Actor**: who made the change, and whether they used a session or an API key.
+- **Actor**: who made the change, and whether it was a user, an API key or the system. A user entry does not record how they signed in: changes made through a session, an invitation link and an identity provider callback all show as a user.
 - **IP address** and user agent of the request.
 - **Before** and **After**: redacted summaries of the target's state.
 - **Details**: extra context, including the request ID.
