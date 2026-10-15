@@ -66,6 +66,7 @@ Instead, the browser always reaches the admin UI through the gateway's own admin
 - The proxy drops any inbound `x-oceans-client-ip` header and sets its own: `<ip>;<unix seconds>;<HMAC-SHA256>`, keyed by the gateway's identity token secret.
 - The admin UI server forwards that header, and the browser's `User-Agent`, on its gateway API calls.
 - `resolve_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the direct peer.
+- When `GATEWAY_IDENTITY_TOKEN_SECRET` is unset, its development fallback is public, so the key is a random per-process value instead. Signed addresses then only verify on the replica that signed them, and other replicas record the direct peer.
 
 Direct API calls record the peer's address. Behind a load balancer or ingress, the admin proxy's peer is the balancer, so both admin UI and API changes record the balancer's address. That is honest but less useful. Recording the browser behind a balancer needs trusted-proxy configuration (or PROXY protocol) at the proxy before it signs, which is planned with #25 and #450.
 
@@ -76,7 +77,9 @@ Summaries are built field by field from response views or domain records that ho
 - It redacts a value whose field name matches a request-log secret key, or contains `secret`, `password`, `token`, `authorization`, `cookie`, `private_key`, `api_key`, `ciphertext`, `nonce`, `key_material` or `invite_url`.
 - Names ending in `_id`, `_at`, `_kind`, `_mode`, `_type`, `_status`, `_count`, `_prefix`, `_ref` and similar suffixes describe a secret without holding it, so they are kept. Booleans and nulls are kept too.
 - It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, an invite link path, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
-- Target labels are user-entered names, so they get the same credential check and are capped at 256 characters.
+- Target and actor labels are user-entered names and emails, so they get the same credential check and are capped at 256 characters.
+- Key/value pairs such as entity tags are judged by their `key`, so a `github_pat` tag's value is redacted. Name segments `pat`, `pwd` and `passphrase` also count as secret.
+- Strings starting with common provider token prefixes (`ghp_`, `github_pat_`, `glpat-`, `xoxb-`, `sk-ant-`, `AKIA` and similar) are redacted whatever their field name.
 - Each summary is capped at 16 KiB. A larger one is replaced with `{ "truncated": true, "bytes": n }`.
 
 The rules for specific actions are:
