@@ -479,7 +479,7 @@ function authLabel(mode: string) {
   const labels: Record<string, string> = {
     none: 'No authentication',
     gateway_bearer_token: 'Gateway bearer token',
-    gateway_static_header: 'Gateway static header',
+    gateway_static_header: 'Gateway static credential',
     oauth_obo: 'OAuth on-behalf-of',
     user_passthrough: 'User passthrough',
   }

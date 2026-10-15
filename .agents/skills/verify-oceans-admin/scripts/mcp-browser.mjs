@@ -1,7 +1,7 @@
 // Real UI mutations with production API reads as the saved-state authority.
 import fs from "node:fs/promises";
 
-const authLabels = { none: "None", gateway_static_header: "Gateway static header", gateway_bearer_token: "Gateway bearer token" };
+const authLabels = { none: "None", gateway_static_header: "Gateway static credential", gateway_bearer_token: "Gateway bearer token" };
 
 /**
  * Names this driver attempt's records. Cleanup disables rather than deletes them, so a retry

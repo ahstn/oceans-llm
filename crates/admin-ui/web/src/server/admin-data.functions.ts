@@ -67,6 +67,7 @@ import {
   revokeApiKey,
   refreshModelPricingCatalog,
   refreshMcpServerDiscovery,
+  discoverMcpServerOauth,
   revokeMcpCredentialBinding,
   revokeMcpOauthConnection,
   replaceMcpToolsetTools,
@@ -581,6 +582,12 @@ export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
 export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { serverId: string } }) => {
     return refreshMcpServerDiscovery(data.serverId)
+  },
+)
+
+export const discoverExternalMcpServerOauth = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { serverUrl: string } }) => {
+    return discoverMcpServerOauth(data.serverUrl)
   },
 )
 

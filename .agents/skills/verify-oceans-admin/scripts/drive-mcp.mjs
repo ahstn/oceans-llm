@@ -198,7 +198,7 @@ function validateConfig(value) {
     if ([...url.searchParams.keys()].some((key) => /key|token|secret|auth/i.test(key))) throw new Error("Do not place credentials in the MCP URL");
     if (!["none", "gateway_static_header", "gateway_bearer_token"].includes(candidate.auth_mode)) throw new Error("This proof supports public or gateway-authenticated discovery only");
     const auth = candidate.auth_config ?? {};
-    if (Object.keys(auth).some((key) => !["secret_ref", "header_name"].includes(key))) throw new Error("Auth config must contain only an environment reference and optional header name");
+    if (Object.keys(auth).some((key) => !["secret_ref", "header_name", "value_template", "query_param"].includes(key))) throw new Error("Auth config must contain only an environment reference and an optional header name, value template, or query parameter name");
     if (candidate.auth_mode !== "none" && !/^env\/OCEANS_MCP_DISCOVERY_[A-Z0-9_]+$/.test(auth.secret_ref ?? "")) throw new Error("Auth secret_ref must use env/OCEANS_MCP_DISCOVERY_*");
     if (candidate.expect_tool_error && candidate.auth_mode === "none") throw new Error("Negative-auth control requires an authenticated server mode");
     if (!candidate.call || typeof candidate.call.name !== "string" || !candidate.call.arguments || Array.isArray(candidate.call.arguments) || typeof candidate.call.arguments !== "object") throw new Error("Supply a reviewed read-only tool call and synthetic arguments");

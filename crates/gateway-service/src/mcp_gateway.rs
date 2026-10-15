@@ -9,13 +9,17 @@ use gateway_core::{
 use crate::McpOauthRuntime;
 use crate::mcp_credentials::McpCredentialService;
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_mcp_server_auth_destination,
+    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, normalize_mcp_server_key,
+    validate_mcp_server_auth_destination,
 };
+use gateway_mcp::McpQueryCredential;
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {
     pub server: ExternalMcpServerRecord,
     pub headers: Option<BTreeMap<String, String>>,
+    /// A gateway-managed API key for the URL query. Its `Debug` is redacted.
+    pub query_credential: Option<McpQueryCredential>,
 }
 
 #[derive(Clone)]
@@ -48,7 +52,12 @@ where
     ) -> Result<McpGatewayUpstream, GatewayError> {
         let server = self.load_active_server(server_key).await?;
         let headers = gateway_mcp_upstream_headers(&server)?;
-        Ok(McpGatewayUpstream { server, headers })
+        let query_credential = gateway_mcp_upstream_query(&server)?;
+        Ok(McpGatewayUpstream {
+            server,
+            headers,
+            query_credential,
+        })
     }
 
     pub async fn load_active_server(
@@ -94,7 +103,12 @@ where
                 credentials.resolve_for_auth(auth, &server).await?.headers
             }),
         };
-        Ok(McpGatewayUpstream { server, headers })
+        let query_credential = gateway_mcp_upstream_query(&server)?;
+        Ok(McpGatewayUpstream {
+            server,
+            headers,
+            query_credential,
+        })
     }
 
     pub async fn prepare_upstream_for_key_and_auth(

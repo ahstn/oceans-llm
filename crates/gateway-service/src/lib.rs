@@ -16,6 +16,7 @@ pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_oauth;
+pub mod mcp_oauth_discovery;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
@@ -89,14 +90,23 @@ pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,
 };
-pub use mcp_oauth::{McpOauthProvider, McpOauthRuntime, McpOauthTokenBundle, McpOauthTokenGrant};
+pub use mcp_oauth::{
+    McpOauthClient, McpOauthProvider, McpOauthProviderType, McpOauthRuntime, McpOauthTokenBundle,
+    McpOauthTokenGrant,
+};
+pub use mcp_oauth_discovery::{
+    BearerChallenge, McpOauthDiscovery, RegisteredOauthClient, choose_token_endpoint_auth_method,
+    parse_bearer_challenge, register_oauth_client,
+};
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
 pub use mcp_upstream_auth::{
-    McpOauthServerConfig, mcp_oauth_server_config, supports_public_discovery,
+    API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
+    McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,
+    gateway_mcp_upstream_query, mcp_oauth_server_config, supports_public_discovery,
 };
 pub use model_access::ModelAccess;
 pub use model_resolution::{

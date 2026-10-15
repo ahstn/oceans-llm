@@ -127,10 +127,14 @@ async fn missing_oauth_credential_returns_the_connect_url() {
         Some("https://gateway.example".to_string()),
         vec![gateway_service::McpOauthProvider {
             key: "google".to_string(),
+            provider_type: gateway_service::McpOauthProviderType::Google,
             client_id: "provider-client".to_string(),
-            client_secret: "provider-client-secret".to_string(),
+            client_secret: Some("provider-client-secret".to_string()),
             authorization_url: "https://accounts.example/authorize".to_string(),
             token_url: "https://accounts.example/token".to_string(),
+            token_endpoint_auth_method:
+                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+            scopes: Vec::new(),
         }],
     ));
     let auth_config = serde_json::from_value(json!({
