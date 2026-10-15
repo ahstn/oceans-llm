@@ -129,10 +129,11 @@ impl LibsqlStore {
         })
     }
 
-    /// Begins a write transaction on a connection of its own. Every store call shares
-    /// `self.connection`, so a transaction there would fail with "cannot start a transaction
-    /// within a transaction" whenever another request already holds one, and would pull that
-    /// request's statements into this transaction's commit or rollback. `IMMEDIATE` takes the
+    /// Begins a write transaction on a connection of its own. Most store calls share
+    /// `self.connection` (skills, routing, and rate limits open their own), so a transaction
+    /// there would fail with "cannot start a transaction within a transaction" whenever another
+    /// request already holds one, and would pull that request's statements into this
+    /// transaction's commit or rollback. `IMMEDIATE` takes the
     /// write lock at `BEGIN` instead of failing on a later read-to-write upgrade.
     pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
         let connection = self.own_connection().await?;

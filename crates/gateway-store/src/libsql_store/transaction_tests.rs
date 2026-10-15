@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    BudgetAlertRepository, ExternalMcpAuthMode, ExternalMcpTransport, McpRegistryRepository,
-    NewExternalMcpServerRecord, UpdateExternalMcpServerRecord,
+    ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+    BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, ExternalMcpAuthMode,
+    ExternalMcpTransport, McpRegistryRepository, Money4, NewExternalMcpServerRecord,
+    UpdateExternalMcpServerRecord,
 };
 use serde_json::Map;
 use tempfile::{TempDir, tempdir};
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use super::LibsqlStore;
 use crate::run_migrations;
@@ -99,6 +102,43 @@ async fn store_write_waits_for_another_store_transaction() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_store_transactions_do_not_nest() {
     let (_directory, store) = fixture().await;
+    let now = OffsetDateTime::now_utc();
+    let alert = BudgetAlertRecord {
+        budget_alert_id: Uuid::new_v4(),
+        ownership_scope_key: format!("user:{}", Uuid::new_v4()),
+        owner_kind: ApiKeyOwnerKind::User,
+        owner_id: Uuid::new_v4(),
+        owner_name: "Member".into(),
+        budget_id: Uuid::new_v4(),
+        cadence: BudgetCadence::Monthly,
+        threshold_bps: 2_000,
+        window_start: now - time::Duration::days(1),
+        window_end: now + time::Duration::days(29),
+        spend_before_usd: Money4::from_scaled(7_500_000),
+        spend_after_usd: Money4::from_scaled(8_200_000),
+        remaining_budget_usd: Money4::from_scaled(1_800_000),
+        created_at: now,
+        updated_at: now,
+    };
+    let delivery = BudgetAlertDeliveryRecord {
+        budget_alert_delivery_id: Uuid::new_v4(),
+        budget_alert_id: alert.budget_alert_id,
+        channel: BudgetAlertChannel::Email,
+        delivery_status: BudgetAlertDeliveryStatus::Pending,
+        recipient: Some("member@example.com".into()),
+        provider_message_id: None,
+        failure_reason: None,
+        queued_at: now,
+        last_attempted_at: None,
+        sent_at: None,
+        updated_at: now,
+    };
+    assert!(
+        store
+            .create_budget_alert_with_deliveries(&alert, std::slice::from_ref(&delivery))
+            .await
+            .expect("pending delivery")
+    );
     let store = Arc::new(store);
     let claims = (0..32).map(|_| {
         let store = store.clone();
@@ -109,11 +149,28 @@ async fn concurrent_store_transactions_do_not_nest() {
         })
     });
 
+    let mut claimed = Vec::new();
     for claim in futures_util::future::join_all(claims).await {
-        claim
-            .expect("claim task")
-            .expect("concurrent claims each run their own transaction");
+        claimed.extend(
+            claim
+                .expect("claim task")
+                .expect("concurrent claims each run their own transaction"),
+        );
     }
+
+    assert_eq!(claimed.len(), 1, "exactly one claim gets the delivery");
+    assert_eq!(
+        claimed[0].delivery.budget_alert_delivery_id,
+        delivery.budget_alert_delivery_id
+    );
+    assert!(
+        store
+            .claim_pending_budget_alert_delivery_tasks(10, OffsetDateTime::now_utc())
+            .await
+            .expect("later claim")
+            .is_empty(),
+        "a claimed delivery is no longer claimable"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
