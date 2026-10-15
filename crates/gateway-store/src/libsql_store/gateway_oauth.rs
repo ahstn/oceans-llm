@@ -503,8 +503,10 @@ impl GatewayOauthRepository for LibsqlStore {
             .query(
                 "SELECT g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
                     g.created_at,
-                    MAX(t.created_at) AS last_issued_at,
-                    MAX(CASE WHEN t.consumed_at IS NULL THEN t.expires_at END) AS usable_until
+                    (SELECT MAX(t.created_at) FROM gateway_oauth_tokens t
+                     WHERE t.grant_id = g.grant_id) AS last_issued_at,
+                    (SELECT MAX(t.expires_at) FROM gateway_oauth_tokens t
+                     WHERE t.grant_id = g.grant_id AND t.consumed_at IS NULL) AS usable_until
              FROM (
                  SELECT lg.grant_id
                  FROM gateway_oauth_grants lg
@@ -525,9 +527,6 @@ impl GatewayOauthRepository for LibsqlStore {
              ) page
              JOIN gateway_oauth_grants g ON g.grant_id = page.grant_id
              JOIN gateway_oauth_clients c ON c.client_id = g.client_id
-             JOIN gateway_oauth_tokens t ON t.grant_id = g.grant_id
-             GROUP BY g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
-                      g.created_at
              ORDER BY g.created_at DESC, g.grant_id",
                 libsql::params![
                     user_id.to_string(),

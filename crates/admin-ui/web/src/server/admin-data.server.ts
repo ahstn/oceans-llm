@@ -50,6 +50,7 @@ import type {
   McpOauthConnectionView,
   McpOauthStartResponse,
   AuthorizedMcpClientsView,
+  RevokeAuthorizedMcpClientsResponse,
   OauthAuthorizationDecisionResponse,
   OauthAuthorizationRequestView,
   McpConnectionInfoPayload,
@@ -712,9 +713,11 @@ export async function listAuthorizedMcpClients(): Promise<AuthorizedMcpClientsVi
   return unwrapGatewayResponse(await client.GET('/api/v1/me/authorized-mcp-clients'))
 }
 
-export async function revokeAuthorizedMcpClient(grantId: string): Promise<void> {
+export async function revokeAuthorizedMcpClient(
+  grantId: string,
+): Promise<RevokeAuthorizedMcpClientsResponse> {
   const client = createGatewayApiClient()
-  unwrapGatewayResponse(
+  return unwrapGatewayResponse(
     await client.DELETE('/api/v1/me/authorized-mcp-clients/{grant_id}', {
       params: { path: { grant_id: grantId } },
     }),
