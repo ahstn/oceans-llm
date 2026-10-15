@@ -491,7 +491,7 @@ async fn repeated_repository_status_changes_record_one_transition() {
             Some(json!({ "team_id": team["data"]["id"], "name": "reviewer" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "{account}");
+    assert_eq!(status, StatusCode::OK, "create service account");
     let (status, repository) = harness
         .admin(
             Method::POST,
