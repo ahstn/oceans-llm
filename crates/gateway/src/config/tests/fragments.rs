@@ -251,18 +251,31 @@ providers:
     );
     write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
 
+    // Failure messages name the case, never the secret or the rendered text.
     let rendered = render_config(&sources(tmp.path()), false).expect("render");
-    for secret in [
-        "sk-live-secret",
-        "hunter2",
-        "org-secret",
-        "query-secret",
-        "token-secret",
+    for (case, secret) in [
+        ("literal token", "sk-live-secret"),
+        ("URL password", "hunter2"),
+        ("header value", "org-secret"),
+        ("URL query value", "query-secret"),
+        ("URL username", "token-secret"),
     ] {
-        assert!(!rendered.contains(secret), "{secret} leaked:\n{rendered}");
+        assert!(!rendered.contains(secret), "{case} was not redacted");
     }
-    assert!(rendered.contains("literal.<redacted>"), "{rendered}");
-    assert!(rendered.contains("env.OPENROUTER_API_KEY"), "{rendered}");
-    assert!(rendered.contains("llm.internal/v1"), "{rendered}");
-    assert!(rendered.contains("api_key=%3Credacted%3E"), "{rendered}");
+    assert!(
+        rendered.contains("literal.<redacted>"),
+        "literal marker missing"
+    );
+    assert!(
+        rendered.contains("env.OPENROUTER_API_KEY"),
+        "env reference should stay visible"
+    );
+    assert!(
+        rendered.contains("llm.internal/v1"),
+        "URL host and path should stay"
+    );
+    assert!(
+        rendered.contains("api_key=%3Credacted%3E"),
+        "query key should stay with a redacted value"
+    );
 }
