@@ -673,10 +673,13 @@ impl RateLimiter {
         }
         let runtime = tokio::runtime::Handle::try_current().ok()?;
         let finished_at = (self.clock)();
-        // Counters known from the cached set are marked pending right away;
-        // the task works the final set out again when it runs. Without a
-        // cached set (just after an invalidation) every token check waits.
-        let keys = self.cached(true).map_or_else(
+        // With a fresh cached set, the task charges exactly that set, so the
+        // counters marked pending here are the ones it writes, even if the
+        // cache refreshes to other policies before it runs. Without one (just
+        // after an invalidation, or once it is stale) the task loads the set
+        // itself and every token check waits.
+        let snapshot = self.cached(false);
+        let keys = snapshot.as_ref().map_or_else(
             || vec![ANY_PENDING_COUNTER.to_string()],
             |set| {
                 set.for_operation(subject.operation)
@@ -704,8 +707,12 @@ impl RateLimiter {
                 model_keys: &model_keys,
                 mcp_server: None,
             };
+            let set = match snapshot {
+                Some(set) => set,
+                None => limiter.policies().await,
+            };
             limiter
-                .add_tokens(&subject, total_tokens, finished_at)
+                .charge_tokens(&set, &subject, total_tokens, finished_at)
                 .await;
         }))
     }
@@ -749,10 +756,22 @@ impl RateLimiter {
         total_tokens: i64,
         finished_at: OffsetDateTime,
     ) {
+        let set = self.policies().await;
+        self.charge_tokens(&set, subject, total_tokens, finished_at)
+            .await;
+    }
+
+    /// Charges `total_tokens` to the token policies in `set` that match.
+    async fn charge_tokens(
+        &self,
+        set: &PolicySet,
+        subject: &RateLimitSubject<'_>,
+        total_tokens: i64,
+        finished_at: OffsetDateTime,
+    ) {
         let Some(store) = &self.store else {
             return;
         };
-        let set = self.policies().await;
         if !set.complete {
             // Admin policies are unknown, so charging only the config subset
             // would lose this usage silently. Treat it as a failed write.

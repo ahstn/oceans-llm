@@ -109,9 +109,12 @@ export function limitError(form: Pick<PolicyFormState, 'limit'>): string | null 
   return null
 }
 
+export function nameError(form: Pick<PolicyFormState, 'name'>): string | null {
+  return form.name.trim() ? null : 'Enter a name.'
+}
+
 export function formError(form: PolicyFormState): string | null {
-  if (!form.name.trim()) return 'Enter a name.'
-  return limitError(form)
+  return nameError(form) ?? limitError(form)
 }
 
 export function describeScope(policy: RateLimitPolicyView): string {

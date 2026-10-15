@@ -1245,3 +1245,44 @@ async fn startup_rejects_a_config_name_used_by_a_paused_admin_policy() {
     let error = harness.limiter.validate_policy_set().await.unwrap_err();
     assert!(error.to_string().contains("shared name"), "{error}");
 }
+
+#[tokio::test]
+async fn a_detached_charge_writes_the_counters_it_marked_pending() {
+    let store = Arc::new(MemoryStore::default());
+    let mut alpha = admin_policy("alpha", RateLimitScopeKind::User, 1_000);
+    alpha.metric = RateLimitMetric::Tokens;
+    *store.policies.lock().unwrap() = vec![alpha.clone()];
+    let limiter = Arc::new(RateLimiter::new(
+        store.clone(),
+        RateLimitSettings {
+            failure_mode: RateLimitFailureMode::Open,
+            policy_refresh: Duration::from_millis(50),
+            config_policies: Vec::new(),
+        },
+    ));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    limiter.check(&subject).await.unwrap();
+
+    // The charge is registered against `alpha`. Before its task runs, the
+    // cache goes stale and another replica swaps `alpha` for `beta`.
+    let charge = limiter.record_tokens_detached(&subject, 400).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    let mut beta = admin_policy("beta", RateLimitScopeKind::User, 1_000);
+    beta.metric = RateLimitMetric::Tokens;
+    *store.policies.lock().unwrap() = vec![beta];
+    charge.await.unwrap();
+
+    let charged: Vec<String> = store
+        .counters
+        .lock()
+        .unwrap()
+        .keys()
+        .map(|(key, _)| key.clone())
+        .collect();
+    let alpha_id = alpha.rate_limit_policy_id.to_string();
+    assert!(!charged.is_empty());
+    assert!(
+        charged.iter().all(|key| key.contains(&alpha_id)),
+        "{charged:?}"
+    );
+}

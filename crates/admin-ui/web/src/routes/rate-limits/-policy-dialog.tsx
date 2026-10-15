@@ -34,6 +34,7 @@ import {
   emptyPolicyForm,
   formError,
   limitError,
+  nameError,
   policyFormFromView,
   policyInputFromForm,
   type PolicyFormState,
@@ -70,7 +71,10 @@ export function PolicyDialog({
     policy ? policyFormFromView(policy) : emptyPolicyForm(),
   )
   const [pending, startTransition] = useTransition()
+  // A new form starts with an empty name; say so only once it was edited.
+  const [nameTouched, setNameTouched] = useState(false)
   const error = formError(form)
+  const shownNameError = nameTouched ? nameError(form) : null
   const fields: FieldsProps = {
     form,
     update: (patch) => setForm((current) => ({ ...current, ...patch })),
@@ -114,16 +118,25 @@ export function PolicyDialog({
         </DialogHeader>
         <form className="flex min-w-0 flex-col gap-4" onSubmit={submit}>
           <FieldGroup>
-            <Field>
+            <Field data-invalid={Boolean(shownNameError) || undefined}>
               <FieldLabel htmlFor="rate-limit-name">Name</FieldLabel>
               <Input
                 id="rate-limit-name"
                 value={form.name}
-                onChange={(event) => fields.update({ name: event.target.value })}
+                onChange={(event) => {
+                  setNameTouched(true)
+                  fields.update({ name: event.target.value })
+                }}
+                onBlur={() => setNameTouched(true)}
                 required
                 maxLength={100}
                 disabled={pending}
+                aria-invalid={Boolean(shownNameError) || undefined}
+                aria-describedby={shownNameError ? 'rate-limit-name-error' : undefined}
               />
+              {shownNameError && (
+                <FieldError id="rate-limit-name-error">{shownNameError}</FieldError>
+              )}
             </Field>
             <TrafficFields {...fields} />
             <ScopeFields {...fields} />

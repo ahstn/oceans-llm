@@ -243,6 +243,21 @@ describe('RateLimitsPage', () => {
     ).toBe(true)
   })
 
+  it('explains a blank name on the name field', () => {
+    renderPage([])
+    fireEvent.click(screen.getByRole('button', { name: 'New rate limit' }))
+    const name = screen.getByLabelText('Name')
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.change(name, { target: { value: '   ' } })
+    const message = screen.getByRole('alert')
+    expect(message.textContent).toBe('Enter a name.')
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    expect(name.getAttribute('aria-describedby')).toBe(message.id)
+    expect(
+      (screen.getByRole('button', { name: 'Create rate limit' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
   it('deletes an admin policy after confirmation', async () => {
     renderPage([adminPolicy])
     const table = screen.getByRole('table')
