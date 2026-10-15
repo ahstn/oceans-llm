@@ -2008,6 +2008,7 @@ dependencies = [
  "base64 0.23.1",
  "gateway-client-config",
  "gateway-core",
+ "gateway-guardrails",
  "gateway-mcp",
  "gateway-skills",
  "itertools 0.14.0",

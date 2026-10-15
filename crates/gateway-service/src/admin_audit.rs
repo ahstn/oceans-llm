@@ -9,12 +9,13 @@
 use std::{
     future::Future,
     sync::{
-        Arc, OnceLock,
+        Arc, LazyLock, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use gateway_core::{AuditActor, AuditLogRepository, NewAuditLogRecord};
+use gateway_guardrails::{SecretRedactionConfig, redact_json_secrets};
 use percent_encoding::percent_decode_str;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -792,7 +793,7 @@ fn redact_scalar(text: String) -> String {
     if looks_like_credential(&text) {
         AUDIT_REDACTED.to_string()
     } else {
-        text
+        scrub_provider_tokens_in(text)
     }
 }
 
@@ -802,6 +803,7 @@ fn redact_label(label: String) -> String {
     if looks_like_credential(&label) {
         return AUDIT_REDACTED.to_string();
     }
+    let label = scrub_provider_tokens_in(label);
     if label.chars().count() > MAX_LABEL_CHARS {
         let mut truncated: String = label.chars().take(MAX_LABEL_CHARS).collect();
         truncated.push('…');
@@ -810,8 +812,29 @@ fn redact_label(label: String) -> String {
     label
 }
 
+/// Replaces provider credentials the checks above miss with `[REDACTED:<rule>]`,
+/// using the guardrail secret rules the gateway already maintains for prompts.
+/// Those rules know many more provider token formats than [`TOKEN_PREFIXES`].
+fn scrub_provider_tokens(value: &mut Value) {
+    static RULES: LazyLock<SecretRedactionConfig> = LazyLock::new(|| SecretRedactionConfig {
+        enabled: true,
+        ..SecretRedactionConfig::default()
+    });
+    redact_json_secrets(value, &RULES);
+}
+
+fn scrub_provider_tokens_in(text: String) -> String {
+    let mut value = Value::String(text);
+    scrub_provider_tokens(&mut value);
+    match value {
+        Value::String(text) => text,
+        _ => AUDIT_REDACTED.to_string(),
+    }
+}
+
 fn redact_summary(value: Value) -> Value {
-    let value = redact_audit_value(value);
+    let mut value = redact_audit_value(value);
+    scrub_provider_tokens(&mut value);
     let size = serde_json::to_vec(&value).map_or(0, |bytes| bytes.len());
     if size > MAX_SUMMARY_BYTES {
         serde_json::json!({ "truncated": true, "bytes": size })
@@ -1240,6 +1263,28 @@ mod tests {
         let records = repo.records.lock().unwrap();
         assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
         assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
+    }
+
+    #[test]
+    fn provider_tokens_without_a_known_prefix_are_redacted() {
+        let router_key = format!("sk-or-v1-{}", "0123456789abcdef".repeat(4));
+        // Built at runtime so no token-shaped literal sits in the source.
+        let hub_token: String = std::iter::once("hf_".to_string())
+            .chain((0..34_u8).map(|i| {
+                let letter = if i % 2 == 0 { b'A' } else { b'a' } + (i * 7) % 26;
+                char::from(letter).to_string()
+            }))
+            .collect();
+        let redacted = redact_summary(json!({
+            "description": format!("upstream key {router_key} for the proxy"),
+            "notes": [format!("token {hub_token}")],
+            "name": "Tickets",
+        }));
+        let text = redacted.to_string();
+        assert!(!text.contains(&router_key), "{text}");
+        assert!(!text.contains(&hub_token), "{text}");
+        assert_eq!(redacted["name"], "Tickets");
+        assert!(!redact_label(format!("server {router_key}")).contains(&router_key));
     }
 
     #[test]
