@@ -61,7 +61,7 @@ A request check is one transaction:
 3. Read the previous window's amount and compute the estimate.
 4. If any charge is over its limit, roll back. A rejected request consumes nothing on any scope. Otherwise commit.
 
-**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. A burst of concurrent requests can therefore overshoot a token limit by up to one request each. Tokens are charged with the usage the provider reports, as budgets are, including partial usage on a failed request or interrupted stream: the provider consumed those tokens. Usage is charged to the window the response finished in. Batches are not rate limited.
+**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. The charge is written before the response is handed back, so a caller sending requests one after another always sees its earlier usage. Only a burst of concurrent requests can overshoot a token limit, by up to one request each. Tokens are charged with the usage the provider reports, as budgets are, including partial usage on a failed request or interrupted stream: the provider consumed those tokens. Usage is charged to the window the response finished in. Batches are not rate limited.
 
 Counter rows expire one window after their window ends. Each replica deletes up to 500 expired rows at most once a minute.
 

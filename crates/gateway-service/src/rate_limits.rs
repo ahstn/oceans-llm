@@ -8,6 +8,7 @@
 //! `docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md`.
 
 use std::{
+    collections::HashMap,
     sync::{
         Arc, RwLock,
         atomic::{AtomicI64, Ordering},
@@ -300,8 +301,30 @@ impl ActivePolicy {
 /// policies are known.
 #[derive(Clone)]
 struct PolicySet {
-    policies: Arc<Vec<ActivePolicy>>,
+    /// Grouped by operation, so a check only looks at policies for its own
+    /// kind of traffic.
+    by_operation: Arc<HashMap<RateLimitOperation, Vec<ActivePolicy>>>,
     complete: bool,
+}
+
+impl PolicySet {
+    fn new(policies: Vec<ActivePolicy>, complete: bool) -> Self {
+        let mut by_operation: HashMap<RateLimitOperation, Vec<ActivePolicy>> = HashMap::new();
+        for policy in policies {
+            by_operation
+                .entry(policy.operation)
+                .or_default()
+                .push(policy);
+        }
+        Self {
+            by_operation: Arc::new(by_operation),
+            complete,
+        }
+    }
+
+    fn for_operation(&self, operation: RateLimitOperation) -> &[ActivePolicy] {
+        self.by_operation.get(&operation).map_or(&[], Vec::as_slice)
+    }
 }
 
 struct PolicyCache {
@@ -383,8 +406,8 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
-        let PolicySet { policies, complete } = self.policies().await;
-        if !complete && self.settings.failure_mode == RateLimitFailureMode::Closed {
+        let set = self.policies().await;
+        if !set.complete && self.settings.failure_mode == RateLimitFailureMode::Closed {
             // Admin policies are unknown, so this request may be one they limit.
             return self.store_failure(
                 subject.operation,
@@ -392,7 +415,8 @@ impl RateLimiter {
             );
         }
         let now = (self.clock)();
-        let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = policies
+        let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = set
+            .for_operation(subject.operation)
             .iter()
             .filter_map(|policy| {
                 let counter_key = policy.counter_key(subject)?;
@@ -497,35 +521,15 @@ impl RateLimiter {
         }
     }
 
-    /// Charges token policies after a response finished. Runs in the
-    /// background; a failure only loses this request's tokens.
-    pub fn record_tokens(self: &Arc<Self>, subject: &RateLimitSubject<'_>, total_tokens: i64) {
+    /// Charges token policies once a response has finished, before the caller
+    /// sees the end of it, so a sequential caller's next check sees the usage.
+    /// Makes no store call when no token policy matches; a failed write only
+    /// loses this request's tokens.
+    pub async fn record_tokens(&self, subject: &RateLimitSubject<'_>, total_tokens: i64) {
         if total_tokens <= 0 || self.store.is_none() {
             return;
         }
-        let limiter = Arc::clone(self);
-        let operation = subject.operation;
-        let api_key_id = subject.api_key_id;
-        let user_id = subject.user_id;
-        let team_id = subject.team_id;
-        let model_keys: Vec<String> = subject.model_keys.iter().map(ToString::to_string).collect();
-        // Charge the window the response finished in, not the one the task
-        // happens to run in.
-        let finished_at = (self.clock)();
-        tokio::spawn(async move {
-            let model_keys: Vec<&str> = model_keys.iter().map(String::as_str).collect();
-            let subject = RateLimitSubject {
-                operation,
-                api_key_id,
-                user_id,
-                team_id,
-                model_keys: &model_keys,
-                mcp_server: None,
-            };
-            limiter
-                .add_tokens(&subject, total_tokens, finished_at)
-                .await;
-        });
+        self.add_tokens(subject, total_tokens, (self.clock)()).await;
     }
 
     async fn add_tokens(
@@ -537,10 +541,9 @@ impl RateLimiter {
         let Some(store) = &self.store else {
             return;
         };
-        let increments: Vec<_> = self
-            .policies()
-            .await
-            .policies
+        let set = self.policies().await;
+        let increments: Vec<_> = set
+            .for_operation(subject.operation)
             .iter()
             .filter(|policy| policy.metric == RateLimitMetric::Tokens)
             .filter_map(|policy| {
@@ -613,10 +616,7 @@ impl RateLimiter {
                 }
             }
         }
-        let set = PolicySet {
-            policies: Arc::new(policies),
-            complete,
-        };
+        let set = PolicySet::new(policies, complete);
         self.store_cache(set.clone());
         set
     }

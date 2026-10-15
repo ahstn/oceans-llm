@@ -33,7 +33,7 @@ A specific policy can tighten a default for one principal, but it cannot raise i
 
 ### Token limits
 
-Token counts are only known once a response finishes. A `tokens` policy rejects a request once its window is already used up, then charges the response's `total_tokens` after it completes. Concurrent requests can each pass the check before the others are charged, so a token limit can be exceeded by up to one response per request in flight.
+Token counts are only known once a response finishes. A `tokens` policy rejects a request once its window is already used up, then charges the response's `total_tokens` after it completes. The charge is written before the response is returned, so requests sent one after another always see earlier usage. Only concurrent requests can each pass the check before the others are charged, so a token limit can be exceeded by up to one response per request in flight.
 
 Token limits count the usage the provider reports, the same usage budgets charge. That includes partial usage from a request that failed or a stream that ended in an error after reporting usage, because the provider consumed those tokens. Requests that report no usage and batch jobs are not charged.
 

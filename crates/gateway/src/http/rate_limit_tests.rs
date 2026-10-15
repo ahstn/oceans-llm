@@ -17,14 +17,13 @@ use gateway_core::{
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitScopeKind,
 };
-use gateway_service::{ConfiguredRateLimitPolicy, RateLimitSubject};
+use gateway_service::ConfiguredRateLimitPolicy;
 use http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use crate::http::{
-    state::AppState,
-    test_support::{TestClock, app_state, install_rate_limits, seed_stream_cancellation_test},
+use crate::http::test_support::{
+    TestClock, app_state, install_rate_limits, seed_stream_cancellation_test,
 };
 
 const API_KEY: &str = "gwk_streamtest.cancel-secret";
@@ -134,8 +133,8 @@ fn policy(
 
 struct Harness {
     _directory: tempfile::TempDir,
-    state: AppState,
     router: Router,
+    metrics: Arc<crate::observability::GatewayMetrics>,
     clock: TestClock,
     provider: Arc<CountingProvider>,
 }
@@ -148,8 +147,8 @@ async fn harness(policies: Vec<ConfiguredRateLimitPolicy>) -> Harness {
     let clock = install_rate_limits(&mut state, policies);
     Harness {
         _directory: directory,
-        router: crate::http::build_router(state.clone(), admin_ui::AdminUiConfig::default()),
-        state,
+        metrics: state.metrics.clone(),
+        router: crate::http::build_router(state, admin_ui::AdminUiConfig::default()),
         clock,
         provider,
     }
@@ -193,34 +192,6 @@ impl Harness {
             headers,
             body: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         }
-    }
-
-    /// Polls token policies without charging them until the background charge
-    /// lands. Token checks never charge, so polling does not change the count.
-    async fn wait_for_token_remaining(&self, expected: i64) {
-        let auth = self
-            .state
-            .service
-            .authenticate(Some(&format!("Bearer {API_KEY}")))
-            .await
-            .unwrap();
-        let models = ["fast"];
-        let subject =
-            RateLimitSubject::new(RateLimitOperation::Inference, &auth).with_models(&models);
-        for _ in 0..400 {
-            let decision = self
-                .state
-                .service
-                .rate_limiter()
-                .check(&subject)
-                .await
-                .unwrap();
-            if decision.status().map(|status| status.remaining) == Some(expected) {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-        panic!("token usage never reached {expected} remaining");
     }
 
     async fn chat(&self) -> Reply {
@@ -446,13 +417,12 @@ async fn token_limits_are_charged_after_the_response() {
     let first = harness.chat().await;
     assert_eq!(first.status, StatusCode::OK);
     assert_eq!(first.header("x-ratelimit-remaining"), Some("20"));
-    // 15 tokens are charged in the background once the response is done.
-    harness.wait_for_token_remaining(5).await;
+    // The 15 tokens are charged before the response is returned, so the very
+    // next sequential request already sees them.
 
     let second = harness.chat().await;
     assert_eq!(second.status, StatusCode::OK);
     assert_eq!(second.header("x-ratelimit-remaining"), Some("5"));
-    harness.wait_for_token_remaining(0).await;
 
     let limited = harness.chat().await;
     assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
@@ -472,4 +442,92 @@ async fn requests_without_a_matching_policy_carry_no_rate_limit_headers() {
     let reply = harness.chat().await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.header("x-ratelimit-limit"), None);
+}
+
+#[tokio::test]
+async fn rejected_requests_keep_one_request_metric_sample_per_route() {
+    let harness = harness(vec![policy(
+        "team inference",
+        RateLimitOperation::Inference,
+        RateLimitScopeKind::Team,
+        RateLimitMetric::Requests,
+        RateLimitPeriod::Day,
+        1,
+    )])
+    .await;
+    assert_eq!(harness.chat().await.status, StatusCode::OK);
+    let before = harness.metrics.test_snapshot();
+
+    let chat_messages = json!([{"role": "user", "content": "hello"}]);
+    for (path, body) in [
+        (
+            "/v1/chat/completions",
+            json!({"model": "fast", "messages": chat_messages}),
+        ),
+        ("/v1/responses", json!({"model": "fast", "input": "hello"})),
+        (
+            "/v1/messages",
+            json!({"model": "fast", "max_tokens": 16, "messages": chat_messages}),
+        ),
+        ("/v1/embeddings", json!({"model": "fast", "input": "hello"})),
+        (
+            "/v1/decisions",
+            json!({
+                "model": "fast",
+                "state": {"ticket": "refund"},
+                "questions": {"approve": {"type": "noul", "instructions": "Approve?"}},
+            }),
+        ),
+    ] {
+        let reply = harness.post(path, body).await;
+        assert_eq!(reply.status, StatusCode::TOO_MANY_REQUESTS, "{path}");
+    }
+
+    let after = harness.metrics.test_snapshot();
+    // Chat Completions, Responses and Messages share the chat request metric.
+    assert_eq!(after.requests - before.requests, 3);
+    assert_eq!(
+        after
+            .request_outcomes
+            .get("rate_limit_error")
+            .copied()
+            .unwrap_or(0),
+        3
+    );
+    let rate_limited = |samples: Vec<(i64, String)>| {
+        samples
+            .into_iter()
+            .filter(|(status, outcome)| *status == 429 && outcome == "rate_limit_error")
+            .count()
+    };
+    assert_eq!(
+        rate_limited(
+            after
+                .embeddings_requests
+                .iter()
+                .flat_map(|(sample, count)| {
+                    std::iter::repeat_n(
+                        (sample.status_code, sample.outcome.clone()),
+                        *count as usize,
+                    )
+                })
+                .collect()
+        ),
+        1
+    );
+    assert_eq!(
+        rate_limited(
+            after
+                .decisions_requests
+                .iter()
+                .flat_map(|(sample, count)| {
+                    std::iter::repeat_n(
+                        (sample.status_code, sample.outcome.clone()),
+                        *count as usize,
+                    )
+                })
+                .collect()
+        ),
+        1
+    );
 }

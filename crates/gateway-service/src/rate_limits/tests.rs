@@ -618,7 +618,7 @@ async fn a_failed_reload_keeps_the_last_complete_policy_set() {
 }
 
 #[tokio::test]
-async fn tokens_are_charged_to_the_window_the_response_finished_in() {
+async fn token_usage_is_charged_before_record_tokens_returns() {
     let harness = Harness::new(
         MemoryStore::default(),
         vec![config(
@@ -633,20 +633,21 @@ async fn tokens_are_charged_to_the_window_the_response_finished_in() {
     let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
     let finished_day = RateLimitWindow::at(RateLimitPeriod::Day, harness.now()).start;
 
-    // The recorder runs on another task; move the clock to the next day before
-    // it gets to run.
-    harness.limiter.record_tokens(&subject, 40);
-    harness.advance(86_400);
-    for _ in 0..100 {
-        if !harness.store.counters.lock().unwrap().is_empty() {
-            break;
-        }
-        tokio::task::yield_now().await;
-    }
+    harness.limiter.record_tokens(&subject, 40).await;
+    // No yield: a sequential caller's next check already sees the usage, in
+    // the window the response finished in.
     let counters = harness.store.counters.lock().unwrap().clone();
     assert_eq!(counters.len(), 1);
     let ((_, window_start), amount) = counters.into_iter().next().unwrap();
     assert_eq!((window_start, amount), (finished_day, 40));
+    harness.advance(86_400);
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus {
+            remaining: 1_000,
+            ..
+        })
+    ));
 }
 
 #[tokio::test]

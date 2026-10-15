@@ -179,6 +179,8 @@ async fn platform_admins_create_update_list_and_delete_policies() {
     assert_eq!(policies[0]["name"], "default per key");
     assert!(policies[0]["id"].is_null());
     assert_eq!(policies[1]["id"], policy_id.as_str());
+    // The list hydrates labels in bulk; the result matches the single view.
+    assert_eq!(policies[1]["scope_label"], target.email.as_str());
 
     let Json(deleted) = delete_rate_limit_policy(
         State(context.state.clone()),

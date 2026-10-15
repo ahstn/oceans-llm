@@ -190,12 +190,13 @@ async fn v1_messages_inner(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_inference_rate_limits(
+    enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
         &resolved,
-        RateLimitOperation::Inference,
+        core_request.stream,
+        request_started_at,
     )
     .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
@@ -507,12 +508,13 @@ pub async fn v1_chat_completions(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_inference_rate_limits(
+    enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
         &resolved,
-        RateLimitOperation::Inference,
+        core_request.stream,
+        request_started_at,
     )
     .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
@@ -686,12 +688,13 @@ pub async fn v1_responses(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_inference_rate_limits(
+    enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
         &resolved,
-        RateLimitOperation::Inference,
+        core_request.stream,
+        request_started_at,
     )
     .await?;
     enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
@@ -2023,7 +2026,7 @@ async fn finalize_successful_usage_accounting_from_parts(
     {
         Ok(usage) => {
             record_usage_metrics_from_ref(metrics, &context.labels, &usage);
-            charge_rate_limit_tokens(service, &context, &usage);
+            charge_rate_limit_tokens(service, &context, &usage).await;
         }
         Err(error) => {
             tracing::warn!(
@@ -2042,8 +2045,8 @@ async fn finalize_successful_usage_accounting_from_parts(
 }
 
 /// Token limits are checked before a request and charged here, once the
-/// provider has reported usage. The charge runs in the background.
-fn charge_rate_limit_tokens(
+/// provider has reported usage and before the caller sees the response end.
+async fn charge_rate_limit_tokens(
     service: &AppGatewayService,
     context: &UsageAccountingContext<'_>,
     usage: &gateway_service::RecordedChatUsage,
@@ -2060,7 +2063,10 @@ fn charge_rate_limit_tokens(
     ];
     let subject =
         RateLimitSubject::new(RateLimitOperation::Inference, context.auth).with_models(&model_keys);
-    service.rate_limiter().record_tokens(&subject, total_tokens);
+    service
+        .rate_limiter()
+        .record_tokens(&subject, total_tokens)
+        .await;
 }
 
 fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
@@ -2077,6 +2083,36 @@ fn extract_anthropic_authorization_header(headers: &HeaderMap) -> Option<String>
         .get("x-api-key")
         .and_then(|value| value.to_str().ok())
         .map(|value| format!("Bearer {value}"))
+}
+
+/// [`enforce_inference_rate_limits`] for Chat Completions, Responses and
+/// Messages. A rejection still records one `gateway.chat.requests` sample, as
+/// every other exit after model resolution does.
+async fn enforce_chat_rate_limits(
+    state: &AppState,
+    policy: &RequestPolicyContext,
+    auth: &AuthenticatedApiKey,
+    resolved: &ResolvedGatewayRequest,
+    stream: bool,
+    request_started_at: Instant,
+) -> Result<(), GatewayError> {
+    let result =
+        enforce_inference_rate_limits(state, policy, auth, resolved, RateLimitOperation::Inference)
+            .await;
+    if let Err(error) = &result {
+        state.metrics.record_chat_request(&ChatRequestMetric {
+            labels: ChatMetricLabels {
+                requested_model: &resolved.selection.requested_model.model_key,
+                resolved_model: &resolved.selection.execution_model.model_key,
+                provider_key: "unavailable",
+                stream,
+            },
+            status_code: i64::from(error.http_status_code()),
+            outcome: error.error_type(),
+            latency_seconds: latency_seconds_since(request_started_at),
+        });
+    }
+    result
 }
 
 /// Rejects the request with `429 rate_limited` when a matching policy is

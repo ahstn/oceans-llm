@@ -4,11 +4,14 @@
 //! `rate_limits.policies` are listed read-only. Every change goes through
 //! [`record_rate_limit_policy_change`], the hook for the admin audit log (#99).
 
+use std::collections::{HashMap, HashSet};
+
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
+use futures_util::future::try_join_all;
 use gateway_core::{
     AdminApiKeyRepository, GatewayError, IdentityRepository, McpRegistryRepository,
     ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitPolicyRecord,
@@ -146,9 +149,37 @@ pub async fn list_rate_limit_policies(
         .iter()
         .map(config_policy_view)
         .collect();
-    for policy in limiter.list_admin_policies().await? {
-        policies.push(admin_policy_view(&state, &policy).await?);
-    }
+    let records = limiter.list_admin_policies().await?;
+    // One query for every MCP server key, and each distinct target principal
+    // looked up once, concurrently, instead of two serial lookups per row.
+    let server_keys: HashMap<Uuid, String> = state
+        .store
+        .list_external_mcp_servers(true)
+        .await?
+        .into_iter()
+        .map(|server| (server.mcp_server_id, server.server_key))
+        .collect();
+    let targets: HashSet<(RateLimitScopeKind, Uuid)> = records
+        .iter()
+        .filter_map(|policy| Some((policy.scope_kind, policy.scope_id?)))
+        .collect();
+    let labels: HashMap<(RateLimitScopeKind, Uuid), Option<String>> =
+        try_join_all(targets.into_iter().map(|target| {
+            let state = &state;
+            async move { Ok::<_, AppError>((target, scope_label(state, target.0, target.1).await?)) }
+        }))
+        .await?
+        .into_iter()
+        .collect();
+    policies.extend(records.iter().map(|policy| {
+        let label = policy
+            .scope_id
+            .and_then(|id| labels.get(&(policy.scope_kind, id)).cloned().flatten());
+        let server_key = policy
+            .mcp_server_id
+            .and_then(|id| server_keys.get(&id).cloned());
+        admin_policy_view_from(policy, label, server_key)
+    }));
     Ok(Json(envelope(RateLimitPoliciesView { policies })))
 }
 
@@ -332,25 +363,42 @@ fn config_policy_view(policy: &ConfiguredRateLimitPolicy) -> RateLimitPolicyView
     }
 }
 
+/// The targeted user's email, team name or API key name.
+async fn scope_label(
+    state: &AppState,
+    scope_kind: RateLimitScopeKind,
+    scope_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    Ok(match scope_kind {
+        RateLimitScopeKind::ApiKey => state
+            .store
+            .get_api_key_by_id(scope_id)
+            .await?
+            .map(|key| key.name),
+        RateLimitScopeKind::User => state
+            .store
+            .get_user_by_id(scope_id)
+            .await?
+            .map(|user| user.email),
+        RateLimitScopeKind::Team => state
+            .store
+            .get_team_by_id(scope_id)
+            .await?
+            .map(|team| team.team_name),
+        RateLimitScopeKind::Global => None,
+    })
+}
+
+/// The view for one policy, for the create, update and delete responses.
 async fn admin_policy_view(
     state: &AppState,
     policy: &RateLimitPolicyRecord,
 ) -> Result<RateLimitPolicyView, AppError> {
-    let scope_label = match (policy.scope_kind, policy.scope_id) {
-        (RateLimitScopeKind::ApiKey, Some(id)) => {
-            state.store.get_api_key_by_id(id).await?.map(|key| key.name)
-        }
-        (RateLimitScopeKind::User, Some(id)) => {
-            state.store.get_user_by_id(id).await?.map(|user| user.email)
-        }
-        (RateLimitScopeKind::Team, Some(id)) => state
-            .store
-            .get_team_by_id(id)
-            .await?
-            .map(|team| team.team_name),
-        _ => None,
+    let label = match policy.scope_id {
+        Some(id) => scope_label(state, policy.scope_kind, id).await?,
+        None => None,
     };
-    let mcp_server_key = match policy.mcp_server_id {
+    let server_key = match policy.mcp_server_id {
         Some(id) => state
             .store
             .get_external_mcp_server(id)
@@ -358,7 +406,15 @@ async fn admin_policy_view(
             .map(|server| server.server_key),
         None => None,
     };
-    Ok(RateLimitPolicyView {
+    Ok(admin_policy_view_from(policy, label, server_key))
+}
+
+fn admin_policy_view_from(
+    policy: &RateLimitPolicyRecord,
+    scope_label: Option<String>,
+    mcp_server_key: Option<String>,
+) -> RateLimitPolicyView {
+    RateLimitPolicyView {
         id: Some(policy.rate_limit_policy_id.to_string()),
         name: policy.name.clone(),
         source: RateLimitPolicySourceView::Admin,
@@ -374,7 +430,7 @@ async fn admin_policy_view(
         limit: policy.limit,
         enabled: policy.enabled,
         updated_at: Some(format_timestamp(policy.updated_at)),
-    })
+    }
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
