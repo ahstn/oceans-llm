@@ -85,6 +85,8 @@ pub mod actions {
     pub const USER_INVITE_REDEEMED: &str = "user.invite_redeemed";
     pub const USER_PASSWORD_CHANGED: &str = "user.password_changed";
     pub const USER_PROVISIONED: &str = "user.provisioned";
+    /// Moves a user between teams; the target is the user.
+    pub const USER_TEAM_TRANSFERRED: &str = "user.team_transferred";
 
     pub const PROVIDER_CREDENTIAL_SET: &str = "provider_credential.set";
     pub const PROVIDER_CREDENTIAL_DELETED: &str = "provider_credential.deleted";
@@ -96,7 +98,6 @@ pub mod actions {
     pub const TEAM_UPDATED: &str = "team.updated";
     pub const TEAM_MEMBERS_ADDED: &str = "team.members_added";
     pub const TEAM_MEMBER_REMOVED: &str = "team.member_removed";
-    pub const TEAM_MEMBER_TRANSFERRED: &str = "team.member_transferred";
 
     pub const SERVICE_ACCOUNT_CREATED: &str = "service_account.created";
     pub const SERVICE_ACCOUNT_UPDATED: &str = "service_account.updated";

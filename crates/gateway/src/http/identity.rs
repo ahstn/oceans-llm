@@ -1535,7 +1535,7 @@ pub async fn transfer_identity_team_member(
     state
         .audit()
         .audited(&meta.user_context(&actor), transfer, |_| {
-            AuditEvent::new(actions::TEAM_MEMBER_TRANSFERRED, targets::USER)
+            AuditEvent::new(actions::USER_TEAM_TRANSFERRED, targets::USER)
                 .target(user_id)
                 .label(identity_user.user.email.clone())
                 .before(serde_json::json!({
