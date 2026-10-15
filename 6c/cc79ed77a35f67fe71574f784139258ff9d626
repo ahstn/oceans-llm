@@ -1,0 +1,31 @@
+crates/gateway-store/src/change_report_tests.rs
+  s_01674f4e1b5bdc::t_98c97f46f3eeb1 185-199
+crates/gateway-store/src/libsql_store/identity.rs
+  s_01674f4e1b5bdc::t_0ef8e428b22348 470-471,476-477,479,484-486,492-496
+crates/gateway-store/src/libsql_store/mod.rs
+  s_01674f4e1b5bdc::t_39d9c3e91749db 290
+crates/gateway-store/src/postgres_store/identity.rs
+  s_01674f4e1b5bdc::t_71b5d07eb6f10e 406-407,412-413,418-420,425,427-430
+crates/gateway-store/src/postgres_store/mod.rs
+  s_01674f4e1b5bdc::t_25128376fc38a2 254
+crates/gateway-store/src/store.rs
+  s_01674f4e1b5bdc::t_9dcacde2a4e613 131,1626
+crates/gateway/src/http/identity.rs
+  s_01674f4e1b5bdc::t_d83d9e9f74867a 480-484,486-496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ccc79ed77a35f67fe71574f784139258ff9d626",
+  "prompts": {},
+  "sessions": {
+    "s_01674f4e1b5bdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b47-bf04-76f3-8675-5d67766468fd",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
