@@ -1,0 +1,25 @@
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_39d6fa0ea27371 384-388,509,526
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_4c70355b33ee1b 183-187
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_f2578e2166f201 811,813-817
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_2a00399bc23764 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cbf71d8633b7bfc8b006ae7f92e66d1bec71283",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
