@@ -6,6 +6,7 @@ pub mod domain;
 pub mod error;
 pub mod gateway_keys;
 pub mod protocol;
+pub mod rate_limits;
 pub mod reasoning_policy;
 pub mod routing;
 pub mod skills;
@@ -156,6 +157,12 @@ pub use protocol::translate::{
     openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core,
 };
+pub use rate_limits::{
+    MAX_RATE_LIMIT_POLICY_NAME_LEN, RateLimitConsumeResult, RateLimitCounterCharge,
+    RateLimitCounterIncrement, RateLimitCounterObservation, RateLimitMetric, RateLimitOperation,
+    RateLimitPeriod, RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind,
+    RateLimitWindow,
+};
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
@@ -178,6 +185,6 @@ pub use traits::{
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
     ProviderRepository, ProviderStream, ProviderUserCredentialRepository,
-    ProviderUserTokenResolver, RequestAttemptRepository, RequestLogRepository,
+    ProviderUserTokenResolver, RateLimitRepository, RequestAttemptRepository, RequestLogRepository,
     ReviewAgentRepository, RoutePlanner, StoreHealth,
 };

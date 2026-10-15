@@ -81,6 +81,7 @@ async fn builtin_tool_result(
 ) -> Value {
     let response = call_builtin_tool(
         state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         auth,
         JsonRpcId::Number(5),
         name.to_string(),
@@ -150,6 +151,7 @@ async fn missing_oauth_credential_returns_the_connect_url() {
 
     let response = call_catalog_tool(
         &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::Number(9),
         CallMcpToolInput {
@@ -223,6 +225,7 @@ async fn upstream_success_preserves_result_and_records_one_invocation() {
     let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
     let response = call_catalog_tool(
         &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::Number(23),
         CallMcpToolInput {
@@ -490,6 +493,7 @@ async fn call_with_upstream_reply(
     let auth = seed_authorized_tool(state, &url, ExternalMcpAuthMode::None).await;
     let response = call_catalog_tool(
         state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::Number(23),
         CallMcpToolInput {
@@ -571,6 +575,7 @@ async fn assert_failed_invocation(
     let auth = seed_authorized_tool(&state, server_url, auth_mode).await;
     let response = call_catalog_tool(
         &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::String("failed-call".to_string()),
         CallMcpToolInput {
@@ -717,4 +722,88 @@ async fn seed_authorized_tool_with_config(
         owner_team_id: key.owner_team_id,
         owner_service_account_id: key.owner_service_account_id,
     }
+}
+
+#[tokio::test]
+async fn rate_limited_call_tool_returns_a_json_rpc_429_and_is_logged() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    crate::http::test_support::install_rate_limits(
+        &mut state,
+        vec![gateway_service::ConfiguredRateLimitPolicy {
+            name: "user tool calls".to_string(),
+            operation: gateway_core::RateLimitOperation::McpToolCall,
+            scope_kind: gateway_core::RateLimitScopeKind::User,
+            model_key: None,
+            mcp_server_key: None,
+            metric: gateway_core::RateLimitMetric::Requests,
+            period: gateway_core::RateLimitPeriod::Day,
+            limit: 1,
+        }],
+    );
+    let (url, requests, server) = spawn_tools_call_upstream(
+        "result",
+        json!({"content": [{"type": "text", "text": "ok"}]}),
+    )
+    .await;
+    let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
+    let policy = crate::http::request_policy::RequestPolicyContext::default();
+    let call = |id| {
+        call_catalog_tool(
+            &state,
+            &policy,
+            &auth,
+            JsonRpcId::Number(id),
+            CallMcpToolInput {
+                address: "mcp://repository/tools/search".to_string(),
+                arguments: json!({"query": "oceans"}),
+                schema_hash: Some("search-v1".to_string()),
+            },
+        )
+    };
+
+    assert_eq!(call(1).await.status(), StatusCode::OK);
+    let upstream_calls = requests.load(Ordering::SeqCst);
+
+    let response = call(2).await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 16_384).await.expect("body"))
+            .expect("JSON-RPC error");
+    assert_eq!(body["id"], 2);
+    assert_eq!(body["error"]["code"], -32029);
+    assert_eq!(body["error"]["data"]["error_code"], "rate_limited");
+    assert!(
+        body["error"]["data"]["retry_after_seconds"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("User rate limit exceeded: 1 MCP tool calls per calendar day (UTC)")
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), upstream_calls);
+
+    let page = state
+        .store
+        .list_mcp_tool_invocations(&McpToolInvocationQuery {
+            page: 1,
+            page_size: 10,
+            ..Default::default()
+        })
+        .await
+        .expect("invocation log");
+    let denied = page
+        .items
+        .iter()
+        .find(|invocation| invocation.error_code.as_deref() == Some("rate_limited"))
+        .expect("rate-limited invocation");
+    assert_eq!(denied.status, McpToolInvocationStatus::PolicyDenied);
+    assert_eq!(denied.policy_result, McpToolPolicyResult::Denied);
+    assert_eq!(denied.metadata["mcp_route"], "aggregate");
+    assert_eq!(denied.metadata["rate_limit"]["scope_kind"], "user");
+    assert_eq!(denied.metadata["rate_limit"]["policy"], "user tool calls");
+    server.abort();
 }

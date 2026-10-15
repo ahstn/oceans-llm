@@ -70,7 +70,12 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4.1-flash`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
+<<<<<<< HEAD
 - [Guardrails](./guardrails.md) covers the decision view's tiles, filters, and detail sheet, the policy as the `Guardrail Settings` YAML preview, and a free evaluate-endpoint decision.
+=======
+- [Rate limits](./rate-limits.md) covers the policy list, creating a per-key limit, enforcement headers and the `429` contract, pausing, deletion, and optional MCP tool-call limits.
+- [Guardrails](./guardrails.md) covers effective policy cards, decision filters, and a free evaluate-endpoint decision.
+>>>>>>> 23f93ad2 (feat(gateway): enforce rate limits and quotas on inference and MCP traffic)
 - [Batch requests](./batch-requests.md) covers the seeded batch list, filters, the responses sheet, and the cancel dialog without cancelling.
 - [Identity](./identity.md) covers the Users, Teams, and Service Accounts lists, user management, team membership transfer, and read-only directories.
 - [Account onboarding](./account-onboarding.md) covers password-user creation, the invite URL, `Account ready`, and voluntary password change.

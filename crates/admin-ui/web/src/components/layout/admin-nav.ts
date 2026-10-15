@@ -1,4 +1,5 @@
 import {
+  DashboardSpeed01Icon,
   GitPullRequestIcon,
   HomeIcon,
   McpServerIcon,
@@ -62,6 +63,14 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Guardrail Settings',
         to: '/guardrails',
         icon: SecurityCheckIcon,
+      },
+      {
+        page: 'rate_limits',
+        requiredPage: 'rate_limits',
+        platformAdminOnly: true,
+        label: 'Rate Limits',
+        to: '/rate-limits',
+        icon: DashboardSpeed01Icon,
       },
     ],
   },

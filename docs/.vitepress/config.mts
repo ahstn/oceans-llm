@@ -35,6 +35,7 @@ const primarySidebar = [
         text: "Model Routing and APIs",
         link: "/configuration/model-routing-and-api-behavior",
       },
+      { text: "Rate Limits", link: "/configuration/rate-limits" },
       {
         text: "Client Harness Configuration",
         link: "/configuration/client-harness-configuration",

@@ -54,6 +54,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         leaderboard_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         harness_usage_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         count_tokens_limiter: Arc::default(),
+        trusted_proxies: crate::http::client_ip::TrustedProxies::default(),
     };
     (directory, state)
 }
@@ -124,4 +125,44 @@ pub async fn seed_stream_cancellation_test(store: &AnyStore) {
         )
         .await
         .expect("seed cancellation test");
+}
+
+/// A clock the rate limiter reads, so tests can step across windows.
+#[derive(Clone)]
+pub struct TestClock(Arc<std::sync::Mutex<time::OffsetDateTime>>);
+
+impl TestClock {
+    pub fn advance(&self, seconds: i64) {
+        *self.0.lock().unwrap() += time::Duration::seconds(seconds);
+    }
+}
+
+/// Replaces the service with one that enforces `policies`, keeping the store.
+/// The clock starts ten seconds into the current minute.
+pub fn install_rate_limits(
+    state: &mut AppState,
+    policies: Vec<gateway_service::ConfiguredRateLimitPolicy>,
+) -> TestClock {
+    let now = time::OffsetDateTime::now_utc();
+    let start = now
+        - time::Duration::seconds(now.unix_timestamp().rem_euclid(60) - 10)
+        - time::Duration::nanoseconds(i64::from(now.nanosecond()));
+    let clock = TestClock(Arc::new(std::sync::Mutex::new(start)));
+    let reader = clock.clone();
+    let limiter = gateway_service::RateLimiter::new(
+        state.store.clone(),
+        gateway_service::RateLimitSettings {
+            config_policies: policies,
+            ..Default::default()
+        },
+    )
+    .with_clock(move || *reader.0.lock().unwrap());
+    state.service = Arc::new(
+        GatewayService::new(
+            state.store.clone(),
+            Arc::new(WeightedRoutePlanner::default()),
+        )
+        .with_rate_limiter(Arc::new(limiter)),
+    );
+    clock
 }

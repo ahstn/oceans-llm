@@ -11,6 +11,10 @@ import {
   completeInvitation,
   createApiKey,
   createMcpServer,
+  createRateLimitPolicy,
+  deleteRateLimitPolicy,
+  listRateLimitPolicies,
+  updateRateLimitPolicy,
   createTeam,
   createUser,
   createBudgetIncrease,
@@ -905,5 +909,31 @@ export const getInviteState = createServerFn({ method: 'POST' }).handler(
 export const completeInvitePassword = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { token: string; password: string } }) => {
     return completeInvitation(data.token, data.password)
+  },
+)
+
+export const getRateLimitPolicies = createServerFn({ method: 'GET' }).handler(async () => {
+  return listRateLimitPolicies()
+})
+
+export const addRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createRateLimitPolicy>[0] }) => {
+    return createRateLimitPolicy(data)
+  },
+)
+
+export const saveRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: { policyId: string; input: Parameters<typeof updateRateLimitPolicy>[1] }
+  }) => {
+    return updateRateLimitPolicy(data.policyId, data.input)
+  },
+)
+
+export const removeRateLimitPolicy = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { policyId: string } }) => {
+    return deleteRateLimitPolicy(data.policyId)
   },
 )

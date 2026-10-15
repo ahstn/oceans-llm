@@ -40,15 +40,16 @@ use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
     AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
     CoreRequestRequirements, GatewayError, McpToolProjection, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, RequestAttemptRecord, RequestAttemptStatus,
-    RequestToolCardinality, ResponsesRequest, anthropic_messages_request_to_core,
-    core_chat_request_to_openai, enforce_chat_reasoning_effort, enforce_responses_reasoning_effort,
-    openai_chat_request_to_core, openai_responses_request_to_core,
-    protocol::anthropic::anthropic_message_from_openai_chat,
+    ProviderRequestContext, ProviderStream, RateLimitOperation, RequestAttemptRecord,
+    RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
+    anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
+    enforce_responses_reasoning_effort, openai_chat_request_to_core,
+    openai_responses_request_to_core, protocol::anthropic::anthropic_message_from_openai_chat,
 };
 use gateway_service::{
-    McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
-    ResolvedProviderConnection, resolve_model_icon_key, resolve_provider_display_from_parts,
+    McpAccess, McpTokenOverhead, McpTokenOverheadInput, RateLimitSubject, RequestLogContext,
+    RequestLogIconMetadata, ResolvedGatewayRequest, ResolvedProviderConnection,
+    resolve_model_icon_key, resolve_provider_display_from_parts,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -63,6 +64,7 @@ use crate::http::{
         GuardStreamError, InferenceGuardContext, guard_model_response, guard_prompt, guard_stream,
         model_route_key, redact_prompt,
     },
+    request_policy::{RequestPolicyContext, enforce_rate_limits},
     request_tags::extract_request_tags,
     request_tracing::{StreamTrace, provider_operation_span, trace_provider_operation},
     state::{AppGatewayService, AppState},
@@ -161,10 +163,11 @@ pub async fn v1_messages(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     Json(request): Json<AnthropicMessagesRequest>,
 ) -> Response {
-    match v1_messages_inner(state, request_id, headers, auth, request).await {
+    match v1_messages_inner(state, request_id, headers, policy, auth, request).await {
         Ok(response) => response,
         Err(error) => anthropic_error_response(error.0),
     }
@@ -174,6 +177,7 @@ async fn v1_messages_inner(
     state: AppState,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     auth: AuthenticatedApiKey,
     request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
@@ -186,6 +190,14 @@ async fn v1_messages_inner(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_inference_rate_limits(
+        &state,
+        &policy,
+        &auth,
+        &resolved,
+        RateLimitOperation::Inference,
+    )
+    .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
@@ -483,6 +495,7 @@ pub async fn v1_chat_completions(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     Json(request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
@@ -494,6 +507,14 @@ pub async fn v1_chat_completions(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_inference_rate_limits(
+        &state,
+        &policy,
+        &auth,
+        &resolved,
+        RateLimitOperation::Inference,
+    )
+    .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
@@ -653,6 +674,7 @@ pub async fn v1_responses(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     Json(request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
@@ -664,6 +686,14 @@ pub async fn v1_responses(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_inference_rate_limits(
+        &state,
+        &policy,
+        &auth,
+        &resolved,
+        RateLimitOperation::Inference,
+    )
+    .await?;
     enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);
@@ -1991,7 +2021,10 @@ async fn finalize_successful_usage_accounting_from_parts(
         )
         .await
     {
-        Ok(usage) => record_usage_metrics_from_ref(metrics, &context.labels, &usage),
+        Ok(usage) => {
+            record_usage_metrics_from_ref(metrics, &context.labels, &usage);
+            charge_rate_limit_tokens(service, &context, &usage);
+        }
         Err(error) => {
             tracing::warn!(
                 request_id = %context.request_id,
@@ -2008,6 +2041,28 @@ async fn finalize_successful_usage_accounting_from_parts(
     }
 }
 
+/// Token limits are checked before a request and charged here, once the
+/// provider has reported usage. The charge runs in the background.
+fn charge_rate_limit_tokens(
+    service: &AppGatewayService,
+    context: &UsageAccountingContext<'_>,
+    usage: &gateway_service::RecordedChatUsage,
+) {
+    let total_tokens = usage
+        .total_tokens
+        .or_else(|| Some(usage.prompt_tokens.unwrap_or(0) + usage.completion_tokens.unwrap_or(0)));
+    let Some(total_tokens) = total_tokens.filter(|tokens| *tokens > 0) else {
+        return;
+    };
+    let model_keys = [
+        context.labels.requested_model,
+        context.labels.resolved_model,
+    ];
+    let subject =
+        RateLimitSubject::new(RateLimitOperation::Inference, context.auth).with_models(&model_keys);
+    service.rate_limiter().record_tokens(&subject, total_tokens);
+}
+
 fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(AUTHORIZATION)
@@ -2022,6 +2077,24 @@ fn extract_anthropic_authorization_header(headers: &HeaderMap) -> Option<String>
         .get("x-api-key")
         .and_then(|value| value.to_str().ok())
         .map(|value| format!("Bearer {value}"))
+}
+
+/// Rejects the request with `429 rate_limited` when a matching policy is
+/// exhausted. Runs after model resolution and before the request log,
+/// guardrails, budget and provider call, so a rejection costs nothing upstream.
+async fn enforce_inference_rate_limits(
+    state: &AppState,
+    policy: &RequestPolicyContext,
+    auth: &AuthenticatedApiKey,
+    resolved: &ResolvedGatewayRequest,
+    operation: RateLimitOperation,
+) -> Result<(), GatewayError> {
+    let model_keys = [
+        resolved.selection.requested_model.model_key.as_str(),
+        resolved.selection.execution_model.model_key.as_str(),
+    ];
+    let subject = RateLimitSubject::new(operation, auth).with_models(&model_keys);
+    enforce_rate_limits(state, policy, &subject).await
 }
 
 fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<String, AppError> {
