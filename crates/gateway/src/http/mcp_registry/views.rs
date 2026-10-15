@@ -395,7 +395,9 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
 }
 
 /// Audit summary of a server. The auth config is already allowlisted by
-/// [`map_server`]; credentials and query strings are stripped from the URL.
+/// [`map_server`]; credentials, query strings and fragments are stripped from the
+/// server URL and from every URL in the auth config (OAuth issuer, endpoints and
+/// resource).
 pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
     let mut summary = serde_json::to_value(server).unwrap_or(Value::Null);
     if let Some(object) = summary.as_object_mut() {
@@ -406,8 +408,21 @@ pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
             "server_url".to_string(),
             Value::String(audit_safe_url(&server.server_url)),
         );
+        if let Some(Value::Object(auth_config)) = object.get_mut("auth_config") {
+            for value in auth_config.values_mut() {
+                if let Value::String(text) = value
+                    && is_web_url(text)
+                {
+                    *text = audit_safe_url(text);
+                }
+            }
+        }
     }
     summary
+}
+
+fn is_web_url(text: &str) -> bool {
+    url::Url::parse(text).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 pub(super) fn audit_safe_url(raw: &str) -> String {
@@ -624,4 +639,54 @@ fn sanitized_auth_config(
                 .map(|value| ((*field).to_string(), value.clone()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod audit_summary_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn auth_config_urls_lose_credentials_and_queries() {
+        let mut auth_config = Map::new();
+        auth_config.insert(
+            "resource".to_string(),
+            json!("https://mcp.example/?access_key=secret"),
+        );
+        auth_config.insert(
+            "token_endpoint".to_string(),
+            json!("https://user:pass@auth.example/token#frag"),
+        );
+        auth_config.insert("provider_key".to_string(), json!("github"));
+        let server = McpServerView {
+            id: "s-1".to_string(),
+            server_key: "tickets".to_string(),
+            display_name: "Tickets".to_string(),
+            description: None,
+            transport: "streamable_http".to_string(),
+            server_url: "https://mcp.example/mcp?token=abc".to_string(),
+            auth_mode: "oauth_obo".to_string(),
+            auth_config,
+            timeout_ms: 1000,
+            status: "active".to_string(),
+            last_discovery_status: None,
+            last_discovery_at: None,
+            last_successful_discovery_at: None,
+            last_error_summary: None,
+            last_tool_count: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            disabled_at: None,
+        };
+        let summary = server_audit_summary(&server);
+        assert_eq!(summary["server_url"], "https://mcp.example/mcp");
+        assert_eq!(summary["auth_config"]["resource"], "https://mcp.example/");
+        assert_eq!(
+            summary["auth_config"]["token_endpoint"],
+            "https://auth.example/token"
+        );
+        assert_eq!(summary["auth_config"]["provider_key"], "github");
+        assert!(!summary.to_string().contains("secret"));
+    }
 }
