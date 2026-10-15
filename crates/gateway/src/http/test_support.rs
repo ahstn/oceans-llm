@@ -166,3 +166,77 @@ pub fn install_rate_limits(
     );
     clock
 }
+
+/// A rate-limit store that is down.
+pub struct DownRateLimitStore;
+
+#[async_trait::async_trait]
+impl gateway_core::RateLimitRepository for DownRateLimitStore {
+    async fn list_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<gateway_core::RateLimitPolicyRecord>, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn get_rate_limit_policy(
+        &self,
+        _: uuid::Uuid,
+    ) -> Result<Option<gateway_core::RateLimitPolicyRecord>, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn insert_rate_limit_policy(
+        &self,
+        _: &gateway_core::RateLimitPolicyRecord,
+    ) -> Result<(), gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn update_rate_limit_policy(
+        &self,
+        _: &gateway_core::RateLimitPolicyRecord,
+    ) -> Result<bool, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn delete_rate_limit_policy(
+        &self,
+        _: uuid::Uuid,
+    ) -> Result<bool, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn consume_rate_limits(
+        &self,
+        _: &[gateway_core::RateLimitCounterCharge],
+    ) -> Result<gateway_core::RateLimitConsumeResult, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn add_rate_limit_usage(
+        &self,
+        _: &[gateway_core::RateLimitCounterIncrement],
+    ) -> Result<(), gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn purge_expired_rate_limit_counters(
+        &self,
+        _: i64,
+        _: i64,
+    ) -> Result<u64, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+}
+
+/// Replaces the service with one whose rate limiter cannot reach its store
+/// and fails closed, so every rate-limit check errors with 503.
+pub fn install_down_rate_limiter(state: &mut AppState) {
+    let limiter = gateway_service::RateLimiter::new(
+        Arc::new(DownRateLimitStore),
+        gateway_service::RateLimitSettings {
+            failure_mode: gateway_service::RateLimitFailureMode::Closed,
+            ..Default::default()
+        },
+    );
+    state.service = Arc::new(
+        GatewayService::new(
+            state.store.clone(),
+            Arc::new(WeightedRoutePlanner::default()),
+        )
+        .with_rate_limiter(Arc::new(limiter)),
+    );
+}

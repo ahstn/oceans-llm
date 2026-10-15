@@ -25,6 +25,7 @@ struct MemoryStore {
     list_started: std::sync::atomic::AtomicBool,
     /// When set, a usage write waits for a permit before applying.
     add_gate: Option<Arc<tokio::sync::Semaphore>>,
+    purges: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait]
@@ -154,6 +155,8 @@ impl RateLimitRepository for MemoryStore {
     }
 
     async fn purge_expired_rate_limit_counters(&self, _: i64, _: i64) -> Result<u64, StoreError> {
+        self.purges
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(0)
     }
 }
@@ -1028,4 +1031,172 @@ async fn closed_mode_rejects_token_checks_when_a_pending_charge_times_out() {
         harness.limiter.check(&subject).await.unwrap(),
         RateLimitDecision::Admitted(RateLimitStatus { remaining: 600, .. })
     ));
+}
+
+fn token_policy() -> Vec<ConfiguredRateLimitPolicy> {
+    vec![config(
+        "user tokens",
+        RateLimitOperation::Inference,
+        RateLimitScopeKind::User,
+        RateLimitMetric::Tokens,
+        RateLimitPeriod::Hour,
+        1_000,
+    )]
+}
+
+#[tokio::test]
+async fn a_pending_charge_only_delays_checks_on_its_own_counters() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let harness = Harness::new(
+        MemoryStore {
+            add_gate: Some(gate.clone()),
+            ..MemoryStore::default()
+        },
+        token_policy(),
+    );
+    let busy = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let other = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness.limiter.check(&busy).await.unwrap();
+
+    // `busy`'s charge is stuck; a different user's check must not wait on it.
+    let _charge = harness.limiter.record_tokens_detached(&busy, 400);
+    let started = std::time::Instant::now();
+    assert!(matches!(
+        harness.limiter.check(&other).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus {
+            remaining: 1_000,
+            ..
+        })
+    ));
+    assert!(started.elapsed() < Duration::from_millis(500));
+    gate.add_permits(1);
+}
+
+#[tokio::test]
+async fn an_older_successful_write_does_not_clear_a_newer_failure() {
+    let harness = Harness::with_mode(
+        MemoryStore::default(),
+        token_policy(),
+        RateLimitFailureMode::Closed,
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness.limiter.check(&subject).await.unwrap();
+
+    harness
+        .store
+        .fail_add
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    harness.limiter.record_tokens(&subject, 100).await;
+    // A write that started in the same instant as the failure succeeds: it is
+    // not evidence of recovery, so the hold stays.
+    harness
+        .store
+        .fail_add
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    harness.limiter.record_tokens(&subject, 100).await;
+    assert_eq!(
+        harness
+            .limiter
+            .check(&subject)
+            .await
+            .unwrap_err()
+            .http_status_code(),
+        503
+    );
+
+    // A write that started after the failure does clear it.
+    harness.advance(1);
+    harness.limiter.record_tokens(&subject, 100).await;
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+}
+
+#[tokio::test]
+async fn accounting_without_the_admin_policies_counts_as_a_failed_write() {
+    let harness = Harness::with_mode(
+        MemoryStore::default(),
+        token_policy(),
+        RateLimitFailureMode::Closed,
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness.limiter.check(&subject).await.unwrap();
+
+    // An admin change invalidates the cache, and the reload fails while the
+    // admitted request's usage is recorded.
+    harness
+        .store
+        .fail_list
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    harness.limiter.invalidate();
+    harness.limiter.record_tokens(&subject, 100).await;
+
+    // Once policies load again, the unrecorded usage keeps closed mode shut.
+    harness
+        .store
+        .fail_list
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+    assert_eq!(
+        harness
+            .limiter
+            .check(&subject)
+            .await
+            .unwrap_err()
+            .http_status_code(),
+        503
+    );
+}
+
+#[tokio::test]
+async fn expired_counters_are_purged_even_when_no_policy_matches() {
+    let harness = Harness::new(MemoryStore::default(), Vec::new());
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    assert_eq!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Unlimited
+    );
+    for _ in 0..50 {
+        if harness
+            .store
+            .purges
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+        {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("no purge was scheduled");
+}
+
+#[tokio::test]
+async fn startup_rejects_config_and_admin_policies_above_the_cap() {
+    let cap = gateway_core::MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION;
+    let store = MemoryStore::default();
+    *store.policies.lock().unwrap() = (0..cap)
+        .map(|n| admin_policy(&format!("admin {n}"), RateLimitScopeKind::Global, 5))
+        .collect();
+    // The database is full; one more policy in config takes it over the cap.
+    let harness = Harness::new(
+        store,
+        vec![config(
+            "config",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            5,
+        )],
+    );
+    let error = harness
+        .limiter
+        .validate_policy_capacity()
+        .await
+        .unwrap_err();
+    assert_eq!(error.http_status_code(), 400);
+
+    let within = Harness::new(MemoryStore::default(), Vec::new());
+    within.limiter.validate_policy_capacity().await.unwrap();
 }

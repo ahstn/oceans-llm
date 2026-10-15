@@ -11,7 +11,7 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
-use futures_util::future::try_join_all;
+use futures_util::{StreamExt, TryStreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, GatewayError, IdentityRepository, McpRegistryRepository,
     ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitPolicyRecord,
@@ -29,6 +29,10 @@ use super::{
     error::AppError,
     state::AppState,
 };
+
+/// Bounds the label lookups one admin listing runs at once, so a large
+/// policy history cannot take over the connection pool.
+const MAX_CONCURRENT_LABEL_LOOKUPS: usize = 8;
 
 macro_rules! contract_enum {
     ($(#[$meta:meta])* $view:ident => $domain:ident { $($variant:ident),+ $(,)? }) => {
@@ -163,14 +167,14 @@ pub async fn list_rate_limit_policies(
         .iter()
         .filter_map(|policy| Some((policy.scope_kind, policy.scope_id?)))
         .collect();
-    let labels: HashMap<(RateLimitScopeKind, Uuid), Option<String>> =
-        try_join_all(targets.into_iter().map(|target| {
+    let labels: HashMap<(RateLimitScopeKind, Uuid), Option<String>> = stream::iter(targets)
+        .map(|target| {
             let state = &state;
             async move { Ok::<_, AppError>((target, scope_label(state, target.0, target.1).await?)) }
-        }))
-        .await?
-        .into_iter()
-        .collect();
+        })
+        .buffer_unordered(MAX_CONCURRENT_LABEL_LOOKUPS)
+        .try_collect()
+        .await?;
     policies.extend(records.iter().map(|policy| {
         let label = policy
             .scope_id

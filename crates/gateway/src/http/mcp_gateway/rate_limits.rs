@@ -64,6 +64,26 @@ pub(super) fn rejection_response(id: Option<&Value>, status: &RateLimitStatus) -
     response
 }
 
+/// The JSON-RPC error for a limiter that cannot check a call in `closed`
+/// mode, with its HTTP status (503).
+pub(super) fn unavailable_response(id: Option<&Value>, error: &GatewayError) -> Response<Body> {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": id.cloned().unwrap_or(Value::Null),
+        "error": {
+            "code": JSON_RPC_INTERNAL_ERROR,
+            "message": error.to_string(),
+        }
+    });
+    let status =
+        StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+    let mut response = (status, Json(body)).into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response
+}
+
 /// Invocation-log metadata naming the policy that rejected the call.
 pub(super) fn rejection_metadata(status: &RateLimitStatus) -> Map<String, Value> {
     Map::from_iter([(

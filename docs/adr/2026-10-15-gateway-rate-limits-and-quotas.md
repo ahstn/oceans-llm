@@ -61,9 +61,9 @@ A request check is one transaction:
 3. Read the previous window's amount and compute the estimate.
 4. If any charge is over its limit, roll back. A rejected request consumes nothing on any scope. Otherwise commit.
 
-**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. The charge is written before the response is handed back, so a caller sending requests one after another always sees its earlier usage. Only a burst of concurrent requests can overshoot a token limit, by up to one request each. Tokens are charged with the usage the provider reports, including partial usage on a failed request, an interrupted stream, or a stream the client cancelled: the provider consumed those tokens. A response's tokens are added to all of its token policies in one transaction, in the window the response finished in. Batches are not rate limited.
+**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. The charge is written before the response is handed back, so a caller sending requests one after another always sees its earlier usage. Only a burst of concurrent requests can overshoot a token limit, by up to one request each. Tokens are charged with the usage the provider reports, including partial usage on a failed request, an interrupted stream, or a stream the client cancelled: the provider consumed those tokens. A response's tokens are added to all of its token policies in one transaction, in the window the response finished in. A cancelled stream is charged in the background; the next check of the same counter on that replica waits up to a second for it. Batches are not rate limited.
 
-Counter rows expire one window after their window ends. Each replica deletes up to 500 expired rows at most once a minute.
+Counter rows expire one window after their window ends. Each replica deletes up to 500 expired rows at most once a minute, on any checked request, whether or not a policy matches it.
 
 When there are no matching policies, a request makes no database call. Policies are cached per replica. The cache reloads every `rate_limits.policy_refresh_seconds` (default 10) and right after an admin change on the same replica, so changes reach other replicas within the refresh interval.
 
@@ -72,9 +72,9 @@ When there are no matching policies, a request makes no database call. Policies 
 If the counter store errors, `rate_limits.failure_mode` decides:
 
 - `open` (default): the request is admitted without rate-limit headers, the gateway logs a warning, and the `gateway.rate_limit.decisions` metric counts it with outcome `store_error`.
-- `closed`: the request is rejected with `503`. Token checks only read counters, so after a token usage write fails, token-limited requests are also rejected for 5 seconds before the store is tried again.
+- `closed`: the request is rejected with `503` (for MCP, a JSON-RPC error with code `-32603`). Token checks only read counters, so after a token usage write fails, token-limited requests are also rejected for 5 seconds before the store is tried again.
 
-A replica that has not loaded the admin policies yet, and cannot, treats that as a store failure in either mode, since it cannot tell which policies a request matches. A replica that loaded them before keeps enforcing that set. A refresh that started before an admin change on the same replica is not cached, so the change applies on that replica's next request.
+A replica that has not loaded the admin policies yet, and cannot, treats that as a store failure in either mode, since it cannot tell which policies a request matches. A replica that loaded them before keeps enforcing that set. A gateway refuses to start if its config and enabled admin policies exceed the per-operation cap. A refresh that started before an admin change on the same replica is not cached, so the change applies on that replica's next request.
 
 The rate-limit table is in the same database that authenticates API keys. When that database is down, most requests fail anyway. Failing open stops a counter-only problem, such as lock contention, from becoming an outage.
 

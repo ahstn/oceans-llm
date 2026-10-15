@@ -11,7 +11,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicI64, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -368,20 +368,33 @@ const INCOMPLETE_POLICY_RETRY: Duration = Duration::from_secs(1);
 const TOKEN_WRITE_FAILURE_HOLD_SECONDS: i64 = 5;
 /// The longest a check waits for this replica's detached token charges.
 const PENDING_CHARGE_WAIT: Duration = Duration::from_secs(1);
+/// Marks a pending charge whose counters were not known when it started.
+/// Counter keys are length-prefixed, so this can never equal one.
+const ANY_PENDING_COUNTER: &str = "*";
 
 type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
-/// Counts one detached token charge until dropped, then wakes waiting checks
-/// once none remain. Dropping also covers a charge task that panicked.
+/// Marks a token charge's counters as pending until dropped, then wakes
+/// waiting checks. Dropping also covers a charge task that panicked.
 struct PendingCharge {
-    pending: Arc<AtomicUsize>,
+    keys: Vec<String>,
+    pending: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     done: Arc<tokio::sync::Notify>,
 }
 
 impl PendingCharge {
-    fn start(pending: &Arc<AtomicUsize>, done: &Arc<tokio::sync::Notify>) -> Self {
-        pending.fetch_add(1, Ordering::SeqCst);
+    fn start(
+        keys: Vec<String>,
+        pending: &Arc<std::sync::Mutex<HashMap<String, usize>>>,
+        done: &Arc<tokio::sync::Notify>,
+    ) -> Self {
+        let mut map = pending.lock().unwrap_or_else(|poison| poison.into_inner());
+        for key in &keys {
+            *map.entry(key.clone()).or_default() += 1;
+        }
+        drop(map);
         Self {
+            keys,
             pending: Arc::clone(pending),
             done: Arc::clone(done),
         }
@@ -390,9 +403,20 @@ impl PendingCharge {
 
 impl Drop for PendingCharge {
     fn drop(&mut self) {
-        if self.pending.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.done.notify_waiters();
+        let mut map = self
+            .pending
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        for key in &self.keys {
+            if let Some(count) = map.get_mut(key) {
+                *count -= 1;
+                if *count == 0 {
+                    map.remove(key);
+                }
+            }
         }
+        drop(map);
+        self.done.notify_waiters();
     }
 }
 
@@ -408,9 +432,9 @@ pub struct RateLimiter {
     last_purge: AtomicI64,
     /// Unix seconds of the last failed token usage write, or 0.
     token_write_failed_at: AtomicI64,
-    /// Detached token charges still being written, and a wake-up for checks
-    /// waiting on them.
-    pending_charges: Arc<AtomicUsize>,
+    /// Token counters with a charge still being written, and a wake-up for
+    /// checks waiting on them.
+    pending_charges: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     charges_done: Arc<tokio::sync::Notify>,
     clock: Clock,
 }
@@ -451,7 +475,7 @@ impl RateLimiter {
             generation: AtomicU64::new(0),
             last_purge: AtomicI64::new(0),
             token_write_failed_at: AtomicI64::new(0),
-            pending_charges: Arc::new(AtomicUsize::new(0)),
+            pending_charges: Arc::default(),
             charges_done: Arc::new(tokio::sync::Notify::new()),
             clock: Arc::new(OffsetDateTime::now_utc),
         }
@@ -478,7 +502,6 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
-        let pending_charge_timed_out = !self.wait_for_pending_charges().await;
         let set = self.policies().await;
         if !set.complete {
             // Admin policies are unknown, so this request may be one they
@@ -508,9 +531,22 @@ impl RateLimiter {
                 ))
             })
             .collect();
+        if let Some(store) = &self.store {
+            // Expired counters are cleaned up even when nothing matches, so
+            // removing every policy does not strand old rows.
+            self.maybe_purge(store, now);
+        }
         if matched.is_empty() {
             return Ok(RateLimitDecision::Unlimited);
         }
+        // Only this request's token counters matter: wait for their charges
+        // still in flight on this replica, and nothing else.
+        let token_keys: Vec<&str> = matched
+            .iter()
+            .filter(|(policy, _)| policy.metric == RateLimitMetric::Tokens)
+            .map(|(_, charge)| charge.counter_key.as_str())
+            .collect();
+        let pending_charge_timed_out = !self.wait_for_pending_charges(&token_keys).await;
         // In `closed` mode a token check cannot trust a counter whose pending
         // charge has not landed, any more than one whose write failed.
         let token_counters_stale = self.token_writes_failing(now)
@@ -534,7 +570,6 @@ impl RateLimiter {
             Ok(result) => result,
             Err(error) => return self.store_failure(subject.operation, error),
         };
-        self.maybe_purge(store, now);
 
         let mut statuses = matched
             .iter()
@@ -621,30 +656,42 @@ impl RateLimiter {
         self.add_tokens(subject, total_tokens, (self.clock)()).await;
     }
 
-    /// [`Self::record_tokens`] for code that cannot await, such as a stream
-    /// the client dropped. The charge runs on its own task, and the next check
-    /// on this replica waits for it, so a caller that cancels and retries
-    /// straight away still sees the usage.
+    /// Starts a token charge on its own task and returns its handle. The
+    /// normal path awaits the handle, so the charge has landed before the
+    /// response completes, as callers on other replicas need. If that caller
+    /// is cancelled, or cannot await (a dropped stream), the task still
+    /// finishes, and checks on this replica for the same counters wait for it.
     pub fn record_tokens_detached(
         self: &Arc<Self>,
         subject: &RateLimitSubject<'_>,
         total_tokens: i64,
-    ) {
+    ) -> Option<tokio::task::JoinHandle<()>> {
         if total_tokens <= 0 || self.store.is_none() {
-            return;
+            return None;
         }
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
+        let runtime = tokio::runtime::Handle::try_current().ok()?;
         let finished_at = (self.clock)();
-        let pending = PendingCharge::start(&self.pending_charges, &self.charges_done);
+        // Counters known from the cached set are marked pending right away;
+        // the task works the final set out again when it runs. Without a
+        // cached set (just after an invalidation) every token check waits.
+        let keys = self.cached(true).map_or_else(
+            || vec![ANY_PENDING_COUNTER.to_string()],
+            |set| {
+                set.for_operation(subject.operation)
+                    .iter()
+                    .filter(|policy| policy.metric == RateLimitMetric::Tokens)
+                    .filter_map(|policy| policy.counter_key(subject))
+                    .collect()
+            },
+        );
+        let pending = PendingCharge::start(keys, &self.pending_charges, &self.charges_done);
         let limiter = Arc::clone(self);
         let operation = subject.operation;
         let api_key_id = subject.api_key_id;
         let user_id = subject.user_id;
         let team_id = subject.team_id;
         let model_keys: Vec<String> = subject.model_keys.iter().map(ToString::to_string).collect();
-        runtime.spawn(async move {
+        Some(runtime.spawn(async move {
             let _pending = pending;
             let model_keys: Vec<&str> = model_keys.iter().map(String::as_str).collect();
             let subject = RateLimitSubject {
@@ -658,13 +705,20 @@ impl RateLimiter {
             limiter
                 .add_tokens(&subject, total_tokens, finished_at)
                 .await;
-        });
+        }))
     }
 
-    /// Waits for this replica's detached token charges. Returns false when
-    /// they were still pending at the timeout.
-    async fn wait_for_pending_charges(&self) -> bool {
-        if self.pending_charges.load(Ordering::SeqCst) == 0 {
+    /// Waits for charges in flight on this replica to any of `keys`. Returns
+    /// false when some were still pending at the timeout.
+    async fn wait_for_pending_charges(&self, keys: &[&str]) -> bool {
+        let any_pending = || {
+            let map = self
+                .pending_charges
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            map.contains_key(ANY_PENDING_COUNTER) || keys.iter().any(|key| map.contains_key(*key))
+        };
+        if keys.is_empty() || !any_pending() {
             return true;
         }
         let drained = async {
@@ -672,7 +726,7 @@ impl RateLimiter {
                 let notified = self.charges_done.notified();
                 tokio::pin!(notified);
                 notified.as_mut().enable();
-                if self.pending_charges.load(Ordering::SeqCst) == 0 {
+                if !any_pending() {
                     return;
                 }
                 notified.await;
@@ -697,6 +751,13 @@ impl RateLimiter {
             return;
         };
         let set = self.policies().await;
+        if !set.complete {
+            // Admin policies are unknown, so charging only the config subset
+            // would lose this usage silently. Treat it as a failed write.
+            tracing::warn!("recording rate-limited token usage without the admin policies");
+            self.mark_token_write_failed();
+            return;
+        }
         let increments: Vec<_> = set
             .for_operation(subject.operation)
             .iter()
@@ -712,16 +773,34 @@ impl RateLimiter {
         if increments.is_empty() {
             return;
         }
+        let started_at = (self.clock)().unix_timestamp();
         match store.add_rate_limit_usage(&increments).await {
-            Ok(()) => self.token_write_failed_at.store(0, Ordering::Relaxed),
+            Ok(()) => {
+                // Only a write that started after the recorded failure shows
+                // the store has recovered; a concurrent one that started
+                // earlier must not clear another write's failure.
+                let failed_at = self.token_write_failed_at.load(Ordering::SeqCst);
+                if failed_at != 0 && failed_at < started_at {
+                    let _ = self.token_write_failed_at.compare_exchange(
+                        failed_at,
+                        0,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    );
+                }
+            }
             Err(error) => {
                 tracing::warn!(error = %error, "recording rate-limited token usage failed");
-                // Stamp when the failure was seen: a write that took longer
-                // than the hold to fail must still start a full hold.
-                self.token_write_failed_at
-                    .store((self.clock)().unix_timestamp().max(1), Ordering::Relaxed);
+                self.mark_token_write_failed();
             }
         }
+    }
+
+    /// Stamps when a failure was seen: a write that took longer than the hold
+    /// to fail must still start a full hold.
+    fn mark_token_write_failed(&self) {
+        self.token_write_failed_at
+            .store((self.clock)().unix_timestamp().max(1), Ordering::SeqCst);
     }
 
     /// Whether `closed` mode should reject token-limited traffic because a
@@ -905,6 +984,35 @@ impl RateLimiter {
             ))));
         }
         self.invalidate();
+        Ok(())
+    }
+
+    /// Fails when config and enabled admin policies together exceed the
+    /// per-operation cap, so a gateway never starts with an oversized set
+    /// (for example, after config policies were added to a full database).
+    pub async fn validate_policy_capacity(&self) -> Result<(), GatewayError> {
+        let Some(store) = &self.store else {
+            return Ok(());
+        };
+        let admin = store.list_enabled_rate_limit_policies().await?;
+        for operation in RateLimitOperation::ALL {
+            let count = admin
+                .iter()
+                .filter(|policy| policy.operation == operation)
+                .count()
+                + self
+                    .settings
+                    .config_policies
+                    .iter()
+                    .filter(|policy| policy.operation == operation)
+                    .count();
+            if count > MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "{count} rate limit policies are enabled for `{}` (config and admin combined); at most {MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION} are allowed. Pause admin policies or remove config ones",
+                    operation.as_str()
+                )));
+            }
+        }
         Ok(())
     }
 

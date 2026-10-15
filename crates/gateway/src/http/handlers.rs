@@ -1105,10 +1105,14 @@ fn spawn_cancelled_stream_token_charge(state: &LoggingBodyStreamState) {
     ];
     let subject =
         RateLimitSubject::new(RateLimitOperation::Inference, &state.auth).with_models(&model_keys);
-    state
-        .service
-        .rate_limiter()
-        .record_tokens_detached(&subject, total_tokens);
+    // Nothing can await here: the task runs on, and this replica's next
+    // check for the same counters waits for it.
+    drop(
+        state
+            .service
+            .rate_limiter()
+            .record_tokens_detached(&subject, total_tokens),
+    );
 }
 
 /// The tokens a token limit charges: the reported total, or prompt plus
@@ -2070,9 +2074,11 @@ async fn finalize_successful_usage_accounting_from_parts(
 ) {
     // Token limits count what the provider reported, whatever happens to the
     // ledger and budget accounting below. The charge starts before anything
-    // here awaits, so a client that drops a finished stream mid-accounting
-    // cannot cancel it, and the drop path never charges it a second time.
-    charge_rate_limit_tokens(
+    // here awaits, on its own task, so a client that drops a finished stream
+    // mid-accounting cannot cancel it, and the drop path never charges it a
+    // second time. It is awaited below, so it has landed before the response
+    // completes, as a caller's next request on another replica needs.
+    let token_charge = charge_rate_limit_tokens(
         service,
         &context,
         &gateway_service::request_logging::usage_summary_from_value(provider_usage.as_ref()),
@@ -2103,23 +2109,24 @@ async fn finalize_successful_usage_accounting_from_parts(
             metrics.record_usage_record_failure(&context.labels, context.operation);
         }
     }
+    if let Some(token_charge) = token_charge {
+        let _ = token_charge.await;
+    }
 }
 
 /// Token limits are checked before a request and charged here, once the
-/// provider has reported usage. The charge runs detached; the next check on
-/// this replica waits for it, so a sequential caller always sees the usage.
+/// provider has reported usage. Returns the charge's task, for the caller to
+/// await.
 fn charge_rate_limit_tokens(
     service: &AppGatewayService,
     context: &UsageAccountingContext<'_>,
     usage: &gateway_service::request_logging::UsageSummary,
-) {
-    let Some(total_tokens) = chargeable_tokens(
+) -> Option<tokio::task::JoinHandle<()>> {
+    let total_tokens = chargeable_tokens(
         usage.total_tokens,
         usage.prompt_tokens,
         usage.completion_tokens,
-    ) else {
-        return;
-    };
+    )?;
     let model_keys = [
         context.labels.requested_model,
         context.labels.resolved_model,
@@ -2128,7 +2135,7 @@ fn charge_rate_limit_tokens(
         RateLimitSubject::new(RateLimitOperation::Inference, context.auth).with_models(&model_keys);
     service
         .rate_limiter()
-        .record_tokens_detached(&subject, total_tokens);
+        .record_tokens_detached(&subject, total_tokens)
 }
 
 fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {

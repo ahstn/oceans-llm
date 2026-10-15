@@ -388,7 +388,27 @@ async fn handle_tools_call(
             let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
             return rate_limits::rejection_response(id.as_ref(), &rejected);
         }
-        Err(error) => return mcp_error_response(error),
+        Err(error) => {
+            // The limiter cannot check the call in `closed` mode: a JSON-RPC
+            // error with the HTTP 503, as the aggregate route returns.
+            let log_input = tool_invocation_log_input(
+                &server,
+                "tools/call",
+                &id,
+                Some(mcp_tool_invocation_id),
+                Some(tool.mcp_tool_id),
+                &tool.upstream_name,
+                &tool.display_name,
+                McpToolInvocationStatus::GatewayError,
+                McpToolPolicyResult::NotEvaluated,
+                Some(error.error_code().to_string()),
+                arguments,
+                None,
+                started_at,
+            );
+            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
+            return rate_limits::unavailable_response(id.as_ref(), &error);
+        }
     }
     let normalized_arguments = arguments.clone().unwrap_or_else(|| json!({}));
     let guardrail_request_id = mcp_request_id(&id);

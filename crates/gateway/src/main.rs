@@ -232,6 +232,11 @@ async fn run_serve_with_store(
         .validate_route_context_overrides()
         .await
         .context("invalid route context-window override")?;
+    service
+        .rate_limiter()
+        .validate_policy_capacity()
+        .await
+        .context("invalid rate limit policy set")?;
     let known_mcp_servers = service
         .store()
         .list_external_mcp_servers(true)

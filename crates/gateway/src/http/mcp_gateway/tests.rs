@@ -958,4 +958,23 @@ mod proxy_policy {
                 .expect("JSON-RPC error");
         assert_eq!(body["error"]["code"], -32029);
     }
+
+    #[tokio::test]
+    async fn closed_rate_limit_failures_return_a_json_rpc_503() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        crate::http::test_support::install_down_rate_limiter(&mut state);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(&state, &auth, search_call(9)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["jsonrpc"], "2.0");
+        assert_eq!(body["id"], 9);
+        assert_eq!(body["error"]["code"], -32603);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].status, McpToolInvocationStatus::GatewayError);
+    }
 }
