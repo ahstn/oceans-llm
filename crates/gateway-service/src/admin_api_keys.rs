@@ -96,6 +96,16 @@ pub struct CreateAdminApiKeyResult {
     pub raw_key: String,
 }
 
+/// An API key after an access update, with the access the update replaced.
+#[derive(Debug, Clone)]
+pub struct UpdateAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// The grant mode and model keys before the update, read under the same lock
+    /// as the write, or `None` when the key already had this access and nothing
+    /// was written.
+    pub replaced_access: Option<(ApiKeyModelGrantMode, Vec<String>)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RevokeAdminApiKeyResult {
     pub api_key: AdminApiKeySummary,
@@ -509,7 +519,7 @@ where
         api_key_id: Uuid,
         request: UpdateAdminApiKeyInput,
         progress: &AuditProgress,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+    ) -> Result<UpdateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
         let service_accounts = self.repo.list_service_accounts().await?;
@@ -539,15 +549,41 @@ where
             .iter()
             .map(|model| model.id)
             .collect::<Vec<_>>();
-        self.repo
+        let replaced = self
+            .repo
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
-        progress.landed_on(api_key.id);
+        if replaced.is_some() {
+            progress.landed_on(api_key.id);
+        }
+        // Grants name models by id; a grant to a model no longer listed keeps its id.
+        let replaced_access = replaced.map(|access| {
+            let model_keys = access
+                .model_ids
+                .iter()
+                .map(|model_id| {
+                    models
+                        .iter()
+                        .find(|model| model.id == *model_id)
+                        .map_or_else(|| model_id.to_string(), |model| model.model_key.clone())
+                })
+                .collect();
+            (access.model_grant_mode, model_keys)
+        });
 
         let mut api_key = api_key;
         api_key.model_grant_mode = model_grant_mode;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        Ok(UpdateAdminApiKeyResult {
+            api_key: build_api_key_summary(
+                &api_key,
+                &users,
+                &teams,
+                &service_accounts,
+                &granted_models,
+            )?,
+            replaced_access,
+        })
     }
 }
 

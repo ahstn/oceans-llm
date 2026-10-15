@@ -185,13 +185,8 @@ pub async fn update_mcp_server(
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    let before_server = state
-        .store
-        .get_external_mcp_server(server_id)
-        .await?
-        .map(map_server);
     let service = McpRegistryService::new(state.store.clone());
-    let server = service
+    let update = service
         .update_server(
             server_id,
             UpdateExternalMcpServerInput {
@@ -204,25 +199,17 @@ pub async fn update_mcp_server(
             },
         )
         .await?;
-    let server = map_server(server);
-    // Saving the server unchanged is not a change, so it records nothing. The
-    // comparison uses the unredacted settings, so rotating a credential inside
-    // the URL still counts even though the stored summary hides it.
-    let changed = before_server
-        .as_ref()
-        .is_none_or(|before| server_settings(before) != server_settings(&server));
-    if changed {
+    let server = map_server(update.current);
+    // The store compares the unredacted settings under the write lock and writes
+    // nothing when they match, so a resave records nothing while rotating a
+    // credential inside the URL still counts even though the summary hides it.
+    if let Some(previous) = update.previous {
         state
             .audit()
             .record(
                 &meta.user_context(&actor),
                 server_event(actions::MCP_SERVER_UPDATED, &server)
-                    .before(
-                        before_server
-                            .as_ref()
-                            .map(server_audit_summary)
-                            .unwrap_or(serde_json::Value::Null),
-                    )
+                    .before(server_audit_summary(&map_server(previous)))
                     .after(server_audit_summary(&server)),
             )
             .await;
@@ -512,27 +499,23 @@ pub async fn update_mcp_toolset(
     Json(request): Json<UpdateMcpToolsetRequest>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
-    let before = toolset_before_summary(&state, toolset_id).await?;
     let record = UpdateMcpToolsetRecord {
         toolset_id,
         display_name: request.display_name,
         description: request.description,
         updated_at: OffsetDateTime::now_utc(),
     };
-    let toolset = state.store.update_mcp_toolset(&record).await?;
-    let after = serde_json::json!({
-        "display_name": toolset.display_name,
-        "description": toolset.description,
-    });
-    // Saving the tool set's details unchanged is not a change, so it records nothing.
-    if before != after {
+    let update = state.store.update_mcp_toolset(&record).await?;
+    let toolset = update.current;
+    // The store writes nothing when the details already match, so a resave records nothing.
+    if let Some(previous) = update.previous {
         state
             .audit()
             .record(
                 &meta.user_context(&actor),
                 toolset_event(actions::MCP_TOOLSET_UPDATED, &map_toolset(toolset.clone()))
-                    .before(before)
-                    .after(after),
+                    .before(toolset_details(&previous))
+                    .after(toolset_details(&toolset)),
             )
             .await;
     }
@@ -622,14 +605,15 @@ pub async fn replace_mcp_toolset_tools(
         ids.sort();
         ids
     };
-    let before = sorted_ids(&state.store.list_mcp_toolset_tools(toolset_id).await?);
-    let tools = state
+    let update = state
         .store
         .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
         .await?;
-    let after = sorted_ids(&tools);
-    // Saving the same membership changes no access, so it records nothing.
-    if before != after {
+    let tools = update.current;
+    // The store writes nothing when the membership already matches, so a resave
+    // changes no access and records nothing.
+    if let Some(previous) = update.previous {
+        let (before, after) = (sorted_ids(&previous), sorted_ids(&tools));
         state
             .audit()
             .record(
@@ -993,19 +977,10 @@ async fn server_before_summary(
         .unwrap_or(serde_json::Value::Null))
 }
 
-async fn toolset_before_summary(
-    state: &AppState,
-    toolset_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
-    Ok(state
-        .store
-        .get_mcp_toolset(toolset_id)
-        .await?
-        .map(|toolset| {
-            serde_json::json!({
-                "display_name": toolset.display_name,
-                "description": toolset.description,
-            })
-        })
-        .unwrap_or(serde_json::Value::Null))
+/// The audited details of a tool set.
+fn toolset_details(toolset: &gateway_core::McpToolsetRecord) -> serde_json::Value {
+    serde_json::json!({
+        "display_name": toolset.display_name,
+        "description": toolset.description,
+    })
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 const REPOSITORY_COLUMNS: &str = "repository_id, provider, external_repository_id, owner, name, full_name, service_account_id, status, inline_review_enabled, pr_summary_enabled, diagrams_enabled, linked_issue_detection_enabled, linked_issue_assessment_enabled, default_model_key, max_inline_comments, request_changes_on_high_severity, settings_json, created_at, updated_at";
 const ALIASED_REPOSITORY_COLUMNS: &str = "r.repository_id, r.provider, r.external_repository_id, r.owner, r.name, r.full_name, r.service_account_id, r.status, r.inline_review_enabled, r.pr_summary_enabled, r.diagrams_enabled, r.linked_issue_detection_enabled, r.linked_issue_assessment_enabled, r.default_model_key, r.max_inline_comments, r.request_changes_on_high_severity, r.settings_json, r.created_at, r.updated_at";
@@ -294,9 +295,31 @@ impl ReviewAgentRepository for PostgresStore {
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<Updated<ReviewAgentRepositoryRecord>, StoreError> {
         let settings_json = serialize_json(&input.settings_json)?;
-        let result = sqlx::query(
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let sql = format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1 FOR UPDATE"
+        );
+        let existing = sqlx::query(&sql)
+            .bind(input.repository_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_repository)
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "review agent repository `{}` was not found",
+                    input.repository_id
+                ))
+            })?;
+        if crate::shared::review_agent_repository_matches(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        sqlx::query(
             r#"
             UPDATE review_agent_repositories
             SET external_repository_id = $1, owner = $2, name = $3, full_name = $4,
@@ -326,16 +349,14 @@ impl ReviewAgentRepository for PostgresStore {
         .bind(settings_json)
         .bind(input.updated_at.unix_timestamp())
         .bind(input.repository_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{}` was not found",
-                input.repository_id
-            )));
-        }
-        load_repository(&self.pool, input.repository_id).await
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current: load_repository(&self.pool, input.repository_id).await?,
+            previous: Some(existing),
+        })
     }
 
     async fn set_review_agent_repository_status(

@@ -261,7 +261,7 @@ impl GatewayStore for LibsqlStore {
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::update_service_account_profile(
             self,
             service_account_id,
@@ -369,7 +369,7 @@ impl GatewayStore for LibsqlStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_name(self, team_id, team_name, updated_at).await
     }
 
@@ -378,7 +378,7 @@ impl GatewayStore for LibsqlStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_tags(self, team_id, tags, updated_at).await
     }
 
@@ -409,7 +409,7 @@ impl GatewayStore for LibsqlStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
     }
 
@@ -418,7 +418,7 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_tags(self, user_id, tags, updated_at).await
     }
 
@@ -479,7 +479,7 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_membership_role(self, team_id, user_id, role, updated_at).await
     }
 
@@ -659,11 +659,11 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oidc_link(self, user_id, oidc_provider_id, created_at).await
     }
 
-    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oidc_link(self, user_id).await
     }
 
@@ -707,15 +707,15 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oauth_link(self, user_id, oauth_provider_id, created_at).await
     }
 
-    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oauth_link(self, user_id).await
     }
 
-    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::delete_user_password_auth(self, user_id).await
     }
 

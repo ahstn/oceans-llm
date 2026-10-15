@@ -48,7 +48,7 @@ impl RateLimitRepository for AnyStore {
     async fn update_rate_limit_policy(
         &self,
         policy: &RateLimitPolicyRecord,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<gateway_core::Updated<RateLimitPolicyRecord>>, StoreError> {
         match self {
             Self::Libsql(store) => store.update_rate_limit_policy(policy).await,
             Self::Postgres(store) => store.update_rate_limit_policy(policy).await,

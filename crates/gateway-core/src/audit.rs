@@ -12,6 +12,30 @@ use uuid::Uuid;
 
 use crate::error::StoreError;
 
+/// The result of an update that writes only when the value differs. `previous` is
+/// read under the same lock as the write, so it is the value this update replaced;
+/// it is `None` when the stored value already matched and nothing was written.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Updated<T> {
+    pub current: T,
+    pub previous: Option<T>,
+}
+
+impl<T> Updated<T> {
+    #[must_use]
+    pub fn unchanged(current: T) -> Self {
+        Self {
+            current,
+            previous: None,
+        }
+    }
+
+    #[must_use]
+    pub fn changed(&self) -> bool {
+        self.previous.is_some()
+    }
+}
+
 pub const DEFAULT_AUDIT_LOG_PAGE_SIZE: u32 = 50;
 pub const MAX_AUDIT_LOG_PAGE_SIZE: u32 = 200;
 

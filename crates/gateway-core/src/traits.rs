@@ -132,12 +132,15 @@ pub trait AdminApiKeyRepository: Send + Sync {
         ))
     }
 
+    /// Replaces the key's grant mode and model grants. Returns the access it
+    /// replaced, read under the same lock, or `None` when the key already had this
+    /// access and nothing was written.
     async fn replace_api_key_model_access(
         &self,
         api_key_id: Uuid,
         model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
-    ) -> Result<(), StoreError>;
+    ) -> Result<Option<crate::domain::ApiKeyModelAccess>, StoreError>;
 
     async fn revoke_api_key(
         &self,
@@ -181,10 +184,11 @@ pub trait ReviewAgentRepository: Send + Sync {
         input: &NewReviewAgentRepositoryRecord,
     ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
 
+    /// Updates the repository. Nothing is written when its settings already match.
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<ReviewAgentRepositoryRecord>, StoreError>;
 
     /// Sets the status. The flag is `false` when the repository already had it,
     /// in which case nothing is written.
@@ -1022,10 +1026,11 @@ pub trait McpRegistryRepository: Send + Sync {
         input: &NewExternalMcpServerRecord,
     ) -> Result<ExternalMcpServerRecord, StoreError>;
 
+    /// Updates the server's settings. Nothing is written when they already match.
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<ExternalMcpServerRecord>, StoreError>;
 
     /// Disables the server. The flag is `false` when it was already disabled,
     /// in which case nothing is written.
@@ -1071,10 +1076,11 @@ pub trait McpAccessRepository: Send + Sync {
         input: &NewMcpToolsetRecord,
     ) -> Result<McpToolsetRecord, StoreError>;
 
+    /// Updates the tool set's details. Nothing is written when they already match.
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<McpToolsetRecord>, StoreError>;
 
     async fn disable_mcp_toolset(
         &self,
@@ -1082,12 +1088,13 @@ pub trait McpAccessRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<McpToolsetRecord, StoreError>;
 
+    /// Replaces the tool set's tools. Nothing is written when the set already matches.
     async fn replace_mcp_toolset_tools(
         &self,
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
+    ) -> Result<crate::audit::Updated<Vec<McpToolsetToolRecord>>, StoreError>;
 
     async fn list_mcp_toolset_tools(
         &self,
@@ -1420,11 +1427,12 @@ pub trait RateLimitRepository: Send + Sync {
         policy: &RateLimitPolicyRecord,
     ) -> Result<(), StoreError>;
 
-    /// Returns `false` when the policy does not exist.
+    /// Saves the policy, or writes nothing when its settings already match.
+    /// Returns `None` when the policy does not exist.
     async fn update_rate_limit_policy(
         &self,
         policy: &RateLimitPolicyRecord,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<crate::audit::Updated<RateLimitPolicyRecord>>, StoreError>;
 
     /// Returns `false` when the policy does not exist.
     /// Deletes the policy and returns it as it was, or `None` when it was missing.

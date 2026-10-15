@@ -398,18 +398,6 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
 /// [`map_server`]; credentials, query strings and fragments are stripped from the
 /// server URL and from every URL in the auth config (OAuth issuer, endpoints and
 /// resource).
-/// A server's settings without timestamps, unredacted. Only compared to tell
-/// whether an update changed anything; never stored.
-pub(super) fn server_settings(server: &McpServerView) -> Value {
-    let mut settings = serde_json::to_value(server).unwrap_or(Value::Null);
-    if let Some(object) = settings.as_object_mut() {
-        for volatile in ["created_at", "updated_at", "last_discovery_at"] {
-            object.remove(volatile);
-        }
-    }
-    settings
-}
-
 pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
     let mut summary = serde_json::to_value(server).unwrap_or(Value::Null);
     if let Some(object) = summary.as_object_mut() {

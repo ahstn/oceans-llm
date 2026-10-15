@@ -408,11 +408,11 @@ pub async fn update_review_agent_repository(
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
     let (actor, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
-    let before = map_repository(require_visible_repository(&state, &scope, repository_id).await?);
+    require_visible_repository(&state, &scope, repository_id).await?;
     let service_account_id = parse_uuid(&request.service_account_id, "service_account_id")?;
     authorize_service_account_scope(&state, &scope, service_account_id).await?;
     let settings = settings_from_view(request.settings)?;
-    let repository = review_agent_service(&state)
+    let update = review_agent_service(&state)
         .update_repository(UpdateReviewAgentRepositoryInput {
             repository_id,
             external_repository_id: request.external_repository_id,
@@ -425,26 +425,26 @@ pub async fn update_review_agent_repository(
             settings_json: validate_settings_json(request.settings_json)?,
         })
         .await?;
-    let repository = map_repository(repository);
-    // A status change here is the same transition the disable and reactivate
-    // endpoints record, so it gets their action.
-    let action = if before.status == repository.status {
-        actions::REVIEW_AGENT_REPOSITORY_UPDATED
-    } else if repository.status == ReviewAgentRepositoryStatus::Disabled.as_str() {
-        actions::REVIEW_AGENT_REPOSITORY_DISABLED
-    } else {
-        actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
-    };
-    let (before, after) = (repository_summary(&before), repository_summary(&repository));
-    // Saving the repository unchanged is not a change, so it records nothing.
-    if before != after {
+    let repository = map_repository(update.current);
+    // The store writes nothing when the repository already matches, so a resave
+    // records nothing. The previous record is read under the write lock.
+    if let Some(before) = update.previous.map(map_repository) {
+        // A status change here is the same transition the disable and reactivate
+        // endpoints record, so it gets their action.
+        let action = if before.status == repository.status {
+            actions::REVIEW_AGENT_REPOSITORY_UPDATED
+        } else if repository.status == ReviewAgentRepositoryStatus::Disabled.as_str() {
+            actions::REVIEW_AGENT_REPOSITORY_DISABLED
+        } else {
+            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+        };
         state
             .audit()
             .record(
                 &meta.user_context(&actor),
                 repository_event(action, &repository)
-                    .before(before)
-                    .after(after),
+                    .before(repository_summary(&before))
+                    .after(repository_summary(&repository)),
             )
             .await;
     }

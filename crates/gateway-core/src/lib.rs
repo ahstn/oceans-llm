@@ -36,6 +36,7 @@ pub use agent_session_analysis::{
 pub use audit::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
     AuditLogRepository, DEFAULT_AUDIT_LOG_PAGE_SIZE, MAX_AUDIT_LOG_PAGE_SIZE, NewAuditLogRecord,
+    Updated,
 };
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
@@ -54,15 +55,15 @@ pub use budgets::{
     BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
 };
 pub use domain::{
-    ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,
-    ApiKeySecretStorageKind, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
-    AwsBedrockRouteCompatibility, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
-    BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+    AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
+    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
+    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode,
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
+    ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,

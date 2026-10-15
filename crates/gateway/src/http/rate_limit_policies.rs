@@ -232,17 +232,18 @@ pub async fn update_rate_limit_policy(
         OffsetDateTime::now_utc(),
     )
     .await?;
-    let updated = limiter.update_admin_policy(policy).await?;
-    let (before, after) = (policy_summary(&before), policy_summary(&updated));
-    // Saving a policy unchanged is not a change.
-    if before != after {
+    let update = limiter.update_admin_policy(policy).await?;
+    let updated = update.current;
+    // The store compares the settings under the write lock and writes nothing when
+    // they match, so saving a policy unchanged records nothing.
+    if let Some(previous) = update.previous {
         state
             .audit()
             .record(
                 &meta.user_context(&actor),
                 policy_event(actions::RATE_LIMIT_POLICY_UPDATED, &updated)
-                    .before(before)
-                    .after(after),
+                    .before(policy_summary(&previous))
+                    .after(policy_summary(&updated)),
             )
             .await;
     }

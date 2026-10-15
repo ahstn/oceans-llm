@@ -352,35 +352,55 @@ impl PostgresStore {
         Ok(())
     }
 
+    /// Renames or retags an active service account. Returns the account as it was
+    /// before the save, read under the same row lock, or `None` when it already
+    /// had this name and these tags and nothing was written.
     pub async fn update_service_account_profile(
         &self,
         service_account_id: Uuid,
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        let updated = sqlx::query(
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let previous = sqlx::query(
+            r#"
+            SELECT service_account_id, team_id, service_account_key, service_account_name,
+                   status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
+            FROM service_accounts
+            WHERE service_account_id = $1 AND status = 'active'
+            FOR UPDATE
+            "#,
+        )
+        .bind(service_account_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .as_ref()
+        .map(decode_service_account_record)
+        .transpose()?
+        .ok_or_else(|| StoreError::NotFound("active service account not found".to_string()))?;
+        if previous.service_account_name == service_account_name && previous.tags == tags {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        }
+        sqlx::query(
             r#"
             UPDATE service_accounts
             SET service_account_name = $1, tags_json = $2, updated_at = $3
-            WHERE service_account_id = $4 AND status = 'active'
+            WHERE service_account_id = $4
             "#,
         )
         .bind(service_account_name)
         .bind(tags_json)
         .bind(updated_at.unix_timestamp())
         .bind(service_account_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
-        .map_err(to_write_error)?
-        .rows_affected();
-        if updated == 0 {
-            return Err(StoreError::NotFound(
-                "active service account not found".to_string(),
-            ));
-        }
-        Ok(())
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(previous))
     }
 
     pub async fn disable_service_account(
@@ -784,13 +804,14 @@ impl PostgresStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             UPDATE teams
             SET team_name = $1,
                 updated_at = $2
             WHERE team_id = $3
+              AND team_name IS DISTINCT FROM $1
             "#,
         )
         .bind(team_name)
@@ -799,7 +820,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn update_team_tags(
@@ -807,14 +828,15 @@ impl PostgresStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE teams
             SET tags_json = $1,
                 updated_at = $2
             WHERE team_id = $3
+              AND tags_json IS DISTINCT FROM $1
             "#,
         )
         .bind(tags_json)
@@ -823,7 +845,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn create_identity_user(
@@ -892,7 +914,7 @@ impl PostgresStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         let row = sqlx::query(
             r#"
@@ -938,13 +960,14 @@ impl PostgresStore {
             }
         }
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE users
             SET global_role = $1,
                 auth_mode = $2,
                 updated_at = $3
             WHERE user_id = $4
+              AND (global_role IS DISTINCT FROM $1 OR auth_mode IS DISTINCT FROM $2)
             "#,
         )
         .bind(global_role.as_str())
@@ -955,7 +978,7 @@ impl PostgresStore {
         .await
         .map_err(to_write_error)?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn update_user_tags(
@@ -963,14 +986,15 @@ impl PostgresStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE users
             SET tags_json = $1,
                 updated_at = $2
             WHERE user_id = $3
+              AND tags_json IS DISTINCT FROM $1
             "#,
         )
         .bind(tags_json)
@@ -979,7 +1003,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn deactivate_identity_user(
@@ -1217,14 +1241,15 @@ impl PostgresStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             UPDATE team_memberships
             SET role = $1,
                 updated_at = $2
             WHERE team_id = $3
               AND user_id = $4
+              AND role IS DISTINCT FROM $1
             "#,
         )
         .bind(role.as_str())
@@ -1234,7 +1259,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn find_active_password_invitation_for_user(
@@ -1664,14 +1689,15 @@ impl PostgresStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             INSERT INTO user_oidc_links (user_id, oidc_provider_id, created_at)
             VALUES ($1, $2, $3)
             ON CONFLICT(user_id) DO UPDATE SET
                 oidc_provider_id = excluded.oidc_provider_id,
                 created_at = excluded.created_at
+            WHERE user_oidc_links.oidc_provider_id IS DISTINCT FROM excluded.oidc_provider_id
             "#,
         )
         .bind(user_id.to_string())
@@ -1680,16 +1706,16 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
-    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
-        sqlx::query("DELETE FROM user_oidc_links WHERE user_id = $1")
+    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let result = sqlx::query("DELETE FROM user_oidc_links WHERE user_id = $1")
             .bind(user_id.to_string())
             .execute(&self.pool)
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn get_user_oauth_auth(
@@ -1769,14 +1795,15 @@ impl PostgresStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             INSERT INTO user_oauth_links (user_id, oauth_provider_id, created_at)
             VALUES ($1, $2, $3)
             ON CONFLICT(user_id) DO UPDATE SET
                 oauth_provider_id = excluded.oauth_provider_id,
                 created_at = excluded.created_at
+            WHERE user_oauth_links.oauth_provider_id IS DISTINCT FROM excluded.oauth_provider_id
             "#,
         )
         .bind(user_id.to_string())
@@ -1785,25 +1812,25 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
-    pub async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
-        sqlx::query("DELETE FROM user_oauth_links WHERE user_id = $1")
+    pub async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let result = sqlx::query("DELETE FROM user_oauth_links WHERE user_id = $1")
             .bind(user_id.to_string())
             .execute(&self.pool)
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
-    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
-        sqlx::query("DELETE FROM user_password_auth WHERE user_id = $1")
+    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let result = sqlx::query("DELETE FROM user_password_auth WHERE user_id = $1")
             .bind(user_id.to_string())
             .execute(&self.pool)
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn delete_user_oidc_auth(

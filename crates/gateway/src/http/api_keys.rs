@@ -5,7 +5,7 @@ use axum::{
 };
 use gateway_core::{
     AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, GatewayError,
-    GlobalRole, IdentityRepository, MembershipRole, ModelRepository, UserRecord, UserStatus,
+    GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
@@ -252,7 +252,6 @@ pub async fn update_api_key(
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
-    let before = api_key_model_access_summary(&state, api_key_id).await?;
     let service = AdminApiKeyService::new(state.store.clone());
     let requested = serde_json::json!({
         "model_grant_mode": request.model_grant_mode.as_str(),
@@ -267,31 +266,34 @@ pub async fn update_api_key(
         },
         &progress,
     );
-    let api_key = state
+    let result = state
         .audit()
         .audited_steps(
             &meta.user_context(&actor),
             &progress,
             update,
-            // Resubmitting the key's current access changes nothing, so it records nothing.
-            |api_key| {
-                let after = model_access_summary(
-                    Some(api_key.model_grant_mode.as_str()),
-                    api_key.model_keys.clone(),
-                );
-                (after != before).then(|| {
-                    api_key_event(actions::API_KEY_UPDATED, api_key)
-                        .before(&before)
-                        .after(after)
+            // The store reports the access it replaced, read under the write lock, and
+            // writes nothing when the key already has this access, which records nothing.
+            |result| {
+                result.replaced_access.as_ref().map(|(mode, model_keys)| {
+                    api_key_event(actions::API_KEY_UPDATED, &result.api_key)
+                        .before(model_access_summary(
+                            Some(mode.as_str()),
+                            model_keys.clone(),
+                        ))
+                        .after(model_access_summary(
+                            Some(result.api_key.model_grant_mode.as_str()),
+                            result.api_key.model_keys.clone(),
+                        ))
                 })
             },
             |progress, error| {
                 partial_api_key_event(actions::API_KEY_UPDATED, progress, error)
-                    .before(&before)
                     .meta("requested", &requested)
             },
         )
         .await?;
+    let api_key = result.api_key;
 
     Ok(Json(envelope(UpdateApiKeyResponse {
         api_key: map_api_key_summary(api_key),
@@ -497,27 +499,6 @@ fn api_key_event(action: AuditAction, api_key: &AdminApiKeySummary) -> AuditEven
         .label(api_key.name.clone())
         .meta("owner_kind", api_key.owner_kind.as_str())
         .meta("owner_id", api_key.owner_id)
-}
-
-async fn api_key_model_access_summary(
-    state: &AppState,
-    api_key_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
-    let model_grant_mode = state
-        .store
-        .get_api_key_by_id(api_key_id)
-        .await?
-        .map(|api_key| api_key.model_grant_mode.as_str());
-    let model_keys: Vec<String> = state
-        .store
-        .list_models_for_api_keys(&[api_key_id])
-        .await?
-        .remove(&api_key_id)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|model| model.model_key)
-        .collect();
-    Ok(model_access_summary(model_grant_mode, model_keys))
 }
 
 /// Grant mode and sorted model keys, so summaries compare equal when access is.

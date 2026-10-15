@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
@@ -115,6 +116,17 @@ fn discovery_config_changed(
     existing.server_url != input.server_url
         || existing.auth_mode != input.auth_mode
         || existing.auth_config != input.auth_config
+}
+
+/// Whether saving `input` would leave the server's settings as they are.
+fn server_settings_match(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.display_name == input.display_name
+        && existing.description == input.description
+        && existing.timeout_ms == input.timeout_ms
+        && !discovery_config_changed(existing, input)
 }
 
 async fn load_server(
@@ -238,15 +250,21 @@ impl McpRegistryRepository for LibsqlStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let existing = load_server(&self.connection, input.mcp_server_id).await?;
-        let invalidate_discovery = discovery_config_changed(&existing, input);
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
+        // An immediate transaction holds the write lock, so the server read here is
+        // exactly the one this update replaces.
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
-            .map_err(to_query_error)?;
+            .map_err(to_write_error)?;
+        let existing = load_server(&tx, input.mcp_server_id).await?;
+        if server_settings_match(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         tx.execute(
             r#"
             UPDATE external_mcp_servers
@@ -295,7 +313,10 @@ impl McpRegistryRepository for LibsqlStore {
             .map_err(to_write_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
-        load_server(&self.connection, input.mcp_server_id).await
+        Ok(Updated {
+            current: load_server(&self.connection, input.mcp_server_id).await?,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_external_mcp_server(

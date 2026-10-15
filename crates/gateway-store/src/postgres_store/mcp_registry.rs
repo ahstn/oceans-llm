@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 macro_rules! server_columns {
     () => {
@@ -131,6 +132,17 @@ fn discovery_config_changed(
         || existing.auth_config != input.auth_config
 }
 
+/// Whether saving `input` would leave the server's settings as they are.
+fn server_settings_match(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.display_name == input.display_name
+        && existing.description == input.description
+        && existing.timeout_ms == input.timeout_ms
+        && !discovery_config_changed(existing, input)
+}
+
 async fn load_server(
     pool: &PgPool,
     mcp_server_id: Uuid,
@@ -226,11 +238,27 @@ impl McpRegistryRepository for PostgresStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let existing = load_server(&self.pool, input.mcp_server_id).await?;
-        let invalidate_discovery = discovery_config_changed(&existing, input);
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the row makes the server read here the one this update replaces.
+        let existing = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
+            .bind(input.mcp_server_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "external MCP server `{}` not found",
+                    input.mcp_server_id
+                ))
+            })
+            .and_then(|row| decode_server(&row))?;
+        if server_settings_match(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         sqlx::query(
             r#"
             UPDATE external_mcp_servers
@@ -278,7 +306,10 @@ impl McpRegistryRepository for PostgresStore {
             .map_err(to_write_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
-        load_server(&self.pool, input.mcp_server_id).await
+        Ok(Updated {
+            current: load_server(&self.pool, input.mcp_server_id).await?,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_external_mcp_server(

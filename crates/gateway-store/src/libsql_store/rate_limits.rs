@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use super::{LibsqlStore, to_query_error, to_write_error};
 use crate::rate_limits::{MAX_PURGE_BATCH, POLICY_COLUMNS, RawPolicyRow, lock_order};
+use gateway_core::Updated;
 
 fn decode(row: &libsql::Row) -> Result<RateLimitPolicyRecord, StoreError> {
     RawPolicyRow {
@@ -166,33 +167,67 @@ impl RateLimitRepository for LibsqlStore {
     async fn update_rate_limit_policy(
         &self,
         policy: &RateLimitPolicyRecord,
-    ) -> Result<bool, StoreError> {
-        let changed = self
+    ) -> Result<Option<Updated<RateLimitPolicyRecord>>, StoreError> {
+        // An immediate transaction holds the write lock, so the policy read here is
+        // exactly the one this update replaces.
+        let tx = self
             .connection
-            .execute(
-                "UPDATE rate_limit_policies SET
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_write_error)?;
+        let mut rows = tx
+            .query(
+                &format!(
+                    "SELECT {POLICY_COLUMNS} FROM rate_limit_policies WHERE rate_limit_policy_id = ?1"
+                ),
+                [policy.rate_limit_policy_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let existing = rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode)
+            .transpose()?;
+        drop(rows);
+        let Some(existing) = existing else {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        };
+        if existing.same_settings(policy) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Some(Updated::unchanged(existing)));
+        }
+        tx.execute(
+            "UPDATE rate_limit_policies SET
                     name = ?2, operation = ?3, scope_kind = ?4, scope_id = ?5, model_key = ?6,
                     mcp_server_id = ?7, metric = ?8, period = ?9, limit_value = ?10,
                     enabled = ?11, updated_at = ?12
                  WHERE rate_limit_policy_id = ?1",
-                libsql::params![
-                    policy.rate_limit_policy_id.to_string(),
-                    policy.name.as_str(),
-                    policy.operation.as_str(),
-                    policy.scope_kind.as_str(),
-                    policy.scope_id.map(|id| id.to_string()),
-                    policy.model_key.as_deref(),
-                    policy.mcp_server_id.map(|id| id.to_string()),
-                    policy.metric.as_str(),
-                    policy.period.as_str(),
-                    policy.limit,
-                    i64::from(policy.enabled),
-                    policy.updated_at.unix_timestamp()
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        Ok(changed > 0)
+            libsql::params![
+                policy.rate_limit_policy_id.to_string(),
+                policy.name.as_str(),
+                policy.operation.as_str(),
+                policy.scope_kind.as_str(),
+                policy.scope_id.map(|id| id.to_string()),
+                policy.model_key.as_deref(),
+                policy.mcp_server_id.map(|id| id.to_string()),
+                policy.metric.as_str(),
+                policy.period.as_str(),
+                policy.limit,
+                i64::from(policy.enabled),
+                policy.updated_at.unix_timestamp()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(Updated {
+            current: policy.clone(),
+            previous: Some(existing),
+        }))
     }
 
     async fn delete_rate_limit_policy(

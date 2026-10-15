@@ -86,7 +86,7 @@ where
     pub async fn update_repository(
         &self,
         input: UpdateReviewAgentRepositoryInput,
-    ) -> Result<ReviewAgentRepositoryRecord, GatewayError> {
+    ) -> Result<gateway_core::Updated<ReviewAgentRepositoryRecord>, GatewayError> {
         self.validate_service_account(input.service_account_id)
             .await?;
         self.store

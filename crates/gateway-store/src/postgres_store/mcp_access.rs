@@ -5,6 +5,7 @@ use gateway_core::McpToolProjection;
 use super::mcp_registry::decode_tool_metadata;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
 const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json::text, t.output_schema_json::text";
@@ -152,6 +153,20 @@ async fn find_toolset(
     row.as_ref().map(decode_toolset).transpose()
 }
 
+async fn toolset_tools_on(
+    executor: impl sqlx::PgExecutor<'_>,
+    toolset_id: Uuid,
+) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    let rows = sqlx::query(
+        "SELECT toolset_id, mcp_tool_id, created_at FROM mcp_toolset_tools WHERE toolset_id = $1 ORDER BY mcp_tool_id",
+    )
+    .bind(toolset_id.to_string())
+    .fetch_all(executor)
+    .await
+    .map_err(to_query_error)?;
+    rows.iter().map(decode_toolset_tool).collect()
+}
+
 async fn load_toolset(pool: &PgPool, toolset_id: Uuid) -> Result<McpToolsetRecord, StoreError> {
     find_toolset(pool, toolset_id)
         .await?
@@ -208,28 +223,49 @@ impl McpAccessRepository for PostgresStore {
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<Updated<McpToolsetRecord>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let sql =
+            format!("SELECT {TOOLSET_COLUMNS} FROM mcp_toolsets WHERE toolset_id = $1 FOR UPDATE");
+        let existing = sqlx::query(&sql)
+            .bind(input.toolset_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_toolset)
+            .transpose()?
+            .filter(|toolset| toolset.status != McpToolsetStatus::Disabled)
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "active MCP toolset `{}` was not found",
+                    input.toolset_id
+                ))
+            })?;
+        if existing.display_name == input.display_name && existing.description == input.description
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        sqlx::query(
             r#"
             UPDATE mcp_toolsets
             SET display_name = $1, description = $2, updated_at = $3
-            WHERE toolset_id = $4 AND status != 'disabled'
+            WHERE toolset_id = $4
             "#,
         )
         .bind(&input.display_name)
         .bind(&input.description)
         .bind(input.updated_at.unix_timestamp())
         .bind(input.toolset_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "active MCP toolset `{}` was not found",
-                input.toolset_id
-            )));
-        }
-        load_toolset(&self.pool, input.toolset_id).await
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current: load_toolset(&self.pool, input.toolset_id).await?,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_mcp_toolset(
@@ -258,8 +294,23 @@ impl McpAccessRepository for PostgresStore {
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the tool set row serializes replacements, so the tools read here
+        // are the ones this replacement removes.
+        sqlx::query("SELECT 1 FROM mcp_toolsets WHERE toolset_id = $1 FOR UPDATE")
+            .bind(toolset_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!("MCP toolset `{toolset_id}` was not found"))
+            })?;
+        let existing = toolset_tools_on(&mut *tx, toolset_id).await?;
+        if same_tool_ids(&existing, tool_ids) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
         sqlx::query("DELETE FROM mcp_toolset_tools WHERE toolset_id = $1")
             .bind(toolset_id.to_string())
             .execute(&mut *tx)
@@ -283,7 +334,10 @@ impl McpAccessRepository for PostgresStore {
             .await
             .map_err(to_write_error)?;
         tx.commit().await.map_err(to_write_error)?;
-        self.list_mcp_toolset_tools(toolset_id).await
+        Ok(Updated {
+            current: self.list_mcp_toolset_tools(toolset_id).await?,
+            previous: Some(existing),
+        })
     }
 
     async fn list_mcp_toolset_tools(
@@ -291,14 +345,7 @@ impl McpAccessRepository for PostgresStore {
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
         load_toolset(&self.pool, toolset_id).await?;
-        let rows = sqlx::query(
-            "SELECT toolset_id, mcp_tool_id, created_at FROM mcp_toolset_tools WHERE toolset_id = $1 ORDER BY mcp_tool_id",
-        )
-        .bind(toolset_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        rows.iter().map(decode_toolset_tool).collect()
+        toolset_tools_on(&self.pool, toolset_id).await
     }
 
     async fn upsert_mcp_tool_grant(
@@ -658,6 +705,15 @@ async fn collect_catalog_toolset_tools(
         out.insert(record.tool.mcp_tool_id, record);
     }
     Ok(())
+}
+
+/// Whether `requested` names exactly the tools already in the set, ignoring order
+/// and repeats.
+fn same_tool_ids(existing: &[McpToolsetToolRecord], requested: &[Uuid]) -> bool {
+    let existing: std::collections::BTreeSet<Uuid> =
+        existing.iter().map(|tool| tool.mcp_tool_id).collect();
+    let requested: std::collections::BTreeSet<Uuid> = requested.iter().copied().collect();
+    existing == requested
 }
 
 #[cfg(test)]

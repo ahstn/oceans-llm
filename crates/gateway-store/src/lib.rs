@@ -52,6 +52,9 @@ mod agent_analysis_tests;
 mod budget_increase_tests;
 
 #[cfg(test)]
+mod change_report_tests;
+
+#[cfg(test)]
 mod budget_reconciliation_tests;
 
 #[cfg(test)]
@@ -1460,7 +1463,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::seconds(1),
             })
             .await
-            .expect("update MCP server");
+            .expect("update MCP server")
+            .current;
         assert_eq!(updated.display_name, "GitHub");
         assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
 
@@ -1579,7 +1583,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::seconds(6),
             })
             .await
-            .expect("invalidate discovery on config update");
+            .expect("invalidate discovery on config update")
+            .current;
         assert_eq!(invalidated.last_discovery_status, None);
         assert_eq!(invalidated.last_tool_count, Some(0));
         assert_eq!(invalidated.last_error_summary, None);

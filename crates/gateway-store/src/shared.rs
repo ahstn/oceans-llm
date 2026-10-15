@@ -209,6 +209,33 @@ pub(crate) fn agent_session_request_matches(
         && stored_terminal_success == candidate_terminal_success
 }
 
+/// Whether saving `input` would leave the repository as it is.
+pub(crate) fn review_agent_repository_matches(
+    existing: &gateway_core::ReviewAgentRepositoryRecord,
+    input: &gateway_core::UpdateReviewAgentRepositoryRecord,
+) -> bool {
+    existing.external_repository_id == input.external_repository_id
+        && existing.owner == input.owner
+        && existing.name == input.name
+        && existing.full_name == input.full_name
+        && existing.service_account_id == input.service_account_id
+        && existing.status == input.status
+        && existing.settings == input.settings
+        && existing.settings_json == input.settings_json
+}
+
+/// Whether the requested access matches what the key already has, ignoring the
+/// order and repeats of the model ids.
+pub(crate) fn same_model_access(
+    current: &gateway_core::ApiKeyModelAccess,
+    model_grant_mode: gateway_core::ApiKeyModelGrantMode,
+    model_ids: &[Uuid],
+) -> bool {
+    let requested: std::collections::BTreeSet<Uuid> = model_ids.iter().copied().collect();
+    let current_ids: std::collections::BTreeSet<Uuid> = current.model_ids.iter().copied().collect();
+    current.model_grant_mode == model_grant_mode && current_ids == requested
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

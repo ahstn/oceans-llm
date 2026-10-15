@@ -414,24 +414,26 @@ pub async fn update_identity_service_account(
         None => account.tags.clone(),
     };
     let now = OffsetDateTime::now_utc();
-    let before = serde_json::json!({ "name": account.service_account_name, "tags": entity_tag_views(&account.tags) });
-    let after = serde_json::json!({ "name": name, "tags": entity_tag_views(&tags) });
-    let update = state
+    // The store returns the profile it replaced, read under the write lock, and
+    // writes nothing when the profile already matches, so that records nothing.
+    let replaced = state
         .store
-        .update_service_account_profile(service_account_id, name, &tags, now);
-    // Saving the profile unchanged is not a change, so it records nothing.
-    if before == after {
-        update.await?;
-    } else {
+        .update_service_account_profile(service_account_id, name, &tags, now)
+        .await?;
+    if let Some(previous) = replaced {
         state
             .audit()
-            .audited(&meta.user_context(&actor), update, |()| {
+            .record(
+                &meta.user_context(&actor),
                 service_account_event(actions::SERVICE_ACCOUNT_UPDATED, &account)
                     .label(name)
-                    .before(before)
-                    .after(after)
-            })
-            .await?;
+                    .before(serde_json::json!({
+                        "name": previous.service_account_name,
+                        "tags": entity_tag_views(&previous.tags),
+                    }))
+                    .after(serde_json::json!({ "name": name, "tags": entity_tag_views(&tags) })),
+            )
+            .await;
     }
     let account = state
         .store
@@ -620,26 +622,33 @@ pub async fn update_identity_team(
         "admin_user_ids": &selected_admin_ids,
     });
     let progress = AuditProgress::default();
+    // Each write is conditional and reports whether it changed anything, so a
+    // concurrent edit cannot make this save look like a no-op, or the reverse.
     let update = async {
-        state.store.update_team_name(team_id, name, now).await?;
-        progress.landed();
-        state.store.update_team_tags(team_id, &tags, now).await?;
-        sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
-        reload_team_view(&state.store, team_id).await
+        let mut changed = false;
+        let mut landed = |step_changed: bool| {
+            if step_changed {
+                changed = true;
+                progress.landed();
+            }
+        };
+        landed(state.store.update_team_name(team_id, name, now).await?);
+        landed(state.store.update_team_tags(team_id, &tags, now).await?);
+        landed(sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?);
+        Ok::<_, AppError>((reload_team_view(&state.store, team_id).await?, changed))
     };
-    let view = state
+    let (view, _) = state
         .audit()
         .audited_steps(
             &meta.user_context(&actor),
             &progress,
             update,
-            // Saving the team unchanged is not a change, so it records nothing.
-            |view| {
-                let (before, after) = (team_summary(&before), team_summary(view));
-                (before != after).then(|| {
+            // Saving the team unchanged writes nothing, so it records nothing.
+            |(view, changed)| {
+                changed.then(|| {
                     team_event(actions::TEAM_UPDATED, view)
-                        .before(before)
-                        .after(after)
+                        .before(team_summary(&before))
+                        .after(team_summary(view))
                 })
             },
             |progress, error| {
@@ -1181,25 +1190,39 @@ pub async fn update_identity_user(
 
     let now = OffsetDateTime::now_utc();
     let progress = AuditProgress::default();
+    // Each write is conditional and reports whether it changed anything, so a
+    // concurrent edit cannot make this save look like a no-op, or the reverse.
     let update = async {
-        state
-            .store
-            .update_identity_user(user_id, next_global_role, next_auth_mode, now)
-            .await?;
-        progress.landed();
-        state.store.update_user_tags(user_id, &tags, now).await?;
-        sync_identity_user_auth_mode(
-            &state.store,
-            &identity_user,
-            next_auth_mode,
-            oidc_provider.as_ref(),
-            oauth_provider.as_ref(),
-            now,
-        )
-        .await?;
-        sync_identity_user_membership(&state.store, &identity_user, requested_membership, now)
-            .await?;
-        reload_identity_user(&state.store, user_id).await
+        let mut changed = false;
+        let mut landed = |step_changed: bool| {
+            if step_changed {
+                changed = true;
+                progress.landed();
+            }
+        };
+        landed(
+            state
+                .store
+                .update_identity_user(user_id, next_global_role, next_auth_mode, now)
+                .await?,
+        );
+        landed(state.store.update_user_tags(user_id, &tags, now).await?);
+        landed(
+            sync_identity_user_auth_mode(
+                &state.store,
+                &identity_user,
+                next_auth_mode,
+                oidc_provider.as_ref(),
+                oauth_provider.as_ref(),
+                now,
+            )
+            .await?,
+        );
+        landed(
+            sync_identity_user_membership(&state.store, &identity_user, requested_membership, now)
+                .await?,
+        );
+        Ok::<_, AppError>((reload_identity_user(&state.store, user_id).await?, changed))
     };
     state
         .audit()
@@ -1207,13 +1230,12 @@ pub async fn update_identity_user(
             &meta.user_context(&actor),
             &progress,
             update,
-            // Saving the user unchanged is not a change, so it records nothing.
-            |updated| {
-                let (before, after) = (user_summary(&identity_user), user_summary(updated));
-                (before != after).then(|| {
+            // Saving the user unchanged writes nothing, so it records nothing.
+            |(updated, changed)| {
+                changed.then(|| {
                     user_event(actions::USER_UPDATED, &identity_user.user)
-                        .before(before)
-                        .after(after)
+                        .before(user_summary(&identity_user))
+                        .after(user_summary(updated))
                 })
             },
             |_, error| {
@@ -3181,12 +3203,14 @@ fn validate_team_admin_assignments(
     }
 }
 
+/// Returns whether any membership changed.
 async fn sync_team_admins(
     store: &AnyStore,
     team_id: Uuid,
     selected_admin_ids: &[Uuid],
     now: OffsetDateTime,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
+    let mut changed = false;
     let selected_admin_ids: BTreeSet<_> = selected_admin_ids.iter().copied().collect();
     let memberships = GatewayStore::list_team_memberships(store, team_id).await?;
 
@@ -3194,7 +3218,7 @@ async fn sync_team_admins(
         if membership.role == MembershipRole::Admin
             && !selected_admin_ids.contains(&membership.user_id)
         {
-            store
+            changed |= store
                 .update_team_membership_role(
                     team_id,
                     membership.user_id,
@@ -3216,7 +3240,7 @@ async fn sync_team_admins(
                 if existing.role == MembershipRole::Admin
                     || existing.role == MembershipRole::Owner => {}
             Some(_) => {
-                store
+                changed |= store
                     .update_team_membership_role(team_id, user_id, MembershipRole::Admin, now)
                     .await?;
             }
@@ -3224,11 +3248,12 @@ async fn sync_team_admins(
                 store
                     .assign_team_membership(user_id, team_id, MembershipRole::Admin)
                     .await?;
+                changed = true;
             }
         }
     }
 
-    Ok(())
+    Ok(changed)
 }
 
 fn parse_requested_membership(
@@ -3317,40 +3342,39 @@ async fn resolve_requested_oauth_provider(
     }
 }
 
+/// Returns whether the membership changed.
 async fn sync_identity_user_membership(
     store: &AnyStore,
     user: &IdentityUserRecord,
     requested_membership: Option<(Uuid, MembershipRole)>,
     now: OffsetDateTime,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     if !membership_update_requested(user, requested_membership) {
-        return Ok(());
+        return Ok(false);
     }
     ensure_mutable_membership(user.membership_role).map_err(AppError)?;
 
     match (user.team_id, requested_membership) {
-        (None, None) => Ok(()),
+        (None, None) => Ok(false),
         (None, Some((team_id, role))) => {
             store
                 .assign_team_membership(user.user.user_id, team_id, role)
                 .await?;
-            Ok(())
+            Ok(true)
         }
-        (Some(team_id), None) => {
-            store
-                .remove_team_membership(team_id, user.user.user_id)
-                .await?;
-            Ok(())
-        }
+        (Some(team_id), None) => Ok(store
+            .remove_team_membership(team_id, user.user.user_id)
+            .await?
+            .is_some()),
         (Some(current_team_id), Some((next_team_id, next_role)))
             if current_team_id == next_team_id =>
         {
-            if user.membership_role != Some(next_role) {
-                store
-                    .update_team_membership_role(current_team_id, user.user.user_id, next_role, now)
-                    .await?;
+            if user.membership_role == Some(next_role) {
+                return Ok(false);
             }
-            Ok(())
+            Ok(store
+                .update_team_membership_role(current_team_id, user.user.user_id, next_role, now)
+                .await?)
         }
         (Some(current_team_id), Some((next_team_id, next_role))) => {
             store
@@ -3362,7 +3386,7 @@ async fn sync_identity_user_membership(
                     now,
                 )
                 .await?;
-            Ok(())
+            Ok(true)
         }
     }
 }
@@ -3412,6 +3436,7 @@ fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole
     }
 }
 
+/// Returns whether any sign-in link or credential changed.
 async fn sync_identity_user_auth_mode(
     store: &AnyStore,
     user: &IdentityUserRecord,
@@ -3419,10 +3444,11 @@ async fn sync_identity_user_auth_mode(
     oidc_provider: Option<&OidcProviderRecord>,
     oauth_provider: Option<&OauthProviderRecord>,
     now: OffsetDateTime,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
+    let mut changed = false;
     if user.user.auth_mode == AuthMode::Password && next_auth_mode != AuthMode::Password {
-        store.delete_user_password_auth(user.user.user_id).await?;
-        store
+        changed |= store.delete_user_password_auth(user.user.user_id).await?;
+        changed |= store
             .revoke_password_invitations_for_user(user.user.user_id, now)
             .await?;
     }
@@ -3430,7 +3456,7 @@ async fn sync_identity_user_auth_mode(
     if let Some(current_provider_id) = user.oidc_provider_id.as_deref() {
         let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
         if next_auth_mode != AuthMode::Oidc || next_provider_id != Some(current_provider_id) {
-            store
+            changed |= store
                 .delete_user_oidc_auth(user.user.user_id, current_provider_id)
                 .await?;
         }
@@ -3439,7 +3465,7 @@ async fn sync_identity_user_auth_mode(
     if let Some(current_provider_id) = user.oauth_provider_id.as_deref() {
         let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
         if next_auth_mode != AuthMode::Oauth || next_provider_id != Some(current_provider_id) {
-            store
+            changed |= store
                 .delete_user_oauth_auth(user.user.user_id, current_provider_id)
                 .await?;
         }
@@ -3447,8 +3473,8 @@ async fn sync_identity_user_auth_mode(
 
     match next_auth_mode {
         AuthMode::Password => {
-            store.clear_user_oidc_link(user.user.user_id).await?;
-            store.clear_user_oauth_link(user.user.user_id).await?;
+            changed |= store.clear_user_oidc_link(user.user.user_id).await?;
+            changed |= store.clear_user_oauth_link(user.user.user_id).await?;
         }
         AuthMode::Oidc => {
             let provider = oidc_provider.ok_or_else(|| {
@@ -3456,8 +3482,8 @@ async fn sync_identity_user_auth_mode(
                     "oidc provider configuration is required".to_string(),
                 ))
             })?;
-            store.clear_user_oauth_link(user.user.user_id).await?;
-            store
+            changed |= store.clear_user_oauth_link(user.user.user_id).await?;
+            changed |= store
                 .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
                 .await?;
         }
@@ -3467,14 +3493,14 @@ async fn sync_identity_user_auth_mode(
                     "oauth provider configuration is required".to_string(),
                 ))
             })?;
-            store.clear_user_oidc_link(user.user.user_id).await?;
-            store
+            changed |= store.clear_user_oidc_link(user.user.user_id).await?;
+            changed |= store
                 .set_user_oauth_link(user.user.user_id, &provider.oauth_provider_id, now)
                 .await?;
         }
     }
 
-    Ok(())
+    Ok(changed)
 }
 
 async fn user_has_auth_proof(

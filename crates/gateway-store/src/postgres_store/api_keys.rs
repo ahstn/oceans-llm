@@ -1,4 +1,6 @@
 use super::*;
+use crate::shared::{parse_uuid, same_model_access};
+use gateway_core::ApiKeyModelAccess;
 
 #[async_trait]
 impl AdminApiKeyRepository for PostgresStore {
@@ -189,20 +191,46 @@ impl AdminApiKeyRepository for PostgresStore {
         api_key_id: Uuid,
         model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ApiKeyModelAccess>, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
 
+        // Locking the key row serializes replacements, so the access read here is
+        // the access this replacement overwrites.
+        let row = sqlx::query(
+            "SELECT owner_kind, model_grant_mode FROM api_keys WHERE id = $1 FOR UPDATE",
+        )
+        .bind(api_key_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+        let owner_kind: String = row.try_get(0).map_err(to_query_error)?;
+        let current_mode: String = row.try_get(1).map_err(to_query_error)?;
+        let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+        })?;
+        let current_mode = ApiKeyModelGrantMode::from_db(&current_mode).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown model grant mode `{current_mode}`"))
+        })?;
+        let current_ids = sqlx::query_scalar::<_, String>(
+            "SELECT model_id FROM api_key_model_grants WHERE api_key_id = $1 ORDER BY model_id",
+        )
+        .bind(api_key_id.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .iter()
+        .map(|model_id| parse_uuid(model_id))
+        .collect::<Result<Vec<_>, _>>()?;
+        let previous = ApiKeyModelAccess {
+            model_grant_mode: current_mode,
+            model_ids: current_ids,
+        };
+        if same_model_access(&previous, model_grant_mode, model_ids) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        }
         if model_grant_mode == ApiKeyModelGrantMode::All {
-            let row = sqlx::query("SELECT owner_kind FROM api_keys WHERE id = $1 LIMIT 1")
-                .bind(api_key_id.to_string())
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(to_query_error)?
-                .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
-            let owner_kind: String = row.try_get(0).map_err(to_query_error)?;
-            let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
-                StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
-            })?;
             validate_api_key_grant_mode(owner_kind, model_grant_mode)?;
         }
 
@@ -230,7 +258,7 @@ impl AdminApiKeyRepository for PostgresStore {
 
         tx.commit().await.map_err(to_query_error)?;
 
-        Ok(())
+        Ok(Some(previous))
     }
 
     async fn revoke_api_key(

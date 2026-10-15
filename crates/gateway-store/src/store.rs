@@ -123,7 +123,7 @@ pub trait GatewayStore:
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError>;
     async fn disable_service_account(
         &self,
         service_account_id: Uuid,
@@ -175,13 +175,13 @@ pub trait GatewayStore:
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn update_team_tags(
         &self,
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn create_identity_user(
         &self,
         name: &str,
@@ -197,13 +197,13 @@ pub trait GatewayStore:
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn update_user_tags(
         &self,
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn deactivate_identity_user(
         &self,
         user_id: Uuid,
@@ -242,7 +242,7 @@ pub trait GatewayStore:
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn find_active_password_invitation_for_user(
         &self,
         user_id: Uuid,
@@ -352,8 +352,8 @@ pub trait GatewayStore:
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
-    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError>;
     async fn get_user_oauth_auth(
         &self,
         oauth_provider_id: &str,
@@ -377,9 +377,9 @@ pub trait GatewayStore:
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
-    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError>;
-    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError>;
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError>;
     async fn delete_user_oidc_auth(
         &self,
         user_id: Uuid,
@@ -569,7 +569,7 @@ impl AdminApiKeyRepository for AnyStore {
         api_key_id: Uuid,
         model_grant_mode: gateway_core::ApiKeyModelGrantMode,
         model_ids: &[Uuid],
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<gateway_core::ApiKeyModelAccess>, StoreError> {
         dispatch_store!(
             self,
             replace_api_key_model_access(api_key_id, model_grant_mode, model_ids)
@@ -1526,7 +1526,7 @@ impl GatewayStore for AnyStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, update_team_name(team_id, team_name, updated_at))
     }
 
@@ -1535,7 +1535,7 @@ impl GatewayStore for AnyStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, update_team_tags(team_id, tags, updated_at))
     }
 
@@ -1607,7 +1607,7 @@ impl GatewayStore for AnyStore {
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError> {
         dispatch_store!(
             self,
             update_service_account_profile(
@@ -1658,7 +1658,7 @@ impl GatewayStore for AnyStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             update_identity_user(user_id, global_role, auth_mode, updated_at)
@@ -1670,7 +1670,7 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, update_user_tags(user_id, tags, updated_at))
     }
 
@@ -1733,7 +1733,7 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             update_team_membership_role(team_id, user_id, role, updated_at)
@@ -1916,14 +1916,14 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             set_user_oidc_link(user_id, oidc_provider_id, created_at)
         )
     }
 
-    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         dispatch_store!(self, clear_user_oidc_link(user_id))
     }
 
@@ -1965,18 +1965,18 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             set_user_oauth_link(user_id, oauth_provider_id, created_at)
         )
     }
 
-    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         dispatch_store!(self, clear_user_oauth_link(user_id))
     }
 
-    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
         dispatch_store!(self, delete_user_password_auth(user_id))
     }
 

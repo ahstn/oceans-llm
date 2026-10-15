@@ -198,11 +198,13 @@ where
             .map_err(Into::into)
     }
 
+    /// Saves the server's settings. Nothing is written when they already match, and
+    /// the result then carries no previous record.
     pub async fn update_server(
         &self,
         mcp_server_id: Uuid,
         input: UpdateExternalMcpServerInput,
-    ) -> Result<ExternalMcpServerRecord, GatewayError> {
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
         self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
@@ -796,7 +798,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
             unimplemented!()
         }
 

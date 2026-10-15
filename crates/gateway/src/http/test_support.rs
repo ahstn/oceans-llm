@@ -192,7 +192,10 @@ impl gateway_core::RateLimitRepository for DownRateLimitStore {
     async fn update_rate_limit_policy(
         &self,
         _: &gateway_core::RateLimitPolicyRecord,
-    ) -> Result<bool, gateway_core::StoreError> {
+    ) -> Result<
+        Option<gateway_core::Updated<gateway_core::RateLimitPolicyRecord>>,
+        gateway_core::StoreError,
+    > {
         Err(gateway_core::StoreError::Unavailable("down".to_string()))
     }
     async fn delete_rate_limit_policy(
