@@ -150,7 +150,7 @@ fn decode_grant_summary(row: &libsql::Row) -> Result<GatewayOauthGrantSummary, S
         scope: row.get(5).map_err(to_query_error)?,
         created_at: unix_to_datetime(row.get(6).map_err(to_query_error)?)?,
         last_token_issued_at: unix_to_datetime(row.get(7).map_err(to_query_error)?)?,
-        session_expires_at: unix_to_datetime(row.get(8).map_err(to_query_error)?)?,
+        expires_at: unix_to_datetime(row.get(8).map_err(to_query_error)?)?,
     })
 }
 
@@ -506,12 +506,15 @@ impl GatewayOauthRepository for LibsqlStore {
                          WHERE t.grant_id = g.grant_id),
                         g.created_at
                     ),
-                    s.expires_at
+                    (SELECT MAX(t.expires_at) FROM gateway_oauth_tokens t
+                     WHERE t.grant_id = g.grant_id AND t.consumed_at IS NULL)
              FROM gateway_oauth_grants g
              JOIN gateway_oauth_clients c ON c.client_id = g.client_id
              JOIN user_sessions s ON s.session_id = g.user_session_id
              WHERE g.user_id = ?1 AND g.revoked_at IS NULL
                AND s.revoked_at IS NULL AND s.expires_at > ?2
+               AND (SELECT MAX(t.expires_at) FROM gateway_oauth_tokens t
+                    WHERE t.grant_id = g.grant_id AND t.consumed_at IS NULL) > ?2
              ORDER BY g.created_at DESC, g.grant_id",
                 libsql::params![user_id.to_string(), now.unix_timestamp()],
             )
@@ -573,7 +576,12 @@ impl GatewayOauthRepository for LibsqlStore {
         let clients = self
             .connection
             .execute(
-                "DELETE FROM gateway_oauth_clients WHERE registration_kind = 'dynamic' AND created_at < ?1 AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = gateway_oauth_clients.client_id)",
+                "DELETE FROM gateway_oauth_clients
+             WHERE registration_kind = 'dynamic' AND created_at < ?1
+               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+                               WHERE g.client_id = gateway_oauth_clients.client_id)
+               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
+                               WHERE r.client_id = gateway_oauth_clients.client_id)",
                 [unused_clients_before.unix_timestamp()],
             )
             .await

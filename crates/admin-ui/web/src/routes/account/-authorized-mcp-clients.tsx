@@ -15,6 +15,8 @@ import {
 import { disconnectAuthorizedMcpClient } from '@/server/admin-data.functions'
 import type { AuthorizedMcpClientView, AuthorizedMcpClientsView } from '@/types/api'
 
+const COLUMNS = ['Client', 'Access', 'Last token', 'Expires', 'Actions'] as const
+
 const utcFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -89,21 +91,14 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
               <Table className="text-left">
                 <TableHeader className="bg-surface-muted">
                   <TableRow>
-                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Client
-                    </TableHead>
-                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Access
-                    </TableHead>
-                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Last token
-                    </TableHead>
-                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Expires
-                    </TableHead>
-                    <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                      Actions
-                    </TableHead>
+                    {COLUMNS.map((column) => (
+                      <TableHead
+                        key={column}
+                        className="text-muted-foreground px-3 py-2 font-semibold"
+                      >
+                        {column}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>

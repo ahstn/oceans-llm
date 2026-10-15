@@ -10313,7 +10313,7 @@
           },
           "expires_at": {
             "type": "string",
-            "description": "Access ends no later than the admin session that approved it."
+            "description": "When the client's last usable token expires; never later than the\nadmin session that approved it."
           },
           "grant_id": {
             "type": "string"

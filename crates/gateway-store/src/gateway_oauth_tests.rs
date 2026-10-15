@@ -436,7 +436,7 @@ where
     let (other, other_session) = users[1];
 
     let old = now - Duration::days(30);
-    for client_id in ["used", "unused-old", "unused-new"] {
+    for client_id in ["used", "unused-old", "unused-new", "unused-active"] {
         let created_at = if client_id == "unused-new" { now } else { old };
         store
             .create_gateway_oauth_client(&dynamic_client(client_id, created_at))
@@ -458,6 +458,11 @@ where
     let first = Uuid::new_v4();
     let second = Uuid::new_v4();
     let others = Uuid::new_v4();
+    let stale = Uuid::new_v4();
+    store
+        .create_gateway_oauth_grant(&grant(stale, owner, owner_session, old))
+        .await
+        .unwrap();
     store
         .create_gateway_oauth_grant(&grant(first, owner, owner_session, old))
         .await
@@ -470,29 +475,84 @@ where
         .create_gateway_oauth_grant(&grant(others, other, other_session, now))
         .await
         .unwrap();
-    for (hash, created_at, expires_at) in [
-        ("expired-token", old, old + Duration::hours(1)),
-        ("live-token", now, now + Duration::hours(1)),
+    // `stale` has only an expired access token and a consumed refresh token,
+    // so it can never get another token and must not list.
+    let hour = Duration::hours(1);
+    for (hash, grant_id, kind, created_at, expires_at, consumed_at) in [
+        (
+            "expired-token",
+            first,
+            GatewayOauthTokenKind::Access,
+            old,
+            old + hour,
+            None,
+        ),
+        (
+            "live-token",
+            first,
+            GatewayOauthTokenKind::Access,
+            now,
+            now + hour,
+            None,
+        ),
+        (
+            "second-live",
+            second,
+            GatewayOauthTokenKind::Access,
+            now,
+            now + 2 * hour,
+            None,
+        ),
+        (
+            "others-live",
+            others,
+            GatewayOauthTokenKind::Access,
+            now,
+            now + hour,
+            None,
+        ),
+        (
+            "stale-access",
+            stale,
+            GatewayOauthTokenKind::Access,
+            now - 3 * hour,
+            now - 2 * hour,
+            None,
+        ),
+        (
+            "stale-refresh",
+            stale,
+            GatewayOauthTokenKind::Refresh,
+            now - 3 * hour,
+            now + Duration::days(10),
+            Some(now - 2 * hour),
+        ),
     ] {
         store
             .create_gateway_oauth_token(&GatewayOauthTokenRecord {
                 token_hash: hash.to_string(),
-                grant_id: first,
-                kind: GatewayOauthTokenKind::Access,
+                grant_id,
+                kind,
                 scope: "mcp:aggregate".to_string(),
                 expires_at,
                 created_at,
-                consumed_at: None,
+                consumed_at,
             })
             .await
             .unwrap();
     }
-    for (expires_at, client_id) in [(old, "used"), (now + Duration::minutes(5), "unused-new")] {
+    // `unused-active` is past the retention window but mid-authorization.
+    for (expires_at, client_id) in [
+        (old, "used"),
+        (now + Duration::minutes(5), "unused-new"),
+        (now + Duration::minutes(5), "unused-active"),
+    ] {
         store
             .create_gateway_oauth_authorization_request(&GatewayOauthAuthorizationRequestRecord {
                 request_id: Uuid::new_v4(),
                 client_id: client_id.to_string(),
                 redirect_uri: "http://127.0.0.1/callback".to_string(),
+                redirect_uri_supplied: true,
                 state: None,
                 code_challenge: "challenge".to_string(),
                 resource: "https://oceans.example.com/mcp".to_string(),
@@ -527,7 +587,8 @@ where
     assert_eq!(listed[1].client_name.as_deref(), Some("Client used"));
     assert_eq!(listed[1].last_token_issued_at, now);
     assert_eq!(listed[0].last_token_issued_at, now);
-    assert_eq!(listed[0].session_expires_at, now + Duration::days(30));
+    assert_eq!(listed[0].expires_at, now + 2 * hour);
+    assert_eq!(listed[1].expires_at, now + hour);
 
     // A user cannot revoke someone else's grant.
     assert!(
@@ -562,7 +623,10 @@ where
         .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
         .await
         .unwrap();
-    assert_eq!(counts.clients, 1, "only the old client without grants");
+    assert_eq!(
+        counts.clients, 1,
+        "only the old client with no grant and no authorization in flight"
+    );
     assert_eq!(counts.tokens, 1);
     assert_eq!(counts.authorization_requests, 1);
     assert!(
@@ -571,6 +635,13 @@ where
             .await
             .unwrap()
             .is_none()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_client("unused-active")
+            .await
+            .unwrap()
+            .is_some()
     );
     assert!(
         store

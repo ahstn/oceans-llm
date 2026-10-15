@@ -47,21 +47,24 @@ function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthCo
   }
 }
 
+const assignMock = vi.fn()
+
+function resetPageMocks() {
+  navigateMock.mockReset()
+  connectMock.mockReset()
+  assignMock.mockReset()
+  Object.values(toastMock).forEach((mock) => mock.mockReset())
+  vi.stubGlobal('location', { assign: assignMock })
+}
+
+function restorePageMocks() {
+  cleanup()
+  vi.unstubAllGlobals()
+}
+
 describe('ConnectionsPage connect links', () => {
-  const assignMock = vi.fn()
-
-  beforeEach(() => {
-    navigateMock.mockReset()
-    connectMock.mockReset()
-    assignMock.mockReset()
-    Object.values(toastMock).forEach((mock) => mock.mockReset())
-    vi.stubGlobal('location', { assign: assignMock })
-  })
-
-  afterEach(() => {
-    cleanup()
-    vi.unstubAllGlobals()
-  })
+  beforeEach(resetPageMocks)
+  afterEach(restorePageMocks)
 
   it('starts the OAuth flow for the named server and drops the parameter', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
@@ -146,6 +149,11 @@ describe('ConnectionsPage connect links', () => {
 
     await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(2))
   })
+})
+
+describe('ConnectionsPage callbacks and discovered servers', () => {
+  beforeEach(resetPageMocks)
+  afterEach(restorePageMocks)
 
   it('names the server the OAuth callback returned from and toasts once', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))

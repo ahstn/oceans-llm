@@ -2745,7 +2745,10 @@ export interface components {
             /** @description Self-asserted by the client at registration. */
             client_name?: string | null;
             client_uri?: string | null;
-            /** @description Access ends no later than the admin session that approved it. */
+            /**
+             * @description When the client's last usable token expires; never later than the
+             *     admin session that approved it.
+             */
             expires_at: string;
             grant_id: string;
             /** @description When the client last received a token, at sign-in or refresh. */

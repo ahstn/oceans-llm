@@ -351,8 +351,9 @@ pub struct GatewayOauthGrantSummary {
     pub created_at: OffsetDateTime,
     /// When the client last received a token, at sign-in or refresh.
     pub last_token_issued_at: OffsetDateTime,
-    /// The grant ends no later than its approving session.
-    pub session_expires_at: OffsetDateTime,
+    /// When the client's last usable token expires. Tokens never outlive
+    /// the approving session.
+    pub expires_at: OffsetDateTime,
 }
 
 /// Rows removed by [`GatewayOauthRepository::purge_gateway_oauth_records`].
@@ -467,7 +468,8 @@ pub trait GatewayOauthRepository: Send + Sync {
     ) -> Result<u64, StoreError>;
 
     /// The user's grants that still work at `now`: not revoked, with a live
-    /// approving session. Newest first.
+    /// approving session and at least one unexpired, unconsumed token.
+    /// Newest first.
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
@@ -483,10 +485,10 @@ pub trait GatewayOauthRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
-    /// Deletes dynamically registered clients created before
-    /// `unused_clients_before` that never received a grant, and authorization
-    /// requests and tokens that expired before `expired_before`. Grants are
-    /// kept as an audit trail.
+    /// Deletes authorization requests and tokens that expired before
+    /// `expired_before`, then dynamically registered clients created before
+    /// `unused_clients_before` that never received a grant and have no
+    /// remaining authorization request. Grants are kept as an audit trail.
     async fn purge_gateway_oauth_records(
         &self,
         unused_clients_before: OffsetDateTime,

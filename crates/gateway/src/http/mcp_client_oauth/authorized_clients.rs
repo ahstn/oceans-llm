@@ -37,7 +37,8 @@ pub struct AuthorizedMcpClientView {
     pub authorized_at: String,
     /// When the client last received a token, at sign-in or refresh.
     pub last_token_issued_at: String,
-    /// Access ends no later than the admin session that approved it.
+    /// When the client's last usable token expires; never later than the
+    /// admin session that approved it.
     pub expires_at: String,
 }
 
@@ -225,7 +226,7 @@ fn authorized_client_view(
             .collect(),
         authorized_at: format_timestamp(grant.created_at),
         last_token_issued_at: format_timestamp(grant.last_token_issued_at),
-        expires_at: format_timestamp(grant.session_expires_at),
+        expires_at: format_timestamp(grant.expires_at),
     }
 }
 
