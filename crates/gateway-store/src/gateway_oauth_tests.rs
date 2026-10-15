@@ -512,7 +512,7 @@ where
             .await
             .unwrap();
         store
-            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
+            .create_gateway_oauth_tokens(&[GatewayOauthTokenRecord {
                 token_hash: format!("foreign-{index}"),
                 grant_id,
                 kind: GatewayOauthTokenKind::Access,
@@ -520,7 +520,7 @@ where
                 expires_at: now + Duration::hours(1),
                 created_at,
                 consumed_at: None,
-            })
+            }])
             .await
             .unwrap();
     }
@@ -588,7 +588,7 @@ where
         ),
     ] {
         store
-            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
+            .create_gateway_oauth_tokens(&[GatewayOauthTokenRecord {
                 token_hash: hash.to_string(),
                 grant_id,
                 kind,
@@ -596,7 +596,7 @@ where
                 expires_at,
                 created_at,
                 consumed_at,
-            })
+            }])
             .await
             .unwrap();
     }
