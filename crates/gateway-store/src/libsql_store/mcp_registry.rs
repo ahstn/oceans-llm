@@ -242,11 +242,7 @@ impl McpRegistryRepository for LibsqlStore {
         let existing = load_server(&self.connection, input.mcp_server_id).await?;
         let invalidate_discovery = discovery_config_changed(&existing, input);
         let auth_config_json = serialize_json(&input.auth_config)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             r#"
             UPDATE external_mcp_servers
@@ -356,11 +352,7 @@ impl McpRegistryRepository for LibsqlStore {
         tools: &[UpsertExternalMcpToolRecord],
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -482,11 +474,7 @@ impl McpRegistryRepository for LibsqlStore {
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

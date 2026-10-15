@@ -227,11 +227,7 @@ impl AdminApiKeyRepository for LibsqlStore {
         model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         if model_grant_mode == ApiKeyModelGrantMode::All {
             let mut rows = tx
