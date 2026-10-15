@@ -435,15 +435,19 @@ pub async fn update_review_agent_repository(
     } else {
         actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
     };
-    state
-        .audit()
-        .record(
-            &meta.user_context(&actor),
-            repository_event(action, &repository)
-                .before(repository_summary(&before))
-                .after(repository_summary(&repository)),
-        )
-        .await;
+    let (before, after) = (repository_summary(&before), repository_summary(&repository));
+    // Saving the repository unchanged is not a change, so it records nothing.
+    if before != after {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                repository_event(action, &repository)
+                    .before(before)
+                    .after(after),
+            )
+            .await;
+    }
     Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
 }
 

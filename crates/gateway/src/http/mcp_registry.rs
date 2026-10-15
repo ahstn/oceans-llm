@@ -597,34 +597,33 @@ pub async fn replace_mcp_toolset_tools(
     Json(request): Json<ReplaceMcpToolsetToolsRequest>,
 ) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
-    let before: Vec<String> = state
-        .store
-        .list_mcp_toolset_tools(toolset_id)
-        .await?
-        .into_iter()
-        .map(|tool| tool.mcp_tool_id.to_string())
-        .collect();
+    let sorted_ids = |tools: &[gateway_core::McpToolsetToolRecord]| {
+        let mut ids: Vec<String> = tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id.to_string())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let before = sorted_ids(&state.store.list_mcp_toolset_tools(toolset_id).await?);
     let tools = state
-        .audit()
-        .audited(
-            &meta.user_context(&actor),
-            state.store.replace_mcp_toolset_tools(
-                toolset_id,
-                &request.tool_ids,
-                OffsetDateTime::now_utc(),
-            ),
-            |tools| {
-                let after: Vec<String> = tools
-                    .iter()
-                    .map(|tool| tool.mcp_tool_id.to_string())
-                    .collect();
+        .store
+        .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
+        .await?;
+    let after = sorted_ids(&tools);
+    // Saving the same membership changes no access, so it records nothing.
+    if before != after {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
                 AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED, targets::MCP_TOOLSET)
                     .target(toolset_id)
                     .before(serde_json::json!({ "tool_ids": before }))
-                    .after(serde_json::json!({ "tool_ids": after }))
-            },
-        )
-        .await?;
+                    .after(serde_json::json!({ "tool_ids": after })),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpToolsetToolsPayload {
         tool_ids: tools
             .into_iter()

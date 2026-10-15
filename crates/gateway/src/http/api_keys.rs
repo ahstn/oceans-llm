@@ -274,13 +274,17 @@ pub async fn update_api_key(
             &meta.user_context(&actor),
             &progress,
             update,
+            // Resubmitting the key's current access changes nothing, so it records nothing.
             |api_key| {
-                api_key_event(actions::API_KEY_UPDATED, api_key)
-                    .before(&before)
-                    .after(serde_json::json!({
-                        "model_grant_mode": api_key.model_grant_mode.as_str(),
-                        "model_keys": api_key.model_keys,
-                    }))
+                let after = model_access_summary(
+                    Some(api_key.model_grant_mode.as_str()),
+                    api_key.model_keys.clone(),
+                );
+                (after != before).then(|| {
+                    api_key_event(actions::API_KEY_UPDATED, api_key)
+                        .before(&before)
+                        .after(after)
+                })
             },
             |progress, error| {
                 partial_api_key_event(actions::API_KEY_UPDATED, progress, error)
@@ -512,10 +516,19 @@ async fn api_key_model_access_summary(
         .into_iter()
         .map(|model| model.model_key)
         .collect();
-    Ok(serde_json::json!({
+    Ok(model_access_summary(model_grant_mode, model_keys))
+}
+
+/// Grant mode and sorted model keys, so summaries compare equal when access is.
+fn model_access_summary(
+    model_grant_mode: Option<&str>,
+    mut model_keys: Vec<String>,
+) -> serde_json::Value {
+    model_keys.sort();
+    serde_json::json!({
         "model_grant_mode": model_grant_mode,
         "model_keys": model_keys,
-    }))
+    })
 }
 
 async fn authorize_reveal_api_key_secret(

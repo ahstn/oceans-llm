@@ -191,6 +191,24 @@ async fn api_key_lifecycle_is_audited_without_the_raw_key() {
     let raw_key = created["data"]["raw_key"].as_str().expect("raw key");
     let api_key_id = created["data"]["api_key"]["id"].as_str().expect("id");
 
+    // Resubmitting the key's current access changes nothing, so it records nothing.
+    let (status, body) = harness
+        .admin(
+            Method::PATCH,
+            &format!("/api/v1/admin/api-keys/{api_key_id}"),
+            Some(json!({ "model_grant_mode": "all", "model_keys": [] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        harness
+            .entries()
+            .await
+            .iter()
+            .all(|entry| entry["action"] != "api_key.updated"),
+        "unchanged api key update was recorded"
+    );
+
     let (status, revoked) = harness
         .admin(
             Method::POST,
@@ -592,6 +610,22 @@ async fn repeated_repository_status_changes_record_one_transition() {
 
     // Disabling through PATCH records the same transition, not a generic update.
     let created = &repository["data"]["repository"];
+    let (status, body) = harness
+        .admin(
+            Method::PATCH,
+            &format!("/api/v1/admin/review-agent/repositories/{repository_id}"),
+            Some(json!({
+                "owner": "acme",
+                "name": "api",
+                "full_name": "acme/api",
+                "service_account_id": account["data"]["id"],
+                "status": "disabled",
+                "settings": created["settings"],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Saving the same configuration again records nothing.
     let (status, body) = harness
         .admin(
             Method::PATCH,
