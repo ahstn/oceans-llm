@@ -37,6 +37,20 @@ impl ProviderConfig {
         }
     }
 
+    /// The provider type's config and storage name, e.g. `openai_compat`.
+    #[must_use]
+    pub const fn provider_type(&self) -> &'static str {
+        match self {
+            Self::OpenAiCompat(_) => "openai_compat",
+            Self::GcpCloudRunOpenAiCompat(_) => "gcp_cloud_run_openai_compat",
+            Self::AnthropicCompat(_) => "anthropic_compat",
+            Self::GcpVertex(_) => "gcp_vertex",
+            Self::AwsBedrock(_) => "aws_bedrock",
+            Self::GitHubCopilot(_) => "github_copilot",
+            Self::TypeSafe(_) => "typesafe",
+        }
+    }
+
     pub(super) fn routing_account_scope(&self) -> Option<&str> {
         match self {
             Self::GcpCloudRunOpenAiCompat(provider) => provider.routing_account_scope.as_deref(),

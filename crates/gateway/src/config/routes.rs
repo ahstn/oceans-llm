@@ -87,17 +87,15 @@ impl ModelRouteConfig {
             return github_copilot_route_capabilities(self.compatibility.github_copilot.as_ref());
         }
 
-        // Start from what the provider type can serve, so stored route flags agree with the
-        // request path, which intersects route flags with the same baselines.
+        // Start from the shared provider-type baseline that request routing also uses, so stored
+        // route flags agree with it; only the route-specific narrowing below lives here.
         let mut capabilities = match provider {
-            Some(ProviderConfig::AnthropicCompat(_)) => {
-                ProviderCapabilities::anthropic_compat_baseline()
-            }
             Some(ProviderConfig::GcpVertex(_)) => {
                 vertex_route_capabilities_for_upstream_model(Some(&self.upstream_model))
             }
-            Some(ProviderConfig::AwsBedrock(_)) => ProviderCapabilities::aws_bedrock_baseline(),
-            _ => ProviderCapabilities::openai_compat_baseline(),
+            Some(provider) => ProviderCapabilities::for_provider_type(provider.provider_type()),
+            // An unknown provider fails validation; keep the generic default until then.
+            None => ProviderCapabilities::openai_compat_baseline(),
         };
         // Only Bedrock providers use api_style; other providers ignore the block.
         if let (Some(ProviderConfig::AwsBedrock(_)), Some(bedrock)) =
