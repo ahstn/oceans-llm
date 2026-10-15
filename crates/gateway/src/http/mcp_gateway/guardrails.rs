@@ -158,7 +158,7 @@ pub(super) async fn enforce_direct_mcp_result(
             prefix,
             rest,
         } => {
-            let released = release_uninspected_result(
+            let evaluation = record_uninspected_result(
                 state,
                 &policy,
                 &request_id,
@@ -166,9 +166,9 @@ pub(super) async fn enforce_direct_mcp_result(
                 failure.error(),
                 &prefix,
             );
-            let Some(evaluation) = released else {
-                return Ok((failure.response(id), None, true));
-            };
+            if evaluation.denied() {
+                return Ok((failure.response(id), Some(evaluation), true));
+            }
             // The consumed prefix is replayed ahead of the unread remainder, so the caller
             // receives the upstream result unchanged.
             let body = stream::iter([Ok(Bytes::from(prefix))]).chain(rest);
@@ -220,7 +220,7 @@ pub(super) async fn enforce_direct_mcp_result(
             true,
         ),
         Err(None) => {
-            let released = release_uninspected_result(
+            let evaluation = record_uninspected_result(
                 state,
                 &policy,
                 &request_id,
@@ -228,13 +228,8 @@ pub(super) async fn enforce_direct_mcp_result(
                 EvaluationError::UnparseableStream,
                 &bytes,
             );
-            match released {
-                Some(evaluation) => (
-                    Response::from_parts(parts, Body::from(bytes)),
-                    Some(evaluation),
-                    false,
-                ),
-                None => (
+            if evaluation.denied() {
+                (
                     mcp_jsonrpc_error_response(
                         StatusCode::FORBIDDEN,
                         id,
@@ -245,9 +240,15 @@ pub(super) async fn enforce_direct_mcp_result(
                             "MCP result was not a valid guarded response"
                         },
                     ),
-                    None,
+                    Some(evaluation),
                     true,
-                ),
+                )
+            } else {
+                (
+                    Response::from_parts(parts, Body::from(bytes)),
+                    Some(evaluation),
+                    false,
+                )
             }
         }
     })
@@ -333,17 +334,17 @@ async fn buffer_mcp_result(
     })
 }
 
-/// Records an audit decision for an MCP result the guard cannot inspect. Returns the
-/// evaluation when the policy is in audit mode, which releases the result unchanged instead
-/// of failing the call; deny mode returns `None` and the caller rejects the result.
-fn release_uninspected_result(
+/// Records the decision for an MCP result the guard cannot inspect and returns it. In audit
+/// mode it is a `fail_open` audit and the caller releases the result unchanged; in deny mode
+/// it is a `fail_closed` deny and the caller rejects the result.
+fn record_uninspected_result(
     state: &AppState,
     policy: &EffectivePolicy,
     request_id: &str,
     mcp_tool_invocation_id: Uuid,
     error: EvaluationError,
     content: &[u8],
-) -> Option<GuardrailEvaluation> {
+) -> GuardrailEvaluation {
     let decision = uninspected_content_decision(
         policy,
         GuardPhase::McpResult,
@@ -351,11 +352,8 @@ fn release_uninspected_result(
         error,
         uninspected_content_hash(&[content]),
     );
-    if decision.action == DecisionAction::Deny {
-        return None;
-    }
     let evaluation = GuardrailEvaluation {
-        action: DecisionAction::Audit,
+        action: decision.action,
         decisions: vec![decision],
         output: EvaluationPayload::McpResult {
             server: String::new(),
@@ -363,7 +361,7 @@ fn release_uninspected_result(
             result: Value::Null,
         },
     };
-    // Persisting on a background task keeps the released result from waiting on the store.
+    // Persisting on a background task keeps the result or rejection from waiting on the store.
     let (state, request_id, decisions) = (
         state.clone(),
         request_id.to_string(),
@@ -378,7 +376,7 @@ fn release_uninspected_result(
         )
         .await;
     });
-    Some(evaluation)
+    evaluation
 }
 
 async fn guard_mcp_json_result(

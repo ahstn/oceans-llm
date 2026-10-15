@@ -58,8 +58,8 @@ async fn guarded_json_and_sse_reject_mixed_result_and_error_envelopes() {
             .expect("guarded result");
             assert!(denied);
             assert!(
-                evaluation.is_none(),
-                "reject ambiguous envelopes before evaluation"
+                only_stream_buffer_deny(evaluation.as_ref()),
+                "reject ambiguous envelopes before content evaluation"
             );
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
             let bytes = to_bytes(response.into_body(), 4_096).await.unwrap();
@@ -101,8 +101,8 @@ async fn guarded_mcp_sse_rejects_malformed_events_without_forwarding_payloads() 
         .expect("guarded result");
         assert!(denied);
         assert!(
-            evaluation.is_none(),
-            "malformed data must fail before evaluation"
+            only_stream_buffer_deny(evaluation.as_ref()),
+            "malformed data must fail before content evaluation"
         );
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let bytes = to_bytes(response.into_body(), 4096)
@@ -212,9 +212,21 @@ async fn guarded_state(
     (directory, state)
 }
 
+/// Whether the only decision is the `stream_buffer` deny for content that could not be
+/// inspected, so no content evaluator saw the result.
+fn only_stream_buffer_deny(evaluation: Option<&GuardrailEvaluation>) -> bool {
+    evaluation.is_some_and(|evaluation| {
+        evaluation.denied()
+            && evaluation.decisions.iter().all(|decision| {
+                decision.evaluator == "stream_buffer"
+                    && decision.failure_disposition == Some(FailureDisposition::FailClosed)
+            })
+    })
+}
+
 /// Returns `action:reason_code:failure_disposition` for each `stream_buffer` decision.
 async fn stream_buffer_decisions(state: &AppState) -> Vec<String> {
-    // Audit releases persist their decision in the background, so wait for the write.
+    // Decisions are persisted in the background, so wait for the write.
     for _ in 0..50 {
         let items = state
             .store
@@ -335,16 +347,32 @@ async fn deny_mode_rejects_oversized_result() {
     let (_directory, state) = guarded_state(PolicyMode::Deny, 24, 1_000).await;
     let upstream = upstream_response("application/json", chunked_body(&RESULT_CHUNKS));
 
-    let (response, denied) = enforce(&state, upstream).await;
+    let (response, evaluation, denied) = enforce_direct_mcp_result(
+        &state,
+        "test-server",
+        "test-tool",
+        Some(&json!(7)),
+        Uuid::new_v4(),
+        upstream,
+    )
+    .await
+    .expect("guarded result");
 
     assert!(denied);
+    assert!(
+        evaluation.is_some_and(|evaluation| evaluation.denied()),
+        "the invocation log receives the deny decision"
+    );
     assert_denied(
         response,
         StatusCode::PAYLOAD_TOO_LARGE,
         "MCP result exceeded the configured guardrail buffer",
     )
     .await;
-    assert!(stream_buffer_decisions(&state).await.is_empty());
+    assert_eq!(
+        stream_buffer_decisions(&state).await,
+        ["deny:stream.buffer_exceeded:fail_closed"]
+    );
 }
 
 #[tokio::test]
@@ -385,6 +413,10 @@ async fn deny_mode_rejects_slow_result() {
         "MCP result did not complete within the guardrail buffer timeout",
     )
     .await;
+    assert_eq!(
+        stream_buffer_decisions(&state).await,
+        ["deny:stream.buffer_timeout:fail_closed"]
+    );
 }
 
 #[tokio::test]
@@ -427,6 +459,10 @@ async fn deny_mode_rejects_invalid_json_rpc_result() {
         "MCP result was not a valid guarded response",
     )
     .await;
+    assert_eq!(
+        stream_buffer_decisions(&state).await,
+        ["deny:stream.unparseable:fail_closed"]
+    );
 }
 
 #[tokio::test]
