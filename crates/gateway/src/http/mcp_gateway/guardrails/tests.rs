@@ -6,6 +6,7 @@ use gateway_guardrails::{
     ManagedCheckKind, ManagedOutcome, ManagedService, PolicyMode, ReasonCode,
     test_utils::StubManagedEvaluator,
 };
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -224,6 +225,27 @@ fn only_stream_buffer_deny(evaluation: Option<&GuardrailEvaluation>) -> bool {
     })
 }
 
+async fn stream_buffer_hashes(state: &AppState) -> Vec<String> {
+    for _ in 0..50 {
+        let items = state
+            .store
+            .list_guardrail_decisions(&GuardrailDecisionQuery {
+                page: 1,
+                page_size: 10,
+                evaluator: Some("stream_buffer".into()),
+                ..Default::default()
+            })
+            .await
+            .expect("decisions")
+            .items;
+        if !items.is_empty() {
+            return items.into_iter().map(|item| item.content_hash).collect();
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Vec::new()
+}
+
 /// Returns `action:reason_code:failure_disposition` for each `stream_buffer` decision.
 async fn stream_buffer_decisions(state: &AppState) -> Vec<String> {
     // Decisions are persisted in the background, so wait for the write.
@@ -339,6 +361,22 @@ async fn audit_mode_releases_oversized_result_unchanged() {
     assert_eq!(
         stream_buffer_decisions(&state).await,
         ["audit:stream.buffer_exceeded:fail_open"]
+    );
+}
+
+#[tokio::test]
+async fn uninspected_result_hash_covers_the_overflowing_chunk() {
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 8, 1_000).await;
+    let result = RESULT_CHUNKS.concat();
+    let upstream = upstream_response("application/json", Body::from(result.clone()));
+
+    let (_, denied) = enforce(&state, upstream).await;
+
+    assert!(denied);
+    assert_eq!(
+        stream_buffer_hashes(&state).await,
+        [format!("sha256:{:x}", Sha256::digest(result.as_bytes()))],
+        "an oversized first chunk is hashed, not an empty prefix"
     );
 }
 

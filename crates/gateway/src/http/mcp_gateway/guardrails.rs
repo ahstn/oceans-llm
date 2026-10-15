@@ -156,6 +156,7 @@ pub(super) async fn enforce_direct_mcp_result(
         BufferedMcpResult::Partial {
             failure,
             prefix,
+            overflow,
             rest,
         } => {
             let evaluation = record_uninspected_result(
@@ -164,14 +165,15 @@ pub(super) async fn enforce_direct_mcp_result(
                 &request_id,
                 mcp_tool_invocation_id,
                 failure.error(),
-                &prefix,
+                &[&prefix, overflow.as_deref().unwrap_or_default()],
             );
             if evaluation.denied() {
                 return Ok((failure.response(id), Some(evaluation), true));
             }
-            // The consumed prefix is replayed ahead of the unread remainder, so the caller
+            // Everything consumed is replayed ahead of the unread remainder, so the caller
             // receives the upstream result unchanged.
-            let body = stream::iter([Ok(Bytes::from(prefix))]).chain(rest);
+            let consumed = [Some(Bytes::from(prefix)), overflow];
+            let body = stream::iter(consumed.into_iter().flatten().map(Ok)).chain(rest);
             return Ok((
                 Response::from_parts(parts, Body::from_stream(body)),
                 Some(evaluation),
@@ -226,7 +228,7 @@ pub(super) async fn enforce_direct_mcp_result(
                 &request_id,
                 mcp_tool_invocation_id,
                 EvaluationError::UnparseableStream,
-                &bytes,
+                &[&bytes],
             );
             if evaluation.denied() {
                 (
@@ -260,11 +262,12 @@ pub(super) type GuardedMcpResult = (Response<Body>, Option<GuardrailEvaluation>,
 /// An upstream MCP result read into memory for inspection.
 enum BufferedMcpResult {
     Complete(Bytes),
-    /// Reading stopped before the end. `prefix` holds every byte consumed so far and `rest`
-    /// the remainder, starting with any chunk that was read but not buffered.
+    /// Reading stopped before the end. `prefix` holds the buffered bytes, `overflow` the chunk
+    /// that would have exceeded the buffer, and `rest` the unread remainder.
     Partial {
         failure: BufferFailure,
         prefix: Vec<u8>,
+        overflow: Option<Bytes>,
         rest: BoxStream<'static, Result<Bytes, axum::Error>>,
     },
 }
@@ -308,7 +311,7 @@ async fn buffer_mcp_result(
     let deadline = Instant::now() + Duration::from_millis(policy.stream_buffer_timeout_ms);
     let mut upstream = body.into_data_stream();
     let mut buffered = Vec::new();
-    let (failure, unbuffered) = loop {
+    let (failure, overflow) = loop {
         match timeout_at(deadline, upstream.next()).await {
             Ok(None) => return Ok(BufferedMcpResult::Complete(Bytes::from(buffered))),
             Ok(Some(Ok(chunk)))
@@ -316,7 +319,7 @@ async fn buffer_mcp_result(
             {
                 buffered.extend_from_slice(&chunk);
             }
-            Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(Ok(chunk))),
+            Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(chunk)),
             // The upstream error can carry its URL, so it is not passed through.
             Ok(Some(Err(_))) => {
                 return Err(ProviderError::Transport(
@@ -330,7 +333,8 @@ async fn buffer_mcp_result(
     Ok(BufferedMcpResult::Partial {
         failure,
         prefix: buffered,
-        rest: stream::iter(unbuffered).chain(upstream).boxed(),
+        overflow,
+        rest: upstream.boxed(),
     })
 }
 
@@ -343,14 +347,14 @@ fn record_uninspected_result(
     request_id: &str,
     mcp_tool_invocation_id: Uuid,
     error: EvaluationError,
-    content: &[u8],
+    content: &[&[u8]],
 ) -> GuardrailEvaluation {
     let decision = uninspected_content_decision(
         policy,
         GuardPhase::McpResult,
         "stream_buffer",
         error,
-        uninspected_content_hash(&[content]),
+        uninspected_content_hash(content),
     );
     let evaluation = GuardrailEvaluation {
         action: decision.action,
