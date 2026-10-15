@@ -53,6 +53,11 @@ export function AuditEntrySheet({
                   <Mono>{entry.actor.user_id}</Mono>
                 </Fact>
               ) : null}
+              {entry.actor.api_key_id ? (
+                <Fact label="API key ID">
+                  <Mono>{entry.actor.api_key_id}</Mono>
+                </Fact>
+              ) : null}
             </dl>
             <Separator />
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 px-4 text-sm">

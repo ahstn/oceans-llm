@@ -144,6 +144,27 @@ describe('AuditLogPage', () => {
     expect(within(sheet).getByTestId('audit-json-before')).toHaveTextContent('Tickets')
   })
 
+  it('names the API key that made a key-authenticated change', async () => {
+    const keyEntry = {
+      ...entry,
+      id: '8',
+      actor: {
+        kind: 'api_key',
+        user_id: ADMIN_ID,
+        api_key_id: '44444444-4444-4444-8444-444444444444',
+        label: 'admin@example.test',
+      },
+    }
+    routeMock.useLoaderData.mockReturnValue(loaderData({ items: [keyEntry] }))
+    await renderPage()
+
+    fireEvent.click(screen.getByText('tickets'))
+
+    const sheet = await screen.findByTestId('audit-entry-sheet')
+    expect(within(sheet).getByText('API key')).toBeInTheDocument()
+    expect(within(sheet).getByText('44444444-4444-4444-8444-444444444444')).toBeInTheDocument()
+  })
+
   it('shows an empty state when nothing matches', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData({ items: [], next_cursor: null }))
     await renderPage()

@@ -63,7 +63,7 @@ impl AuditLogFilter {
             target_id: query.target_id.clone(),
             start_ms: query
                 .occurred_at_start
-                .map(datetime_to_unix_millis)
+                .map(lower_bound_millis)
                 .transpose()?,
             end_ms: query
                 .occurred_at_end
@@ -74,6 +74,17 @@ impl AuditLogFilter {
             page_size: page_size as usize,
             fetch_limit: i64::from(page_size) + 1,
         })
+    }
+}
+
+/// Stored timestamps are whole milliseconds, so an inclusive lower bound with a
+/// sub-millisecond fraction rounds up; rounding down would admit earlier entries.
+fn lower_bound_millis(value: time::OffsetDateTime) -> Result<i64, StoreError> {
+    let millis = datetime_to_unix_millis(value)?;
+    if value.unix_timestamp_nanos() % 1_000_000 == 0 {
+        Ok(millis)
+    } else {
+        Ok(millis + 1)
     }
 }
 
@@ -207,4 +218,25 @@ pub(crate) async fn exercise_audit_log_store(store: &impl gateway_core::AuditLog
         .await
         .expect("other actor");
     assert!(nobody.items.is_empty());
+}
+
+#[cfg(test)]
+mod tests {
+    use time::{Duration, OffsetDateTime};
+
+    use super::lower_bound_millis;
+
+    #[test]
+    fn lower_bounds_round_sub_millisecond_fractions_up() {
+        let whole = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+        assert_eq!(lower_bound_millis(whole).unwrap(), 1_800_000_000_000);
+        assert_eq!(
+            lower_bound_millis(whole + Duration::nanoseconds(1)).unwrap(),
+            1_800_000_000_001
+        );
+        assert_eq!(
+            lower_bound_millis(whole + Duration::microseconds(1_500)).unwrap(),
+            1_800_000_000_002
+        );
+    }
 }
