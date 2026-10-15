@@ -202,22 +202,22 @@ impl McpAccessRepository for PostgresStore {
         input: &NewMcpToolsetRecord,
     ) -> Result<McpToolsetRecord, StoreError> {
         let id = Uuid::new_v4();
-        sqlx::query(
-            r#"
-            INSERT INTO mcp_toolsets (
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let row = sqlx::query(&format!(
+            "INSERT INTO mcp_toolsets (
                 toolset_id, toolset_key, display_name, description, status, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, 'active', $5, $5)
-            "#,
-        )
+            RETURNING {TOOLSET_COLUMNS}"
+        ))
         .bind(id.to_string())
         .bind(&input.toolset_key)
         .bind(&input.display_name)
         .bind(&input.description)
         .bind(input.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_toolset(&self.pool, id).await
+        decode_toolset(&row)
     }
 
     async fn update_mcp_toolset(

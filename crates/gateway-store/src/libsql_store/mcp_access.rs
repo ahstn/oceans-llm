@@ -244,13 +244,16 @@ impl McpAccessRepository for LibsqlStore {
         input: &NewMcpToolsetRecord,
     ) -> Result<McpToolsetRecord, StoreError> {
         let id = Uuid::new_v4();
-        self.connection
-            .execute(
-                r#"
-                INSERT INTO mcp_toolsets (
-                    toolset_id, toolset_key, display_name, description, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)
-                "#,
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "INSERT INTO mcp_toolsets (
+                        toolset_id, toolset_key, display_name, description, status, created_at, updated_at
+                    ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)
+                    RETURNING {TOOLSET_COLUMNS}"
+                ),
                 libsql::params![
                     id.to_string(),
                     input.toolset_key.as_str(),
@@ -261,7 +264,11 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_toolset(&self.connection, id).await
+        let row =
+            rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+                StoreError::Unexpected("tool set insert returned no row".to_string())
+            })?;
+        decode_toolset(&row)
     }
 
     async fn update_mcp_toolset(
