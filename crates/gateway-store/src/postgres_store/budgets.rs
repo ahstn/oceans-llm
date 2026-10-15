@@ -159,8 +159,8 @@ impl BudgetRepository for PostgresStore {
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
         self.write_active_budget(scope, settings, source, updated_at, false)
-            .await?;
-        self.load_upserted_budget(scope).await
+            .await?
+            .ok_or_else(|| StoreError::Unexpected("budget upsert returned no row".to_string()))
     }
 
     async fn set_manual_budget(
@@ -169,10 +169,15 @@ impl BudgetRepository for PostgresStore {
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
     ) -> Result<(BudgetRecord, bool), StoreError> {
-        let changed = self
+        // The written row is the one this save produced; with no write, the
+        // active budget already had these settings.
+        match self
             .write_active_budget(scope, settings, &BudgetSource::manual(), updated_at, true)
-            .await?;
-        Ok((self.load_upserted_budget(scope).await?, changed))
+            .await?
+        {
+            Some(budget) => Ok((budget, true)),
+            None => Ok((self.load_upserted_budget(scope).await?, false)),
+        }
     }
 
     async fn upsert_active_budget_with_source_guard(
@@ -1589,9 +1594,9 @@ fn token_usage_buckets_from_row(
 }
 
 impl PostgresStore {
-    /// Inserts or replaces the active budget for the scope. With
-    /// `only_when_changed`, an active budget with the same settings and source is
-    /// left alone, and the result says whether a row was written.
+    /// Inserts or replaces the active budget for the scope and returns the written
+    /// row. With `only_when_changed`, an active budget with the same settings and
+    /// source is left alone and `None` is returned.
     async fn write_active_budget(
         &self,
         scope: &BudgetScope,
@@ -1599,7 +1604,7 @@ impl PostgresStore {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
         only_when_changed: bool,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<BudgetRecord>, StoreError> {
         let condition = if only_when_changed {
             ACTIVE_BUDGET_CHANGED
         } else {
@@ -1621,6 +1626,9 @@ impl PostgresStore {
                 source_kind = excluded.source_kind,
                 source_key = excluded.source_key,
                 updated_at = excluded.updated_at{condition}
+            RETURNING budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
             "#
         );
         let result = sqlx::query(&sql)
@@ -1639,10 +1647,10 @@ impl PostgresStore {
             .bind(updated_at.unix_timestamp())
             .bind(source.kind.as_str())
             .bind(source.key.as_deref())
-            .execute(&self.pool)
+            .fetch_optional(&self.pool)
             .await
             .map_err(to_query_error)?;
-        Ok(result.rows_affected() > 0)
+        result.as_ref().map(decode_budget_record).transpose()
     }
 
     async fn load_upserted_budget(&self, scope: &BudgetScope) -> Result<BudgetRecord, StoreError> {
