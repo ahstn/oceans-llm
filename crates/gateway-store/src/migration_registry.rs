@@ -335,6 +335,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
         postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
     },
+    MigrationManifest {
+        version: 59,
+        name: "mcp_oauth_clients",
+        checksum: "V59__mcp_oauth_clients.sql",
+        libsql_sql: include_str!("../migrations/V59__mcp_oauth_clients.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__mcp_oauth_clients.sql"),
+    },
 ];
 
 #[cfg(test)]

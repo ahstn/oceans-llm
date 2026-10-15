@@ -19,6 +19,7 @@ The platform-admin API surface is:
 - `POST /api/v1/admin/mcp/servers/{server_id}/disable`
 - `GET /api/v1/admin/mcp/servers/{server_id}/tools`
 - `POST /api/v1/admin/mcp/servers/{server_id}/discovery-refresh`
+- `POST /api/v1/admin/mcp/oauth-discovery`: read a server URL's OAuth metadata (RFC 9728, RFC 8414, OpenID Connect discovery) and return a suggested `oauth_obo` auth config; stores nothing
 - `GET /api/v1/admin/mcp/toolsets`
 - `POST /api/v1/admin/mcp/toolsets`
 - `PATCH /api/v1/admin/mcp/toolsets/{toolset_id}`
@@ -32,7 +33,7 @@ The platform-admin API surface is:
 - `DELETE /api/v1/admin/mcp/credential-bindings/{credential_binding_id}`
 - `GET /api/v1/admin/mcp/effective-access`
 
-All endpoints require an active platform-admin session. The admin contract is generated from gateway handler annotations; regenerate it with `mise run admin-contract-generate` after route or DTO changes.
+All endpoints require an active platform-admin session. The user-facing OAuth routes are separate: `GET /api/v1/mcp/oauth/callback` completes connections for servers with their own authorization server, and `GET /api/v1/mcp/oauth/client-metadata.json` serves the public Client ID Metadata Document. The admin contract is generated from gateway handler annotations; regenerate it with `mise run admin-contract-generate` after route or DTO changes.
 
 ## Admin UI
 
@@ -120,6 +121,7 @@ User-added MCP servers are stored in:
 - `mcp_upstream_credential_bindings`: principal-bound upstream credentials for execution-time auth
 - `mcp_oauth_states`: one-use upstream OAuth state and PKCE transactions
 - `mcp_oauth_refresh_leases`: short refresh leases shared by gateway replicas
+- `mcp_oauth_clients`: OAuth clients Oceans registered dynamically (RFC 7591), one per server, with the secret encrypted
 - `mcp_tool_token_estimates`: cached context-token estimates for MCP tool definitions
 - `request_mcp_token_overheads`: request-level MCP context-overhead summaries, separate from spend accounting
 

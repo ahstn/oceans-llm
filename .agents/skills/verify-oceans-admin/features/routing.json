@@ -372,6 +372,7 @@
         "crates/gateway/src/http/mcp_*/**",
         "crates/gateway-mcp/**",
         "crates/gateway-service/src/mcp_*.rs",
+        "crates/gateway-service/src/mcp_*/**",
         "crates/gateway-store/src/libsql_store/mcp_*.rs",
         "crates/gateway-store/src/any_store_mcp_*.rs",
         ".agents/skills/verify-oceans-admin/scripts/{drive-mcp,mcp-browser,mcp-canary}.mjs",
@@ -504,7 +505,9 @@
         "crates/gateway/src/http/mcp_oauth/**",
         "crates/gateway/src/http/mcp_gateway/credentials.rs",
         "crates/gateway/src/http/mcp_gateway/credentials/**",
-        "crates/gateway-service/src/mcp_oauth.rs"
+        "crates/gateway-service/src/mcp_oauth.rs",
+        "crates/gateway-service/src/mcp_oauth_discovery.rs",
+        "crates/gateway-service/src/mcp_oauth_discovery/**"
       ]
     },
     {

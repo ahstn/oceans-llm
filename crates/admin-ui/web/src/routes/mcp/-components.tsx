@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -39,15 +39,24 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
+import { OauthDiscoveryPanel } from './-oauth-discovery'
 import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
 
 const AUTH_MODES = [
   { value: 'none', label: 'None' },
-  { value: 'gateway_static_header', label: 'Gateway static header' },
+  { value: 'gateway_static_header', label: 'Gateway static credential' },
   { value: 'gateway_bearer_token', label: 'Gateway bearer token' },
   { value: 'user_passthrough', label: 'User passthrough' },
   { value: 'oauth_obo', label: 'OAuth on-behalf-of' },
 ] as const
+
+const AUTH_CONFIG_HINTS: Record<string, string> = {
+  gateway_static_header:
+    'Send the secret as header_name, optionally wrapped by value_template (for example "Token {{api_key}}"), or as a query_param such as "api_key". secret_ref names an env/OCEANS_MCP_DISCOVERY_* variable.',
+  gateway_bearer_token: 'secret_ref names an env/OCEANS_MCP_DISCOVERY_* variable.',
+  oauth_obo:
+    "Use provider_key for a configured provider, or discover the server's own authorization server above. scopes is optional when the provider has defaults.",
+}
 
 export function ServerOverviewPanel({
   server,
@@ -798,6 +807,18 @@ export function ServerFormFields({
           required
         />
       </Field>
+      <div className="min-w-0 md:col-span-2">
+        <OauthDiscoveryPanel
+          serverUrl={form.server_url}
+          onApply={(authConfig) =>
+            onFormChange({
+              ...form,
+              auth_mode: 'oauth_obo',
+              auth_config: JSON.stringify(authConfig, null, 2),
+            })
+          }
+        />
+      </div>
       <Field>
         <FieldLabel>Auth mode</FieldLabel>
         <Select
@@ -838,6 +859,9 @@ export function ServerFormFields({
           onChange={(event) => onFormChange({ ...form, auth_config: event.target.value })}
           rows={5}
         />
+        {AUTH_CONFIG_HINTS[form.auth_mode] ? (
+          <FieldDescription>{AUTH_CONFIG_HINTS[form.auth_mode]}</FieldDescription>
+        ) : null}
       </Field>
     </FieldGroup>
   )

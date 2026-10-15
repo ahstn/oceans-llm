@@ -54,6 +54,25 @@ fn decode_credential(row: &PgRow) -> Result<McpUpstreamCredentialBindingRecord, 
     })
 }
 
+const OAUTH_CLIENT_COLUMNS: &str = "mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method, secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at, created_at, updated_at";
+
+fn decode_oauth_client(row: &PgRow) -> Result<McpOauthClientRecord, StoreError> {
+    let client_secret_expires_at: Option<i64> = row.try_get(8).map_err(to_query_error)?;
+    Ok(McpOauthClientRecord {
+        mcp_server_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
+        issuer: row.try_get(1).map_err(to_query_error)?,
+        redirect_uri: row.try_get(2).map_err(to_query_error)?,
+        client_id: row.try_get(3).map_err(to_query_error)?,
+        token_endpoint_auth_method: row.try_get(4).map_err(to_query_error)?,
+        secret_ciphertext: row.try_get(5).map_err(to_query_error)?,
+        secret_nonce: row.try_get(6).map_err(to_query_error)?,
+        secret_key_id: row.try_get(7).map_err(to_query_error)?,
+        client_secret_expires_at: client_secret_expires_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(row.try_get(9).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.try_get(10).map_err(to_query_error)?)?,
+    })
+}
+
 async fn load_credential(
     pool: &PgPool,
     credential_binding_id: Uuid,
@@ -340,6 +359,81 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         )
         .bind(credential_binding_id.to_string())
         .bind(lease_token.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {OAUTH_CLIENT_COLUMNS} FROM mcp_oauth_clients WHERE mcp_server_id = $1"
+        );
+        sqlx::query(&sql)
+            .bind(mcp_server_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_oauth_client)
+            .transpose()
+    }
+
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO mcp_oauth_clients (
+                mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method,
+                secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at,
+                created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT(mcp_server_id) DO NOTHING
+            "#,
+        )
+        .bind(record.mcp_server_id.to_string())
+        .bind(&record.issuer)
+        .bind(&record.redirect_uri)
+        .bind(&record.client_id)
+        .bind(&record.token_endpoint_auth_method)
+        .bind(&record.secret_ciphertext)
+        .bind(&record.secret_nonce)
+        .bind(&record.secret_key_id)
+        .bind(
+            record
+                .client_secret_expires_at
+                .map(OffsetDateTime::unix_timestamp),
+        )
+        .bind(record.created_at.unix_timestamp())
+        .bind(record.updated_at.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        self.get_mcp_oauth_client(record.mcp_server_id)
+            .await?
+            .ok_or_else(|| {
+                StoreError::Unexpected(format!(
+                    "MCP OAuth client for server `{}` was not stored",
+                    record.mcp_server_id
+                ))
+            })
+    }
+
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "DELETE FROM mcp_oauth_clients WHERE mcp_server_id = $1 AND client_id = $2",
+        )
+        .bind(mcp_server_id.to_string())
+        .bind(client_id)
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;

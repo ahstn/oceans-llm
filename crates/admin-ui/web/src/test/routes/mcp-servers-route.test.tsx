@@ -13,6 +13,7 @@ const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
 const refreshExternalMcpServerDiscoveryMock = vi.fn()
+const discoverExternalMcpServerOauthMock = vi.fn()
 
 class ResizeObserverMock {
   observe() {}
@@ -38,6 +39,8 @@ vi.mock('sonner', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   addMcpServer: (...args: unknown[]) => addMcpServerMock(...args),
   disableExternalMcpServer: (...args: unknown[]) => disableExternalMcpServerMock(...args),
+  discoverExternalMcpServerOauth: (...args: unknown[]) =>
+    discoverExternalMcpServerOauthMock(...args),
   getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
@@ -443,6 +446,81 @@ describe('ServersTab', () => {
           serverId: 'server_1',
           input: expect.objectContaining({ display_name: 'GitHub MCP' }),
         },
+      })
+    })
+  })
+
+  it('fills OAuth settings from discovery and lets the admin edit them before saving', async () => {
+    discoverExternalMcpServerOauthMock.mockResolvedValue({
+      data: {
+        resource: 'https://mcp.linear.example/mcp',
+        resource_metadata_url:
+          'https://mcp.linear.example/.well-known/oauth-protected-resource/mcp',
+        authorization_servers: ['https://auth.linear.example'],
+        issuer: 'https://auth.linear.example',
+        authorization_server_metadata_url:
+          'https://auth.linear.example/.well-known/oauth-authorization-server',
+        authorization_endpoint: 'https://auth.linear.example/authorize',
+        token_endpoint: 'https://auth.linear.example/token',
+        registration_endpoint: 'https://auth.linear.example/register',
+        scopes_supported: ['read', 'write'],
+        default_scopes: ['read'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        code_challenge_methods_supported: ['S256'],
+        client_id_metadata_document_supported: false,
+        recommended_client_registration: 'dynamic',
+        resource_indicator: true,
+        callback_url: 'https://gateway.example/api/v1/mcp/oauth/callback',
+        client_metadata_document_url: null,
+        warnings: ['The server lists 2 authorization servers; Oceans uses the first.'],
+        suggested_auth_config: {
+          resource: 'https://mcp.linear.example/mcp',
+          issuer: 'https://auth.linear.example',
+          client_registration: 'dynamic',
+          scopes: ['read'],
+        },
+      },
+    })
+    await renderServersTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'linear' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Linear' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.linear.example/mcp' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Discover OAuth' }))
+
+    await waitFor(() =>
+      expect(discoverExternalMcpServerOauthMock).toHaveBeenCalledWith({
+        data: { serverUrl: 'https://mcp.linear.example/mcp' },
+      }),
+    )
+    const panel = await screen.findByTestId('mcp-oauth-discovery')
+    expect(within(panel).getByText('Dynamic client registration')).toBeTruthy()
+    expect(within(panel).getByText('https://auth.linear.example/token')).toBeTruthy()
+    expect(within(panel).getByText(/lists 2 authorization servers/)).toBeTruthy()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Use discovered settings' }))
+    const authConfig = screen.getByLabelText('Auth config JSON') as HTMLTextAreaElement
+    const applied = JSON.parse(authConfig.value) as Record<string, unknown>
+    expect(applied.client_registration).toBe('dynamic')
+    // The admin overrides the discovered scopes before saving.
+    fireEvent.change(authConfig, {
+      target: { value: JSON.stringify({ ...applied, scopes: ['read', 'write'] }) },
+    })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          server_key: 'linear',
+          auth_mode: 'oauth_obo',
+          auth_config: expect.objectContaining({
+            issuer: 'https://auth.linear.example',
+            scopes: ['read', 'write'],
+          }),
+        }),
       })
     })
   })
