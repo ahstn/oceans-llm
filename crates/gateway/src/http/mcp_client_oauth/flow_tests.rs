@@ -466,13 +466,18 @@ async fn authorize_never_redirects_to_an_unverified_client() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(location.is_none());
 
-    let repeated = format!(
-        "{}&client_id=editor",
-        harness.authorize_query("editor", &[])
-    );
-    let (status, location) = harness.authorize(&repeated).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(location.is_none());
+    // A repeated client_id or redirect_uri never redirects, even after an
+    // earlier repeat of another parameter.
+    for suffix in [
+        "&client_id=editor",
+        "&code_challenge_method=S256&client_id=another-client",
+        "&code_challenge_method=S256&redirect_uri=https%3A%2F%2Fevil.example.com%2Fcallback",
+    ] {
+        let repeated = format!("{}{suffix}", harness.authorize_query("editor", &[]));
+        let (status, location) = harness.authorize(&repeated).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{suffix}");
+        assert!(location.is_none(), "{suffix}");
+    }
 }
 
 #[tokio::test]
@@ -806,4 +811,17 @@ async fn omitted_token_resource_keeps_the_authorized_per_server_audience() {
         context.grant.resource,
         "https://oceans.example.com/mcp/repository"
     );
+}
+
+#[tokio::test]
+async fn token_requests_over_the_body_limit_are_refused() {
+    let harness = Harness::new().await;
+    let scope = "x ".repeat(10 * 1024);
+    let (status, _, _) = harness
+        .token(
+            &[("grant_type", "refresh_token"), ("scope", scope.as_str())],
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }

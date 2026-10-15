@@ -23,6 +23,7 @@ pub use consent::{
     OauthAuthorizationRequestView, OauthResourceKind, OauthScopeView,
     decide_oauth_authorization_request, get_oauth_authorization_request,
 };
+pub(crate) use form::MAX_FORM_BODY_BYTES;
 pub use metadata::{
     oauth_authorization_server_metadata, oauth_protected_resource_metadata_aggregate,
     oauth_protected_resource_metadata_server,
