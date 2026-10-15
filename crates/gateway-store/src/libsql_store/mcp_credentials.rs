@@ -336,15 +336,18 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let changed = self
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let mut rows = self
             .connection
-            .execute(
-                r#"
-                UPDATE mcp_upstream_credential_bindings
-                SET revoked_at = ?1, updated_at = ?1
-                WHERE credential_binding_id = ?2 AND revoked_at IS NULL
-                "#,
+            .query(
+                &format!(
+                    r#"
+                    UPDATE mcp_upstream_credential_bindings
+                    SET revoked_at = ?1, updated_at = ?1
+                    WHERE credential_binding_id = ?2 AND revoked_at IS NULL
+                    RETURNING {CREDENTIAL_COLUMNS}
+                    "#
+                ),
                 libsql::params![
                     revoked_at.unix_timestamp(),
                     credential_binding_id.to_string()
@@ -352,7 +355,11 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(changed > 0)
+        rows.next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_credential(&row))
+            .transpose()
     }
 
     async fn touch_mcp_upstream_credential_binding_last_used(

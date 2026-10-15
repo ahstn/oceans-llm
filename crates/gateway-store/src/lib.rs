@@ -2026,15 +2026,16 @@ pub(crate) mod tests {
                 .expect("release refresh lease")
         );
 
-        assert!(
-            store
-                .revoke_mcp_upstream_credential_binding(
-                    binding.credential_binding_id,
-                    now + Duration::minutes(10),
-                )
-                .await
-                .expect("revoke credential")
-        );
+        let revoked = store
+            .revoke_mcp_upstream_credential_binding(
+                binding.credential_binding_id,
+                now + Duration::minutes(10),
+            )
+            .await
+            .expect("revoke credential")
+            .expect("active binding revoked");
+        assert_eq!(revoked.credential_binding_id, binding.credential_binding_id);
+        assert!(revoked.revoked_at.is_some());
         assert!(
             store
                 .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)

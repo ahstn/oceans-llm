@@ -488,10 +488,14 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
     assert_eq!(binding_entry["target_id"], binding_id);
     assert_eq!(binding_entry["metadata"]["operation"], "create");
     assert_eq!(binding_entry["after"]["material_kind"], "bearer_token");
+    let revoked_binding = harness.entry("mcp_credential_binding.revoked").await;
+    assert_eq!(revoked_binding["target_id"], binding_id);
+    // The entry names the revoked access, not just its id.
     assert_eq!(
-        harness.entry("mcp_credential_binding.revoked").await["target_id"],
-        binding_id
+        revoked_binding["target_label"],
+        binding_entry["target_label"]
     );
+    assert_eq!(revoked_binding["before"]["material_kind"], "bearer_token");
 
     let everything = serde_json::to_string(&harness.entries().await).unwrap();
     assert!(!everything.contains(secret), "credential secret leaked");

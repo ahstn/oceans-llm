@@ -300,20 +300,22 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let sql = format!(
             r#"
             UPDATE mcp_upstream_credential_bindings
             SET revoked_at = $1, updated_at = $1
             WHERE credential_binding_id = $2 AND revoked_at IS NULL
-            "#,
-        )
-        .bind(revoked_at.unix_timestamp())
-        .bind(credential_binding_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_write_error)?;
-        Ok(result.rows_affected() > 0)
+            RETURNING {CREDENTIAL_COLUMNS}
+            "#
+        );
+        let row = sqlx::query(&sql)
+            .bind(revoked_at.unix_timestamp())
+            .bind(credential_binding_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        row.as_ref().map(decode_credential).transpose()
     }
 
     async fn touch_mcp_upstream_credential_binding_last_used(

@@ -304,14 +304,20 @@ where
             .collect())
     }
 
-    pub async fn revoke_binding(&self, credential_binding_id: Uuid) -> Result<bool, GatewayError> {
+    /// Revokes the binding and returns it, without secret material, or `None` when
+    /// it was missing or already revoked.
+    pub async fn revoke_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
         Ok(self
             .repo
             .revoke_mcp_upstream_credential_binding(
                 credential_binding_id,
                 OffsetDateTime::now_utc(),
             )
-            .await?)
+            .await?
+            .map(redact_binding))
     }
 }
 
@@ -1067,7 +1073,7 @@ mod tests {
             &self,
             _credential_binding_id: Uuid,
             _revoked_at: OffsetDateTime,
-        ) -> Result<bool, StoreError> {
+        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
             unimplemented!()
         }
 

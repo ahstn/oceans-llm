@@ -872,20 +872,25 @@ pub async fn revoke_mcp_credential_binding(
     let actor = require_platform_admin(&state, &headers).await?;
     let credential_binding_id = parse_uuid(&credential_binding_id, "credential_binding_id")?;
     let service = McpCredentialService::new(state.store.clone());
-    state
-        .audit()
-        .audited_change(
-            &meta.user_context(&actor),
-            service.revoke_binding(credential_binding_id),
-            || {
+    // The revoke returns the binding it changed, so the entry names its owner and
+    // keeps its redacted settings. A missing or already-revoked binding records
+    // nothing.
+    if let Some(binding) = service.revoke_binding(credential_binding_id).await? {
+        let binding = map_credential_binding(binding);
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
                 AuditEvent::new(
                     actions::MCP_CREDENTIAL_BINDING_REVOKED,
                     targets::MCP_CREDENTIAL_BINDING,
                 )
-                .target(credential_binding_id)
-            },
-        )
-        .await?;
+                .target(binding.id())
+                .label(binding.owner_scope_key().to_string())
+                .before(credential_binding_audit_summary(&binding)),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpCredentialBindingsPayload {
         items: Vec::new(),
     })))

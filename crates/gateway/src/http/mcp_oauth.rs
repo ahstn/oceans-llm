@@ -458,7 +458,12 @@ pub async fn revoke_mcp_oauth_connection(
         .await?
     {
         let credentials = McpCredentialService::new(state.store.clone());
-        let revoke = credentials.revoke_binding(binding.credential_binding_id);
+        let revoke = async {
+            credentials
+                .revoke_binding(binding.credential_binding_id)
+                .await
+                .map(|revoked| revoked.is_some())
+        };
         state
             .audit()
             .audited_change(&meta.user_context(&user), revoke, || {

@@ -121,7 +121,7 @@ impl McpUpstreamCredentialRepository for AnyStore {
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store

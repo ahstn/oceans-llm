@@ -1216,11 +1216,13 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         include_revoked: bool,
     ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError>;
 
+    /// Revokes an active binding and returns it as revoked, or `None` when it was
+    /// missing or already revoked.
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
 
     async fn touch_mcp_upstream_credential_binding_last_used(
         &self,
