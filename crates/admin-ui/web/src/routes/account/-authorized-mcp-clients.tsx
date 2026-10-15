@@ -109,10 +109,10 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                 <TableBody>
                   {clients.items.map((client) => (
                     <TableRow key={client.grant_id}>
-                      <TableCell className="max-w-64 px-3 py-3">
+                      <TableCell className="max-w-56 px-3 py-3">
                         <ClientIdentity client={client} />
                       </TableCell>
-                      <TableCell className="text-subtle-foreground px-3 py-3">
+                      <TableCell className="text-subtle-foreground max-w-56 truncate px-3 py-3">
                         {accessLabel(client)}
                       </TableCell>
                       <TableCell className="text-subtle-foreground px-3 py-3">
@@ -177,7 +177,7 @@ function clientName(client: AuthorizedMcpClientView) {
 
 function accessLabel(client: AuthorizedMcpClientView) {
   return client.resource_kind === 'aggregate'
-    ? 'All MCP servers you have access to'
+    ? 'All your MCP servers'
     : `MCP server ${client.server_key ?? ''}`.trim()
 }
 

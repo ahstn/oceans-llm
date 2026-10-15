@@ -78,9 +78,7 @@ describe('AuthorizedMcpClientsCard', () => {
     const card = screen.getByTestId('authorized-mcp-clients')
     expect(within(card).getAllByText('Editor').length).toBeGreaterThan(0)
     expect(within(card).getAllByText('Unnamed MCP client').length).toBeGreaterThan(0)
-    expect(within(card).getAllByText('All MCP servers you have access to').length).toBeGreaterThan(
-      0,
-    )
+    expect(within(card).getAllByText('All your MCP servers').length).toBeGreaterThan(0)
     expect(within(card).getAllByText('MCP server github').length).toBeGreaterThan(0)
     expect(card.querySelector('[data-slot="card-content"]')).toHaveClass('min-w-0')
     expect(screen.getByTestId('authorized-mcp-clients-table')).toHaveClass(
