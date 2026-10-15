@@ -806,7 +806,20 @@ where
                 if route.pricing_override.is_none() && route.context_window_tokens.is_none() {
                     continue;
                 }
-                let metadata = self.resolve_route_metadata(&route, now).await?;
+                // This check only warns, so a failed lookup must not stop startup.
+                let metadata = match self.resolve_route_metadata(&route, now).await {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        warn!(
+                            error = %error,
+                            model_key = %model.model_key,
+                            provider_key = %route.provider_key,
+                            upstream_model = %route.upstream_model,
+                            "skipping redundant route override check; route metadata lookup failed"
+                        );
+                        continue;
+                    }
+                };
                 if let (Some(configured), Some(catalog)) = (
                     route.pricing_override.as_ref(),
                     metadata.catalog_pricing.as_ref(),

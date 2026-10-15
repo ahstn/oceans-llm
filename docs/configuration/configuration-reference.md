@@ -1237,6 +1237,8 @@ An omitted capability flag takes the value the route's provider and compatibilit
 | `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, and `decisions` |
 | Any other route | Everything except `decisions` |
 
+The table lists route flags. Bedrock routes derive `embeddings: true`, but Bedrock providers never serve embeddings, so an embeddings request never selects a Bedrock route.
+
 An explicit flag replaces the derived value. Validation still rejects a flag the profile cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. At request time the gateway also intersects route flags with what the provider type can serve, so a route can narrow provider capability but cannot expand it.
 
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
