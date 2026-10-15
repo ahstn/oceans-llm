@@ -1285,8 +1285,11 @@ pub async fn deactivate_identity_user(
     ensure_deactivation_allowed(&user).map_err(AppError)?;
     let now = OffsetDateTime::now_utc();
     let progress = AuditProgress::default();
+    // The store returns the status it replaced, read under the deactivation's write
+    // lock, so `before` is not the earlier read a concurrent change could outdate.
+    let replaced = std::sync::OnceLock::new();
     let deactivate = async {
-        state.store.deactivate_identity_user(user_id, now).await?;
+        let _ = replaced.set(state.store.deactivate_identity_user(user_id, now).await?);
         progress.landed();
         state.store.revoke_user_sessions(user_id, now).await?;
         state
@@ -1295,7 +1298,11 @@ pub async fn deactivate_identity_user(
             .await?;
         Ok::<_, AppError>(())
     };
-    let before = serde_json::json!({ "status": user.status.as_str() });
+    let before = || {
+        serde_json::json!({
+            "status": replaced.get().copied().unwrap_or(user.status).as_str(),
+        })
+    };
     let after = serde_json::json!({ "status": UserStatus::Disabled.as_str() });
     state
         .audit()
@@ -1305,14 +1312,14 @@ pub async fn deactivate_identity_user(
             deactivate,
             |()| {
                 user_event(actions::USER_DEACTIVATED, &user)
-                    .before(&before)
+                    .before(before())
                     .after(&after)
                     .meta("sessions_revoked", true)
             },
             // Deactivated, but sessions or invitations may still be live.
             |_, error| {
                 user_event(actions::USER_DEACTIVATED, &user)
-                    .before(&before)
+                    .before(before())
                     .after(&after)
                     .meta("error", error.0.error_code())
             },

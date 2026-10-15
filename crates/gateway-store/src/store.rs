@@ -208,7 +208,7 @@ pub trait GatewayStore:
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<UserStatus, StoreError>;
     async fn assign_team_membership(
         &self,
         user_id: Uuid,
@@ -1678,7 +1678,7 @@ impl GatewayStore for AnyStore {
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         dispatch_store!(self, deactivate_identity_user(user_id, updated_at))
     }
 

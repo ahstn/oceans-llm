@@ -1149,13 +1149,18 @@ impl LibsqlStore {
         Ok(changed > 0)
     }
 
+    /// Disables the user. Returns the status it replaced, read under the same
+    /// write lock.
     pub async fn deactivate_identity_user(
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         let connection = self.transaction_connection().await?;
-        let tx = connection.transaction().await.map_err(to_query_error)?;
+        let tx = connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_write_error)?;
         let mut rows = tx
             .query(
                 r#"
@@ -1173,6 +1178,7 @@ impl LibsqlStore {
         };
         let current_role: String = row.get(0).map_err(to_query_error)?;
         let current_status: String = row.get(1).map_err(to_query_error)?;
+        drop(rows);
         if current_status == UserStatus::Disabled.as_str() {
             return Err(StoreError::Conflict("user is already disabled".to_string()));
         }
@@ -1227,7 +1233,9 @@ impl LibsqlStore {
             return Err(StoreError::Conflict("user is already disabled".to_string()));
         }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        UserStatus::from_db(&current_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown user status `{current_status}`"))
+        })
     }
 
     pub async fn remove_team_membership(

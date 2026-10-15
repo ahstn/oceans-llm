@@ -1015,18 +1015,20 @@ impl PostgresStore {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Disables the user. Returns the status it replaced, read under the same
+    /// write lock.
     pub async fn deactivate_identity_user(
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         let row = sqlx::query(
             r#"
             SELECT global_role, status
             FROM users
             WHERE user_id = $1
-            LIMIT 1
+            FOR UPDATE
             "#,
         )
         .bind(user_id.to_string())
@@ -1089,7 +1091,9 @@ impl PostgresStore {
             return Err(StoreError::Conflict("user is already disabled".to_string()));
         }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        UserStatus::from_db(&current_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown user status `{current_status}`"))
+        })
     }
 
     pub async fn remove_team_membership(

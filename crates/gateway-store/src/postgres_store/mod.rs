@@ -401,7 +401,7 @@ impl GatewayStore for PostgresStore {
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         Self::deactivate_identity_user(self, user_id, updated_at).await
     }
 
