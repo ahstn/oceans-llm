@@ -6,8 +6,8 @@ use gateway_core::{
 
 use super::{LibsqlStore, to_query_error};
 use crate::audit_logs::{
-    AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql, parse_json,
-    parse_optional_json,
+    AUDIT_LOG_COLUMNS, AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql,
+    parse_json, parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
 
@@ -100,6 +100,22 @@ impl AuditLogRepository for LibsqlStore {
             items.push(decode(&row)?);
         }
         Ok(finish_page(items, filter.page_size))
+    }
+
+    async fn get_audit_log(&self, id: i64) -> Result<Option<AuditLogRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                &format!("SELECT {AUDIT_LOG_COLUMNS} FROM audit_logs WHERE id = ?1"),
+                [id],
+            )
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode(&row))
+            .transpose()
     }
 }
 

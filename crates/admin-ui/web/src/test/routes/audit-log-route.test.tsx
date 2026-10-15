@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,8 +13,11 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: navigateMock }),
 }))
 
+const getAuditLogEntry = vi.fn()
+
 vi.mock('@/server/admin-data.functions', () => ({
   getAuditLogPage: vi.fn(),
+  getAuditLogEntry: (input: unknown) => getAuditLogEntry(input),
 }))
 
 const ADMIN_ID = '22222222-2222-4222-8222-222222222222'
@@ -26,11 +30,15 @@ const entry = {
   target_type: 'mcp_server',
   target_id: '33333333-3333-4333-8333-333333333333',
   target_label: 'tickets',
+  request_ip: '203.0.113.9',
+  user_agent: 'Browser/1.0',
+}
+
+const detail = {
+  ...entry,
   before: { display_name: 'Tickets' },
   after: { display_name: 'Ticket Desk' },
   metadata: { request_id: 'req-1' },
-  request_ip: '203.0.113.9',
-  user_agent: 'Browser/1.0',
 }
 
 function loaderData(overrides: Record<string, unknown> = {}) {
@@ -52,11 +60,18 @@ describe('AuditLogPage', () => {
     navigateMock.mockReset()
     routeMock.useLoaderData.mockReturnValue(loaderData())
     routeMock.useSearch.mockReturnValue({})
+    getAuditLogEntry.mockReset()
+    getAuditLogEntry.mockResolvedValue({ data: detail })
   })
 
   async function renderPage() {
     const { AuditLogPage } = await import('@/routes/observability/audit-log')
-    render(<AuditLogPage />)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuditLogPage />
+      </QueryClientProvider>,
+    )
   }
 
   it('lists entries with actor, target and request address', async () => {
@@ -138,7 +153,8 @@ describe('AuditLogPage', () => {
 
     const sheet = await screen.findByTestId('audit-entry-sheet')
     expect(within(sheet).getByText('Browser/1.0')).toBeInTheDocument()
-    const after = within(sheet).getByTestId('audit-json-after')
+    const after = await within(sheet).findByTestId('audit-json-after')
+    expect(getAuditLogEntry).toHaveBeenCalledWith({ data: { id: '7' } })
     expect(after).toHaveTextContent('Ticket Desk')
     expect(after).toHaveClass('max-w-full', 'overflow-x-auto')
     expect(within(sheet).getByTestId('audit-json-before')).toHaveTextContent('Tickets')
@@ -163,6 +179,16 @@ describe('AuditLogPage', () => {
     const sheet = await screen.findByTestId('audit-entry-sheet')
     expect(within(sheet).getByText('API key')).toBeInTheDocument()
     expect(within(sheet).getByText('44444444-4444-4444-8444-444444444444')).toBeInTheDocument()
+  })
+
+  it('shows an error when an entry cannot be loaded', async () => {
+    getAuditLogEntry.mockRejectedValue(new Error('audit log entry `7` not found'))
+    await renderPage()
+
+    fireEvent.click(screen.getByText('tickets'))
+
+    const sheet = await screen.findByTestId('audit-entry-sheet')
+    expect(await within(sheet).findByText(/not found/)).toBeInTheDocument()
   })
 
   it('shows an empty state when nothing matches', async () => {

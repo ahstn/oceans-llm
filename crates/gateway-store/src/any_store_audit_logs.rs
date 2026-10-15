@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AuditLogPage, AuditLogQuery, AuditLogRepository, NewAuditLogRecord, StoreError,
+    AuditLogPage, AuditLogQuery, AuditLogRecord, AuditLogRepository, NewAuditLogRecord, StoreError,
 };
 
 use crate::store::AnyStore;
@@ -18,6 +18,13 @@ impl AuditLogRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.list_audit_logs(query).await,
             Self::Postgres(store) => store.list_audit_logs(query).await,
+        }
+    }
+
+    async fn get_audit_log(&self, id: i64) -> Result<Option<AuditLogRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_audit_log(id).await,
+            Self::Postgres(store) => store.get_audit_log(id).await,
         }
     }
 }

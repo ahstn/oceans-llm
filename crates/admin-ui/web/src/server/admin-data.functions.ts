@@ -36,6 +36,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listBatches,
+  getAuditLog,
   listAuditLogs,
   listGuardrailDecisions,
   listMcpInvocations,
@@ -508,6 +509,17 @@ export const getAuditLogPage = createServerFn({ method: 'POST' })
   .validator(validateAuditLogFilters)
   .handler(async ({ data }) => {
     return listAuditLogs(data)
+  })
+
+export const getAuditLogEntry = createServerFn({ method: 'GET' })
+  .validator((data: unknown) => {
+    const input = requireObject(data, 'Audit log entry')
+    const id = optionalString(input.id, 'id')
+    if (!id || !/^\d+$/.test(id)) throw new Error('id must be an audit log entry ID')
+    return { id }
+  })
+  .handler(async ({ data }) => {
+    return getAuditLog(data.id)
   })
 
 export const getGuardrailDecisionPage = createServerFn({ method: 'POST' })

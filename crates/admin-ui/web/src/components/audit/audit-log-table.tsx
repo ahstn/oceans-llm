@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { AuditLogFiltersInput, AuditLogPageView, AuditLogView } from '@/types/api'
+import type { AuditLogFiltersInput, AuditLogPageView, AuditLogSummaryView } from '@/types/api'
 
 import { AuditEntrySheet } from './audit-entry-sheet'
 import {
@@ -52,7 +52,7 @@ export type AuditLogTableProps = {
 
 /** Filterable, cursor-paged list of admin audit entries with a detail sheet. */
 export function AuditLogTable({ page, search, pending, onSearch }: AuditLogTableProps) {
-  const [selected, setSelected] = useState<AuditLogView | null>(null)
+  const [selected, setSelected] = useState<AuditLogSummaryView | null>(null)
   const filters = withoutCursor(search)
   const update = (patch: AuditLogFiltersInput) => {
     const next: AuditLogFiltersInput = { ...filters, ...patch }
@@ -171,11 +171,11 @@ function AuditGrid({
   onSelect,
   onActor,
 }: {
-  items: AuditLogView[]
-  onSelect: (entry: AuditLogView) => void
+  items: AuditLogSummaryView[]
+  onSelect: (entry: AuditLogSummaryView) => void
   onActor: (actorUserId: string) => void
 }) {
-  const columns = useMemo<ColumnDef<DataGridFeatures, AuditLogView>[]>(
+  const columns = useMemo<ColumnDef<DataGridFeatures, AuditLogSummaryView>[]>(
     () => [
       {
         accessorKey: 'occurred_at',
@@ -234,7 +234,7 @@ function AuditGrid({
     features: dataGridFeatures,
     columns,
     data: items,
-    getRowId: (entry: AuditLogView) => entry.id,
+    getRowId: (entry: AuditLogSummaryView) => entry.id,
     // Rows are one server page in server order; sorting here would only reorder that page.
     enableSorting: false,
     manualPagination: true,
@@ -270,7 +270,7 @@ function ActorCell({
   entry,
   onActor,
 }: {
-  entry: AuditLogView
+  entry: AuditLogSummaryView
   onActor: (actorUserId: string) => void
 }) {
   const actorUserId = entry.actor.user_id

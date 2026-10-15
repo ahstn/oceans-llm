@@ -1,4 +1,4 @@
-import type { AuditLogView } from '@/types/api'
+import type { AuditLogSummaryView } from '@/types/api'
 
 const timeFormatter = new Intl.DateTimeFormat('en-GB', {
   dateStyle: 'medium',
@@ -44,7 +44,7 @@ export function actionVariant(action: string): ActionBadgeVariant {
   return 'secondary'
 }
 
-export function actorLabel(entry: AuditLogView) {
+export function actorLabel(entry: AuditLogSummaryView) {
   if (entry.actor.label) return entry.actor.label
   if (entry.actor.kind === 'system') return 'System'
   return entry.actor.user_id ?? 'Unknown actor'

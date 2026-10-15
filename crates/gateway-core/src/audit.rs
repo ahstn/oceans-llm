@@ -169,7 +169,11 @@ pub struct AuditLogPage {
 pub trait AuditLogRepository: Send + Sync {
     async fn insert_audit_log(&self, record: &NewAuditLogRecord) -> Result<i64, StoreError>;
 
+    /// Lists entries without their summaries: `before` and `after` are `None` and
+    /// `metadata` is empty. Fetch one entry with [`AuditLogRepository::get_audit_log`].
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError>;
+
+    async fn get_audit_log(&self, id: i64) -> Result<Option<AuditLogRecord>, StoreError>;
 }
 
 #[cfg(test)]

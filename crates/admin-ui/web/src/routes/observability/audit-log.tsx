@@ -54,7 +54,8 @@ function normalizeSearch(search: Record<string, unknown>): AuditLogFiltersInput 
     const value = search[key]
     if (typeof value === 'string' && value.trim()) filters[key] = value.trim()
   }
-  const limit = search.limit
+  // Search params usually arrive JSON-parsed, but `?limit="20"` stays a string.
+  const limit = typeof search.limit === 'string' ? Number(search.limit) : search.limit
   if (typeof limit === 'number' && Number.isInteger(limit) && limit > 0) filters.limit = limit
   return filters
 }

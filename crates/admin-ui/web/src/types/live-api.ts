@@ -145,6 +145,7 @@ export type McpInvocationFiltersInput = NonNullable<
   operations['list_mcp_tool_invocations']['parameters']['query']
 >
 export type McpInvocationStatus = NonNullable<McpInvocationFiltersInput['status']>
+export type AuditLogSummaryView = components['schemas']['AuditLogSummaryView']
 export type AuditLogView = components['schemas']['AuditLogView']
 export type AuditLogPageView = components['schemas']['AuditLogPageView']
 export type AuditLogFiltersInput = NonNullable<operations['list_audit_logs']['parameters']['query']>

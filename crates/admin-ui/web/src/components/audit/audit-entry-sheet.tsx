@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
+
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -7,7 +10,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import type { AuditLogView } from '@/types/api'
+import { Skeleton } from '@/components/ui/skeleton'
+import { getAuditLogEntry } from '@/server/admin-data.functions'
+import type { AuditLogSummaryView } from '@/types/api'
 
 import {
   actionVariant,
@@ -18,12 +23,15 @@ import {
   targetTypeLabel,
 } from './audit-meta'
 
-/** Read-only detail for one entry. Summaries are redacted before they are stored. */
+/**
+ * Read-only detail for one entry. The list carries no summaries, so the redacted
+ * before, after and details JSON load when the sheet opens.
+ */
 export function AuditEntrySheet({
   entry,
   onOpenChange,
 }: {
-  entry: AuditLogView | null
+  entry: AuditLogSummaryView | null
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -69,15 +77,46 @@ export function AuditEntrySheet({
               </Fact>
             </dl>
             <Separator />
-            <div className="flex min-w-0 flex-col gap-4 px-4 pb-4">
-              <JsonBlock label="Before" value={entry.before} />
-              <JsonBlock label="After" value={entry.after} />
-              <JsonBlock label="Details" value={entry.metadata} />
-            </div>
+            <EntrySummaries entryId={entry.id} />
           </>
         ) : null}
       </SheetContent>
     </Sheet>
+  )
+}
+
+function EntrySummaries({ entryId }: { entryId: string }) {
+  const detail = useQuery({
+    queryKey: ['audit-log-entry', entryId],
+    queryFn: () => getAuditLogEntry({ data: { id: entryId } }),
+    retry: false,
+  })
+  if (detail.isPending) {
+    return (
+      <div className="flex flex-col gap-3 px-4 pb-4" aria-busy="true">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    )
+  }
+  if (detail.isError) {
+    return (
+      <div className="px-4 pb-4">
+        <Alert variant="destructive">
+          <AlertDescription>
+            {detail.error instanceof Error ? detail.error.message : 'Could not load this entry.'}
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
+  const { before, after, metadata } = detail.data.data
+  return (
+    <div className="flex min-w-0 flex-col gap-4 px-4 pb-4">
+      <JsonBlock label="Before" value={before} />
+      <JsonBlock label="After" value={after} />
+      <JsonBlock label="Details" value={metadata} />
+    </div>
   )
 }
 

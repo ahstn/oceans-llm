@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/audit-logs/{audit_log_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_audit_log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/guardrails/decisions": {
         parameters: {
             query?: never;
@@ -2597,7 +2613,8 @@ export interface components {
             user_id?: string | null;
         };
         AuditLogPageView: {
-            items: components["schemas"]["AuditLogView"][];
+            /** @description Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`. */
+            items: components["schemas"]["AuditLogSummaryView"][];
             /** Format: int32 */
             limit: number;
             /** @description Pass as `cursor` to fetch the next page. Absent on the last page. */
@@ -2605,13 +2622,31 @@ export interface components {
             /** @description Known target types, for filter controls. */
             target_types: string[];
         };
+        AuditLogSummaryView: {
+            action: string;
+            actor: components["schemas"]["AuditActorView"];
+            id: string;
+            occurred_at: string;
+            request_ip?: string | null;
+            target_id?: string | null;
+            target_label?: string | null;
+            target_type: string;
+            user_agent?: string | null;
+        };
+        /** @description One entry with its redacted summaries. */
         AuditLogView: {
             action: string;
             actor: components["schemas"]["AuditActorView"];
-            after?: Record<string, never> | null;
-            before?: Record<string, never> | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+            before?: {
+                [key: string]: unknown;
+            } | null;
             id: string;
-            metadata: Record<string, never>;
+            metadata: {
+                [key: string]: unknown;
+            };
             occurred_at: string;
             request_ip?: string | null;
             target_id?: string | null;
@@ -3131,13 +3166,38 @@ export interface components {
         };
         Envelope_AuditLogPageView: {
             data: {
-                items: components["schemas"]["AuditLogView"][];
+                /** @description Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`. */
+                items: components["schemas"]["AuditLogSummaryView"][];
                 /** Format: int32 */
                 limit: number;
                 /** @description Pass as `cursor` to fetch the next page. Absent on the last page. */
                 next_cursor?: string | null;
                 /** @description Known target types, for filter controls. */
                 target_types: string[];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AuditLogView: {
+            /** @description One entry with its redacted summaries. */
+            data: {
+                action: string;
+                actor: components["schemas"]["AuditActorView"];
+                after?: {
+                    [key: string]: unknown;
+                } | null;
+                before?: {
+                    [key: string]: unknown;
+                } | null;
+                id: string;
+                metadata: {
+                    [key: string]: unknown;
+                };
+                occurred_at: string;
+                request_ip?: string | null;
+                target_id?: string | null;
+                target_label?: string | null;
+                target_type: string;
+                user_agent?: string | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4975,6 +5035,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_AuditLogPageView"];
+                };
+            };
+        };
+    };
+    get_audit_log: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audit log entry identifier */
+                audit_log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AuditLogView"];
                 };
             };
         };

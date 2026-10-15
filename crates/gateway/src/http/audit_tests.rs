@@ -127,13 +127,24 @@ impl Harness {
         self.send(method, uri, &self.admin, body).await
     }
 
-    /// Every audit entry, newest first.
+    /// Every audit entry with its summaries, newest first. The list omits summaries,
+    /// so each entry is read back through the detail endpoint.
     async fn entries(&self) -> Vec<Value> {
         let (status, body) = self
             .admin(Method::GET, &format!("{AUDIT_LOGS}?limit=200"), None)
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        body["data"]["items"].as_array().expect("items").clone()
+        let mut entries = Vec::new();
+        for item in body["data"]["items"].as_array().expect("items") {
+            assert!(item.get("after").is_none(), "list items carry no summaries");
+            let id = item["id"].as_str().expect("id");
+            let (status, detail) = self
+                .admin(Method::GET, &format!("{AUDIT_LOGS}/{id}"), None)
+                .await;
+            assert_eq!(status, StatusCode::OK, "{detail}");
+            entries.push(detail["data"].clone());
+        }
+        entries
     }
 
     async fn entry(&self, action: &str) -> Value {
@@ -176,14 +187,14 @@ async fn api_key_lifecycle_is_audited_without_the_raw_key() {
     let raw_key = created["data"]["raw_key"].as_str().expect("raw key");
     let api_key_id = created["data"]["api_key"]["id"].as_str().expect("id");
 
-    let (status, revealed) = harness
+    let (status, revoked) = harness
         .admin(
             Method::POST,
             &format!("/api/v1/admin/api-keys/{api_key_id}/revoke"),
             None,
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "{revealed}");
+    assert_eq!(status, StatusCode::OK, "{revoked}");
 
     let created_entry = harness.entry("api_key.created").await;
     assert_admin_actor(&created_entry, harness.admin_id);
@@ -611,6 +622,10 @@ async fn audit_log_list_filters_and_pages() {
         .admin(Method::GET, &format!("{AUDIT_LOGS}?cursor=bogus"), None)
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = harness
+        .admin(Method::GET, &format!("{AUDIT_LOGS}/999999"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (_, member) = harness.user(GlobalRole::User).await;
     let (status, _) = harness.send(Method::GET, AUDIT_LOGS, &member, None).await;

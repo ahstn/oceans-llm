@@ -287,7 +287,7 @@ impl AuditEvent {
             after: self.after.map(redact_summary),
             metadata: redact_summary(Value::Object(self.metadata)),
             request_ip: context.request_ip.clone(),
-            user_agent: context.user_agent.clone(),
+            user_agent: context.user_agent.clone().map(redact_scalar),
         }
     }
 }
@@ -505,16 +505,28 @@ fn looks_like_credential(text: &str) -> bool {
     // A full gateway key is `gwk_<public id>.<secret>`, anywhere in the text; the bare
     // `gwk_<public id>` prefix is a display identifier and stays readable. Invite links
     // carry their token in the path.
-    text.split(|character: char| character.is_whitespace() || character == '"')
-        .any(|word| {
-            (word.starts_with("gwk_") && word.contains('.'))
-                || TOKEN_PREFIXES
-                    .iter()
-                    .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len() + 8)
-        })
-        || text.contains("/invite/")
+    // Split at anything that cannot be part of a token, so `token=gwk_…` and
+    // `(ghp_…)` are checked from the token's first character.
+    text.split(|character: char| {
+        !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-'))
+    })
+    .any(|word| {
+        (word.starts_with("gwk_") && word.contains('.'))
+            || TOKEN_PREFIXES
+                .iter()
+                .any(|prefix| word.starts_with(prefix) && word.len() > prefix.len() + 8)
+    }) || text.contains("/invite/")
         || lower.starts_with("bearer ")
         || lower.starts_with("basic ")
+}
+
+/// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
+fn redact_scalar(text: String) -> String {
+    if looks_like_credential(&text) {
+        AUDIT_REDACTED.to_string()
+    } else {
+        text
+    }
 }
 
 /// Labels are user-entered names, so they get the same credential check as summary
@@ -557,7 +569,7 @@ mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use gateway_core::{AuditLogPage, AuditLogQuery, StoreError};
+    use gateway_core::{AuditLogPage, AuditLogQuery, AuditLogRecord, StoreError};
     use serde_json::json;
     use uuid::Uuid;
 
@@ -581,6 +593,10 @@ mod tests {
         }
 
         async fn list_audit_logs(&self, _: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {
+            unreachable!()
+        }
+
+        async fn get_audit_log(&self, _: i64) -> Result<Option<AuditLogRecord>, StoreError> {
             unreachable!()
         }
     }
@@ -703,6 +719,9 @@ mod tests {
                 { "key": "team", "value": "platform" },
             ],
             "pat": "ghp_0123456789abcdefghij",
+            "description": "rotate token=gwk_0f3c9a.s3cr3t soon",
+            "comment": "see (ghp_0123456789abcdefghij)",
+            "path": "/srv/data",
         }));
         assert_eq!(
             redacted,
@@ -725,6 +744,9 @@ mod tests {
                     { "key": "team", "value": "platform" },
                 ],
                 "pat": AUDIT_REDACTED,
+                "description": AUDIT_REDACTED,
+                "comment": AUDIT_REDACTED,
+                "path": "/srv/data",
             })
         );
     }
@@ -755,6 +777,25 @@ mod tests {
         assert_eq!(labels[1], AUDIT_REDACTED);
         assert_eq!(labels[2].chars().count(), MAX_LABEL_CHARS + 1);
         assert_eq!(labels[3], "gwk_0f3c9a");
+    }
+
+    #[tokio::test]
+    async fn credential_shaped_user_agents_are_redacted() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for user_agent in ["gwk_0f3c9a.s3cr3t", "curl/8.0"] {
+            let context = AuditContext::new(AuditActor::user(Uuid::nil(), "a@example.com"))
+                .with_request(None, Some(user_agent.to_string()), None);
+            audit
+                .record(
+                    &context,
+                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM),
+                )
+                .await;
+        }
+        let records = repo.records.lock().unwrap();
+        assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
+        assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
     }
 
     #[tokio::test]

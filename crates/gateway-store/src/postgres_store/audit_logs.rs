@@ -7,8 +7,8 @@ use sqlx::{Row, postgres::PgRow};
 
 use super::{PostgresStore, to_query_error};
 use crate::audit_logs::{
-    AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql, parse_json,
-    parse_optional_json,
+    AUDIT_LOG_COLUMNS, AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql,
+    parse_json, parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
 
@@ -94,6 +94,19 @@ impl AuditLogRepository for PostgresStore {
             .map(decode)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(finish_page(items, filter.page_size))
+    }
+
+    async fn get_audit_log(&self, id: i64) -> Result<Option<AuditLogRecord>, StoreError> {
+        sqlx::query(&format!(
+            "SELECT {AUDIT_LOG_COLUMNS} FROM audit_logs WHERE id = $1"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .as_ref()
+        .map(decode)
+        .transpose()
     }
 }
 

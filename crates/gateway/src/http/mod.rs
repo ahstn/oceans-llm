@@ -52,9 +52,23 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, audit::list_audit_logs, batches::*, guardrails::*, handlers::*, identity::*,
-    mcp_gateway::*, mcp_oauth::*, mcp_registry::*, models::*, observability::*, profile::*,
-    provider_credentials::*, review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
+    api_keys::*,
+    audit::{get_audit_log, list_audit_logs},
+    batches::*,
+    guardrails::*,
+    handlers::*,
+    identity::*,
+    mcp_gateway::*,
+    mcp_oauth::*,
+    mcp_registry::*,
+    models::*,
+    observability::*,
+    profile::*,
+    provider_credentials::*,
+    review_agent::*,
+    spend::*,
+    spend_budget_increases::*,
+    state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -293,6 +307,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(get_mcp_tool_invocation_detail),
         )
         .route("/api/v1/admin/audit-logs", get(list_audit_logs))
+        .route(
+            "/api/v1/admin/audit-logs/{audit_log_id}",
+            get(get_audit_log),
+        )
         .route(
             "/api/v1/admin/guardrails/policies",
             get(get_guardrail_policies),

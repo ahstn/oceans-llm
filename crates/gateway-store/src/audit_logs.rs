@@ -144,12 +144,18 @@ pub(crate) fn list_sql(
     };
     (
         format!(
-            "SELECT {AUDIT_LOG_COLUMNS} FROM audit_logs {where_clause} \
+            "SELECT {AUDIT_LOG_LIST_COLUMNS} FROM audit_logs {where_clause} \
              ORDER BY ts DESC, id DESC LIMIT {limit_marker}"
         ),
         binds,
     )
 }
+
+/// The list projection keeps the column order of [`AUDIT_LOG_COLUMNS`] but leaves
+/// out the summaries, which can each reach 16 KiB.
+pub(crate) const AUDIT_LOG_LIST_COLUMNS: &str = "id, ts, actor_kind, actor_user_id, \
+    actor_api_key_id, actor_label, action, object_type, object_id, target_label, \
+    NULL AS before_json, NULL AS after_json, '{}' AS details_json, request_ip, user_agent";
 
 pub(crate) const AUDIT_LOG_COLUMNS: &str = "id, ts, actor_kind, actor_user_id, \
     actor_api_key_id, actor_label, action, object_type, object_id, target_label, \
@@ -226,7 +232,15 @@ pub(crate) async fn exercise_audit_log_store(store: &impl gateway_core::AuditLog
         .await
         .expect("list audit logs");
     assert_eq!(everything.next_cursor, None);
-    let newest = &everything.items[0];
+    let listed = &everything.items[0];
+    assert_eq!(listed.id, ids[3]);
+    assert_eq!(listed.before, None, "the list leaves summaries out");
+    assert_eq!(listed.metadata, json!({}));
+    let newest = store
+        .get_audit_log(ids[3])
+        .await
+        .expect("get audit log")
+        .expect("entry exists");
     assert_eq!(newest.id, ids[3]);
     assert_eq!(newest.occurred_at, inputs[3].occurred_at);
     assert_eq!(newest.actor, inputs[3].actor);
@@ -235,6 +249,14 @@ pub(crate) async fn exercise_audit_log_store(store: &impl gateway_core::AuditLog
     assert_eq!(newest.metadata, inputs[3].metadata);
     assert_eq!(newest.request_ip, inputs[3].request_ip);
     assert_eq!(newest.user_agent, inputs[3].user_agent);
+    assert_eq!(listed.target_label, newest.target_label);
+    assert!(
+        store
+            .get_audit_log(i64::MAX)
+            .await
+            .expect("missing")
+            .is_none()
+    );
     assert_eq!(
         everything
             .items

@@ -40,6 +40,7 @@ import type {
   LogoutResult,
   AuditLogFiltersInput,
   AuditLogPageView,
+  AuditLogView,
   GuardrailDecisionFiltersInput,
   GuardrailDecisionPageView,
   GuardrailPoliciesView,
@@ -436,6 +437,15 @@ export async function listAuditLogs(
   return unwrapGatewayResponse(
     await client.GET('/api/v1/admin/audit-logs', {
       params: { query: filters },
+    }),
+  )
+}
+
+export async function getAuditLog(auditLogId: string): Promise<ApiEnvelope<AuditLogView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/audit-logs/{audit_log_id}', {
+      params: { path: { audit_log_id: auditLogId } },
     }),
   )
 }

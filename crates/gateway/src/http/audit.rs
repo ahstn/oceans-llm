@@ -13,17 +13,17 @@ use admin_ui::client_ip::{CLIENT_IP_HEADER, verify_client_ip};
 
 use axum::{
     Json,
-    extract::{ConnectInfo, FromRequestParts, Query, State},
+    extract::{ConnectInfo, FromRequestParts, Path, Query, State},
     http::{HeaderMap, request::Parts},
 };
 use gateway_core::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogQuery, AuditLogRecord, AuditLogRepository,
-    GatewayError, MAX_AUDIT_LOG_PAGE_SIZE, UserRecord,
+    GatewayError, MAX_AUDIT_LOG_PAGE_SIZE, StoreError, UserRecord,
 };
 use gateway_service::{AdminAudit, AuditContext, admin_audit::targets};
 use gateway_store::AnyStore;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -185,7 +185,8 @@ pub struct AuditLogListQuery {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditLogPageView {
-    pub items: Vec<AuditLogView>,
+    /// Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`.
+    pub items: Vec<AuditLogSummaryView>,
     /// Pass as `cursor` to fetch the next page. Absent on the last page.
     pub next_cursor: Option<String>,
     pub limit: u32,
@@ -193,6 +194,20 @@ pub struct AuditLogPageView {
     pub target_types: Vec<String>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuditLogSummaryView {
+    pub id: String,
+    pub occurred_at: String,
+    pub actor: AuditActorView,
+    pub action: String,
+    pub target_type: String,
+    pub target_id: Option<String>,
+    pub target_label: Option<String>,
+    pub request_ip: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+/// One entry with its redacted summaries.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditLogView {
     pub id: String,
@@ -202,12 +217,12 @@ pub struct AuditLogView {
     pub target_type: String,
     pub target_id: Option<String>,
     pub target_label: Option<String>,
-    #[schema(value_type = Option<Object>)]
-    pub before: Option<Value>,
-    #[schema(value_type = Option<Object>)]
-    pub after: Option<Value>,
-    #[schema(value_type = Object)]
-    pub metadata: Value,
+    #[schema(additional_properties = true)]
+    pub before: Option<Map<String, Value>>,
+    #[schema(additional_properties = true)]
+    pub after: Option<Map<String, Value>>,
+    #[schema(additional_properties = true)]
+    pub metadata: Map<String, Value>,
     pub request_ip: Option<String>,
     pub user_agent: Option<String>,
 }
@@ -255,35 +270,87 @@ pub async fn list_audit_logs(
     let limit = query.effective_limit();
     let page = state.store.list_audit_logs(&query).await?;
     Ok(Json(envelope(AuditLogPageView {
-        items: page.items.into_iter().map(audit_log_view).collect(),
+        items: page.items.into_iter().map(audit_log_summary_view).collect(),
         next_cursor: page.next_cursor.map(AuditLogCursor::encode),
         limit,
         target_types: targets::ALL.iter().map(|kind| kind.to_string()).collect(),
     })))
 }
 
-fn audit_log_view(record: AuditLogRecord) -> AuditLogView {
-    AuditLogView {
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/audit-logs/{audit_log_id}",
+    params(("audit_log_id" = String, Path, description = "Audit log entry identifier")),
+    responses((status = 200, body = Envelope<AuditLogView>)),
+    security(("session_cookie" = [])),
+    tag = "Audit"
+)]
+pub async fn get_audit_log(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(audit_log_id): Path<String>,
+) -> Result<Json<Envelope<AuditLogView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let id: i64 = audit_log_id
+        .parse()
+        .map_err(|_| invalid_request("`audit_log_id` must be an integer"))?;
+    let record = state
+        .store
+        .get_audit_log(id)
+        .await?
+        .ok_or_else(|| StoreError::NotFound(format!("audit log entry `{id}`")))?;
+    Ok(Json(envelope(audit_log_view(record))))
+}
+
+fn actor_view(actor: AuditActor) -> AuditActorView {
+    AuditActorView {
+        kind: actor.kind.as_str().to_string(),
+        user_id: actor.user_id.map(|id| id.to_string()),
+        api_key_id: match actor.kind {
+            AuditActorKind::ApiKey => actor.api_key_id.map(|id| id.to_string()),
+            AuditActorKind::User | AuditActorKind::System => None,
+        },
+        label: actor.label,
+    }
+}
+
+fn audit_log_summary_view(record: AuditLogRecord) -> AuditLogSummaryView {
+    AuditLogSummaryView {
         id: record.id.to_string(),
         occurred_at: format_timestamp(record.occurred_at),
-        actor: AuditActorView {
-            kind: record.actor.kind.as_str().to_string(),
-            user_id: record.actor.user_id.map(|id| id.to_string()),
-            api_key_id: match record.actor.kind {
-                AuditActorKind::ApiKey => record.actor.api_key_id.map(|id| id.to_string()),
-                AuditActorKind::User | AuditActorKind::System => None,
-            },
-            label: record.actor.label,
-        },
+        actor: actor_view(record.actor),
         action: record.action,
         target_type: record.target_type,
         target_id: record.target_id,
         target_label: record.target_label,
-        before: record.before,
-        after: record.after,
-        metadata: record.metadata,
         request_ip: record.request_ip,
         user_agent: record.user_agent,
+    }
+}
+
+fn audit_log_view(record: AuditLogRecord) -> AuditLogView {
+    AuditLogView {
+        id: record.id.to_string(),
+        occurred_at: format_timestamp(record.occurred_at),
+        actor: actor_view(record.actor),
+        action: record.action,
+        target_type: record.target_type,
+        target_id: record.target_id,
+        target_label: record.target_label,
+        before: record.before.and_then(json_object),
+        after: record.after.and_then(json_object),
+        metadata: json_object(record.metadata).unwrap_or_default(),
+        request_ip: record.request_ip,
+        user_agent: record.user_agent,
+    }
+}
+
+/// Summaries are JSON objects; any other stored value is wrapped as `{ "value": ... }`.
+fn json_object(value: Value) -> Option<Map<String, Value>> {
+    match value {
+        Value::Object(map) => Some(map),
+        Value::Null => None,
+        other => Some(Map::from_iter([("value".to_string(), other)])),
     }
 }
 
