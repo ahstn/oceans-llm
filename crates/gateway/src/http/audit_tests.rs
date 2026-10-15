@@ -537,6 +537,15 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         .map(|entry| entry["metadata"]["operation"].clone())
         .collect();
     assert_eq!(operations, vec![json!("replace"), json!("create")]);
+    let replace_entry = harness
+        .entries()
+        .await
+        .into_iter()
+        .find(|entry| entry["target_id"] == chosen_id.as_str())
+        .expect("replace entry");
+    // The replacement records the binding it overwrote.
+    assert_eq!(replace_entry["before"]["material_kind"], "bearer_token");
+    assert_eq!(replace_entry["before"]["id"], chosen_id.as_str());
 
     // Disabling a disabled server is not another transition.
     for _ in 0..2 {

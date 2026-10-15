@@ -1184,11 +1184,18 @@ pub trait McpAggregateSessionRepository: Send + Sync {
 #[async_trait]
 pub trait McpUpstreamCredentialRepository: Send + Sync {
     /// Updates the binding when `credential_binding_id` names an existing one,
-    /// otherwise inserts it. The flag is `true` when an existing row was replaced.
+    /// otherwise inserts it. Returns the written binding and, for an update, the
+    /// binding as it was just before, read in the same transaction.
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError>;
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        StoreError,
+    >;
 
     async fn get_active_mcp_upstream_credential_binding(
         &self,

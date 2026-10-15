@@ -178,12 +178,18 @@ where
         })
     }
 
-    /// Creates or replaces a binding. The flag is `true` when an existing binding
-    /// was replaced, as decided by the store's write.
+    /// Creates or replaces a binding. Returns the written binding and, when an
+    /// existing one was replaced, that binding as it was, both without secrets.
     pub async fn upsert_binding(
         &self,
         input: UpsertMcpCredentialBindingInput,
-    ) -> Result<(RedactedMcpCredentialBinding, bool), GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         validate_credential_input(&input)?;
         let now = OffsetDateTime::now_utc();
         let owner_scope_key = credential_owner_scope_key(
@@ -243,7 +249,7 @@ where
             .repo
             .upsert_mcp_upstream_credential_binding(&record)
             .await?;
-        Ok((redact_binding(binding), replaced))
+        Ok((redact_binding(binding), replaced.map(redact_binding)))
     }
 
     pub async fn upsert_oauth_user_binding(
@@ -1026,7 +1032,13 @@ mod tests {
         async fn upsert_mcp_upstream_credential_binding(
             &self,
             _input: &UpsertMcpUpstreamCredentialBindingRecord,
-        ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
+        ) -> Result<
+            (
+                McpUpstreamCredentialBindingRecord,
+                Option<McpUpstreamCredentialBindingRecord>,
+            ),
+            StoreError,
+        > {
             unimplemented!()
         }
 

@@ -106,10 +106,31 @@ impl McpUpstreamCredentialRepository for PostgresStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        StoreError,
+    > {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
-        if input.credential_binding_id.is_some() {
+        // `FOR UPDATE` locks the row, so the replaced row read here is exactly the
+        // one the update below overwrites.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let previous = if input.credential_binding_id.is_some() {
+            let row = sqlx::query(&format!(
+                "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = $1 FOR UPDATE"
+            ))
+            .bind(id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+            row.as_ref().map(decode_credential).transpose()?
+        } else {
+            None
+        };
+        if let Some(previous) = previous {
             let sql = format!(
                 r#"
                 UPDATE mcp_upstream_credential_bindings
@@ -145,13 +166,12 @@ impl McpUpstreamCredentialRepository for PostgresStore {
                 .bind(input.expires_at.map(|value| value.unix_timestamp()))
                 .bind(&metadata_json)
                 .bind(input.updated_at.unix_timestamp())
-                .fetch_optional(&self.pool)
+                .fetch_one(&mut *tx)
                 .await
                 .map_err(to_write_error)?;
-            // The row this update wrote, not a later reload another write could change.
-            if let Some(row) = row {
-                return Ok((decode_credential(&row)?, true));
-            }
+            let replaced = decode_credential(&row)?;
+            tx.commit().await.map_err(to_query_error)?;
+            return Ok((replaced, Some(previous)));
         }
         let sql = format!(
             r#"
@@ -186,10 +206,12 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .bind(input.expires_at.map(|value| value.unix_timestamp()))
             .bind(&metadata_json)
             .bind(input.updated_at.unix_timestamp())
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(to_write_error)?;
-        Ok((decode_credential(&row)?, false))
+        let inserted = decode_credential(&row)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok((inserted, None))
     }
 
     async fn get_active_mcp_upstream_credential_binding(

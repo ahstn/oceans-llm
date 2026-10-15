@@ -837,21 +837,32 @@ pub async fn upsert_mcp_credential_binding(
             metadata: request.metadata,
         })
         .await?;
-    // The service returns the binding without its secret; only that view is recorded.
+    // The service returns bindings without their secrets; only those views are
+    // recorded. A replacement also records the binding it overwrote, read in the
+    // same transaction, so the entry shows what access changed.
     let binding = map_credential_binding(binding);
+    let replaced = replaced.map(map_credential_binding);
+    let mut event = AuditEvent::new(
+        actions::MCP_CREDENTIAL_BINDING_SET,
+        targets::MCP_CREDENTIAL_BINDING,
+    )
+    .target(binding.id())
+    .label(binding.owner_scope_key().to_string())
+    .meta(
+        "operation",
+        if replaced.is_some() {
+            "replace"
+        } else {
+            "create"
+        },
+    )
+    .after(credential_binding_audit_summary(&binding));
+    if let Some(replaced) = &replaced {
+        event = event.before(credential_binding_audit_summary(replaced));
+    }
     state
         .audit()
-        .record(
-            &meta.user_context(&actor),
-            AuditEvent::new(
-                actions::MCP_CREDENTIAL_BINDING_SET,
-                targets::MCP_CREDENTIAL_BINDING,
-            )
-            .target(binding.id())
-            .label(binding.owner_scope_key().to_string())
-            .meta("operation", if replaced { "replace" } else { "create" })
-            .after(credential_binding_audit_summary(&binding)),
-        )
+        .record(&meta.user_context(&actor), event)
         .await;
     Ok(Json(envelope(McpCredentialBindingPayload { binding })))
 }

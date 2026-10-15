@@ -111,17 +111,57 @@ async fn load_credential(
         })
 }
 
+/// Steps a result set to its end. SQLite keeps a statement active until then,
+/// and a transaction cannot commit while one is.
+async fn finish_rows(rows: &mut libsql::Rows) -> Result<(), StoreError> {
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    Ok(())
+}
+
 #[async_trait]
 impl McpUpstreamCredentialRepository for LibsqlStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        StoreError,
+    > {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
-        if input.credential_binding_id.is_some() {
-            let mut rows = self
-                .connection
+        // An immediate transaction holds the write lock, so the replaced row read
+        // here is exactly the one the update below overwrites.
+        let tx = self
+            .connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_write_error)?;
+        let previous = if input.credential_binding_id.is_some() {
+            let mut rows = tx
+                .query(
+                    &format!(
+                        "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = ?1"
+                    ),
+                    [id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let previous = rows
+                .next()
+                .await
+                .map_err(to_query_error)?
+                .map(|row| decode_credential(&row))
+                .transpose()?;
+            finish_rows(&mut rows).await?;
+            previous
+        } else {
+            None
+        };
+        if let Some(previous) = previous {
+            let mut rows = tx
                 .query(
                     &format!(
                         r#"
@@ -160,13 +200,15 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                 )
                 .await
                 .map_err(to_write_error)?;
-            // The row this update wrote, not a later reload another write could change.
-            if let Some(row) = rows.next().await.map_err(to_write_error)? {
-                return Ok((decode_credential(&row)?, true));
-            }
+            let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+                StoreError::Unexpected("credential update returned no row".to_string())
+            })?;
+            let replaced = decode_credential(&row)?;
+            finish_rows(&mut rows).await?;
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok((replaced, Some(previous)));
         }
-        let mut rows = self
-            .connection
+        let mut rows = tx
             .query(
                 &format!(
                 r#"
@@ -204,7 +246,10 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
             StoreError::Unexpected("credential insert returned no row".to_string())
         })?;
-        Ok((decode_credential(&row)?, false))
+        let inserted = decode_credential(&row)?;
+        finish_rows(&mut rows).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok((inserted, None))
     }
 
     async fn get_active_mcp_upstream_credential_binding(

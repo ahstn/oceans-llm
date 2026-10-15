@@ -1906,7 +1906,7 @@ pub(crate) mod tests {
             .await
             .expect("create credential binding");
         let (binding, replaced) = binding;
-        assert!(!replaced, "a new binding is a create");
+        assert!(replaced.is_none(), "a new binding is a create");
         assert_eq!(binding.owner_scope_key, scope_key);
         assert_eq!(
             binding.secret_ref.as_deref(),
@@ -2192,7 +2192,11 @@ pub(crate) mod tests {
             .await
             .expect("reconnect OAuth credential");
         let (reconnected, replaced) = reconnected;
-        assert!(replaced, "reusing an existing id replaces the binding");
+        let replaced = replaced.expect("reusing an existing id replaces the binding");
+        assert_eq!(
+            replaced.credential_binding_id,
+            oauth_binding.credential_binding_id
+        );
         assert!(
             !store
                 .revoke_mcp_oauth_credential_if_unchanged(
