@@ -185,22 +185,34 @@ So access stops at once when:
 - **The user is deactivated.** Deactivation revokes all of the user's sessions and, explicitly, all their grants.
 - **The client revokes a token.** `/oauth/revoke` revokes the grant behind the token, access or refresh. RFC 7009 permits revoking the refresh token along with an access token. Unknown tokens return `200`, as the RFC requires.
 - **A refresh token is reused.** The gateway revokes the grant (section 3).
+- **The user disconnects the client.** The `Authorized MCP clients` card on `/admin/account/connections` lists the user's live grants and revokes one with `Disconnect`. The card uses `GET /api/v1/me/authorized-mcp-clients` and `DELETE /api/v1/me/authorized-mcp-clients/{grant_id}`. A user can only revoke their own grants.
+- **A platform admin revokes it.** `GET /api/v1/admin/mcp/authorized-clients?user_id=…` lists a user's live grants. `POST /api/v1/admin/mcp/authorized-clients/revoke` revokes one grant, or every grant when `grant_id` is omitted.
+
+The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin_revoked`, `client_revoked`, `user_deactivated`, `refresh_token_reused`, or `authorization_code_replayed`.
+
+### 10. Cleanup
+
+An hourly loop runs while the feature is enabled. It deletes:
+
+- dynamically registered clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
+- authorization requests and tokens that expired more than a day ago
+
+The one-day grace keeps a late code or refresh-token replay meeting a consumed record, so it still revokes the grant. Grants are never deleted, because they are the audit trail for which client acted for a user. Invocation metadata refers to them by ID.
 
 ## Trade-offs
 
 - Signing out of the admin UI also disconnects the MCP clients that session approved. That is the guarantee #441 asks for, but it can surprise someone who signs out to switch accounts. The consent page says so.
 - OAuth calls cannot use grants given to a specific key. An admin who relies on per-key MCP grants has to give the user or team the grant before OAuth users see those tools.
 - Asking for consent on every authorization adds a click each time a client signs in again. Remembered consent can come later, with an allowlist of trusted clients.
-- Open registration lets anyone create client rows. The rows are inert without consent, but they pile up. Cleaning up clients that are never authorized is a follow-up.
+- Open registration lets anyone create client rows. The rows are inert without consent, and cleanup removes the unused ones after the retention window. Until then they take space.
 - The issuer must be configured. A deployment that serves the gateway at more than one origin can expose OAuth on only one of them.
 - Plain `http` loopback issuers break the HTTPS rule for authorization servers. They are allowed only so the local stack and tests work.
 
 ## Follow-up
 
 - Client ID Metadata Documents, once #442 provides an SSRF-safe fetcher.
-- A page where users can list and revoke the MCP clients they have authorized, plus an admin view.
+- An admin UI view of a user's authorized clients. The admin API exists; the user management sheet does not show it yet.
 - Pre-registered clients that admins manage, with an option to skip consent for trusted clients.
-- Clean up unused dynamically registered clients.
 - CORS on the metadata, token, registration, and revocation endpoints for browser-based clients.
 - Show `auth_method` in the invocation-log UI and filters (#448).
 - Capability scopes on API keys (#446), using the same names.

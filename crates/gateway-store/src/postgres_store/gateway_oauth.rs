@@ -4,8 +4,9 @@ use crate::shared::{parse_uuid, unix_to_datetime};
 use gateway_core::{
     GatewayOauthAuthorizationDecision, GatewayOauthAuthorizationRequestRecord,
     GatewayOauthAuthorizationStatus, GatewayOauthClientAuthMethod, GatewayOauthClientRecord,
-    GatewayOauthGrantRecord, GatewayOauthRepository, GatewayOauthSessionState,
-    GatewayOauthTokenContext, GatewayOauthTokenKind, GatewayOauthTokenRecord,
+    GatewayOauthGrantRecord, GatewayOauthGrantSummary, GatewayOauthPurgeCounts,
+    GatewayOauthRepository, GatewayOauthSessionState, GatewayOauthTokenContext,
+    GatewayOauthTokenKind, GatewayOauthTokenRecord,
 };
 
 const CLIENT_COLUMNS: &str = "client_id, registration_kind, client_name, client_uri, logo_uri, \
@@ -134,6 +135,21 @@ fn decode_session_state(row: &PgRow) -> Result<GatewayOauthSessionState, StoreEr
         user_status: UserStatus::from_db(&user_status).ok_or_else(|| {
             StoreError::Serialization(format!("invalid user status `{user_status}`"))
         })?,
+    })
+}
+
+fn decode_grant_summary(row: &PgRow) -> Result<GatewayOauthGrantSummary, StoreError> {
+    let grant_id: String = row.try_get(0).map_err(to_query_error)?;
+    Ok(GatewayOauthGrantSummary {
+        grant_id: parse_uuid(&grant_id)?,
+        client_id: row.try_get(1).map_err(to_query_error)?,
+        client_name: row.try_get(2).map_err(to_query_error)?,
+        client_uri: row.try_get(3).map_err(to_query_error)?,
+        resource: row.try_get(4).map_err(to_query_error)?,
+        scope: row.try_get(5).map_err(to_query_error)?,
+        created_at: unix_to_datetime(row.try_get(6).map_err(to_query_error)?)?,
+        last_token_issued_at: unix_to_datetime(row.try_get(7).map_err(to_query_error)?)?,
+        session_expires_at: unix_to_datetime(row.try_get(8).map_err(to_query_error)?)?,
     })
 }
 
@@ -451,5 +467,89 @@ impl GatewayOauthRepository for PostgresStore {
         .await
         .map_err(to_write_error)?;
         Ok(result.rows_affected())
+    }
+    async fn list_live_gateway_oauth_grants_for_user(
+        &self,
+        user_id: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
+        let rows = sqlx::query(
+            "SELECT g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
+                    g.created_at,
+                    COALESCE(
+                        (SELECT MAX(t.created_at) FROM gateway_oauth_tokens t
+                         WHERE t.grant_id = g.grant_id),
+                        g.created_at
+                    ),
+                    s.expires_at
+             FROM gateway_oauth_grants g
+             JOIN gateway_oauth_clients c ON c.client_id = g.client_id
+             JOIN user_sessions s ON s.session_id = g.user_session_id
+             WHERE g.user_id = $1 AND g.revoked_at IS NULL
+               AND s.revoked_at IS NULL AND s.expires_at > $2
+             ORDER BY g.created_at DESC, g.grant_id",
+        )
+        .bind(user_id.to_string())
+        .bind(now.unix_timestamp())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_grant_summary).collect()
+    }
+
+    async fn revoke_gateway_oauth_grant_for_user(
+        &self,
+        grant_id: Uuid,
+        user_id: Uuid,
+        reason: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "UPDATE gateway_oauth_grants
+             SET revoked_at = $1, revoked_reason = $2, updated_at = $1
+             WHERE grant_id = $3 AND user_id = $4 AND revoked_at IS NULL",
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(reason)
+        .bind(grant_id.to_string())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn purge_gateway_oauth_records(
+        &self,
+        unused_clients_before: OffsetDateTime,
+        expired_before: OffsetDateTime,
+    ) -> Result<GatewayOauthPurgeCounts, StoreError> {
+        let authorization_requests = sqlx::query(
+            "DELETE FROM gateway_oauth_authorization_requests WHERE expires_at < $1 AND (code_expires_at IS NULL OR code_expires_at < $1)",
+        )
+        .bind(expired_before.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?
+        .rows_affected();
+        let tokens = sqlx::query("DELETE FROM gateway_oauth_tokens WHERE expires_at < $1")
+            .bind(expired_before.unix_timestamp())
+            .execute(&self.pool)
+            .await
+            .map_err(to_write_error)?
+            .rows_affected();
+        let clients = sqlx::query(
+            "DELETE FROM gateway_oauth_clients WHERE registration_kind = 'dynamic' AND created_at < $1 AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = gateway_oauth_clients.client_id)",
+        )
+        .bind(unused_clients_before.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?
+        .rows_affected();
+        Ok(GatewayOauthPurgeCounts {
+            clients,
+            authorization_requests,
+            tokens,
+        })
     }
 }

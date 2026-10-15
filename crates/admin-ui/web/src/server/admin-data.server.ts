@@ -46,6 +46,7 @@ import type {
   McpInvocationPageView,
   McpOauthConnectionView,
   McpOauthStartResponse,
+  AuthorizedMcpClientsView,
   OauthAuthorizationDecisionResponse,
   OauthAuthorizationRequestView,
   McpConnectionInfoPayload,
@@ -687,6 +688,20 @@ export async function startMcpOauthConnection(serverId: string): Promise<McpOaut
       params: { path: { server_id: serverId } },
       // The callback appends `oauth=connected`; `server` names the card to confirm.
       body: { redirect_to: `/admin/account/connections?server=${encodeURIComponent(serverId)}` },
+    }),
+  )
+}
+
+export async function listAuthorizedMcpClients(): Promise<AuthorizedMcpClientsView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/me/authorized-mcp-clients'))
+}
+
+export async function revokeAuthorizedMcpClient(grantId: string): Promise<void> {
+  const client = createGatewayApiClient()
+  unwrapGatewayResponse(
+    await client.DELETE('/api/v1/me/authorized-mcp-clients/{grant_id}', {
+      params: { path: { grant_id: grantId } },
     }),
   )
 }

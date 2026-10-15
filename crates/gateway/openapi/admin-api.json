@@ -1061,6 +1061,118 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/authorized-clients": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "admin_list_authorized_mcp_clients",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "description": "User whose authorized clients to list.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedMcpClientsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/authorized-clients/revoke": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "admin_revoke_authorized_mcp_clients",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRevokeAuthorizedMcpClientsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthorizedMcpClientsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/connection-info": {
       "get": {
         "tags": [
@@ -4800,6 +4912,97 @@
         ]
       }
     },
+    "/api/v1/me/authorized-mcp-clients": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "list_my_authorized_mcp_clients",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedMcpClientsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/authorized-mcp-clients/{grant_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "revoke_my_authorized_mcp_client",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthorizedMcpClientsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/profile": {
       "get": {
         "tags": [
@@ -7433,6 +7636,26 @@
           }
         }
       },
+      "AdminRevokeAuthorizedMcpClientsRequest": {
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "grant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Revoke only this grant; omit to revoke every client the user authorized."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "AdminServiceAccountView": {
         "type": "object",
         "required": [
@@ -9781,6 +10004,89 @@
           },
           "user": {
             "$ref": "#/components/schemas/AuthSessionUserView"
+          }
+        }
+      },
+      "AuthorizedMcpClientView": {
+        "type": "object",
+        "description": "One MCP client that can still get tokens on the user's behalf.",
+        "required": [
+          "grant_id",
+          "client_id",
+          "resource",
+          "resource_kind",
+          "scopes",
+          "authorized_at",
+          "last_token_issued_at",
+          "expires_at"
+        ],
+        "properties": {
+          "authorized_at": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Self-asserted by the client at registration."
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Access ends no later than the admin session that approved it."
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "last_token_issued_at": {
+            "type": "string",
+            "description": "When the client last received a token, at sign-in or refresh."
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_kind": {
+            "$ref": "#/components/schemas/OauthResourceKind"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OauthScopeView"
+            }
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuthorizedMcpClientsView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "items"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether OAuth sign-in for MCP clients is enabled on this gateway."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedMcpClientView"
+            }
           }
         }
       },
@@ -16856,6 +17162,19 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "RevokeAuthorizedMcpClientsResponse": {
+        "type": "object",
+        "required": [
+          "revoked_count"
+        ],
+        "properties": {
+          "revoked_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },

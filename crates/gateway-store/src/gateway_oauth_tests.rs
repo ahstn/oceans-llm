@@ -348,3 +348,248 @@ where
         Some("user_deactivated")
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn libsql_gateway_oauth_grants_list_revoke_and_purge() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_grant_management(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_gateway_oauth_grants_list_revoke_and_purge() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres gateway OAuth management test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_grant_management(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
+fn dynamic_client(client_id: &str, created_at: OffsetDateTime) -> GatewayOauthClientRecord {
+    GatewayOauthClientRecord {
+        client_id: client_id.to_string(),
+        registration_kind: "dynamic".to_string(),
+        client_name: Some(format!("Client {client_id}")),
+        client_uri: None,
+        logo_uri: None,
+        redirect_uris: vec!["http://127.0.0.1/callback".to_string()],
+        grant_types: vec!["authorization_code".to_string()],
+        token_endpoint_auth_method: GatewayOauthClientAuthMethod::None,
+        client_secret_hash: None,
+        software_id: None,
+        software_version: None,
+        created_at,
+        updated_at: created_at,
+    }
+}
+
+async fn exercise_grant_management<S>(store: &S)
+where
+    S: GatewayStore + GatewayOauthRepository,
+{
+    let now = timestamp(0);
+    let mut users = Vec::new();
+    for email in ["owner@example.com", "other@example.com"] {
+        let user = store
+            .create_identity_user(
+                email,
+                email,
+                email,
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let session_id = Uuid::new_v4();
+        store
+            .create_user_session(
+                session_id,
+                user.user_id,
+                &format!("hash-{email}"),
+                now + Duration::days(30),
+                now,
+            )
+            .await
+            .expect("session");
+        users.push((user.user_id, session_id));
+    }
+    let (owner, owner_session) = users[0];
+    let (other, other_session) = users[1];
+
+    let old = now - Duration::days(30);
+    for client_id in ["used", "unused-old", "unused-new"] {
+        let created_at = if client_id == "unused-new" { now } else { old };
+        store
+            .create_gateway_oauth_client(&dynamic_client(client_id, created_at))
+            .await
+            .expect("client");
+    }
+    let grant = |grant_id, user_id, user_session_id, created_at| GatewayOauthGrantRecord {
+        grant_id,
+        client_id: "used".to_string(),
+        user_id,
+        user_session_id,
+        resource: "https://oceans.example.com/mcp".to_string(),
+        scope: "mcp:aggregate".to_string(),
+        created_at,
+        updated_at: created_at,
+        revoked_at: None,
+        revoked_reason: None,
+    };
+    let first = Uuid::new_v4();
+    let second = Uuid::new_v4();
+    let others = Uuid::new_v4();
+    store
+        .create_gateway_oauth_grant(&grant(first, owner, owner_session, old))
+        .await
+        .unwrap();
+    store
+        .create_gateway_oauth_grant(&grant(second, owner, owner_session, now))
+        .await
+        .unwrap();
+    store
+        .create_gateway_oauth_grant(&grant(others, other, other_session, now))
+        .await
+        .unwrap();
+    for (hash, created_at, expires_at) in [
+        ("expired-token", old, old + Duration::hours(1)),
+        ("live-token", now, now + Duration::hours(1)),
+    ] {
+        store
+            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
+                token_hash: hash.to_string(),
+                grant_id: first,
+                kind: GatewayOauthTokenKind::Access,
+                scope: "mcp:aggregate".to_string(),
+                expires_at,
+                created_at,
+                consumed_at: None,
+            })
+            .await
+            .unwrap();
+    }
+    for (expires_at, client_id) in [(old, "used"), (now + Duration::minutes(5), "unused-new")] {
+        store
+            .create_gateway_oauth_authorization_request(&GatewayOauthAuthorizationRequestRecord {
+                request_id: Uuid::new_v4(),
+                client_id: client_id.to_string(),
+                redirect_uri: "http://127.0.0.1/callback".to_string(),
+                state: None,
+                code_challenge: "challenge".to_string(),
+                resource: "https://oceans.example.com/mcp".to_string(),
+                scope: "mcp:aggregate".to_string(),
+                status: GatewayOauthAuthorizationStatus::Pending,
+                user_id: None,
+                user_session_id: None,
+                code_hash: None,
+                code_expires_at: None,
+                grant_id: None,
+                expires_at,
+                created_at: expires_at - Duration::minutes(10),
+                decided_at: None,
+                consumed_at: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    // Newest first; the last token issued counts as the latest activity.
+    let listed = store
+        .list_live_gateway_oauth_grants_for_user(owner, now)
+        .await
+        .unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|grant| grant.grant_id)
+            .collect::<Vec<_>>(),
+        vec![second, first]
+    );
+    assert_eq!(listed[1].client_name.as_deref(), Some("Client used"));
+    assert_eq!(listed[1].last_token_issued_at, now);
+    assert_eq!(listed[0].last_token_issued_at, now);
+    assert_eq!(listed[0].session_expires_at, now + Duration::days(30));
+
+    // A user cannot revoke someone else's grant.
+    assert!(
+        !store
+            .revoke_gateway_oauth_grant_for_user(others, owner, "user_revoked", now)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .revoke_gateway_oauth_grant_for_user(first, owner, "user_revoked", now)
+            .await
+            .unwrap()
+    );
+    let listed = store
+        .list_live_gateway_oauth_grants_for_user(owner, now)
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1);
+
+    // Grants whose approving session ended no longer list.
+    store.revoke_user_session(other_session, now).await.unwrap();
+    assert!(
+        store
+            .list_live_gateway_oauth_grants_for_user(other, now)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let counts = store
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+        .await
+        .unwrap();
+    assert_eq!(counts.clients, 1, "only the old client without grants");
+    assert_eq!(counts.tokens, 1);
+    assert_eq!(counts.authorization_requests, 1);
+    assert!(
+        store
+            .get_gateway_oauth_client("unused-old")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_client("unused-new")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_client("used")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_token_context("live-token")
+            .await
+            .unwrap()
+            .is_some()
+    );
+}

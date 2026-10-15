@@ -336,6 +336,30 @@ impl GatewayOauthTokenContext {
     }
 }
 
+/// A live grant as its user sees it: one authorized MCP client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthGrantSummary {
+    pub grant_id: Uuid,
+    pub client_id: String,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub resource: String,
+    pub scope: String,
+    pub created_at: OffsetDateTime,
+    /// When the client last received a token, at sign-in or refresh.
+    pub last_token_issued_at: OffsetDateTime,
+    /// The grant ends no later than its approving session.
+    pub session_expires_at: OffsetDateTime,
+}
+
+/// Rows removed by [`GatewayOauthRepository::purge_gateway_oauth_records`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GatewayOauthPurgeCounts {
+    pub clients: u64,
+    pub authorization_requests: u64,
+    pub tokens: u64,
+}
+
 /// The admin session that approves a consent, and its user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayOauthSessionState {
@@ -438,6 +462,33 @@ pub trait GatewayOauthRepository: Send + Sync {
         reason: &str,
         revoked_at: OffsetDateTime,
     ) -> Result<u64, StoreError>;
+
+    /// The user's grants that still work at `now`: not revoked, with a live
+    /// approving session. Newest first.
+    async fn list_live_gateway_oauth_grants_for_user(
+        &self,
+        user_id: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError>;
+
+    /// Revokes `grant_id` only if it belongs to `user_id`.
+    async fn revoke_gateway_oauth_grant_for_user(
+        &self,
+        grant_id: Uuid,
+        user_id: Uuid,
+        reason: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    /// Deletes dynamically registered clients created before
+    /// `unused_clients_before` that never received a grant, and authorization
+    /// requests and tokens that expired before `expired_before`. Grants are
+    /// kept as an audit trail.
+    async fn purge_gateway_oauth_records(
+        &self,
+        unused_clients_before: OffsetDateTime,
+        expired_before: OffsetDateTime,
+    ) -> Result<GatewayOauthPurgeCounts, StoreError>;
 }
 
 #[cfg(test)]

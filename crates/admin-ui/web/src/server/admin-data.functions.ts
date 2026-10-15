@@ -71,6 +71,8 @@ import {
   revokeMcpOauthConnection,
   decideOauthAuthorizationRequest,
   getOauthAuthorizationRequest,
+  listAuthorizedMcpClients,
+  revokeAuthorizedMcpClient,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
@@ -520,6 +522,29 @@ export const disconnectMcpOauthServer = createServerFn({ method: 'POST' })
   .validator(validateMcpOauthServerInput)
   .handler(async ({ data }) => {
     return revokeMcpOauthConnection(data.serverId)
+  })
+
+export const getAuthorizedMcpClients = createServerFn({ method: 'GET' }).handler(async () => {
+  return listAuthorizedMcpClients()
+})
+
+function validateGrantInput(input: unknown): { grantId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'grantId' in input &&
+    typeof input.grantId === 'string' &&
+    input.grantId.length > 0
+  ) {
+    return { grantId: input.grantId }
+  }
+  throw new Error('A valid authorized client ID is required')
+}
+
+export const disconnectAuthorizedMcpClient = createServerFn({ method: 'POST' })
+  .validator(validateGrantInput)
+  .handler(async ({ data }) => {
+    return revokeAuthorizedMcpClient(data.grantId)
   })
 
 function validateOauthAuthorizationRequestInput(input: unknown): { requestId: string } {

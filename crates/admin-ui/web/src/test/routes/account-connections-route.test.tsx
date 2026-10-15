@@ -23,7 +23,13 @@ vi.mock('@/server/admin-data.functions', () => ({
   connectMcpOauthServer: (...args: unknown[]) => connectMock(...args),
   disconnectMcpOauthServer: vi.fn(),
   getMcpOauthConnections: vi.fn(),
+  getAuthorizedMcpClients: vi.fn(),
+  disconnectAuthorizedMcpClient: vi.fn(),
 }))
+
+function loaderData(connections: McpOauthConnectionView[]) {
+  return { connections, authorizedClients: { enabled: false, items: [] } }
+}
 
 function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthConnectionView {
   return {
@@ -57,7 +63,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('starts the OAuth flow for the named server and drops the parameter', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection()])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
@@ -77,7 +83,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('reconnects an expired connection', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'expired' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'expired' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
@@ -88,7 +94,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('does not start the flow when the server is already connected', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'connected' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
@@ -101,9 +107,9 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('reports unknown and unavailable servers instead of starting the flow', async () => {
-    routeMock.useLoaderData.mockReturnValue([
-      connection({ availability_error: 'OAuth provider `google` is not configured' }),
-    ])
+    routeMock.useLoaderData.mockReturnValue(
+      loaderData([connection({ availability_error: 'OAuth provider `google` is not configured' })]),
+    )
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
@@ -124,7 +130,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('handles a second link to the same server after the first was consumed', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection()])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     connectMock.mockRejectedValue(new Error('consent failed'))
     const { ConnectionsPage } = await import('@/routes/account/connections')
@@ -141,7 +147,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('names the server the OAuth callback returned from and toasts once', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'connected' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
     routeMock.useSearch.mockReturnValue({ oauth: 'connected', server: 'server-1' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
@@ -158,7 +164,7 @@ describe('ConnectionsPage connect links', () => {
 
     // A loader refresh, such as the one after a disconnect, must not repeat the toast.
     routeMock.useSearch.mockReturnValue({})
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'disconnected' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'disconnected' })]))
     rerender(<ConnectionsPage />)
     expect(toastMock.success).toHaveBeenCalledTimes(1)
   })

@@ -122,10 +122,11 @@ pub use gateway_keys::{
 pub use mcp_client_oauth::{
     GatewayAuthMethod, GatewayOauthAuthorizationDecision, GatewayOauthAuthorizationRequestRecord,
     GatewayOauthAuthorizationStatus, GatewayOauthClientAuthMethod, GatewayOauthClientRecord,
-    GatewayOauthGrantRecord, GatewayOauthRepository, GatewayOauthSessionState,
-    GatewayOauthTokenContext, GatewayOauthTokenKind, GatewayOauthTokenRecord, McpOauthResource,
-    OAUTH_ACCESS_TOKEN_PREFIX, OAUTH_REFRESH_TOKEN_PREFIX, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
-    SUPPORTED_SCOPES, parse_scope_list,
+    GatewayOauthGrantRecord, GatewayOauthGrantSummary, GatewayOauthPurgeCounts,
+    GatewayOauthRepository, GatewayOauthSessionState, GatewayOauthTokenContext,
+    GatewayOauthTokenKind, GatewayOauthTokenRecord, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX,
+    OAUTH_REFRESH_TOKEN_PREFIX, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, SUPPORTED_SCOPES,
+    parse_scope_list,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

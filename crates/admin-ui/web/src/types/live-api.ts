@@ -189,6 +189,8 @@ export type McpGrantsQuery = NonNullable<operations['list_mcp_grants']['paramete
 export type McpOauthConnectionView = components['schemas']['McpOauthConnectionView']
 export type McpOauthStartResponse = components['schemas']['McpOauthStartResponse']
 export type OauthAuthorizationRequestView = components['schemas']['OauthAuthorizationRequestView']
+export type AuthorizedMcpClientsView = components['schemas']['AuthorizedMcpClientsView']
+export type AuthorizedMcpClientView = components['schemas']['AuthorizedMcpClientView']
 export type OauthAuthorizationDecisionResponse =
   components['schemas']['OauthAuthorizationDecisionResponse']
 

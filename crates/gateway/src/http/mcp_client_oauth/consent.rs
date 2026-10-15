@@ -4,8 +4,7 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AuthError, GatewayError, McpOauthResource, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, StoreError,
-    UserStatus,
+    GatewayError, McpOauthResource, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, StoreError,
 };
 use gateway_service::PendingAuthorization;
 use serde::{Deserialize, Serialize};
@@ -13,11 +12,10 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::oauth_service;
+use super::{oauth_service, require_active_session};
 use crate::http::{
     admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
     error::AppError,
-    identity::resolve_session_user_with_session_id,
     state::AppState,
 };
 
@@ -129,19 +127,6 @@ pub async fn decide_oauth_authorization_request(
     Ok(Json(OauthAuthorizationDecisionResponse { redirect_to }))
 }
 
-async fn require_active_session(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<(Uuid, Uuid), AppError> {
-    let (user, session_id) = resolve_session_user_with_session_id(state, headers)
-        .await?
-        .ok_or(AppError(AuthError::SessionRequired.into()))?;
-    if user.status != UserStatus::Active {
-        return Err(AppError(AuthError::InsufficientPrivileges.into()));
-    }
-    Ok((user.user_id, session_id))
-}
-
 fn parse_request_id(raw: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(raw).map_err(|_| {
         AppError(GatewayError::Store(StoreError::NotFound(
@@ -200,7 +185,7 @@ fn redirect_host(redirect_uri: &str) -> String {
         .unwrap_or_else(|| redirect_uri.to_string())
 }
 
-fn scope_description(scope: &str) -> &'static str {
+pub(super) fn scope_description(scope: &str) -> &'static str {
     match scope {
         SCOPE_MCP_AGGREGATE => "Search and call your MCP tools through the aggregate endpoint",
         SCOPE_MCP_PROXY => "Connect directly to MCP servers you have access to",

@@ -324,6 +324,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/authorized-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_authorized_mcp_clients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/authorized-clients/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_revoke_authorized_mcp_clients"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/connection-info": {
         parameters: {
             query?: never;
@@ -1300,6 +1332,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/authorized-mcp-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_my_authorized_mcp_clients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/authorized-mcp-clients/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_my_authorized_mcp_client"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/profile": {
         parameters: {
             query?: never;
@@ -1974,6 +2038,15 @@ export interface components {
             updated_at?: string | null;
             user_id: string;
         };
+        AdminRevokeAuthorizedMcpClientsRequest: {
+            /**
+             * Format: uuid
+             * @description Revoke only this grant; omit to revoke every client the user authorized.
+             */
+            grant_id?: string | null;
+            /** Format: uuid */
+            user_id: string;
+        };
         AdminServiceAccountView: {
             id: string;
             key: string;
@@ -2570,6 +2643,28 @@ export interface components {
             team_id?: string | null;
             team_role?: string | null;
             user: components["schemas"]["AuthSessionUserView"];
+        };
+        /** @description One MCP client that can still get tokens on the user's behalf. */
+        AuthorizedMcpClientView: {
+            authorized_at: string;
+            client_id: string;
+            /** @description Self-asserted by the client at registration. */
+            client_name?: string | null;
+            client_uri?: string | null;
+            /** @description Access ends no later than the admin session that approved it. */
+            expires_at: string;
+            grant_id: string;
+            /** @description When the client last received a token, at sign-in or refresh. */
+            last_token_issued_at: string;
+            resource: string;
+            resource_kind: components["schemas"]["OauthResourceKind"];
+            scopes: components["schemas"]["OauthScopeView"][];
+            server_key?: string | null;
+        };
+        AuthorizedMcpClientsView: {
+            /** @description Whether OAuth sign-in for MCP clients is enabled on this gateway. */
+            enabled: boolean;
+            items: components["schemas"]["AuthorizedMcpClientView"][];
         };
         BatchCallerResponse: {
             /** Format: uuid */
@@ -4363,6 +4458,10 @@ export interface components {
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        RevokeAuthorizedMcpClientsResponse: {
+            /** Format: int64 */
+            revoked_count: number;
+        };
         SecretRedactionView: {
             disabled_rules: string[];
             enabled: boolean;
@@ -5313,6 +5412,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_CreateUserResponse"];
+                };
+            };
+        };
+    };
+    admin_list_authorized_mcp_clients: {
+        parameters: {
+            query: {
+                /** @description User whose authorized clients to list. */
+                user_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizedMcpClientsView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    admin_revoke_authorized_mcp_clients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRevokeAuthorizedMcpClientsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAuthorizedMcpClientsResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };
@@ -7210,6 +7386,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_my_authorized_mcp_clients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizedMcpClientsView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    revoke_my_authorized_mcp_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Grant identifier */
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAuthorizedMcpClientsResponse"];
                 };
             };
             401: {
