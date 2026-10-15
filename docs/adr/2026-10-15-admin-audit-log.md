@@ -22,7 +22,8 @@ Several planned features need a durable record of control-plane changes and will
 Every audit entry goes through `gateway_service::AdminAudit` (`crates/gateway-service/src/admin_audit.rs`). Handlers do not insert rows themselves.
 
 - `AdminAudit::audited(context, mutation, describe)` awaits the mutation future. Only if it succeeds does it call `describe` with the output and write the entry. A failed mutation never reaches `describe`, so it writes nothing.
-- `AdminAudit::record(context, event)` writes an entry for a change that has already succeeded. Handlers use it when the mutation is a sequence of store calls that has no single future, such as user creation, or when the success point comes after response shaping.
+- `AdminAudit::audited_steps(context, progress, mutation, describe, partial)` is for a mutation made of several store writes that are not in one transaction, such as creating a user or updating a team. The handler calls `progress.landed()` after each write. On success it behaves like `audited`. If the mutation fails after a write landed, the change is partly applied, so `partial` describes it, the entry carries `outcome: partial` and the failure's error code, and the request still returns the error. A failure before any write records nothing.
+- `AdminAudit::record(context, event)` writes an entry for a change that has already succeeded, when the success point comes after response shaping.
 - `AuditContext` carries the actor and the request IP, user agent and request ID. In HTTP handlers it comes from the `AuditRequestMeta` extractor and the signed-in `UserRecord`: `meta.user_context(&actor)`.
 - `AuditEvent` is a small builder: `AuditEvent::new(actions::API_KEY_CREATED, targets::API_KEY).target(id).label(name).before(..).after(..).meta(key, value)`.
 - Action and target names are constants in `admin_audit::actions` and `admin_audit::targets`, named `<target_type>.<past-tense verb>`. New code adds a constant rather than a free-form string, so filters and the admin UI see a closed vocabulary.
@@ -58,7 +59,15 @@ Labels are snapshots, so entries stay readable after the user, key or resource i
 
 ### Request IP
 
-The gateway now serves with `ConnectInfo`. `resolve_client_ip` treats a public peer as the client. When the peer is a loopback, private or link-local hop, it reads `X-Forwarded-For` from right to left and uses the first public address. The admin UI proxy appends the browser's peer to `X-Forwarded-For`. The admin UI server forwards that header and the browser's `User-Agent` on its gateway API calls, so entries made through the UI carry the browser's address rather than the UI server's.
+The gateway now serves with `ConnectInfo`, and `X-Forwarded-For` is never trusted for audit entries. Any client can set it, and without a configured chain of trusted proxies the gateway cannot tell a real hop from a forged one.
+
+Instead, the browser always reaches the admin UI through the gateway's own admin proxy, the only hop that observes the browser's address:
+
+- The proxy drops any inbound `x-oceans-client-ip` header and sets its own: `<ip>;<unix seconds>;<HMAC-SHA256>`, keyed by the gateway's identity token secret.
+- The admin UI server forwards that header, and the browser's `User-Agent`, on its gateway API calls.
+- `resolve_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the direct peer.
+
+Direct API calls record the peer's address. Behind a load balancer or ingress, that is the balancer's address: it is honest but less useful, and fixing it needs the trusted-proxy configuration planned in #25 and #450.
 
 ### Redaction
 
@@ -95,7 +104,7 @@ Audited:
 - Teams: create, update, add members, remove a member and transfer a member.
 - Service accounts: create, update and disable.
 - Budgets: set, deactivate and temporary increase.
-- Sessions: password, OIDC and OAuth sign-in, and logout.
+- Sessions: password, OIDC and OAuth sign-in, and logout. An invited user's first OIDC or OAuth sign-in also records `user.invite_redeemed`.
 - MCP: server create, update, disable and discovery refresh. Tool set create, update, disable and tool replacement. Grant set and revoke. Credential binding create, replace and revoke, including a user's own OAuth connect and disconnect.
 - Provider credentials, set by an admin or by the user's own API key.
 - Pricing catalog refresh, and Review Agent repository create, update, disable and reactivate.
@@ -108,12 +117,12 @@ Not audited:
 ## Trade-offs
 
 - An entry can be missing for a change that committed, if the audit insert fails. The failure is logged at `error` with enough context to rebuild the entry, but the log is not the audit trail.
-- Multi-step handlers that fail partway, such as team creation succeeding before a tag update fails, write no entry. This is because their store calls were never atomic.
+- Multi-step identity handlers (user create, update, deactivate and onboarding reset; team create, update and add members; password change and invite redemption) record a failure partway as `outcome: partial` with a `requested` summary where one exists, not the exact final state. Other single-write handlers have nothing partial to record.
 - Old entries are only as complete as their summaries. Fields added to a resource later do not appear in older entries.
 
 ## Follow-up
 
 - Move audit writes into the mutation's transaction once the store has a unit of work.
-- Adopt the shared trusted-proxy client IP resolution from #25 and #450 when it lands.
+- Add trusted-proxy configuration with #25 and #450, so deployments behind a load balancer record the client rather than the balancer.
 - Add a configurable retention window and an export for SIEM ingestion (see #452).
 - Audit failed sign-in attempts as security events, separate from control-plane changes.

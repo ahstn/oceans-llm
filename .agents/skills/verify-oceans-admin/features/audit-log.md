@@ -25,7 +25,7 @@ Preconditions:
 Steps:
 
 - **Open.** Choose the `Audit Log` link. The `Audit Log` heading and the `Control-plane changes` frame are visible, and the newest row is the sign-in (`Session`, `Created`) attributed to `admin@local` with `127.0.0.1` as the IP address.
-- **Changes through the UI.** On `API Keys`, create a temporary user API key and revoke it (see [API keys](./api-keys.md)). On `Teams`, transfer `ben@platform.local` from Platform to Research and back (see [Identity](./identity.md)). Return to `Audit Log`. Rows for `API key` `Created` and `Revoked` and two `User` `Member transferred` appear above the sign-in. Each is attributed to `admin@local` from `127.0.0.1`, and its user agent is the browser's, which proves the admin UI server forwards `X-Forwarded-For` and `User-Agent`.
+- **Changes through the UI.** On `API Keys`, create a temporary user API key and revoke it (see [API keys](./api-keys.md)). On `Teams`, transfer `ben@platform.local` from Platform to Research and back (see [Identity](./identity.md)). Return to `Audit Log`. Rows for `API key` `Created` and `Revoked` and two `User` `Member transferred` appear above the sign-in. Each is attributed to `admin@local` from `127.0.0.1`, and its user agent is the browser's, which proves the admin UI server forwards the proxy's signed `x-oceans-client-ip` and the browser's `User-Agent`.
 - **No secret.** Open the `API key` `Created` row. The `After` block shows the key name, the `gwk_<id>` display prefix, owner and status. The full raw key from the create dialog appears nowhere on the page or in the API response.
 - **Failed change.** From the same session, send `POST /api/v1/admin/identity/teams` with a name that is only spaces. It returns `400`, and no `team.created` entry appears.
 - **Filter.** Choose `API key` in `Target type`. Only API key rows remain and the URL search holds `target_type=api_key`. Choose `Clear`.
@@ -40,5 +40,5 @@ Budget, service account, MCP server, tool set, grant and credential binding entr
 
 - Entries are never purged by request-log retention, so a reused `gateway.db` keeps entries from earlier runs. Compare against the rows newer than the run's sign-in entry.
 - `Older` uses a keyset cursor, not page numbers; the browser's back button returns to the previous page.
-- The admin UI calls the gateway API from its own server, so the IP address comes from the `X-Forwarded-For` chain the gateway's admin proxy adds. Locally that is `127.0.0.1`.
+- The admin UI calls the gateway API from its own server, so the IP address comes from the address the gateway's admin proxy signs into `x-oceans-client-ip`. `X-Forwarded-For` is ignored. Locally the address is `127.0.0.1`.
 - Guardrail policies are configuration only, so there are no guardrail policy entries yet.

@@ -36,7 +36,9 @@ Each entry shows:
 | Provider credentials | `provider_credential.set`, `provider_credential.deleted` |
 | Other | `pricing_catalog.refreshed`, `review_agent_repository.created`, `.updated`, `.disabled`, `.reactivated` |
 
-A change that fails writes no entry. That includes validation errors, conflicts and denied permissions.
+A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
+
+An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
 
 Not recorded:
 
@@ -67,7 +69,7 @@ curl -s -b "ogw_session=$SESSION" \
 
 ## Request IP
 
-When the admin UI makes a change, the gateway records the browser's address. When requests reach the gateway through a load balancer or ingress on a private address, the gateway uses the right-most public address in `X-Forwarded-For`. A request from a public address directly records that address.
+When you make a change in the admin UI, the gateway records your browser's address. The gateway's admin proxy signs that address, so a client cannot forge it with `X-Forwarded-For`. A direct API call records the address that connected to the gateway. Behind a load balancer or ingress, that is the balancer's address until trusted proxies can be configured.
 
 ## Retention
 
