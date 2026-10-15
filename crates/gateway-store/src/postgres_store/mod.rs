@@ -251,7 +251,7 @@ impl GatewayStore for PostgresStore {
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::disable_service_account(self, service_account_id, disabled_at).await
     }
 

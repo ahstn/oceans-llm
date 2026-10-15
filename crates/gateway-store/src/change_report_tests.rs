@@ -182,6 +182,21 @@ async fn exercise_identity_change_reports<S: GatewayStore + ?Sized>(store: &S) {
         .expect("the rename replaced the profile");
     assert_eq!(replaced.service_account_name, "CI");
     assert!(replaced.tags.is_empty());
+
+    // Disabling returns the account the update disabled, as it was then.
+    let disabled = store
+        .disable_service_account(account.service_account_id, now + Duration::seconds(2))
+        .await
+        .expect("disable")
+        .expect("the account was active");
+    assert_eq!(disabled.service_account_name, "CI runner");
+    assert!(
+        store
+            .disable_service_account(account.service_account_id, now + Duration::seconds(3))
+            .await
+            .expect("disable again")
+            .is_none()
+    );
 }
 
 async fn exercise_toolset_change_reports<S: GatewayStore + McpAccessRepository + ?Sized>(

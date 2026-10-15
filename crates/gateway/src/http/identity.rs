@@ -477,20 +477,23 @@ pub async fn disable_identity_service_account(
         })?;
     let actor =
         require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
-    state
-        .audit()
-        .audited_change(
-            &meta.user_context(&actor),
-            state
-                .store
-                .disable_service_account(service_account_id, OffsetDateTime::now_utc()),
-            || {
-                service_account_event(actions::SERVICE_ACCOUNT_DISABLED, &account)
-                    .before(serde_json::json!({ "status": account.status.as_str() }))
-                    .after(serde_json::json!({ "status": "disabled" }))
-            },
-        )
+    // The store returns the account its update disabled, so the entry is labelled
+    // as the account was when the change landed. Disabling it again records nothing.
+    let disabled = state
+        .store
+        .disable_service_account(service_account_id, OffsetDateTime::now_utc())
         .await?;
+    if let Some(disabled) = &disabled {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                service_account_event(actions::SERVICE_ACCOUNT_DISABLED, disabled)
+                    .before(serde_json::json!({ "status": "active" }))
+                    .after(serde_json::json!({ "status": disabled.status.as_str() })),
+            )
+            .await;
+    }
     let account = state
         .store
         .get_service_account_by_id(service_account_id)

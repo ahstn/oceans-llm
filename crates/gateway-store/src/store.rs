@@ -128,7 +128,7 @@ pub trait GatewayStore:
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError>;
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError>;
     async fn get_enabled_oidc_provider_by_key(
         &self,
@@ -1623,7 +1623,7 @@ impl GatewayStore for AnyStore {
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError> {
         dispatch_store!(
             self,
             disable_service_account(service_account_id, disabled_at)

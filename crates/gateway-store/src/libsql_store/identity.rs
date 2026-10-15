@@ -467,24 +467,33 @@ impl LibsqlStore {
         Ok(Some(previous))
     }
 
+    /// Disables an active service account and returns it as disabled, or `None`
+    /// when it was not active.
     pub async fn disable_service_account(
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let result = self
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let mut rows = self
             .connection
-            .execute(
+            .query(
                 r#"
                 UPDATE service_accounts
                 SET status = 'disabled', updated_at = ?1, disabled_at = ?1
                 WHERE service_account_id = ?2 AND status = 'active'
+                RETURNING service_account_id, team_id, service_account_key, service_account_name,
+                          status, model_access_mode, metadata_json, tags_json, created_at,
+                          updated_at, disabled_at
                 "#,
                 libsql::params![disabled_at.unix_timestamp(), service_account_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(result > 0)
+        rows.next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_service_account_record(&row))
+            .transpose()
     }
 
     pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
