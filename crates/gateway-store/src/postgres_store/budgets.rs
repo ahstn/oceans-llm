@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
+use gateway_core::ManualBudgetSave;
 
 #[async_trait]
 impl BudgetRepository for PostgresStore {
@@ -158,8 +159,9 @@ impl BudgetRepository for PostgresStore {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
-        self.write_active_budget(scope, settings, source, updated_at, false)
+        Self::write_active_budget(&self.pool, scope, settings, source, updated_at, false)
             .await?
+            .map(|(budget, _)| budget)
             .ok_or_else(|| StoreError::Unexpected("budget upsert returned no row".to_string()))
     }
 
@@ -168,16 +170,64 @@ impl BudgetRepository for PostgresStore {
         scope: &BudgetScope,
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<(BudgetRecord, bool), StoreError> {
-        // The written row is the one this save produced; with no write, the
-        // active budget already had these settings.
-        match self
-            .write_active_budget(scope, settings, &BudgetSource::manual(), updated_at, true)
-            .await?
-        {
-            Some(budget) => Ok((budget, true)),
-            None => Ok((self.load_upserted_budget(scope).await?, false)),
+    ) -> Result<ManualBudgetSave, StoreError> {
+        // Locking the active row makes the budget read here the one the save below
+        // overwrites. With no row to lock, a concurrent create can still land first;
+        // the upsert then finds that row, so the save is retried to read it.
+        for _ in 0..MANUAL_BUDGET_SAVE_ATTEMPTS {
+            let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+            let replaced = sqlx::query(
+                r#"
+                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
+                FROM budgets
+                WHERE scope_key = $1
+                  AND is_active = 1
+                FOR UPDATE
+                "#,
+            )
+            .bind(scope.scope_key())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_budget_record)
+            .transpose()?;
+            let written = Self::write_active_budget(
+                &mut *tx,
+                scope,
+                settings,
+                &BudgetSource::manual(),
+                updated_at,
+                true,
+            )
+            .await?;
+            let save = match (written, replaced) {
+                (Some((budget, inserted)), replaced) if inserted || replaced.is_some() => {
+                    ManualBudgetSave {
+                        budget,
+                        changed: true,
+                        replaced,
+                    }
+                }
+                // With no write, the active budget already had these settings.
+                (None, Some(budget)) => ManualBudgetSave {
+                    budget,
+                    changed: false,
+                    replaced: None,
+                },
+                _ => {
+                    tx.rollback().await.map_err(to_write_error)?;
+                    continue;
+                }
+            };
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(save);
         }
+        Err(StoreError::Conflict(
+            "the budget changed during the save; try again".to_string(),
+        ))
     }
 
     async fn upsert_active_budget_with_source_guard(
@@ -1611,14 +1661,16 @@ impl PostgresStore {
     /// Inserts or replaces the active budget for the scope and returns the written
     /// row. With `only_when_changed`, an active budget with the same settings and
     /// source is left alone and `None` is returned.
+    ///
+    /// The flag beside the row is `true` when the upsert inserted it.
     async fn write_active_budget(
-        &self,
+        executor: impl sqlx::PgExecutor<'_>,
         scope: &BudgetScope,
         settings: &BudgetSettings,
         source: &BudgetSource,
         updated_at: OffsetDateTime,
         only_when_changed: bool,
-    ) -> Result<Option<BudgetRecord>, StoreError> {
+    ) -> Result<Option<(BudgetRecord, bool)>, StoreError> {
         let condition = if only_when_changed {
             ACTIVE_BUDGET_CHANGED
         } else {
@@ -1642,7 +1694,7 @@ impl PostgresStore {
                 updated_at = excluded.updated_at{condition}
             RETURNING budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at, source_kind, source_key
+                       created_at, updated_at, source_kind, source_key, (xmax = 0) AS inserted
             "#
         );
         let result = sqlx::query(&sql)
@@ -1661,20 +1713,21 @@ impl PostgresStore {
             .bind(updated_at.unix_timestamp())
             .bind(source.kind.as_str())
             .bind(source.key.as_deref())
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await
             .map_err(to_query_error)?;
-        result.as_ref().map(decode_budget_record).transpose()
-    }
-
-    async fn load_upserted_budget(&self, scope: &BudgetScope) -> Result<BudgetRecord, StoreError> {
-        self.get_active_budget_by_scope(scope)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected("active budget missing after successful upsert".to_string())
+        result
+            .as_ref()
+            .map(|row| {
+                let inserted: bool = row.try_get("inserted").map_err(to_query_error)?;
+                Ok((decode_budget_record(row)?, inserted))
             })
+            .transpose()
     }
 }
+
+/// A manual save retries when a concurrent create lands between its read and write.
+const MANUAL_BUDGET_SAVE_ATTEMPTS: usize = 3;
 
 /// Appended to the upsert's `DO UPDATE` so an unchanged active budget is not rewritten.
 const ACTIVE_BUDGET_CHANGED: &str = "

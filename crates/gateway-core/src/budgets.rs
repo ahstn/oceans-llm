@@ -394,6 +394,19 @@ pub struct BudgetRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// The outcome of a manual budget save.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualBudgetSave {
+    /// The active budget after the save.
+    pub budget: BudgetRecord,
+    /// `false` when an active manual budget already had these settings, in which
+    /// case nothing was written.
+    pub changed: bool,
+    /// The active budget the save overwrote, read under the same write lock. `None`
+    /// when the save created the budget or changed nothing.
+    pub replaced: Option<BudgetRecord>,
+}
+
 /// The budget state an increase was validated against. Creating the increase fails
 /// with `StoreError::Conflict` if the budget or its active increase has changed by the
 /// time the store holds the budget's lock.

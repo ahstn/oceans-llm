@@ -21,7 +21,7 @@ use crate::{
     },
     budgets::{
         BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind,
-        BudgetSettings, BudgetSource,
+        BudgetSettings, BudgetSource, ManualBudgetSave,
     },
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
@@ -443,15 +443,14 @@ pub trait BudgetRepository: Send + Sync {
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError>;
 
-    /// Sets a manual budget for the scope in one statement. The flag is `false`
-    /// when an active manual budget already had these settings, in which case
-    /// nothing is written.
+    /// Sets a manual budget for the scope. The budget it replaced is read under the
+    /// same write lock, so it is the row this save overwrote.
     async fn set_manual_budget(
         &self,
         scope: &BudgetScope,
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<(BudgetRecord, bool), StoreError>;
+    ) -> Result<ManualBudgetSave, StoreError>;
     async fn upsert_active_budget_with_source(
         &self,
         scope: &BudgetScope,

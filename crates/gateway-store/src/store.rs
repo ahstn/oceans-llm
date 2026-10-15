@@ -829,7 +829,7 @@ impl BudgetRepository for AnyStore {
         scope: &gateway_core::BudgetScope,
         settings: &gateway_core::BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<(gateway_core::BudgetRecord, bool), StoreError> {
+    ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
         dispatch_store!(self, set_manual_budget(scope, settings, updated_at))
     }
 

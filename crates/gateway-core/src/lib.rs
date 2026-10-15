@@ -51,7 +51,7 @@ pub use batch::{
 pub use budgets::{
     BudgetContact, BudgetExceededStatus, BudgetIncreaseBasis, BudgetIncreaseRecord,
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetScopeWindow,
-    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert,
+    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
 };
 pub use domain::{
     ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,

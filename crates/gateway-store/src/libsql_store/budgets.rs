@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
+use gateway_core::ManualBudgetSave;
 
 #[async_trait]
 impl BudgetRepository for LibsqlStore {
@@ -61,32 +62,7 @@ impl BudgetRepository for LibsqlStore {
         &self,
         scope: &BudgetScope,
     ) -> Result<Option<BudgetRecord>, StoreError> {
-        let mut rows = self
-            .connection
-            .query(
-                r#"
-                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at, source_kind, source_key
-                FROM budgets
-                WHERE scope_key = ?1
-                  AND is_active = 1
-                LIMIT 1
-                "#,
-                [scope.scope_key()],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
-        let Some(row) = rows
-            .next()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?
-        else {
-            return Ok(None);
-        };
-
-        decode_budget_record(&row).map(Some)
+        active_budget_on(&self.connection, scope).await
     }
 
     async fn get_latest_budget_by_scope(
@@ -178,7 +154,7 @@ impl BudgetRepository for LibsqlStore {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
-        self.write_active_budget(scope, settings, source, updated_at, false)
+        self.write_active_budget(&self.connection, scope, settings, source, updated_at, false)
             .await?
             .ok_or_else(|| StoreError::Unexpected("budget upsert returned no row".to_string()))
     }
@@ -188,15 +164,40 @@ impl BudgetRepository for LibsqlStore {
         scope: &BudgetScope,
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<(BudgetRecord, bool), StoreError> {
-        // The written row is the one this save produced; with no write, the
-        // active budget already had these settings.
-        match self
-            .write_active_budget(scope, settings, &BudgetSource::manual(), updated_at, true)
-            .await?
-        {
-            Some(budget) => Ok((budget, true)),
-            None => Ok((self.load_upserted_budget(scope).await?, false)),
+    ) -> Result<ManualBudgetSave, StoreError> {
+        // An immediate transaction holds the write lock, so the budget read here is
+        // exactly the one the save below overwrites.
+        let tx = self
+            .connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_write_error)?;
+        let replaced = active_budget_on(&tx, scope).await?;
+        let written = self
+            .write_active_budget(
+                &tx,
+                scope,
+                settings,
+                &BudgetSource::manual(),
+                updated_at,
+                true,
+            )
+            .await?;
+        tx.commit().await.map_err(to_write_error)?;
+        // With no write, the active budget already had these settings.
+        match written {
+            Some(budget) => Ok(ManualBudgetSave {
+                budget,
+                changed: true,
+                replaced,
+            }),
+            None => Ok(ManualBudgetSave {
+                budget: replaced.ok_or_else(|| {
+                    StoreError::Unexpected("active budget missing after unchanged save".to_string())
+                })?,
+                changed: false,
+                replaced: None,
+            }),
         }
     }
 
@@ -1735,6 +1736,7 @@ impl LibsqlStore {
     /// source is left alone and `None` is returned.
     async fn write_active_budget(
         &self,
+        connection: &libsql::Connection,
         scope: &BudgetScope,
         settings: &BudgetSettings,
         source: &BudgetSource,
@@ -1767,8 +1769,7 @@ impl LibsqlStore {
                        created_at, updated_at, source_kind, source_key
                 "#
         );
-        let mut rows = self
-            .connection
+        let mut rows = connection
             .query(
                 &sql,
                 libsql::params![
@@ -1791,20 +1792,45 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        rows.next()
+        let written = rows
+            .next()
             .await
             .map_err(to_write_error)?
             .map(|row| decode_budget_record(&row))
-            .transpose()
+            .transpose()?;
+        // A transaction cannot commit while the statement still has rows pending.
+        while rows.next().await.map_err(to_write_error)?.is_some() {}
+        Ok(written)
     }
+}
 
-    async fn load_upserted_budget(&self, scope: &BudgetScope) -> Result<BudgetRecord, StoreError> {
-        self.get_active_budget_by_scope(scope)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected("active budget missing after successful upsert".to_string())
-            })
-    }
+async fn active_budget_on(
+    connection: &libsql::Connection,
+    scope: &BudgetScope,
+) -> Result<Option<BudgetRecord>, StoreError> {
+    let mut rows = connection
+        .query(
+            r#"
+            SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                   upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                   created_at, updated_at, source_kind, source_key
+            FROM budgets
+            WHERE scope_key = ?1
+              AND is_active = 1
+            LIMIT 1
+            "#,
+            [scope.scope_key()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let budget = rows
+        .next()
+        .await
+        .map_err(to_query_error)?
+        .map(|row| decode_budget_record(&row))
+        .transpose()?;
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    Ok(budget)
 }
 
 /// Appended to the upsert's `DO UPDATE` so an unchanged active budget is not rewritten.

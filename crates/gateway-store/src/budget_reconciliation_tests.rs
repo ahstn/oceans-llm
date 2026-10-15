@@ -3,6 +3,7 @@ use crate::{
     GatewayStore, LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations,
     run_migrations_with_options,
 };
+use futures_util::future::join_all;
 use gateway_core::{
     AuthMode, BudgetCadence, BudgetModelSelector, BudgetScope, BudgetSettings, BudgetSource,
     BudgetSourceKind, GlobalRole, Money4, SeedBudget, SeedHumanBudgetDefaults, SeedModel, SeedUser,
@@ -45,6 +46,7 @@ async fn postgres_human_budget_defaults_inherit_until_manual_override_or_deactiv
     exercise_human_budget_defaults(&store).await;
     exercise_batch_source_guards(&store).await;
     exercise_set_manual_budget(&store).await;
+    exercise_concurrent_manual_budget_saves(&store).await;
     drop(store);
     drop_postgres_test_database(&test_db).await;
 }
@@ -557,12 +559,12 @@ async fn exercise_set_manual_budget<S: GatewayStore + ?Sized>(store: &S) {
         timezone: "UTC".to_string(),
     };
     let now = OffsetDateTime::now_utc();
-    // The admin audit records a budget change from this flag.
-    let (_, first) = store
+    // The admin audit records a budget change, and what it replaced, from this result.
+    let first = store
         .set_manual_budget(&scope, &settings, now)
         .await
         .expect("set budget");
-    let (_, repeated) = store
+    let repeated = store
         .set_manual_budget(&scope, &settings, now + Duration::seconds(1))
         .await
         .expect("set same budget");
@@ -570,13 +572,85 @@ async fn exercise_set_manual_budget<S: GatewayStore + ?Sized>(store: &S) {
         amount_usd: Money4::from_scaled(2_000_000),
         ..settings.clone()
     };
-    let (budget, changed) = store
+    let raise = store
         .set_manual_budget(&scope, &raised, now + Duration::seconds(2))
         .await
         .expect("raise budget");
-    assert!(first);
-    assert!(!repeated, "saving the same manual budget is not a change");
-    assert!(changed);
-    assert_eq!(budget.settings, raised);
-    assert_eq!(budget.source.kind, BudgetSourceKind::Manual);
+    assert!(first.changed);
+    // The bootstrap user starts on the configured default, which the first save replaces.
+    let default = first
+        .replaced
+        .expect("the first save replaced the config default");
+    assert_eq!(default.source.kind, BudgetSourceKind::ConfigUserDefault);
+    assert_eq!(default.budget_id, first.budget.budget_id);
+    assert!(
+        !repeated.changed,
+        "saving the same manual budget is not a change"
+    );
+    assert_eq!(repeated.replaced, None);
+    assert_eq!(repeated.budget.settings, settings);
+    assert!(raise.changed);
+    assert_eq!(raise.budget.settings, raised);
+    assert_eq!(raise.budget.source.kind, BudgetSourceKind::Manual);
+    let replaced = raise.replaced.expect("the raise replaced the first budget");
+    assert_eq!(replaced.settings, settings);
+    assert_eq!(replaced.budget_id, raise.budget.budget_id);
+}
+
+/// Concurrent saves each report the budget they overwrote, so the entries chain:
+/// every replaced budget is the starting one or another save's result, once.
+async fn exercise_concurrent_manual_budget_saves<S: GatewayStore + ?Sized>(store: &S) {
+    let user = store
+        .upsert_bootstrap_admin_user("Budget owner", "budget-owner@local", true)
+        .await
+        .expect("user");
+    let scope = BudgetScope::User {
+        user_id: user.user_id,
+    };
+    let start = store
+        .get_active_budget_by_scope(&scope)
+        .await
+        .expect("load budget")
+        .expect("budget exists");
+    let now = OffsetDateTime::now_utc();
+    let amounts: Vec<i64> = (1..=8).map(|n| 5_000_000 + n * 10_000).collect();
+    let scope = &scope;
+    let saves = join_all(amounts.iter().map(|amount| {
+        let settings = BudgetSettings {
+            amount_usd: Money4::from_scaled(*amount),
+            ..start.settings.clone()
+        };
+        async move { store.set_manual_budget(scope, &settings, now).await }
+    }))
+    .await;
+
+    let mut replaced = Vec::new();
+    for save in saves {
+        let save = save.expect("concurrent save");
+        assert!(save.changed);
+        replaced.push(
+            save.replaced
+                .expect("each save replaced a budget")
+                .settings
+                .amount_usd
+                .as_scaled_i64(),
+        );
+    }
+    let final_amount = store
+        .get_active_budget_by_scope(scope)
+        .await
+        .expect("load budget")
+        .expect("budget exists")
+        .settings
+        .amount_usd
+        .as_scaled_i64();
+    let mut expected: Vec<i64> = amounts
+        .iter()
+        .copied()
+        .filter(|amount| *amount != final_amount)
+        .chain([start.settings.amount_usd.as_scaled_i64()])
+        .collect();
+    expected.sort_unstable();
+    replaced.sort_unstable();
+    assert_eq!(replaced, expected);
 }

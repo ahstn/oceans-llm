@@ -466,19 +466,15 @@ pub async fn upsert_budget(
     };
     let now = OffsetDateTime::now_utc();
 
-    let before = state
-        .store
-        .get_active_budget_by_scope(&scope)
-        .await?
-        .map(|budget| budget_audit_summary(&budget));
-    // The store decides in one statement whether the save changed anything, so a
-    // concurrent edit cannot turn a real change into a skipped one. Saving over a
-    // config budget changes its owner to manual, which counts as a change.
-    let (budget, changed) = state
+    // The store decides under one write lock whether the save changed anything and
+    // which budget it replaced, so a concurrent edit cannot skew either. Saving over
+    // a config budget changes its owner to manual, which counts as a change.
+    let save = state
         .store
         .set_manual_budget(&scope, &settings, now)
         .await?;
-    if changed {
+    let budget = save.budget;
+    if save.changed {
         state
             .audit()
             .record(
@@ -486,7 +482,7 @@ pub async fn upsert_budget(
                 AuditEvent::new(actions::BUDGET_SET, targets::BUDGET)
                     .target(&budget.scope_key)
                     .meta("budget_id", budget.budget_id)
-                    .before(&before)
+                    .before(save.replaced.as_ref().map(budget_audit_summary))
                     .after(budget_audit_summary(&budget)),
             )
             .await;

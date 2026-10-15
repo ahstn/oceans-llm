@@ -2230,7 +2230,7 @@ mod tests {
             _scope: &BudgetScope,
             _settings: &BudgetSettings,
             _updated_at: OffsetDateTime,
-        ) -> Result<(BudgetRecord, bool), StoreError> {
+        ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
             unimplemented!()
         }
 
