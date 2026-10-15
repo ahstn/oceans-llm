@@ -1481,13 +1481,14 @@ impl PostgresStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             UPDATE users
             SET status = $1,
                 updated_at = $2
             WHERE user_id = $3
+              AND status IS DISTINCT FROM $1
             "#,
         )
         .bind(status.as_str())
@@ -1496,7 +1497,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn update_user_must_change_password(

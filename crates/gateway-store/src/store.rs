@@ -281,12 +281,13 @@ pub trait GatewayStore:
         password_hash: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    /// Sets the status. `false` when the user already had it, so nothing was written.
     async fn update_user_status(
         &self,
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     /// Moves the user from `from` to `to`. `false` means the user was not in
     /// `from`, for example because a concurrent request already moved them.
     async fn transition_user_status(
@@ -1810,7 +1811,7 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, update_user_status(user_id, status, updated_at))
     }
 

@@ -1646,14 +1646,16 @@ impl LibsqlStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE users
                 SET status = ?1,
                     updated_at = ?2
                 WHERE user_id = ?3
+                  AND status IS NOT ?1
                 "#,
                 libsql::params![
                     status.as_str(),
@@ -1663,7 +1665,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn update_user_must_change_password(

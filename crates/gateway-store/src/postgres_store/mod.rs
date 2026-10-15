@@ -525,7 +525,7 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_status(self, user_id, status, updated_at).await
     }
 

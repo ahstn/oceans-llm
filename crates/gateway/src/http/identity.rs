@@ -1419,7 +1419,9 @@ pub async fn reset_identity_user_onboarding(
     let reset = async {
         // A password reset always issues a fresh invite; SSO resets change
         // nothing when the link is already gone and the user is still invited.
-        let mut changed = previous_status != UserStatus::Invited;
+        // Both are decided by the writes, not the earlier read, so a concurrent
+        // reset that already did the work is not recorded twice.
+        let mut changed = false;
         match identity_user.user.auth_mode {
             AuthMode::Password => {
                 changed = true;
@@ -1469,11 +1471,12 @@ pub async fn reset_identity_user_onboarding(
                 }
             }
         }
-        state
+        if state
             .store
             .update_user_status(user_id, UserStatus::Invited, now)
-            .await?;
-        if previous_status != UserStatus::Invited {
+            .await?
+        {
+            changed = true;
             progress.landed();
         }
         let reloaded = reload_identity_user(&state.store, user_id).await?;
