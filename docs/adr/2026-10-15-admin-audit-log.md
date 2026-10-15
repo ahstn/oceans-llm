@@ -88,7 +88,7 @@ The rules for specific actions are:
 - API key creation and secret reveal record no key material.
 - Invites record only their expiry, never the URL that carries the token.
 - MCP credential bindings record their metadata view: kind, header name, secret reference, scopes and expiry. A secret reference written as a URL loses its credentials and query.
-- MCP server and OAuth URLs are stored without credentials, query or fragment, and path segments that look like tokens (a known token shape, or a long random value that is not a UUID) become `REDACTED`.
+- MCP server and OAuth URLs are stored without credentials, query or fragment, and path segments that look like tokens (a known token shape, or a value of 32+ characters that mixes letters and digits or is one unbroken run of letters, and is not a UUID) become `REDACTED`.
 - Provider credentials record only the user and provider key.
 - Review Agent repositories record only the key names of their free-form `settings_json`, never its values.
 - Password changes and sign-ins record that they happened and how the user signed in.

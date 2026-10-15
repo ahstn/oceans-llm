@@ -565,14 +565,22 @@ pub fn is_secret_path_segment(segment: &str) -> bool {
     if uuid::Uuid::parse_str(segment).is_ok() {
         return false;
     }
-    segment.len() >= 32
+    if segment.len() < 32 {
+        return false;
+    }
+    let token_charset = segment
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'));
+    let mixed = segment.chars().any(|character| character.is_ascii_digit())
         && segment
             .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
-        && segment.chars().any(|character| character.is_ascii_digit())
-        && segment
-            .chars()
-            .any(|character| character.is_ascii_alphabetic())
+            .any(|character| character.is_ascii_alphabetic());
+    // A 32+ character run of letters with no separators is not a path word;
+    // hyphenated words such as `oauth-authorization-server` stay readable.
+    let unbroken_letters = segment
+        .chars()
+        .all(|character| character.is_ascii_alphabetic());
+    token_charset && (mixed || unbroken_letters)
 }
 
 /// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
@@ -865,6 +873,12 @@ mod tests {
         ));
         assert!(!is_secret_path_segment(
             "6f1c9a2e-0d5b-4c1e-9f7a-1b2c3d4e5f60"
+        ));
+        assert!(is_secret_path_segment(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
+        assert!(!is_secret_path_segment(
+            "oauth-authorization-server-metadata"
         ));
         assert!(!is_secret_path_segment("mcp"));
         assert!(!is_secret_path_segment("v1"));
