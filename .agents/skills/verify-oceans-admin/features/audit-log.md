@@ -25,12 +25,16 @@ Preconditions:
 Steps:
 
 - **Open.** Choose the `Audit Log` link. The `Audit Log` heading and the `Control-plane changes` frame are visible, and the newest row is the sign-in (`Session`, `Created`) attributed to `admin@local` with `127.0.0.1` as the IP address.
-- **One change per area.** Through the UI, create a temporary user API key on `API Keys` and revoke it, create a team on `Teams`, set a budget for a user on `Spend Controls`, and create a tool set on `MCP Servers` → `Tool Sets`. Return to `Audit Log`. Rows for `API key Created`, `API key Revoked`, `Team Created`, `Budget Set` and `MCP toolset Created` appear above the sign-in, each with `admin@local` as the actor.
-- **No secret.** Open the `API key Created` row. The `After` block shows the key name, prefix, owner and status, and no raw `gwk_` key. The revealed key from the create dialog appears nowhere on the page.
-- **Failed change.** Try to create a team with a name that is only spaces. The request fails with a validation error and no new `Team` row appears.
+- **Changes through the UI.** On `API Keys`, create a temporary user API key and revoke it (see [API keys](./api-keys.md)). On `Teams`, transfer `ben@platform.local` from Platform to Research and back (see [Identity](./identity.md)). Return to `Audit Log`. Rows for `API key` `Created` and `Revoked` and two `User` `Member transferred` appear above the sign-in. Each is attributed to `admin@local` from `127.0.0.1`, and its user agent is the browser's, which proves the admin UI server forwards `X-Forwarded-For` and `User-Agent`.
+- **No secret.** Open the `API key` `Created` row. The `After` block shows the key name, the `gwk_<id>` display prefix, owner and status. The full raw key from the create dialog appears nowhere on the page or in the API response.
+- **Failed change.** From the same session, send `POST /api/v1/admin/identity/teams` with a name that is only spaces. It returns `400`, and no `team.created` entry appears.
 - **Filter.** Choose `API key` in `Target type`. Only API key rows remain and the URL search holds `target_type=api_key`. Choose `Clear`.
 - **API parity.** With the same session, fetch `GET /api/v1/admin/audit-logs?limit=200`. The `id`, `action`, `target_id` and `actor.user_id` of the rendered rows must match `data.items` in order, and the response must not contain the raw API key.
-- **Proof.** Capture the list after the changes, the filtered list, and the opened `API key Created` sheet. Record the entry IDs.
+- **Cursor.** Fetch `?limit=2`, then `?limit=2&cursor=<next_cursor>`. The second page holds older, different entries.
+- **Sign out.** Sign out and back in. A `Session` `Revoked` entry records the sign-out.
+- **Proof.** Capture the list after the changes, the filtered list, and the opened `API key` `Created` sheet. Record the entry IDs.
+
+Budget, service account, MCP server, tool set, grant and credential binding entries are covered by the gateway HTTP tests in `crates/gateway/src/http/audit_tests.rs`.
 
 ## Gotchas
 
