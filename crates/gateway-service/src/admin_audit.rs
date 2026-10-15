@@ -7,6 +7,7 @@
 //! `docs/adr/2026-10-15-admin-audit-log.md`.
 
 use std::{
+    fmt,
     future::Future,
     sync::{
         Arc, LazyLock, OnceLock,
@@ -71,73 +72,108 @@ const SAFE_KEY_SUFFIXES: &[&str] = &[
     "_ref",
 ];
 
+/// An audit action. Values exist only as the constants in [`actions`], so an entry
+/// cannot name an action outside the taxonomy. The target type is the action's
+/// prefix, so it cannot disagree with the action either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AuditAction(&'static str);
+
+impl AuditAction {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+
+    /// The target type the action's prefix names, such as `user` for `user.updated`.
+    #[must_use]
+    pub fn target_type(self) -> &'static str {
+        self.0
+            .split_once('.')
+            .map_or(self.0, |(target_type, _)| target_type)
+    }
+}
+
+impl fmt::Display for AuditAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
 /// Action names. Use `<target_type>.<past-tense verb>` for new actions.
 pub mod actions {
-    pub const API_KEY_CREATED: &str = "api_key.created";
-    pub const API_KEY_UPDATED: &str = "api_key.updated";
-    pub const API_KEY_REVOKED: &str = "api_key.revoked";
-    pub const API_KEY_SECRET_REVEALED: &str = "api_key.secret_revealed";
+    use super::AuditAction;
 
-    pub const USER_CREATED: &str = "user.created";
-    pub const USER_UPDATED: &str = "user.updated";
-    pub const USER_DEACTIVATED: &str = "user.deactivated";
-    pub const USER_REACTIVATED: &str = "user.reactivated";
-    pub const USER_ONBOARDING_RESET: &str = "user.onboarding_reset";
-    pub const USER_INVITE_ISSUED: &str = "user.invite_issued";
-    pub const USER_INVITE_REDEEMED: &str = "user.invite_redeemed";
-    pub const USER_PASSWORD_CHANGED: &str = "user.password_changed";
-    pub const USER_PROVISIONED: &str = "user.provisioned";
+    pub const API_KEY_CREATED: AuditAction = AuditAction("api_key.created");
+    pub const API_KEY_UPDATED: AuditAction = AuditAction("api_key.updated");
+    pub const API_KEY_REVOKED: AuditAction = AuditAction("api_key.revoked");
+    pub const API_KEY_SECRET_REVEALED: AuditAction = AuditAction("api_key.secret_revealed");
+
+    pub const USER_CREATED: AuditAction = AuditAction("user.created");
+    pub const USER_UPDATED: AuditAction = AuditAction("user.updated");
+    pub const USER_DEACTIVATED: AuditAction = AuditAction("user.deactivated");
+    pub const USER_REACTIVATED: AuditAction = AuditAction("user.reactivated");
+    pub const USER_ONBOARDING_RESET: AuditAction = AuditAction("user.onboarding_reset");
+    pub const USER_INVITE_ISSUED: AuditAction = AuditAction("user.invite_issued");
+    pub const USER_INVITE_REDEEMED: AuditAction = AuditAction("user.invite_redeemed");
+    pub const USER_PASSWORD_CHANGED: AuditAction = AuditAction("user.password_changed");
+    pub const USER_PROVISIONED: AuditAction = AuditAction("user.provisioned");
     /// Moves a user between teams; the target is the user.
-    pub const USER_TEAM_TRANSFERRED: &str = "user.team_transferred";
+    pub const USER_TEAM_TRANSFERRED: AuditAction = AuditAction("user.team_transferred");
 
-    pub const PROVIDER_CREDENTIAL_SET: &str = "provider_credential.set";
-    pub const PROVIDER_CREDENTIAL_DELETED: &str = "provider_credential.deleted";
+    pub const PROVIDER_CREDENTIAL_SET: AuditAction = AuditAction("provider_credential.set");
+    pub const PROVIDER_CREDENTIAL_DELETED: AuditAction = AuditAction("provider_credential.deleted");
 
-    pub const SESSION_CREATED: &str = "session.created";
-    pub const SESSION_REVOKED: &str = "session.revoked";
+    pub const SESSION_CREATED: AuditAction = AuditAction("session.created");
+    pub const SESSION_REVOKED: AuditAction = AuditAction("session.revoked");
 
-    pub const TEAM_CREATED: &str = "team.created";
-    pub const TEAM_UPDATED: &str = "team.updated";
-    pub const TEAM_MEMBERS_ADDED: &str = "team.members_added";
-    pub const TEAM_MEMBER_REMOVED: &str = "team.member_removed";
+    pub const TEAM_CREATED: AuditAction = AuditAction("team.created");
+    pub const TEAM_UPDATED: AuditAction = AuditAction("team.updated");
+    pub const TEAM_MEMBERS_ADDED: AuditAction = AuditAction("team.members_added");
+    pub const TEAM_MEMBER_REMOVED: AuditAction = AuditAction("team.member_removed");
 
-    pub const SERVICE_ACCOUNT_CREATED: &str = "service_account.created";
-    pub const SERVICE_ACCOUNT_UPDATED: &str = "service_account.updated";
-    pub const SERVICE_ACCOUNT_DISABLED: &str = "service_account.disabled";
+    pub const SERVICE_ACCOUNT_CREATED: AuditAction = AuditAction("service_account.created");
+    pub const SERVICE_ACCOUNT_UPDATED: AuditAction = AuditAction("service_account.updated");
+    pub const SERVICE_ACCOUNT_DISABLED: AuditAction = AuditAction("service_account.disabled");
 
-    pub const BUDGET_SET: &str = "budget.set";
-    pub const BUDGET_DEACTIVATED: &str = "budget.deactivated";
-    pub const BUDGET_INCREASE_CREATED: &str = "budget.increase_created";
+    pub const BUDGET_SET: AuditAction = AuditAction("budget.set");
+    pub const BUDGET_DEACTIVATED: AuditAction = AuditAction("budget.deactivated");
+    pub const BUDGET_INCREASE_CREATED: AuditAction = AuditAction("budget.increase_created");
 
-    pub const MCP_SERVER_CREATED: &str = "mcp_server.created";
-    pub const MCP_SERVER_UPDATED: &str = "mcp_server.updated";
-    pub const MCP_SERVER_DISABLED: &str = "mcp_server.disabled";
-    pub const MCP_SERVER_DISCOVERY_REFRESHED: &str = "mcp_server.discovery_refreshed";
+    pub const MCP_SERVER_CREATED: AuditAction = AuditAction("mcp_server.created");
+    pub const MCP_SERVER_UPDATED: AuditAction = AuditAction("mcp_server.updated");
+    pub const MCP_SERVER_DISABLED: AuditAction = AuditAction("mcp_server.disabled");
+    pub const MCP_SERVER_DISCOVERY_REFRESHED: AuditAction =
+        AuditAction("mcp_server.discovery_refreshed");
 
-    pub const MCP_TOOLSET_CREATED: &str = "mcp_toolset.created";
-    pub const MCP_TOOLSET_UPDATED: &str = "mcp_toolset.updated";
-    pub const MCP_TOOLSET_DISABLED: &str = "mcp_toolset.disabled";
-    pub const MCP_TOOLSET_TOOLS_REPLACED: &str = "mcp_toolset.tools_replaced";
+    pub const MCP_TOOLSET_CREATED: AuditAction = AuditAction("mcp_toolset.created");
+    pub const MCP_TOOLSET_UPDATED: AuditAction = AuditAction("mcp_toolset.updated");
+    pub const MCP_TOOLSET_DISABLED: AuditAction = AuditAction("mcp_toolset.disabled");
+    pub const MCP_TOOLSET_TOOLS_REPLACED: AuditAction = AuditAction("mcp_toolset.tools_replaced");
 
-    pub const MCP_GRANT_SET: &str = "mcp_grant.set";
-    pub const MCP_GRANT_REVOKED: &str = "mcp_grant.revoked";
+    pub const MCP_GRANT_SET: AuditAction = AuditAction("mcp_grant.set");
+    pub const MCP_GRANT_REVOKED: AuditAction = AuditAction("mcp_grant.revoked");
 
-    pub const MCP_CREDENTIAL_BINDING_SET: &str = "mcp_credential_binding.set";
-    pub const MCP_CREDENTIAL_BINDING_REVOKED: &str = "mcp_credential_binding.revoked";
+    pub const MCP_CREDENTIAL_BINDING_SET: AuditAction = AuditAction("mcp_credential_binding.set");
+    pub const MCP_CREDENTIAL_BINDING_REVOKED: AuditAction =
+        AuditAction("mcp_credential_binding.revoked");
 
-    pub const PRICING_CATALOG_REFRESHED: &str = "pricing_catalog.refreshed";
+    pub const PRICING_CATALOG_REFRESHED: AuditAction = AuditAction("pricing_catalog.refreshed");
 
-    pub const REVIEW_AGENT_REPOSITORY_CREATED: &str = "review_agent_repository.created";
-    pub const REVIEW_AGENT_REPOSITORY_UPDATED: &str = "review_agent_repository.updated";
-    pub const REVIEW_AGENT_REPOSITORY_DISABLED: &str = "review_agent_repository.disabled";
-    pub const REVIEW_AGENT_REPOSITORY_REACTIVATED: &str = "review_agent_repository.reactivated";
+    pub const REVIEW_AGENT_REPOSITORY_CREATED: AuditAction =
+        AuditAction("review_agent_repository.created");
+    pub const REVIEW_AGENT_REPOSITORY_UPDATED: AuditAction =
+        AuditAction("review_agent_repository.updated");
+    pub const REVIEW_AGENT_REPOSITORY_DISABLED: AuditAction =
+        AuditAction("review_agent_repository.disabled");
+    pub const REVIEW_AGENT_REPOSITORY_REACTIVATED: AuditAction =
+        AuditAction("review_agent_repository.reactivated");
 
-    pub const RATE_LIMIT_POLICY_CREATED: &str = "rate_limit_policy.created";
-    pub const RATE_LIMIT_POLICY_UPDATED: &str = "rate_limit_policy.updated";
-    pub const RATE_LIMIT_POLICY_DELETED: &str = "rate_limit_policy.deleted";
+    pub const RATE_LIMIT_POLICY_CREATED: AuditAction = AuditAction("rate_limit_policy.created");
+    pub const RATE_LIMIT_POLICY_UPDATED: AuditAction = AuditAction("rate_limit_policy.updated");
+    pub const RATE_LIMIT_POLICY_DELETED: AuditAction = AuditAction("rate_limit_policy.deleted");
 
     /// Every action, so tests can check each one names a known target type.
-    pub const ALL: &[&str] = &[
+    pub const ALL: &[AuditAction] = &[
         API_KEY_CREATED,
         API_KEY_UPDATED,
         API_KEY_REVOKED,
@@ -273,32 +309,13 @@ pub struct AuditEvent {
 }
 
 impl AuditEvent {
-    /// `action` must be one of [`actions`] and `target_type` the target type its
-    /// prefix names, such as `user.updated` with `user`.
-    ///
-    /// Tests fail on anything else. A release build logs the mismatch and still
-    /// records the entry, because dropping it would lose a real change.
+    /// Starts an entry for `action`. Its target type is the one the action's prefix
+    /// names, such as `user` for `user.updated`.
     #[must_use]
-    pub fn new(action: &str, target_type: &str) -> Self {
-        let valid = actions::ALL.contains(&action)
-            && targets::ALL.contains(&target_type)
-            && action
-                .strip_prefix(target_type)
-                .is_some_and(|rest| rest.starts_with('.'));
-        debug_assert!(
-            valid,
-            "audit action `{action}` and target type `{target_type}` are not a known pair"
-        );
-        if !valid {
-            tracing::error!(
-                audit_action = action,
-                audit_target_type = target_type,
-                "audit event uses an unknown action or target type"
-            );
-        }
+    pub fn new(action: AuditAction) -> Self {
         Self {
-            action: action.to_string(),
-            target_type: target_type.to_string(),
+            action: action.as_str().to_string(),
+            target_type: action.target_type().to_string(),
             target_id: None,
             target_label: None,
             before: None,
@@ -952,7 +969,7 @@ mod tests {
 
         let created: Result<u32, &str> = audit
             .audited(&context(), async { Ok(7) }, |value| {
-                AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                AuditEvent::new(actions::TEAM_CREATED)
                     .target(value)
                     .after(json!({ "name": "Platform" }))
             })
@@ -988,7 +1005,7 @@ mod tests {
                 &untouched,
                 async { Err("validation") },
                 |_| -> AuditEvent { unreachable!() },
-                |_, _| AuditEvent::new(actions::TEAM_UPDATED, targets::TEAM),
+                |_, _| AuditEvent::new(actions::TEAM_UPDATED),
             )
             .await;
         assert_eq!(result, Err("validation"));
@@ -1005,7 +1022,7 @@ mod tests {
                 },
                 |_| -> AuditEvent { unreachable!() },
                 |progress, error| {
-                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                    AuditEvent::new(actions::TEAM_CREATED)
                         .target(progress.target_id().unwrap_or_default())
                         .meta("error", *error)
                 },
@@ -1029,9 +1046,7 @@ mod tests {
                     &context(),
                     &AuditProgress::default(),
                     async move { Ok(changed) },
-                    |changed| {
-                        changed.then(|| AuditEvent::new(actions::API_KEY_REVOKED, targets::API_KEY))
-                    },
+                    |changed| changed.then(|| AuditEvent::new(actions::API_KEY_REVOKED)),
                     |_, _| unreachable!(),
                 )
                 .await;
@@ -1057,7 +1072,7 @@ mod tests {
                 },
                 |_| -> AuditEvent { unreachable!() },
                 |_, error| {
-                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                    AuditEvent::new(actions::TEAM_CREATED)
                         .meta("error", *error)
                         .meta("requested", &requested)
                 },
@@ -1079,7 +1094,7 @@ mod tests {
         for changed in [false, true] {
             let result: Result<bool, ()> = audit
                 .audited_change(&context(), async move { Ok(changed) }, || {
-                    AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT)
+                    AuditEvent::new(actions::MCP_GRANT_REVOKED)
                 })
                 .await;
             assert_eq!(result, Ok(changed));
@@ -1096,7 +1111,7 @@ mod tests {
         let audit = AdminAudit::new(repo);
         let result: Result<(), ()> = audit
             .audited(&context(), async { Ok(()) }, |_| {
-                AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                AuditEvent::new(actions::TEAM_CREATED)
             })
             .await;
         assert_eq!(result, Ok(()));
@@ -1216,7 +1231,7 @@ mod tests {
             audit
                 .record(
                     &context(),
-                    AuditEvent::new(actions::API_KEY_CREATED, targets::API_KEY).label(label),
+                    AuditEvent::new(actions::API_KEY_CREATED).label(label),
                 )
                 .await;
         }
@@ -1274,10 +1289,7 @@ mod tests {
             let context = AuditContext::new(AuditActor::user(Uuid::nil(), "a@example.com"))
                 .with_request(None, Some(user_agent.to_string()), None);
             audit
-                .record(
-                    &context,
-                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM),
-                )
+                .record(&context, AuditEvent::new(actions::TEAM_CREATED))
                 .await;
         }
         let records = repo.records.lock().unwrap();
@@ -1326,7 +1338,11 @@ mod tests {
     #[test]
     fn every_action_names_a_known_target_type() {
         for action in actions::ALL {
-            let (target_type, verb) = action.split_once('.').expect("action has a target prefix");
+            let (target_type, verb) = action
+                .as_str()
+                .split_once('.')
+                .expect("action has a target prefix");
+            assert_eq!(action.target_type(), target_type);
             assert!(targets::ALL.contains(&target_type), "{action}");
             assert!(!verb.is_empty(), "{action}");
         }
@@ -1334,7 +1350,7 @@ mod tests {
             assert!(
                 actions::ALL
                     .iter()
-                    .any(|action| action.starts_with(&format!("{target_type}."))),
+                    .any(|action| action.target_type() == *target_type),
                 "{target_type} has no actions"
             );
         }
@@ -1352,7 +1368,7 @@ mod tests {
             audit
                 .record(
                     &context(),
-                    AuditEvent::new(actions::BUDGET_SET, targets::BUDGET).target(target_id),
+                    AuditEvent::new(actions::BUDGET_SET).target(target_id),
                 )
                 .await;
         }
@@ -1377,10 +1393,7 @@ mod tests {
             "gwk_0f3c9a.s3cr3t@example.com",
         ));
         audit
-            .record(
-                &context,
-                AuditEvent::new(actions::TEAM_CREATED, targets::TEAM),
-            )
+            .record(&context, AuditEvent::new(actions::TEAM_CREATED))
             .await;
         let records = repo.records.lock().unwrap();
         assert_eq!(records[0].actor.label.as_deref(), Some(AUDIT_REDACTED));
@@ -1394,7 +1407,7 @@ mod tests {
         audit
             .record(
                 &context(),
-                AuditEvent::new(actions::MCP_SERVER_UPDATED, targets::MCP_SERVER)
+                AuditEvent::new(actions::MCP_SERVER_UPDATED)
                     .after(json!({ "blob": "x".repeat(MAX_SUMMARY_BYTES) })),
             )
             .await;

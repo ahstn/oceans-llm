@@ -13,10 +13,7 @@ use gateway_core::{
     OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
     UserSessionRecord, UserStatus, validate_entity_tags,
 };
-use gateway_service::{
-    AuditEvent, AuditProgress,
-    admin_audit::{actions, targets},
-};
+use gateway_service::{AuditEvent, AuditProgress, admin_audit::actions};
 use gateway_store::{AnyStore, GatewayStore};
 use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
@@ -566,7 +563,7 @@ pub async fn create_identity_team(
             create,
             |view| team_event(actions::TEAM_CREATED, view).after(team_summary(view)),
             |progress, error| {
-                partial_event(actions::TEAM_CREATED, targets::TEAM, progress, error)
+                partial_event(actions::TEAM_CREATED, progress, error)
                     .label(name)
                     .meta("requested", &requested)
             },
@@ -646,7 +643,7 @@ pub async fn update_identity_team(
                 })
             },
             |progress, error| {
-                partial_event(actions::TEAM_UPDATED, targets::TEAM, progress, error)
+                partial_event(actions::TEAM_UPDATED, progress, error)
                     .target(team_id)
                     .label(before.name.clone())
                     .before(team_summary(&before))
@@ -749,7 +746,7 @@ pub async fn add_identity_team_members(
                     .meta("role", MembershipRole::Member.as_str())
             },
             |progress, error| {
-                partial_event(actions::TEAM_MEMBERS_ADDED, targets::TEAM, progress, error)
+                partial_event(actions::TEAM_MEMBERS_ADDED, progress, error)
                     .target(team_id)
                     .meta("requested_user_ids", &added_user_ids)
                     .meta("role", MembershipRole::Member.as_str())
@@ -870,7 +867,7 @@ pub async fn logout_current_session(
                     &meta.context(actor),
                     state.store.revoke_user_session(session_id, now),
                     || {
-                        let event = AuditEvent::new(actions::SESSION_REVOKED, targets::SESSION)
+                        let event = AuditEvent::new(actions::SESSION_REVOKED)
                             .target(session_id)
                             .meta("reason", "logout");
                         match &user {
@@ -1087,7 +1084,7 @@ pub async fn create_identity_user(
             create,
             |(user, after, _)| user_event(actions::USER_CREATED, user).after(after),
             |progress, error| {
-                partial_event(actions::USER_CREATED, targets::USER, progress, error)
+                partial_event(actions::USER_CREATED, progress, error)
                     .label(email)
                     .meta(
                         "requested",
@@ -1505,7 +1502,7 @@ pub async fn remove_identity_team_member(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::TEAM_MEMBER_REMOVED, targets::TEAM)
+                AuditEvent::new(actions::TEAM_MEMBER_REMOVED)
                     .target(team_id)
                     .label(identity_user.team_name.clone().unwrap_or_default())
                     .meta("user_id", user_id)
@@ -1573,7 +1570,7 @@ pub async fn transfer_identity_team_member(
     state
         .audit()
         .audited(&meta.user_context(&actor), transfer, |_| {
-            AuditEvent::new(actions::USER_TEAM_TRANSFERRED, targets::USER)
+            AuditEvent::new(actions::USER_TEAM_TRANSFERRED)
                 .target(user_id)
                 .label(identity_user.user.email.clone())
                 .before(serde_json::json!({
@@ -3760,7 +3757,7 @@ async fn issue_session_cookie(
     state
         .audit()
         .audited(&meta.user_context(user), create, |_| {
-            AuditEvent::new(actions::SESSION_CREATED, targets::SESSION)
+            AuditEvent::new(actions::SESSION_CREATED)
                 .target(session_id)
                 .label(user.email.clone())
                 .meta("method", method)
@@ -3834,7 +3831,7 @@ async fn record_partial_provisioning(
         api_key_id: None,
         label: Some(provisioning.email.to_string()),
     };
-    let event = partial_event(actions::USER_PROVISIONED, targets::USER, progress, error)
+    let event = partial_event(actions::USER_PROVISIONED, progress, error)
         .label(provisioning.email)
         .meta("method", provisioning.method)
         .meta("provider_key", provisioning.provider_key)

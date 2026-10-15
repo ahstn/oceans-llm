@@ -9,11 +9,7 @@ use gateway_core::{
     AuthError, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetRepository,
     BudgetScope, GatewayError, IdentityRepository, Money4,
 };
-use gateway_service::{
-    AuditEvent,
-    admin_audit::{actions, targets},
-    budget_scopes::limit_with_increase,
-};
+use gateway_service::{AuditEvent, admin_audit::actions, budget_scopes::limit_with_increase};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
 use uuid::Uuid;
 
@@ -100,7 +96,7 @@ pub async fn create_budget_increase(
             &meta.user_context(&actor),
             state.store.create_budget_increase(&increase, &basis),
             |_| {
-                AuditEvent::new(actions::BUDGET_INCREASE_CREATED, targets::BUDGET)
+                AuditEvent::new(actions::BUDGET_INCREASE_CREATED)
                     .target(&budget.scope_key)
                     .meta("budget_id", budget.budget_id)
                     .meta("user_id", user_id)

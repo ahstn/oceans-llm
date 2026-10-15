@@ -16,10 +16,7 @@ use gateway_core::{
     McpRegistryRepository, ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod,
     RateLimitPolicyRecord, RateLimitScopeKind,
 };
-use gateway_service::{
-    AuditEvent, ConfiguredRateLimitPolicy,
-    admin_audit::{actions, targets},
-};
+use gateway_service::{AuditAction, AuditEvent, ConfiguredRateLimitPolicy, admin_audit::actions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -285,8 +282,8 @@ pub async fn delete_rate_limit_policy(
     Ok(Json(envelope(admin_policy_view(&state, &deleted).await?)))
 }
 
-fn policy_event(action: &str, policy: &RateLimitPolicyRecord) -> AuditEvent {
-    AuditEvent::new(action, targets::RATE_LIMIT_POLICY)
+fn policy_event(action: AuditAction, policy: &RateLimitPolicyRecord) -> AuditEvent {
+    AuditEvent::new(action)
         .target(policy.rate_limit_policy_id)
         .label(policy.name.clone())
 }

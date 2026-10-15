@@ -6,8 +6,7 @@ use axum::{
 use gateway_core::GlobalRole;
 use gateway_service::{
     AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent, AuditProgress,
-    EffectiveMetadataSource, EffectiveMetadataSourceKind,
-    admin_audit::{actions, targets},
+    EffectiveMetadataSource, EffectiveMetadataSourceKind, admin_audit::actions,
 };
 
 use crate::http::{
@@ -166,10 +165,10 @@ pub async fn refresh_model_pricing_catalog(
             &meta.user_context(&actor),
             &progress,
             state.service.refresh_pricing_catalog_now_tracked(&progress),
-            |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED, targets::PRICING_CATALOG),
+            |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED),
             // The fetched catalog was cached, but syncing model pricing failed.
             |_, error| {
-                AuditEvent::new(actions::PRICING_CATALOG_REFRESHED, targets::PRICING_CATALOG)
+                AuditEvent::new(actions::PRICING_CATALOG_REFRESHED)
                     .meta("error", error.error_code())
             },
         )

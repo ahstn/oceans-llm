@@ -7,8 +7,8 @@ use gateway_core::{
     AuditActor, AuditActorKind, AuthError, GatewayError, IdentityRepository, UserStatus,
 };
 use gateway_service::{
-    AuditEvent, ProviderCredentialService, ProviderCredentialStatus,
-    admin_audit::{actions, targets},
+    AuditAction, AuditEvent, ProviderCredentialService, ProviderCredentialStatus,
+    admin_audit::actions,
 };
 use gateway_store::GatewayStore;
 use serde::{Deserialize, Serialize};
@@ -236,8 +236,8 @@ pub async fn delete_identity_user_provider_credential(
 }
 
 /// The token itself is never part of the entry; the target names whose credential changed.
-fn provider_credential_event(action: &str, user_id: Uuid, provider_key: &str) -> AuditEvent {
-    AuditEvent::new(action, targets::PROVIDER_CREDENTIAL)
+fn provider_credential_event(action: AuditAction, user_id: Uuid, provider_key: &str) -> AuditEvent {
+    AuditEvent::new(action)
         .target(format!("{user_id}/{provider_key}"))
         .label(provider_key.to_string())
         .meta("user_id", user_id)

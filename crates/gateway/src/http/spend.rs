@@ -11,10 +11,7 @@ use gateway_core::{
     ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
     TokenUsageBuckets, UserStatus, budget_window_utc,
 };
-use gateway_service::{
-    AuditEvent,
-    admin_audit::{actions, targets},
-};
+use gateway_service::{AuditEvent, admin_audit::actions};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
@@ -479,7 +476,7 @@ pub async fn upsert_budget(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::BUDGET_SET, targets::BUDGET)
+                AuditEvent::new(actions::BUDGET_SET)
                     .target(&budget.scope_key)
                     .meta("budget_id", budget.budget_id)
                     .before(save.replaced.as_ref().map(budget_audit_summary))
@@ -543,7 +540,7 @@ pub async fn deactivate_budget(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::BUDGET_DEACTIVATED, targets::BUDGET)
+                AuditEvent::new(actions::BUDGET_DEACTIVATED)
                     .target(&scope_key)
                     .before(budget_to_settings_view(budget)),
             )

@@ -14,8 +14,7 @@ use gateway_core::{
 };
 use gateway_service::{
     AuditEvent, MCP_SERVER_OAUTH_PROVIDER_KEY, McpCredentialService, McpOauthServerConfig,
-    admin_audit::{actions, targets},
-    credential_owner_scope_key, mcp_oauth_server_config,
+    admin_audit::actions, credential_owner_scope_key, mcp_oauth_server_config,
 };
 use gateway_store::GatewayStore;
 use openidconnect::{CsrfToken, PkceCodeChallenge};
@@ -351,22 +350,19 @@ async fn complete_oauth_callback(
     state
         .audit()
         .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
-            let event = AuditEvent::new(
-                actions::MCP_CREDENTIAL_BINDING_SET,
-                targets::MCP_CREDENTIAL_BINDING,
-            )
-            .target(binding.credential_binding_id)
-            .label(binding.owner_scope_key.clone())
-            .meta(
-                "operation",
-                if replaced.is_some() {
-                    "oauth_reconnect"
-                } else {
-                    "oauth_connect"
-                },
-            )
-            .meta("mcp_server_id", binding.mcp_server_id)
-            .after(oauth_binding_summary(binding));
+            let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+                .target(binding.credential_binding_id)
+                .label(binding.owner_scope_key.clone())
+                .meta(
+                    "operation",
+                    if replaced.is_some() {
+                        "oauth_reconnect"
+                    } else {
+                        "oauth_connect"
+                    },
+                )
+                .meta("mcp_server_id", binding.mcp_server_id)
+                .after(oauth_binding_summary(binding));
             match replaced {
                 Some(replaced) => event.before(oauth_binding_summary(replaced)),
                 None => event,
@@ -475,15 +471,12 @@ pub async fn revoke_mcp_oauth_connection(
                 .audit()
                 .record(
                     &meta.user_context(&user),
-                    AuditEvent::new(
-                        actions::MCP_CREDENTIAL_BINDING_REVOKED,
-                        targets::MCP_CREDENTIAL_BINDING,
-                    )
-                    .target(revoked.credential_binding_id)
-                    .label(revoked.owner_scope_key.clone())
-                    .meta("operation", "oauth_disconnect")
-                    .meta("mcp_server_id", server_id)
-                    .before(oauth_binding_summary(&revoked)),
+                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                        .target(revoked.credential_binding_id)
+                        .label(revoked.owner_scope_key.clone())
+                        .meta("operation", "oauth_disconnect")
+                        .meta("mcp_server_id", server_id)
+                        .before(oauth_binding_summary(&revoked)),
                 )
                 .await;
         }

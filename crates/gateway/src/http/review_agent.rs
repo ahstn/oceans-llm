@@ -12,9 +12,9 @@ use gateway_core::{
 use gateway_service::{
     ActionConfigResolveInput, ActionPullRequestInput, ActionRepositoryIdentity,
     ActionRunCompleteInput, ActionRunFailInput, ActionRunHeartbeatInput, ActionRunStartInput,
-    AuditEvent, CreateReviewAgentRepositoryInput, ReviewAgentConfigOverrides, ReviewAgentService,
-    UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
-    admin_audit::{actions, targets},
+    AuditAction, AuditEvent, CreateReviewAgentRepositoryInput, ReviewAgentConfigOverrides,
+    ReviewAgentService, UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
+    admin_audit::actions,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -742,8 +742,8 @@ async fn set_repository_status_handler(
     Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
 }
 
-fn repository_event(action: &str, repository: &ReviewAgentRepositoryView) -> AuditEvent {
-    AuditEvent::new(action, targets::REVIEW_AGENT_REPOSITORY)
+fn repository_event(action: AuditAction, repository: &ReviewAgentRepositoryView) -> AuditEvent {
+    AuditEvent::new(action)
         .target(&repository.id)
         .label(repository.full_name.clone())
 }

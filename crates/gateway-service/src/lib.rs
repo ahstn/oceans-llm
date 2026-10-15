@@ -44,7 +44,8 @@ pub use admin_api_keys::{
     api_key_display_prefix,
 };
 pub use admin_audit::{
-    AdminAudit, AuditContext, AuditEvent, AuditProgress, is_secret_path_segment, redact_audit_value,
+    AdminAudit, AuditAction, AuditContext, AuditEvent, AuditProgress, is_secret_path_segment,
+    redact_audit_value,
 };
 pub use admin_models::{
     AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,

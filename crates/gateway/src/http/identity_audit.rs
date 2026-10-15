@@ -4,20 +4,23 @@
 //! credentials in the response views never reach an audit entry.
 
 use gateway_core::{IdentityUserRecord, MembershipRole, ServiceAccountRecord, UserRecord};
-use gateway_service::{AuditEvent, AuditProgress, admin_audit::targets};
+use gateway_service::{AuditAction, AuditEvent, AuditProgress};
 use serde_json::{Value, json};
 
 use crate::http::{admin_contract::AdminTeamManagementView, error::AppError};
 
-pub(crate) fn service_account_event(action: &str, account: &ServiceAccountRecord) -> AuditEvent {
-    AuditEvent::new(action, targets::SERVICE_ACCOUNT)
+pub(crate) fn service_account_event(
+    action: AuditAction,
+    account: &ServiceAccountRecord,
+) -> AuditEvent {
+    AuditEvent::new(action)
         .target(account.service_account_id)
         .label(account.service_account_name.clone())
         .meta("team_id", account.team_id)
 }
 
-pub(crate) fn team_event(action: &str, team: &AdminTeamManagementView) -> AuditEvent {
-    AuditEvent::new(action, targets::TEAM)
+pub(crate) fn team_event(action: AuditAction, team: &AdminTeamManagementView) -> AuditEvent {
+    AuditEvent::new(action)
         .target(&team.id)
         .label(team.name.clone())
 }
@@ -31,8 +34,8 @@ pub(crate) fn team_summary(team: &AdminTeamManagementView) -> Value {
     })
 }
 
-pub(crate) fn user_event(action: &str, user: &UserRecord) -> AuditEvent {
-    AuditEvent::new(action, targets::USER)
+pub(crate) fn user_event(action: AuditAction, user: &UserRecord) -> AuditEvent {
+    AuditEvent::new(action)
         .target(user.user_id)
         .label(user.email.clone())
 }
@@ -58,12 +61,11 @@ pub(crate) fn user_summary(identity: &IdentityUserRecord) -> Value {
 /// The entry for a multi-step change that failed after some of its writes landed.
 /// The boundary adds `outcome: partial`; this adds the failure's error code.
 pub(crate) fn partial_event(
-    action: &str,
-    target_type: &str,
+    action: AuditAction,
     progress: &AuditProgress,
     error: &AppError,
 ) -> AuditEvent {
-    let event = AuditEvent::new(action, target_type).meta("error", error.0.error_code());
+    let event = AuditEvent::new(action).meta("error", error.0.error_code());
     match progress.target_id() {
         Some(target_id) => event.target(target_id),
         None => event,

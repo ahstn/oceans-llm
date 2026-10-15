@@ -19,9 +19,9 @@ use gateway_core::{
     UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpCredentialService,
+    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpCredentialService,
     McpRegistryService, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
-    admin_audit::{actions, targets},
+    admin_audit::actions,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -401,13 +401,12 @@ pub async fn refresh_mcp_server_discovery(
                 });
             // A refresh that reached the server but failed discovery still
             // rewrote the server's discovery state, so it is audited too.
-            let event =
-                AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED, targets::MCP_SERVER)
-                    .target(server_id)
-                    .label(result.server.server_key.clone())
-                    .meta("status", status)
-                    .meta("error_summary", &result.error_summary)
-                    .after(serde_json::json!({ "tool_count": result.tools.len() }));
+            let event = AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED)
+                .target(server_id)
+                .label(result.server.server_key.clone())
+                .meta("status", status)
+                .meta("error_summary", &result.error_summary)
+                .after(serde_json::json!({ "tool_count": result.tools.len() }));
             state
                 .audit()
                 .record(&meta.user_context(&actor), event)
@@ -425,11 +424,10 @@ pub async fn refresh_mcp_server_discovery(
                 });
             // The discovery run was stored, but reloading the server or tools failed.
             if progress.has_landed() {
-                let event =
-                    AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED, targets::MCP_SERVER)
-                        .target(server_id)
-                        .meta("error", error.error_code())
-                        .meta("outcome", "partial");
+                let event = AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED)
+                    .target(server_id)
+                    .meta("error", error.error_code())
+                    .meta("outcome", "partial");
                 state
                     .audit()
                     .record(&meta.user_context(&actor), event)
@@ -642,10 +640,7 @@ pub async fn replace_mcp_toolset_tools(
                     Some(toolset) => {
                         toolset_event(actions::MCP_TOOLSET_TOOLS_REPLACED, &map_toolset(toolset))
                     }
-                    None => {
-                        AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED, targets::MCP_TOOLSET)
-                            .target(toolset_id)
-                    }
+                    None => AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED).target(toolset_id),
                 }
                 .before(serde_json::json!({ "tool_ids": before }))
                 .after(serde_json::json!({ "tool_ids": after })),
@@ -718,7 +713,7 @@ pub async fn upsert_mcp_grant(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_GRANT_SET, targets::MCP_GRANT)
+                AuditEvent::new(actions::MCP_GRANT_SET)
                     .target(grant_id)
                     .after(&grant),
             )
@@ -760,7 +755,7 @@ pub async fn revoke_mcp_grant(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT)
+                AuditEvent::new(actions::MCP_GRANT_REVOKED)
                     .target(grant_id)
                     .before(serde_json::json!({
                         "subject_kind": subject_kind.as_str(),
@@ -851,21 +846,18 @@ pub async fn upsert_mcp_credential_binding(
     // same transaction, so the entry shows what access changed.
     let binding = map_credential_binding(binding);
     let replaced = replaced.map(map_credential_binding);
-    let mut event = AuditEvent::new(
-        actions::MCP_CREDENTIAL_BINDING_SET,
-        targets::MCP_CREDENTIAL_BINDING,
-    )
-    .target(binding.id())
-    .label(binding.owner_scope_key().to_string())
-    .meta(
-        "operation",
-        if replaced.is_some() {
-            "replace"
-        } else {
-            "create"
-        },
-    )
-    .after(credential_binding_audit_summary(&binding));
+    let mut event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+        .target(binding.id())
+        .label(binding.owner_scope_key().to_string())
+        .meta(
+            "operation",
+            if replaced.is_some() {
+                "replace"
+            } else {
+                "create"
+            },
+        )
+        .after(credential_binding_audit_summary(&binding));
     if let Some(replaced) = &replaced {
         event = event.before(credential_binding_audit_summary(replaced));
     }
@@ -901,13 +893,10 @@ pub async fn revoke_mcp_credential_binding(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(
-                    actions::MCP_CREDENTIAL_BINDING_REVOKED,
-                    targets::MCP_CREDENTIAL_BINDING,
-                )
-                .target(binding.id())
-                .label(binding.owner_scope_key().to_string())
-                .before(credential_binding_audit_summary(&binding)),
+                AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                    .target(binding.id())
+                    .label(binding.owner_scope_key().to_string())
+                    .before(credential_binding_audit_summary(&binding)),
             )
             .await;
     }
@@ -980,14 +969,14 @@ fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {
     })
 }
 
-fn server_event(action: &str, server: &McpServerView) -> AuditEvent {
-    AuditEvent::new(action, targets::MCP_SERVER)
+fn server_event(action: AuditAction, server: &McpServerView) -> AuditEvent {
+    AuditEvent::new(action)
         .target(server.id())
         .label(server.server_key().to_string())
 }
 
-fn toolset_event(action: &str, toolset: &McpToolsetView) -> AuditEvent {
-    AuditEvent::new(action, targets::MCP_TOOLSET)
+fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
+    AuditEvent::new(action)
         .target(toolset.id())
         .label(toolset.toolset_key().to_string())
 }

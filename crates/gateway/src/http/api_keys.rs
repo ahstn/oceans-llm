@@ -9,10 +9,9 @@ use gateway_core::{
 };
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditEvent,
-    AuditProgress, CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
-    UpdateAdminApiKeyInput,
-    admin_audit::{actions, targets},
+    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditAction,
+    AuditEvent, AuditProgress, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
+    RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, admin_audit::actions,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -370,7 +369,7 @@ pub async fn reveal_api_key_secret(
             &meta.user_context(&actor),
             service.reveal_api_key_secret(api_key_id),
             |result| {
-                AuditEvent::new(actions::API_KEY_SECRET_REVEALED, targets::API_KEY)
+                AuditEvent::new(actions::API_KEY_SECRET_REVEALED)
                     .target(api_key_id)
                     .label(result.name.clone())
                     .meta("owner_kind", result.owner_kind.as_str())
@@ -481,19 +480,19 @@ async fn require_api_key_action_scope(
 
 /// A key change that failed after its first write landed; `progress` holds the key ID.
 fn partial_api_key_event(
-    action: &str,
+    action: AuditAction,
     progress: &AuditProgress,
     error: &GatewayError,
 ) -> AuditEvent {
-    let event = AuditEvent::new(action, targets::API_KEY).meta("error", error.error_code());
+    let event = AuditEvent::new(action).meta("error", error.error_code());
     match progress.target_id() {
         Some(api_key_id) => event.target(api_key_id),
         None => event,
     }
 }
 
-fn api_key_event(action: &str, api_key: &AdminApiKeySummary) -> AuditEvent {
-    AuditEvent::new(action, targets::API_KEY)
+fn api_key_event(action: AuditAction, api_key: &AdminApiKeySummary) -> AuditEvent {
+    AuditEvent::new(action)
         .target(api_key.id)
         .label(api_key.name.clone())
         .meta("owner_kind", api_key.owner_kind.as_str())
