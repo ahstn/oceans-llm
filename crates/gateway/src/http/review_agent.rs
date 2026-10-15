@@ -711,6 +711,10 @@ async fn set_repository_status_handler(
         ReviewAgentRepositoryStatus::Disabled => actions::REVIEW_AGENT_REPOSITORY_DISABLED,
         _ => actions::REVIEW_AGENT_REPOSITORY_REACTIVATED,
     };
+    // A retry that leaves the status as it was is not a transition.
+    if before.status == status {
+        return Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })));
+    }
     state
         .audit()
         .record(

@@ -2988,6 +2988,52 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_password_invitation_revoke_reports_whether_it_changed() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "Invitee",
+                "invitee@example.com",
+                "invitee@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Invited,
+            )
+            .await
+            .expect("create user");
+        let now = OffsetDateTime::now_utc();
+        store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("invitation");
+        // Audit progress is marked from this flag, so a retry must report false.
+        assert!(
+            store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke again")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_oidc_login_state_consumes_once() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -8937,6 +8983,18 @@ pub(crate) mod tests {
                 .await
                 .expect("load invitation")
                 .is_some()
+        );
+        assert!(
+            store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations again")
         );
 
         let cache = PricingCatalogCacheRecord {

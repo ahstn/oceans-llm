@@ -36,7 +36,7 @@ Each entry shows:
 | Provider credentials | `provider_credential.set`, `provider_credential.deleted` |
 | Other | `pricing_catalog.refreshed`, `review_agent_repository.created`, `.updated`, `.disabled`, `.reactivated` |
 
-A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key or adding a team's existing members, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
+A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members or disabling a disabled repository, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
 
 An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
 

@@ -251,7 +251,7 @@ pub trait GatewayStore:
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn create_password_invitation(
         &self,
         invitation_id: Uuid,
@@ -1720,7 +1720,7 @@ impl GatewayStore for AnyStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             revoke_password_invitations_for_user(user_id, revoked_at)

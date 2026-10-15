@@ -494,7 +494,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_password_invitations_for_user(self, user_id, revoked_at).await
     }
 

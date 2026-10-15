@@ -1388,8 +1388,9 @@ impl LibsqlStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let revoked = self
+            .connection
             .execute(
                 r#"
                 UPDATE password_invitations
@@ -1402,7 +1403,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(revoked > 0)
     }
 
     pub async fn create_password_invitation(

@@ -474,6 +474,60 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
 }
 
 #[tokio::test]
+async fn repeated_repository_status_changes_record_one_transition() {
+    let harness = Harness::new().await;
+    let (status, team) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/identity/teams",
+            Some(json!({ "name": "Review", "admin_user_ids": [] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{team}");
+    let (status, account) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/identity/service-accounts",
+            Some(json!({ "team_id": team["data"]["id"], "name": "reviewer" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{account}");
+    let (status, repository) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/review-agent/repositories",
+            Some(json!({
+                "provider": "github",
+                "owner": "acme",
+                "name": "api",
+                "full_name": "acme/api",
+                "service_account_id": account["data"]["id"],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{repository}");
+    let repository_id = repository["data"]["repository"]["id"]
+        .as_str()
+        .expect("repository id");
+
+    // Retrying a status change leaves the status as it was, so it records nothing.
+    for transition in ["disable", "disable", "reactivate", "reactivate"] {
+        let (status, body) = harness
+            .admin(
+                Method::POST,
+                &format!("/api/v1/admin/review-agent/repositories/{repository_id}/{transition}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let disabled = harness.entry("review_agent_repository.disabled").await;
+    assert_eq!(disabled["before"]["status"], "active");
+    let reactivated = harness.entry("review_agent_repository.reactivated").await;
+    assert_eq!(reactivated["before"]["status"], "disabled");
+}
+
+#[tokio::test]
 async fn failed_mutations_write_no_entry() {
     let harness = Harness::new().await;
     let (status, _) = harness

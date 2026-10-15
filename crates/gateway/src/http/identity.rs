@@ -3557,7 +3557,7 @@ struct GeneratedInvite {
     expires_at: String,
 }
 
-/// Replaces a user's invitation. `progress` is marked once older invitations are
+/// Replaces a user's invitation. `progress` is marked if older invitations were
 /// revoked, so a failed replacement still leaves an audit entry.
 async fn create_password_invite(
     store: &AnyStore,
@@ -3567,10 +3567,12 @@ async fn create_password_invite(
     progress: &AuditProgress,
 ) -> Result<GeneratedInvite, AppError> {
     let now = OffsetDateTime::now_utc();
-    store
+    if store
         .revoke_password_invitations_for_user(user_id, now)
-        .await?;
-    progress.landed();
+        .await?
+    {
+        progress.landed();
+    }
 
     let invitation_id = Uuid::new_v4();
     let raw_token = signed_token("invite", secret, invitation_id);
