@@ -6,7 +6,13 @@
 //! through [`redact_audit_value`] before it is stored. See
 //! `docs/adr/2026-10-15-admin-audit-log.md`.
 
-use std::{future::Future, sync::Arc};
+use std::{
+    future::Future,
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use gateway_core::{AuditActor, AuditLogRepository, NewAuditLogRecord};
 use serde::Serialize;
@@ -275,6 +281,35 @@ impl AuditEvent {
     }
 }
 
+/// Tracks whether a mutation made of several non-atomic writes has changed
+/// anything yet. Call [`AuditProgress::landed`] after each write that succeeds.
+#[derive(Debug, Default)]
+pub struct AuditProgress {
+    landed: AtomicBool,
+    target_id: OnceLock<String>,
+}
+
+impl AuditProgress {
+    pub fn landed(&self) {
+        self.landed.store(true, Ordering::SeqCst);
+    }
+
+    /// Marks progress and remembers the target the first write created.
+    pub fn landed_on(&self, target_id: impl ToString) {
+        let _ = self.target_id.set(target_id.to_string());
+        self.landed();
+    }
+
+    #[must_use]
+    pub fn target_id(&self) -> Option<&str> {
+        self.target_id.get().map(String::as_str)
+    }
+
+    fn has_landed(&self) -> bool {
+        self.landed.load(Ordering::SeqCst)
+    }
+}
+
 /// Writes admin audit entries.
 pub struct AdminAudit<R: ?Sized> {
     repo: Arc<R>,
@@ -304,6 +339,38 @@ where
         let output = mutation.await?;
         self.record(context, describe(&output)).await;
         Ok(output)
+    }
+
+    /// Like [`AdminAudit::audited`], for a mutation made of several writes that are
+    /// not in one transaction. If it fails after `progress` reports a write that
+    /// landed, the change is partly applied, so `partial` describes it and the entry
+    /// is marked `outcome: partial`. A failure before any write records nothing.
+    pub async fn audited_steps<T, E, Fut, F, P>(
+        &self,
+        context: &AuditContext,
+        progress: &AuditProgress,
+        mutation: Fut,
+        describe: F,
+        partial: P,
+    ) -> Result<T, E>
+    where
+        Fut: Future<Output = Result<T, E>>,
+        F: FnOnce(&T) -> AuditEvent,
+        P: FnOnce(&AuditProgress, &E) -> AuditEvent,
+    {
+        match mutation.await {
+            Ok(output) => {
+                self.record(context, describe(&output)).await;
+                Ok(output)
+            }
+            Err(error) => {
+                if progress.has_landed() {
+                    let event = partial(progress, &error).meta("outcome", "partial");
+                    self.record(context, event).await;
+                }
+                Err(error)
+            }
+        }
     }
 
     /// Writes one entry for a change that has already succeeded. Returns the
@@ -479,6 +546,49 @@ mod tests {
         assert_eq!(record.request_ip.as_deref(), Some("203.0.113.9"));
         assert_eq!(record.after, Some(json!({ "name": "Platform" })));
         assert_eq!(record.occurred_at.nanosecond() % 1_000_000, 0);
+    }
+
+    #[tokio::test]
+    async fn audited_steps_records_partial_changes_only_after_a_write_landed() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+
+        let untouched = AuditProgress::default();
+        let result: Result<(), &str> = audit
+            .audited_steps(
+                &context(),
+                &untouched,
+                async { Err("validation") },
+                |_| unreachable!(),
+                |_, _| AuditEvent::new(actions::TEAM_UPDATED, targets::TEAM),
+            )
+            .await;
+        assert_eq!(result, Err("validation"));
+        assert!(repo.records.lock().unwrap().is_empty());
+
+        let progress = AuditProgress::default();
+        let result: Result<(), &str> = audit
+            .audited_steps(
+                &context(),
+                &progress,
+                async {
+                    progress.landed_on("team-1");
+                    Err("tags failed")
+                },
+                |_| unreachable!(),
+                |progress, error| {
+                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                        .target(progress.target_id().unwrap_or_default())
+                        .meta("error", *error)
+                },
+            )
+            .await;
+        assert_eq!(result, Err("tags failed"));
+        let records = repo.records.lock().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].target_id.as_deref(), Some("team-1"));
+        assert_eq!(records[0].metadata["outcome"], json!("partial"));
+        assert_eq!(records[0].metadata["error"], json!("tags failed"));
     }
 
     #[tokio::test]

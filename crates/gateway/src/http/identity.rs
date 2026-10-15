@@ -14,7 +14,7 @@ use gateway_core::{
     UserSessionRecord, UserStatus, validate_entity_tags,
 };
 use gateway_service::{
-    AuditEvent,
+    AuditEvent, AuditProgress,
     admin_audit::{actions, targets},
 };
 use gateway_store::{AnyStore, GatewayStore};
@@ -55,7 +55,8 @@ use crate::{
         audit::AuditRequestMeta,
         error::AppError,
         identity_audit::{
-            service_account_event, team_event, team_summary, user_event, user_summary,
+            partial_event, service_account_event, team_event, team_summary, user_event,
+            user_summary,
         },
         identity_lifecycle::{
             ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
@@ -534,8 +535,15 @@ pub async fn create_identity_team(
     let tags = parse_entity_tag_views(&request.tags, "team tags")?;
 
     let team_key = generate_unique_team_key(&state.store, name).await?;
+    let requested = serde_json::json!({
+        "name": name,
+        "tags": entity_tag_views(&tags),
+        "admin_user_ids": &selected_admin_ids,
+    });
+    let progress = AuditProgress::default();
     let create = async {
         let team = state.store.create_team(&team_key, name).await?;
+        progress.landed_on(team.team_id);
         state
             .store
             .update_team_tags(team.team_id, &tags, OffsetDateTime::now_utc())
@@ -550,9 +558,17 @@ pub async fn create_identity_team(
     };
     let view = state
         .audit()
-        .audited(&meta.user_context(&actor), create, |view| {
-            team_event(actions::TEAM_CREATED, view).after(view)
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            create,
+            |view| team_event(actions::TEAM_CREATED, view).after(view),
+            |progress, error| {
+                partial_event(actions::TEAM_CREATED, targets::TEAM, progress, error)
+                    .label(name)
+                    .meta("requested", &requested)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(view)))
@@ -599,19 +615,38 @@ pub async fn update_identity_team(
 
     let before = reload_team_view(&state.store, team_id).await?;
     let now = OffsetDateTime::now_utc();
+    let requested = serde_json::json!({
+        "name": name,
+        "tags": entity_tag_views(&tags),
+        "admin_user_ids": &selected_admin_ids,
+    });
+    let progress = AuditProgress::default();
     let update = async {
         state.store.update_team_name(team_id, name, now).await?;
+        progress.landed();
         state.store.update_team_tags(team_id, &tags, now).await?;
         sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
         reload_team_view(&state.store, team_id).await
     };
     let view = state
         .audit()
-        .audited(&meta.user_context(&actor), update, |view| {
-            team_event(actions::TEAM_UPDATED, view)
-                .before(team_summary(&before))
-                .after(team_summary(view))
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            update,
+            |view| {
+                team_event(actions::TEAM_UPDATED, view)
+                    .before(team_summary(&before))
+                    .after(team_summary(view))
+            },
+            |progress, error| {
+                partial_event(actions::TEAM_UPDATED, targets::TEAM, progress, error)
+                    .target(team_id)
+                    .label(before.name.clone())
+                    .before(team_summary(&before))
+                    .meta("requested", &requested)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(view)))
@@ -678,22 +713,35 @@ pub async fn add_identity_team_members(
     }
 
     let added_user_ids = assignable_user_ids.clone();
+    let progress = AuditProgress::default();
     let add = async {
         for user_id in assignable_user_ids {
             state
                 .store
                 .assign_team_membership(user_id, team_id, MembershipRole::Member)
                 .await?;
+            progress.landed();
         }
         reload_team_view(&state.store, team_id).await
     };
     let view = state
         .audit()
-        .audited(&meta.user_context(&actor), add, |view| {
-            team_event(actions::TEAM_MEMBERS_ADDED, view)
-                .meta("user_ids", &added_user_ids)
-                .meta("role", MembershipRole::Member.as_str())
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            add,
+            |view| {
+                team_event(actions::TEAM_MEMBERS_ADDED, view)
+                    .meta("user_ids", &added_user_ids)
+                    .meta("role", MembershipRole::Member.as_str())
+            },
+            |progress, error| {
+                partial_event(actions::TEAM_MEMBERS_ADDED, targets::TEAM, progress, error)
+                    .target(team_id)
+                    .meta("requested_user_ids", &added_user_ids)
+                    .meta("role", MembershipRole::Member.as_str())
+            },
+        )
         .await?;
 
     Ok(Json(envelope(view)))
@@ -876,21 +924,32 @@ pub async fn change_password(
     let now = OffsetDateTime::now_utc();
     let new_password_hash = gateway_service::hash_gateway_key_secret(&request.new_password)
         .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
-    state
-        .store
-        .store_user_password(user.user_id, &new_password_hash, now)
-        .await?;
-    state
-        .store
-        .update_user_must_change_password(user.user_id, false, now)
-        .await?;
+    let progress = AuditProgress::default();
+    let change = async {
+        state
+            .store
+            .store_user_password(user.user_id, &new_password_hash, now)
+            .await?;
+        progress.landed();
+        state
+            .store
+            .update_user_must_change_password(user.user_id, false, now)
+            .await?;
+        Ok::<_, AppError>(())
+    };
     state
         .audit()
-        .record(
+        .audited_steps(
             &meta.user_context(&user),
-            user_event(actions::USER_PASSWORD_CHANGED, &user),
+            &progress,
+            change,
+            |()| user_event(actions::USER_PASSWORD_CHANGED, &user),
+            |_, error| {
+                user_event(actions::USER_PASSWORD_CHANGED, &user)
+                    .meta("error", error.0.error_code())
+            },
         )
-        .await;
+        .await?;
 
     let refreshed_user = state
         .store
@@ -955,61 +1014,79 @@ pub async fn create_identity_user(
             .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
     }
 
-    let user = state
-        .store
-        .create_identity_user(
-            name,
-            email,
-            &email_normalized,
-            global_role,
-            auth_mode,
-            UserStatus::Invited,
-        )
-        .await?;
-    let created_at = OffsetDateTime::now_utc();
-    state
-        .store
-        .update_user_tags(user.user_id, &tags, created_at)
-        .await?;
-
-    if let Some((team_id, role)) = membership {
+    let progress = AuditProgress::default();
+    let create = async {
+        let user = state
+            .store
+            .create_identity_user(
+                name,
+                email,
+                &email_normalized,
+                global_role,
+                auth_mode,
+                UserStatus::Invited,
+            )
+            .await?;
+        progress.landed_on(user.user_id);
+        let created_at = OffsetDateTime::now_utc();
         state
             .store
-            .assign_team_membership(user.user_id, team_id, role)
+            .update_user_tags(user.user_id, &tags, created_at)
             .await?;
-    }
-
-    if let Some(provider) = oidc_provider.as_ref() {
+        if let Some((team_id, role)) = membership {
+            state
+                .store
+                .assign_team_membership(user.user_id, team_id, role)
+                .await?;
+        }
+        if let Some(provider) = oidc_provider.as_ref() {
+            state
+                .store
+                .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, created_at)
+                .await?;
+        }
+        if let Some(provider) = oauth_provider.as_ref() {
+            state
+                .store
+                .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, created_at)
+                .await?;
+        }
         state
             .store
-            .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, created_at)
+            .apply_human_budget_defaults_for_user(
+                state.budget_defaults.as_ref(),
+                user.user_id,
+                created_at,
+            )
             .await?;
-    }
-    if let Some(provider) = oauth_provider.as_ref() {
-        state
-            .store
-            .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, created_at)
-            .await?;
-    }
-    state
-        .store
-        .apply_human_budget_defaults_for_user(
-            state.budget_defaults.as_ref(),
-            user.user_id,
-            created_at,
-        )
-        .await?;
-
-    let identity_user = reload_identity_user(&state.store, user.user_id).await?;
-    let after = user_summary(&identity_user);
-    let response = build_onboarding_response(&state, &origin, created_at, identity_user).await?;
-    state
+        let identity_user = reload_identity_user(&state.store, user.user_id).await?;
+        let after = user_summary(&identity_user);
+        let response =
+            build_onboarding_response(&state, &origin, created_at, identity_user).await?;
+        Ok::<_, AppError>((user, after, response))
+    };
+    let (_, _, response) = state
         .audit()
-        .record(
+        .audited_steps(
             &meta.user_context(&actor),
-            user_event(actions::USER_CREATED, &user).after(after),
+            &progress,
+            create,
+            |(user, after, _)| user_event(actions::USER_CREATED, user).after(after),
+            |progress, error| {
+                partial_event(actions::USER_CREATED, targets::USER, progress, error)
+                    .label(email)
+                    .meta(
+                        "requested",
+                        serde_json::json!({
+                            "name": name,
+                            "auth_mode": auth_mode.as_str(),
+                            "global_role": global_role.as_str(),
+                            "team_id": membership.map(|(team_id, _)| team_id),
+                        }),
+                    )
+            },
         )
-        .await;
+        .await?;
 
     Ok(Json(envelope(response)))
 }
@@ -1092,32 +1169,53 @@ pub async fn update_identity_user(
     }
 
     let now = OffsetDateTime::now_utc();
-    state
-        .store
-        .update_identity_user(user_id, next_global_role, next_auth_mode, now)
+    let progress = AuditProgress::default();
+    let update = async {
+        state
+            .store
+            .update_identity_user(user_id, next_global_role, next_auth_mode, now)
+            .await?;
+        progress.landed();
+        state.store.update_user_tags(user_id, &tags, now).await?;
+        sync_identity_user_auth_mode(
+            &state.store,
+            &identity_user,
+            next_auth_mode,
+            oidc_provider.as_ref(),
+            oauth_provider.as_ref(),
+            now,
+        )
         .await?;
-    state.store.update_user_tags(user_id, &tags, now).await?;
-    sync_identity_user_auth_mode(
-        &state.store,
-        &identity_user,
-        next_auth_mode,
-        oidc_provider.as_ref(),
-        oauth_provider.as_ref(),
-        now,
-    )
-    .await?;
-    sync_identity_user_membership(&state.store, &identity_user, requested_membership, now).await?;
-
-    let updated = reload_identity_user(&state.store, user_id).await?;
+        sync_identity_user_membership(&state.store, &identity_user, requested_membership, now)
+            .await?;
+        reload_identity_user(&state.store, user_id).await
+    };
     state
         .audit()
-        .record(
+        .audited_steps(
             &meta.user_context(&actor),
-            user_event(actions::USER_UPDATED, &identity_user.user)
-                .before(user_summary(&identity_user))
-                .after(user_summary(&updated)),
+            &progress,
+            update,
+            |updated| {
+                user_event(actions::USER_UPDATED, &identity_user.user)
+                    .before(user_summary(&identity_user))
+                    .after(user_summary(updated))
+            },
+            |_, error| {
+                user_event(actions::USER_UPDATED, &identity_user.user)
+                    .before(user_summary(&identity_user))
+                    .meta("error", error.0.error_code())
+                    .meta(
+                        "requested",
+                        serde_json::json!({
+                            "global_role": next_global_role.as_str(),
+                            "auth_mode": next_auth_mode.as_str(),
+                            "team_id": requested_membership.map(|(team_id, _)| team_id),
+                        }),
+                    )
+            },
         )
-        .await;
+        .await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
@@ -1146,22 +1244,40 @@ pub async fn deactivate_identity_user(
     ensure_not_self_deactivating(&actor, &user).map_err(AppError)?;
     ensure_deactivation_allowed(&user).map_err(AppError)?;
     let now = OffsetDateTime::now_utc();
-    state.store.deactivate_identity_user(user_id, now).await?;
-    state.store.revoke_user_sessions(user_id, now).await?;
-    state
-        .store
-        .revoke_password_invitations_for_user(user_id, now)
-        .await?;
+    let progress = AuditProgress::default();
+    let deactivate = async {
+        state.store.deactivate_identity_user(user_id, now).await?;
+        progress.landed();
+        state.store.revoke_user_sessions(user_id, now).await?;
+        state
+            .store
+            .revoke_password_invitations_for_user(user_id, now)
+            .await?;
+        Ok::<_, AppError>(())
+    };
+    let before = serde_json::json!({ "status": user.status.as_str() });
+    let after = serde_json::json!({ "status": UserStatus::Disabled.as_str() });
     state
         .audit()
-        .record(
+        .audited_steps(
             &meta.user_context(&actor),
-            user_event(actions::USER_DEACTIVATED, &user)
-                .before(serde_json::json!({ "status": user.status.as_str() }))
-                .after(serde_json::json!({ "status": UserStatus::Disabled.as_str() }))
-                .meta("sessions_revoked", true),
+            &progress,
+            deactivate,
+            |()| {
+                user_event(actions::USER_DEACTIVATED, &user)
+                    .before(&before)
+                    .after(&after)
+                    .meta("sessions_revoked", true)
+            },
+            // Deactivated, but sessions or invitations may still be live.
+            |_, error| {
+                user_event(actions::USER_DEACTIVATED, &user)
+                    .before(&before)
+                    .after(&after)
+                    .meta("error", error.0.error_code())
+            },
         )
-        .await;
+        .await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
@@ -1242,56 +1358,74 @@ pub async fn reset_identity_user_onboarding(
     }
 
     let now = OffsetDateTime::now_utc();
-    match identity_user.user.auth_mode {
-        AuthMode::Password => {
-            state.store.delete_user_password_auth(user_id).await?;
-            state
-                .store
-                .revoke_password_invitations_for_user(user_id, now)
-                .await?;
-        }
-        AuthMode::Oidc => {
-            let provider_id = identity_user.oidc_provider_id.as_deref().ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "oidc users must be linked to a provider before resetting onboarding"
-                        .to_string(),
-                ))
-            })?;
-            state
-                .store
-                .delete_user_oidc_auth(user_id, provider_id)
-                .await?;
-        }
-        AuthMode::Oauth => {
-            let provider_id = identity_user.oauth_provider_id.as_deref().ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "oauth users must be linked to a provider before resetting onboarding"
-                        .to_string(),
-                ))
-            })?;
-            state
-                .store
-                .delete_user_oauth_auth(user_id, provider_id)
-                .await?;
-        }
-    }
-
-    state
-        .store
-        .update_user_status(user_id, UserStatus::Invited, now)
-        .await?;
     let origin = request_origin(&headers);
     let previous_status = identity_user.user.status;
-    let identity_user = reload_identity_user(&state.store, user_id).await?;
-    let event = user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
-        .before(serde_json::json!({ "status": previous_status.as_str() }))
-        .after(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
-        .meta("auth_mode", identity_user.user.auth_mode.as_str());
-    let response = build_onboarding_response(&state, &origin, now, identity_user).await?;
-    state
+    let progress = AuditProgress::default();
+    let reset = async {
+        match identity_user.user.auth_mode {
+            AuthMode::Password => {
+                state.store.delete_user_password_auth(user_id).await?;
+                progress.landed();
+                state
+                    .store
+                    .revoke_password_invitations_for_user(user_id, now)
+                    .await?;
+            }
+            AuthMode::Oidc => {
+                let provider_id = identity_user.oidc_provider_id.as_deref().ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "oidc users must be linked to a provider before resetting onboarding"
+                            .to_string(),
+                    ))
+                })?;
+                state
+                    .store
+                    .delete_user_oidc_auth(user_id, provider_id)
+                    .await?;
+                progress.landed();
+            }
+            AuthMode::Oauth => {
+                let provider_id = identity_user.oauth_provider_id.as_deref().ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "oauth users must be linked to a provider before resetting onboarding"
+                            .to_string(),
+                    ))
+                })?;
+                state
+                    .store
+                    .delete_user_oauth_auth(user_id, provider_id)
+                    .await?;
+                progress.landed();
+            }
+        }
+        state
+            .store
+            .update_user_status(user_id, UserStatus::Invited, now)
+            .await?;
+        let reloaded = reload_identity_user(&state.store, user_id).await?;
+        build_onboarding_response(&state, &origin, now, reloaded).await
+    };
+    let before = serde_json::json!({ "status": previous_status.as_str() });
+    let response = state
         .audit()
-        .record(&meta.user_context(&actor), event)
-        .await;
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            reset,
+            |_| {
+                user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
+                    .before(&before)
+                    .after(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
+                    .meta("auth_mode", identity_user.user.auth_mode.as_str())
+            },
+            |_, error| {
+                user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
+                    .before(&before)
+                    .meta("auth_mode", identity_user.user.auth_mode.as_str())
+                    .meta("error", error.0.error_code())
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(response)))
 }
@@ -1512,30 +1646,49 @@ pub async fn complete_password_invitation(
         .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
     let now = OffsetDateTime::now_utc();
 
-    state
-        .store
-        .store_user_password(invitation.user_id, &password_hash, now)
-        .await?;
-    state
-        .store
-        .update_user_status(invitation.user_id, UserStatus::Active, now)
-        .await?;
-    state
-        .store
-        .mark_password_invitation_consumed(invitation.invitation_id, now)
-        .await?;
     // Holding the invite token proves the user, so the entry is attributed to them.
-    if let Some(user) = state.store.get_user_by_id(invitation.user_id).await? {
+    let user = state
+        .store
+        .get_user_by_id(invitation.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+    let progress = AuditProgress::default();
+    let redeem = async {
         state
-            .audit()
-            .record(
-                &meta.user_context(&user),
+            .store
+            .store_user_password(invitation.user_id, &password_hash, now)
+            .await?;
+        progress.landed();
+        state
+            .store
+            .update_user_status(invitation.user_id, UserStatus::Active, now)
+            .await?;
+        state
+            .store
+            .mark_password_invitation_consumed(invitation.invitation_id, now)
+            .await?;
+        Ok::<_, AppError>(())
+    };
+    state
+        .audit()
+        .audited_steps(
+            &meta.user_context(&user),
+            &progress,
+            redeem,
+            |()| {
                 user_event(actions::USER_INVITE_REDEEMED, &user)
                     .meta("invitation_id", invitation.invitation_id)
-                    .after(serde_json::json!({ "status": UserStatus::Active.as_str() })),
-            )
-            .await;
-    }
+                    .meta("method", "password")
+                    .after(serde_json::json!({ "status": UserStatus::Active.as_str() }))
+            },
+            |_, error| {
+                user_event(actions::USER_INVITE_REDEEMED, &user)
+                    .meta("invitation_id", invitation.invitation_id)
+                    .meta("method", "password")
+                    .meta("error", error.0.error_code())
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(CompleteInvitationResponse {
         status: "password_set",
@@ -1716,6 +1869,7 @@ pub async fn oidc_callback(
                 .store
                 .update_user_status(user.user_id, UserStatus::Active, now)
                 .await?;
+            record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         }
         user
     } else if let Some(user) = state
@@ -1744,6 +1898,7 @@ pub async fn oidc_callback(
             .store
             .update_user_status(user.user_id, UserStatus::Active, now)
             .await?;
+        record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         user
     } else if state
         .store
@@ -1969,6 +2124,7 @@ pub async fn oauth_callback_github(
                 .store
                 .update_user_status(user.user_id, UserStatus::Active, now)
                 .await?;
+            record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         }
         user
     } else if let Some(user) = state
@@ -1997,6 +2153,7 @@ pub async fn oauth_callback_github(
             .store
             .update_user_status(user.user_id, UserStatus::Active, now)
             .await?;
+        record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         user
     } else if state
         .store
@@ -3379,6 +3536,23 @@ async fn issue_session_cookie(
         .await?;
 
     session_cookie_header(&raw_token, SESSION_TTL_SECONDS, secure)
+}
+
+/// An invited SSO user's first sign-in links their identity and activates them,
+/// which redeems the invitation.
+async fn record_sso_activation(
+    state: &AppState,
+    meta: &AuditRequestMeta,
+    user: &UserRecord,
+    method: &str,
+    provider_key: &str,
+) {
+    let event = user_event(actions::USER_INVITE_REDEEMED, user)
+        .meta("method", method)
+        .meta("provider_key", provider_key)
+        .before(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
+        .after(serde_json::json!({ "status": UserStatus::Active.as_str() }));
+    state.audit().record(&meta.user_context(user), event).await;
 }
 
 async fn record_user_provisioned(
