@@ -3061,6 +3061,30 @@ pub(crate) mod tests {
                 .await
                 .expect("revoke again")
         );
+
+        // Redeeming claims an invitation once; a racing second claim gets `false`.
+        let invitation = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash-2",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("second invitation");
+        assert!(
+            store
+                .mark_password_invitation_consumed(invitation.invitation_id, now)
+                .await
+                .expect("claim")
+        );
+        assert!(
+            !store
+                .mark_password_invitation_consumed(invitation.invitation_id, now)
+                .await
+                .expect("claim again")
+        );
     }
 
     #[tokio::test]

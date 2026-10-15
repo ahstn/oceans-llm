@@ -504,7 +504,7 @@ impl GatewayStore for PostgresStore {
         &self,
         invitation_id: Uuid,
         consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::mark_password_invitation_consumed(self, invitation_id, consumed_at).await
     }
 

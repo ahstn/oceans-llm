@@ -1673,20 +1673,27 @@ pub async fn complete_password_invitation(
         .get_user_by_id(invitation.user_id)
         .await?
         .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+    // Claim the invitation before writing anything else, so when two requests
+    // race with the same token only the winner sets the password.
+    if !state
+        .store
+        .mark_password_invitation_consumed(invitation.invitation_id, now)
+        .await?
+    {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "invitation token is no longer valid".to_string(),
+        )));
+    }
     let progress = AuditProgress::default();
+    progress.landed();
     let redeem = async {
         state
             .store
             .store_user_password(invitation.user_id, &password_hash, now)
             .await?;
-        progress.landed();
         state
             .store
             .update_user_status(invitation.user_id, UserStatus::Active, now)
-            .await?;
-        state
-            .store
-            .mark_password_invitation_consumed(invitation.invitation_id, now)
             .await?;
         Ok::<_, AppError>(())
     };

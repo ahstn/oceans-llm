@@ -1467,19 +1467,22 @@ impl LibsqlStore {
         &self,
         invitation_id: Uuid,
         consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let claimed = self
+            .connection
             .execute(
                 r#"
                 UPDATE password_invitations
                 SET consumed_at = ?1
                 WHERE invitation_id = ?2
+                  AND consumed_at IS NULL
+                  AND revoked_at IS NULL
                 "#,
                 libsql::params![consumed_at.unix_timestamp(), invitation_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(claimed > 0)
     }
 
     pub async fn store_user_password(

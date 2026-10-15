@@ -1327,12 +1327,14 @@ impl PostgresStore {
         &self,
         invitation_id: Uuid,
         consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             UPDATE password_invitations
             SET consumed_at = $1
             WHERE invitation_id = $2
+              AND consumed_at IS NULL
+              AND revoked_at IS NULL
             "#,
         )
         .bind(consumed_at.unix_timestamp())
@@ -1340,7 +1342,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn store_user_password(
