@@ -257,7 +257,13 @@ where
         mcp_server_id: Uuid,
         user_id: Uuid,
         grant: McpOauthTokenGrant,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         let owner_scope_key = credential_owner_scope_key(
             McpUpstreamCredentialOwnerScopeKind::User,
             Some(user_id),
@@ -286,7 +292,6 @@ where
             metadata,
         })
         .await
-        .map(|(binding, _)| binding)
     }
 
     pub async fn list_bindings(

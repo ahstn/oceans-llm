@@ -347,23 +347,30 @@ async fn complete_oauth_callback(
         grant,
     );
     // Token values never leave the service; the entry keeps binding metadata only.
+    // A reconnect replaces the user's binding, so it also records what it replaced.
     state
         .audit()
-        .audited(&meta.user_context(&user), connect, |binding| {
-            AuditEvent::new(
+        .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
+            let event = AuditEvent::new(
                 actions::MCP_CREDENTIAL_BINDING_SET,
                 targets::MCP_CREDENTIAL_BINDING,
             )
             .target(binding.credential_binding_id)
             .label(binding.owner_scope_key.clone())
-            .meta("operation", "oauth_connect")
+            .meta(
+                "operation",
+                if replaced.is_some() {
+                    "oauth_reconnect"
+                } else {
+                    "oauth_connect"
+                },
+            )
             .meta("mcp_server_id", binding.mcp_server_id)
-            .after(serde_json::json!({
-                "material_kind": binding.material_kind.as_str(),
-                "oauth_provider_key": binding.oauth_provider_key,
-                "granted_scopes": binding.granted_scopes,
-                "expires_at": binding.expires_at.map(format_timestamp),
-            }))
+            .after(oauth_binding_summary(binding));
+            match replaced {
+                Some(replaced) => event.before(oauth_binding_summary(replaced)),
+                None => event,
+            }
         })
         .await?;
     Ok(connection_success_redirect(&transaction.redirect_to))
@@ -458,27 +465,42 @@ pub async fn revoke_mcp_oauth_connection(
         .await?
     {
         let credentials = McpCredentialService::new(state.store.clone());
-        let revoke = async {
-            credentials
-                .revoke_binding(binding.credential_binding_id)
-                .await
-                .map(|revoked| revoked.is_some())
-        };
-        state
-            .audit()
-            .audited_change(&meta.user_context(&user), revoke, || {
-                AuditEvent::new(
-                    actions::MCP_CREDENTIAL_BINDING_REVOKED,
-                    targets::MCP_CREDENTIAL_BINDING,
+        // The revoke returns the binding it removed, so the entry records that
+        // access, not just its id. An already-revoked binding records nothing.
+        if let Some(revoked) = credentials
+            .revoke_binding(binding.credential_binding_id)
+            .await?
+        {
+            state
+                .audit()
+                .record(
+                    &meta.user_context(&user),
+                    AuditEvent::new(
+                        actions::MCP_CREDENTIAL_BINDING_REVOKED,
+                        targets::MCP_CREDENTIAL_BINDING,
+                    )
+                    .target(revoked.credential_binding_id)
+                    .label(revoked.owner_scope_key.clone())
+                    .meta("operation", "oauth_disconnect")
+                    .meta("mcp_server_id", server_id)
+                    .before(oauth_binding_summary(&revoked)),
                 )
-                .target(binding.credential_binding_id)
-                .label(owner_scope_key.clone())
-                .meta("operation", "oauth_disconnect")
-                .meta("mcp_server_id", server_id)
-            })
-            .await?;
+                .await;
+        }
     }
     Ok(Json(McpOauthRevokeResponse { revoked: true }))
+}
+
+/// The OAuth binding fields an entry keeps: never the token values.
+fn oauth_binding_summary(
+    binding: &gateway_service::RedactedMcpCredentialBinding,
+) -> serde_json::Value {
+    serde_json::json!({
+        "material_kind": binding.material_kind.as_str(),
+        "oauth_provider_key": binding.oauth_provider_key,
+        "granted_scopes": binding.granted_scopes,
+        "expires_at": binding.expires_at.map(format_timestamp),
+    })
 }
 
 async fn require_session_user(
