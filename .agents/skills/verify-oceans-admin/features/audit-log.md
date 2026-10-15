@@ -19,13 +19,13 @@ Audit Log is a read-only, platform-admin-only view of administrator changes to t
 Preconditions:
 
 - `control-oceans-admin doctor` passes.
-- You are signed in as the seeded `admin@local`. The sidebar entry needs the `request_logs` page and the `platform_admin` role, and `GET /api/v1/admin/audit-logs` rejects non-platform-admins.
+- You are signed in as the seeded `admin@local`. The sidebar entry needs only the `platform_admin` role, and `GET /api/v1/admin/audit-logs` rejects non-platform-admins.
 - The demo seed writes no audit entries, but signing in writes a `session.created` entry, so a fresh run starts with at least one row.
 
 Steps:
 
 - **Open.** Choose the `Audit Log` link. The `Audit Log` heading and the `Control-plane changes` frame are visible, and the newest row is the sign-in (`Session`, `Created`) attributed to `admin@local` with `127.0.0.1` as the IP address.
-- **Changes through the UI.** On `API Keys`, create a temporary user API key and revoke it (see [API keys](./api-keys.md)). On `Teams`, transfer `ben@platform.local` from Platform to Research and back (see [Identity](./identity.md)). Return to `Audit Log`. Rows for `API key` `Created` and `Revoked` and two `User` `Member transferred` appear above the sign-in. Each is attributed to `admin@local` from `127.0.0.1`, and its user agent is the browser's, which proves the admin UI server forwards the proxy's signed `x-oceans-client-ip` and the browser's `User-Agent`.
+- **Changes through the UI.** On `API Keys`, create a temporary user API key and revoke it (see [API keys](./api-keys.md)). On `Teams`, transfer `ben@platform.local` from Platform to Research and back (see [Identity](./identity.md)). Return to `Audit Log`. Rows for `API key` `Created` and `Revoked` and two `User` `Team transferred` appear above the sign-in. Each is attributed to `admin@local` from `127.0.0.1`, and its user agent is the browser's, which proves the admin UI server forwards the proxy's signed `x-oceans-client-ip` and the browser's `User-Agent`.
 - **No secret.** Open the `API key` `Created` row. The `After` block shows the key name, the `gwk_<id>` display prefix, owner and status. The full raw key from the create dialog appears nowhere on the page or in the API response.
 - **Failed change.** From the same session, send `POST /api/v1/admin/identity/teams` with a name that is only spaces. It returns `400`, and no `team.created` entry appears.
 - **Filter.** Choose `API key` in `Target type`. Only API key rows remain and the URL search holds `target_type=api_key`. Choose `Clear`.

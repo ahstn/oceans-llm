@@ -24,8 +24,8 @@ Each entry shows:
 | Area | Actions |
 |---|---|
 | API keys | `api_key.created`, `api_key.updated`, `api_key.revoked`, `api_key.secret_revealed` |
-| Users | `user.created`, `user.updated`, `user.deactivated`, `user.reactivated`, `user.onboarding_reset`, `user.invite_issued`, `user.invite_redeemed`, `user.password_changed`, `user.provisioned` |
-| Teams | `team.created`, `team.updated`, `team.members_added`, `team.member_removed`, `team.member_transferred` |
+| Users | `user.created`, `user.updated`, `user.deactivated`, `user.reactivated`, `user.onboarding_reset`, `user.invite_issued`, `user.invite_redeemed`, `user.password_changed`, `user.provisioned`, `user.team_transferred` |
+| Teams | `team.created`, `team.updated`, `team.members_added`, `team.member_removed` |
 | Service accounts | `service_account.created`, `service_account.updated`, `service_account.disabled` |
 | Budgets | `budget.set`, `budget.deactivated`, `budget.increase_created` |
 | Sessions | `session.created` (password, OIDC or OAuth sign-in), `session.revoked` (logout) |

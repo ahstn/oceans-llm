@@ -106,7 +106,7 @@ Audited:
 
 - API keys: create, model-access update, revoke and secret reveal.
 - Users: create, update, deactivate, reactivate, onboarding reset, invite issue and redemption, password change, and SSO provisioning.
-- Teams: create, update, add members, remove a member and transfer a member.
+- Teams: create, update, add members and remove a member. Moving a user between teams is `user.team_transferred`, because its target is the user.
 - Service accounts: create, update and disable.
 - Budgets: set, deactivate and temporary increase.
 - Sessions: password, OIDC and OAuth sign-in, and logout. An invited user's first OIDC or OAuth sign-in also records `user.invite_redeemed`.
