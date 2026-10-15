@@ -55,7 +55,7 @@ Migration `V60__admin_audit_log.sql` extends the baseline table on both backends
 | `details_json` | Redacted metadata, including `request_id`. |
 | `request_ip`, `user_agent` | Where the request came from. |
 
-Labels are snapshots, so entries stay readable after the user, key or resource is gone. `actor_user_id` has no foreign key for the same reason. Indexes cover the newest-first list and each filter as `(column, ts, id)`: actor, target and action. The list query includes only the filters a request uses and pages with a `(ts, id)` row-value cursor, so a filtered page reads the matching index in order rather than scanning the table.
+Labels are snapshots, so entries stay readable after the user, key or resource is gone. `actor_user_id` has no foreign key for the same reason. Indexes cover the newest-first list and each filter as `(column, ts, id)`: actor, target type and ID, target ID alone, action, and actor plus action. An action's prefix is its target type, so action plus target type is served by the action index. The list query includes only the filters a request uses and pages with a `(ts, id)` row-value cursor, so a filtered page reads the matching index in order rather than scanning the table.
 
 ### Request IP
 
@@ -75,7 +75,8 @@ Summaries are built field by field from response views or domain records that ho
 
 - It redacts a value whose field name matches a request-log secret key, or contains `secret`, `password`, `token`, `authorization`, `cookie`, `private_key`, `api_key`, `ciphertext`, `nonce`, `key_material` or `invite_url`.
 - Names ending in `_id`, `_at`, `_kind`, `_mode`, `_type`, `_status`, `_count`, `_prefix`, `_ref` and similar suffixes describe a secret without holding it, so they are kept. Booleans and nulls are kept too.
-- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
+- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, an invite link path, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
+- Target labels are user-entered names, so they get the same credential check and are capped at 256 characters.
 - Each summary is capped at 16 KiB. A larger one is replaced with `{ "truncated": true, "bytes": n }`.
 
 The rules for specific actions are:
