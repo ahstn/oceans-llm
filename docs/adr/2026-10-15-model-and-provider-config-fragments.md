@@ -94,7 +94,7 @@ The per-provider-type baselines now live once in `gateway-core`: `ProviderCapabi
 - An explicitly set `--config` or `--config-dir` must exist.
 - Only the implicit `./gateway.yaml` may be absent.
 
-`gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists each one's source file.
+`gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists each one's source file. It redacts `literal.` values, header values, and URL passwords.
 
 The suggested layout is `models/<provider-account>.yaml` for a provider account and the models that route only to it, plus `models/multi-provider.yaml` for models whose routes span providers. [`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a tested example.
 
@@ -112,7 +112,7 @@ The chart supports two ways to split model config.
 
 ### 7. Startup warning for redundant overrides
 
-At startup the gateway logs a warning for each route whose `pricing_override` or `context_window_tokens` equals the current catalog value. Such an override stops the route from following catalog updates. `EffectiveRouteMetadata` now carries `catalog_pricing` alongside the effective pricing so this comparison is possible.
+At startup the gateway logs a warning for each route whose `pricing_override` or `context_window_tokens` equals the current catalog value. The same pass that rejects a context window above the catalog limit does this, resolving each overridden route once. Such an override stops the route from following catalog updates. `EffectiveRouteMetadata` now carries `catalog_pricing` alongside the effective pricing so this comparison is possible.
 
 ## Implementation
 

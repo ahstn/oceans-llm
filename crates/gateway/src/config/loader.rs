@@ -249,7 +249,8 @@ impl SourceTracker {
     }
 }
 
-/// Prints the merged config as loaded, before inferred defaults are applied. `providers` and
+/// Prints the merged config as loaded, before inferred defaults are applied, with secrets
+/// redacted (see [`redact_secrets`]). `providers` and
 /// `models` are rendered in map form. With `show_sources`, a trailing comment block names the
 /// file that defined each provider and model.
 pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Result<String> {
@@ -272,7 +273,9 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
         }
     }
 
-    let mut rendered = serde_yaml::to_string(&Value::Mapping(merged))?;
+    let mut merged = Value::Mapping(merged);
+    redact_secrets(&mut merged, false);
+    let mut rendered = serde_yaml::to_string(&merged)?;
     if show_sources {
         rendered.push_str("# sources:\n");
         for source in &loaded.sources {
@@ -285,6 +288,44 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
         }
     }
     Ok(rendered)
+}
+
+const REDACTED: &str = "<redacted>";
+
+/// Replaces values that can carry credentials, so rendered output is safe to paste into logs:
+/// `literal.` secret references, every header value, and the password in a URL. `env.` and
+/// `file.` references name where a secret lives without containing it, so they stay visible.
+fn redact_secrets(value: &mut Value, in_headers: bool) {
+    match value {
+        Value::Mapping(mapping) => {
+            for (key, entry) in mapping.iter_mut() {
+                let headers = in_headers
+                    || matches!(
+                        key.as_str(),
+                        Some("default_headers" | "extra_headers" | "headers")
+                    );
+                redact_secrets(entry, headers);
+            }
+        }
+        Value::Sequence(items) => {
+            for item in items {
+                redact_secrets(item, false);
+            }
+        }
+        Value::String(text) => {
+            if in_headers {
+                *text = REDACTED.to_string();
+            } else if text.starts_with("literal.") {
+                *text = format!("literal.{REDACTED}");
+            } else if let Ok(mut url) = url::Url::parse(text)
+                && url.password().is_some()
+                && url.set_password(Some(REDACTED)).is_ok()
+            {
+                *text = url.to_string();
+            }
+        }
+        _ => {}
+    }
 }
 
 fn take_collections(

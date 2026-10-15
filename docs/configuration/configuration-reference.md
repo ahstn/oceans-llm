@@ -82,7 +82,7 @@ conf.d/
     multi-provider.yaml  # models whose routes use more than one provider file
 ```
 
-[`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists the file that defined each one. `gateway config validate` accepts the same flags.
+[`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists the file that defined each one. It redacts `literal.` values, header values, and URL passwords, so the output is safe to share; `env.` and `file.` references stay visible. `gateway config validate` accepts the same flags.
 
 Removing a fragment does not remove what it seeded. Models and providers that disappear from config stay in the database, and their routes stay enabled. Disable a model's routes with `enabled: false` before deleting its entry.
 

@@ -216,3 +216,38 @@ fn follows_symlinks_without_looping_or_reading_a_file_twice() {
     assert_eq!(loaded.config.models.len(), 1);
     render_config(&sources(tmp.path()), false).expect("render skips blank fragments");
 }
+
+#[test]
+fn render_redacts_literal_secrets_headers_and_url_passwords() {
+    let tmp = tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        "gateway.yaml",
+        r#"
+providers:
+  self-hosted:
+    type: openai_compat
+    base_url: https://oceans:hunter2@llm.internal/v1
+    pricing_provider_id: openai
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    default_headers:
+      OpenAI-Organization: org-secret
+    auth: { token: literal.sk-live-secret }
+  openrouter:
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    auth: { token: env.OPENROUTER_API_KEY }
+"#,
+    );
+    write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
+
+    let rendered = render_config(&sources(tmp.path()), false).expect("render");
+    for secret in ["sk-live-secret", "hunter2", "org-secret"] {
+        assert!(!rendered.contains(secret), "{secret} leaked:\n{rendered}");
+    }
+    assert!(rendered.contains("literal.<redacted>"), "{rendered}");
+    assert!(rendered.contains("env.OPENROUTER_API_KEY"), "{rendered}");
+    assert!(rendered.contains("llm.internal/v1"), "{rendered}");
+}

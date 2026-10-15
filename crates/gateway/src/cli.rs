@@ -36,7 +36,8 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum ConfigCommand {
     Validate,
-    /// Print the merged config as loaded, before inferred defaults are applied.
+    /// Print the merged config as loaded, before inferred defaults are applied. `literal.`
+    /// values, header values, and URL passwords are redacted.
     Render {
         /// Append a comment block naming the file that defined each provider and model.
         #[arg(long, action = ArgAction::SetTrue)]

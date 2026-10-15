@@ -262,13 +262,9 @@ async fn run_serve_with_store(
         .await
         .context("failed to initialize pricing catalog")?;
     service
-        .validate_route_context_overrides()
+        .validate_route_overrides()
         .await
         .context("invalid route context-window override")?;
-    service
-        .warn_on_redundant_route_overrides()
-        .await
-        .context("failed checking route overrides against the pricing catalog")?;
     let known_mcp_servers = service
         .store()
         .list_external_mcp_servers(true)
