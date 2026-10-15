@@ -364,7 +364,7 @@ pub async fn create_review_agent_repository(
         .record(
             &meta.user_context(&actor),
             repository_event(actions::REVIEW_AGENT_REPOSITORY_CREATED, &repository)
-                .after(&repository),
+                .after(repository_summary(&repository)),
         )
         .await;
     Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
@@ -729,11 +729,20 @@ fn repository_event(action: &str, repository: &ReviewAgentRepositoryView) -> Aud
         .label(repository.full_name.clone())
 }
 
+/// Audit summary of a repository. `settings_json` is free-form extension data
+/// that can hold credentials, so only its key names are recorded.
 fn repository_summary(repository: &ReviewAgentRepositoryView) -> Value {
     let mut summary = serde_json::to_value(repository).unwrap_or(Value::Null);
     if let Some(object) = summary.as_object_mut() {
         object.remove("created_at");
         object.remove("updated_at");
+        let settings_json_keys: Vec<String> = repository
+            .settings_json
+            .as_object()
+            .map(|settings| settings.keys().cloned().collect())
+            .unwrap_or_default();
+        object.remove("settings_json");
+        object.insert("settings_json_keys".to_string(), json!(settings_json_keys));
     }
     summary
 }
@@ -1168,6 +1177,31 @@ fn insufficient_privileges() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_audit_summary_keeps_only_settings_json_keys() {
+        let repository = map_repository(ReviewAgentRepositoryRecord {
+            repository_id: Uuid::nil(),
+            provider: ReviewAgentProvider::Github,
+            external_repository_id: None,
+            owner: "octo".to_string(),
+            name: "repo".to_string(),
+            full_name: "octo/repo".to_string(),
+            service_account_id: Uuid::nil(),
+            status: ReviewAgentRepositoryStatus::Active,
+            settings: ReviewAgentSettings::default(),
+            settings_json: json!({ "github_pat": "ghp_secret_value", "labels": ["a"] }),
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+        });
+        let summary = repository_summary(&repository);
+        assert!(!summary.to_string().contains("ghp_secret_value"));
+        assert_eq!(
+            summary["settings_json_keys"],
+            json!(["github_pat", "labels"])
+        );
+        assert_eq!(summary["full_name"], "octo/repo");
+    }
 
     #[test]
     fn action_config_request_rejects_unknown_raw_fields() {
