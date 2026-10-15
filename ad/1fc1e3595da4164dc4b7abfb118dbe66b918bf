@@ -1,0 +1,19 @@
+crates/gateway-service/src/admin_api_keys.rs
+  s_6ff66569c6a522::t_bccbc49f142709 580-582,585-588
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad1fc1e3595da4164dc4b7abfb118dbe66b918bf",
+  "prompts": {},
+  "sessions": {
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
