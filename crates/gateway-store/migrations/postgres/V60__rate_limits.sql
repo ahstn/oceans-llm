@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS rate_limit_policies (
   FOREIGN KEY (mcp_server_id) REFERENCES external_mcp_servers(mcp_server_id) ON DELETE CASCADE
 );
 
+-- Every replica reloads the enabled policies on each refresh; paused rows
+-- stay out of that scan.
+CREATE INDEX IF NOT EXISTS rate_limit_policies_enabled_idx
+  ON rate_limit_policies (name) WHERE enabled = 1;
+
 -- Shared counters, one row per counter and fixed window. Sliding windows read
 -- the previous window's row, so rows expire one window after they end.
 CREATE TABLE IF NOT EXISTS rate_limit_counters (
