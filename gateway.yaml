@@ -71,6 +71,13 @@ guardrails:
   model_routes: {}
   mcp_servers: {}
 
+mcp:
+  # OAuth sign-in for MCP clients. The local mise tasks point the issuer at the
+  # gateway port; see docs/mcp/mcp-client-setup.md#oauth-sign-in.
+  client_oauth:
+    enabled: true
+    public_base_url: env.OCEANS_LOCAL_PUBLIC_BASE_URL
+
 request_logging:
   payloads:
     capture_mode: redacted_payloads
