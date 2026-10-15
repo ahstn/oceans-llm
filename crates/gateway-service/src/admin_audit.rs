@@ -546,13 +546,30 @@ fn looks_like_credential(text: &str) -> bool {
     if looks_like_credential_as_written(text) {
         return true;
     }
-    // `?api%5Fkey=…` hides a secret name behind percent-encoding, so encoded text
-    // is checked again once decoded.
-    text.contains('%') && {
-        let decoded = percent_decode_str(text).decode_utf8_lossy();
-        decoded != text && looks_like_credential_as_written(&decoded)
+    // `?api%5Fkey=…` hides a secret name behind percent-encoding, and a nested
+    // URL can encode it twice (`api%255Fkey`), so each decoding is checked in
+    // turn, up to a few layers.
+    let mut current = text.to_string();
+    for _ in 0..MAX_PERCENT_DECODES {
+        if !current.contains('%') {
+            return false;
+        }
+        let decoded = percent_decode_str(&current)
+            .decode_utf8_lossy()
+            .into_owned();
+        if decoded == current {
+            return false;
+        }
+        if looks_like_credential_as_written(&decoded) {
+            return true;
+        }
+        current = decoded;
     }
+    false
 }
+
+/// How many layers of percent-encoding the credential check looks through.
+const MAX_PERCENT_DECODES: usize = 4;
 
 fn looks_like_credential_as_written(text: &str) -> bool {
     // Split at anything that cannot be part of a token, so `token=gwk_…`,
@@ -983,6 +1000,7 @@ mod tests {
             "empty_quoted": "password=\"\" means none",
             "json_config": "config={\"password\":\"hunter2\"}",
             "encoded_query": "see https://example.test/?api%5Fkey=hunter2",
+            "double_encoded": "next=https%3A%2F%2Fexample.test%2F%3Fapi%255Fkey%3Dhunter2",
             "encoded_path": "docs at https://example.test/guides/100%25-uptime",
             "header_note": "send Authorization: Bearer abc",
             "basic_note": "use Basic dTpw",
@@ -1028,6 +1046,7 @@ mod tests {
                 "empty_quoted": "password=\"\" means none",
                 "json_config": AUDIT_REDACTED,
                 "encoded_query": AUDIT_REDACTED,
+                "double_encoded": AUDIT_REDACTED,
                 "encoded_path": "docs at https://example.test/guides/100%25-uptime",
                 "header_note": AUDIT_REDACTED,
                 "basic_note": AUDIT_REDACTED,
