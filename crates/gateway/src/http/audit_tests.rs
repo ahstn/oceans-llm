@@ -286,6 +286,15 @@ async fn identity_changes_are_audited_without_invite_links() {
     assert_admin_actor(&team_entry, harness.admin_id);
     assert_eq!(team_entry["target_id"], team_id);
     assert_eq!(team_entry["after"]["name"], "Platform");
+    // The summary keeps admin ids, not the members' directory details.
+    let mut fields: Vec<_> = team_entry["after"]
+        .as_object()
+        .expect("team summary")
+        .keys()
+        .cloned()
+        .collect();
+    fields.sort();
+    assert_eq!(fields, ["admin_user_ids", "name", "status", "tags"]);
 
     let user_entry = harness.entry("user.created").await;
     assert_eq!(user_entry["target_label"], "invitee@example.test");

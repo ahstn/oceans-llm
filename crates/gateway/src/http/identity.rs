@@ -561,7 +561,7 @@ pub async fn create_identity_team(
             &meta.user_context(&actor),
             &progress,
             create,
-            |view| team_event(actions::TEAM_CREATED, view).after(view),
+            |view| team_event(actions::TEAM_CREATED, view).after(team_summary(view)),
             |progress, error| {
                 partial_event(actions::TEAM_CREATED, targets::TEAM, progress, error)
                     .label(name)
