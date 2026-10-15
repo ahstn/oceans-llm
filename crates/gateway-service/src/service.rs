@@ -799,6 +799,10 @@ where
         let now = OffsetDateTime::now_utc();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
+                // Disabled rows include batch-referenced routes that config no longer declares.
+                if !route.enabled || route.weight <= 0.0 {
+                    continue;
+                }
                 if route.pricing_override.is_none() && route.context_window_tokens.is_none() {
                     continue;
                 }

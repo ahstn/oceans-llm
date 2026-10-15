@@ -107,9 +107,10 @@ fn load_config(sources: &ConfigSources) -> anyhow::Result<GatewayConfig> {
         })
 }
 
-/// `config validate` always requires the main file, even at the implicit default path.
+/// `config validate` requires the main file unless fragments are configured; `serve` also
+/// accepts a missing implicit `./gateway.yaml` when `--config-dir` supplies the config.
 fn validate_config_file(sources: &ConfigSources) -> anyhow::Result<()> {
-    if !sources.path.exists() {
+    if !sources.path.exists() && (sources.path_is_explicit || sources.dir.is_none()) {
         anyhow::bail!(
             "gateway configuration `{}` does not exist",
             sources.path.display()
@@ -815,6 +816,34 @@ providers:
         })
         .expect_err("missing config should fail");
 
+        assert!(format!("{error:#}").contains("does not exist"));
+    }
+
+    #[test]
+    fn config_validation_accepts_fragments_without_the_implicit_main_file() {
+        let tmp = tempdir().expect("tempdir");
+        let dir = tmp.path().join("conf.d");
+        std::fs::create_dir_all(&dir).expect("conf.d");
+        std::fs::write(
+            dir.join("openai.yaml"),
+            "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n",
+        )
+        .expect("write fragment");
+        let missing_path = tmp.path().join("gateway.yaml");
+
+        validate_config_file(&gateway::config::ConfigSources {
+            path: missing_path.clone(),
+            path_is_explicit: false,
+            dir: Some(dir.clone()),
+        })
+        .expect("fragments alone are a valid config");
+
+        let error = validate_config_file(&gateway::config::ConfigSources {
+            path: missing_path,
+            path_is_explicit: true,
+            dir: Some(dir),
+        })
+        .expect_err("an explicit main path must exist");
         assert!(format!("{error:#}").contains("does not exist"));
     }
 }

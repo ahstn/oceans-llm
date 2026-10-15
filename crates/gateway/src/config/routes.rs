@@ -89,7 +89,10 @@ impl ModelRouteConfig {
 
         let mut capabilities = ProviderCapabilities::all_enabled();
         capabilities.decisions = false;
-        if let Some(bedrock) = &self.compatibility.aws_bedrock {
+        // Only Bedrock providers use api_style; other providers ignore the block.
+        if let (Some(ProviderConfig::AwsBedrock(_)), Some(bedrock)) =
+            (provider, &self.compatibility.aws_bedrock)
+        {
             if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
                 capabilities.chat_completions = false;
             } else {

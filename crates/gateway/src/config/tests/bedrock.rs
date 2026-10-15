@@ -679,3 +679,17 @@ fn bedrock_api_styles_derive_compatible_capabilities() {
         );
     }
 }
+
+#[test]
+fn bedrock_capability_defaults_apply_only_to_bedrock_providers() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  model:\n    route:\n      provider: openai\n      upstream_model: gpt-5\n      compatibility:\n        aws_bedrock:\n          api_style: runtime_converse\n",
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
+    assert!(capabilities.responses && capabilities.json_schema);
+}
