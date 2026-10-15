@@ -107,7 +107,7 @@ async fn aggregate_protected_resource_metadata_names_issuer_and_scope() {
     );
     assert_eq!(
         body["scopes_supported"],
-        serde_json::json!(["mcp:aggregate"])
+        serde_json::json!(["mcp:aggregate", "mcp:proxy"])
     );
     assert_eq!(
         body["bearer_methods_supported"],

@@ -112,7 +112,7 @@ Non-MCP routes never accept an `oat_` token. Inference, admin, batch, and Skills
 
 These are the capability names #446 proposes for API keys. A future scoped `gwk_` key and an OAuth token with the same scopes will therefore reach the same routes. The token's resource does the job of #446's optional server list.
 
-If the client sends no scope, the gateway picks one from the resource: `mcp:aggregate` for `{issuer}/mcp`, and `mcp:proxy` for a per-server resource. An unknown scope returns `invalid_scope`. `mcp:aggregate` with a per-server resource also returns `invalid_scope`. The `401` challenge names the scope its route needs. A token without that scope gets `403` with `error="insufficient_scope"`.
+If the client sends no scope, the gateway picks one from the resource: `mcp:aggregate` for `{issuer}/mcp`, and `mcp:proxy` for a per-server resource. Each protected-resource metadata document lists every scope its resource accepts: both for `{issuer}/mcp`, and `mcp:proxy` for a server. An unknown scope returns `invalid_scope`. `mcp:aggregate` with a per-server resource also returns `invalid_scope`. The `401` challenge names the scope its route needs. A token without that scope gets `403` with `error="insufficient_scope"`.
 
 Scopes only narrow access. A token never reaches a tool that the user's own grants do not allow. `offline_access` is not used. Whether a refresh token is issued depends on whether the client registered the `refresh_token` grant type.
 

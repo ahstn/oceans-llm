@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use gateway_core::{McpOauthResource, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, SUPPORTED_SCOPES};
+use gateway_core::{McpOauthResource, SUPPORTED_SCOPES};
 use gateway_service::{McpClientOauthSettings, McpGatewayService};
 use serde::Serialize;
 use serde_json::json;
@@ -102,10 +102,13 @@ fn protected_resource_metadata(
     resource: &McpOauthResource,
     resource_name: String,
 ) -> ProtectedResourceMetadata {
-    let scopes_supported = match resource {
-        McpOauthResource::Aggregate => vec![SCOPE_MCP_AGGREGATE],
-        McpOauthResource::Server(_) => vec![SCOPE_MCP_PROXY],
-    };
+    // Every scope the authorization endpoint accepts for this resource, so
+    // discovery matches enforcement. The 401 challenge still names only the
+    // scope the route needs, which is what clients should request first.
+    let scopes_supported = SUPPORTED_SCOPES
+        .into_iter()
+        .filter(|scope| resource.allows_scope(scope))
+        .collect();
     ProtectedResourceMetadata {
         resource: settings.resource_uri(resource),
         authorization_servers: vec![settings.issuer().to_string()],

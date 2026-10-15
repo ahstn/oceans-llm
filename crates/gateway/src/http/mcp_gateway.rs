@@ -665,7 +665,7 @@ async fn authenticate_mcp_request(
     headers: &HeaderMap,
     resource: Option<&McpOauthResource>,
 ) -> Result<AuthenticatedApiKey, GatewayError> {
-    let token = extract_mcp_gateway_api_key(headers)?;
+    let token = extract_mcp_bearer_token(headers)?;
     if !is_oauth_access_token(&token) {
         return state.service.authenticate_bearer_token(&token).await;
     }
@@ -684,7 +684,9 @@ async fn authenticate_mcp_request(
         .await
 }
 
-fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {
+/// The credential from `Authorization: Bearer` or `x-oceans-api-key`: a
+/// `gwk_` API key, or an `oat_` OAuth access token.
+fn extract_mcp_bearer_token(headers: &HeaderMap) -> Result<String, AuthError> {
     let authorization_token = headers
         .get(AUTHORIZATION)
         .map(|value| {
