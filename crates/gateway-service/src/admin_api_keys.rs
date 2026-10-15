@@ -577,9 +577,15 @@ where
             (access.model_grant_mode, model_keys)
         });
 
+        // The result describes this update's write: the access it granted, not a
+        // later read a concurrent update could have changed. Sorted as the store
+        // lists a key's models.
         let mut api_key = api_key;
         api_key.model_grant_mode = model_grant_mode;
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
         Ok(UpdateAdminApiKeyResult {
             api_key: build_api_key_summary(
                 &api_key,
