@@ -1,11 +1,24 @@
+use std::collections::HashSet;
+
 use gateway_service::OauthError;
+
+/// The most parameters an authorization or token request may carry. Both
+/// endpoints use fewer than a dozen; the cap stops an unauthenticated caller
+/// from making the gateway decode and keep thousands of unknown names.
+const MAX_PARAMETERS: usize = 64;
 
 /// Parses `application/x-www-form-urlencoded` pairs. OAuth parameters must
 /// not repeat (RFC 6749 section 3.1), so a repeated name is rejected.
 pub(super) fn parse_unique_pairs(raw: &str) -> Result<Vec<(String, String)>, OauthError> {
-    let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut pairs = Vec::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
-        if pairs.iter().any(|(existing, _)| *existing == key) {
+        if pairs.len() == MAX_PARAMETERS {
+            return Err(OauthError::invalid_request(format!(
+                "requests may carry at most {MAX_PARAMETERS} parameters"
+            )));
+        }
+        if !seen.insert(key.clone()) {
             return Err(OauthError::invalid_request(format!(
                 "parameter `{key}` is repeated"
             )));
@@ -30,6 +43,21 @@ mod tests {
         );
         assert_eq!(
             parse_unique_pairs("a=1&a=2").unwrap_err().error,
+            "invalid_request"
+        );
+    }
+
+    #[test]
+    fn rejects_too_many_parameters() {
+        let at_limit = (0..MAX_PARAMETERS)
+            .map(|index| format!("p{index}=x"))
+            .collect::<Vec<_>>()
+            .join("&");
+        assert_eq!(parse_unique_pairs(&at_limit).unwrap().len(), MAX_PARAMETERS);
+        assert_eq!(
+            parse_unique_pairs(&format!("{at_limit}&extra=x"))
+                .unwrap_err()
+                .error,
             "invalid_request"
         );
     }
