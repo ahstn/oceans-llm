@@ -419,6 +419,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         )
         .route("/oauth/authorize", get(oauth_authorize))
         .route("/oauth/token", post(oauth_token))
+        .route("/oauth/revoke", post(oauth_revoke))
         .route(
             "/oauth/register",
             post(oauth_register).layer(DefaultBodyLimit::max(

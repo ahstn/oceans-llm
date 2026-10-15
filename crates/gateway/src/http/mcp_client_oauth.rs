@@ -6,6 +6,7 @@ mod consent;
 mod form;
 mod metadata;
 mod registration;
+mod revocation;
 mod token;
 
 use axum::http::HeaderValue;
@@ -28,6 +29,7 @@ pub use metadata::{
 };
 pub(crate) use registration::MAX_REGISTRATION_BODY_BYTES;
 pub use registration::oauth_register;
+pub use revocation::oauth_revoke;
 pub use token::oauth_token;
 
 /// The authorization server, or `None` when OAuth for MCP clients is disabled.
@@ -77,6 +79,8 @@ pub(crate) fn bearer_challenge(
 
 #[cfg(test)]
 mod flow_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 #[cfg(test)]
 mod registration_tests;
 #[cfg(test)]

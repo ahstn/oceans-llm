@@ -2,6 +2,7 @@ use gateway_core::{
     GatewayOauthAuthorizationStatus, GatewayOauthClientAuthMethod, GatewayOauthClientRecord,
     GatewayOauthGrantRecord, GatewayOauthRepository, GatewayOauthTokenKind,
     GatewayOauthTokenRecord, McpRegistryRepository, OAUTH_ACCESS_TOKEN_PREFIX,
+    OAUTH_REFRESH_TOKEN_PREFIX, parse_scope_list,
 };
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -89,6 +90,7 @@ where
         }
         match grant_type.as_str() {
             "authorization_code" => self.exchange_code(&client, request, now).await,
+            "refresh_token" => self.refresh(&client, request, now).await,
             _ => Err(OauthError::unsupported_grant_type(
                 "grant_type is not supported",
             )),
@@ -227,35 +229,212 @@ where
             revoked_reason: None,
         };
         self.repo.create_gateway_oauth_grant(&grant).await?;
-        self.issue_tokens(&grant, session.expires_at, now).await
+        let refresh_scope = client
+            .allows_grant_type("refresh_token")
+            .then_some(grant.scope.as_str());
+        self.issue_tokens(
+            grant.grant_id,
+            &grant.scope,
+            refresh_scope,
+            session.expires_at,
+            now,
+        )
+        .await
     }
 
-    /// Issues an access token for `grant`, capped at the session's expiry.
+    /// Rotates a refresh token. Presenting a consumed refresh token revokes
+    /// the whole grant (OAuth 2.1 section 4.3.1).
+    async fn refresh(
+        &self,
+        client: &GatewayOauthClientRecord,
+        request: TokenRequest,
+        now: OffsetDateTime,
+    ) -> Result<TokenResponse, OauthError> {
+        let raw = request
+            .refresh_token
+            .as_deref()
+            .ok_or_else(|| OauthError::invalid_request("refresh_token is required"))?;
+        let invalid = || OauthError::invalid_grant("refresh token is invalid");
+        let token_hash = oauth_secret_hash(raw);
+        let context = self
+            .repo
+            .get_gateway_oauth_token_context(&token_hash)
+            .await?
+            .filter(|context| {
+                context.token.kind == GatewayOauthTokenKind::Refresh
+                    && context.grant.client_id == client.client_id
+            })
+            .ok_or_else(invalid)?;
+        let grant_id = context.grant.grant_id;
+        if context.token.consumed_at.is_some() {
+            self.repo
+                .revoke_gateway_oauth_grant(grant_id, "refresh_token_reused", now)
+                .await?;
+            return Err(invalid());
+        }
+        if context.token.expires_at <= now || !context.grant_is_live(now) {
+            return Err(invalid());
+        }
+        if let Some(resource) = request.resource.as_deref() {
+            let resource = self.resolve_resource(Some(resource)).await?;
+            if self.settings.resource_uri(&resource) != context.grant.resource {
+                return Err(OauthError::invalid_target(
+                    "resource does not match the grant",
+                ));
+            }
+        }
+        let access_scope = narrowed_scope(&context.token.scope, request.scope.as_deref())?;
+        if !self
+            .repo
+            .consume_gateway_oauth_refresh_token(&token_hash, now)
+            .await?
+        {
+            // Another request rotated this token first: treat it as reuse.
+            self.repo
+                .revoke_gateway_oauth_grant(grant_id, "refresh_token_reused", now)
+                .await?;
+            return Err(invalid());
+        }
+        self.issue_tokens(
+            grant_id,
+            &access_scope,
+            Some(&context.token.scope),
+            context.session_expires_at,
+            now,
+        )
+        .await
+    }
+
+    /// Revokes the grant behind `token` (RFC 7009). Unknown tokens and tokens
+    /// issued to another client succeed without effect.
+    pub async fn revoke_token(
+        &self,
+        credentials: &ClientCredentials,
+        token: Option<&str>,
+        now: OffsetDateTime,
+    ) -> Result<(), OauthError> {
+        let client = self.authenticate_client(credentials).await?;
+        let token = token.ok_or_else(|| OauthError::invalid_request("token is required"))?;
+        if let Some(context) = self
+            .repo
+            .get_gateway_oauth_token_context(&oauth_secret_hash(token))
+            .await?
+            .filter(|context| context.grant.client_id == client.client_id)
+        {
+            self.repo
+                .revoke_gateway_oauth_grant(context.grant.grant_id, "client_revoked", now)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Issues an access token, and a refresh token when `refresh_scope` is
+    /// set. Both expire no later than the approving session.
     async fn issue_tokens(
         &self,
-        grant: &GatewayOauthGrantRecord,
+        grant_id: Uuid,
+        access_scope: &str,
+        refresh_scope: Option<&str>,
         session_expires_at: OffsetDateTime,
         now: OffsetDateTime,
     ) -> Result<TokenResponse, OauthError> {
         let access_token = generate_secret(OAUTH_ACCESS_TOKEN_PREFIX);
         let access_expires_at = (now + self.settings.access_token_ttl()).min(session_expires_at);
-        self.repo
-            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
-                token_hash: oauth_secret_hash(&access_token),
-                grant_id: grant.grant_id,
-                kind: GatewayOauthTokenKind::Access,
-                scope: grant.scope.clone(),
-                expires_at: access_expires_at,
-                created_at: now,
-                consumed_at: None,
-            })
-            .await?;
+        self.store_token(
+            &access_token,
+            grant_id,
+            GatewayOauthTokenKind::Access,
+            access_scope,
+            access_expires_at,
+            now,
+        )
+        .await?;
+        let refresh_token = match refresh_scope {
+            Some(scope) => {
+                let refresh_token = generate_secret(OAUTH_REFRESH_TOKEN_PREFIX);
+                let refresh_expires_at =
+                    (now + self.settings.refresh_token_ttl()).min(session_expires_at);
+                self.store_token(
+                    &refresh_token,
+                    grant_id,
+                    GatewayOauthTokenKind::Refresh,
+                    scope,
+                    refresh_expires_at,
+                    now,
+                )
+                .await?;
+                Some(refresh_token)
+            }
+            None => None,
+        };
         Ok(TokenResponse {
             access_token,
             token_type: "Bearer",
             expires_in: (access_expires_at - now).whole_seconds(),
-            refresh_token: None,
-            scope: grant.scope.clone(),
+            refresh_token,
+            scope: access_scope.to_string(),
         })
+    }
+
+    async fn store_token(
+        &self,
+        raw: &str,
+        grant_id: Uuid,
+        kind: GatewayOauthTokenKind,
+        scope: &str,
+        expires_at: OffsetDateTime,
+        now: OffsetDateTime,
+    ) -> Result<(), OauthError> {
+        self.repo
+            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
+                token_hash: oauth_secret_hash(raw),
+                grant_id,
+                kind,
+                scope: scope.to_string(),
+                expires_at,
+                created_at: now,
+                consumed_at: None,
+            })
+            .await?;
+        Ok(())
+    }
+}
+
+/// The scope for a refreshed access token: the requested subset of the
+/// refresh token's scope, or all of it (RFC 6749 section 6).
+fn narrowed_scope(granted: &str, requested: Option<&str>) -> Result<String, OauthError> {
+    let requested = requested.map(parse_scope_list).unwrap_or_default();
+    if requested.is_empty() {
+        return Ok(granted.to_string());
+    }
+    let granted = parse_scope_list(granted);
+    if let Some(scope) = requested.iter().find(|scope| !granted.contains(scope)) {
+        return Err(OauthError::invalid_scope(format!(
+            "scope `{scope}` was not granted"
+        )));
+    }
+    Ok(requested.join(" "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_scope_can_only_narrow() {
+        assert_eq!(
+            narrowed_scope("mcp:aggregate mcp:proxy", None).unwrap(),
+            "mcp:aggregate mcp:proxy"
+        );
+        assert_eq!(
+            narrowed_scope("mcp:aggregate mcp:proxy", Some("mcp:proxy")).unwrap(),
+            "mcp:proxy"
+        );
+        assert_eq!(
+            narrowed_scope("mcp:proxy", Some("mcp:aggregate"))
+                .unwrap_err()
+                .error,
+            "invalid_scope"
+        );
     }
 }

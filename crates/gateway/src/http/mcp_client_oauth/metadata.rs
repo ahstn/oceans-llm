@@ -31,11 +31,13 @@ struct AuthorizationServerMetadata {
     token_endpoint: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     registration_endpoint: Option<String>,
+    revocation_endpoint: String,
     scopes_supported: [&'static str; 2],
     response_types_supported: [&'static str; 1],
     response_modes_supported: [&'static str; 1],
-    grant_types_supported: [&'static str; 1],
+    grant_types_supported: [&'static str; 2],
     token_endpoint_auth_methods_supported: [&'static str; 3],
+    revocation_endpoint_auth_methods_supported: [&'static str; 3],
     code_challenge_methods_supported: [&'static str; 1],
     authorization_response_iss_parameter_supported: bool,
 }
@@ -121,11 +123,13 @@ fn authorization_server_metadata(settings: &McpClientOauthSettings) -> Authoriza
         registration_endpoint: settings
             .dynamic_client_registration()
             .then(|| settings.endpoint("/oauth/register")),
+        revocation_endpoint: settings.endpoint("/oauth/revoke"),
         scopes_supported: SUPPORTED_SCOPES,
         response_types_supported: ["code"],
         response_modes_supported: ["query"],
-        grant_types_supported: ["authorization_code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
         token_endpoint_auth_methods_supported: TOKEN_ENDPOINT_AUTH_METHODS,
+        revocation_endpoint_auth_methods_supported: TOKEN_ENDPOINT_AUTH_METHODS,
         code_challenge_methods_supported: ["S256"],
         authorization_response_iss_parameter_supported: true,
     }
