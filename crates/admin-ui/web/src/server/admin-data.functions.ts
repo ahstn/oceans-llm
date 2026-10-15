@@ -585,11 +585,24 @@ export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST'
   },
 )
 
-export const discoverExternalMcpServerOauth = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { serverUrl: string } }) => {
+function validateMcpOauthDiscoveryInput(input: unknown): { serverUrl: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'serverUrl' in input &&
+    typeof input.serverUrl === 'string' &&
+    URL.canParse(input.serverUrl.trim())
+  ) {
+    return { serverUrl: input.serverUrl.trim() }
+  }
+  throw new Error('A valid MCP server URL is required')
+}
+
+export const discoverExternalMcpServerOauth = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthDiscoveryInput)
+  .handler(async ({ data }) => {
     return discoverMcpServerOauth(data.serverUrl)
-  },
-)
+  })
 
 export const getMcpCredentialBindings = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listMcpCredentialBindings>[0] }) => {
