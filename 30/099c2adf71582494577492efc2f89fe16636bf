@@ -1,0 +1,19 @@
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_4394d7bb181c63::t_3859643ba36b1c 28-30,33-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30099c2adf71582494577492efc2f89fe16636bf",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
