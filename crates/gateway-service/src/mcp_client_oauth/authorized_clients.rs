@@ -37,34 +37,6 @@ where
             .collect())
     }
 
-    /// Disconnects one authorized client. Returns `false` when the grant is
-    /// not the user's or is already revoked.
-    pub async fn revoke_authorized_client(
-        &self,
-        user_id: Uuid,
-        grant_id: Uuid,
-        reason: &str,
-        now: OffsetDateTime,
-    ) -> Result<bool, GatewayError> {
-        Ok(self
-            .repo
-            .revoke_gateway_oauth_grant_for_user(grant_id, user_id, reason, now)
-            .await?)
-    }
-
-    /// Disconnects every client `user_id` has authorized.
-    pub async fn revoke_all_authorized_clients(
-        &self,
-        user_id: Uuid,
-        reason: &str,
-        now: OffsetDateTime,
-    ) -> Result<u64, GatewayError> {
-        Ok(self
-            .repo
-            .revoke_gateway_oauth_grants_for_user(user_id, reason, now)
-            .await?)
-    }
-
     /// Removes registered clients that never got a grant within the
     /// retention window, and long-expired codes and tokens.
     pub async fn purge_stale_records(

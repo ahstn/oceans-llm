@@ -6,7 +6,8 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    GatewayError, GatewayOauthGrantSummary, McpOauthResource, StoreError, parse_scope_list,
+    GatewayError, GatewayOauthGrantSummary, GatewayOauthRepository, McpOauthResource, StoreError,
+    parse_scope_list,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -102,10 +103,17 @@ pub async fn revoke_my_authorized_mcp_client(
     Path(grant_id): Path<String>,
 ) -> Result<Json<RevokeAuthorizedMcpClientsResponse>, AppError> {
     let (user_id, _) = require_active_session(&state, &headers).await?;
-    let service = oauth_service(&state).ok_or_else(grant_not_found)?;
     let grant_id = Uuid::parse_str(&grant_id).map_err(|_| grant_not_found())?;
-    if !service
-        .revoke_authorized_client(user_id, grant_id, "user_revoked", OffsetDateTime::now_utc())
+    // Revocation does not depend on the runtime setting: a grant left live
+    // while OAuth is disabled would work again once it is re-enabled.
+    if !state
+        .store
+        .revoke_gateway_oauth_grant_for_user(
+            grant_id,
+            user_id,
+            "user_revoked",
+            OffsetDateTime::now_utc(),
+        )
         .await?
     {
         return Err(grant_not_found());
@@ -154,21 +162,25 @@ pub async fn admin_revoke_authorized_mcp_clients(
     Json(request): Json<AdminRevokeAuthorizedMcpClientsRequest>,
 ) -> Result<Json<RevokeAuthorizedMcpClientsResponse>, AppError> {
     require_platform_admin(&state, &headers).await?;
-    let Some(service) = oauth_service(&state) else {
-        return Ok(Json(RevokeAuthorizedMcpClientsResponse {
-            revoked_count: 0,
-        }));
-    };
+    // Works while OAuth is disabled too, so a compromised client stays
+    // disconnected when the feature is turned back on.
     let now = OffsetDateTime::now_utc();
     let revoked_count = match request.grant_id {
         Some(grant_id) => u64::from(
-            service
-                .revoke_authorized_client(request.user_id, grant_id, "admin_revoked", now)
+            state
+                .store
+                .revoke_gateway_oauth_grant_for_user(
+                    grant_id,
+                    request.user_id,
+                    "admin_revoked",
+                    now,
+                )
                 .await?,
         ),
         None => {
-            service
-                .revoke_all_authorized_clients(request.user_id, "admin_revoked", now)
+            state
+                .store
+                .revoke_gateway_oauth_grants_for_user(request.user_id, "admin_revoked", now)
                 .await?
         }
     };

@@ -321,3 +321,58 @@ async fn grants_from_a_previous_issuer_are_not_listed() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"enabled": true, "items": []}));
 }
+
+#[tokio::test]
+async fn revocation_while_oauth_is_disabled_survives_re_enabling() {
+    let harness = Harness::new().await;
+    let first = harness.issue_tokens(&[]).await;
+    let second = harness.issue_tokens(&[]).await;
+    let grant_id = harness
+        .state
+        .store
+        .list_live_gateway_oauth_grants_for_user(harness.user_id, OffsetDateTime::now_utc())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|grant| grant.grant_id)
+        .next()
+        .unwrap();
+    let admin = session_cookie(&harness, "admin@example.com", GlobalRole::PlatformAdmin).await;
+
+    // Turn the feature off; revocation must still be recorded.
+    let mut disabled = harness.state.clone();
+    disabled.mcp_client_oauth = None;
+    let disabled_router = crate::http::build_router(disabled, admin_ui::AdminUiConfig::default());
+    let (status, body) = send(
+        &disabled_router,
+        Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/v1/me/authorized-mcp-clients/{grant_id}"))
+            .header(COOKIE, &harness.cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &disabled_router,
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/admin/mcp/authorized-clients/revoke")
+            .header(COOKIE, &admin)
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"user_id": harness.user_id}).to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["revoked_count"], 1);
+
+    // Back on, neither client's token works.
+    for tokens in [&first, &second] {
+        assert_eq!(
+            initialize_status(&harness, tokens["access_token"].as_str().unwrap()).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+}
