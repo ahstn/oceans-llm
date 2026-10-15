@@ -55,7 +55,7 @@ Migration `V60__admin_audit_log.sql` extends the baseline table on both backends
 | `details_json` | Redacted metadata, including `request_id`. |
 | `request_ip`, `user_agent` | Where the request came from. |
 
-Labels are snapshots, so entries stay readable after the user, key or resource is gone. `actor_user_id` has no foreign key for the same reason. Indexes cover the newest-first list and each filter: actor, target and action.
+Labels are snapshots, so entries stay readable after the user, key or resource is gone. `actor_user_id` has no foreign key for the same reason. Indexes cover the newest-first list and each filter as `(column, ts, id)`: actor, target and action. The list query includes only the filters a request uses and pages with a `(ts, id)` row-value cursor, so a filtered page reads the matching index in order rather than scanning the table.
 
 ### Request IP
 
@@ -67,7 +67,7 @@ Instead, the browser always reaches the admin UI through the gateway's own admin
 - The admin UI server forwards that header, and the browser's `User-Agent`, on its gateway API calls.
 - `resolve_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the direct peer.
 
-Direct API calls record the peer's address. Behind a load balancer or ingress, that is the balancer's address: it is honest but less useful, and fixing it needs the trusted-proxy configuration planned in #25 and #450.
+Direct API calls record the peer's address. Behind a load balancer or ingress, the admin proxy's peer is the balancer, so both admin UI and API changes record the balancer's address. That is honest but less useful. Recording the browser behind a balancer needs trusted-proxy configuration (or PROXY protocol) at the proxy before it signs, which is planned with #25 and #450.
 
 ### Redaction
 
@@ -85,6 +85,7 @@ The rules for specific actions are:
 - MCP credential bindings record their metadata view: kind, header name, secret reference, scopes and expiry.
 - MCP server URLs are stored without credentials, query or fragment.
 - Provider credentials record only the user and provider key.
+- Review Agent repositories record only the key names of their free-form `settings_json`, never its values.
 - Password changes and sign-ins record that they happened and how the user signed in.
 
 ### Read access

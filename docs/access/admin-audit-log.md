@@ -69,7 +69,7 @@ curl -s -b "ogw_session=$SESSION" \
 
 ## Request IP
 
-When you make a change in the admin UI, the gateway records your browser's address. The gateway's admin proxy signs that address, so a client cannot forge it with `X-Forwarded-For`. A direct API call records the address that connected to the gateway. Behind a load balancer or ingress, that is the balancer's address until trusted proxies can be configured.
+The gateway records the address that connected to it. Its admin proxy signs that address for admin UI changes, so a client cannot forge it with `X-Forwarded-For`. When browsers reach the gateway directly, entries record each browser's address. Behind a load balancer or ingress, they record the balancer's address until trusted proxies can be configured.
 
 ## Retention
 
