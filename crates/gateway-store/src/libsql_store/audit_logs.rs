@@ -49,8 +49,10 @@ fn decode(row: &libsql::Row) -> Result<AuditLogRecord, StoreError> {
 impl AuditLogRepository for LibsqlStore {
     async fn insert_audit_log(&self, record: &NewAuditLogRecord) -> Result<i64, StoreError> {
         let row = AuditLogRow::from_record(record)?;
-        let mut rows = self
-            .connection
+        // A connection of its own: on the shared one this insert could join, and be
+        // rolled back with, another request's open transaction.
+        let connection = self.transaction_connection().await?;
+        let mut rows = connection
             .query(
                 r#"
                 INSERT INTO audit_logs (
