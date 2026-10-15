@@ -114,6 +114,8 @@ mise run dist-plan
 
 Do not edit the generated workflow directly. Keep product publication and CLI checks in their reusable workflows. `dist-check` verifies the generated file and lints all three release workflows.
 
+Dependabot updates action commits in every workflow, including the generated `release.yml`. Its `ignore` rules match dependencies, not files, so it cannot skip that file. When a Dependabot pull request changes an action in `release.yml`, copy the new commit into `[dist.github-action-commits]` in `dist-workspace.toml` in the same pull request. Otherwise the `plan` job fails on every later pull request, because `dist plan` regenerates the workflow from the old pins.
+
 To check local packaging without publishing a release:
 
 ```bash
