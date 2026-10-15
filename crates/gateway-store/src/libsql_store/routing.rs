@@ -13,7 +13,12 @@ use crate::routing::{
 use crate::shared::parse_uuid;
 
 impl LibsqlStore {
-    async fn run_routing_operation<T, F, Fut>(&self, operation: F) -> Result<T, StoreError>
+    /// Runs `operation` on its own connection in a bounded blocking worker.
+    /// Rate-limit counters reuse it for their write transactions.
+    pub(super) async fn run_routing_operation<T, F, Fut>(
+        &self,
+        operation: F,
+    ) -> Result<T, StoreError>
     where
         T: Send + 'static,
         F: FnOnce(libsql::Connection) -> Fut + Send + 'static,

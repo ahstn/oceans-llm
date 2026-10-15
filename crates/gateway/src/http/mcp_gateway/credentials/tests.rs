@@ -156,6 +156,7 @@ async fn send(state: &AppState, auth: &AuthenticatedApiKey, message: Value) -> (
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let response = dispatch_mcp_request(
         state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         auth,
         "drive",
         &Method::POST,

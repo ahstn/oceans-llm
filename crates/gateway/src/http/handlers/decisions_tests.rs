@@ -148,10 +148,26 @@ async fn call(state: &AppState, path: &str, body: Value) -> Result<Response, App
     let state = State(state.clone());
     match path {
         "/v1/decisions" => {
-            v1_decisions(state, request_id, HeaderMap::new(), auth, Json(body)).await
+            v1_decisions(
+                state,
+                request_id,
+                HeaderMap::new(),
+                Default::default(),
+                auth,
+                Json(body),
+            )
+            .await
         }
         "/v1/systemone" => {
-            v1_systemone(state, request_id, HeaderMap::new(), auth, Json(body)).await
+            v1_systemone(
+                state,
+                request_id,
+                HeaderMap::new(),
+                Default::default(),
+                auth,
+                Json(body),
+            )
+            .await
         }
         other => panic!("unexpected path {other}"),
     }

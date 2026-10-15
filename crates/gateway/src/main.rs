@@ -9,6 +9,7 @@ use gateway::{
     email::build_budget_alert_sender,
     http::{
         build_router,
+        client_ip::TrustedProxies,
         response_cache::ResponseCache,
         state::{AppSkillService, AppState},
     },
@@ -24,7 +25,8 @@ use gateway_providers::{
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, SkillService, WeightedRoutePlanner, hash_gateway_key_secret,
+    ProviderCredentialService, RateLimiter, SkillService, WeightedRoutePlanner,
+    hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
@@ -230,6 +232,11 @@ async fn run_serve_with_store(
         .validate_route_context_overrides()
         .await
         .context("invalid route context-window override")?;
+    service
+        .rate_limiter()
+        .validate_policy_set()
+        .await
+        .context("invalid rate limit policy set")?;
     let known_mcp_servers = service
         .store()
         .list_external_mcp_servers(true)
@@ -241,6 +248,14 @@ async fn run_serve_with_store(
     config
         .validate_guardrail_mcp_server_keys(&known_mcp_servers)
         .context("invalid guardrail MCP-server override")?;
+    for server_key in config.rate_limits.mcp_server_keys() {
+        if !known_mcp_servers.contains(server_key) {
+            tracing::warn!(
+                mcp_server = server_key,
+                "rate limit policy names an MCP server that is not registered; it applies once a server with this key exists"
+            );
+        }
+    }
     let guardrail_engine = Arc::new(
         config
             .guardrail_engine()
@@ -319,6 +334,7 @@ async fn run_serve_with_store(
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         count_tokens_limiter: Arc::default(),
+        trusted_proxies: TrustedProxies::new(config.server.trusted_proxy_networks()?),
     };
     gateway::batch_worker::spawn(state.clone());
     let app = build_router(state, load_admin_ui_config(args.admin_ui_upstream));
@@ -329,9 +345,13 @@ async fn run_serve_with_store(
 
     tracing::info!(address = %bind_address, "gateway started");
 
-    axum::serve(listener, app)
-        .await
-        .context("gateway server stopped unexpectedly")?;
+    // Connection info lets request policy resolve the client IP.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .context("gateway server stopped unexpectedly")?;
 
     Ok(())
 }
@@ -698,6 +718,10 @@ fn build_gateway_service(
     let payload_policy = config
         .request_log_payload_policy()
         .context("failed to build request log payload policy")?;
+    let rate_limiter = Arc::new(RateLimiter::new(
+        store.clone(),
+        config.rate_limits.settings(),
+    ));
     Ok(Arc::new(
         GatewayService::new_with_budget_alert_sender_and_payload_policy(
             store,
@@ -706,6 +730,7 @@ fn build_gateway_service(
             payload_policy,
         )
         .with_budget_exceeded_status(config.budgets.exceeded_status_code)
+        .with_rate_limiter(rate_limiter)
         .with_agent_analysis_enabled(agent_analysis_enabled)
         .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
         .with_agent_analysis_policy(analysis_policy),

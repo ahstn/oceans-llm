@@ -342,6 +342,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V59__mcp_oauth_clients.sql"),
         postgres_sql: include_str!("../migrations/postgres/V59__mcp_oauth_clients.sql"),
     },
+    MigrationManifest {
+        version: 60,
+        name: "rate_limits",
+        checksum: "V60__rate_limits.sql",
+        libsql_sql: include_str!("../migrations/V60__rate_limits.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V60__rate_limits.sql"),
+    },
 ];
 
 #[cfg(test)]

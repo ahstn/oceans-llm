@@ -1,4 +1,6 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+
+use ipnet::IpNet;
 
 use anyhow::{Context, bail};
 use serde::Deserialize;
@@ -17,6 +19,10 @@ pub struct ServerConfig {
     pub otel_trace_sample_ratio: f64,
     #[serde(default = "default_otel_export_interval_secs")]
     pub otel_export_interval_secs: u64,
+    /// Proxies (IP or CIDR) whose `X-Forwarded-For` the gateway trusts when it
+    /// resolves a client IP. Empty means the socket peer is the client.
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -28,6 +34,7 @@ impl Default for ServerConfig {
             otel_metrics_endpoint: None,
             otel_trace_sample_ratio: default_otel_trace_sample_ratio(),
             otel_export_interval_secs: default_otel_export_interval_secs(),
+            trusted_proxies: Vec::new(),
         }
     }
 }
@@ -43,7 +50,26 @@ impl ServerConfig {
         if !(0.0..=1.0).contains(&self.otel_trace_sample_ratio) {
             bail!("server.otel_trace_sample_ratio must be between 0.0 and 1.0 inclusive");
         }
+        self.trusted_proxy_networks()?;
         Ok(())
+    }
+
+    /// `server.trusted_proxies` as networks. A bare address is a single-host network.
+    pub fn trusted_proxy_networks(&self) -> anyhow::Result<Vec<IpNet>> {
+        self.trusted_proxies
+            .iter()
+            .map(|entry| {
+                let entry = entry.trim();
+                entry
+                    .parse::<IpNet>()
+                    .or_else(|_| entry.parse::<IpAddr>().map(IpNet::from))
+                    .with_context(|| {
+                        format!(
+                            "server.trusted_proxies entry `{entry}` is not an IP address or CIDR"
+                        )
+                    })
+            })
+            .collect()
     }
 
     pub fn bind_address(&self) -> anyhow::Result<SocketAddr> {

@@ -22,6 +22,7 @@ mod models;
 mod normalization;
 mod permissions;
 mod providers;
+mod rate_limits;
 mod references;
 mod request_logging;
 mod routes;
@@ -54,6 +55,7 @@ pub use identity::{
 };
 pub use mcp::{McpConfig, McpOauthConfig, McpOauthProviderConfig};
 pub use models::{ModelAllowlistConfig, ModelConfig};
+pub use rate_limits::{RateLimitFailureModeConfig, RateLimitPolicyConfig, RateLimitsConfig};
 pub use request_logging::{
     RequestLogPayloadCaptureModeConfig, RequestLogPayloadConfig, RequestLogPurgeConfig,
     RequestLoggingConfig,
@@ -102,6 +104,8 @@ pub struct GatewayConfig {
     pub budget_alerts: BudgetAlertConfig,
     #[serde(default)]
     pub budgets: BudgetsConfig,
+    #[serde(default)]
+    pub rate_limits: RateLimitsConfig,
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
@@ -173,6 +177,7 @@ impl GatewayConfig {
         models::validate_models(&self.models, &model_by_id, &provider_by_id)?;
 
         budgets::validate_user_defaults(&self.budgets, &model_by_id)?;
+        self.rate_limits.validate(&model_by_id)?;
 
         let team_keys = identity::validate_teams(&self.teams)?;
         identity::validate_service_accounts(&self.service_accounts, &team_keys, &model_by_id)?;
