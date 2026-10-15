@@ -1,0 +1,21 @@
+crates/gateway/mise.toml
+  s_4743c3bdc4d116::t_18c7e7b5abb62d 48,57
+crates/gateway/src/http/mcp_client_oauth/metadata.rs
+  s_4743c3bdc4d116::t_3f1c5246af40d6 7,82,152-171,182-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a859e586ca0797a1c5136122ff53725f3c5146d0",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
