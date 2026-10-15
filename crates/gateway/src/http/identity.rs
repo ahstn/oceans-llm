@@ -1422,12 +1422,18 @@ pub async fn reset_identity_user_onboarding(
         match identity_user.user.auth_mode {
             AuthMode::Password => {
                 changed = true;
-                state.store.delete_user_password_auth(user_id).await?;
-                progress.landed();
-                state
+                // Progress marks only writes that changed something, so a failure
+                // before any of them lands records no partial entry.
+                if state.store.delete_user_password_auth(user_id).await? {
+                    progress.landed();
+                }
+                if state
                     .store
                     .revoke_password_invitations_for_user(user_id, now)
-                    .await?;
+                    .await?
+                {
+                    progress.landed();
+                }
             }
             AuthMode::Oidc => {
                 let provider_id = identity_user.oidc_provider_id.as_deref().ok_or_else(|| {
@@ -1466,6 +1472,9 @@ pub async fn reset_identity_user_onboarding(
             .store
             .update_user_status(user_id, UserStatus::Invited, now)
             .await?;
+        if previous_status != UserStatus::Invited {
+            progress.landed();
+        }
         let reloaded = reload_identity_user(&state.store, user_id).await?;
         let response = build_onboarding_response(&state, &origin, now, reloaded).await?;
         Ok::<_, AppError>((response, changed))
