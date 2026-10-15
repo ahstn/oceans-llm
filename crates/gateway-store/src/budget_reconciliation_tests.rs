@@ -23,6 +23,7 @@ async fn libsql_human_budget_defaults_inherit_until_manual_override_or_deactivat
         .expect("store");
     exercise_human_budget_defaults(&store).await;
     exercise_batch_source_guards(&store).await;
+    exercise_set_manual_budget(&store).await;
 }
 
 #[tokio::test]
@@ -43,6 +44,7 @@ async fn postgres_human_budget_defaults_inherit_until_manual_override_or_deactiv
         .expect("store");
     exercise_human_budget_defaults(&store).await;
     exercise_batch_source_guards(&store).await;
+    exercise_set_manual_budget(&store).await;
     drop(store);
     drop_postgres_test_database(&test_db).await;
 }
@@ -538,4 +540,43 @@ async fn exercise_batch_source_guards<S: GatewayStore + ?Sized>(store: &S) {
             .expect("active")
             .is_some()
     );
+}
+
+async fn exercise_set_manual_budget<S: GatewayStore + ?Sized>(store: &S) {
+    let user = store
+        .upsert_bootstrap_admin_user("Budget owner", "budget-owner@local", true)
+        .await
+        .expect("user");
+    let scope = BudgetScope::User {
+        user_id: user.user_id,
+    };
+    let settings = BudgetSettings {
+        cadence: BudgetCadence::Monthly,
+        amount_usd: Money4::from_scaled(1_230_000),
+        hard_limit: true,
+        timezone: "UTC".to_string(),
+    };
+    let now = OffsetDateTime::now_utc();
+    // The admin audit records a budget change from this flag.
+    let (_, first) = store
+        .set_manual_budget(&scope, &settings, now)
+        .await
+        .expect("set budget");
+    let (_, repeated) = store
+        .set_manual_budget(&scope, &settings, now + Duration::seconds(1))
+        .await
+        .expect("set same budget");
+    let raised = BudgetSettings {
+        amount_usd: Money4::from_scaled(2_000_000),
+        ..settings.clone()
+    };
+    let (budget, changed) = store
+        .set_manual_budget(&scope, &raised, now + Duration::seconds(2))
+        .await
+        .expect("raise budget");
+    assert!(first);
+    assert!(!repeated, "saving the same manual budget is not a change");
+    assert!(changed);
+    assert_eq!(budget.settings, raised);
+    assert_eq!(budget.source.kind, BudgetSourceKind::Manual);
 }

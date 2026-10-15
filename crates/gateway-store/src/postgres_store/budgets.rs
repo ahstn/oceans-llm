@@ -158,48 +158,21 @@ impl BudgetRepository for PostgresStore {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
-        sqlx::query(
-            r#"
-            INSERT INTO budgets (
-                budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                created_at, updated_at, source_kind, source_key
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13, $14, $15)
-            ON CONFLICT (scope_key) WHERE is_active = 1
-            DO UPDATE SET
-                cadence = excluded.cadence,
-                amount_10000 = excluded.amount_10000,
-                hard_limit = excluded.hard_limit,
-                timezone = excluded.timezone,
-                source_kind = excluded.source_kind,
-                source_key = excluded.source_key,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(scope.kind().as_str())
-        .bind(scope.scope_key())
-        .bind(scope.user_id().map(|id| id.to_string()))
-        .bind(scope.service_account_id().map(|id| id.to_string()))
-        .bind(scope.model_id().map(|id| id.to_string()))
-        .bind(scope.upstream_model().map(ToOwned::to_owned))
-        .bind(settings.cadence.as_str())
-        .bind(settings.amount_usd.as_scaled_i64())
-        .bind(if settings.hard_limit { 1_i64 } else { 0_i64 })
-        .bind(&settings.timezone)
-        .bind(updated_at.unix_timestamp())
-        .bind(updated_at.unix_timestamp())
-        .bind(source.kind.as_str())
-        .bind(source.key.as_deref())
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?;
+        self.write_active_budget(scope, settings, source, updated_at, false)
+            .await?;
+        self.load_upserted_budget(scope).await
+    }
 
-        self.get_active_budget_by_scope(scope)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected("active budget missing after successful upsert".to_string())
-            })
+    async fn set_manual_budget(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        updated_at: OffsetDateTime,
+    ) -> Result<(BudgetRecord, bool), StoreError> {
+        let changed = self
+            .write_active_budget(scope, settings, &BudgetSource::manual(), updated_at, true)
+            .await?;
+        Ok((self.load_upserted_budget(scope).await?, changed))
     }
 
     async fn upsert_active_budget_with_source_guard(
@@ -1614,3 +1587,78 @@ fn token_usage_buckets_from_row(
         cache_write_tokens: row.try_get(offset + 5).map_err(to_query_error)?,
     })
 }
+
+impl PostgresStore {
+    /// Inserts or replaces the active budget for the scope. With
+    /// `only_when_changed`, an active budget with the same settings and source is
+    /// left alone, and the result says whether a row was written.
+    async fn write_active_budget(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        updated_at: OffsetDateTime,
+        only_when_changed: bool,
+    ) -> Result<bool, StoreError> {
+        let condition = if only_when_changed {
+            ACTIVE_BUDGET_CHANGED
+        } else {
+            ""
+        };
+        let sql = format!(
+            r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                created_at, updated_at, source_kind, source_key
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13, $14, $15)
+            ON CONFLICT (scope_key) WHERE is_active = 1
+            DO UPDATE SET
+                cadence = excluded.cadence,
+                amount_10000 = excluded.amount_10000,
+                hard_limit = excluded.hard_limit,
+                timezone = excluded.timezone,
+                source_kind = excluded.source_kind,
+                source_key = excluded.source_key,
+                updated_at = excluded.updated_at{condition}
+            "#
+        );
+        let result = sqlx::query(&sql)
+            .bind(Uuid::new_v4().to_string())
+            .bind(scope.kind().as_str())
+            .bind(scope.scope_key())
+            .bind(scope.user_id().map(|id| id.to_string()))
+            .bind(scope.service_account_id().map(|id| id.to_string()))
+            .bind(scope.model_id().map(|id| id.to_string()))
+            .bind(scope.upstream_model().map(ToOwned::to_owned))
+            .bind(settings.cadence.as_str())
+            .bind(settings.amount_usd.as_scaled_i64())
+            .bind(if settings.hard_limit { 1_i64 } else { 0_i64 })
+            .bind(&settings.timezone)
+            .bind(updated_at.unix_timestamp())
+            .bind(updated_at.unix_timestamp())
+            .bind(source.kind.as_str())
+            .bind(source.key.as_deref())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn load_upserted_budget(&self, scope: &BudgetScope) -> Result<BudgetRecord, StoreError> {
+        self.get_active_budget_by_scope(scope)
+            .await?
+            .ok_or_else(|| {
+                StoreError::Unexpected("active budget missing after successful upsert".to_string())
+            })
+    }
+}
+
+/// Appended to the upsert's `DO UPDATE` so an unchanged active budget is not rewritten.
+const ACTIVE_BUDGET_CHANGED: &str = "
+            WHERE budgets.cadence IS DISTINCT FROM excluded.cadence
+               OR budgets.amount_10000 IS DISTINCT FROM excluded.amount_10000
+               OR budgets.hard_limit IS DISTINCT FROM excluded.hard_limit
+               OR budgets.timezone IS DISTINCT FROM excluded.timezone
+               OR budgets.source_kind IS DISTINCT FROM excluded.source_kind
+               OR budgets.source_key IS DISTINCT FROM excluded.source_key";

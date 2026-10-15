@@ -824,6 +824,15 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, upsert_active_budget(scope, settings, updated_at))
     }
 
+    async fn set_manual_budget(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        settings: &gateway_core::BudgetSettings,
+        updated_at: OffsetDateTime,
+    ) -> Result<(gateway_core::BudgetRecord, bool), StoreError> {
+        dispatch_store!(self, set_manual_budget(scope, settings, updated_at))
+    }
+
     async fn upsert_active_budget_with_source(
         &self,
         scope: &gateway_core::BudgetScope,

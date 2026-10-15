@@ -442,6 +442,16 @@ pub trait BudgetRepository: Send + Sync {
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError>;
+
+    /// Sets a manual budget for the scope in one statement. The flag is `false`
+    /// when an active manual budget already had these settings, in which case
+    /// nothing is written.
+    async fn set_manual_budget(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        updated_at: OffsetDateTime,
+    ) -> Result<(BudgetRecord, bool), StoreError>;
     async fn upsert_active_budget_with_source(
         &self,
         scope: &BudgetScope,

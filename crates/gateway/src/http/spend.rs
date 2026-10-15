@@ -7,9 +7,9 @@ use axum::{
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
-    BudgetScope, BudgetSettings, BudgetSource, BudgetSourceKind, GatewayError, GlobalRole,
-    IdentityRepository, ModelRepository, Money4, SpendModelTokenDailyRecord,
-    SpendOwnerTokenDailyRecord, TokenUsageBuckets, UserStatus, budget_window_utc,
+    BudgetScope, BudgetSettings, BudgetSource, GatewayError, GlobalRole, IdentityRepository,
+    ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
+    TokenUsageBuckets, UserStatus, budget_window_utc,
 };
 use gateway_service::{
     AuditEvent,
@@ -466,28 +466,31 @@ pub async fn upsert_budget(
     };
     let now = OffsetDateTime::now_utc();
 
-    let existing = state.store.get_active_budget_by_scope(&scope).await?;
-    // The upsert makes the budget manual, so saving a manual budget with the same
-    // settings changes nothing; saving over a config budget changes its owner.
-    let unchanged = existing.as_ref().is_some_and(|budget| {
-        budget.settings == settings && budget.source.kind == BudgetSourceKind::Manual
-    });
-    let before = existing.as_ref().map(budget_to_settings_view);
-    let upsert = state.store.upsert_active_budget(&scope, &settings, now);
-    let budget = if unchanged {
-        upsert.await?
-    } else {
+    let before = state
+        .store
+        .get_active_budget_by_scope(&scope)
+        .await?
+        .map(|budget| budget_to_settings_view(&budget));
+    // The store decides in one statement whether the save changed anything, so a
+    // concurrent edit cannot turn a real change into a skipped one. Saving over a
+    // config budget changes its owner to manual, which counts as a change.
+    let (budget, changed) = state
+        .store
+        .set_manual_budget(&scope, &settings, now)
+        .await?;
+    if changed {
         state
             .audit()
-            .audited(&meta.user_context(&actor), upsert, |budget| {
+            .record(
+                &meta.user_context(&actor),
                 AuditEvent::new(actions::BUDGET_SET, targets::BUDGET)
                     .target(&budget.scope_key)
                     .meta("budget_id", budget.budget_id)
                     .before(&before)
-                    .after(budget_to_settings_view(budget))
-            })
-            .await?
-    };
+                    .after(budget_to_settings_view(&budget)),
+            )
+            .await;
+    }
     let current_window_spend = current_window_spend(&state, &budget, now).await?;
     state
         .service
