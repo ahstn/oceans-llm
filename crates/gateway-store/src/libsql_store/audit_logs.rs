@@ -164,6 +164,13 @@ mod tests {
                 },
                 "audit_logs_object_id_idx",
             ),
+            (
+                AuditLogQuery {
+                    target_type: Some("team".to_string()),
+                    ..Default::default()
+                },
+                "audit_logs_object_type_idx",
+            ),
             (AuditLogQuery::default(), "audit_logs_ts_idx"),
         ];
         for (query, index) in cases {

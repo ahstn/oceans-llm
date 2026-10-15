@@ -26,3 +26,7 @@ CREATE INDEX IF NOT EXISTS audit_logs_actor_action_idx
   ON audit_logs (actor_user_id, action, ts DESC, id DESC);
 CREATE INDEX IF NOT EXISTS audit_logs_object_id_idx
   ON audit_logs (object_id, ts DESC, id DESC);
+-- Target type alone needs its own ordered index: the target index above puts
+-- object_id between object_type and the page order.
+CREATE INDEX IF NOT EXISTS audit_logs_object_type_idx
+  ON audit_logs (object_type, ts DESC, id DESC);
