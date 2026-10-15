@@ -3062,7 +3062,8 @@ pub(crate) mod tests {
                 .expect("revoke again")
         );
 
-        // Redeeming claims an invitation once; a racing second claim gets `false`.
+        // Redeeming claims an invitation once; a racing second redemption gets
+        // `false` and changes nothing.
         let invitation = store
             .create_password_invitation(
                 Uuid::new_v4(),
@@ -3075,15 +3076,41 @@ pub(crate) mod tests {
             .expect("second invitation");
         assert!(
             store
-                .mark_password_invitation_consumed(invitation.invitation_id, now)
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "first-hash",
+                    now
+                )
                 .await
-                .expect("claim")
+                .expect("redeem")
         );
         assert!(
             !store
-                .mark_password_invitation_consumed(invitation.invitation_id, now)
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "second-hash",
+                    now
+                )
                 .await
-                .expect("claim again")
+                .expect("redeem again")
+        );
+        let redeemed = store
+            .get_user_by_id(user.user_id)
+            .await
+            .expect("load user")
+            .expect("user exists");
+        assert_eq!(redeemed.status, UserStatus::Active);
+        assert_eq!(
+            store
+                .get_user_password_auth(user.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash",
+            "the losing redemption must not replace the password"
         );
     }
 
@@ -9059,6 +9086,39 @@ pub(crate) mod tests {
                 .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
                 .await
                 .expect("revoke invitations again")
+        );
+        let redeemable = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                member.user_id,
+                "token-hash-2",
+                OffsetDateTime::now_utc() + time::Duration::days(7),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("redeemable invitation");
+        for (hash, expected) in [("first-hash", true), ("second-hash", false)] {
+            assert_eq!(
+                store
+                    .redeem_password_invitation(
+                        redeemable.invitation_id,
+                        member.user_id,
+                        hash,
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await
+                    .expect("redeem invitation"),
+                expected
+            );
+        }
+        assert_eq!(
+            store
+                .get_user_password_auth(member.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash"
         );
 
         let cache = PricingCatalogCacheRecord {

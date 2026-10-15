@@ -265,12 +265,15 @@ pub trait GatewayStore:
         &self,
         invitation_id: Uuid,
     ) -> Result<Option<PasswordInvitationRecord>, StoreError>;
-    /// Claims an unused, unrevoked invitation. `false` means another request
-    /// already used it or it was revoked.
-    async fn mark_password_invitation_consumed(
+    /// In one transaction, claims an unused, unrevoked invitation, stores the
+    /// user's password and activates them. `false` means another request already
+    /// used the invitation or it was revoked, and nothing is written.
+    async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
     async fn store_user_password(
         &self,
@@ -1751,14 +1754,16 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, get_password_invitation(invitation_id))
     }
 
-    async fn mark_password_invitation_consumed(
+    async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
-            mark_password_invitation_consumed(invitation_id, consumed_at)
+            redeem_password_invitation(invitation_id, user_id, password_hash, redeemed_at)
         )
     }
 

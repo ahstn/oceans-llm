@@ -303,6 +303,25 @@ async fn identity_changes_are_audited_without_invite_links() {
 
     let everything = serde_json::to_string(&harness.entries().await).unwrap();
     assert!(!everything.contains(invite_token), "invite token leaked");
+
+    // Redeeming sets the password once; reusing the link is rejected and recorded nowhere.
+    let redeem_path = format!("/api/v1/auth/invitations/{invite_token}/password");
+    let anonymous = HeaderMap::new();
+    let mut statuses = Vec::new();
+    for _ in 0..2 {
+        let (status, _) = harness
+            .send(
+                Method::POST,
+                &redeem_path,
+                &anonymous,
+                Some(json!({ "password": "a long enough password" })),
+            )
+            .await;
+        statuses.push(status);
+    }
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::BAD_REQUEST]);
+    let redeemed = harness.entry("user.invite_redeemed").await;
+    assert_eq!(redeemed["after"]["status"], "active");
 }
 
 #[tokio::test]

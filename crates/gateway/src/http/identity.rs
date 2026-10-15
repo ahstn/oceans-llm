@@ -1676,49 +1676,35 @@ pub async fn complete_password_invitation(
         .get_user_by_id(invitation.user_id)
         .await?
         .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
-    // Claim the invitation before writing anything else, so when two requests
-    // race with the same token only the winner sets the password.
-    if !state
-        .store
-        .mark_password_invitation_consumed(invitation.invitation_id, now)
-        .await?
-    {
-        return Err(AppError(GatewayError::InvalidRequest(
-            "invitation token is no longer valid".to_string(),
-        )));
-    }
-    let progress = AuditProgress::default();
-    progress.landed();
+    // One transaction claims the invitation, stores the password and activates
+    // the user. A failure leaves the link usable, and of two requests racing with
+    // the same token only the one that claims it changes anything.
     let redeem = async {
-        state
+        if state
             .store
-            .store_user_password(invitation.user_id, &password_hash, now)
-            .await?;
-        state
-            .store
-            .update_user_status(invitation.user_id, UserStatus::Active, now)
-            .await?;
-        Ok::<_, AppError>(())
+            .redeem_password_invitation(
+                invitation.invitation_id,
+                invitation.user_id,
+                &password_hash,
+                now,
+            )
+            .await?
+        {
+            Ok(())
+        } else {
+            Err(AppError(GatewayError::InvalidRequest(
+                "invitation token is no longer valid".to_string(),
+            )))
+        }
     };
     state
         .audit()
-        .audited_steps(
-            &meta.user_context(&user),
-            &progress,
-            redeem,
-            |()| {
-                user_event(actions::USER_INVITE_REDEEMED, &user)
-                    .meta("invitation_id", invitation.invitation_id)
-                    .meta("method", "password")
-                    .after(serde_json::json!({ "status": UserStatus::Active.as_str() }))
-            },
-            |_, error| {
-                user_event(actions::USER_INVITE_REDEEMED, &user)
-                    .meta("invitation_id", invitation.invitation_id)
-                    .meta("method", "password")
-                    .meta("error", error.0.error_code())
-            },
-        )
+        .audited(&meta.user_context(&user), redeem, |()| {
+            user_event(actions::USER_INVITE_REDEEMED, &user)
+                .meta("invitation_id", invitation.invitation_id)
+                .meta("method", "password")
+                .after(serde_json::json!({ "status": UserStatus::Active.as_str() }))
+        })
         .await?;
 
     Ok(Json(envelope(CompleteInvitationResponse {

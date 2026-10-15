@@ -1463,26 +1463,68 @@ impl LibsqlStore {
         decode_password_invitation_record(&row).map(Some)
     }
 
-    pub async fn mark_password_invitation_consumed(
+    pub async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        let claimed = self
+        // Dropping the transaction without committing rolls every write back.
+        let tx = self
             .connection
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
+        let claimed = tx
             .execute(
                 r#"
                 UPDATE password_invitations
                 SET consumed_at = ?1
                 WHERE invitation_id = ?2
+                  AND user_id = ?3
                   AND consumed_at IS NULL
                   AND revoked_at IS NULL
                 "#,
-                libsql::params![consumed_at.unix_timestamp(), invitation_id.to_string()],
+                libsql::params![
+                    redeemed_at.unix_timestamp(),
+                    invitation_id.to_string(),
+                    user_id.to_string()
+                ],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(claimed > 0)
+        if claimed == 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            r#"
+            INSERT INTO user_password_auth (user_id, password_hash, password_updated_at)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(user_id) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                password_updated_at = excluded.password_updated_at
+            "#,
+            libsql::params![
+                user_id.to_string(),
+                password_hash,
+                redeemed_at.unix_timestamp()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.execute(
+            "UPDATE users SET status = ?1, updated_at = ?2 WHERE user_id = ?3",
+            libsql::params![
+                UserStatus::Active.as_str(),
+                redeemed_at.unix_timestamp(),
+                user_id.to_string()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(true)
     }
 
     pub async fn store_user_password(

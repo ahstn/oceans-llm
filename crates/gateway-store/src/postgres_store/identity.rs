@@ -1323,26 +1323,58 @@ impl PostgresStore {
             .transpose()
     }
 
-    pub async fn mark_password_invitation_consumed(
+    pub async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
+        // Dropping the transaction without committing rolls every write back.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let claimed = sqlx::query(
             r#"
             UPDATE password_invitations
             SET consumed_at = $1
             WHERE invitation_id = $2
+              AND user_id = $3
               AND consumed_at IS NULL
               AND revoked_at IS NULL
             "#,
         )
-        .bind(consumed_at.unix_timestamp())
+        .bind(redeemed_at.unix_timestamp())
         .bind(invitation_id.to_string())
-        .execute(&self.pool)
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        Ok(result.rows_affected() > 0)
+        if claimed.rows_affected() == 0 {
+            return Ok(false);
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO user_password_auth (user_id, password_hash, password_updated_at)
+            VALUES ($1, $2, $3)
+            ON CONFLICT(user_id) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                password_updated_at = excluded.password_updated_at
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(password_hash)
+        .bind(redeemed_at.unix_timestamp())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        sqlx::query("UPDATE users SET status = $1, updated_at = $2 WHERE user_id = $3")
+            .bind(UserStatus::Active.as_str())
+            .bind(redeemed_at.unix_timestamp())
+            .bind(user_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(true)
     }
 
     pub async fn store_user_password(

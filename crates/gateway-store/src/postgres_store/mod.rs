@@ -500,12 +500,15 @@ impl GatewayStore for PostgresStore {
         Self::get_password_invitation(self, invitation_id).await
     }
 
-    async fn mark_password_invitation_consumed(
+    async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        Self::mark_password_invitation_consumed(self, invitation_id, consumed_at).await
+        Self::redeem_password_invitation(self, invitation_id, user_id, password_hash, redeemed_at)
+            .await
     }
 
     async fn store_user_password(

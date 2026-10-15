@@ -123,7 +123,7 @@ Not audited:
 ## Trade-offs
 
 - An entry can be missing for a change that committed, if the audit insert fails. The failure is logged at `error` with enough context to rebuild the entry, but the log is not the audit trail.
-- Multi-step identity handlers (user create, update, deactivate and onboarding reset; team create, update and add members; password change and invite redemption) record a failure partway as `outcome: partial` with a `requested` summary where one exists, not the exact final state. Other single-write handlers have nothing partial to record. Password invite redemption claims the invitation before it writes the password, so two requests racing with one token cannot both set a password; if the password write then fails, the invitation is used up, the entry is partial, and an admin re-issues the invite.
+- Multi-step identity handlers (user create, update, deactivate and onboarding reset; team create, update and add members; password change) record a failure partway as `outcome: partial` with a `requested` summary where one exists, not the exact final state. Other single-write handlers have nothing partial to record. Password invite redemption claims the invitation, stores the password and activates the user in one store transaction, so two requests racing with one token cannot both set a password, and a failure leaves the link usable.
 - Old entries are only as complete as their summaries. Fields added to a resource later do not appear in older entries.
 
 ## Follow-up
