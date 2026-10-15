@@ -288,7 +288,8 @@ impl AuditEvent {
             },
             action: self.action,
             target_type: self.target_type,
-            target_id: self.target_id,
+            // Some ids embed caller input, such as a budget scope's upstream model.
+            target_id: self.target_id.map(redact_label),
             target_label: self.target_label.map(redact_label),
             before: self.before.map(redact_summary),
             after: self.after.map(redact_summary),
@@ -1135,6 +1136,34 @@ mod tests {
         let records = repo.records.lock().unwrap();
         assert_eq!(records[0].user_agent.as_deref(), Some(AUDIT_REDACTED));
         assert_eq!(records[1].user_agent.as_deref(), Some("curl/8.0"));
+    }
+
+    #[tokio::test]
+    async fn target_ids_are_redacted_and_capped() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for target_id in [
+            "user_model:1:upstream:password=hunter2".to_string(),
+            "x".repeat(MAX_LABEL_CHARS + 50),
+            "6f1c9a2e-0d5b-4c1e-9f7a-1b2c3d4e5f60".to_string(),
+        ] {
+            audit
+                .record(
+                    &context(),
+                    AuditEvent::new(actions::BUDGET_SET, targets::BUDGET).target(target_id),
+                )
+                .await;
+        }
+        let records = repo.records.lock().unwrap();
+        assert_eq!(records[0].target_id.as_deref(), Some(AUDIT_REDACTED));
+        assert_eq!(
+            records[1].target_id.as_ref().map(|id| id.chars().count()),
+            Some(MAX_LABEL_CHARS + 1)
+        );
+        assert_eq!(
+            records[2].target_id.as_deref(),
+            Some("6f1c9a2e-0d5b-4c1e-9f7a-1b2c3d4e5f60")
+        );
     }
 
     #[tokio::test]
