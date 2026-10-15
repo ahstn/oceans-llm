@@ -8,8 +8,10 @@ use url::Url;
 use uuid::Uuid;
 
 use super::{
-    McpClientOauthService, error::OauthError, redirect::validate_redirect_uri,
-    secrets::generate_secret,
+    McpClientOauthService,
+    error::OauthError,
+    redirect::validate_redirect_uri,
+    secrets::{generate_token, run_argon2},
 };
 
 const MAX_REDIRECT_URIS: usize = 10;
@@ -96,12 +98,15 @@ where
         let software_version = optional_text(request.software_version, "software_version")?;
 
         let client_secret = (auth_method != GatewayOauthClientAuthMethod::None)
-            .then(|| generate_secret(CLIENT_SECRET_PREFIX));
-        let client_secret_hash = client_secret
-            .as_deref()
-            .map(hash_gateway_key_secret)
-            .transpose()
-            .map_err(OauthError::from)?;
+            .then(|| generate_token(CLIENT_SECRET_PREFIX));
+        let client_secret_hash = match client_secret.clone() {
+            Some(secret) => Some(
+                run_argon2(move || hash_gateway_key_secret(&secret))
+                    .await?
+                    .map_err(OauthError::from)?,
+            ),
+            None => None,
+        };
         let record = GatewayOauthClientRecord {
             client_id: Uuid::new_v4().to_string(),
             registration_kind: "dynamic".to_string(),

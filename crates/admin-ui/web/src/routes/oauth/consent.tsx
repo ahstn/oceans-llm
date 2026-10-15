@@ -104,7 +104,7 @@ function ConsentCard({
             <dt className="text-muted-foreground">Returns to</dt>
             <dd className="flex min-w-0 flex-wrap items-center gap-2" data-testid="redirect-host">
               <span className="font-mono break-all">{request.redirect_host}</span>
-              {request.loopback_redirect_only ? <Badge variant="warning">This device</Badge> : null}
+              {request.redirect_is_loopback ? <Badge variant="warning">This device</Badge> : null}
             </dd>
             <dt className="text-muted-foreground">Access</dt>
             <dd className="min-w-0 break-words">
@@ -127,7 +127,7 @@ function ConsentCard({
             </dd>
           </dl>
 
-          {request.loopback_redirect_only ? (
+          {request.redirect_is_loopback ? (
             <Alert data-testid="loopback-warning">
               <AlertTitle>Only continue if you started this sign-in</AlertTitle>
               <AlertDescription>

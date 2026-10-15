@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::{
     McpClientOauthService,
     error::OauthError,
-    secrets::{generate_secret, oauth_secret_hash, pkce_s256_matches},
+    secrets::{generate_token, oauth_token_hash, pkce_s256_matches, run_argon2},
 };
 use crate::authenticator::verify_gateway_key_secret;
 
@@ -128,7 +128,9 @@ where
                 .client_secret_hash
                 .as_deref()
                 .ok_or_else(|| OauthError::invalid_client("client authentication failed"))?;
-            let matches = verify_gateway_key_secret(secret, hash)
+            let (secret, hash) = (secret.clone(), hash.to_string());
+            let matches = run_argon2(move || verify_gateway_key_secret(&secret, &hash))
+                .await?
                 .map_err(|error| OauthError::server_error(error.to_string()))?;
             if !matches {
                 return Err(OauthError::invalid_client("client authentication failed"));
@@ -154,16 +156,23 @@ where
         let invalid_code = || OauthError::invalid_grant("authorization code is invalid");
         let authorization = self
             .repo
-            .get_gateway_oauth_authorization_request_by_code_hash(&oauth_secret_hash(code))
+            .get_gateway_oauth_authorization_request_by_code_hash(&oauth_token_hash(code))
             .await?
             .ok_or_else(invalid_code)?;
+        // Only the client the code was issued to, holding its PKCE verifier,
+        // can redeem it or trigger replay revocation. Anyone else who learned
+        // the code from a log cannot end the victim's grant.
+        if authorization.client_id != client.client_id {
+            return Err(invalid_code());
+        }
+        if !pkce_s256_matches(code_verifier, &authorization.code_challenge) {
+            return Err(OauthError::invalid_grant(
+                "code_verifier does not match the code challenge",
+            ));
+        }
         if authorization.status == GatewayOauthAuthorizationStatus::Consumed {
             // A replayed code may have been stolen, so end the grant it created.
-            if let Some(grant_id) = authorization.grant_id {
-                self.repo
-                    .revoke_gateway_oauth_grant(grant_id, "authorization_code_replayed", now)
-                    .await?;
-            }
+            self.revoke_code_grant(authorization.grant_id, now).await?;
             return Err(invalid_code());
         }
         let (Some(user_id), Some(user_session_id), Some(code_expires_at)) = (
@@ -174,23 +183,18 @@ where
             return Err(invalid_code());
         };
         if authorization.status != GatewayOauthAuthorizationStatus::Approved
-            || authorization.client_id != client.client_id
             || code_expires_at <= now
         {
             return Err(invalid_code());
         }
-        if request
-            .redirect_uri
-            .as_deref()
-            .is_some_and(|redirect_uri| redirect_uri != authorization.redirect_uri)
-        {
+        let redirect_matches = match request.redirect_uri.as_deref() {
+            Some(redirect_uri) => redirect_uri == authorization.redirect_uri,
+            // RFC 6749 section 4.1.3: required when the authorization request sent it.
+            None => !authorization.redirect_uri_supplied,
+        };
+        if !redirect_matches {
             return Err(OauthError::invalid_grant(
                 "redirect_uri does not match the authorization request",
-            ));
-        }
-        if !pkce_s256_matches(code_verifier, &authorization.code_challenge) {
-            return Err(OauthError::invalid_grant(
-                "code_verifier does not match the code challenge",
             ));
         }
         if let Some(resource) = request.resource.as_deref() {
@@ -208,21 +212,16 @@ where
             .filter(|session| session.user_id == user_id && session.is_live(now))
             .ok_or_else(|| OauthError::invalid_grant("the approving session has ended"))?;
 
-        let grant_id = Uuid::new_v4();
-        if !self
-            .repo
-            .consume_gateway_oauth_authorization_code(authorization.request_id, grant_id, now)
-            .await?
-        {
-            return Err(invalid_code());
-        }
+        // Issue first and consume the code last: a failed write leaves the
+        // code redeemable for a retry, and the conditional consume still makes
+        // the exchange single-use.
         let grant = GatewayOauthGrantRecord {
-            grant_id,
+            grant_id: Uuid::new_v4(),
             client_id: client.client_id.clone(),
             user_id,
             user_session_id,
-            resource: authorization.resource,
-            scope: authorization.scope,
+            resource: authorization.resource.clone(),
+            scope: authorization.scope.clone(),
             created_at: now,
             updated_at: now,
             revoked_at: None,
@@ -232,14 +231,45 @@ where
         let refresh_scope = client
             .allows_grant_type("refresh_token")
             .then_some(grant.scope.as_str());
-        self.issue_tokens(
-            grant.grant_id,
-            &grant.scope,
-            refresh_scope,
-            session.expires_at,
-            now,
-        )
-        .await
+        let response = self
+            .issue_tokens(
+                grant.grant_id,
+                &grant.scope,
+                refresh_scope,
+                session.expires_at,
+                now,
+            )
+            .await?;
+        if !self
+            .repo
+            .consume_gateway_oauth_authorization_code(authorization.request_id, grant.grant_id, now)
+            .await?
+        {
+            // A concurrent request redeemed the code first: this is a replay,
+            // so neither grant may survive.
+            self.revoke_code_grant(Some(grant.grant_id), now).await?;
+            let winner = self
+                .repo
+                .get_gateway_oauth_authorization_request(authorization.request_id)
+                .await?
+                .and_then(|request| request.grant_id);
+            self.revoke_code_grant(winner, now).await?;
+            return Err(invalid_code());
+        }
+        Ok(response)
+    }
+
+    async fn revoke_code_grant(
+        &self,
+        grant_id: Option<Uuid>,
+        now: OffsetDateTime,
+    ) -> Result<(), OauthError> {
+        if let Some(grant_id) = grant_id {
+            self.repo
+                .revoke_gateway_oauth_grant(grant_id, "authorization_code_replayed", now)
+                .await?;
+        }
+        Ok(())
     }
 
     /// Rotates a refresh token. Presenting a consumed refresh token revokes
@@ -255,7 +285,7 @@ where
             .as_deref()
             .ok_or_else(|| OauthError::invalid_request("refresh_token is required"))?;
         let invalid = || OauthError::invalid_grant("refresh token is invalid");
-        let token_hash = oauth_secret_hash(raw);
+        let token_hash = oauth_token_hash(raw);
         let context = self
             .repo
             .get_gateway_oauth_token_context(&token_hash)
@@ -284,25 +314,30 @@ where
             }
         }
         let access_scope = narrowed_scope(&context.token.scope, request.scope.as_deref())?;
+        // Issue the new pair before consuming the old token, so a failed write
+        // leaves the old refresh token usable for a retry.
+        let response = self
+            .issue_tokens(
+                grant_id,
+                &access_scope,
+                Some(&context.token.scope),
+                context.session_expires_at,
+                now,
+            )
+            .await?;
         if !self
             .repo
             .consume_gateway_oauth_refresh_token(&token_hash, now)
             .await?
         {
             // Another request rotated this token first: treat it as reuse.
+            // Revoking the grant also ends the pair just issued.
             self.repo
                 .revoke_gateway_oauth_grant(grant_id, "refresh_token_reused", now)
                 .await?;
             return Err(invalid());
         }
-        self.issue_tokens(
-            grant_id,
-            &access_scope,
-            Some(&context.token.scope),
-            context.session_expires_at,
-            now,
-        )
-        .await
+        Ok(response)
     }
 
     /// Revokes the grant behind `token` (RFC 7009). Unknown tokens and tokens
@@ -317,7 +352,7 @@ where
         let token = token.ok_or_else(|| OauthError::invalid_request("token is required"))?;
         if let Some(context) = self
             .repo
-            .get_gateway_oauth_token_context(&oauth_secret_hash(token))
+            .get_gateway_oauth_token_context(&oauth_token_hash(token))
             .await?
             .filter(|context| context.grant.client_id == client.client_id)
         {
@@ -338,7 +373,7 @@ where
         session_expires_at: OffsetDateTime,
         now: OffsetDateTime,
     ) -> Result<TokenResponse, OauthError> {
-        let access_token = generate_secret(OAUTH_ACCESS_TOKEN_PREFIX);
+        let access_token = generate_token(OAUTH_ACCESS_TOKEN_PREFIX);
         let access_expires_at = (now + self.settings.access_token_ttl()).min(session_expires_at);
         self.store_token(
             &access_token,
@@ -351,7 +386,7 @@ where
         .await?;
         let refresh_token = match refresh_scope {
             Some(scope) => {
-                let refresh_token = generate_secret(OAUTH_REFRESH_TOKEN_PREFIX);
+                let refresh_token = generate_token(OAUTH_REFRESH_TOKEN_PREFIX);
                 let refresh_expires_at =
                     (now + self.settings.refresh_token_ttl()).min(session_expires_at);
                 self.store_token(
@@ -387,7 +422,7 @@ where
     ) -> Result<(), OauthError> {
         self.repo
             .create_gateway_oauth_token(&GatewayOauthTokenRecord {
-                token_hash: oauth_secret_hash(raw),
+                token_hash: oauth_token_hash(raw),
                 grant_id,
                 kind,
                 scope: scope.to_string(),

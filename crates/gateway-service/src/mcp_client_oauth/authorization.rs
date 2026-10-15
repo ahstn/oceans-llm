@@ -12,7 +12,7 @@ use super::{
     McpClientOauthService,
     error::OauthError,
     redirect::{is_loopback_redirect, redirect_uri_is_registered},
-    secrets::{generate_secret, is_valid_s256_challenge, oauth_secret_hash},
+    secrets::{generate_token, is_valid_s256_challenge, oauth_token_hash},
 };
 
 const AUTHORIZATION_REQUEST_TTL: Duration = Duration::minutes(10);
@@ -51,9 +51,9 @@ pub struct PendingAuthorization {
     pub resource: McpOauthResource,
     pub server_display_name: Option<String>,
     pub scopes: Vec<String>,
-    /// Every registered redirect URI is loopback, so the client is a local app
-    /// whose identity the gateway cannot verify.
-    pub loopback_redirect_only: bool,
+    /// The code goes to a loopback URI, so the receiving app runs on the
+    /// user's device and the gateway cannot verify who published it.
+    pub redirect_is_loopback: bool,
 }
 
 impl<R> McpClientOauthService<R>
@@ -102,6 +102,7 @@ where
             request_id,
             client_id: client.client_id.clone(),
             redirect_uri: redirect_uri.clone(),
+            redirect_uri_supplied: params.redirect_uri.is_some(),
             state: params.state,
             code_challenge: validated.code_challenge,
             resource: self.settings.resource_uri(&validated.resource),
@@ -224,17 +225,16 @@ where
                 .await
                 .map_err(|_| GatewayError::Internal("failed loading MCP server".into()))?,
         };
-        let loopback_redirect_only = client
-            .redirect_uris
-            .iter()
-            .all(|uri| is_loopback_redirect(uri));
+        // Judge the URI this request sends the code to, not the registration:
+        // a client may register an HTTPS URI next to a loopback one.
+        let redirect_is_loopback = is_loopback_redirect(&request.redirect_uri);
         Ok(PendingAuthorization {
             scopes: parse_scope_list(&request.scope),
             request,
             client,
             resource,
             server_display_name,
-            loopback_redirect_only,
+            redirect_is_loopback,
         })
     }
 
@@ -249,7 +249,7 @@ where
     ) -> Result<String, GatewayError> {
         let request = self.load_pending_request(request_id, now).await?;
         let (decision, redirect) = if approve {
-            let code = generate_secret(AUTHORIZATION_CODE_PREFIX);
+            let code = generate_token(AUTHORIZATION_CODE_PREFIX);
             let redirect = authorization_success_redirect(
                 self.settings.issuer(),
                 &request.redirect_uri,
@@ -259,7 +259,7 @@ where
             let decision = GatewayOauthAuthorizationDecision::Approved {
                 user_id,
                 user_session_id,
-                code_hash: oauth_secret_hash(&code),
+                code_hash: oauth_token_hash(&code),
                 code_expires_at: now + AUTHORIZATION_CODE_TTL,
             };
             (decision, redirect)

@@ -117,7 +117,7 @@ When access ends:
 - Reusing a refresh token that was already rotated revokes the grant.
 - Tokens never outlive the session that approved them. Expect to sign in again when that session expires (30 days).
 
-Consent is asked every time a client signs in. Clients that only use loopback redirect URIs get a warning on the consent page, because Oceans cannot verify who published them. Client ID Metadata Documents are not supported yet, so clients fall back to registration.
+Consent is asked every time a client signs in. When the code goes to a loopback redirect URI, the consent page shows a warning, because Oceans cannot verify who published the client. Client ID Metadata Documents are not supported yet, so clients fall back to registration.
 
 API keys keep working on the same URLs. Clients that support custom headers can use either method.
 

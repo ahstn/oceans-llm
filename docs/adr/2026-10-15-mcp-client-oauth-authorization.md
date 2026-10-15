@@ -90,7 +90,7 @@ Every expiry is capped at the approving session's `expires_at`. A token family n
 
 **Refresh rotation.** Each refresh returns a new refresh token and consumes the old one, for public and confidential clients alike. If a consumed refresh token is presented again, the gateway revokes the whole grant, following the OAuth 2.1 reuse-detection guidance. A refresh request may name the same resource as the grant, or none. It may narrow the scope but never widen it.
 
-**Code replay.** If an authorization code is redeemed twice, the second attempt fails and the grant created by the first is revoked.
+**Code replay.** If an authorization code is redeemed twice, the second attempt fails and the grant created by the first is revoked. Only the client the code was issued to, presenting its PKCE verifier, can trigger that revocation, so a code leaked through logs cannot be used to end someone else's grant. The token endpoint creates the grant and tokens first and consumes the code last, with a conditional update. A failed write leaves the code redeemable for a retry. When two requests race, the loser revokes both its own grant and the winner's. Refresh rotation uses the same order. When the authorization request sent `redirect_uri`, the token request must repeat it exactly (RFC 6749 section 4.1.3).
 
 ### 4. Audience binding (RFC 8707)
 
@@ -125,7 +125,7 @@ The consent page shows:
 - the signed-in user
 - the client name, marked as provided by the client
 - the redirect URI's host, which the spec says must be shown
-- a warning when every registered redirect URI is loopback
+- a warning when the redirect URI for this request is loopback, judged per request rather than per registration
 - the MCP server, or "all MCP servers you have access to"
 - the requested scopes
 
@@ -145,6 +145,7 @@ Only active users can approve. A user who has no MCP grants can still approve, b
 - Registration accepts at most 10 redirect URIs and a 16 KiB body. Text fields are limited to 200 printable characters, and `client_uri` and `logo_uri` must be HTTPS.
 - `token_endpoint_auth_method` defaults to `client_secret_basic`, as RFC 7591 specifies. MCP clients without a backend register with `none`. `client_secret_post` and `client_secret_basic` get a generated `ocs_` secret. Only its Argon2 hash is stored, and the secret is returned once.
 - A registered client can do nothing until a user approves it on the consent screen.
+- Argon2 (secret hashing at registration, secret checks at the token and revocation endpoints) runs on the blocking pool, at most four at a time. A request that waits more than five seconds for a slot gets `503 temporarily_unavailable`, so unauthenticated floods cannot starve the async executor. Per-IP throttling is a follow-up.
 
 `mcp.client_oauth.dynamic_client_registration` (default `true`) turns the endpoint off. When it is off, `registration_endpoint` is left out of the metadata.
 

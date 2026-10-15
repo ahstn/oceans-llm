@@ -128,6 +128,7 @@ where
         request_id: Uuid::new_v4(),
         client_id: client.client_id.clone(),
         redirect_uri: "http://127.0.0.1:4000/callback".to_string(),
+        redirect_uri_supplied: true,
         state: Some("xyz".to_string()),
         code_challenge: "challenge".to_string(),
         resource: "https://oceans.example.com/mcp".to_string(),
