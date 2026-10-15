@@ -71,7 +71,7 @@ curl -s -b "ogw_session=$SESSION" \
 
 ## Request IP
 
-For admin UI changes, the admin proxy signs the address that connected to it, so a client cannot forge it with `X-Forwarded-For`. For direct API calls, the gateway records the address that connected to it. If that address is listed in [`server.trusted_proxies`](../configuration/rate-limits.md#client-ip-and-trusted-proxies), the gateway reads `X-Forwarded-For` instead, as it does for rate limits. Behind a load balancer in front of the admin UI, admin UI changes still record the balancer's address, because the admin proxy signs its own peer.
+The gateway records the address that connected to it. If that address is listed in [`server.trusted_proxies`](../configuration/rate-limits.md#client-ip-and-trusted-proxies), it reads `X-Forwarded-For` instead, as it does for rate limits, so behind a load balancer entries record the browser rather than the balancer. For admin UI changes, the gateway's admin proxy resolves the address this way and signs it, so a client cannot forge it with `X-Forwarded-For` or by sending its own signed header.
 
 ## Retention
 

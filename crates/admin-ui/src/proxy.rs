@@ -16,7 +16,7 @@ use tracing::warn;
 
 use crate::{
     AdminUiConfig,
-    client_ip::{CLIENT_IP_HEADER, sign_client_ip},
+    client_ip::{CLIENT_IP_HEADER, TrustedProxies, resolve_client_ip, sign_client_ip},
 };
 
 #[derive(Clone)]
@@ -26,6 +26,7 @@ struct ProxyState {
     client: reqwest::Client,
     max_multipart_body_bytes: usize,
     client_ip_signing_key: Option<std::sync::Arc<[u8]>>,
+    trusted_proxies: TrustedProxies,
 }
 
 impl ProxyState {
@@ -47,6 +48,7 @@ impl ProxyState {
             client,
             max_multipart_body_bytes: config.max_multipart_body_bytes,
             client_ip_signing_key: config.client_ip_signing_key.clone(),
+            trusted_proxies: config.trusted_proxies.clone(),
         }
     }
 }
@@ -158,7 +160,8 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
             outbound = outbound.header(name, value);
         }
     }
-    if let Some(signed) = signed_client_ip(&state, peer) {
+    let client = resolve_client_ip(peer, &inbound_headers, &state.trusted_proxies);
+    if let Some(signed) = signed_client_ip(&state, client) {
         outbound = outbound.header(CLIENT_IP_HEADER, signed);
     }
 
@@ -240,15 +243,16 @@ fn should_forward_request_header(name: &HeaderName, connection_tokens: &[HeaderN
     !is_hop_by_hop_header(name) && !connection_tokens.iter().any(|token| token == name)
 }
 
-/// Signs the browser-facing peer so the gateway API can attribute admin audit
-/// entries to it without trusting any client-supplied forwarding header.
-fn signed_client_ip(state: &ProxyState, peer: Option<std::net::IpAddr>) -> Option<String> {
+/// Signs the browser's address, resolved through trusted proxies, so the gateway
+/// API can attribute admin audit entries to it without trusting a forwarding
+/// header from anyone else.
+fn signed_client_ip(state: &ProxyState, client: Option<std::net::IpAddr>) -> Option<String> {
     let key = state.client_ip_signing_key.as_deref()?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
         .as_secs();
-    Some(sign_client_ip(key, peer?, i64::try_from(now).ok()?))
+    Some(sign_client_ip(key, client?, i64::try_from(now).ok()?))
 }
 
 fn should_forward_response_header(name: &HeaderName, connection_tokens: &[HeaderName]) -> bool {
@@ -355,6 +359,55 @@ mod tests {
             "203.0.113.9".parse().ok()
         );
         assert_eq!(header(1), None, "a forged header must not pass through");
+    }
+
+    #[tokio::test]
+    async fn proxy_signs_the_client_behind_a_trusted_proxy() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+        let key: Arc<[u8]> = Arc::from(&b"proxy-test-key"[..]);
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                client_ip_signing_key: Some(key.clone()),
+                trusted_proxies: crate::client_ip::TrustedProxies::new(vec![
+                    "10.0.0.0/8".parse().unwrap(),
+                ]),
+                ..AdminUiConfig::default()
+            },
+        );
+        // A trusted balancer forwards the browser; anyone else's header is ignored.
+        for peer in ["10.0.0.5:5000", "198.51.100.4:5000"] {
+            let mut request = Request::builder()
+                .uri("/admin/models")
+                .header("x-forwarded-for", "203.0.113.9")
+                .body(Body::empty())
+                .expect("request must build");
+            let peer: std::net::SocketAddr = peer.parse().unwrap();
+            request
+                .extensions_mut()
+                .insert(axum::extract::ConnectInfo(peer));
+            let response = app.clone().oneshot(request).await.expect("proxy response");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let captured = captured.lock().expect("capture lock");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let signed = |index: usize| {
+            let value = captured[index]
+                .headers
+                .iter()
+                .find(|(name, _)| name == CLIENT_IP_HEADER)
+                .map(|(_, value)| value.clone())
+                .expect("signed client ip");
+            crate::client_ip::verify_client_ip(&key, &value, now)
+        };
+        assert_eq!(signed(0), "203.0.113.9".parse().ok());
+        assert_eq!(signed(1), "198.51.100.4".parse().ok());
     }
 
     #[tokio::test]

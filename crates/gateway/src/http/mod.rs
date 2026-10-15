@@ -82,8 +82,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             .expect("configured archive limit fits usize")
             .saturating_add(64 * 1024);
     }
-    // The admin UI proxy signs the browser's address for audit entries.
+    // The admin UI proxy resolves the browser through trusted proxies and signs its
+    // address for audit entries.
     admin_ui.client_ip_signing_key = Some(state.client_ip_signing_key());
+    admin_ui.trusted_proxies = state.trusted_proxies.clone();
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
 

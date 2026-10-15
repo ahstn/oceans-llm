@@ -59,16 +59,16 @@ Labels are snapshots, so entries stay readable after the user, key or resource i
 
 ### Request IP
 
-The gateway serves with `ConnectInfo`. Without a valid signature, the audit IP comes from the same trusted-proxy resolution as request policy (`http::client_ip::resolve_client_ip`, configured by `server.trusted_proxies`). `X-Forwarded-For` is read only when the peer is a configured trusted proxy, so a client that connects directly cannot pick its own address.
+The gateway serves with `ConnectInfo`. Client addresses are resolved by `admin_ui::client_ip::resolve_client_ip`, configured by `server.trusted_proxies` and shared with request policy. `X-Forwarded-For` is read only when the peer is a configured trusted proxy, so a client that connects directly cannot pick its own address.
 
-Instead, the browser always reaches the admin UI through the gateway's own admin proxy, the only hop that observes the browser's address:
+The browser always reaches the admin UI through the gateway's own admin proxy, the edge its connection reaches:
 
-- The proxy drops any inbound `x-oceans-client-ip` header and sets its own: `<ip>;<unix seconds>;<HMAC-SHA256>`, keyed by the gateway's identity token secret.
+- The proxy resolves the client through the trusted proxies, drops any inbound `x-oceans-client-ip` header, and sets its own: `<ip>;<unix seconds>;<HMAC-SHA256>`, keyed by the gateway's identity token secret.
 - The admin UI server forwards that header, and the browser's `User-Agent`, on its gateway API calls.
-- `resolve_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the direct peer.
+- `resolve_audit_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the client resolved through the trusted proxies.
 - When `GATEWAY_IDENTITY_TOKEN_SECRET` is unset, its development fallback is public, so the key is a random per-process value instead. Signed addresses then only verify on the replica that signed them, and other replicas record the direct peer.
 
-Direct API calls record the client resolved through `server.trusted_proxies`, or the peer when it is not a trusted proxy. Behind a load balancer in front of the admin UI, the admin proxy's peer is the balancer, so admin UI changes still record the balancer's address. Recording the browser there needs the same trusted-proxy resolution (or PROXY protocol) in the admin proxy before it signs.
+Behind a load balancer, list it in `server.trusted_proxies` and both admin UI changes and direct API calls record the browser. Without that, they record the balancer's address. The resolver lives in the admin UI crate because the gateway depends on it, so both the proxy and the gateway can share one implementation.
 
 ### Redaction
 
@@ -129,6 +129,5 @@ Not audited:
 ## Follow-up
 
 - Move audit writes into the mutation's transaction once the store has a unit of work.
-- Resolve trusted proxies in the admin UI proxy before it signs, so admin UI changes behind a load balancer record the browser rather than the balancer.
 - Add a configurable retention window and an export for SIEM ingestion (see #452).
 - Audit failed sign-in attempts as security events, separate from control-plane changes.
