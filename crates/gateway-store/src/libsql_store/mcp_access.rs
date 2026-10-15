@@ -268,8 +268,8 @@ impl McpAccessRepository for LibsqlStore {
         &self,
         input: &UpdateMcpToolsetRecord,
     ) -> Result<Updated<McpToolsetRecord>, StoreError> {
-        let tx = self
-            .connection
+        let connection = self.transaction_connection().await?;
+        let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;
@@ -336,8 +336,8 @@ impl McpAccessRepository for LibsqlStore {
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
     ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
-        let tx = self
-            .connection
+        let connection = self.transaction_connection().await?;
+        let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;

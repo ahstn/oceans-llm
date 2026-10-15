@@ -338,8 +338,8 @@ impl ReviewAgentRepository for LibsqlStore {
         input: &UpdateReviewAgentRepositoryRecord,
     ) -> Result<Updated<ReviewAgentRepositoryRecord>, StoreError> {
         let settings_json = serialize_json(&input.settings_json)?;
-        let tx = self
-            .connection
+        let connection = self.transaction_connection().await?;
+        let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;

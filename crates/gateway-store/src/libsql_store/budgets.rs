@@ -167,8 +167,8 @@ impl BudgetRepository for LibsqlStore {
     ) -> Result<ManualBudgetSave, StoreError> {
         // An immediate transaction holds the write lock, so the budget read here is
         // exactly the one the save below overwrites.
-        let tx = self
-            .connection
+        let connection = self.transaction_connection().await?;
+        let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;

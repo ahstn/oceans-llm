@@ -231,8 +231,8 @@ impl AdminApiKeyRepository for LibsqlStore {
     ) -> Result<Option<ApiKeyModelAccess>, StoreError> {
         // An immediate transaction holds the write lock, so the access read here is
         // exactly the access this replacement overwrites.
-        let tx = self
-            .connection
+        let connection = self.transaction_connection().await?;
+        let tx = connection
             .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;

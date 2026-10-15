@@ -125,6 +125,17 @@ impl LibsqlStore {
         })
     }
 
+    /// A connection of its own for a transaction. On the shared connection, an
+    /// unrelated request's statements would join the transaction, or its `BEGIN`
+    /// would fail while another request's transaction is open.
+    pub(super) async fn transaction_connection(&self) -> Result<libsql::Connection, StoreError> {
+        let connection = self.database.connect().map_err(to_query_error)?;
+        Self::configure_connection(&connection)
+            .await
+            .map_err(to_query_error)?;
+        Ok(connection)
+    }
+
     async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute("PRAGMA foreign_keys = ON", ()).await?;
