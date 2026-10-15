@@ -34,7 +34,8 @@ pub fn verify_client_ip(key: &[u8], value: &str, now_unix_secs: i64) -> Option<I
     let (ip, issued_at) = payload.split_once(';')?;
     let ip: IpAddr = ip.parse().ok()?;
     let issued_at: i64 = issued_at.parse().ok()?;
-    if (now_unix_secs - issued_at).abs() > MAX_AGE_SECS {
+    // `abs_diff` cannot overflow, whatever timestamp an unauthenticated client sends.
+    if now_unix_secs.abs_diff(issued_at) > MAX_AGE_SECS.unsigned_abs() {
         return None;
     }
     let signature = unhex(signature)?;
@@ -97,5 +98,8 @@ mod tests {
             verify_client_ip(KEY, "198.51.100.1;1800000000;zz", NOW),
             None
         );
+        let extreme = format!("198.51.100.1;{};00", i64::MIN);
+        assert_eq!(verify_client_ip(KEY, &extreme, NOW), None);
+        assert_eq!(verify_client_ip(KEY, &extreme, i64::MAX), None);
     }
 }
