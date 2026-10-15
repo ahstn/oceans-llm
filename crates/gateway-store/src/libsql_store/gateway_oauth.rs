@@ -581,51 +581,88 @@ impl GatewayOauthRepository for LibsqlStore {
         unused_clients_before: OffsetDateTime,
         expired_before: OffsetDateTime,
     ) -> Result<GatewayOauthPurgeCounts, StoreError> {
+        let expired = expired_before.unix_timestamp();
+        let retired_grants = self.purge_in_batches(RETIRE_ENDED_GRANTS, expired).await?;
         let authorization_requests = self
-            .connection
-            .execute(
-                "DELETE FROM gateway_oauth_authorization_requests
-             WHERE expires_at < ?1 AND (code_expires_at IS NULL OR code_expires_at < ?1)
-               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
-                               JOIN user_sessions s ON s.session_id = g.user_session_id
-                               WHERE g.grant_id = gateway_oauth_authorization_requests.grant_id
-                                 AND g.revoked_at IS NULL
-                                 AND s.revoked_at IS NULL AND s.expires_at >= ?1)",
-                [expired_before.unix_timestamp()],
-            )
-            .await
-            .map_err(to_write_error)?;
-        let tokens = self
-            .connection
-            .execute(
-                "DELETE FROM gateway_oauth_tokens
-             WHERE expires_at < ?1
-               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
-                               JOIN user_sessions s ON s.session_id = g.user_session_id
-                               WHERE g.grant_id = gateway_oauth_tokens.grant_id
-                                 AND g.revoked_at IS NULL
-                                 AND s.revoked_at IS NULL AND s.expires_at >= ?1)",
-                [expired_before.unix_timestamp()],
-            )
-            .await
-            .map_err(to_write_error)?;
+            .purge_in_batches(PURGE_AUTHORIZATION_REQUESTS, expired)
+            .await?;
+        let tokens = self.purge_in_batches(PURGE_TOKENS, expired).await?;
         let clients = self
-            .connection
-            .execute(
-                "DELETE FROM gateway_oauth_clients
-             WHERE registration_kind = 'dynamic' AND created_at < ?1
-               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
-                               WHERE g.client_id = gateway_oauth_clients.client_id)
-               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
-                               WHERE r.client_id = gateway_oauth_clients.client_id)",
-                [unused_clients_before.unix_timestamp()],
-            )
-            .await
-            .map_err(to_write_error)?;
+            .purge_in_batches(PURGE_UNUSED_CLIENTS, unused_clients_before.unix_timestamp())
+            .await?;
         Ok(GatewayOauthPurgeCounts {
+            retired_grants,
             clients,
             authorization_requests,
             tokens,
         })
     }
 }
+
+impl LibsqlStore {
+    /// Repeats a cleanup statement until a batch comes back short.
+    async fn purge_in_batches(&self, sql: &str, cutoff: i64) -> Result<u64, StoreError> {
+        let mut total = 0;
+        loop {
+            let affected = self
+                .connection
+                .execute(sql, libsql::params![cutoff, PURGE_BATCH_SIZE])
+                .await
+                .map_err(to_write_error)?;
+            total += affected;
+            if affected < PURGE_BATCH_SIZE.unsigned_abs() {
+                return Ok(total);
+            }
+        }
+    }
+}
+
+/// Cleanup statements for `purge_gateway_oauth_records`. Each takes the
+/// cutoff as `?1` and touches at most `?2` rows.
+const RETIRE_ENDED_GRANTS: &str = "UPDATE gateway_oauth_grants
+     SET revoked_at = (SELECT COALESCE(s.revoked_at, s.expires_at) FROM user_sessions s
+          WHERE s.session_id = gateway_oauth_grants.user_session_id),
+         updated_at = (SELECT COALESCE(s.revoked_at, s.expires_at) FROM user_sessions s
+          WHERE s.session_id = gateway_oauth_grants.user_session_id),
+         revoked_reason = 'session_ended'
+     WHERE grant_id IN (
+         SELECT g.grant_id FROM gateway_oauth_grants g
+         JOIN user_sessions s ON s.session_id = g.user_session_id
+         WHERE g.revoked_at IS NULL
+           AND (s.revoked_at IS NOT NULL OR s.expires_at < ?1)
+         LIMIT ?2)";
+const PURGE_AUTHORIZATION_REQUESTS: &str = "DELETE FROM gateway_oauth_authorization_requests
+     WHERE request_id IN (
+         SELECT r.request_id FROM gateway_oauth_authorization_requests r
+         WHERE r.expires_at < ?1 AND (r.code_expires_at IS NULL OR r.code_expires_at < ?1)
+           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+                           JOIN user_sessions s ON s.session_id = g.user_session_id
+                           WHERE g.grant_id = r.grant_id
+                             AND g.revoked_at IS NULL
+                             AND s.revoked_at IS NULL AND s.expires_at >= ?1)
+         LIMIT ?2)";
+const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
+     WHERE token_hash IN (
+         SELECT t.token_hash FROM gateway_oauth_tokens t
+         WHERE t.expires_at < ?1
+           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+                           JOIN user_sessions s ON s.session_id = g.user_session_id
+                           WHERE g.grant_id = t.grant_id
+                             AND g.revoked_at IS NULL
+                             AND s.revoked_at IS NULL AND s.expires_at >= ?1)
+         LIMIT ?2)";
+const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
+     WHERE client_id IN (
+         SELECT c.client_id FROM gateway_oauth_clients c
+         WHERE c.registration_kind = 'dynamic' AND c.created_at < ?1
+           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = c.client_id)
+           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
+                           WHERE r.client_id = c.client_id)
+         LIMIT ?2)";
+
+/// Rows each cleanup statement touches per round trip.
+#[cfg(not(test))]
+const PURGE_BATCH_SIZE: i64 = 1000;
+/// Small in tests, so the shared store tests run several batches.
+#[cfg(test)]
+const PURGE_BATCH_SIZE: i64 = 2;

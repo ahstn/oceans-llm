@@ -356,9 +356,11 @@ pub struct GatewayOauthGrantSummary {
     pub expires_at: OffsetDateTime,
 }
 
-/// Rows removed by [`GatewayOauthRepository::purge_gateway_oauth_records`].
+/// Rows changed by [`GatewayOauthRepository::purge_gateway_oauth_records`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GatewayOauthPurgeCounts {
+    /// Grants marked revoked because their approving session ended.
+    pub retired_grants: u64,
     pub clients: u64,
     pub authorization_requests: u64,
     pub tokens: u64,
@@ -492,10 +494,14 @@ pub trait GatewayOauthRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
-    /// Deletes authorization requests and tokens that expired before
-    /// `expired_before`, then dynamically registered clients created before
-    /// `unused_clients_before` that never received a grant and have no
-    /// remaining authorization request. Grants are kept as an audit trail.
+    /// Marks grants revoked (`session_ended`) once their approving session
+    /// has been revoked or expired before `expired_before`, so dead grants
+    /// leave the live-grant index. Then deletes authorization requests and
+    /// tokens that expired before `expired_before`, and dynamically
+    /// registered clients created before `unused_clients_before` that never
+    /// received a grant and have no remaining authorization request. Grants
+    /// are kept as an audit trail. Each step works in bounded batches, so a
+    /// backlog never becomes one long transaction.
     ///
     /// A consumed code or refresh token is the only link from a replay to
     /// its grant, so rows of a grant that can still be live are kept: one

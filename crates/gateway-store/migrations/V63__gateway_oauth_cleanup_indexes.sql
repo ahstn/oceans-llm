@@ -23,3 +23,10 @@ CREATE INDEX IF NOT EXISTS gateway_oauth_tokens_grant_usable_idx
 -- The grant-issued index leads with grant_id, so it also serves grant
 -- lookups and cascading deletes.
 DROP INDEX IF EXISTS gateway_oauth_tokens_grant_idx;
+
+-- The authorized clients listing walks only grants that are not revoked.
+-- Cleanup retires grants whose approving session ended, so the long audit
+-- history of dead grants never sits in front of the live ones.
+CREATE INDEX IF NOT EXISTS gateway_oauth_grants_live_user_idx
+  ON gateway_oauth_grants (user_id, created_at)
+  WHERE revoked_at IS NULL;

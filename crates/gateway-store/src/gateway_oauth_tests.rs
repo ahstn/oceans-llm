@@ -757,6 +757,10 @@ where
     );
     assert_eq!(counts.tokens, 1);
     assert_eq!(counts.authorization_requests, 1);
+    assert_eq!(
+        counts.retired_grants, 1,
+        "only the grant whose approving session was revoked"
+    );
     assert!(
         store
             .get_gateway_oauth_client("unused-old")
@@ -843,6 +847,15 @@ where
         .await
         .unwrap();
     assert_eq!((counts.tokens, counts.authorization_requests), (1, 1));
+    // The owner's four remaining grants retire together, over several batches.
+    assert_eq!(counts.retired_grants, 4);
+    assert!(
+        store
+            .list_live_gateway_oauth_grants_for_user(owner, None, now, 100)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert!(
         store
             .get_gateway_oauth_authorization_request_by_code_hash("second-code")

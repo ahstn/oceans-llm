@@ -705,6 +705,7 @@ fn spawn_mcp_client_oauth_cleanup_loop(
                 .await
             {
                 Ok(counts) if counts != Default::default() => tracing::info!(
+                    retired_grants = counts.retired_grants,
                     clients = counts.clients,
                     authorization_requests = counts.authorization_requests,
                     tokens = counts.tokens,
