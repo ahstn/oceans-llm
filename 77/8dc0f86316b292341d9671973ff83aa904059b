@@ -1,0 +1,29 @@
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_6ff66569c6a522::t_86223446949883 347-351,358,371-377
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_af4ccbd37c05c0::t_8a670e201f81e1 296-298,305,314,317-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "778dc0f86316b292341d9671973ff83aa904059b",
+  "prompts": {},
+  "sessions": {
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
