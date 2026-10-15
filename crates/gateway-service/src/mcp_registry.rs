@@ -20,6 +20,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 use uuid::Uuid;
 
+use crate::admin_audit::AuditProgress;
 use crate::mcp_upstream_auth::{
     gateway_mcp_upstream_headers, gateway_mcp_upstream_query, mcp_oauth_server_config,
     normalize_mcp_server_key, supports_public_discovery, validate_mcp_auth_config,
@@ -250,6 +251,17 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<McpDiscoveryResult, GatewayError> {
+        self.refresh_discovery_tracked(mcp_server_id, &AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_discovery`]; `progress` is marked once the discovery run
+    /// is stored, so an audit entry can record a refresh whose reload fails afterwards.
+    pub async fn refresh_discovery_tracked(
+        &self,
+        mcp_server_id: Uuid,
+        progress: &AuditProgress,
+    ) -> Result<McpDiscoveryResult, GatewayError> {
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
         let server = self.server_or_not_found(mcp_server_id).await?;
@@ -261,6 +273,7 @@ where
                     OffsetDateTime::now_utc(),
                     Some("external MCP server is disabled".to_string()),
                     json!({"reason": "disabled"}),
+                    progress,
                 )
                 .await;
         }
@@ -275,6 +288,7 @@ where
                         "server auth mode requires per-user credentials for discovery".to_string(),
                     ),
                     json!({"auth_mode": auth_mode}),
+                    progress,
                 )
                 .await;
         }
@@ -294,6 +308,7 @@ where
                         started_at,
                         Some(bounded_error_summary(error.to_string())),
                         json!({"reason": "invalid_discovery_auth_config"}),
+                        progress,
                     )
                     .await;
             }
@@ -346,6 +361,7 @@ where
                     .repo
                     .record_external_mcp_discovery_success(&run, &upserts)
                     .await?;
+                progress.landed_on(server.mcp_server_id);
                 let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
                 Ok(McpDiscoveryResult {
                     server: refreshed_server,
@@ -362,6 +378,7 @@ where
                     started_at,
                     Some(summary),
                     json!({"client_error": classify_client_error(&error)}),
+                    progress,
                 )
                 .await
             }
@@ -452,6 +469,7 @@ where
         started_at: OffsetDateTime,
         error_summary: Option<String>,
         details: Value,
+        progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
@@ -469,6 +487,7 @@ where
         self.repo
             .record_external_mcp_discovery_failure(&run)
             .await?;
+        progress.landed_on(server.mcp_server_id);
         let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
         let tools = self
             .repo

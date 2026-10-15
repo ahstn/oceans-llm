@@ -19,8 +19,8 @@ use gateway_core::{
     UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    AuditEvent, CreateExternalMcpServerInput, McpCredentialService, McpRegistryService,
-    UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
+    AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpCredentialService,
+    McpRegistryService, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
     admin_audit::{actions, targets},
 };
 use time::OffsetDateTime;
@@ -356,7 +356,10 @@ pub async fn refresh_mcp_server_discovery(
     let server_id = parse_uuid(&server_id, "server_id")?;
     let service = McpRegistryService::new(state.store.clone());
     let started_at = Instant::now();
-    let result = service.refresh_discovery(server_id).await;
+    let progress = AuditProgress::default();
+    let result = service
+        .refresh_discovery_tracked(server_id, &progress)
+        .await;
     let latency_seconds = started_at.elapsed().as_secs_f64();
     match result {
         Ok(result) => {
@@ -398,6 +401,18 @@ pub async fn refresh_mcp_server_discovery(
                     status: error.error_code(),
                     latency_seconds,
                 });
+            // The discovery run was stored, but reloading the server or tools failed.
+            if progress.has_landed() {
+                let event =
+                    AuditEvent::new(actions::MCP_SERVER_DISCOVERY_REFRESHED, targets::MCP_SERVER)
+                        .target(server_id)
+                        .meta("error", error.error_code())
+                        .meta("outcome", "partial");
+                state
+                    .audit()
+                    .record(&meta.user_context(&actor), event)
+                    .await;
+            }
             Err(error.into())
         }
     }

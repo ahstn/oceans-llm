@@ -21,6 +21,8 @@ use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::admin_audit::AuditProgress;
+
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
 const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
@@ -136,9 +138,20 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
+        self.refresh_now_and_sync_tracked(&AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_now_and_sync`]; `progress` is marked once the fetched
+    /// catalog is cached, so an audit entry can record a refresh whose sync fails.
+    pub async fn refresh_now_and_sync_tracked(
+        &self,
+        progress: &AuditProgress,
+    ) -> Result<(), GatewayError> {
         let current = self.load_stored_cache().await?;
         self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
             .await?;
+        progress.landed();
         self.sync_latest_snapshot_with_retry().await
     }
 

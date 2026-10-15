@@ -24,6 +24,7 @@ use crate::{
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
     StreamResponseCollector,
+    admin_audit::AuditProgress,
     agent_analysis::{
         PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
         finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
@@ -755,7 +756,19 @@ where
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_now_and_sync().await?;
+        self.refresh_pricing_catalog_now_tracked(&AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_pricing_catalog_now`], marking `progress` once the
+    /// catalog cache is written.
+    pub async fn refresh_pricing_catalog_now_tracked(
+        &self,
+        progress: &AuditProgress,
+    ) -> Result<(), GatewayError> {
+        self.pricing_catalog
+            .refresh_now_and_sync_tracked(progress)
+            .await?;
         self.warn_on_route_context_override_conflicts().await
     }
 

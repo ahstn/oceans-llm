@@ -5,7 +5,7 @@ use axum::{
 };
 use gateway_core::GlobalRole;
 use gateway_service::{
-    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent,
+    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent, AuditProgress,
     EffectiveMetadataSource, EffectiveMetadataSourceKind,
     admin_audit::{actions, targets},
 };
@@ -159,12 +159,19 @@ pub async fn refresh_model_pricing_catalog(
 ) -> Result<Json<Envelope<RefreshModelPricingCatalogResponse>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
 
+    let progress = AuditProgress::default();
     state
         .audit()
-        .audited(
+        .audited_steps(
             &meta.user_context(&actor),
-            state.service.refresh_pricing_catalog_now(),
+            &progress,
+            state.service.refresh_pricing_catalog_now_tracked(&progress),
             |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED, targets::PRICING_CATALOG),
+            // The fetched catalog was cached, but syncing model pricing failed.
+            |_, error| {
+                AuditEvent::new(actions::PRICING_CATALOG_REFRESHED, targets::PRICING_CATALOG)
+                    .meta("error", error.error_code())
+            },
         )
         .await?;
 
