@@ -29,10 +29,14 @@ fn configure_oauth(state: &mut AppState, public_base_url: Option<&str>) {
         public_base_url.map(str::to_string),
         vec![McpOauthProvider {
             key: "google".to_string(),
+            provider_type: gateway_service::McpOauthProviderType::Google,
             client_id: "provider-client".to_string(),
-            client_secret: CLIENT_SECRET.to_string(),
+            client_secret: Some(CLIENT_SECRET.to_string()),
             authorization_url: "https://accounts.example/authorize".to_string(),
             token_url: "https://accounts.example/token".to_string(),
+            token_endpoint_auth_method:
+                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+            scopes: Vec::new(),
         }],
     ));
 }

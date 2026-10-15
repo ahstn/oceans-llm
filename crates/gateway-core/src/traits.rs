@@ -31,10 +31,10 @@ use crate::{
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
         HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
         McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolProjection,
-        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpGrantSubject, McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
         McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
         ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
         NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
@@ -1206,6 +1206,26 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         &self,
         credential_binding_id: Uuid,
         lease_token: Uuid,
+    ) -> Result<bool, StoreError>;
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError>;
+
+    /// Stores a registered client unless the server already has one, and
+    /// returns the row that is stored afterwards. Concurrent registrations
+    /// therefore converge on a single client.
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError>;
+
+    /// Deletes the registered client only when it is still `client_id`.
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
     ) -> Result<bool, StoreError>;
 }
 

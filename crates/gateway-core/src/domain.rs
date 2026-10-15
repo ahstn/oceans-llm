@@ -701,6 +701,24 @@ pub struct McpOauthStateRecord {
     pub created_at: OffsetDateTime,
 }
 
+/// An OAuth client that Oceans registered with an upstream MCP authorization
+/// server through RFC 7591 dynamic client registration. The client secret and
+/// registration access token stay in the encrypted blob.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOauthClientRecord {
+    pub mcp_server_id: Uuid,
+    pub issuer: String,
+    pub redirect_uri: String,
+    pub client_id: String,
+    pub token_endpoint_auth_method: String,
+    pub secret_ciphertext: Option<String>,
+    pub secret_nonce: Option<String>,
+    pub secret_key_id: Option<String>,
+    pub client_secret_expires_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOidcAuthRecord {
     pub user_id: Uuid,

@@ -180,7 +180,8 @@ impl CatalogInvocation<'_> {
             &upstream.server.server_url,
             Duration::from_millis(upstream.server.timeout_ms.max(1) as u64),
         )
-        .map_err(|error| CatalogCallError::Gateway(map_mcp_client_error(error)))?;
+        .map_err(|error| CatalogCallError::Gateway(map_mcp_client_error(error)))?
+        .with_query_credential(upstream.query_credential.clone());
         match client
             .call_tool(
                 upstream.headers.as_ref(),

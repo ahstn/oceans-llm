@@ -41,7 +41,7 @@ A `model_key` filter matches either the requested model key or the model it reso
 Policies come from two sources:
 
 - **Config** (`rate_limits.policies` in `gateway.yaml`) holds platform-wide defaults. Config policies cannot name a specific principal. Each is identified by its `name`, held in memory, read-only in the admin UI, and never written to the database. This keeps config-as-code free of database ids and matches how guardrail policy is loaded.
-- **Admin** policies are rows in `rate_limit_policies` (migration `V59__rate_limits`). Platform admins manage them on the Rate Limits page. They can target a specific key, user, team or MCP server.
+- **Admin** policies are rows in `rate_limit_policies` (migration `V60__rate_limits`). Platform admins manage them on the Rate Limits page. They can target a specific key, user, team or MCP server.
 
 ### 2. Sliding windows for rates, calendar windows for quotas
 
