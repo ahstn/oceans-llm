@@ -59,7 +59,7 @@ Labels are snapshots, so entries stay readable after the user, key or resource i
 
 ### Request IP
 
-The gateway now serves with `ConnectInfo`, and `X-Forwarded-For` is never trusted for audit entries. Any client can set it, and without a configured chain of trusted proxies the gateway cannot tell a real hop from a forged one.
+The gateway serves with `ConnectInfo`. Without a valid signature, the audit IP comes from the same trusted-proxy resolution as request policy (`http::client_ip::resolve_client_ip`, configured by `server.trusted_proxies`). `X-Forwarded-For` is read only when the peer is a configured trusted proxy, so a client that connects directly cannot pick its own address.
 
 Instead, the browser always reaches the admin UI through the gateway's own admin proxy, the only hop that observes the browser's address:
 
@@ -68,7 +68,7 @@ Instead, the browser always reaches the admin UI through the gateway's own admin
 - `resolve_client_ip` accepts the header only when its signature verifies and it is less than five minutes old. Otherwise it records the direct peer.
 - When `GATEWAY_IDENTITY_TOKEN_SECRET` is unset, its development fallback is public, so the key is a random per-process value instead. Signed addresses then only verify on the replica that signed them, and other replicas record the direct peer.
 
-Direct API calls record the peer's address. Behind a load balancer or ingress, the admin proxy's peer is the balancer, so both admin UI and API changes record the balancer's address. That is honest but less useful. Recording the browser behind a balancer needs trusted-proxy configuration (or PROXY protocol) at the proxy before it signs, which is planned with #25 and #450.
+Direct API calls record the client resolved through `server.trusted_proxies`, or the peer when it is not a trusted proxy. Behind a load balancer in front of the admin UI, the admin proxy's peer is the balancer, so admin UI changes still record the balancer's address. Recording the browser there needs the same trusted-proxy resolution (or PROXY protocol) in the admin proxy before it signs.
 
 ### Redaction
 
@@ -129,6 +129,6 @@ Not audited:
 ## Follow-up
 
 - Move audit writes into the mutation's transaction once the store has a unit of work.
-- Add trusted-proxy configuration with #25 and #450, so deployments behind a load balancer record the client rather than the balancer.
+- Resolve trusted proxies in the admin UI proxy before it signs, so admin UI changes behind a load balancer record the browser rather than the balancer.
 - Add a configurable retention window and an export for SIEM ingestion (see #452).
 - Audit failed sign-in attempts as security events, separate from control-plane changes.

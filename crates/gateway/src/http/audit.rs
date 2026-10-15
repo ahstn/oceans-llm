@@ -31,6 +31,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{Envelope, envelope, format_timestamp},
+    client_ip::{self, TrustedProxies},
     error::AppError,
     state::AppState,
 };
@@ -50,12 +51,24 @@ pub struct AuditRequestMeta {
 
 impl AuditRequestMeta {
     /// `signing_key` verifies the admin UI proxy's signed client address. Without a
-    /// valid signature the direct peer is recorded; forwarding headers are never trusted.
+    /// valid signature the address is resolved through `trusted` proxies, as for
+    /// request policy.
     #[must_use]
-    pub fn from_parts(peer: Option<IpAddr>, headers: &HeaderMap, signing_key: &[u8]) -> Self {
+    pub fn from_parts(
+        peer: Option<IpAddr>,
+        headers: &HeaderMap,
+        signing_key: &[u8],
+        trusted: &TrustedProxies,
+    ) -> Self {
         Self {
-            request_ip: resolve_client_ip(peer, headers, signing_key, now_unix_secs())
-                .map(|ip| ip.to_string()),
+            request_ip: resolve_audit_client_ip(
+                peer,
+                headers,
+                signing_key,
+                trusted,
+                now_unix_secs(),
+            )
+            .map(|ip| ip.to_string()),
             user_agent: header_text(headers, "user-agent")
                 .map(|value| value.chars().take(MAX_USER_AGENT_CHARS).collect()),
             request_id: header_text(headers, "x-request-id")
@@ -94,6 +107,7 @@ impl FromRequestParts<AppState> for AuditRequestMeta {
             peer,
             &parts.headers,
             &state.client_ip_signing_key(),
+            &state.trusted_proxies,
         ))
     }
 }
@@ -134,23 +148,24 @@ fn client_ip_signing_key_for(identity_token_secret: &str) -> Arc<[u8]> {
 }
 
 /// Resolves the client address for an audit entry: the address the admin UI
-/// proxy signed when its signature is valid and fresh, otherwise the direct peer.
+/// proxy signed when its signature is valid and fresh, otherwise the client
+/// [`client_ip::resolve_client_ip`] finds through the configured trusted proxies.
 ///
-/// `X-Forwarded-For` is ignored, because without a configured trusted-proxy chain
-/// any client could choose its own value. Behind a load balancer the peer is the
-/// balancer's address.
+/// `X-Forwarded-For` is read only when the peer is a trusted proxy, so a client
+/// that reaches the gateway directly cannot choose its own address.
 #[must_use]
-pub fn resolve_client_ip(
+pub fn resolve_audit_client_ip(
     peer: Option<IpAddr>,
     headers: &HeaderMap,
     signing_key: &[u8],
+    trusted: &TrustedProxies,
     now_unix_secs: i64,
 ) -> Option<IpAddr> {
     headers
         .get(CLIENT_IP_HEADER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| verify_client_ip(signing_key, value, now_unix_secs))
-        .or(peer)
+        .or_else(|| client_ip::resolve_client_ip(peer, headers, trusted))
 }
 
 fn now_unix_secs() -> i64 {
@@ -407,7 +422,13 @@ mod tests {
         );
         let peer = "10.0.0.5".parse().ok();
         assert_eq!(
-            resolve_client_ip(peer, &headers(&[(CLIENT_IP_HEADER, forged)]), &key, NOW),
+            resolve_audit_client_ip(
+                peer,
+                &headers(&[(CLIENT_IP_HEADER, forged)]),
+                &key,
+                &none(),
+                NOW
+            ),
             peer
         );
         assert_eq!(&*client_ip_signing_key_for("configured"), b"configured");
@@ -419,6 +440,7 @@ mod tests {
             None,
             &headers(&[("x-request-id", "r".repeat(10_000))]),
             KEY,
+            &none(),
         );
         assert_eq!(meta.request_id.unwrap().len(), MAX_REQUEST_ID_CHARS);
     }
@@ -428,7 +450,13 @@ mod tests {
         let signed = sign_client_ip(KEY, "203.0.113.9".parse().unwrap(), NOW);
         let peer = "127.0.0.1".parse().ok();
         assert_eq!(
-            resolve_client_ip(peer, &headers(&[(CLIENT_IP_HEADER, signed)]), KEY, NOW),
+            resolve_audit_client_ip(
+                peer,
+                &headers(&[(CLIENT_IP_HEADER, signed)]),
+                KEY,
+                &none(),
+                NOW
+            ),
             "203.0.113.9".parse().ok()
         );
     }
@@ -441,7 +469,40 @@ mod tests {
             ("x-forwarded-for", "198.51.100.1".to_string()),
             (CLIENT_IP_HEADER, forged),
         ]);
-        assert_eq!(resolve_client_ip(peer, &spoofed, KEY, NOW), peer);
-        assert_eq!(resolve_client_ip(None, &spoofed, KEY, NOW), None);
+        assert_eq!(
+            resolve_audit_client_ip(peer, &spoofed, KEY, &none(), NOW),
+            peer
+        );
+        assert_eq!(
+            resolve_audit_client_ip(None, &spoofed, KEY, &none(), NOW),
+            None
+        );
+    }
+
+    #[test]
+    fn a_trusted_proxy_peer_forwards_the_client_address() {
+        let balancer = "10.0.0.5".parse().ok();
+        let forwarded = headers(&[("x-forwarded-for", "198.51.100.7".to_string())]);
+        let trusted = TrustedProxies::new(vec!["10.0.0.0/8".parse().unwrap()]);
+        assert_eq!(
+            resolve_audit_client_ip(balancer, &forwarded, KEY, &trusted, NOW),
+            "198.51.100.7".parse().ok()
+        );
+        // A valid signature from the admin UI proxy still wins.
+        let signed = headers(&[
+            ("x-forwarded-for", "198.51.100.7".to_string()),
+            (
+                CLIENT_IP_HEADER,
+                sign_client_ip(KEY, "203.0.113.9".parse().unwrap(), NOW),
+            ),
+        ]);
+        assert_eq!(
+            resolve_audit_client_ip(balancer, &signed, KEY, &trusted, NOW),
+            "203.0.113.9".parse().ok()
+        );
+    }
+
+    fn none() -> TrustedProxies {
+        TrustedProxies::default()
     }
 }
