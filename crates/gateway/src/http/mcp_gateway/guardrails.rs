@@ -8,6 +8,7 @@ use futures_util::{
     StreamExt,
     stream::{self, BoxStream},
 };
+use gateway_core::{GatewayError, ProviderError};
 use gateway_guardrails::{
     DecisionAction, EffectivePolicy, EvaluationInput, EvaluationPayload, GuardPhase,
     GuardrailEvaluation, McpCall, PolicyMode, PolicyResolver, PolicyTarget,
@@ -141,15 +142,15 @@ pub(super) async fn enforce_direct_mcp_result(
     id: Option<&Value>,
     mcp_tool_invocation_id: Uuid,
     response: Response<Body>,
-) -> (Response<Body>, Option<GuardrailEvaluation>, bool) {
+) -> Result<GuardedMcpResult, GatewayError> {
     let policy =
         PolicyResolver::new(&state.guardrail_config).resolve(PolicyTarget::McpServer(server));
     if !policy.enabled {
-        return (response, None, false);
+        return Ok((response, None, false));
     }
     let (mut parts, body) = response.into_parts();
     let request_id = mcp_request_id(&id.cloned());
-    let bytes = match buffer_mcp_result(body, &policy).await {
+    let bytes = match buffer_mcp_result(body, &policy).await? {
         BufferedMcpResult::Complete(bytes) => bytes,
         BufferedMcpResult::Partial {
             failure,
@@ -165,16 +166,16 @@ pub(super) async fn enforce_direct_mcp_result(
                 &prefix,
             );
             let Some(evaluation) = released else {
-                return (failure.response(id), None, true);
+                return Ok((failure.response(id), None, true));
             };
             // The consumed prefix is replayed ahead of the unread remainder, so the caller
             // receives the upstream result unchanged.
             let body = stream::iter([Ok(Bytes::from(prefix))]).chain(rest);
-            return (
+            return Ok((
                 Response::from_parts(parts, Body::from_stream(body)),
                 Some(evaluation),
                 false,
-            );
+            ));
         }
     };
     let event_stream = parts
@@ -203,7 +204,7 @@ pub(super) async fn enforce_direct_mcp_result(
         )
         .await
     };
-    match guarded {
+    Ok(match guarded {
         Ok((output, evaluation)) => {
             parts.headers.remove(axum::http::header::CONTENT_LENGTH);
             (
@@ -248,8 +249,11 @@ pub(super) async fn enforce_direct_mcp_result(
                 ),
             }
         }
-    }
+    })
 }
+
+/// The guarded response, the result evaluation when one ran, and whether the result was denied.
+pub(super) type GuardedMcpResult = (Response<Body>, Option<GuardrailEvaluation>, bool);
 
 /// An upstream MCP result read into memory for inspection.
 enum BufferedMcpResult {
@@ -267,7 +271,6 @@ enum BufferedMcpResult {
 enum BufferFailure {
     Exceeded,
     TimedOut,
-    ReadFailed,
 }
 
 impl BufferFailure {
@@ -275,13 +278,12 @@ impl BufferFailure {
         match self {
             Self::Exceeded => "stream.buffer_exceeded",
             Self::TimedOut => "stream.buffer_timeout",
-            Self::ReadFailed => "stream.read_failed",
         }
     }
 
     fn response(self, id: Option<&Value>) -> Response<Body> {
         let (status, message) = match self {
-            Self::Exceeded | Self::ReadFailed => (
+            Self::Exceeded => (
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "MCP result exceeded the configured guardrail buffer",
             ),
@@ -295,29 +297,39 @@ impl BufferFailure {
 }
 
 /// Reads the result within the policy's buffer size and timeout. Unlike `to_bytes`, a result
-/// that stops short keeps what was consumed, so audit mode can still release all of it.
-async fn buffer_mcp_result(body: Body, policy: &EffectivePolicy) -> BufferedMcpResult {
+/// that stops short keeps what was consumed, so audit mode can still release all of it. A body
+/// that fails mid-read is an upstream failure, not an uninspectable result, so it is an error.
+async fn buffer_mcp_result(
+    body: Body,
+    policy: &EffectivePolicy,
+) -> Result<BufferedMcpResult, GatewayError> {
     let deadline = Instant::now() + Duration::from_millis(policy.stream_buffer_timeout_ms);
     let mut upstream = body.into_data_stream();
     let mut buffered = Vec::new();
     let (failure, unbuffered) = loop {
         match timeout_at(deadline, upstream.next()).await {
-            Ok(None) => return BufferedMcpResult::Complete(Bytes::from(buffered)),
+            Ok(None) => return Ok(BufferedMcpResult::Complete(Bytes::from(buffered))),
             Ok(Some(Ok(chunk)))
                 if buffered.len().saturating_add(chunk.len()) <= policy.stream_buffer_bytes =>
             {
                 buffered.extend_from_slice(&chunk);
             }
             Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(Ok(chunk))),
-            Ok(Some(Err(error))) => break (BufferFailure::ReadFailed, Some(Err(error))),
+            // The upstream error can carry its URL, so it is not passed through.
+            Ok(Some(Err(_))) => {
+                return Err(ProviderError::Transport(
+                    "MCP upstream response body failed".to_string(),
+                )
+                .into());
+            }
             Err(_) => break (BufferFailure::TimedOut, None),
         }
     };
-    BufferedMcpResult::Partial {
+    Ok(BufferedMcpResult::Partial {
         failure,
         prefix: buffered,
         rest: stream::iter(unbuffered).chain(upstream).boxed(),
-    }
+    })
 }
 
 /// Records an audit decision for an MCP result the guard cannot inspect. Returns the

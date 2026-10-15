@@ -53,7 +53,8 @@ async fn guarded_json_and_sse_reject_mixed_result_and_error_envelopes() {
                 Uuid::new_v4(),
                 upstream,
             )
-            .await;
+            .await
+            .expect("guarded result");
             assert!(denied);
             assert!(
                 evaluation.is_none(),
@@ -95,7 +96,8 @@ async fn guarded_mcp_sse_rejects_malformed_events_without_forwarding_payloads() 
             Uuid::new_v4(),
             upstream,
         )
-        .await;
+        .await
+        .expect("guarded result");
         assert!(denied);
         assert!(
             evaluation.is_none(),
@@ -171,7 +173,8 @@ async fn guarded_sse_transforms_all_payloads_and_preserves_envelopes() {
         Uuid::new_v4(),
         response,
     )
-    .await;
+    .await
+    .expect("guarded result");
     assert!(!denied);
     assert_eq!(evaluation.unwrap().action, DecisionAction::Transformed);
     let bytes = to_bytes(response.into_body(), 4_096).await.unwrap();
@@ -251,7 +254,8 @@ async fn enforce(state: &AppState, upstream: Response<Body>) -> (Response<Body>,
         Uuid::new_v4(),
         upstream,
     )
-    .await;
+    .await
+    .expect("guarded result");
     (response, denied)
 }
 
@@ -422,4 +426,33 @@ async fn deny_mode_rejects_invalid_json_rpc_result() {
         "MCP result was not a valid guarded response",
     )
     .await;
+}
+
+#[tokio::test]
+async fn result_body_failure_is_an_upstream_error_in_both_modes() {
+    for mode in [PolicyMode::Audit, PolicyMode::Deny] {
+        let (_directory, state) = guarded_state(mode, 1 << 20, 1_000).await;
+        let body = Body::from_stream(stream::iter([
+            Ok(Bytes::from_static(b"{\"jsonrpc\":\"2.0\",")),
+            Err(std::io::Error::other("connection reset")),
+        ]));
+        let upstream = upstream_response("application/json", body);
+
+        let error = enforce_direct_mcp_result(
+            &state,
+            "test-server",
+            "test-tool",
+            Some(&json!(7)),
+            Uuid::new_v4(),
+            upstream,
+        )
+        .await
+        .expect_err("a failed body is not released as a successful result");
+
+        assert!(
+            matches!(error, GatewayError::Provider(ProviderError::Transport(_))),
+            "{mode:?}: {error:?}"
+        );
+        assert!(stream_buffer_decisions(&state).await.is_empty(), "{mode:?}");
+    }
 }
