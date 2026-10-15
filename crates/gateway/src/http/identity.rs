@@ -418,21 +418,24 @@ pub async fn update_identity_service_account(
     };
     let now = OffsetDateTime::now_utc();
     let before = serde_json::json!({ "name": account.service_account_name, "tags": entity_tag_views(&account.tags) });
-    state
-        .audit()
-        .audited(
-            &meta.user_context(&actor),
-            state
-                .store
-                .update_service_account_profile(service_account_id, name, &tags, now),
-            |()| {
+    let after = serde_json::json!({ "name": name, "tags": entity_tag_views(&tags) });
+    let update = state
+        .store
+        .update_service_account_profile(service_account_id, name, &tags, now);
+    // Saving the profile unchanged is not a change, so it records nothing.
+    if before == after {
+        update.await?;
+    } else {
+        state
+            .audit()
+            .audited(&meta.user_context(&actor), update, |()| {
                 service_account_event(actions::SERVICE_ACCOUNT_UPDATED, &account)
                     .label(name)
                     .before(before)
-                    .after(serde_json::json!({ "name": name, "tags": entity_tag_views(&tags) }))
-            },
-        )
-        .await?;
+                    .after(after)
+            })
+            .await?;
+    }
     let account = state
         .store
         .get_service_account_by_id(service_account_id)

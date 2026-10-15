@@ -519,6 +519,20 @@ async fn repeated_repository_status_changes_record_one_transition() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "create service account");
+    // Saving the profile unchanged records nothing; renaming records one update.
+    let account_path = format!(
+        "/api/v1/admin/identity/service-accounts/{}",
+        account["data"]["id"].as_str().expect("service account id")
+    );
+    for name in ["reviewer", "review-bot"] {
+        let (status, _) = harness
+            .admin(Method::PATCH, &account_path, Some(json!({ "name": name })))
+            .await;
+        assert_eq!(status, StatusCode::OK, "update service account");
+    }
+    let renamed = harness.entry("service_account.updated").await;
+    assert_eq!(renamed["before"]["name"], "reviewer");
+    assert_eq!(renamed["after"]["name"], "review-bot");
     let (status, repository) = harness
         .admin(
             Method::POST,
