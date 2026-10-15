@@ -258,6 +258,14 @@ providers:
     auth: { token: raw-secret }
 "#,
     );
+    let main = std::fs::read_to_string(tmp.path().join("gateway.yaml")).expect("read main");
+    write(
+        tmp.path(),
+        "gateway.yaml",
+        &format!(
+            "{main}teams:\n  - id: platform\n    name: Platform\n    tags: [{{ key: owner, value: platform-team }}]\nservice_accounts:\n  - id: ci\n    team: platform\n    budget: {{ cadence: monthly, amount_usd: \"10\" }}\n    keys:\n      - id: primary\n        value: gwk_ci.service-account-secret\n"
+        ),
+    );
     write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
 
     // Failure messages name the case, never the secret or the rendered text.
@@ -270,12 +278,17 @@ providers:
         ("URL username", "token-secret"),
         ("URL fragment", "fragment-secret"),
         ("raw credential field", "raw-secret"),
+        ("service-account key value", "service-account-secret"),
     ] {
         assert!(!rendered.contains(secret), "{case} was not redacted");
     }
     assert!(
         rendered.contains("literal.<redacted>"),
         "literal marker missing"
+    );
+    assert!(
+        rendered.contains("platform-team"),
+        "tag values outside service-account keys should stay"
     );
     assert!(
         rendered.contains("env.OPENROUTER_API_KEY"),

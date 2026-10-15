@@ -288,7 +288,7 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
     }
 
     let mut merged = Value::Mapping(merged);
-    redact_secrets(&mut merged, false);
+    redact_secrets(&mut merged, RedactScope::Plain);
     let mut rendered = serde_yaml::to_string(&merged)?;
     if show_sources {
         rendered.push_str("# sources:\n");
@@ -322,15 +322,33 @@ const CREDENTIAL_FIELDS: &[&str] = &[
 
 /// Replaces values that can carry credentials. Rendered output still contains identity data,
 /// such as user emails, so it is not anonymized:
-/// `literal.` secret references, raw values in credential fields, every header value, and URL
+/// `literal.` secret references, raw values in credential fields (including service-account key
+/// `value`s), every header value, and URL
 /// credentials (userinfo, query values, and fragments). `env.` and
 /// `file.` references name where a secret lives without containing it, so they stay visible.
-fn redact_secrets(value: &mut Value, in_headers: bool) {
+/// Where a value sits, for redaction rules that depend on context rather than field name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RedactScope {
+    Plain,
+    /// Header maps, whose values are all redacted.
+    Headers,
+    /// A service account's `keys` collection.
+    ManagedKeys,
+    /// One managed key, whose `value` is the gateway API key itself.
+    ManagedKey,
+}
+
+fn redact_secrets(value: &mut Value, scope: RedactScope) {
     match value {
         Value::Mapping(mapping) => {
             for (key, entry) in mapping.iter_mut() {
-                if let (Some(name), Value::String(text)) = (key.as_str(), &mut *entry)
-                    && CREDENTIAL_FIELDS.contains(&name)
+                let name = key.as_str();
+                let credential = name.is_some_and(|name| {
+                    CREDENTIAL_FIELDS.contains(&name)
+                        || (scope == RedactScope::ManagedKey && name == "value")
+                });
+                if let Value::String(text) = &mut *entry
+                    && credential
                     && !["env.", "file.", "literal."]
                         .iter()
                         .any(|prefix| text.starts_with(prefix))
@@ -338,21 +356,30 @@ fn redact_secrets(value: &mut Value, in_headers: bool) {
                     *text = REDACTED.to_string();
                     continue;
                 }
-                let headers = in_headers
-                    || matches!(
-                        key.as_str(),
-                        Some("default_headers" | "extra_headers" | "headers")
-                    );
-                redact_secrets(entry, headers);
+                let child = match (scope, name) {
+                    (RedactScope::Headers, _)
+                    | (_, Some("default_headers" | "extra_headers" | "headers")) => {
+                        RedactScope::Headers
+                    }
+                    // A map-form `keys` collection: each entry is one managed key.
+                    (RedactScope::ManagedKeys, _) => RedactScope::ManagedKey,
+                    (_, Some("keys")) => RedactScope::ManagedKeys,
+                    _ => RedactScope::Plain,
+                };
+                redact_secrets(entry, child);
             }
         }
         Value::Sequence(items) => {
+            let child = match scope {
+                RedactScope::ManagedKeys => RedactScope::ManagedKey,
+                _ => RedactScope::Plain,
+            };
             for item in items {
-                redact_secrets(item, false);
+                redact_secrets(item, child);
             }
         }
         Value::String(text) => {
-            if in_headers {
+            if scope == RedactScope::Headers {
                 *text = REDACTED.to_string();
             } else if text.starts_with("literal.") {
                 *text = format!("literal.{REDACTED}");
