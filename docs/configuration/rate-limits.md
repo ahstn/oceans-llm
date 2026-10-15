@@ -10,7 +10,7 @@ A policy counts one kind of traffic for one scope over one window.
 
 | Field | Values | Notes |
 |---|---|---|
-| `operation` | `inference`, `count_tokens`, `mcp_tool_call` | `inference` covers `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, and their unversioned aliases. `count_tokens` covers `/v1/messages/count_tokens`. `mcp_tool_call` covers `tools/call` on `/mcp/{server_key}` and aggregate `call_tool` on `/mcp`. |
+| `operation` | `inference`, `count_tokens`, `mcp_tool_call` | `inference` covers `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, and their unversioned aliases. `count_tokens` covers `/v1/messages/count_tokens`. `mcp_tool_call` covers `tools/call` on `/mcp/{server_key}` and aggregate `call_tool` on `/mcp`. The aggregate `search_tools` and `describe_tool` read the gateway's own catalog and call no MCP server, so they are not counted. |
 | scope | `global`, `api_key`, `user`, `team` | `global` is one counter for everyone. The other kinds give each key, user, or team its own counter. Admin policies can also target one specific key, user, or team. |
 | `model` | gateway model key | Optional, for `inference` and `count_tokens`. Matches the requested model or the model it resolves to, so a policy on a model also covers its aliases. |
 | `mcp_server` | MCP server key | Optional, for `mcp_tool_call`. |

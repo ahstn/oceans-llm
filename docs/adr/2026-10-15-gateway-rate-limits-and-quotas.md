@@ -133,7 +133,7 @@ Trade-offs:
 - Write policy changes to the admin audit log once #99 lands.
 - Consider an `UNLOGGED` counter table on Postgres if write volume becomes a concern.
 - Allow a specific policy to raise a default for one principal, if admins need that.
-- Rate limit batch creation and `/v1/models`, if needed.
+- Rate limit batch creation, `/v1/models`, and the aggregate MCP `search_tools` and `describe_tool` catalog reads, if needed.
 - Replace the per-instance `count_tokens` in-flight cap once operators have set `count_tokens` policies. For now it remains as a cheap first guard.
 
 ## Attribution
