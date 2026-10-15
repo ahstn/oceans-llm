@@ -1,0 +1,19 @@
+crates/gateway/src/http/inference_guardrails.rs
+  s_24d514c38befdd::t_5ab4ca0b68032a 473-476,487-491,789-792,2244,2247-2256,2258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c20920b00384db6c43377338de84b6287ea3972",
+  "prompts": {},
+  "sessions": {
+    "s_24d514c38befdd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad1917b4c7707bcfb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
