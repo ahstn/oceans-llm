@@ -60,6 +60,8 @@ Audit entries never store secret values:
 
 The list is newest first. Filter by target type, exact action, target ID, actor user ID, or time range (`occurred_at_start` and `occurred_at_end`, RFC 3339). In the UI, choose an actor's name in a row to filter by that actor.
 
+The list leaves out each entry's before, after and details summaries; `GET /api/v1/admin/audit-logs/{id}` returns one entry with them.
+
 Pages use a cursor rather than page numbers. The response's `next_cursor` fetches older entries and is absent on the last page. `limit` defaults to 50 and is capped at 200.
 
 ```bash

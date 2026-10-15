@@ -76,7 +76,8 @@ Summaries are built field by field from response views or domain records that ho
 
 - It redacts a value whose field name matches a request-log secret key, or contains `secret`, `password`, `token`, `authorization`, `cookie`, `private_key`, `api_key`, `ciphertext`, `nonce`, `key_material` or `invite_url`.
 - Names ending in `_id`, `_at`, `_kind`, `_mode`, `_type`, `_status`, `_count`, `_prefix`, `_ref` and similar suffixes describe a secret without holding it, so they are kept. Booleans and nulls are kept too.
-- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, an invite link path, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
+- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, including after punctuation such as `token=` or `(`, an invite link path, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
+- User agents get the same credential check.
 - Target and actor labels are user-entered names and emails, so they get the same credential check and are capped at 256 characters.
 - Key/value pairs such as entity tags are judged by their `key`, so a `github_pat` tag's value is redacted. Name segments `pat`, `pwd` and `passphrase` also count as secret.
 - Strings starting with common provider token prefixes (`ghp_`, `github_pat_`, `glpat-`, `xoxb-`, `sk-ant-`, `AKIA` and similar) are redacted whatever their field name.
@@ -86,7 +87,7 @@ The rules for specific actions are:
 
 - API key creation and secret reveal record no key material.
 - Invites record only their expiry, never the URL that carries the token.
-- MCP credential bindings record their metadata view: kind, header name, secret reference, scopes and expiry.
+- MCP credential bindings record their metadata view: kind, header name, secret reference, scopes and expiry. A secret reference written as a URL loses its credentials and query.
 - MCP server URLs are stored without credentials, query or fragment.
 - Provider credentials record only the user and provider key.
 - Review Agent repositories record only the key names of their free-form `settings_json`, never its values.
@@ -94,7 +95,7 @@ The rules for specific actions are:
 
 ### Read access
 
-`GET /api/v1/admin/audit-logs` is platform-admin only. It filters by `actor_user_id`, `action`, `target_type`, `target_id` and an RFC 3339 `occurred_at_start` and `occurred_at_end`. It pages newest first with an opaque `<millis>_<id>` keyset cursor and a `limit` of up to 200. The admin UI shows it at `/admin/observability/audit-log`.
+`GET /api/v1/admin/audit-logs` is platform-admin only. It filters by `actor_user_id`, `action`, `target_type`, `target_id` and an RFC 3339 `occurred_at_start` and `occurred_at_end`. It pages newest first with an opaque `<millis>_<id>` keyset cursor and a `limit` of up to 200. The admin UI shows it at `/admin/observability/audit-log`. List items leave out the before, after and metadata summaries, which can each reach 16 KiB; `GET /api/v1/admin/audit-logs/{id}` returns one entry with them, and the UI loads it when the detail sheet opens.
 
 ### Retention
 

@@ -428,6 +428,7 @@
         "crates/gateway-store/src/any_store_audit_logs.rs",
         "crates/gateway-store/src/libsql_store/audit_logs.rs",
         "crates/gateway-store/migrations/V60__admin_audit_log.sql",
+        "crates/gateway-store/migrations/postgres/V60__admin_audit_log.sql",
         "crates/admin-ui/web/src/components/guardrails/{decision-toolbar,inner-panel}.{ts,tsx}"
       ]
     },
