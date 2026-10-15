@@ -1152,21 +1152,28 @@ impl LibsqlStore {
             }
         }
 
-        tx.execute(
-            r#"
-            UPDATE users
-            SET status = ?1,
-                updated_at = ?2
-            WHERE user_id = ?3
-            "#,
-            libsql::params![
-                UserStatus::Disabled.as_str(),
-                updated_at.unix_timestamp(),
-                user_id.to_string(),
-            ],
-        )
-        .await
-        .map_err(to_write_error)?;
+        // The status guard keeps a concurrent deactivation from writing the same
+        // transition twice; the loser sees the same conflict as the read above.
+        let changed = tx
+            .execute(
+                r#"
+                UPDATE users
+                SET status = ?1,
+                    updated_at = ?2
+                WHERE user_id = ?3
+                  AND status <> ?1
+                "#,
+                libsql::params![
+                    UserStatus::Disabled.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if changed == 0 {
+            return Err(StoreError::Conflict("user is already disabled".to_string()));
+        }
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }

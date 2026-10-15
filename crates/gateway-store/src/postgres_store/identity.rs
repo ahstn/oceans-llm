@@ -1034,12 +1034,16 @@ impl PostgresStore {
             }
         }
 
-        sqlx::query(
+        // The status guard keeps a concurrent deactivation from writing the same
+        // transition twice: the second waits for the first's row lock, rechecks the
+        // condition and changes nothing, so it sees the same conflict as the read.
+        let changed = sqlx::query(
             r#"
             UPDATE users
             SET status = $1,
                 updated_at = $2
             WHERE user_id = $3
+              AND status <> $1
             "#,
         )
         .bind(UserStatus::Disabled.as_str())
@@ -1048,6 +1052,9 @@ impl PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
+        if changed.rows_affected() == 0 {
+            return Err(StoreError::Conflict("user is already disabled".to_string()));
+        }
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }
