@@ -1873,16 +1873,48 @@ pub async fn oidc_callback(
         if user.status == UserStatus::Disabled {
             return Ok(oidc_error_redirect("denied"));
         }
-        state
-            .store
-            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
-            .await?;
         if user.status == UserStatus::Invited {
+            // Activation writes budget defaults, then the status; record a partial
+            // redemption if the status write fails after the defaults landed.
+            let progress = AuditProgress::default();
+            let activate = async {
+                state
+                    .store
+                    .apply_human_budget_defaults_for_user(
+                        state.budget_defaults.as_ref(),
+                        user.user_id,
+                        now,
+                    )
+                    .await?;
+                progress.landed();
+                state
+                    .store
+                    .update_user_status(user.user_id, UserStatus::Active, now)
+                    .await?;
+                Ok::<_, AppError>(())
+            };
+            if let Err(error) = activate.await {
+                record_partial_sso_activation(
+                    &state,
+                    &meta,
+                    &progress,
+                    &user,
+                    &error,
+                    ("oidc", &provider.provider_key),
+                )
+                .await;
+                return Err(error);
+            }
+            record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
+        } else {
             state
                 .store
-                .update_user_status(user.user_id, UserStatus::Active, now)
+                .apply_human_budget_defaults_for_user(
+                    state.budget_defaults.as_ref(),
+                    user.user_id,
+                    now,
+                )
                 .await?;
-            record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         }
         user
     } else if let Some(user) = state
@@ -1922,12 +1954,15 @@ pub async fn oidc_callback(
         };
         if let Err(error) = activate.await {
             // The identity link exists even though activation did not finish.
-            if progress.has_landed() {
-                let event = sso_activation_event(&user, "oidc", &provider.provider_key)
-                    .meta("error", error.0.error_code())
-                    .meta("outcome", "partial");
-                state.audit().record(&meta.user_context(&user), event).await;
-            }
+            record_partial_sso_activation(
+                &state,
+                &meta,
+                &progress,
+                &user,
+                &error,
+                ("oidc", &provider.provider_key),
+            )
+            .await;
             return Err(error);
         }
         record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
@@ -2160,16 +2195,48 @@ pub async fn oauth_callback_github(
         if user.status == UserStatus::Disabled {
             return Ok(oidc_error_redirect("denied"));
         }
-        state
-            .store
-            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
-            .await?;
         if user.status == UserStatus::Invited {
+            // Activation writes budget defaults, then the status; record a partial
+            // redemption if the status write fails after the defaults landed.
+            let progress = AuditProgress::default();
+            let activate = async {
+                state
+                    .store
+                    .apply_human_budget_defaults_for_user(
+                        state.budget_defaults.as_ref(),
+                        user.user_id,
+                        now,
+                    )
+                    .await?;
+                progress.landed();
+                state
+                    .store
+                    .update_user_status(user.user_id, UserStatus::Active, now)
+                    .await?;
+                Ok::<_, AppError>(())
+            };
+            if let Err(error) = activate.await {
+                record_partial_sso_activation(
+                    &state,
+                    &meta,
+                    &progress,
+                    &user,
+                    &error,
+                    ("oauth", &provider.provider_key),
+                )
+                .await;
+                return Err(error);
+            }
+            record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
+        } else {
             state
                 .store
-                .update_user_status(user.user_id, UserStatus::Active, now)
+                .apply_human_budget_defaults_for_user(
+                    state.budget_defaults.as_ref(),
+                    user.user_id,
+                    now,
+                )
                 .await?;
-            record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         }
         user
     } else if let Some(user) = state
@@ -2209,12 +2276,15 @@ pub async fn oauth_callback_github(
         };
         if let Err(error) = activate.await {
             // The identity link exists even though activation did not finish.
-            if progress.has_landed() {
-                let event = sso_activation_event(&user, "oauth", &provider.provider_key)
-                    .meta("error", error.0.error_code())
-                    .meta("outcome", "partial");
-                state.audit().record(&meta.user_context(&user), event).await;
-            }
+            record_partial_sso_activation(
+                &state,
+                &meta,
+                &progress,
+                &user,
+                &error,
+                ("oauth", &provider.provider_key),
+            )
+            .await;
             return Err(error);
         }
         record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
@@ -3641,6 +3711,25 @@ async fn record_sso_activation(
 ) {
     let event = sso_activation_event(user, method, provider_key)
         .after(serde_json::json!({ "status": UserStatus::Active.as_str() }));
+    state.audit().record(&meta.user_context(user), event).await;
+}
+
+/// Records an invited user's SSO activation that failed after a write landed.
+/// `provider` is the sign-in method and provider key.
+async fn record_partial_sso_activation(
+    state: &AppState,
+    meta: &AuditRequestMeta,
+    progress: &AuditProgress,
+    user: &UserRecord,
+    error: &AppError,
+    provider: (&str, &str),
+) {
+    if !progress.has_landed() {
+        return;
+    }
+    let event = sso_activation_event(user, provider.0, provider.1)
+        .meta("error", error.0.error_code())
+        .meta("outcome", "partial");
     state.audit().record(&meta.user_context(user), event).await;
 }
 
