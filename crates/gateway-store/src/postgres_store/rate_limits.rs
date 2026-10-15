@@ -48,7 +48,8 @@ const ADD_AMOUNT: &str =
     "INSERT INTO rate_limit_counters (counter_key, window_start, amount, expires_at)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (counter_key, window_start)
-     DO UPDATE SET amount = rate_limit_counters.amount + EXCLUDED.amount
+     DO UPDATE SET amount = rate_limit_counters.amount + EXCLUDED.amount,
+                   expires_at = GREATEST(rate_limit_counters.expires_at, EXCLUDED.expires_at)
      RETURNING amount";
 
 #[async_trait]

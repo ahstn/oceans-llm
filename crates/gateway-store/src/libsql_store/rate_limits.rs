@@ -57,7 +57,8 @@ async fn add_amount(
             "INSERT INTO rate_limit_counters (counter_key, window_start, amount, expires_at)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT (counter_key, window_start)
-             DO UPDATE SET amount = rate_limit_counters.amount + excluded.amount
+             DO UPDATE SET amount = rate_limit_counters.amount + excluded.amount,
+                           expires_at = MAX(rate_limit_counters.expires_at, excluded.expires_at)
              RETURNING amount",
             libsql::params![counter_key, window_start, amount, expires_at],
         )

@@ -18,11 +18,15 @@ struct MemoryStore {
     policies: Mutex<Vec<RateLimitPolicyRecord>>,
     counters: Mutex<HashMap<(String, i64), i64>>,
     fail: bool,
+    fail_list: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
 impl RateLimitRepository for MemoryStore {
     async fn list_rate_limit_policies(&self) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        if self.fail_list.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(StoreError::Unavailable("down".to_string()));
+        }
         Ok(self.policies.lock().unwrap().clone())
     }
 
@@ -213,6 +217,10 @@ impl Harness {
     fn advance(&self, seconds: i64) {
         *self.now.lock().unwrap() += TimeDuration::seconds(seconds);
     }
+
+    fn now(&self) -> OffsetDateTime {
+        *self.now.lock().unwrap()
+    }
 }
 
 fn user_subject(user_id: Uuid, key_id: Uuid) -> RateLimitSubject<'static> {
@@ -362,12 +370,18 @@ async fn token_limits_reject_once_recorded_usage_reaches_the_limit() {
             ..
         })
     ));
-    harness.limiter.add_tokens(&subject, 999).await;
+    harness
+        .limiter
+        .add_tokens(&subject, 999, harness.now())
+        .await;
     assert!(matches!(
         harness.limiter.check(&subject).await.unwrap(),
         RateLimitDecision::Admitted(RateLimitStatus { remaining: 1, .. })
     ));
-    harness.limiter.add_tokens(&subject, 50).await;
+    harness
+        .limiter
+        .add_tokens(&subject, 50, harness.now())
+        .await;
     let RateLimitDecision::Rejected(rejected) = harness.limiter.check(&subject).await.unwrap()
     else {
         panic!("expected rejection");
@@ -539,4 +553,142 @@ async fn admin_changes_apply_on_the_next_check_and_validate_shape() {
         .await
         .unwrap_err();
     assert_eq!(error.http_status_code(), 409);
+}
+
+#[tokio::test]
+async fn an_unloadable_policy_set_fails_closed_and_open_uses_config_only() {
+    let unloadable = || MemoryStore {
+        fail_list: std::sync::atomic::AtomicBool::new(true),
+        ..MemoryStore::default()
+    };
+    let config_policy = || {
+        vec![config(
+            "per key",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            5,
+        )]
+    };
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+
+    // Closed: admin policies are unknown, so even traffic no config policy
+    // matches is rejected.
+    let closed = Harness::with_mode(unloadable(), Vec::new(), RateLimitFailureMode::Closed);
+    let error = closed.limiter.check(&subject).await.unwrap_err();
+    assert_eq!(error.http_status_code(), 503);
+
+    // Open: config policies still apply.
+    let open = Harness::new(unloadable(), config_policy());
+    assert!(matches!(
+        open.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus { remaining: 4, .. })
+    ));
+}
+
+#[tokio::test]
+async fn a_failed_reload_keeps_the_last_complete_policy_set() {
+    let store = Arc::new(MemoryStore::default());
+    *store.policies.lock().unwrap() = vec![admin_policy("admin", RateLimitScopeKind::Global, 1)];
+    // A zero refresh interval reloads on every check.
+    let limiter = RateLimiter::new(
+        store.clone(),
+        RateLimitSettings {
+            failure_mode: RateLimitFailureMode::Closed,
+            policy_refresh: Duration::ZERO,
+            config_policies: Vec::new(),
+        },
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    assert!(matches!(
+        limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+
+    store
+        .fail_list
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    // The admin policy from the last good load is still enforced, and the
+    // closed failure mode does not reject on its own.
+    assert!(matches!(
+        limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Rejected(ref status) if status.policy_name == "admin"
+    ));
+}
+
+#[tokio::test]
+async fn tokens_are_charged_to_the_window_the_response_finished_in() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "daily tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::User,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Day,
+            1_000,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let finished_day = RateLimitWindow::at(RateLimitPeriod::Day, harness.now()).start;
+
+    // The recorder runs on another task; move the clock to the next day before
+    // it gets to run.
+    harness.limiter.record_tokens(&subject, 40);
+    harness.advance(86_400);
+    for _ in 0..100 {
+        if !harness.store.counters.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    let counters = harness.store.counters.lock().unwrap().clone();
+    assert_eq!(counters.len(), 1);
+    let ((_, window_start), amount) = counters.into_iter().next().unwrap();
+    assert_eq!((window_start, amount), (finished_day, 40));
+}
+
+#[tokio::test]
+async fn editing_a_policy_period_starts_fresh_counters() {
+    let harness = Harness::new(MemoryStore::default(), Vec::new());
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let policy = harness
+        .limiter
+        .create_admin_policy(admin_policy("global", RateLimitScopeKind::Global, 1))
+        .await
+        .unwrap();
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Rejected(_)
+    ));
+
+    harness
+        .limiter
+        .update_admin_policy(RateLimitPolicyRecord {
+            period: RateLimitPeriod::Day,
+            ..policy
+        })
+        .await
+        .unwrap();
+    // The minute counter is not reused, so the daily quota starts empty.
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus { remaining: 0, .. })
+    ));
+    let keys: std::collections::HashSet<_> = harness
+        .store
+        .counters
+        .lock()
+        .unwrap()
+        .keys()
+        .map(|(key, _)| key.clone())
+        .collect();
+    assert_eq!(keys.len(), 2);
+    assert!(keys.iter().any(|key| key.contains(":minute:requests|")));
+    assert!(keys.iter().any(|key| key.contains(":day:requests|")));
 }

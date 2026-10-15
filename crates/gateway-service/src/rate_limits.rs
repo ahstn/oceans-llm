@@ -281,10 +281,13 @@ impl ActivePolicy {
         {
             return None;
         }
+        // The period and metric are part of the identity, so editing either
+        // starts fresh counters instead of reusing rows sized for the old window.
         let policy = match &self.source {
             RateLimitPolicySource::Config => format!("config:{}", self.name),
             RateLimitPolicySource::Admin(id) => format!("policy:{id}"),
         };
+        let policy = format!("{policy}:{}:{}", self.period.as_str(), self.metric.as_str());
         Some(match principal {
             Some(principal) => format!("{policy}|{}:{principal}", self.scope_kind.as_str()),
             None => format!("{policy}|global"),
@@ -292,10 +295,22 @@ impl ActivePolicy {
     }
 }
 
+/// The policies a check runs against. `complete` is false when admin policies
+/// could not be loaded and no earlier set was available, so only config
+/// policies are known.
+#[derive(Clone)]
+struct PolicySet {
+    policies: Arc<Vec<ActivePolicy>>,
+    complete: bool,
+}
+
 struct PolicyCache {
     loaded_at: Instant,
-    policies: Arc<Vec<ActivePolicy>>,
+    set: PolicySet,
 }
+
+/// How long an incomplete policy set is reused before the store is retried.
+const INCOMPLETE_POLICY_RETRY: Duration = Duration::from_secs(1);
 
 type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
@@ -368,7 +383,14 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
-        let policies = self.policies().await;
+        let PolicySet { policies, complete } = self.policies().await;
+        if !complete && self.settings.failure_mode == RateLimitFailureMode::Closed {
+            // Admin policies are unknown, so this request may be one they limit.
+            return self.store_failure(
+                subject.operation,
+                StoreError::Unavailable("rate limit policies could not be loaded".to_string()),
+            );
+        }
         let now = (self.clock)();
         let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = policies
             .iter()
@@ -487,6 +509,9 @@ impl RateLimiter {
         let user_id = subject.user_id;
         let team_id = subject.team_id;
         let model_keys: Vec<String> = subject.model_keys.iter().map(ToString::to_string).collect();
+        // Charge the window the response finished in, not the one the task
+        // happens to run in.
+        let finished_at = (self.clock)();
         tokio::spawn(async move {
             let model_keys: Vec<&str> = model_keys.iter().map(String::as_str).collect();
             let subject = RateLimitSubject {
@@ -497,24 +522,31 @@ impl RateLimiter {
                 model_keys: &model_keys,
                 mcp_server: None,
             };
-            limiter.add_tokens(&subject, total_tokens).await;
+            limiter
+                .add_tokens(&subject, total_tokens, finished_at)
+                .await;
         });
     }
 
-    async fn add_tokens(&self, subject: &RateLimitSubject<'_>, total_tokens: i64) {
+    async fn add_tokens(
+        &self,
+        subject: &RateLimitSubject<'_>,
+        total_tokens: i64,
+        finished_at: OffsetDateTime,
+    ) {
         let Some(store) = &self.store else {
             return;
         };
-        let now = (self.clock)();
         let increments: Vec<_> = self
             .policies()
             .await
+            .policies
             .iter()
             .filter(|policy| policy.metric == RateLimitMetric::Tokens)
             .filter_map(|policy| {
                 Some(RateLimitCounterIncrement {
                     counter_key: policy.counter_key(subject)?,
-                    window: RateLimitWindow::at(policy.period, now),
+                    window: RateLimitWindow::at(policy.period, finished_at),
                     amount: total_tokens,
                 })
             })
@@ -550,16 +582,19 @@ impl RateLimiter {
     }
 
     /// The enabled policies, reloading admin policies when the cache is stale.
-    /// A failed reload keeps the previous set.
-    async fn policies(&self) -> Arc<Vec<ActivePolicy>> {
-        if let Some(policies) = self.cached(false) {
-            return policies;
+    /// A failed reload keeps the previous complete set. Without one, the set
+    /// holds config policies only, is marked incomplete, and is retried after
+    /// `INCOMPLETE_POLICY_RETRY`.
+    async fn policies(&self) -> PolicySet {
+        if let Some(set) = self.cached(false) {
+            return set;
         }
         let _guard = self.refresh.lock().await;
-        if let Some(policies) = self.cached(false) {
-            return policies;
+        if let Some(set) = self.cached(false) {
+            return set;
         }
         let mut policies = self.config_policies.clone();
+        let mut complete = true;
         if let Some(store) = &self.store {
             match store.list_rate_limit_policies().await {
                 Ok(records) => policies.extend(
@@ -570,36 +605,47 @@ impl RateLimiter {
                 ),
                 Err(error) => {
                     tracing::warn!(error = %error, "loading rate limit policies failed");
-                    if let Some(stale) = self.cached(true) {
-                        self.store_cache(Arc::clone(&stale));
+                    if let Some(stale) = self.cached(true).filter(|set| set.complete) {
+                        self.store_cache(stale.clone());
                         return stale;
                     }
+                    complete = false;
                 }
             }
         }
-        let policies = Arc::new(policies);
-        self.store_cache(Arc::clone(&policies));
-        policies
+        let set = PolicySet {
+            policies: Arc::new(policies),
+            complete,
+        };
+        self.store_cache(set.clone());
+        set
     }
 
-    fn cached(&self, allow_stale: bool) -> Option<Arc<Vec<ActivePolicy>>> {
+    fn cached(&self, allow_stale: bool) -> Option<PolicySet> {
         let cache = self
             .cache
             .read()
             .unwrap_or_else(|poison| poison.into_inner());
         cache
             .as_ref()
-            .filter(|cache| allow_stale || cache.loaded_at.elapsed() < self.settings.policy_refresh)
-            .map(|cache| Arc::clone(&cache.policies))
+            .filter(|cache| {
+                let ttl = if cache.set.complete {
+                    self.settings.policy_refresh
+                } else {
+                    INCOMPLETE_POLICY_RETRY
+                };
+                allow_stale || cache.loaded_at.elapsed() < ttl
+            })
+            .map(|cache| cache.set.clone())
     }
 
-    fn store_cache(&self, policies: Arc<Vec<ActivePolicy>>) {
+    fn store_cache(&self, set: PolicySet) {
         *self
             .cache
             .write()
             .unwrap_or_else(|poison| poison.into_inner()) = Some(PolicyCache {
             loaded_at: Instant::now(),
-            policies,
+            set,
         });
     }
 

@@ -52,7 +52,7 @@ We chose a sliding-window counter over a token bucket. A token bucket in SQL nee
 
 ### 3. Counters live in the gateway database
 
-`rate_limit_counters (counter_key, window_start, amount, expires_at)` is keyed by counter and window. All replicas consume the same rows.
+`rate_limit_counters (counter_key, window_start, amount, expires_at)` is keyed by counter and window. All replicas consume the same rows. A counter key names the policy, its period and metric, and the principal, so editing a policy's period or metric starts new counters instead of reusing rows sized for the old window. Upserts also keep the later of the two expiry times.
 
 A request check is one transaction:
 
@@ -61,7 +61,7 @@ A request check is one transaction:
 3. Read the previous window's amount and compute the estimate.
 4. If any charge is over its limit, roll back. A rejected request consumes nothing on any scope. Otherwise commit.
 
-**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. A burst of concurrent requests can therefore overshoot a token limit by up to one request each. Token counting only charges successful synchronous requests. Batches are not rate limited.
+**Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. A burst of concurrent requests can therefore overshoot a token limit by up to one request each. Tokens are charged with the usage the provider reports, as budgets are, including partial usage on a failed request or interrupted stream: the provider consumed those tokens. Usage is charged to the window the response finished in. Batches are not rate limited.
 
 Counter rows expire one window after their window ends. Each replica deletes up to 500 expired rows at most once a minute.
 
@@ -72,7 +72,7 @@ When there are no matching policies, a request makes no database call. Policies 
 If the counter store errors, `rate_limits.failure_mode` decides:
 
 - `open` (default): the request is admitted without rate-limit headers, the gateway logs a warning, and the `gateway.rate_limit.decisions` metric counts it with outcome `store_error`.
-- `closed`: the request is rejected with `503`.
+- `closed`: the request is rejected with `503`. A replica that has not loaded the admin policies yet, and cannot, also rejects with `503`, since it cannot tell which admin policies a request matches. A replica that loaded them before keeps enforcing that set.
 
 The rate-limit table is in the same database that authenticates API keys. When that database is down, most requests fail anyway. Failing open stops a counter-only problem, such as lock contention, from becoming an outage.
 

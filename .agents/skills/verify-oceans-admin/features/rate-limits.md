@@ -14,7 +14,7 @@ Rate Limits is a platform-admin page that lists every rate-limit policy, from `g
 ## How to get to it (user POV)
 
 - Sign in as a platform administrator and choose `Rate Limits` under `Control Plane`.
-- Open `/admin/rate-limits` directly. Users and team admins without the `rate_limits` page are redirected to `/admin/no-access`.
+- Open `/admin/rate-limits` directly. Users and team admins without the `rate_limits` page are sent to `/admin/profile`, and `GET /api/v1/admin/rate-limits` returns `403`. Only a session with no permitted pages lands on `/admin/no-access`.
 
 ## Driving it with control-oceans-admin
 
@@ -27,7 +27,7 @@ Preconditions:
 - **Open.** Choose `Rate Limits`. The `Rate Limits` heading and the `Policies` card are visible, with `No rate limits` on a fresh seed.
 - **Create.** Choose `New rate limit`. Fill `Name` with a unique `verify-<run id>`, leave `Traffic` as `Inference requests`, choose `API key` in `Counted per`, choose the temporary key in `Applies to`, set `Limit` to `1`, keep `Per minute (sliding)`, and choose `Create rate limit`. The row shows `1 requests / minute`, `Inference requests`, `API key: <key name>`, and `Enforced`.
 - **API parity.** With the same session, `GET /api/v1/admin/rate-limits` returns the policy with `source: admin`, `scope_kind: api_key`, the key id in `scope_id`, and `limit: 1`.
-- **Enforce.** Send one non-streaming `/v1/chat/completions` request with the temporary key, `model: deepseek-v4.1-flash`, a short synthetic prompt, and `max_tokens` at most 32. Expect `200` with `x-ratelimit-limit: 1` and `x-ratelimit-remaining: 0`. Send the same request again within the minute. Expect `429`, `error.type: rate_limit_error`, `error.code: rate_limited`, a message starting `API key rate limit exceeded: 1 inference requests per minute`, and a `retry-after` header. `Request Logs` shows only the first request.
+- **Enforce.** Send one non-streaming `/v1/chat/completions` request with the temporary key, `model: deepseek-v4.1-flash`, a short synthetic prompt, and `max_tokens` at most 32. Expect `200` with `x-ratelimit-limit: 1` and `x-ratelimit-remaining: 0`. Send the same request again within the minute. Expect `429`, `error.type: rate_limit_error`, `error.code: rate_limited`, a message starting `rate limited: API key rate limit exceeded: 1 inference requests per minute`, and a `retry-after` header. `Request Logs` shows only the first request.
 - **Edit.** Choose `Edit` on the row, turn off `Enforced`, and choose `Save rate limit`. The row shows `Paused`. A third request (paid) is optional: it returns `200` with no `x-ratelimit-*` headers.
 - **Delete.** Choose `Delete`, then `Delete rate limit`. The row disappears and `GET /api/v1/admin/rate-limits` no longer returns it.
 - **MCP (optional).** With a registered MCP server and a granted key from the [MCP](./mcp.md) recipe, create a policy with `Traffic` `MCP tool calls`, that server, `Counted per` `API key`, and `Limit` `1`. Call one read-only tool twice on `/mcp/<server_key>`. The second call returns HTTP `429` with JSON-RPC error code `-32029`, and `MCP Invocations` shows it with error code `rate_limited`.

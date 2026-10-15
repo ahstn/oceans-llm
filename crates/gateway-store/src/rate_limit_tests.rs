@@ -302,4 +302,35 @@ async fn exercise_counters<S: RateLimitRepository>(store: &S) {
         .await
         .expect("consume");
     assert_eq!(fresh.observations[0].current, 1);
+    // A row reused by a longer window keeps the later expiry, so a purge
+    // cannot drop a counter that is still in use.
+    let midnight = OffsetDateTime::from_unix_timestamp(1_800_057_600).expect("midnight");
+    let short = RateLimitCounterIncrement {
+        counter_key: "reused".to_string(),
+        window: RateLimitWindow::at(RateLimitPeriod::Minute, midnight),
+        amount: 1,
+    };
+    let long = RateLimitCounterIncrement {
+        window: RateLimitWindow::at(RateLimitPeriod::Day, midnight),
+        ..short.clone()
+    };
+    assert_eq!(short.window.start, long.window.start);
+    store
+        .add_rate_limit_usage(&[short.clone(), long.clone()])
+        .await
+        .expect("add");
+    store
+        .purge_expired_rate_limit_counters(short.window.expires_at() + 1, 100)
+        .await
+        .expect("purge");
+    let reused = store
+        .consume_rate_limits(&[RateLimitCounterCharge {
+            counter_key: long.counter_key,
+            window: long.window,
+            limit: 100,
+            cost: 0,
+        }])
+        .await
+        .expect("check");
+    assert_eq!(reused.observations[0].current, 2);
 }
