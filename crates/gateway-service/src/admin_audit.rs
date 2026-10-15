@@ -423,7 +423,7 @@ pub fn redact_audit_value(value: Value) -> Value {
             let sensitive = map
                 .get("key")
                 .and_then(Value::as_str)
-                .is_some_and(is_sensitive_audit_key);
+                .is_some_and(is_secret_name);
             if let Some(value) = map.remove("value") {
                 let value = if sensitive && !is_flag(&value) {
                     Value::String(AUDIT_REDACTED.to_string())
@@ -463,6 +463,13 @@ pub fn is_sensitive_audit_key(key: &str) -> bool {
     {
         return false;
     }
+    is_secret_name(&normalized)
+}
+
+/// Whether a name looks secret, without the safe-suffix allowance. Tag keys are
+/// user-entered, so `password_ref` must not pass as a reference.
+fn is_secret_name(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase().replace('-', "_");
     is_sensitive_json_key(&normalized)
         || SECRET_KEY_FRAGMENTS
             .iter()
@@ -716,6 +723,7 @@ mod tests {
             "password": null,
             "tags": [
                 { "key": "github_pat", "value": "plain-looking-value" },
+                { "key": "password_ref", "value": "hunter2" },
                 { "key": "team", "value": "platform" },
             ],
             "pat": "ghp_0123456789abcdefghij",
@@ -741,6 +749,7 @@ mod tests {
                 "password": null,
                 "tags": [
                     { "key": "github_pat", "value": AUDIT_REDACTED },
+                    { "key": "password_ref", "value": AUDIT_REDACTED },
                     { "key": "team", "value": "platform" },
                 ],
                 "pat": AUDIT_REDACTED,
