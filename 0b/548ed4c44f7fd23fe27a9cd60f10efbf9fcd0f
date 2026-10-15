@@ -1,0 +1,75 @@
+crates/gateway-core/src/audit.rs
+  s_1f9f91df052d6c::t_4398e43bd9eebc 1-202
+crates/gateway-core/src/lib.rs
+  s_63939a3786d9af::t_35ce5a7a15295d 2,35-38
+crates/gateway-store/migrations/V59__admin_audit_log.sql
+  s_af4ccbd37c05c0::t_358ef2c9809dc0 1-22
+crates/gateway-store/migrations/postgres/V59__admin_audit_log.sql
+  s_af4ccbd37c05c0::t_7e4f5642948909 1-22
+crates/gateway-store/src/any_store_audit_logs.rs
+  s_4743c3bdc4d116::t_c516600c5f49df 1-23
+crates/gateway-store/src/audit_logs.rs
+  s_7a82db561e19d4::t_3f43f7dbab94b9 1-210
+crates/gateway-store/src/lib.rs
+  s_7a82db561e19d4::t_2b7f3d0d72abe3 7,19
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_c7724b3176bb10 1-149
+crates/gateway-store/src/libsql_store/mod.rs
+  s_7a82db561e19d4::t_33ece72dbc0d6b 3
+crates/gateway-store/src/migration_registry.rs
+  s_af4ccbd37c05c0::t_f69b5781b6e232 338-344
+crates/gateway-store/src/postgres_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_39702572c4d890 1-147
+crates/gateway-store/src/postgres_store/mod.rs
+  s_7a82db561e19d4::t_aa8ae93c7d2100 3
+crates/gateway-store/src/store.rs
+  s_7a82db561e19d4::t_dad31166e69093 6-7,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b548ed4c44f7fd23fe27a9cd60f10efbf9fcd0f",
+  "prompts": {},
+  "sessions": {
+    "s_1f9f91df052d6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9424644d-27c2-45b8-ad4b-a7bdfe08346d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a82db561e19d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd9e51db-6bcf-4a05-bc63-90f1704b3ca9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
