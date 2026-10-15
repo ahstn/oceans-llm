@@ -83,6 +83,10 @@ describe('AuthorizedMcpClientsCard', () => {
     )
     expect(within(card).getAllByText('MCP server github').length).toBeGreaterThan(0)
     expect(card.querySelector('[data-slot="card-content"]')).toHaveClass('min-w-0')
+    expect(screen.getByTestId('authorized-mcp-clients-table')).toHaveClass(
+      'max-w-full',
+      'overflow-x-auto',
+    )
   })
 
   it('disconnects a client and refreshes the list', async () => {

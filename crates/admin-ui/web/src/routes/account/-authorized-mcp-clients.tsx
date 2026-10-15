@@ -81,7 +81,10 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                 </li>
               ))}
             </ul>
-            <div className="border-border hidden overflow-hidden rounded-md border md:block">
+            <div
+              className="border-border hidden max-w-full overflow-x-auto rounded-md border md:block"
+              data-testid="authorized-mcp-clients-table"
+            >
               <Table className="text-left">
                 <TableHeader className="bg-surface-muted">
                   <TableRow>
@@ -105,7 +108,7 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                 <TableBody>
                   {clients.items.map((client) => (
                     <TableRow key={client.grant_id}>
-                      <TableCell className="px-3 py-3">
+                      <TableCell className="max-w-64 px-3 py-3">
                         <ClientIdentity client={client} />
                       </TableCell>
                       <TableCell className="text-subtle-foreground px-3 py-3">
@@ -117,7 +120,7 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                       <TableCell className="text-subtle-foreground px-3 py-3">
                         {formatUtc(client.expires_at)}
                       </TableCell>
-                      <TableCell className="px-3 py-3">
+                      <TableCell className="w-px px-3 py-3 whitespace-nowrap">
                         <DisconnectButton
                           client={client}
                           pending={isPending && pendingGrantId === client.grant_id}
