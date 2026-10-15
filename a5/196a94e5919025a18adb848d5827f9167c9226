@@ -1,0 +1,32 @@
+crates/admin-ui/web/src/routes/oauth/consent.tsx
+  h_2f452a9c375069 20,32-35,45-58
+crates/admin-ui/web/src/server/admin-data.server.ts
+  h_2f452a9c375069 727,730,732-736
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  h_2f452a9c375069 128-143
+crates/gateway-core/src/auth.rs
+  h_2f452a9c375069 1,21-24
+crates/gateway-service/src/mcp_client_oauth/validation.rs
+  h_2f452a9c375069 25,28,51,68-69
+crates/gateway/src/http/mcp_client_oauth.rs
+  h_2f452a9c375069 11,47
+crates/gateway/src/http/mcp_client_oauth/authorize.rs
+  h_2f452a9c375069 72-73,75-79,87,98-123
+crates/gateway/src/http/mcp_client_oauth/stream_lifetime.rs
+  h_2f452a9c375069 1-198
+crates/gateway/src/http/mcp_gateway.rs
+  h_2f452a9c375069 44-46,126
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  h_2f452a9c375069 209-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5196a94e5919025a18adb848d5827f9167c9226",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
