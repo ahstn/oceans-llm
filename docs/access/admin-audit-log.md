@@ -1,6 +1,6 @@
 # Admin Audit Log
 
-`See also`: [Admin Control Plane](admin-control-plane.md), [Identity and Access](identity-and-access.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Admin Audit Log](../adr/2026-10-15-admin-audit-log.md)
+`See also`: [Admin Control Plane](admin-control-plane.md), [Identity and Access](identity-and-access.md), [Observability and Request Logs](../operations/observability-and-request-logs.md)
 
 The audit log records administrator changes to the control plane: who changed what, when, from where, and what the change was. It is separate from request logs. Request logs explain model and tool traffic; the audit log explains changes to keys, identities, budgets, sessions and MCP access.
 
