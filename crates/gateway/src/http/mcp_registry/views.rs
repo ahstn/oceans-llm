@@ -449,19 +449,21 @@ pub(super) fn audit_safe_url(raw: &str) -> String {
             url.set_query(None);
             url.set_fragment(None);
             // Some servers take a token as a path segment, e.g. `/connect/<token>`.
-            let segments: Option<Vec<String>> = url.path_segments().map(|segments| {
+            // Segments stay in their encoded form; `set_path` keeps existing escapes.
+            let path = url.path_segments().map(|segments| {
                 segments
                     .map(|segment| {
                         if gateway_service::is_secret_path_segment(segment) {
-                            AUDIT_REDACTED_SEGMENT.to_string()
+                            AUDIT_REDACTED_SEGMENT
                         } else {
-                            segment.to_string()
+                            segment
                         }
                     })
-                    .collect()
+                    .collect::<Vec<_>>()
+                    .join("/")
             });
-            if let (Some(segments), Ok(mut path)) = (segments, url.path_segments_mut()) {
-                path.clear().extend(segments);
+            if let Some(path) = path {
+                url.set_path(&format!("/{path}"));
             }
             url.to_string()
         }
@@ -760,6 +762,16 @@ mod audit_summary_tests {
         assert_eq!(
             audit_safe_url("https://mcp.example/v1/mcp"),
             "https://mcp.example/v1/mcp"
+        );
+        let encoded = format!("https://mcp.example/connect/{}/sse", "%41".repeat(32));
+        assert_eq!(
+            audit_safe_url(&encoded),
+            "https://mcp.example/connect/REDACTED/sse"
+        );
+        // Encoded segments that are not secrets keep their encoding.
+        assert_eq!(
+            audit_safe_url("https://mcp.example/team%20a/mcp"),
+            "https://mcp.example/team%20a/mcp"
         );
     }
 }

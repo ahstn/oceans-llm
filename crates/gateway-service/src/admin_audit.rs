@@ -15,6 +15,7 @@ use std::{
 };
 
 use gateway_core::{AuditActor, AuditLogRepository, NewAuditLogRecord};
+use percent_encoding::percent_decode_str;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -557,20 +558,27 @@ fn is_token_word(word: &str) -> bool {
 
 /// Whether a URL path segment looks like an embedded credential: a known token
 /// shape, or a long random-looking value. UUIDs are identifiers and are kept.
+/// The segment is percent-decoded first, so an encoded token is caught too.
 #[must_use]
 pub fn is_secret_path_segment(segment: &str) -> bool {
+    let decoded = percent_decode_str(segment).decode_utf8_lossy();
+    let segment = decoded.as_ref();
     if is_token_word(segment) || looks_like_credential(segment) {
         return true;
     }
-    if uuid::Uuid::parse_str(segment).is_ok() {
+    // Only the hyphenated form is an identifier; 32 bare hex digits are as
+    // likely to be a key.
+    if segment.len() == 36 && uuid::Uuid::parse_str(segment).is_ok() {
         return false;
     }
     if segment.len() < 32 {
         return false;
     }
-    let token_charset = segment
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'));
+    // Letters, digits, and the URL-safe and base64 symbols tokens are built from.
+    let token_charset = segment.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || matches!(character, '_' | '-' | '.' | '~' | '+' | '/' | '=')
+    });
     let mixed = segment.chars().any(|character| character.is_ascii_digit())
         && segment
             .chars()
@@ -882,6 +890,18 @@ mod tests {
         ));
         assert!(!is_secret_path_segment("mcp"));
         assert!(!is_secret_path_segment("v1"));
+        // Percent-encoded tokens are decoded before they are checked.
+        assert!(is_secret_path_segment(&"%41".repeat(32)));
+        assert!(is_secret_path_segment(
+            "%61%31%62%32c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
+        ));
+        assert!(is_secret_path_segment("gwk_0f3c9a%2Es3cr3t"));
+        // Base64 tokens carry `+`, `/` and `=`.
+        assert!(is_secret_path_segment(
+            "dGhpcyBpcyBhIHNlY3JldCB0b2tlbg+/xyz1=="
+        ));
+        assert!(!is_secret_path_segment("%7Euser"));
+        assert!(is_secret_path_segment("0f3c9a2e0d5b4c1e9f7a1b2c3d4e5f60"));
     }
 
     #[tokio::test]
