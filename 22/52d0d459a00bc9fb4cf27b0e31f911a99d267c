@@ -1,0 +1,19 @@
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_01674f4e1b5bdc::t_7993e417b78124 52-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2252d0d459a00bc9fb4cf27b0e31f911a99d267c",
+  "prompts": {},
+  "sessions": {
+    "s_01674f4e1b5bdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b47-bf04-76f3-8675-5d67766468fd",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
