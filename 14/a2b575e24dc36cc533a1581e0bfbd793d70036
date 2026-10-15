@@ -1,0 +1,19 @@
+dist-workspace.toml
+  s_7a82db561e19d4::t_1a0172c240bba9 53-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14a2b575e24dc36cc533a1581e0bfbd793d70036",
+  "prompts": {},
+  "sessions": {
+    "s_7a82db561e19d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd9e51db-6bcf-4a05-bc63-90f1704b3ca9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
