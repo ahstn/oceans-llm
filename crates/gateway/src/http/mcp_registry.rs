@@ -807,12 +807,9 @@ pub async fn upsert_mcp_credential_binding(
 ) -> Result<Json<Envelope<McpCredentialBindingPayload>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
     let service = McpCredentialService::new(state.store.clone());
-    // A caller-chosen ID that does not exist yet is inserted, so it is a create.
-    let replaced = match request.credential_binding_id {
-        Some(credential_binding_id) => service.binding_exists(credential_binding_id).await?,
-        None => false,
-    };
-    let binding = service
+    // The store reports whether its write replaced a binding: a caller-chosen ID
+    // that does not exist yet is inserted, so it is a create.
+    let (binding, replaced) = service
         .upsert_binding(UpsertMcpCredentialBindingInput {
             credential_binding_id: request.credential_binding_id,
             mcp_server_id: request.server_id,

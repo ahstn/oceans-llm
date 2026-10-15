@@ -116,7 +116,7 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
         if input.credential_binding_id.is_some() {
@@ -158,7 +158,7 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                 .await
                 .map_err(to_write_error)?;
             if changed > 0 {
-                return load_credential(&self.connection, id).await;
+                return Ok((load_credential(&self.connection, id).await?, true));
             }
         }
         self.connection
@@ -193,7 +193,7 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_credential(&self.connection, id).await
+        Ok((load_credential(&self.connection, id).await?, false))
     }
 
     async fn get_active_mcp_upstream_credential_binding(
@@ -217,13 +217,6 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .map_err(to_query_error)?
             .map(|row| decode_credential(&row))
             .transpose()
-    }
-
-    async fn get_mcp_upstream_credential_binding(
-        &self,
-        credential_binding_id: Uuid,
-    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
-        find_credential(&self.connection, credential_binding_id).await
     }
 
     async fn compare_and_swap_mcp_oauth_credential_refresh(

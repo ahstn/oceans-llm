@@ -106,7 +106,7 @@ impl McpUpstreamCredentialRepository for PostgresStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
         if input.credential_binding_id.is_some() {
@@ -147,7 +147,7 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .await
             .map_err(to_write_error)?;
             if result.rows_affected() > 0 {
-                return load_credential(&self.pool, id).await;
+                return Ok((load_credential(&self.pool, id).await?, true));
             }
         }
         sqlx::query(
@@ -180,7 +180,7 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_credential(&self.pool, id).await
+        Ok((load_credential(&self.pool, id).await?, false))
     }
 
     async fn get_active_mcp_upstream_credential_binding(
@@ -198,13 +198,6 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .await
             .map_err(to_query_error)?;
         row.as_ref().map(decode_credential).transpose()
-    }
-
-    async fn get_mcp_upstream_credential_binding(
-        &self,
-        credential_binding_id: Uuid,
-    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
-        find_credential(&self.pool, credential_binding_id).await
     }
 
     async fn compare_and_swap_mcp_oauth_credential_refresh(

@@ -178,10 +178,12 @@ where
         })
     }
 
+    /// Creates or replaces a binding. The flag is `true` when an existing binding
+    /// was replaced, as decided by the store's write.
     pub async fn upsert_binding(
         &self,
         input: UpsertMcpCredentialBindingInput,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<(RedactedMcpCredentialBinding, bool), GatewayError> {
         validate_credential_input(&input)?;
         let now = OffsetDateTime::now_utc();
         let owner_scope_key = credential_owner_scope_key(
@@ -237,21 +239,11 @@ where
             metadata: input.metadata,
             updated_at: now,
         };
-        Ok(redact_binding(
-            self.repo
-                .upsert_mcp_upstream_credential_binding(&record)
-                .await?,
-        ))
-    }
-
-    /// Whether a binding with this ID exists, including a revoked one. An upsert
-    /// with an unknown ID creates the binding rather than replacing one.
-    pub async fn binding_exists(&self, credential_binding_id: Uuid) -> Result<bool, GatewayError> {
-        Ok(self
+        let (binding, replaced) = self
             .repo
-            .get_mcp_upstream_credential_binding(credential_binding_id)
-            .await?
-            .is_some())
+            .upsert_mcp_upstream_credential_binding(&record)
+            .await?;
+        Ok((redact_binding(binding), replaced))
     }
 
     pub async fn upsert_oauth_user_binding(
@@ -288,6 +280,7 @@ where
             metadata,
         })
         .await
+        .map(|(binding, _)| binding)
     }
 
     pub async fn list_bindings(
@@ -1027,7 +1020,7 @@ mod tests {
         async fn upsert_mcp_upstream_credential_binding(
             &self,
             _input: &UpsertMcpUpstreamCredentialBindingRecord,
-        ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+        ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
             unimplemented!()
         }
 
@@ -1042,13 +1035,6 @@ mod tests {
                 .expect("bindings")
                 .get(&(mcp_server_id, owner_scope_key.to_string()))
                 .cloned())
-        }
-
-        async fn get_mcp_upstream_credential_binding(
-            &self,
-            _credential_binding_id: Uuid,
-        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
-            unimplemented!()
         }
 
         async fn compare_and_swap_mcp_oauth_credential_refresh(

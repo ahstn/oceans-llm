@@ -1895,6 +1895,8 @@ pub(crate) mod tests {
             })
             .await
             .expect("create credential binding");
+        let (binding, replaced) = binding;
+        assert!(!replaced, "a new binding is a create");
         assert_eq!(binding.owner_scope_key, scope_key);
         assert_eq!(
             binding.secret_ref.as_deref(),
@@ -2082,7 +2084,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(11),
             })
             .await
-            .expect("create replacement credential");
+            .expect("create replacement credential")
+            .0;
         assert_eq!(
             replacement.material_kind,
             McpUpstreamCredentialMaterialKind::StaticHeader
@@ -2121,7 +2124,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(20),
             })
             .await
-            .expect("create OAuth credential");
+            .expect("create OAuth credential")
+            .0;
         let refreshed = store
             .compare_and_swap_mcp_oauth_credential_refresh(
                 &RefreshMcpOauthCredentialBindingRecord {
@@ -2176,6 +2180,8 @@ pub(crate) mod tests {
             })
             .await
             .expect("reconnect OAuth credential");
+        let (reconnected, replaced) = reconnected;
+        assert!(replaced, "reusing an existing id replaces the binding");
         assert!(
             !store
                 .revoke_mcp_oauth_credential_if_unchanged(

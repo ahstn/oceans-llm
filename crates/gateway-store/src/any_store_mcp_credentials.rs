@@ -14,7 +14,7 @@ impl McpUpstreamCredentialRepository for AnyStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    ) -> Result<(McpUpstreamCredentialBindingRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => store.upsert_mcp_upstream_credential_binding(input).await,
             Self::Postgres(store) => store.upsert_mcp_upstream_credential_binding(input).await,
@@ -35,24 +35,6 @@ impl McpUpstreamCredentialRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .get_active_mcp_upstream_credential_binding(mcp_server_id, owner_scope_key)
-                    .await
-            }
-        }
-    }
-
-    async fn get_mcp_upstream_credential_binding(
-        &self,
-        credential_binding_id: Uuid,
-    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
-        match self {
-            Self::Libsql(store) => {
-                store
-                    .get_mcp_upstream_credential_binding(credential_binding_id)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .get_mcp_upstream_credential_binding(credential_binding_id)
                     .await
             }
         }
