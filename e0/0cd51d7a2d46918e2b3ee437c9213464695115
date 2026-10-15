@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_4743c3bdc4d116::t_e880aecd446bea 1-40
+docs/access/admin-audit-log.md
+  s_63939a3786d9af::t_0736be91280413 1-74
+docs/adr/2026-10-15-admin-audit-log.md
+  s_63939a3786d9af::t_d6500fc1049c97 1-119
+.agents/skills/verify-oceans-admin/features/README.md
+  s_63939a3786d9af::t_bcf815f0fc9446 74
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_63939a3786d9af::t_335ea1a000a999 408-429,483-484
+docs/.vitepress/config.mts
+  s_63939a3786d9af::t_2a78b98ec27f3d 129
+docs/.vitepress/theme/sidebar-icons.ts
+  s_63939a3786d9af::t_7cb999e42045a7 72
+docs/access/admin-control-plane.md
+  s_63939a3786d9af::t_ce3561c84cdbbd 3,170
+docs/contributing/reference/data-relationships.md
+  s_63939a3786d9af::t_2046373cdac577 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e00cd51d7a2d46918e2b3ee437c9213464695115",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
