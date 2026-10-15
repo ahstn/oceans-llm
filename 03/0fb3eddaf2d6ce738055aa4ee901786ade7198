@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/mod.rs
+  s_01674f4e1b5bdc::t_2a5d26590a33c8 137-138,144-152
+crates/gateway-store/src/libsql_store/skills.rs
+  s_01674f4e1b5bdc::t_bd83004519fb55 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "030fb3eddaf2d6ce738055aa4ee901786ade7198",
+  "prompts": {},
+  "sessions": {
+    "s_01674f4e1b5bdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b47-bf04-76f3-8675-5d67766468fd",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
