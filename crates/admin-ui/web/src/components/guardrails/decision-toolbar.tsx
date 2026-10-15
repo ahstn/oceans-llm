@@ -116,7 +116,7 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
 }
 
 /** Free-text filter that applies on Enter; keyed by its value so URL changes reset the input. */
-function SearchField({
+export function SearchField({
   label,
   value,
   disabled,

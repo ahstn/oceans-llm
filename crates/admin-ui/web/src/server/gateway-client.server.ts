@@ -103,6 +103,17 @@ export function forwardRequestHeadersFromRequest(request: Request, initHeaders?:
     headers.set('x-forwarded-host', requestHost)
   }
 
+  // The gateway records the client address and agent on admin audit entries.
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  if (forwardedFor && !headers.has('x-forwarded-for')) {
+    headers.set('x-forwarded-for', forwardedFor)
+  }
+
+  const userAgent = request.headers.get('user-agent')
+  if (userAgent && !headers.has('user-agent')) {
+    headers.set('user-agent', userAgent)
+  }
+
   return headers
 }
 

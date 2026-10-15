@@ -118,6 +118,21 @@ describe('forwardRequestHeadersFromRequest', () => {
     expect(headers.get('x-forwarded-origin')).toBe('http://localhost:3001')
   })
 
+  it('forwards the client address chain and user agent for audit attribution', () => {
+    const request = new Request('http://localhost:3001/admin/identity/users', {
+      headers: {
+        host: 'localhost:3001',
+        'x-forwarded-for': '203.0.113.9, 127.0.0.1',
+        'user-agent': 'Browser/1.0',
+      },
+    })
+
+    const headers = forwardRequestHeadersFromRequest(request)
+
+    expect(headers.get('x-forwarded-for')).toBe('203.0.113.9, 127.0.0.1')
+    expect(headers.get('user-agent')).toBe('Browser/1.0')
+  })
+
   it('derives forwarded origin from the host header for loopback IPv6 requests', () => {
     const request = new Request('http://[::1]:3001/admin/login', {
       headers: {

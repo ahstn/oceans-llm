@@ -1,4 +1,5 @@
 import {
+  Audit01Icon,
   GitPullRequestIcon,
   HomeIcon,
   McpServerIcon,
@@ -146,6 +147,13 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Guardrails',
         to: '/observability/guardrails',
         icon: Notification03Icon,
+      },
+      {
+        requiredPage: 'request_logs',
+        platformAdminOnly: true,
+        label: 'Audit Log',
+        to: '/observability/audit-log',
+        icon: Audit01Icon,
       },
     ],
   },

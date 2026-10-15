@@ -36,6 +36,7 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listBatches,
+  listAuditLogs,
   listGuardrailDecisions,
   listMcpInvocations,
   listMcpOauthConnections,
@@ -175,6 +176,23 @@ function optionalRfc3339(value: unknown, label: string): string | undefined {
     throw new Error(`${label} must be an RFC 3339 timestamp`)
   }
   return timestamp
+}
+
+type AuditLogFilters = NonNullable<Parameters<typeof listAuditLogs>[0]>
+
+function validateAuditLogFilters(data: unknown): AuditLogFilters {
+  if (data === undefined) return {}
+  const input = requireObject(data, 'Audit log filters')
+  return {
+    actor_user_id: optionalString(input.actor_user_id, 'actor_user_id'),
+    action: optionalString(input.action, 'action'),
+    target_type: optionalString(input.target_type, 'target_type'),
+    target_id: optionalString(input.target_id, 'target_id'),
+    occurred_at_start: optionalRfc3339(input.occurred_at_start, 'occurred_at_start'),
+    occurred_at_end: optionalRfc3339(input.occurred_at_end, 'occurred_at_end'),
+    cursor: optionalString(input.cursor, 'cursor'),
+    limit: optionalPositiveInteger(input.limit, 'limit'),
+  }
 }
 
 type GuardrailDecisionFilters = NonNullable<Parameters<typeof listGuardrailDecisions>[0]>
@@ -484,6 +502,12 @@ export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
 export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(async () => {
   return getGuardrailPolicies()
 })
+
+export const getAuditLogPage = createServerFn({ method: 'POST' })
+  .validator(validateAuditLogFilters)
+  .handler(async ({ data }) => {
+    return listAuditLogs(data)
+  })
 
 export const getGuardrailDecisionPage = createServerFn({ method: 'POST' })
   .validator(validateGuardrailDecisionFilters)
