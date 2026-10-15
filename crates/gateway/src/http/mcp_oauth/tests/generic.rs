@@ -407,3 +407,40 @@ async fn generic_servers_get_a_connect_url_and_their_own_callback() {
         "/admin/account/connections?oauth_error=state_invalid"
     );
 }
+
+#[tokio::test]
+async fn manual_clients_use_the_admin_secret_and_configured_auth_method() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    unsafe {
+        std::env::set_var("OCEANS_MCP_DISCOVERY_GENERIC_MANUAL_SECRET", "admin-secret");
+    }
+    let (origin, mock) = start_mock(true).await;
+    let server = server(
+        &state,
+        &origin,
+        json!({
+            "client_registration": "manual",
+            "client_id": "admin-client",
+            "client_secret_ref": "env/OCEANS_MCP_DISCOVERY_GENERIC_MANUAL_SECRET",
+            "token_endpoint_auth_method": "client_secret_post",
+        }),
+    )
+    .await;
+    let (_user, headers) = oauth_session(&state).await;
+
+    let query = start(&state, &headers, &server).await;
+    assert_eq!(query["client_id"], "admin-client");
+    let location = callback(&state, &headers, &query["state"]).await;
+    assert_eq!(location, "/admin/account/connections?oauth=connected");
+
+    let mock = mock.lock().expect("mock");
+    assert!(
+        mock.registrations.is_empty(),
+        "manual clients never register"
+    );
+    let (authorization, form) = mock.token_requests.last().expect("code exchange");
+    assert_eq!(authorization, &None);
+    assert_eq!(form["client_id"], "admin-client");
+    assert_eq!(form["client_secret"], "admin-secret");
+}
