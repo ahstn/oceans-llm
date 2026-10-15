@@ -401,7 +401,7 @@ pub(crate) mod tests {
 
         // Config now names the route, which changes its derived identity.
         models[0].routes[0].route_key = Some("openai-prod".to_string());
-        seed(models).await.expect("reseed renamed route");
+        seed(models.clone()).await.expect("reseed renamed route");
 
         let routes = store
             .list_routes_for_model(model.id)
@@ -415,6 +415,15 @@ pub(crate) mod tests {
             .await
             .expect("batch after rename");
         assert_eq!(batch.route_id, route.id);
+
+        // Only rows that survived the delete are reused. Two configured routes that share
+        // (provider, upstream, priority) must still fail instead of overwriting each other.
+        let mut duplicate = models[0].routes[0].clone();
+        duplicate.route_key = Some("second".to_string());
+        models[0].routes.push(duplicate);
+        seed(models)
+            .await
+            .expect_err("routes sharing provider, upstream, and priority must not merge");
     }
 
     async fn exercise_managed_service_account_seed<S>(store: &S)

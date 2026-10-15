@@ -171,7 +171,7 @@ Operational limits to document:
 
 - ConfigMap keys allow only `[-._a-zA-Z0-9]`, so fragment files are named per team or per group, not per user email.
 - A ConfigMap is capped at 1 MiB. Around 200 bytes per user puts a 150-user deployment well under that, even in one ConfigMap.
-- The chart cannot checksum ConfigMaps it does not render. Pods do not seed (`GATEWAY_SEED_CONFIG=false`), so the seed job is what applies changes. Under Argo CD, Helm `post-install`/`post-upgrade` hooks run as `PostSync` hooks on every sync, so a fragment change triggers a reseed. Plain Helm users must run `helm upgrade` after changing an external fragment.
+- The chart cannot checksum ConfigMaps it does not render. Pods do not seed (`GATEWAY_SEED_CONFIG=false`), so the seed job is what applies changes. Under Argo CD, Helm `post-install`/`post-upgrade` hooks run as `PostSync` hooks when the release's Application syncs. A fragment change reseeds only if that ConfigMap belongs to the same Application, so its change triggers the sync; otherwise sync the Application manually. Plain Helm users must run `helm upgrade` after changing an external fragment.
 
 ### 7. Ownership, pruning and transactional seeding come next, in that order
 

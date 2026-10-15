@@ -5,7 +5,7 @@
 //! file overrides another. Validation runs once on the merged config.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -152,7 +152,8 @@ fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
         bail!("config directory `{}` is not a directory", dir.display());
     }
     let mut files = Vec::new();
-    collect_fragment_files(dir, &mut files)?;
+    let mut visited = BTreeSet::new();
+    collect_fragment_files(dir, &mut files, &mut visited)?;
     files.sort_by(|left, right| {
         left.strip_prefix(dir)
             .ok()
@@ -161,7 +162,18 @@ fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn collect_fragment_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+/// `visited` holds canonical paths, so a symlinked directory that points back at an ancestor is
+/// not walked again, and a directory or file reachable through two aliases is read once.
+fn collect_fragment_files(
+    dir: &Path,
+    files: &mut Vec<PathBuf>,
+    visited: &mut BTreeSet<PathBuf>,
+) -> anyhow::Result<()> {
+    let canonical =
+        fs::canonicalize(dir).with_context(|| format!("failed resolving `{}`", dir.display()))?;
+    if !visited.insert(canonical) {
+        return Ok(());
+    }
     let entries =
         fs::read_dir(dir).with_context(|| format!("failed reading `{}`", dir.display()))?;
     for entry in entries {
@@ -173,12 +185,16 @@ fn collect_fragment_files(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Resul
         let metadata =
             fs::metadata(&path).with_context(|| format!("failed reading `{}`", path.display()))?;
         if metadata.is_dir() {
-            collect_fragment_files(&path, files)?;
+            collect_fragment_files(&path, files, visited)?;
         } else if metadata.is_file()
             && path
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "yaml" | "yml"))
+            && visited.insert(
+                fs::canonicalize(&path)
+                    .with_context(|| format!("failed resolving `{}`", path.display()))?,
+            )
         {
             files.push(path);
         }
@@ -296,6 +312,10 @@ fn read_yaml_mapping(path: &Path) -> anyhow::Result<Mapping> {
     }
     let raw =
         fs::read_to_string(path).with_context(|| format!("failed reading `{}`", path.display()))?;
+    // Match `GatewayConfig::load`, which skips comment-only and `---`-only fragments.
+    if is_blank_yaml(&raw) {
+        return Ok(Mapping::new());
+    }
     match serde_yaml::from_str(&raw)
         .with_context(|| format!("failed parsing yaml `{}`", path.display()))?
     {

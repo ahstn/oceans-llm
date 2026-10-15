@@ -3,8 +3,12 @@
 #   configMapGenerator:
 #     - name: oceans-models-openai
 #       files: [conf.d/models/openai.yaml]
+#       options: { disableNameSuffixHash: true }
 #     - name: oceans-models-shared
 #       files: [conf.d/models/multi-provider.yaml]
+#       options: { disableNameSuffixHash: true }
+#
+# Without disableNameSuffixHash, Kustomize appends a content hash that these names won't match.
 #
 # Each ConfigMap mounts at /app/conf.d/<name>/, and the gateway reads every YAML file below
 # /app/conf.d. A provider or model id defined in two files fails validation. The ConfigMaps must

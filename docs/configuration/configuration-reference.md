@@ -895,7 +895,7 @@ Important fields:
 
 - `id`
 - `base_url`
-- `pricing_provider_id`, inferred for `api.openai.com` and `openrouter.ai` hosts
+- `pricing_provider_id`, inferred for `api.openai.com`, `openrouter.ai`, and `opencode.ai` hosts
 - optional `auth.kind`, which must be `bearer` when set
 - `auth.token`
 - optional `display.label`
@@ -1232,7 +1232,7 @@ An omitted capability flag takes the value the route's provider and compatibilit
 | Route | Derived capabilities |
 | --- | --- |
 | `typesafe` provider, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` only |
-| `github_copilot` provider | From `compatibility.github_copilot`: `chat_api`, `supports_responses`, `supports_embeddings`, and `upstream_supports` |
+| GitHub Copilot (`type: github_copilot`) provider | From `compatibility.github_copilot`: `chat_api`, `supports_responses`, `supports_embeddings`, and `upstream_supports` |
 | `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions` and `decisions` |
 | `aws_bedrock`, `api_style: runtime_anthropic_invoke` | Everything except `responses`, `json_schema`, `stream`, and `decisions` |
 | `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, and `decisions` |
@@ -1347,15 +1347,15 @@ models:
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
 
-Every Bedrock route must include an explicit `capabilities` block. Omitted capability fields default to `true`; defaults are not inferred from `api_style`. Configure these fields for the selected style:
+Bedrock route capabilities derive from `api_style`, so a route needs no `capabilities` block for these limits:
 
-| API style | Required capability settings |
+| API style | Derived as `false` |
 | --- | --- |
-| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `responses: false`, `json_schema: false` |
-| `runtime_anthropic_invoke` | `responses: false`, `json_schema: false`, `stream: false` |
-| `mantle_openai_responses` | `chat_completions: false` |
+| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `responses`, `json_schema` |
+| `runtime_anthropic_invoke` | `responses`, `json_schema`, `stream` |
+| `mantle_openai_responses` | `chat_completions` |
 
-Also disable API families that the selected upstream model does not support, such as `embeddings`. Configuration validation rejects conflicting capabilities; it does not establish live model support.
+Configuration validation rejects an explicit flag that the style cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. Set other flags to `false` when the selected upstream model lacks a feature, such as `vision`. Bedrock providers never serve `embeddings`. Validation checks styles against capabilities; it does not establish live model support.
 
 `compatibility.aws_bedrock.supports_strict_tools` is optional. When unset, Runtime Converse routes infer support from transparent upstream model IDs and omit `strict` for Claude Opus 4.7/4.8. Set it to `false` for opaque application-inference-profile IDs or ARNs backed by those models; explicit `true` or `false` overrides inference.
 

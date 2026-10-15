@@ -349,28 +349,35 @@ impl LibsqlStore {
                 }
             }
 
+            // Batch-referenced routes survive the delete above. Capture them before inserting,
+            // so a renamed route reuses its surviving row instead of inserting a second row that
+            // the (model, provider, upstream, priority) unique key rejects. Rows inserted below
+            // are not candidates, so two configured routes sharing that key still fail.
+            let mut survivor_rows = self
+                .connection
+                .query(
+                    "SELECT id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = ?1",
+                    libsql::params![model_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let mut survivors = std::collections::HashMap::new();
+            while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                let provider_key: String = row.get(1).map_err(to_query_error)?;
+                let upstream_model: String = row.get(2).map_err(to_query_error)?;
+                let priority: i64 = row.get(3).map_err(to_query_error)?;
+                survivors.insert((provider_key, upstream_model, priority), id);
+            }
+
             for (route_index, route) in model.routes.iter().enumerate() {
-                // A batch-referenced route survives the delete above. When its identity
-                // changed but its (model, provider, upstream, priority) did not, reuse its id
-                // so the unique key does not reject the replacement.
-                let mut existing_route = self
-                    .connection
-                    .query(
-                        "SELECT id FROM model_routes WHERE model_id = ?1 AND provider_key = ?2 AND upstream_model = ?3 AND priority = ?4 LIMIT 1",
-                        libsql::params![
-                            model_id.to_string(),
-                            route.provider_key.as_str(),
-                            route.upstream_model.as_str(),
-                            route.priority
-                        ],
-                    )
-                    .await
-                    .map_err(to_query_error)?;
-                let route_id = match existing_route.next().await.map_err(to_query_error)? {
-                    Some(row) => {
-                        let raw: String = row.get(0).map_err(to_query_error)?;
-                        parse_uuid(&raw)?
-                    }
+                let survivor = survivors.remove(&(
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                    i64::from(route.priority),
+                ));
+                let route_id = match survivor {
+                    Some(raw) => parse_uuid(&raw)?,
                     None => route_uuid(
                         &model.model_key,
                         route.route_key.as_deref(),

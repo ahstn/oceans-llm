@@ -344,21 +344,31 @@ impl PostgresStore {
                 }
             }
 
+            // Batch-referenced routes survive the delete above. Capture them before inserting,
+            // so a renamed route reuses its surviving row instead of inserting a second row that
+            // the (model, provider, upstream, priority) unique key rejects. Rows inserted below
+            // are not candidates, so two configured routes sharing that key still fail.
+            let survivor_rows: Vec<(String, String, String, i32)> = sqlx::query_as(
+                "SELECT id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = $1",
+            )
+            .bind(model_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+            let mut survivors = survivor_rows
+                .into_iter()
+                .map(|(id, provider_key, upstream_model, priority)| {
+                    ((provider_key, upstream_model, priority), id)
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+
             for (route_index, route) in model.routes.iter().enumerate() {
-                // A batch-referenced route survives the delete above. When its identity
-                // changed but its (model, provider, upstream, priority) did not, reuse its id
-                // so the unique key does not reject the replacement.
-                let existing_route_id: Option<String> = sqlx::query_scalar(
-                    "SELECT id FROM model_routes WHERE model_id = $1 AND provider_key = $2 AND upstream_model = $3 AND priority = $4 LIMIT 1",
-                )
-                .bind(model_id.to_string())
-                .bind(route.provider_key.as_str())
-                .bind(route.upstream_model.as_str())
-                .bind(route.priority)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(to_query_error)?;
-                let route_id = match existing_route_id {
+                let survivor = survivors.remove(&(
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                    route.priority,
+                ));
+                let route_id = match survivor {
                     Some(raw) => parse_uuid(&raw)?,
                     None => route_uuid(
                         &model.model_key,

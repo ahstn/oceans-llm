@@ -66,12 +66,12 @@ fn pricing_override_matches_catalog(
 ) -> bool {
     catalog.input_cost_per_million_tokens == Some(configured.input_cost_per_million_tokens)
         && catalog.output_cost_per_million_tokens == Some(configured.output_cost_per_million_tokens)
-        && configured
-            .cache_read_cost_per_million_tokens
-            .is_none_or(|rate| catalog.cache_read_cost_per_million_tokens == Some(rate))
-        && configured
-            .cache_write_cost_per_million_tokens
-            .is_none_or(|rate| catalog.cache_write_cost_per_million_tokens == Some(rate))
+        // The override replaces catalog pricing wholesale, so an omitted cache rate leaves cache
+        // tokens unpriced while the catalog would charge them. Only identical rates are redundant.
+        && catalog.cache_read_cost_per_million_tokens
+            == configured.cache_read_cost_per_million_tokens
+        && catalog.cache_write_cost_per_million_tokens
+            == configured.cache_write_cost_per_million_tokens
 }
 
 #[derive(Debug)]
@@ -3441,10 +3441,15 @@ mod redundant_override_tests {
         let mut catalog = EffectiveRoutePricing {
             input_cost_per_million_tokens: Some(money("0.1500")),
             output_cost_per_million_tokens: Some(money("0.6000")),
-            cache_read_cost_per_million_tokens: Some(money("0.01")),
+            cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
         };
         assert!(pricing_override_matches_catalog(&configured, &catalog));
+
+        // Removing an override that omits a catalog cache rate would start charging cache tokens.
+        catalog.cache_read_cost_per_million_tokens = Some(money("0.01"));
+        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+        catalog.cache_read_cost_per_million_tokens = None;
 
         catalog.output_cost_per_million_tokens = Some(money("0.64"));
         assert!(!pricing_override_matches_catalog(&configured, &catalog));

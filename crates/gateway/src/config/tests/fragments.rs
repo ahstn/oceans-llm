@@ -195,3 +195,24 @@ fn checked_in_config_dir_example_is_valid() {
         ]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn follows_symlinks_without_looping_or_reading_a_file_twice() {
+    let tmp = tempdir().expect("tempdir");
+    write(tmp.path(), "gateway.yaml", MAIN);
+    write(
+        tmp.path(),
+        "conf.d/models/openai.yaml",
+        "models:\n  gpt-5:\n    route: { provider: openai-prod, upstream_model: gpt-5 }\n",
+    );
+    let conf = tmp.path().join("conf.d");
+    // A loop back to the root and a second alias for the same directory.
+    std::os::unix::fs::symlink(&conf, conf.join("models/loop")).expect("loop symlink");
+    std::os::unix::fs::symlink(conf.join("models"), conf.join("alias")).expect("alias symlink");
+    write(tmp.path(), "conf.d/separators.yaml", "---\n---\n");
+
+    let loaded = GatewayConfig::load(&sources(tmp.path())).expect("config should load");
+    assert_eq!(loaded.config.models.len(), 1);
+    render_config(&sources(tmp.path()), false).expect("render skips blank fragments");
+}
