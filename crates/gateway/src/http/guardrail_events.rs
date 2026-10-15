@@ -3,9 +3,10 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use gateway_core::{GuardrailDecisionEventRecord, GuardrailDecisionRepository};
 use gateway_guardrails::{
-    DecisionAction, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
-    GuardrailEvaluation, ManagedService,
+    DecisionAction, DecisionId, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
+    GuardrailEvaluation, ManagedService, ReasonCode,
 };
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -24,6 +25,32 @@ pub async fn record_guardrail_evaluation(
         &evaluation.decisions,
     )
     .await;
+}
+
+/// Builds the `fail_open` audit decision for content an audit-mode policy releases without
+/// inspecting it, such as a stream larger than its buffer. `content` is whatever was read
+/// before inspection stopped.
+pub fn uninspected_content_decision(
+    phase: GuardPhase,
+    scope: EffectiveScope,
+    reason_code: &'static str,
+    content: &[u8],
+) -> DecisionRecord {
+    DecisionRecord {
+        decision_id: DecisionId::new(),
+        phase,
+        scope,
+        evaluator: "stream_buffer".to_string(),
+        managed_service: None,
+        managed_metadata: None,
+        action: DecisionAction::Audit,
+        reason_code: ReasonCode::new(reason_code).expect("static reason code is valid"),
+        matched_rule: None,
+        latency_micros: 0,
+        failure_disposition: Some(FailureDisposition::FailOpen),
+        transformed: false,
+        content_hash: format!("sha256:{:x}", Sha256::digest(content)),
+    }
 }
 
 /// Persists decisions on a background task, so a slow or unavailable store adds

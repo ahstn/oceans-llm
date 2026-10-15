@@ -1,8 +1,9 @@
 use super::*;
+use axum::body::to_bytes;
+use gateway_core::{GuardrailDecisionQuery, GuardrailDecisionRepository};
 use gateway_guardrails::{
-    ContentTransformation, FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig,
-    ManagedCheckKind, ManagedOutcome, ManagedService, PolicyMode, ReasonCode,
-    test_utils::StubManagedEvaluator,
+    ContentTransformation, FailureDisposition, GuardrailEngine, ManagedCheckConfig,
+    ManagedCheckKind, ManagedOutcome, ManagedService, ReasonCode, test_utils::StubManagedEvaluator,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -28,8 +29,7 @@ fn guarded_mcp_extracts_enveloped_and_bare_payloads() {
 
 #[tokio::test]
 async fn guarded_json_and_sse_reject_mixed_result_and_error_envelopes() {
-    let (_directory, mut state) = crate::http::test_support::app_state().await;
-    Arc::make_mut(&mut state.guardrail_config).default.enabled = true;
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 1 << 20, 1_000).await;
     for envelope in [
         json!({"jsonrpc": "2.0", "id": 42, "result": {}, "error": {"message": "private-error"}}),
         json!({"jsonrpc": "2.0", "id": 42, "result": null, "error": {"message": "private-error"}}),
@@ -72,10 +72,7 @@ async fn guarded_json_and_sse_reject_mixed_result_and_error_envelopes() {
 
 #[tokio::test]
 async fn guarded_mcp_sse_rejects_malformed_events_without_forwarding_payloads() {
-    let (_directory, mut state) = crate::http::test_support::app_state().await;
-    std::sync::Arc::make_mut(&mut state.guardrail_config)
-        .default
-        .enabled = true;
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 1 << 20, 1_000).await;
     for (prefix, line, boundary) in [
         ("", "\n", "\n\n"),
         ("", "\r\n", "\r\n\r\n"),
@@ -195,4 +192,226 @@ async fn guarded_sse_transforms_all_payloads_and_preserves_envelopes() {
             json!({"jsonrpc": "2.0", "id": 2, "error": {"message": "redacted"}}),
         ]
     );
+}
+
+async fn guarded_state(
+    mode: PolicyMode,
+    stream_buffer_bytes: usize,
+    stream_buffer_timeout_ms: u64,
+) -> (tempfile::TempDir, AppState) {
+    let (directory, mut state) = crate::http::test_support::app_state().await;
+    let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
+    policy.enabled = true;
+    policy.mode = mode;
+    policy.stream_buffer_bytes = stream_buffer_bytes;
+    policy.stream_buffer_timeout_ms = stream_buffer_timeout_ms;
+    (directory, state)
+}
+
+/// Returns `action:reason_code:failure_disposition` for each `stream_buffer` decision.
+async fn stream_buffer_decisions(state: &AppState) -> Vec<String> {
+    state
+        .store
+        .list_guardrail_decisions(&GuardrailDecisionQuery {
+            page: 1,
+            page_size: 10,
+            phase: Some("mcp_result".into()),
+            evaluator: Some("stream_buffer".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("decisions")
+        .items
+        .iter()
+        .map(|item| {
+            format!(
+                "{}:{}:{}",
+                item.action,
+                item.reason_code,
+                item.failure_disposition.as_deref().unwrap_or("none")
+            )
+        })
+        .collect()
+}
+
+async fn enforce(state: &AppState, upstream: Response<Body>) -> (Response<Body>, bool) {
+    let (response, _, denied) = enforce_direct_mcp_result(
+        state,
+        "test-server",
+        "test-tool",
+        Some(&json!(7)),
+        Uuid::new_v4(),
+        upstream,
+    )
+    .await;
+    (response, denied)
+}
+
+fn upstream_response(content_type: &'static str, body: Body) -> Response<Body> {
+    Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(body)
+        .expect("upstream response")
+}
+
+fn chunked_body(chunks: &[&'static str]) -> Body {
+    Body::from_stream(stream::iter(
+        chunks
+            .iter()
+            .map(|chunk| Ok::<_, std::io::Error>(Bytes::from_static(chunk.as_bytes())))
+            .collect::<Vec<_>>(),
+    ))
+}
+
+/// A body that sends `first`, then stalls past the buffer timeout before sending `rest`.
+fn stalled_body(first: &'static str, rest: &'static str) -> Body {
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(2);
+    tokio::spawn(async move {
+        let _ = sender.send(Ok(Bytes::from_static(first.as_bytes()))).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = sender.send(Ok(Bytes::from_static(rest.as_bytes()))).await;
+    });
+    Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|chunk| (chunk, receiver))
+    }))
+}
+
+async fn body_text(response: Response<Body>) -> String {
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(2),
+        to_bytes(response.into_body(), 1 << 20),
+    )
+    .await
+    .expect("body completes")
+    .expect("body");
+    String::from_utf8(bytes.to_vec()).expect("UTF-8")
+}
+
+async fn assert_denied(response: Response<Body>, status: StatusCode, message: &str) {
+    assert_eq!(response.status(), status);
+    let body: Value = serde_json::from_str(&body_text(response).await).expect("JSON-RPC error");
+    assert_eq!(body["id"], 7);
+    assert_eq!(body["error"]["code"], GUARDRAIL_POLICY_DENIED_CODE);
+    assert_eq!(body["error"]["message"], message);
+}
+
+const RESULT_CHUNKS: [&str; 3] = [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,",
+    "\"result\":{\"content\":\"oversized result\"}",
+    "}",
+];
+
+#[tokio::test]
+async fn audit_mode_releases_oversized_result_unchanged() {
+    let (_directory, state) = guarded_state(PolicyMode::Audit, 24, 1_000).await;
+    let upstream = upstream_response("application/json", chunked_body(&RESULT_CHUNKS));
+
+    let (response, denied) = enforce(&state, upstream).await;
+
+    assert!(!denied);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_text(response).await, RESULT_CHUNKS.concat());
+    assert_eq!(
+        stream_buffer_decisions(&state).await,
+        ["audit:stream.buffer_exceeded:fail_open"]
+    );
+}
+
+#[tokio::test]
+async fn deny_mode_rejects_oversized_result() {
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 24, 1_000).await;
+    let upstream = upstream_response("application/json", chunked_body(&RESULT_CHUNKS));
+
+    let (response, denied) = enforce(&state, upstream).await;
+
+    assert!(denied);
+    assert_denied(
+        response,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "MCP result exceeded the configured guardrail buffer",
+    )
+    .await;
+    assert!(stream_buffer_decisions(&state).await.is_empty());
+}
+
+#[tokio::test]
+async fn audit_mode_releases_slow_result_unchanged() {
+    let (_directory, state) = guarded_state(PolicyMode::Audit, 1 << 20, 50).await;
+    let upstream = upstream_response(
+        "text/event-stream",
+        stalled_body("event: message\n", "data: {\"result\":{}}\n\n"),
+    );
+
+    let (response, denied) = enforce(&state, upstream).await;
+
+    assert!(!denied);
+    assert_eq!(
+        body_text(response).await,
+        "event: message\ndata: {\"result\":{}}\n\n"
+    );
+    assert_eq!(
+        stream_buffer_decisions(&state).await,
+        ["audit:stream.buffer_timeout:fail_open"]
+    );
+}
+
+#[tokio::test]
+async fn deny_mode_rejects_slow_result() {
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 1 << 20, 50).await;
+    let upstream = upstream_response(
+        "text/event-stream",
+        stalled_body("event: message\n", "data: {\"result\":{}}\n\n"),
+    );
+
+    let (response, denied) = enforce(&state, upstream).await;
+
+    assert!(denied);
+    assert_denied(
+        response,
+        StatusCode::GATEWAY_TIMEOUT,
+        "MCP result did not complete within the guardrail buffer timeout",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn audit_mode_releases_unparseable_results_unchanged() {
+    let invalid_sse = "data: {\"result\":{}}\n\ndata: not-json\n\n";
+    let mixed_envelope = "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{},\"error\":{}}";
+    for (content_type, source) in [
+        ("text/event-stream", invalid_sse),
+        ("application/json", mixed_envelope),
+    ] {
+        let (_directory, state) = guarded_state(PolicyMode::Audit, 1 << 20, 1_000).await;
+        let upstream = upstream_response(content_type, Body::from(source));
+
+        let (response, denied) = enforce(&state, upstream).await;
+
+        assert!(!denied, "{content_type}");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_text(response).await, source);
+        assert_eq!(
+            stream_buffer_decisions(&state).await,
+            ["audit:stream.unparseable:fail_open"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn deny_mode_rejects_invalid_json_rpc_result() {
+    let (_directory, state) = guarded_state(PolicyMode::Deny, 1 << 20, 1_000).await;
+    let upstream = upstream_response(
+        "application/json",
+        Body::from("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{},\"error\":{}}"),
+    );
+
+    let (response, denied) = enforce(&state, upstream).await;
+
+    assert!(denied);
+    assert_denied(
+        response,
+        StatusCode::FORBIDDEN,
+        "MCP result was not a valid guarded response",
+    )
+    .await;
 }

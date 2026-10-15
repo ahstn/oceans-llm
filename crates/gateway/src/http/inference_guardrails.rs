@@ -4,15 +4,16 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, DecisionId, DecisionRecord, EvaluationInput, EvaluationPayload,
-    FailureDisposition, GuardPhase, GuardrailEvaluation, PolicyMode, PolicyResolver, PolicyTarget,
-    ReasonCode, redact_prompt_secrets,
+    DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, PolicyMode, PolicyResolver, PolicyTarget, redact_prompt_secrets,
 };
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::http::{
-    guardrail_events::{record_guardrail_decisions_in_background, record_guardrail_evaluation},
+    guardrail_events::{
+        record_guardrail_decisions_in_background, record_guardrail_evaluation,
+        uninspected_content_decision,
+    },
     state::AppState,
 };
 const PROMPT_TEXT_FIELDS: &[&str] = &[
@@ -227,21 +228,12 @@ fn release_uninspected_stream(
     if policy.mode != PolicyMode::Audit {
         return false;
     }
-    let decision = DecisionRecord {
-        decision_id: DecisionId::new(),
-        phase: GuardPhase::ModelResponse,
-        scope: policy.scope,
-        evaluator: "stream_buffer".to_string(),
-        managed_service: None,
-        managed_metadata: None,
-        action: DecisionAction::Audit,
-        reason_code: ReasonCode::new(reason_code).expect("static reason code is valid"),
-        matched_rule: None,
-        latency_micros: 0,
-        failure_disposition: Some(FailureDisposition::FailOpen),
-        transformed: false,
-        content_hash: format!("sha256:{:x}", Sha256::digest(content)),
-    };
+    let decision = uninspected_content_decision(
+        GuardPhase::ModelResponse,
+        policy.scope,
+        reason_code,
+        content,
+    );
     record_guardrail_decisions_in_background(
         state,
         vec![(context.request_id.clone(), vec![decision])],
