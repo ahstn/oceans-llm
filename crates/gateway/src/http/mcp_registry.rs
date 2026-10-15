@@ -833,7 +833,7 @@ pub async fn upsert_mcp_credential_binding(
             .target(binding.id())
             .label(binding.owner_scope_key().to_string())
             .meta("operation", if replaced { "replace" } else { "create" })
-            .after(&binding),
+            .after(credential_binding_audit_summary(&binding)),
         )
         .await;
     Ok(Json(envelope(McpCredentialBindingPayload { binding })))

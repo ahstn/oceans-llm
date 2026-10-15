@@ -425,6 +425,20 @@ fn is_web_url(text: &str) -> bool {
     url::Url::parse(text).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
+/// Audit summary of a credential binding. The view never holds secret material;
+/// a `secret_ref` written as a URL is stripped of credentials and query like
+/// other audited URLs, and plain references such as `env/NAME` are kept.
+pub(super) fn credential_binding_audit_summary(binding: &McpCredentialBindingView) -> Value {
+    let mut summary = serde_json::to_value(binding).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut()
+        && let Some(Value::String(secret_ref)) = object.get_mut("secret_ref")
+        && is_web_url(secret_ref)
+    {
+        *secret_ref = audit_safe_url(secret_ref);
+    }
+    summary
+}
+
 pub(super) fn audit_safe_url(raw: &str) -> String {
     match url::Url::parse(raw) {
         Ok(mut url) => {
@@ -688,5 +702,35 @@ mod audit_summary_tests {
         );
         assert_eq!(summary["auth_config"]["provider_key"], "github");
         assert!(!summary.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn credential_binding_secret_refs_lose_url_credentials() {
+        let binding = |secret_ref: &str| McpCredentialBindingView {
+            id: "b-1".to_string(),
+            server_id: "s-1".to_string(),
+            owner_scope_kind: "user".to_string(),
+            owner_scope_key: "user:1".to_string(),
+            owner_user_id: Some("1".to_string()),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            material_kind: "bearer_token".to_string(),
+            header_name: None,
+            storage_kind: "reference".to_string(),
+            secret_ref: Some(secret_ref.to_string()),
+            expires_at: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            last_used_at: None,
+            revoked_at: None,
+            oauth_provider_key: None,
+            granted_scopes: Vec::new(),
+        };
+        let url = credential_binding_audit_summary(&binding(
+            "https://vault.example/v1/secret/mcp?token=abc",
+        ));
+        assert_eq!(url["secret_ref"], "https://vault.example/v1/secret/mcp");
+        let plain = credential_binding_audit_summary(&binding("env/OCEANS_MCP_DISCOVERY_X"));
+        assert_eq!(plain["secret_ref"], "env/OCEANS_MCP_DISCOVERY_X");
     }
 }

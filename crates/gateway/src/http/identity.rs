@@ -1586,19 +1586,32 @@ pub async fn regenerate_password_invite(
     }
 
     let origin = request_origin(&headers);
+    let progress = AuditProgress::default();
     let invite = create_password_invite(
         &state.store,
         &state.identity_token_secret,
         &origin,
         user.user_id,
+        &progress,
     );
     // The invite URL carries the token, so only its expiry is recorded.
     let invitation = state
         .audit()
-        .audited(&meta.user_context(&actor), invite, |invitation| {
-            user_event(actions::USER_INVITE_ISSUED, &user)
-                .meta("expires_at", &invitation.expires_at)
-        })
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            invite,
+            |invitation| {
+                user_event(actions::USER_INVITE_ISSUED, &user)
+                    .meta("expires_at", &invitation.expires_at)
+            },
+            // Older invitations were revoked, but no replacement was created.
+            |_, error| {
+                user_event(actions::USER_INVITE_ISSUED, &user)
+                    .meta("error", error.0.error_code())
+                    .meta("previous_invitations_revoked", true)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(PasswordInviteResponse {
@@ -3366,11 +3379,13 @@ async fn build_onboarding_response(
 ) -> Result<CreateUserResponse, AppError> {
     match user.user.auth_mode {
         AuthMode::Password => {
+            // Callers audit the change that needed the invite, so progress is not tracked here.
             let invitation = create_password_invite(
                 &state.store,
                 &state.identity_token_secret,
                 origin,
                 user.user.user_id,
+                &AuditProgress::default(),
             )
             .await?;
             let view = build_admin_identity_user_view(
@@ -3462,16 +3477,20 @@ struct GeneratedInvite {
     expires_at: String,
 }
 
+/// Replaces a user's invitation. `progress` is marked once older invitations are
+/// revoked, so a failed replacement still leaves an audit entry.
 async fn create_password_invite(
     store: &AnyStore,
     secret: &str,
     origin: &str,
     user_id: Uuid,
+    progress: &AuditProgress,
 ) -> Result<GeneratedInvite, AppError> {
     let now = OffsetDateTime::now_utc();
     store
         .revoke_password_invitations_for_user(user_id, now)
         .await?;
+    progress.landed();
 
     let invitation_id = Uuid::new_v4();
     let raw_token = signed_token("invite", secret, invitation_id);
