@@ -600,11 +600,13 @@ fn has_secret_assignment(text: &str) -> bool {
             })
             .next()
             .unwrap_or_default();
-        let has_value = text[index + 1..]
-            .trim_start()
-            .chars()
-            .next()
-            .is_some_and(|character| !matches!(character, '&' | ';' | ',' | '"' | '\''));
+        // A quoted value counts once it has something inside the quotes.
+        let mut value = text[index + 1..].trim_start().chars();
+        let has_value = match value.next() {
+            Some(quote @ ('"' | '\'')) => value.next().is_some_and(|next| next != quote),
+            Some(character) => !matches!(character, '&' | ';' | ','),
+            None => false,
+        };
         !name.is_empty() && has_value && is_secret_name(name)
     })
 }
@@ -974,6 +976,9 @@ mod tests {
             "query_note": "see https://example.test/?api_key=hunter2",
             "setup": "set password=hunter2 first",
             "spaced": "set password = hunter2 first",
+            "quoted": "config has password=\"hunter2\"",
+            "single_quoted": "set api_key = 'secret' here",
+            "empty_quoted": "password=\"\" means none",
             "encoded_query": "see https://example.test/?api%5Fkey=hunter2",
             "encoded_path": "docs at https://example.test/guides/100%25-uptime",
             "header_note": "send Authorization: Bearer abc",
@@ -1015,6 +1020,9 @@ mod tests {
                 "query_note": AUDIT_REDACTED,
                 "setup": AUDIT_REDACTED,
                 "spaced": AUDIT_REDACTED,
+                "quoted": AUDIT_REDACTED,
+                "single_quoted": AUDIT_REDACTED,
+                "empty_quoted": "password=\"\" means none",
                 "encoded_query": AUDIT_REDACTED,
                 "encoded_path": "docs at https://example.test/guides/100%25-uptime",
                 "header_note": AUDIT_REDACTED,
