@@ -335,6 +335,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
         postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
     },
+    MigrationManifest {
+        version: 59,
+        name: "batch_jobs_route_index",
+        checksum: "V59__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V59__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__batch_jobs_route_index.sql"),
+    },
 ];
 
 #[cfg(test)]

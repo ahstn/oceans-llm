@@ -251,12 +251,17 @@ impl PostgresStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
-        // Only routes a batch job references survive the per-model delete below. Load them once,
-        // so a renamed route reuses its surviving row instead of inserting a second row that the
-        // (model, provider, upstream, priority) unique key rejects.
+        // Only routes a batch job references survive the per-model delete below. Load those of
+        // the configured models once, so a renamed route reuses its surviving row instead of
+        // inserting a second row that the (model, provider, upstream, priority) unique key rejects.
+        let configured_model_ids = model_ids
+            .values()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
         let survivor_rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
+            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = ANY($1) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
         )
+        .bind(&configured_model_ids)
         .fetch_all(&self.pool)
         .await
         .map_err(to_query_error)?;

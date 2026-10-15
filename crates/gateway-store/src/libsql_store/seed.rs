@@ -251,31 +251,45 @@ impl LibsqlStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
-        // Only routes a batch job references survive the per-model delete below. Load them once,
-        // so a renamed route reuses its surviving row instead of inserting a second row that the
-        // (model, provider, upstream, priority) unique key rejects.
-        let mut survivor_rows = self
-            .connection
-            .query(
-                "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
-                (),
-            )
-            .await
-            .map_err(to_query_error)?;
+        // Only routes a batch job references survive the per-model delete below. Load those of
+        // the configured models once, so a renamed route reuses its surviving row instead of
+        // inserting a second row that the (model, provider, upstream, priority) unique key rejects.
+        let configured_model_ids = model_ids
+            .values()
+            .map(|model_id| libsql::Value::Text(model_id.to_string()))
+            .collect::<Vec<_>>();
         let mut survivors_by_model = std::collections::HashMap::<
             String,
             std::collections::HashMap<(String, String, i64), String>,
         >::new();
-        while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
-            let id: String = row.get(0).map_err(to_query_error)?;
-            let model_id: String = row.get(1).map_err(to_query_error)?;
-            let provider_key: String = row.get(2).map_err(to_query_error)?;
-            let upstream_model: String = row.get(3).map_err(to_query_error)?;
-            let priority: i64 = row.get(4).map_err(to_query_error)?;
-            survivors_by_model
-                .entry(model_id)
-                .or_default()
-                .insert((provider_key, upstream_model, priority), id);
+        // `IN ()` is invalid SQL, and a config without models has no survivors to reuse.
+        if !configured_model_ids.is_empty() {
+            let placeholders = (1..=configured_model_ids.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut survivor_rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders}) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)"
+                    ),
+                    libsql::params::Params::Positional(configured_model_ids),
+                )
+                .await
+                .map_err(to_query_error)?;
+
+            while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                let model_id: String = row.get(1).map_err(to_query_error)?;
+                let provider_key: String = row.get(2).map_err(to_query_error)?;
+                let upstream_model: String = row.get(3).map_err(to_query_error)?;
+                let priority: i64 = row.get(4).map_err(to_query_error)?;
+                survivors_by_model
+                    .entry(model_id)
+                    .or_default()
+                    .insert((provider_key, upstream_model, priority), id);
+            }
         }
 
         // Insert model rows first with a null alias target so config order does not
