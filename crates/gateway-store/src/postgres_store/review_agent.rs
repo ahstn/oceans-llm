@@ -139,28 +139,6 @@ fn decode_run(row: &PgRow) -> Result<ReviewAgentRunRecord, StoreError> {
     })
 }
 
-async fn load_repository(
-    pool: &PgPool,
-    repository_id: Uuid,
-) -> Result<ReviewAgentRepositoryRecord, StoreError> {
-    let sql = format!(
-        "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
-    );
-    let row = sqlx::query(&sql)
-        .bind(repository_id.to_string())
-        .fetch_optional(pool)
-        .await
-        .map_err(to_query_error)?;
-    row.as_ref()
-        .map(decode_repository)
-        .transpose()?
-        .ok_or_else(|| {
-            StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            ))
-        })
-}
-
 async fn load_run(pool: &PgPool, run_id: Uuid) -> Result<ReviewAgentRunRecord, StoreError> {
     let sql = format!("SELECT {RUN_COLUMNS} FROM review_agent_runs WHERE run_id = $1");
     let row = sqlx::query(&sql)
@@ -375,24 +353,53 @@ impl ReviewAgentRepository for PostgresStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
-        // Only a different status is written. `load_repository` reports a missing row.
-        let sql = format!(
-            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3 AND status <> $1 RETURNING {REPOSITORY_COLUMNS}"
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    > {
+        // Locking the row makes the status read here the one this call replaces.
+        // Only a different status is written.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let select = format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
         );
-        let row = sqlx::query(&sql)
-            .bind(status.as_str())
-            .bind(updated_at.unix_timestamp())
+        let existing = sqlx::query(&format!("{select} FOR UPDATE"))
             .bind(repository_id.to_string())
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
-            .map_err(to_write_error)?;
-        // A transition returns the row it wrote, so a later write cannot change
-        // what this call reports. Without one, the current row is unchanged.
-        if let Some(row) = row {
-            return Ok((decode_repository(&row)?, true));
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_repository)
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "review agent repository `{repository_id}` was not found"
+                ))
+            })?;
+        if existing.status == status {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok((existing, None));
         }
-        Ok((load_repository(&self.pool, repository_id).await?, false))
+        sqlx::query(
+            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3",
+        )
+        .bind(status.as_str())
+        .bind(updated_at.unix_timestamp())
+        .bind(repository_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        let current = sqlx::query(&select)
+            .bind(repository_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)
+            .and_then(|row| decode_repository(&row))?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok((current, Some(existing.status)))
     }
 
     async fn upsert_review_agent_pull_request(

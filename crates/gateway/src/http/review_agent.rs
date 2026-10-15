@@ -706,27 +706,25 @@ async fn set_repository_status_handler(
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
     let (actor, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
-    let before = require_visible_repository(&state, &scope, repository_id).await?;
-    let (repository, changed) = review_agent_service(&state)
+    require_visible_repository(&state, &scope, repository_id).await?;
+    let (repository, replaced) = review_agent_service(&state)
         .set_repository_status(repository_id, status)
         .await?;
     let repository = map_repository(repository);
     // The store writes only a different status, so a retry, or a request that
     // loses a race to the same status, is not a transition.
-    if !changed {
+    let Some(replaced) = replaced else {
         return Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })));
-    }
+    };
     let action = match status {
         ReviewAgentRepositoryStatus::Disabled => actions::REVIEW_AGENT_REPOSITORY_DISABLED,
         _ => actions::REVIEW_AGENT_REPOSITORY_REACTIVATED,
     };
-    let mut event =
-        repository_event(action, &repository).after(json!({ "status": status.as_str() }));
-    // A concurrent change can leave the earlier read showing the new status, so
-    // the prior status is recorded only when that read can be trusted.
-    if before.status != status {
-        event = event.before(json!({ "status": before.status.as_str() }));
-    }
+    // The store reads the replaced status under its write lock, so `before` is the
+    // status this request actually changed.
+    let event = repository_event(action, &repository)
+        .before(json!({ "status": replaced.as_str() }))
+        .after(json!({ "status": status.as_str() }));
     state
         .audit()
         .record(&meta.user_context(&actor), event)

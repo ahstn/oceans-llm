@@ -190,14 +190,21 @@ pub trait ReviewAgentRepository: Send + Sync {
         input: &UpdateReviewAgentRepositoryRecord,
     ) -> Result<crate::audit::Updated<ReviewAgentRepositoryRecord>, StoreError>;
 
-    /// Sets the status. The flag is `false` when the repository already had it,
-    /// in which case nothing is written.
+    /// Sets the status. Returns the repository and the status it replaced, read
+    /// under the same write lock, or `None` when the repository already had this
+    /// status and nothing was written.
     async fn set_review_agent_repository_status(
         &self,
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError>;
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    >;
 
     async fn upsert_review_agent_pull_request(
         &self,

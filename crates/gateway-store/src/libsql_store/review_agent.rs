@@ -406,27 +406,34 @@ impl ReviewAgentRepository for LibsqlStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
-        // Only a different status is written. `load_repository` reports a missing row.
-        let mut rows = self
-            .connection
-            .query(
-                &format!(
-                    "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3 AND status <> ?1 RETURNING {REPOSITORY_COLUMNS}"
-                ),
-                libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
-            )
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    > {
+        // An immediate transaction holds the write lock, so the status read here is
+        // the one this call replaces. Only a different status is written.
+        let connection = self.transaction_connection().await?;
+        let tx = connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;
-        // A transition returns the row it wrote, so a later write cannot change
-        // what this call reports. Without one, the current row is unchanged.
-        if let Some(row) = rows.next().await.map_err(to_write_error)? {
-            return Ok((decode_repository(&row)?, true));
+        let existing = load_repository(&tx, repository_id).await?;
+        if existing.status == status {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok((existing, None));
         }
-        Ok((
-            load_repository(&self.connection, repository_id).await?,
-            false,
-        ))
+        tx.execute(
+            "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3",
+            libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
+        )
+        .await
+        .map_err(to_write_error)?;
+        let current = load_repository(&tx, repository_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok((current, Some(existing.status)))
     }
 
     async fn upsert_review_agent_pull_request(
