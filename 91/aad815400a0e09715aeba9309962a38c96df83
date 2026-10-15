@@ -1,0 +1,53 @@
+Cargo.lock
+  s_af4ccbd37c05c0::t_731063e0f941ef 10,15
+crates/admin-ui/Cargo.toml
+  s_af4ccbd37c05c0::t_c6415d50c13ae9 8,12
+crates/admin-ui/src/client_ip.rs
+  s_dd118f467446e0::t_abdfe93fe29c21 1-101
+crates/admin-ui/src/lib.rs
+  s_af4ccbd37c05c0::t_f9ce3f0e79e9be 1,14-16,27
+crates/admin-ui/src/proxy.rs
+  s_56409892e094a0::t_802143100d164a 17-20,28,49,156-157,161-162,243-251,301,309-320,322-352,354-355,357
+crates/admin-ui/web/src/server/gateway-client.server.test.ts
+  s_af4ccbd37c05c0::t_960cb140cb0dd2 121,125-126,133-134
+crates/admin-ui/web/src/server/gateway-client.server.ts
+  s_af4ccbd37c05c0::t_504d49870aebd2 106-110
+crates/gateway/src/http/audit.rs
+  s_af4ccbd37c05c0::t_513c2d3063be6a 7-12,49-50,52,54-55,78,81-84,89-93,103-108,111-112,114-116,118-127,131-132,290,295-298,300-302,307-308,311,317-325
+crates/gateway/src/http/audit_tests.rs
+  s_56409892e094a0::t_3fb28009f84bfb 5,81,86-95,382-385,478,506-528
+crates/gateway/src/http/mod.rs
+  s_af4ccbd37c05c0::t_2cf1711315762e 66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91aad815400a0e09715aeba9309962a38c96df83",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
