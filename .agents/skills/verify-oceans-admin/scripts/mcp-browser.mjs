@@ -1,7 +1,7 @@
 // Real UI mutations with production API reads as the saved-state authority.
 import fs from "node:fs/promises";
 
-const authLabels = { none: "None", gateway_static_header: "Gateway static header", gateway_bearer_token: "Gateway bearer token" };
+const authLabels = { none: "None", gateway_static_header: "Gateway static credential", gateway_bearer_token: "Gateway bearer token" };
 
 /**
  * Names this driver attempt's records. Cleanup disables rather than deletes them, so a retry
@@ -177,7 +177,7 @@ export async function createAccess(ui, primary, candidates, verifyNoMcpGrant) {
   await page.goto(`${baseURL}/admin/api-keys`, { waitUntil: "networkidle" });
   const catalog = await adminJson(page, "/api/v1/admin/api-keys");
   const owner = catalog.users.find((item) => item.email === "admin@local") ?? catalog.users[0];
-  const model = catalog.models.find((item) => item.key === "deepseek-v4-flash-0731") ?? catalog.models[0];
+  const model = catalog.models.find((item) => item.key === "deepseek-v4.1-flash") ?? catalog.models[0];
   if (!owner || !model) throw new Error("No owner or constrained model is available for temporary key");
   const keyName = `MCP verification ${scope.key}`;
   if (catalog.items.some((item) => item.name === keyName)) throw new Error("Verification API key name already exists; rerun the driver for a new attempt scope");

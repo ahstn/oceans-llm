@@ -106,6 +106,62 @@ updates:
           - 'typescript'
           - '@typescript/typescript-*'
           - 'eslint*'
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+      tanstack:
+        patterns:
+          - '@tanstack/*'
+      ui-components-and-assets:
+        patterns:
+          - '@fontsource-variable/*'
+          - '@hugeicons/*'
+          - '@lobehub/icons-*'
+          - '@radix-ui/*'
+          - 'boring-avatars'
+          - 'cmdk'
+          - 'radix-ui'
+          - 'recharts'
+          - 'shadcn'
+          - 'sonner'
+      styling:
+        patterns:
+          - '@tailwindcss/*'
+          - 'autoprefixer'
+          - 'class-variance-authority'
+          - 'clsx'
+          - 'postcss'
+          - 'tailwind*'
+          - 'tw-animate-css'
+      content-and-formatting:
+        patterns:
+          - 'date-fns'
+          - 'react-markdown'
+          - 'shiki'
+      api-client:
+        patterns:
+          - 'openapi-*'
+      build-tools:
+        patterns:
+          - '@types/node'
+          - '@vitejs/*'
+          - 'typescript'
+          - 'vite'
+          - 'vite-*'
+      testing:
+        patterns:
+          - '@playwright/*'
+          - '@testing-library/*'
+          - 'jsdom'
+          - 'playwright'
+          - 'vitest*'
+      code-quality:
+        patterns:
+          - '@shadcn/lint'
+          - 'oxfmt*'
+          - 'oxlint*'
 
   # The review agent pins exact versions. Pi and its extensions release
   # together and share peer dependencies, so they update as one PR.

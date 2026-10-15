@@ -420,6 +420,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/oauth-discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reads an MCP server's OAuth metadata so an admin can register it by URL.
+         *     Nothing is stored; the admin saves the suggested auth config, or an
+         *     edited copy, with the server.
+         */
+        post: operations["discover_mcp_server_oauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/recommended-servers": {
         parameters: {
             query?: never;
@@ -1244,6 +1265,47 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_identity_directory_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The callback for servers whose authorization server is configured on the
+         *     server row, including dynamically registered clients.
+         */
+        get: operations["mcp_oauth_server_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/oauth/client-metadata.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Client ID Metadata Document whose URL is Oceans' client ID at
+         *     authorization servers that accept metadata documents instead of dynamic
+         *     client registration. It is public by design.
+         */
+        get: operations["mcp_oauth_client_metadata_document"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3295,6 +3357,35 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpOauthDiscoveryPayload: {
+            /** @description What OAuth metadata discovery found for an MCP server URL. */
+            data: {
+                authorization_endpoint: string;
+                authorization_server_metadata_url: string;
+                authorization_servers: string[];
+                callback_url?: string | null;
+                client_id_metadata_document_supported: boolean;
+                client_metadata_document_url?: string | null;
+                code_challenge_methods_supported: string[];
+                default_scopes: string[];
+                issuer: string;
+                /** @description `dynamic`, `metadata_document`, or `manual`. */
+                recommended_client_registration: string;
+                registration_endpoint?: string | null;
+                resource: string;
+                resource_indicator: boolean;
+                resource_metadata_url?: string | null;
+                scopes_supported: string[];
+                /** @description An `oauth_obo` auth config to save with the server. */
+                suggested_auth_config: {
+                    [key: string]: unknown;
+                };
+                token_endpoint: string;
+                token_endpoint_auth_methods_supported: string[];
+                warnings: string[];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpServerPayload: {
             data: {
                 server: components["schemas"]["McpServerView"];
@@ -3779,11 +3870,45 @@ export interface components {
             expires_at?: string | null;
             granted_scopes: string[];
             provider_key: string;
+            /**
+             * @description The configured provider key, or the authorization server's host for a
+             *     server-level OAuth client.
+             */
+            provider_label: string;
             required_scopes: string[];
             /** Format: uuid */
             server_id: string;
             server_key: string;
             status: components["schemas"]["McpOauthConnectionStatus"];
+        };
+        /** @description What OAuth metadata discovery found for an MCP server URL. */
+        McpOauthDiscoveryPayload: {
+            authorization_endpoint: string;
+            authorization_server_metadata_url: string;
+            authorization_servers: string[];
+            callback_url?: string | null;
+            client_id_metadata_document_supported: boolean;
+            client_metadata_document_url?: string | null;
+            code_challenge_methods_supported: string[];
+            default_scopes: string[];
+            issuer: string;
+            /** @description `dynamic`, `metadata_document`, or `manual`. */
+            recommended_client_registration: string;
+            registration_endpoint?: string | null;
+            resource: string;
+            resource_indicator: boolean;
+            resource_metadata_url?: string | null;
+            scopes_supported: string[];
+            /** @description An `oauth_obo` auth config to save with the server. */
+            suggested_auth_config: {
+                [key: string]: unknown;
+            };
+            token_endpoint: string;
+            token_endpoint_auth_methods_supported: string[];
+            warnings: string[];
+        };
+        McpOauthDiscoveryRequest: {
+            server_url: string;
         };
         McpOauthRevokeResponse: {
             revoked: boolean;
@@ -5546,6 +5671,37 @@ export interface operations {
             };
         };
     };
+    discover_mcp_server_oauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpOauthDiscoveryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpOauthDiscoveryPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
     list_recommended_mcp_servers: {
         parameters: {
             query?: never;
@@ -7094,6 +7250,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_IdentityDirectoryUsersPayload"];
+                };
+            };
+        };
+    };
+    mcp_oauth_server_callback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the connection page */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    mcp_oauth_client_metadata_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth Client ID Metadata Document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

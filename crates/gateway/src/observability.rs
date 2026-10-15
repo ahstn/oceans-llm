@@ -28,6 +28,8 @@ pub struct GatewayMetrics {
     request_duration: Histogram<f64>,
     decisions_requests: Counter<u64>,
     decisions_request_duration: Histogram<f64>,
+    embeddings_requests: Counter<u64>,
+    embeddings_request_duration: Histogram<f64>,
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     tool_cardinality: Histogram<u64>,
@@ -84,6 +86,19 @@ pub struct DecisionsRequestMetric<'a> {
     pub latency_seconds: f64,
 }
 
+/// One `POST /v1/embeddings` request. Embeddings has its own request metric
+/// for the same reasons as Decisions: no streaming, no tools, and a latency
+/// profile that would skew the chat duration histogram.
+#[derive(Debug, Clone)]
+pub struct EmbeddingsRequestMetric<'a> {
+    pub requested_model: &'a str,
+    pub resolved_model: &'a str,
+    pub provider_key: &'a str,
+    pub status_code: i64,
+    pub outcome: &'a str,
+    pub latency_seconds: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct McpToolInvocationMetric<'a> {
     pub status: &'a str,
@@ -106,6 +121,7 @@ struct TestMetricCounters {
     requests: Mutex<u64>,
     request_outcomes: Mutex<BTreeMap<String, u64>>,
     decisions_requests: Mutex<BTreeMap<TestDecisionsRequest, u64>>,
+    embeddings_requests: Mutex<BTreeMap<TestEmbeddingsRequest, u64>>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -116,6 +132,7 @@ pub struct TestMetricSnapshot {
     /// Sample counts per label set, so debug builds stay bounded by label
     /// cardinality rather than by traffic.
     pub decisions_requests: BTreeMap<TestDecisionsRequest, u64>,
+    pub embeddings_requests: BTreeMap<TestEmbeddingsRequest, u64>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -123,6 +140,14 @@ pub struct TestMetricSnapshot {
 pub struct TestDecisionsRequest {
     pub http_route: String,
     pub request_format: String,
+    pub provider_key: String,
+    pub status_code: i64,
+    pub outcome: String,
+}
+
+#[cfg(any(test, debug_assertions))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TestEmbeddingsRequest {
     pub provider_key: String,
     pub status_code: i64,
     pub outcome: String,
@@ -156,6 +181,15 @@ impl GatewayMetrics {
                 .f64_histogram("gateway.decisions.request.duration")
                 .with_unit("s")
                 .with_description("Decisions API request duration in seconds")
+                .build(),
+            embeddings_requests: meter
+                .u64_counter("gateway.embeddings.requests")
+                .with_description("Total embeddings requests")
+                .build(),
+            embeddings_request_duration: meter
+                .f64_histogram("gateway.embeddings.request.duration")
+                .with_unit("s")
+                .with_description("Embeddings request duration in seconds")
                 .build(),
             tokens: meter
                 .u64_counter("gateway.chat.tokens")
@@ -268,6 +302,36 @@ impl GatewayMetrics {
                 .entry(TestDecisionsRequest {
                     http_route: metric.http_route.to_string(),
                     request_format: metric.request_format.to_string(),
+                    provider_key: metric.provider_key.to_string(),
+                    status_code: metric.status_code,
+                    outcome: metric.outcome.to_string(),
+                })
+                .or_default() += 1;
+        }
+    }
+
+    pub fn record_embeddings_request(&self, metric: &EmbeddingsRequestMetric<'_>) {
+        let attrs = [
+            KeyValue::new("requested_model", metric.requested_model.to_string()),
+            KeyValue::new("resolved_model", metric.resolved_model.to_string()),
+            KeyValue::new("provider", metric.provider_key.to_string()),
+            KeyValue::new("http.route", "/v1/embeddings"),
+            KeyValue::new("http.method", "POST"),
+            KeyValue::new("http.response.status_code", metric.status_code),
+            KeyValue::new("outcome", metric.outcome.to_string()),
+        ];
+
+        self.embeddings_requests.add(1, &attrs);
+        self.embeddings_request_duration
+            .record(metric.latency_seconds, &attrs);
+        #[cfg(any(test, debug_assertions))]
+        {
+            *self
+                .test_counters
+                .embeddings_requests
+                .lock()
+                .expect("embeddings requests lock")
+                .entry(TestEmbeddingsRequest {
                     provider_key: metric.provider_key.to_string(),
                     status_code: metric.status_code,
                     outcome: metric.outcome.to_string(),
@@ -430,6 +494,12 @@ impl GatewayMetrics {
                 .decisions_requests
                 .lock()
                 .expect("decisions requests lock")
+                .clone(),
+            embeddings_requests: self
+                .test_counters
+                .embeddings_requests
+                .lock()
+                .expect("embeddings requests lock")
                 .clone(),
         }
     }

@@ -1580,6 +1580,52 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/oauth-discovery": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Reads an MCP server's OAuth metadata so an admin can register it by URL.\nNothing is stored; the admin saves the suggested auth config, or an\nedited copy, with the server.",
+        "operationId": "discover_mcp_server_oauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpOauthDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpOauthDiscoveryPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/recommended-servers": {
       "get": {
         "tags": [
@@ -4677,6 +4723,92 @@
             "session_cookie": []
           }
         ]
+      }
+    },
+    "/api/v1/mcp/oauth/callback": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "summary": "The callback for servers whose authorization server is configured on the\nserver row, including dynamically registered clients.",
+        "operationId": "mcp_oauth_server_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to the connection page"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/oauth/client-metadata.json": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "summary": "The Client ID Metadata Document whose URL is Oceans' client ID at\nauthorization servers that accept metadata documents instead of dynamic\nclient registration. It is public by design.",
+        "operationId": "mcp_oauth_client_metadata_document",
+        "responses": {
+          "200": {
+            "description": "OAuth Client ID Metadata Document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/mcp/oauth/connections": {
@@ -12740,6 +12872,131 @@
           }
         }
       },
+      "Envelope_McpOauthDiscoveryPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "What OAuth metadata discovery found for an MCP server URL.",
+            "required": [
+              "resource",
+              "authorization_servers",
+              "issuer",
+              "authorization_server_metadata_url",
+              "authorization_endpoint",
+              "token_endpoint",
+              "scopes_supported",
+              "default_scopes",
+              "token_endpoint_auth_methods_supported",
+              "code_challenge_methods_supported",
+              "client_id_metadata_document_supported",
+              "recommended_client_registration",
+              "resource_indicator",
+              "warnings",
+              "suggested_auth_config"
+            ],
+            "properties": {
+              "authorization_endpoint": {
+                "type": "string"
+              },
+              "authorization_server_metadata_url": {
+                "type": "string"
+              },
+              "authorization_servers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "callback_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "client_id_metadata_document_supported": {
+                "type": "boolean"
+              },
+              "client_metadata_document_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "code_challenge_methods_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "recommended_client_registration": {
+                "type": "string",
+                "description": "`dynamic`, `metadata_document`, or `manual`."
+              },
+              "registration_endpoint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "resource": {
+                "type": "string"
+              },
+              "resource_indicator": {
+                "type": "boolean"
+              },
+              "resource_metadata_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scopes_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "suggested_auth_config": {
+                "type": "object",
+                "description": "An `oauth_obo` auth config to save with the server.",
+                "additionalProperties": true
+              },
+              "token_endpoint": {
+                "type": "string"
+              },
+              "token_endpoint_auth_methods_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpServerPayload": {
         "type": "object",
         "required": [
@@ -14759,6 +15016,7 @@
           "server_key",
           "display_name",
           "provider_key",
+          "provider_label",
           "required_scopes",
           "granted_scopes",
           "status"
@@ -14788,6 +15046,10 @@
           "provider_key": {
             "type": "string"
           },
+          "provider_label": {
+            "type": "string",
+            "description": "The configured provider key, or the authorization server's host for a\nserver-level OAuth client."
+          },
           "required_scopes": {
             "type": "array",
             "items": {
@@ -14803,6 +15065,130 @@
           },
           "status": {
             "$ref": "#/components/schemas/McpOauthConnectionStatus"
+          }
+        }
+      },
+      "McpOauthDiscoveryPayload": {
+        "type": "object",
+        "description": "What OAuth metadata discovery found for an MCP server URL.",
+        "required": [
+          "resource",
+          "authorization_servers",
+          "issuer",
+          "authorization_server_metadata_url",
+          "authorization_endpoint",
+          "token_endpoint",
+          "scopes_supported",
+          "default_scopes",
+          "token_endpoint_auth_methods_supported",
+          "code_challenge_methods_supported",
+          "client_id_metadata_document_supported",
+          "recommended_client_registration",
+          "resource_indicator",
+          "warnings",
+          "suggested_auth_config"
+        ],
+        "properties": {
+          "authorization_endpoint": {
+            "type": "string"
+          },
+          "authorization_server_metadata_url": {
+            "type": "string"
+          },
+          "authorization_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "callback_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id_metadata_document_supported": {
+            "type": "boolean"
+          },
+          "client_metadata_document_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code_challenge_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "recommended_client_registration": {
+            "type": "string",
+            "description": "`dynamic`, `metadata_document`, or `manual`."
+          },
+          "registration_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_indicator": {
+            "type": "boolean"
+          },
+          "resource_metadata_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "suggested_auth_config": {
+            "type": "object",
+            "description": "An `oauth_obo` auth config to save with the server.",
+            "additionalProperties": true
+          },
+          "token_endpoint": {
+            "type": "string"
+          },
+          "token_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "McpOauthDiscoveryRequest": {
+        "type": "object",
+        "required": [
+          "server_url"
+        ],
+        "properties": {
+          "server_url": {
+            "type": "string"
           }
         }
       },

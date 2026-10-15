@@ -276,6 +276,8 @@ fn bindings_that_no_longer_match_the_server_need_reconnecting() {
         provider_key: "google".to_string(),
         resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
         scopes: vec!["drive.readonly".to_string(), "drive.file".to_string()],
+        resource_indicator: true,
+        server_oauth: None,
         discovery_tool_allowlist: None,
     };
     let metadata = |provider: &str, resource: &str, scopes: &[&str]| {
@@ -325,10 +327,14 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
         Some("https://gateway.example".to_string()),
         vec![McpOauthProvider {
             key: "google".to_string(),
+            provider_type: gateway_service::McpOauthProviderType::Google,
             client_id: "test-client".to_string(),
-            client_secret: "test-secret".to_string(),
+            client_secret: Some("test-secret".to_string()),
             authorization_url: "https://accounts.example/authorize".to_string(),
             token_url: "https://accounts.example/token".to_string(),
+            token_endpoint_auth_method:
+                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+            scopes: Vec::new(),
         }],
     ));
     let now = OffsetDateTime::now_utc();
@@ -404,3 +410,5 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
         "transaction must be single-use"
     );
 }
+
+mod generic;

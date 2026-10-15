@@ -58,6 +58,28 @@ fn decode_credential(row: &libsql::Row) -> Result<McpUpstreamCredentialBindingRe
     })
 }
 
+const OAUTH_CLIENT_COLUMNS: &str = "mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method, secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at, created_at, updated_at";
+
+fn decode_oauth_client(row: &libsql::Row) -> Result<McpOauthClientRecord, StoreError> {
+    let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
+    let client_secret_expires_at: Option<i64> = row.get(8).map_err(to_query_error)?;
+    let created_at: i64 = row.get(9).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(10).map_err(to_query_error)?;
+    Ok(McpOauthClientRecord {
+        mcp_server_id: parse_uuid(&mcp_server_id)?,
+        issuer: row.get(1).map_err(to_query_error)?,
+        redirect_uri: row.get(2).map_err(to_query_error)?,
+        client_id: row.get(3).map_err(to_query_error)?,
+        token_endpoint_auth_method: row.get(4).map_err(to_query_error)?,
+        secret_ciphertext: row.get(5).map_err(to_query_error)?,
+        secret_nonce: row.get(6).map_err(to_query_error)?,
+        secret_key_id: row.get(7).map_err(to_query_error)?,
+        client_secret_expires_at: client_secret_expires_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
 async fn load_credential(
     connection: &libsql::Connection,
     credential_binding_id: Uuid,
@@ -378,6 +400,83 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .execute(
                 "DELETE FROM mcp_oauth_refresh_leases WHERE credential_binding_id = ?1 AND lease_token = ?2",
                 libsql::params![credential_binding_id.to_string(), lease_token.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(changed > 0)
+    }
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {OAUTH_CLIENT_COLUMNS} FROM mcp_oauth_clients WHERE mcp_server_id = ?1"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [mcp_server_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_oauth_client(&row))
+            .transpose()
+    }
+
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO mcp_oauth_clients (
+                    mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method,
+                    secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at,
+                    created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                ON CONFLICT(mcp_server_id) DO NOTHING
+                "#,
+                libsql::params![
+                    record.mcp_server_id.to_string(),
+                    record.issuer.clone(),
+                    record.redirect_uri.clone(),
+                    record.client_id.clone(),
+                    record.token_endpoint_auth_method.clone(),
+                    record.secret_ciphertext.clone(),
+                    record.secret_nonce.clone(),
+                    record.secret_key_id.clone(),
+                    record
+                        .client_secret_expires_at
+                        .map(OffsetDateTime::unix_timestamp),
+                    record.created_at.unix_timestamp(),
+                    record.updated_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        self.get_mcp_oauth_client(record.mcp_server_id)
+            .await?
+            .ok_or_else(|| {
+                StoreError::Unexpected(format!(
+                    "MCP OAuth client for server `{}` was not stored",
+                    record.mcp_server_id
+                ))
+            })
+    }
+
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                "DELETE FROM mcp_oauth_clients WHERE mcp_server_id = ?1 AND client_id = ?2",
+                libsql::params![mcp_server_id.to_string(), client_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;

@@ -274,7 +274,7 @@ where
             header_name: None,
             secret: Some(secret),
             secret_ref: None,
-            expires_at: Some(grant.expires_at),
+            expires_at: grant.expires_at,
             metadata,
         })
         .await
@@ -551,10 +551,22 @@ pub(crate) fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayErr
 pub(crate) fn decrypt_binding_secret(
     binding: &McpUpstreamCredentialBindingRecord,
 ) -> Result<String, GatewayError> {
-    decrypt_secret_with_key(
+    decrypt_credential_secret(
         binding.secret_ciphertext.as_deref().unwrap_or_default(),
         binding.secret_nonce.as_deref().unwrap_or_default(),
         binding.secret_key_id.as_deref().unwrap_or_default(),
+    )
+}
+
+pub(crate) fn decrypt_credential_secret(
+    ciphertext: &str,
+    nonce: &str,
+    key_id: &str,
+) -> Result<String, GatewayError> {
+    decrypt_secret_with_key(
+        ciphertext,
+        nonce,
+        key_id,
         CREDENTIAL_KEY_ENV,
         CREDENTIAL_KEY_ID,
         "MCP credential",
@@ -1080,6 +1092,28 @@ mod tests {
             _lease_token: Uuid,
         ) -> Result<bool, StoreError> {
             Ok(true)
+        }
+
+        async fn get_mcp_oauth_client(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<Option<gateway_core::McpOauthClientRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn insert_mcp_oauth_client_if_absent(
+            &self,
+            record: &gateway_core::McpOauthClientRecord,
+        ) -> Result<gateway_core::McpOauthClientRecord, StoreError> {
+            Ok(record.clone())
+        }
+
+        async fn delete_mcp_oauth_client(
+            &self,
+            _mcp_server_id: Uuid,
+            _client_id: &str,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
         }
     }
 

@@ -2084,6 +2084,7 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::disable_mcp_server,
         crate::http::mcp_registry::list_mcp_server_tools,
         crate::http::mcp_registry::refresh_mcp_server_discovery,
+        crate::http::mcp_registry::discover_mcp_server_oauth,
         crate::http::mcp_registry::list_mcp_toolsets,
         crate::http::mcp_registry::create_mcp_toolset,
         crate::http::mcp_registry::update_mcp_toolset,
@@ -2100,7 +2101,9 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_oauth::list_mcp_oauth_connections,
         crate::http::mcp_oauth::start_mcp_oauth_connection,
         crate::http::mcp_oauth::revoke_mcp_oauth_connection,
-        crate::http::mcp_oauth::mcp_oauth_callback
+        crate::http::mcp_oauth::mcp_oauth_callback,
+        crate::http::mcp_oauth::mcp_oauth_server_callback,
+        crate::http::mcp_oauth::mcp_oauth_client_metadata_document
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)

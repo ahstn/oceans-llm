@@ -50,6 +50,7 @@ import type {
   McpOauthStartResponse,
   McpConnectionInfoPayload,
   McpDiscoveryRefreshPayload,
+  McpOauthDiscoveryPayload,
   McpCredentialBindingPayload,
   McpCredentialBindingsPayload,
   McpCredentialBindingsQuery,
@@ -545,6 +546,17 @@ export async function refreshMcpServerDiscovery(
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/mcp/servers/{server_id}/discovery-refresh', {
       params: { path: { server_id: serverId } },
+    }),
+  )
+}
+
+export async function discoverMcpServerOauth(
+  serverUrl: string,
+): Promise<ApiEnvelope<McpOauthDiscoveryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/oauth-discovery', {
+      body: { server_url: serverUrl },
     }),
   )
 }

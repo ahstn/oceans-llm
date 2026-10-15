@@ -1336,6 +1336,24 @@ impl PricingCatalogRepository for AnyStore {
             resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
         )
     }
+
+    async fn resolve_model_pricing_with_fallback_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            resolve_model_pricing_with_fallback_at(
+                pricing_provider_id,
+                pricing_model_id,
+                fallback_model_id,
+                occurred_at
+            )
+        )
+    }
 }
 
 #[async_trait]

@@ -337,10 +337,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 59,
+        name: "mcp_oauth_clients",
+        checksum: "V59__mcp_oauth_clients.sql",
+        libsql_sql: include_str!("../migrations/V59__mcp_oauth_clients.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__mcp_oauth_clients.sql"),
+    },
+    MigrationManifest {
+        version: 60,
         name: "admin_audit_log",
-        checksum: "V59__admin_audit_log.sql",
-        libsql_sql: include_str!("../migrations/V59__admin_audit_log.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V59__admin_audit_log.sql"),
+        checksum: "V60__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V60__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V60__admin_audit_log.sql"),
     },
 ];
 

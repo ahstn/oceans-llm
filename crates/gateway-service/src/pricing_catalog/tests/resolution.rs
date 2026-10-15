@@ -250,31 +250,92 @@ fn bedrock_default_version_normalization_is_conservative() {
 }
 
 #[test]
-fn vertex_anthropic_default_version_normalization_tracks_default_catalog_ids() {
+fn vertex_anthropic_default_fallback_applies_only_to_unversioned_anthropic_ids() {
     assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-6"),
-        "claude-sonnet-4-6@default"
+        catalog_model_id_fallback("google-vertex-anthropic", "claude-fable-5-1").as_deref(),
+        Some("claude-fable-5-1@default")
     );
     assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8"),
-        "claude-opus-4-8@default"
+        catalog_model_id_fallback("google-vertex-anthropic", "claude-opus-4-8@default"),
+        None
     );
     assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-5"),
-        "claude-sonnet-5@default"
+        catalog_model_id_fallback("google-vertex-anthropic", "claude-haiku-4-5@20251001"),
+        None
     );
     assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-5"),
-        "claude-sonnet-4-5"
+        catalog_model_id_fallback("google-vertex", "gemini-2.5-flash"),
+        None
     );
     assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8@default"),
-        "claude-opus-4-8@default"
+        catalog_model_id_fallback("opencode", "claude-fable-5-1"),
+        None
     );
-    assert_eq!(
-        normalize_vertex_pricing_model_id("google-vertex", "claude-opus-4-8"),
-        "claude-opus-4-8"
+}
+
+#[tokio::test]
+async fn vertex_anthropic_routes_fall_back_to_default_catalog_ids() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = PricingCatalog::with_fallback_snapshot(
+        repo.clone(),
+        "http://127.0.0.1:9/api.json".to_string(),
+        PRICING_CATALOG_CACHE_KEY.to_string(),
+        Duration::from_secs(0),
+        load_vendored_fallback_snapshot(),
     );
+    catalog
+        .refresh_if_stale_and_sync()
+        .await
+        .expect("initialize pricing catalog");
+    // Vendored rows take effect at the snapshot's fetch time.
+    let occurred_at = OffsetDateTime::now_utc();
+
+    for (upstream_model, expected_model_id) in [
+        // No hard-coded family list: new families resolve through `@default`.
+        ("anthropic/claude-fable-5-1", "claude-fable-5-1@default"),
+        ("anthropic/claude-sonnet-4-6", "claude-sonnet-4-6@default"),
+        // Explicit versions stay exact.
+        (
+            "anthropic/claude-opus-4-7@default",
+            "claude-opus-4-7@default",
+        ),
+        (
+            "anthropic/claude-haiku-4-5@20251001",
+            "claude-haiku-4-5@20251001",
+        ),
+    ] {
+        let resolution = catalog
+            .resolve_for_provider_connection(
+                &vertex_provider("global"),
+                &route("vertex-prod", upstream_model),
+                occurred_at,
+            )
+            .await
+            .expect("resolve vertex anthropic pricing");
+        match resolution {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "google-vertex-anthropic");
+                assert_eq!(pricing.model_id, expected_model_id);
+            }
+            other => panic!("unexpected {upstream_model} resolution: {other:?}"),
+        }
+    }
+
+    // The catalog lists only the dated release, so there is no `@default` to fall back to.
+    let dated_only = catalog
+        .resolve_for_provider_connection(
+            &vertex_provider("global"),
+            &route("vertex-prod", "anthropic/claude-sonnet-4-5"),
+            occurred_at,
+        )
+        .await
+        .expect("resolve dated-only model");
+    assert!(matches!(
+        dated_only,
+        PricingResolution::Unpriced {
+            reason: PricingUnpricedReason::ModelNotFound
+        }
+    ));
 }
 
 #[test]

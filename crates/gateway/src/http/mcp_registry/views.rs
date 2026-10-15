@@ -309,6 +309,38 @@ pub struct CreateMcpServerRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct McpOauthDiscoveryRequest {
+    pub(super) server_url: String,
+}
+
+/// What OAuth metadata discovery found for an MCP server URL.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpOauthDiscoveryPayload {
+    pub(super) resource: String,
+    pub(super) resource_metadata_url: Option<String>,
+    pub(super) authorization_servers: Vec<String>,
+    pub(super) issuer: String,
+    pub(super) authorization_server_metadata_url: String,
+    pub(super) authorization_endpoint: String,
+    pub(super) token_endpoint: String,
+    pub(super) registration_endpoint: Option<String>,
+    pub(super) scopes_supported: Vec<String>,
+    pub(super) default_scopes: Vec<String>,
+    pub(super) token_endpoint_auth_methods_supported: Vec<String>,
+    pub(super) code_challenge_methods_supported: Vec<String>,
+    pub(super) client_id_metadata_document_supported: bool,
+    /// `dynamic`, `metadata_document`, or `manual`.
+    pub(super) recommended_client_registration: String,
+    pub(super) resource_indicator: bool,
+    pub(super) callback_url: Option<String>,
+    pub(super) client_metadata_document_url: Option<String>,
+    pub(super) warnings: Vec<String>,
+    /// An `oauth_obo` auth config to save with the server.
+    #[schema(additional_properties = true)]
+    pub(super) suggested_auth_config: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateMcpServerRequest {
     pub(super) display_name: String,
     pub(super) description: Option<String>,
@@ -553,7 +585,9 @@ fn sanitized_auth_config(
 ) -> Map<String, Value> {
     let allowed_fields: &[&str] = match auth_mode {
         ExternalMcpAuthMode::None => &[],
-        ExternalMcpAuthMode::GatewayStaticHeader => &["header_name", "secret_ref"],
+        ExternalMcpAuthMode::GatewayStaticHeader => {
+            &["header_name", "value_template", "query_param", "secret_ref"]
+        }
         ExternalMcpAuthMode::GatewayBearerToken => &["secret_ref"],
         ExternalMcpAuthMode::UserPassthrough => &["header", "token_type"],
         ExternalMcpAuthMode::OauthObo => &[
@@ -561,9 +595,18 @@ fn sanitized_auth_config(
             "token_type",
             "provider_key",
             "resource",
+            "resource_indicator",
             "scopes",
             "discovery_auth",
             "discovery_tool_allowlist",
+            "issuer",
+            "authorization_endpoint",
+            "token_endpoint",
+            "registration_endpoint",
+            "client_registration",
+            "client_id",
+            "client_secret_ref",
+            "token_endpoint_auth_method",
         ],
     };
     allowed_fields
@@ -575,6 +618,7 @@ fn sanitized_auth_config(
                     "scopes" | "discovery_tool_allowlist" => value
                         .as_array()
                         .is_some_and(|items| items.iter().all(Value::is_string)),
+                    "resource_indicator" => value.is_boolean(),
                     _ => value.is_string(),
                 })
                 .map(|value| ((*field).to_string(), value.clone()))
