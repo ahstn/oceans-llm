@@ -10,8 +10,8 @@ use futures_util::{
 };
 use gateway_core::{GatewayError, ProviderError};
 use gateway_guardrails::{
-    DecisionAction, EffectivePolicy, EvaluationError, EvaluationInput, EvaluationPayload,
-    GuardPhase, GuardrailEvaluation, McpCall, PolicyResolver, PolicyTarget,
+    DecisionAction, EffectivePolicy, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, McpCall, PolicyResolver, PolicyTarget, UninspectedContent,
     uninspected_content_decision,
 };
 use serde_json::{Map, Value, json};
@@ -164,7 +164,7 @@ pub(super) async fn enforce_direct_mcp_result(
                 &policy,
                 &request_id,
                 mcp_tool_invocation_id,
-                failure.error(),
+                failure.reason(),
                 &[&prefix, overflow.as_deref().unwrap_or_default()],
             );
             if evaluation.denied() {
@@ -227,7 +227,7 @@ pub(super) async fn enforce_direct_mcp_result(
                 &policy,
                 &request_id,
                 mcp_tool_invocation_id,
-                EvaluationError::UnparseableStream,
+                UninspectedContent::Unparseable,
                 &[&bytes],
             );
             if evaluation.denied() {
@@ -279,10 +279,10 @@ enum BufferFailure {
 }
 
 impl BufferFailure {
-    fn error(self) -> EvaluationError {
+    fn reason(self) -> UninspectedContent {
         match self {
-            Self::Exceeded => EvaluationError::StreamBufferExceeded,
-            Self::TimedOut => EvaluationError::StreamBufferTimeout,
+            Self::Exceeded => UninspectedContent::BufferExceeded,
+            Self::TimedOut => UninspectedContent::BufferTimeout,
         }
     }
 
@@ -346,14 +346,13 @@ fn record_uninspected_result(
     policy: &EffectivePolicy,
     request_id: &str,
     mcp_tool_invocation_id: Uuid,
-    error: EvaluationError,
+    reason: UninspectedContent,
     content: &[&[u8]],
 ) -> GuardrailEvaluation {
     let decision = uninspected_content_decision(
         policy,
         GuardPhase::McpResult,
-        "stream_buffer",
-        error,
+        reason,
         uninspected_content_hash(content),
     );
     let evaluation = GuardrailEvaluation {

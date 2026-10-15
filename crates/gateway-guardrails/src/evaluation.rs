@@ -62,12 +62,6 @@ pub enum EvaluationError {
     MissingEvaluator(String),
     #[error("guardrail transformation is invalid for this phase")]
     InvalidTransformation,
-    #[error("guarded stream exceeded the configured buffer")]
-    StreamBufferExceeded,
-    #[error("guarded stream did not complete within the buffer timeout")]
-    StreamBufferTimeout,
-    #[error("guarded stream could not be parsed")]
-    UnparseableStream,
 }
 
 impl EvaluationError {
@@ -81,9 +75,6 @@ impl EvaluationError {
             Self::MalformedToolCall => "tool_call.malformed_arguments",
             Self::MissingEvaluator(_) => "managed.missing_evaluator",
             Self::InvalidTransformation => "managed.invalid_transformation",
-            Self::StreamBufferExceeded => "stream.buffer_exceeded",
-            Self::StreamBufferTimeout => "stream.buffer_timeout",
-            Self::UnparseableStream => "stream.unparseable",
         };
         ReasonCode::new(code).expect("static reason code is valid")
     }
@@ -425,8 +416,29 @@ fn failure_decision(
         ),
         policy,
         disposition,
-        error,
+        error.reason_code(),
     )
+}
+
+/// Why the gateway could not inspect a stream or result at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UninspectedContent {
+    /// The content is larger than the policy's `stream_buffer_bytes`.
+    BufferExceeded,
+    /// The content did not complete within the policy's `stream_buffer_timeout_ms`.
+    BufferTimeout,
+    /// The content is not valid UTF-8 SSE or JSON-RPC.
+    Unparseable,
+}
+
+impl UninspectedContent {
+    fn reason_code(self) -> ReasonCode {
+        reason(match self {
+            Self::BufferExceeded => "stream.buffer_exceeded",
+            Self::BufferTimeout => "stream.buffer_timeout",
+            Self::Unparseable => "stream.unparseable",
+        })
+    }
 }
 
 /// Records content the gateway could not inspect at all, such as a provider stream over the
@@ -436,15 +448,14 @@ fn failure_decision(
 pub fn uninspected_content_decision(
     policy: &EffectivePolicy,
     phase: GuardPhase,
-    evaluator: &str,
-    error: EvaluationError,
+    content: UninspectedContent,
     content_hash: String,
 ) -> DecisionRecord {
     with_failure(
-        base_decision(phase, policy, evaluator, None, 0, content_hash),
+        base_decision(phase, policy, "stream_buffer", None, 0, content_hash),
         policy,
         FailureDisposition::FailClosed,
-        error,
+        content.reason_code(),
     )
 }
 
@@ -452,7 +463,7 @@ fn with_failure(
     decision: DecisionRecord,
     policy: &EffectivePolicy,
     disposition: FailureDisposition,
-    error: EvaluationError,
+    reason_code: ReasonCode,
 ) -> DecisionRecord {
     // Audit mode never stops an operation, so a failure there is recorded as fail-open
     // whatever the configured disposition.
@@ -465,7 +476,7 @@ fn with_failure(
             FailureDisposition::FailOpen => DecisionAction::Audit,
             FailureDisposition::FailClosed => DecisionAction::Deny,
         },
-        reason_code: error.reason_code(),
+        reason_code,
         failure_disposition: Some(disposition),
         ..decision
     }
@@ -651,8 +662,7 @@ mod tests {
             uninspected_content_decision(
                 &policy(mode, Vec::new()),
                 GuardPhase::ModelResponse,
-                "stream_buffer",
-                EvaluationError::StreamBufferExceeded,
+                UninspectedContent::BufferExceeded,
                 "sha256:00".into(),
             )
         };
@@ -665,6 +675,7 @@ mod tests {
         );
         assert_eq!(audit.reason_code.as_str(), "stream.buffer_exceeded");
         assert_eq!(audit.content_hash, "sha256:00");
+        assert_eq!(audit.evaluator, "stream_buffer");
         let deny = decision(PolicyMode::Deny);
         assert_eq!(deny.action, DecisionAction::Deny);
         assert_eq!(

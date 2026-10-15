@@ -4,8 +4,8 @@ use axum::body::Bytes;
 use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
-    DecisionAction, DecisionRecord, EvaluationError, EvaluationInput, EvaluationPayload,
-    GuardPhase, GuardrailEvaluation, PolicyResolver, PolicyTarget, redact_prompt_secrets,
+    DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, redact_prompt_secrets,
     uninspected_content_decision,
 };
 use serde_json::{Map, Value};
@@ -191,7 +191,7 @@ pub async fn guard_stream(
             if release_uninspected_stream(
                 state,
                 context,
-                EvaluationError::StreamBufferExceeded,
+                UninspectedContent::BufferExceeded,
                 &[&buffered, &chunk],
             ) {
                 let inspected = stream::iter([Ok(Bytes::from(buffered)), Ok(chunk)]);
@@ -228,7 +228,7 @@ pub async fn guard_stream(
 fn release_uninspected_stream(
     state: &AppState,
     context: &InferenceGuardContext,
-    error: EvaluationError,
+    reason: UninspectedContent,
     content: &[&[u8]],
 ) -> bool {
     let policy = PolicyResolver::new(&state.guardrail_config)
@@ -236,8 +236,7 @@ fn release_uninspected_stream(
     let decision = uninspected_content_decision(
         &policy,
         GuardPhase::ModelResponse,
-        "stream_buffer",
-        error,
+        reason,
         uninspected_content_hash(content),
     );
     let released = decision.action != DecisionAction::Deny;
@@ -259,7 +258,7 @@ async fn guard_sse_payload(
             if release_uninspected_stream(
                 state,
                 context,
-                EvaluationError::UnparseableStream,
+                UninspectedContent::Unparseable,
                 &[payload],
             ) =>
         {
@@ -310,7 +309,7 @@ async fn guard_sse_payload(
                         if release_uninspected_stream(
                             state,
                             context,
-                            EvaluationError::UnparseableStream,
+                            UninspectedContent::Unparseable,
                             &[source.as_bytes()],
                         ) =>
                     {
