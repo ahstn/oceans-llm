@@ -95,7 +95,7 @@ The rules for specific actions are:
 
 ### Retention
 
-Audit entries are kept indefinitely. Request-log retention and `purge_request_logs_older_than` do not touch `audit_logs`. Operators who must prune can delete by `ts` in SQL. A configurable audit retention window is follow-up work.
+Audit entries are kept indefinitely. Request-log retention and `purge_request_logs_older_than` do not touch `audit_logs`. Maintainers who must prune can delete by `ts` in SQL. A configurable audit retention window is follow-up work.
 
 ## Coverage
 
