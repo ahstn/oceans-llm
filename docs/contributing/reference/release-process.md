@@ -112,7 +112,7 @@ mise run dist-check
 mise run dist-plan
 ```
 
-Do not edit the generated workflow directly. Keep product publication and CLI checks in their reusable workflows. `dist-check` verifies the generated file and lints all three release workflows.
+Do not edit the generated workflow directly. Action commits in the generated workflow come from `[dist.github-action-commits]`, and Dependabot is configured to skip `release.yml`. When Dependabot bumps an action that the generated workflow also uses, such as `actions/upload-artifact` in `ci.yml`, copy the new commit into `dist-workspace.toml` and regenerate. Keep product publication and CLI checks in their reusable workflows. `dist-check` verifies the generated file and lints all three release workflows.
 
 To check local packaging without publishing a release:
 
