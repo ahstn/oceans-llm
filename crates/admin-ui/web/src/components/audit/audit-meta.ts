@@ -10,9 +10,11 @@ export function formatAuditTimestamp(value: string) {
   return `${timeFormatter.format(new Date(value))} UTC`
 }
 
-/** `mcp_server` → `MCP server`, for target type labels. */
+const ACRONYMS: Record<string, string> = { api: 'API', mcp: 'MCP' }
+
+/** `mcp_server` → `MCP server`, `api_key` → `API key`, for target type labels. */
 export function targetTypeLabel(targetType: string) {
-  const words = targetType.split('_').map((word) => (word === 'mcp' ? 'MCP' : word))
+  const words = targetType.split('_').map((word) => ACRONYMS[word] ?? word)
   const label = words.join(' ')
   return label.charAt(0).toUpperCase() + label.slice(1)
 }

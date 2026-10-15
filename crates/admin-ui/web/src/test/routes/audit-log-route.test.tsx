@@ -67,6 +67,7 @@ describe('AuditLogPage', () => {
     expect(screen.getByText('Updated')).toBeInTheDocument()
     expect(screen.getByText('admin@example.test')).toBeInTheDocument()
     expect(screen.getByText('203.0.113.9')).toBeInTheDocument()
+    expect(screen.getByText('MCP server')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|delete|revoke/i })).not.toBeInTheDocument()
   })
 
