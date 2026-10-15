@@ -69,7 +69,9 @@ Each ConfigMap mounts at `<mountPath>/<name>/`, and the chart sets `GATEWAY_CONF
 Limits to plan for:
 
 - The ConfigMaps must exist before install, because the migration hook and the gateway init container load the config.
-- The chart cannot checksum ConfigMaps it does not render, so a fragment change neither restarts pods nor reseeds. Pods do not seed. Enable `seedConfigJob.enabled`, then run `helm upgrade`. Under Argo CD the seed Job runs as a `PostSync` hook whenever the release's Application syncs. That happens automatically only when the fragment ConfigMaps belong to the same Application; otherwise sync it manually after changing a fragment.
+- The chart cannot checksum ConfigMaps it does not render, so a fragment change neither restarts pods nor reseeds. Applying a change takes two steps:
+  - Reseed: pods do not seed, so enable `seedConfigJob.enabled` and run `helm upgrade`. Under Argo CD the seed Job runs as a `PostSync` hook whenever the release's Application syncs. That happens automatically only when the fragment ConfigMaps belong to the same Application; otherwise sync it manually.
+  - Restart the gateway pods with `kubectl rollout restart deployment/<fullname>-gateway`, for example `deployment/oceans-llm-gateway` for a release named `oceans-llm`. Pods build provider clients at startup, so until they restart they keep the old endpoints and credentials and do not know about new providers. When Kustomize renders this chart with name hashes enabled, a changed ConfigMap gets a new name and the rollout happens on its own.
 - Kustomize `configMapGenerator` appends a content hash to generated names by default, which the names in `gateway.configDir.configMaps` will not match. Set `options.disableNameSuffixHash: true` on each generator, unless Kustomize also renders this chart and rewrites the references.
 - ConfigMap keys allow only letters, digits, `-`, `_`, and `.`, and each ConfigMap is limited to 1 MiB.
 

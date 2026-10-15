@@ -8,7 +8,7 @@ use gateway_core::{
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
     RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
-    github_copilot_route_capabilities,
+    github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
@@ -87,8 +87,18 @@ impl ModelRouteConfig {
             return github_copilot_route_capabilities(self.compatibility.github_copilot.as_ref());
         }
 
-        let mut capabilities = ProviderCapabilities::all_enabled();
-        capabilities.decisions = false;
+        // Start from what the provider type can serve, so stored route flags agree with the
+        // request path, which intersects route flags with the same baselines.
+        let mut capabilities = match provider {
+            Some(ProviderConfig::AnthropicCompat(_)) => {
+                ProviderCapabilities::anthropic_compat_baseline()
+            }
+            Some(ProviderConfig::GcpVertex(_)) => {
+                vertex_route_capabilities_for_upstream_model(Some(&self.upstream_model))
+            }
+            Some(ProviderConfig::AwsBedrock(_)) => ProviderCapabilities::aws_bedrock_baseline(),
+            _ => ProviderCapabilities::openai_compat_baseline(),
+        };
         // Only Bedrock providers use api_style; other providers ignore the block.
         if let (Some(ProviderConfig::AwsBedrock(_)), Some(bedrock)) =
             (provider, &self.compatibility.aws_bedrock)

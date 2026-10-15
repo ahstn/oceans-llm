@@ -82,7 +82,7 @@ conf.d/
     multi-provider.yaml  # models whose routes use more than one provider file
 ```
 
-[`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists the file that defined each one. It redacts `literal.` values, header values, and URL passwords, so the output is safe to share; `env.` and `file.` references stay visible. `gateway config validate` accepts the same flags.
+[`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists the file that defined each one. It redacts `literal.` values, header values, and URL credentials (usernames, passwords, and query values), so the output is safe to share; `env.` and `file.` references stay visible. `gateway config validate` accepts the same flags.
 
 Removing a fragment does not remove what it seeded. Models and providers that disappear from config stay in the database, and their routes stay enabled. Disable a model's routes with `enabled: false` before deleting its entry.
 
@@ -1232,12 +1232,12 @@ An omitted capability flag takes the value the route's provider and compatibilit
 | --- | --- |
 | `typesafe` provider, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` only |
 | GitHub Copilot (`type: github_copilot`) provider | From `compatibility.github_copilot`: `chat_api`, `supports_responses`, `supports_embeddings`, and `upstream_supports` |
-| `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions` and `decisions` |
-| `aws_bedrock`, `api_style: runtime_anthropic_invoke` | Everything except `responses`, `json_schema`, `stream`, and `decisions` |
-| `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, and `decisions` |
-| Any other route | Everything except `decisions` |
-
-The table lists route flags. Bedrock routes derive `embeddings: true`, but Bedrock providers never serve embeddings, so an embeddings request never selects a Bedrock route.
+| `gcp_vertex` provider | From the `upstream_model`: Google chat models, Anthropic models, and supported embedding models each have their own set |
+| `anthropic_compat` provider | `chat_completions`, `stream`, `tools`, and `vision` |
+| `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions`, `embeddings`, and `decisions` |
+| `aws_bedrock`, `api_style: runtime_anthropic_invoke` | `chat_completions`, `tools`, `vision`, and `developer_role` |
+| `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, `embeddings`, and `decisions` |
+| `openai_compat` and `gcp_cloud_run_openai_compat` | Everything except `decisions` |
 
 An explicit flag replaces the derived value. Validation still rejects a flag the profile cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. At request time the gateway also intersects route flags with what the provider type can serve, so a route can narrow provider capability but cannot expand it.
 

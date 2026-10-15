@@ -239,15 +239,30 @@ providers:
     type: openai_compat
     base_url: https://openrouter.ai/api/v1
     auth: { token: env.OPENROUTER_API_KEY }
+  query-key:
+    type: openai_compat
+    base_url: https://llm.example.com/v1?api_key=query-secret&region=eu
+    pricing_provider_id: openai
+  user-token:
+    type: openai_compat
+    base_url: https://token-secret@llm.example.net/v1
+    pricing_provider_id: openai
 "#,
     );
     write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
 
     let rendered = render_config(&sources(tmp.path()), false).expect("render");
-    for secret in ["sk-live-secret", "hunter2", "org-secret"] {
+    for secret in [
+        "sk-live-secret",
+        "hunter2",
+        "org-secret",
+        "query-secret",
+        "token-secret",
+    ] {
         assert!(!rendered.contains(secret), "{secret} leaked:\n{rendered}");
     }
     assert!(rendered.contains("literal.<redacted>"), "{rendered}");
     assert!(rendered.contains("env.OPENROUTER_API_KEY"), "{rendered}");
     assert!(rendered.contains("llm.internal/v1"), "{rendered}");
+    assert!(rendered.contains("api_key=%3Credacted%3E"), "{rendered}");
 }

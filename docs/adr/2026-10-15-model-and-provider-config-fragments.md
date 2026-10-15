@@ -94,7 +94,7 @@ The per-provider-type baselines now live once in `gateway-core`: `ProviderCapabi
 - An explicitly set `--config` or `--config-dir` must exist.
 - Only the implicit `./gateway.yaml` may be absent.
 
-`gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists each one's source file. It redacts `literal.` values, header values, and URL passwords.
+`gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists each one's source file. It redacts `literal.` values, header values, and URL credentials (usernames, passwords, and query values).
 
 The suggested layout is `models/<provider-account>.yaml` for a provider account and the models that route only to it, plus `models/multi-provider.yaml` for models whose routes span providers. [`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a tested example.
 

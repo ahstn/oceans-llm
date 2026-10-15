@@ -293,7 +293,8 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
 const REDACTED: &str = "<redacted>";
 
 /// Replaces values that can carry credentials, so rendered output is safe to paste into logs:
-/// `literal.` secret references, every header value, and the password in a URL. `env.` and
+/// `literal.` secret references, every header value, and URL credentials (userinfo and query
+/// values). `env.` and
 /// `file.` references name where a secret lives without containing it, so they stay visible.
 fn redact_secrets(value: &mut Value, in_headers: bool) {
     match value {
@@ -317,15 +318,40 @@ fn redact_secrets(value: &mut Value, in_headers: bool) {
                 *text = REDACTED.to_string();
             } else if text.starts_with("literal.") {
                 *text = format!("literal.{REDACTED}");
-            } else if let Ok(mut url) = url::Url::parse(text)
-                && url.password().is_some()
-                && url.set_password(Some(REDACTED)).is_ok()
-            {
-                *text = url.to_string();
+            } else if let Some(redacted) = redact_url_credentials(text) {
+                *text = redacted;
             }
         }
         _ => {}
     }
+}
+
+/// Returns the URL with its username, password, and every query value redacted, or `None` when
+/// the text is not a URL or carries none of them. Query strings on endpoint URLs are rare and
+/// often hold API keys, so all values are redacted rather than guessing parameter names.
+fn redact_url_credentials(text: &str) -> Option<String> {
+    let mut url = url::Url::parse(text).ok()?;
+    if url.cannot_be_a_base() {
+        return None;
+    }
+    let mut changed = false;
+    if !url.username().is_empty() {
+        changed |= url.set_username(REDACTED).is_ok();
+    }
+    if url.password().is_some() {
+        changed |= url.set_password(Some(REDACTED)).is_ok();
+    }
+    if url.query().is_some() {
+        let keys = url
+            .query_pairs()
+            .map(|(key, _)| key.into_owned())
+            .collect::<Vec<_>>();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs(keys.iter().map(|key| (key.as_str(), REDACTED)));
+        changed = true;
+    }
+    changed.then(|| url.to_string())
 }
 
 fn take_collections(

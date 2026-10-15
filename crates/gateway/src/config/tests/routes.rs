@@ -603,3 +603,44 @@ models:
         "unexpected error: {error_text}"
     );
 }
+
+#[test]
+fn route_capability_defaults_start_from_the_provider_baseline() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  vertex:
+    type: gcp_vertex
+    project_id: project
+    auth: { mode: adc }
+models:
+  zen-model:
+    route: { provider: zen, upstream_model: claude-sonnet }
+  vertex-claude:
+    route: { provider: vertex, upstream_model: anthropic/claude-sonnet-4-6 }
+  vertex-embedding:
+    route: { provider: vertex, upstream_model: google/gemini-embedding-001 }
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let seeds = config.seed_models().expect("seed models");
+    let capabilities = |index: usize| seeds[index].routes[0].capabilities;
+    assert_eq!(
+        capabilities(0),
+        gateway_core::ProviderCapabilities::anthropic_compat_baseline()
+    );
+    assert_eq!(
+        capabilities(1),
+        gateway_core::vertex_route_capabilities_for_upstream_model(Some(
+            "anthropic/claude-sonnet-4-6"
+        ))
+    );
+    assert!(capabilities(2).embeddings && !capabilities(2).chat_completions);
+}
