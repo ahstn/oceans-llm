@@ -1200,7 +1200,8 @@ impl LibsqlStore {
             ));
         }
 
-        self.connection
+        let removed = self
+            .connection
             .execute(
                 r#"
                 DELETE FROM team_memberships
@@ -1211,7 +1212,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(true)
+        Ok(removed > 0)
     }
 
     pub async fn transfer_team_membership(

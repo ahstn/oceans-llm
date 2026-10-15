@@ -484,6 +484,20 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         .map(|entry| entry["metadata"]["operation"].clone())
         .collect();
     assert_eq!(operations, vec![json!("replace"), json!("create")]);
+
+    // Disabling a disabled server is not another transition.
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(
+                Method::POST,
+                &format!("/api/v1/admin/mcp/servers/{server_id}/disable"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let disabled = harness.entry("mcp_server.disabled").await;
+    assert_eq!(disabled["before"]["status"], "active");
 }
 
 #[tokio::test]

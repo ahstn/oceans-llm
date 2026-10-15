@@ -235,15 +235,18 @@ pub async fn disable_mcp_server(
     let before = server_before_summary(&state, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
     let server = map_server(service.disable_server(server_id).await?);
-    state
-        .audit()
-        .record(
-            &meta.user_context(&actor),
-            server_event(actions::MCP_SERVER_DISABLED, &server)
-                .before(serde_json::json!({ "status": before["status"] }))
-                .after(serde_json::json!({ "status": "disabled" })),
-        )
-        .await;
+    // Disabling a disabled server is not a transition.
+    if before["status"] != "disabled" {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                server_event(actions::MCP_SERVER_DISABLED, &server)
+                    .before(serde_json::json!({ "status": before["status"] }))
+                    .after(serde_json::json!({ "status": "disabled" })),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpServerPayload { server })))
 }
 

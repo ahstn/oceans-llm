@@ -1466,12 +1466,13 @@ pub async fn remove_identity_team_member(
         )));
     }
 
+    // A concurrent removal of the same membership may already have deleted it.
     state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
             state.store.remove_team_membership(team_id, user_id),
-            |_| {
+            || {
                 AuditEvent::new(actions::TEAM_MEMBER_REMOVED, targets::TEAM)
                     .target(team_id)
                     .label(identity_user.team_name.clone().unwrap_or_default())
