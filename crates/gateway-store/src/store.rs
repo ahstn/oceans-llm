@@ -287,6 +287,13 @@ pub trait GatewayStore:
         status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    /// Moves an invited user to active. `false` means the user was not invited,
+    /// for example because a concurrent sign-in already activated them.
+    async fn activate_invited_user(
+        &self,
+        user_id: Uuid,
+        activated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
     async fn update_user_must_change_password(
         &self,
         user_id: Uuid,
@@ -1786,6 +1793,14 @@ impl GatewayStore for AnyStore {
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         dispatch_store!(self, update_user_status(user_id, status, updated_at))
+    }
+
+    async fn activate_invited_user(
+        &self,
+        user_id: Uuid,
+        activated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, activate_invited_user(user_id, activated_at))
     }
 
     async fn update_user_must_change_password(

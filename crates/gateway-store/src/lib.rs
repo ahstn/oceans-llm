@@ -3038,6 +3038,19 @@ pub(crate) mod tests {
             .await
             .expect("create user");
         let now = OffsetDateTime::now_utc();
+        // SSO activation moves an invited user to active once.
+        assert!(
+            store
+                .activate_invited_user(user.user_id, now)
+                .await
+                .expect("activate")
+        );
+        assert!(
+            !store
+                .activate_invited_user(user.user_id, now)
+                .await
+                .expect("activate again")
+        );
         store
             .create_password_invitation(
                 Uuid::new_v4(),
@@ -9119,6 +9132,13 @@ pub(crate) mod tests {
                 .expect("password stored")
                 .password_hash,
             "first-hash"
+        );
+        // The redeemed user is already active, so SSO activation changes nothing.
+        assert!(
+            !store
+                .activate_invited_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("activate redeemed user")
         );
 
         let cache = PricingCatalogCacheRecord {

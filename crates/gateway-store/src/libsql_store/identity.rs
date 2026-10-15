@@ -1553,6 +1553,27 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn activate_invited_user(
+        &self,
+        user_id: Uuid,
+        activated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let activated = self
+            .connection
+            .execute(
+                "UPDATE users SET status = ?1, updated_at = ?2 WHERE user_id = ?3 AND status = ?4",
+                libsql::params![
+                    UserStatus::Active.as_str(),
+                    activated_at.unix_timestamp(),
+                    user_id.to_string(),
+                    UserStatus::Invited.as_str()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(activated > 0)
+    }
+
     pub async fn update_user_status(
         &self,
         user_id: Uuid,

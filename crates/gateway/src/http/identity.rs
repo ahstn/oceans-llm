@@ -1901,25 +1901,28 @@ pub async fn oidc_callback(
                 {
                     progress.landed();
                 }
-                state
-                    .store
-                    .update_user_status(user.user_id, UserStatus::Active, now)
-                    .await?;
-                Ok::<_, AppError>(())
+                let activated = state.store.activate_invited_user(user.user_id, now).await?;
+                Ok::<_, AppError>(activated)
             };
-            if let Err(error) = activate.await {
-                record_partial_sso_activation(
-                    &state,
-                    &meta,
-                    &progress,
-                    &user,
-                    &error,
-                    ("oidc", &provider.provider_key),
-                )
-                .await;
-                return Err(error);
+            let activated = match activate.await {
+                Ok(activated) => activated,
+                Err(error) => {
+                    record_partial_sso_activation(
+                        &state,
+                        &meta,
+                        &progress,
+                        &user,
+                        &error,
+                        ("oidc", &provider.provider_key),
+                    )
+                    .await;
+                    return Err(error);
+                }
+            };
+            // A concurrent sign-in may already have activated the user.
+            if activated {
+                record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
             }
-            record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         } else {
             state
                 .store
@@ -1960,26 +1963,29 @@ pub async fn oidc_callback(
                     now,
                 )
                 .await?;
-            state
-                .store
-                .update_user_status(user.user_id, UserStatus::Active, now)
-                .await?;
-            Ok::<_, AppError>(())
+            let activated = state.store.activate_invited_user(user.user_id, now).await?;
+            Ok::<_, AppError>(activated)
         };
-        if let Err(error) = activate.await {
-            // The identity link exists even though activation did not finish.
-            record_partial_sso_activation(
-                &state,
-                &meta,
-                &progress,
-                &user,
-                &error,
-                ("oidc", &provider.provider_key),
-            )
-            .await;
-            return Err(error);
+        let activated = match activate.await {
+            Ok(activated) => activated,
+            Err(error) => {
+                // The identity link exists even though activation did not finish.
+                record_partial_sso_activation(
+                    &state,
+                    &meta,
+                    &progress,
+                    &user,
+                    &error,
+                    ("oidc", &provider.provider_key),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        // A concurrent sign-in may already have activated the user.
+        if activated {
+            record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         }
-        record_sso_activation(&state, &meta, &user, "oidc", &provider.provider_key).await;
         user
     } else if state
         .store
@@ -2225,25 +2231,28 @@ pub async fn oauth_callback_github(
                 {
                     progress.landed();
                 }
-                state
-                    .store
-                    .update_user_status(user.user_id, UserStatus::Active, now)
-                    .await?;
-                Ok::<_, AppError>(())
+                let activated = state.store.activate_invited_user(user.user_id, now).await?;
+                Ok::<_, AppError>(activated)
             };
-            if let Err(error) = activate.await {
-                record_partial_sso_activation(
-                    &state,
-                    &meta,
-                    &progress,
-                    &user,
-                    &error,
-                    ("oauth", &provider.provider_key),
-                )
-                .await;
-                return Err(error);
+            let activated = match activate.await {
+                Ok(activated) => activated,
+                Err(error) => {
+                    record_partial_sso_activation(
+                        &state,
+                        &meta,
+                        &progress,
+                        &user,
+                        &error,
+                        ("oauth", &provider.provider_key),
+                    )
+                    .await;
+                    return Err(error);
+                }
+            };
+            // A concurrent sign-in may already have activated the user.
+            if activated {
+                record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
             }
-            record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         } else {
             state
                 .store
@@ -2284,26 +2293,29 @@ pub async fn oauth_callback_github(
                     now,
                 )
                 .await?;
-            state
-                .store
-                .update_user_status(user.user_id, UserStatus::Active, now)
-                .await?;
-            Ok::<_, AppError>(())
+            let activated = state.store.activate_invited_user(user.user_id, now).await?;
+            Ok::<_, AppError>(activated)
         };
-        if let Err(error) = activate.await {
-            // The identity link exists even though activation did not finish.
-            record_partial_sso_activation(
-                &state,
-                &meta,
-                &progress,
-                &user,
-                &error,
-                ("oauth", &provider.provider_key),
-            )
-            .await;
-            return Err(error);
+        let activated = match activate.await {
+            Ok(activated) => activated,
+            Err(error) => {
+                // The identity link exists even though activation did not finish.
+                record_partial_sso_activation(
+                    &state,
+                    &meta,
+                    &progress,
+                    &user,
+                    &error,
+                    ("oauth", &provider.provider_key),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        // A concurrent sign-in may already have activated the user.
+        if activated {
+            record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         }
-        record_sso_activation(&state, &meta, &user, "oauth", &provider.provider_key).await;
         user
     } else if state
         .store

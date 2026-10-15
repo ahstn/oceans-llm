@@ -1401,6 +1401,24 @@ impl PostgresStore {
         Ok(())
     }
 
+    pub async fn activate_invited_user(
+        &self,
+        user_id: Uuid,
+        activated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "UPDATE users SET status = $1, updated_at = $2 WHERE user_id = $3 AND status = $4",
+        )
+        .bind(UserStatus::Active.as_str())
+        .bind(activated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .bind(UserStatus::Invited.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn update_user_status(
         &self,
         user_id: Uuid,
