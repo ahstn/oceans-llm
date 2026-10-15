@@ -16,6 +16,15 @@ impl RateLimitRepository for AnyStore {
         }
     }
 
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_enabled_rate_limit_policies().await,
+            Self::Postgres(store) => store.list_enabled_rate_limit_policies().await,
+        }
+    }
+
     async fn get_rate_limit_policy(
         &self,
         policy_id: Uuid,

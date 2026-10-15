@@ -287,27 +287,42 @@ impl ActivePolicy {
         // identity: the operation, traffic filter, period and metric. Editing
         // any of them starts fresh counters instead of reusing rows that
         // counted other traffic or were sized for another window.
-        let policy = match &self.source {
-            RateLimitPolicySource::Config => format!("config:{}", self.name),
-            RateLimitPolicySource::Admin(id) => format!("policy:{id}"),
+        let (source_kind, source_value) = match &self.source {
+            RateLimitPolicySource::Config => ("config", self.name.clone()),
+            RateLimitPolicySource::Admin(id) => ("policy", id.to_string()),
         };
-        let filter = match (&self.model_key, &self.mcp_server) {
-            (Some(model_key), _) => format!("model={model_key}"),
-            (None, Some(ServerFilter::Id(id))) => format!("server={id}"),
-            (None, Some(ServerFilter::Key(key))) => format!("server-key={key}"),
-            (None, None) => "any".to_string(),
+        let (filter_kind, filter_value) = match (&self.model_key, &self.mcp_server) {
+            (Some(model_key), _) => ("model", model_key.clone()),
+            (None, Some(ServerFilter::Id(id))) => ("server", id.to_string()),
+            (None, Some(ServerFilter::Key(key))) => ("server-key", key.clone()),
+            (None, None) => ("any", String::new()),
         };
-        let policy = format!(
-            "{policy}:{}:{}:{}:{filter}",
+        let principal = principal.map(|id| id.to_string()).unwrap_or_default();
+        Some(encode_counter_key(&[
+            source_kind,
+            &source_value,
             self.operation.as_str(),
             self.period.as_str(),
-            self.metric.as_str()
-        );
-        Some(match principal {
-            Some(principal) => format!("{policy}|{}:{principal}", self.scope_kind.as_str()),
-            None => format!("{policy}|global"),
-        })
+            self.metric.as_str(),
+            filter_kind,
+            &filter_value,
+            self.scope_kind.as_str(),
+            &principal,
+        ]))
     }
+}
+
+/// Joins counter-key fields unambiguously: each is written as
+/// `<byte length>:<value>`, so names or model keys containing delimiters can
+/// never make two different policies share a key.
+fn encode_counter_key(fields: &[&str]) -> String {
+    let mut key = String::new();
+    for field in fields {
+        key.push_str(&field.len().to_string());
+        key.push(':');
+        key.push_str(field);
+    }
+    key
 }
 
 /// The policies a check runs against. `complete` is false when admin policies
@@ -693,8 +708,10 @@ impl RateLimiter {
             Ok(()) => self.token_write_failed_at.store(0, Ordering::Relaxed),
             Err(error) => {
                 tracing::warn!(error = %error, "recording rate-limited token usage failed");
+                // Stamp when the failure was seen: a write that took longer
+                // than the hold to fail must still start a full hold.
                 self.token_write_failed_at
-                    .store(finished_at.unix_timestamp().max(1), Ordering::Relaxed);
+                    .store((self.clock)().unix_timestamp().max(1), Ordering::Relaxed);
             }
         }
     }
@@ -748,13 +765,8 @@ impl RateLimiter {
         let mut policies = self.config_policies.clone();
         let mut complete = true;
         if let Some(store) = &self.store {
-            match store.list_rate_limit_policies().await {
-                Ok(records) => policies.extend(
-                    records
-                        .iter()
-                        .filter(|record| record.enabled)
-                        .map(ActivePolicy::from_record),
-                ),
+            match store.list_enabled_rate_limit_policies().await {
+                Ok(records) => policies.extend(records.iter().map(ActivePolicy::from_record)),
                 Err(error) => {
                     tracing::warn!(error = %error, "loading rate limit policies failed");
                     if let Some(stale) = self.cached(true).filter(|set| set.complete) {
@@ -901,12 +913,11 @@ impl RateLimiter {
         }
         let others = self
             .admin_store()?
-            .list_rate_limit_policies()
+            .list_enabled_rate_limit_policies()
             .await?
             .into_iter()
             .filter(|other| {
-                other.enabled
-                    && other.operation == policy.operation
+                other.operation == policy.operation
                     && other.rate_limit_policy_id != policy.rate_limit_policy_id
             })
             .count();

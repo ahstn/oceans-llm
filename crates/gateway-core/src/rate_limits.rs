@@ -164,7 +164,7 @@ pub struct RateLimitPolicyRecord {
     pub updated_at: OffsetDateTime,
 }
 
-/// The longest policy name config and the admin API accept.
+/// The longest policy name config and the admin API accept, in characters.
 pub const MAX_RATE_LIMIT_POLICY_NAME_LEN: usize = 100;
 
 /// The most enabled policies, config and admin together, one operation may
@@ -190,7 +190,7 @@ impl RateLimitPolicyShape<'_> {
     /// Config and the admin API share these rules; the table repeats them.
     pub fn validate(&self) -> Result<(), String> {
         let name = self.name.trim();
-        if name.is_empty() || name.len() > MAX_RATE_LIMIT_POLICY_NAME_LEN {
+        if name.is_empty() || name.chars().count() > MAX_RATE_LIMIT_POLICY_NAME_LEN {
             return Err(format!(
                 "name must be 1 to {MAX_RATE_LIMIT_POLICY_NAME_LEN} characters"
             ));
@@ -427,6 +427,28 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
+
+    #[test]
+    fn policy_names_are_limited_in_characters_not_bytes() {
+        let valid = |name: &str| {
+            RateLimitPolicyShape {
+                name,
+                operation: RateLimitOperation::Inference,
+                scope_kind: RateLimitScopeKind::User,
+                has_scope_id: false,
+                model_key: None,
+                has_mcp_server: false,
+                metric: RateLimitMetric::Requests,
+                limit: 1,
+            }
+            .validate()
+            .is_ok()
+        };
+        let longest = "制".repeat(MAX_RATE_LIMIT_POLICY_NAME_LEN);
+        assert!(longest.len() > MAX_RATE_LIMIT_POLICY_NAME_LEN);
+        assert!(valid(&longest));
+        assert!(!valid(&format!("{longest}制")));
+    }
 
     #[test]
     fn minute_window_weights_the_previous_window_by_time_left() {

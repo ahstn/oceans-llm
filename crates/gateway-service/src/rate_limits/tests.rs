@@ -714,11 +714,11 @@ async fn editing_a_policy_period_starts_fresh_counters() {
     assert_eq!(keys.len(), 2);
     assert!(
         keys.iter()
-            .any(|key| key.contains(":inference:minute:requests:any|"))
+            .any(|key| key.contains("9:inference6:minute8:requests3:any0:"))
     );
     assert!(
         keys.iter()
-            .any(|key| key.contains(":inference:day:requests:any|"))
+            .any(|key| key.contains("9:inference3:day8:requests3:any0:"))
     );
 }
 
@@ -938,4 +938,61 @@ async fn enabled_policies_are_capped_per_operation() {
         .update_admin_policy(RateLimitPolicyRecord { limit: 9, ..last })
         .await
         .unwrap();
+}
+
+#[test]
+fn counter_keys_cannot_collide_through_delimiters_in_names() {
+    // Without length prefixes these two would both read as
+    // `a:inference:minute:requests:model=x...`.
+    let joined = |fields: &[&str]| encode_counter_key(fields);
+    assert_ne!(
+        joined(&[
+            "config",
+            "a",
+            "inference",
+            "minute",
+            "requests",
+            "model",
+            "x:inference"
+        ]),
+        joined(&[
+            "config",
+            "a:inference",
+            "minute",
+            "requests",
+            "model",
+            "x",
+            "inference"
+        ]),
+    );
+    assert_eq!(joined(&["a", "", "bc"]), "1:a0:2:bc");
+}
+
+#[tokio::test]
+async fn a_slow_failing_token_write_still_starts_a_full_hold() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let harness = Harness::with_mode(
+        MemoryStore {
+            fail_add: std::sync::atomic::AtomicBool::new(true),
+            add_gate: Some(gate.clone()),
+            ..MemoryStore::default()
+        },
+        vec![config(
+            "user tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::User,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )],
+        RateLimitFailureMode::Closed,
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+
+    // The write takes ten seconds to fail: longer than the hold.
+    harness.limiter.record_tokens_detached(&subject, 400);
+    harness.advance(10);
+    gate.add_permits(1);
+    let error = harness.limiter.check(&subject).await.unwrap_err();
+    assert_eq!(error.http_status_code(), 503);
 }

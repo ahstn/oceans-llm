@@ -1357,6 +1357,16 @@ pub trait PricingCatalogRepository: Send + Sync {
 pub trait RateLimitRepository: Send + Sync {
     async fn list_rate_limit_policies(&self) -> Result<Vec<RateLimitPolicyRecord>, StoreError>;
 
+    /// Enabled policies only, for the request-path cache, so paused rows
+    /// never cost a refresh anything.
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        let mut policies = self.list_rate_limit_policies().await?;
+        policies.retain(|policy| policy.enabled);
+        Ok(policies)
+    }
+
     async fn get_rate_limit_policy(
         &self,
         policy_id: Uuid,

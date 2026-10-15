@@ -90,6 +90,26 @@ impl RateLimitRepository for LibsqlStore {
         Ok(policies)
     }
 
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "SELECT {POLICY_COLUMNS} FROM rate_limit_policies WHERE enabled = 1 ORDER BY name"
+                ),
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut policies = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            policies.push(decode(&row)?);
+        }
+        Ok(policies)
+    }
+
     async fn get_rate_limit_policy(
         &self,
         policy_id: Uuid,

@@ -64,6 +64,18 @@ impl RateLimitRepository for PostgresStore {
         rows.iter().map(decode).collect()
     }
 
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        let rows = sqlx::query(&format!(
+            "SELECT {POLICY_COLUMNS} FROM rate_limit_policies WHERE enabled = 1 ORDER BY name"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode).collect()
+    }
+
     async fn get_rate_limit_policy(
         &self,
         policy_id: Uuid,

@@ -188,6 +188,14 @@ async fn exercise_policies<S: RateLimitRepository>(store: &S) {
         store.list_rate_limit_policies().await.expect("list"),
         vec![updated.clone()]
     );
+    // `updated` is paused, so the request-path listing leaves it out.
+    assert!(
+        store
+            .list_enabled_rate_limit_policies()
+            .await
+            .expect("list enabled")
+            .is_empty()
+    );
 
     assert!(
         store
