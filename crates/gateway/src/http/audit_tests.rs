@@ -532,6 +532,10 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         binding_entry["target_label"]
     );
     assert_eq!(revoked_binding["before"]["material_kind"], "bearer_token");
+    // `before` is the binding while still active; the revocation time is `after`.
+    assert_eq!(revoked_binding["before"]["revoked_at"], Value::Null);
+    assert!(revoked_binding["before"].get("updated_at").is_none());
+    assert!(revoked_binding["after"]["revoked_at"].is_string());
 
     let everything = serde_json::to_string(&harness.entries().await).unwrap();
     assert!(!everything.contains(secret), "credential secret leaked");

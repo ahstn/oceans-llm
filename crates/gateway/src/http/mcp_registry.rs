@@ -873,6 +873,14 @@ pub async fn revoke_mcp_credential_binding(
     // nothing.
     if let Some(binding) = service.revoke_binding(credential_binding_id).await? {
         let binding = map_credential_binding(binding);
+        // The returned row already carries the revocation, so `before` leaves out
+        // what the revoke wrote: it matched only an active binding.
+        let mut before = credential_binding_audit_summary(&binding);
+        let revoked_at = before.get("revoked_at").cloned().unwrap_or_default();
+        if let Some(fields) = before.as_object_mut() {
+            fields.insert("revoked_at".to_string(), serde_json::Value::Null);
+            fields.remove("updated_at");
+        }
         state
             .audit()
             .record(
@@ -880,7 +888,8 @@ pub async fn revoke_mcp_credential_binding(
                 AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
                     .target(binding.id())
                     .label(binding.owner_scope_key().to_string())
-                    .before(credential_binding_audit_summary(&binding)),
+                    .before(before)
+                    .after(serde_json::json!({ "revoked_at": revoked_at })),
             )
             .await;
     }
