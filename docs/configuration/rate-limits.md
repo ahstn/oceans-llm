@@ -157,10 +157,9 @@ server:
     - fd00::/8
 ```
 
-The gateway reads `X-Forwarded-For` only when the peer is a trusted proxy. It walks the header from the right, skips trusted hops, and takes the first untrusted address, so a caller cannot choose its own IP by sending the header. Rate limits do not key on IP today. [Admin audit entries](../access/admin-audit-log.md#request-ip) use the same resolution, and IP allow and deny lists will too.
+The gateway reads `X-Forwarded-For` only when the peer is a trusted proxy. It walks the header from the right, skips trusted hops, and takes the first untrusted address, so a caller cannot choose its own IP by sending the header. Rate limits do not key on IP today. Policy changes are recorded in the [admin audit log](../access/admin-audit-log.md). [Admin audit entries](../access/admin-audit-log.md#request-ip) use the same resolution, and IP allow and deny lists will too.
 
 ## Limits of this release
 
 - Batches, `/v1/models`, and admin APIs are not rate limited.
 - A specific policy cannot raise a default for one principal.
-- Policy changes are written to the gateway logs (`admin_audit` target), not yet to a durable admin audit log.

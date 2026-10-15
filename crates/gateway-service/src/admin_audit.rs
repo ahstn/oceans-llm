@@ -130,6 +130,10 @@ pub mod actions {
     pub const REVIEW_AGENT_REPOSITORY_UPDATED: &str = "review_agent_repository.updated";
     pub const REVIEW_AGENT_REPOSITORY_DISABLED: &str = "review_agent_repository.disabled";
     pub const REVIEW_AGENT_REPOSITORY_REACTIVATED: &str = "review_agent_repository.reactivated";
+
+    pub const RATE_LIMIT_POLICY_CREATED: &str = "rate_limit_policy.created";
+    pub const RATE_LIMIT_POLICY_UPDATED: &str = "rate_limit_policy.updated";
+    pub const RATE_LIMIT_POLICY_DELETED: &str = "rate_limit_policy.deleted";
 }
 
 /// Target resource types. An action's prefix names its target type.
@@ -147,6 +151,7 @@ pub mod targets {
     pub const MCP_CREDENTIAL_BINDING: &str = "mcp_credential_binding";
     pub const PRICING_CATALOG: &str = "pricing_catalog";
     pub const REVIEW_AGENT_REPOSITORY: &str = "review_agent_repository";
+    pub const RATE_LIMIT_POLICY: &str = "rate_limit_policy";
 
     /// Every target type, for filter controls.
     pub const ALL: &[&str] = &[
@@ -163,6 +168,7 @@ pub mod targets {
         MCP_CREDENTIAL_BINDING,
         PRICING_CATALOG,
         REVIEW_AGENT_REPOSITORY,
+        RATE_LIMIT_POLICY,
     ];
 }
 

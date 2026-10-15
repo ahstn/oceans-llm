@@ -2,7 +2,7 @@
 
 `See also`: [Admin Control Plane](admin-control-plane.md), [Identity and Access](identity-and-access.md), [Observability and Request Logs](../operations/observability-and-request-logs.md)
 
-The audit log records administrator changes to the control plane: who changed what, when, from where, and what the change was. It is separate from request logs. Request logs explain model and tool traffic; the audit log explains changes to keys, identities, budgets, sessions and MCP access.
+The audit log records administrator changes to the control plane: who changed what, when, from where, and what the change was. It is separate from request logs. Request logs explain model and tool traffic; the audit log explains changes to keys, identities, budgets, rate limits, sessions and MCP access.
 
 ## Where to find it
 
@@ -34,9 +34,10 @@ Each entry shows:
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
 | MCP credentials | `mcp_credential_binding.set` (create, replace, or a user's OAuth connect), `mcp_credential_binding.revoked` |
 | Provider credentials | `provider_credential.set`, `provider_credential.deleted` |
+| Rate limits | `rate_limit_policy.created`, `rate_limit_policy.updated`, `rate_limit_policy.deleted` |
 | Other | `pricing_catalog.refreshed`, `review_agent_repository.created`, `.updated`, `.disabled`, `.reactivated` |
 
-A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members or disabling a disabled repository, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
+A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository, signing out twice with the same session or saving a rate-limit policy unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
 
 An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
 

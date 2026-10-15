@@ -1,8 +1,8 @@
 //! Admin API for rate-limit policies.
 //!
 //! Platform admins manage database policies here. Config policies from
-//! `rate_limits.policies` are listed read-only. Every change goes through
-//! [`record_rate_limit_policy_change`], the hook for the admin audit log (#99).
+//! `rate_limits.policies` are listed read-only. Every change is recorded in the
+//! admin audit log.
 
 use std::collections::HashMap;
 
@@ -14,10 +14,14 @@ use axum::{
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, GatewayError, IdentityRepository,
     McpRegistryRepository, ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod,
-    RateLimitPolicyRecord, RateLimitScopeKind, UserRecord,
+    RateLimitPolicyRecord, RateLimitScopeKind,
 };
-use gateway_service::ConfiguredRateLimitPolicy;
+use gateway_service::{
+    AuditEvent, ConfiguredRateLimitPolicy,
+    admin_audit::{actions, targets},
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -25,6 +29,7 @@ use uuid::Uuid;
 use super::{
     admin_auth::require_platform_admin,
     admin_contract::{Envelope, envelope, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -181,6 +186,7 @@ pub async fn list_rate_limit_policies(
 pub async fn create_rate_limit_policy(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<RateLimitPolicyRequest>,
 ) -> Result<Json<Envelope<RateLimitPolicyView>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
@@ -191,7 +197,14 @@ pub async fn create_rate_limit_policy(
         .rate_limiter()
         .create_admin_policy(policy)
         .await?;
-    record_rate_limit_policy_change(&actor, "create", None, Some(&created));
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            policy_event(actions::RATE_LIMIT_POLICY_CREATED, &created)
+                .after(policy_summary(&created)),
+        )
+        .await;
     Ok(Json(envelope(admin_policy_view(&state, &created).await?)))
 }
 
@@ -206,6 +219,7 @@ pub async fn create_rate_limit_policy(
 pub async fn update_rate_limit_policy(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(policy_id): Path<String>,
     Json(request): Json<RateLimitPolicyRequest>,
 ) -> Result<Json<Envelope<RateLimitPolicyView>>, AppError> {
@@ -222,7 +236,19 @@ pub async fn update_rate_limit_policy(
     )
     .await?;
     let updated = limiter.update_admin_policy(policy).await?;
-    record_rate_limit_policy_change(&actor, "update", Some(&before), Some(&updated));
+    let (before, after) = (policy_summary(&before), policy_summary(&updated));
+    // Saving a policy unchanged is not a change.
+    if before != after {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                policy_event(actions::RATE_LIMIT_POLICY_UPDATED, &updated)
+                    .before(before)
+                    .after(after),
+            )
+            .await;
+    }
     Ok(Json(envelope(admin_policy_view(&state, &updated).await?)))
 }
 
@@ -236,6 +262,7 @@ pub async fn update_rate_limit_policy(
 pub async fn delete_rate_limit_policy(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(policy_id): Path<String>,
 ) -> Result<Json<Envelope<RateLimitPolicyView>>, AppError> {
     let actor = require_platform_admin(&state, &headers).await?;
@@ -244,31 +271,34 @@ pub async fn delete_rate_limit_policy(
     let before = limiter.get_admin_policy(policy_id).await?;
     let view = admin_policy_view(&state, &before).await?;
     limiter.delete_admin_policy(policy_id).await?;
-    record_rate_limit_policy_change(&actor, "delete", Some(&before), None);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            policy_event(actions::RATE_LIMIT_POLICY_DELETED, &before)
+                .before(policy_summary(&before)),
+        )
+        .await;
     Ok(Json(envelope(view)))
 }
 
-/// The admin audit hook for rate-limit policy changes. It emits a structured
-/// event today; the admin audit log (#99) should persist the same fields.
-fn record_rate_limit_policy_change(
-    actor: &UserRecord,
-    action: &'static str,
-    before: Option<&RateLimitPolicyRecord>,
-    after: Option<&RateLimitPolicyRecord>,
-) {
-    let policy_id = after
-        .or(before)
-        .map(|policy| policy.rate_limit_policy_id.to_string());
-    tracing::info!(
-        target: "admin_audit",
-        resource = "rate_limit_policy",
-        action,
-        actor_user_id = %actor.user_id,
-        policy_id = policy_id.as_deref(),
-        before = before.map(|policy| format!("{policy:?}")).as_deref(),
-        after = after.map(|policy| format!("{policy:?}")).as_deref(),
-        "admin changed a rate limit policy"
-    );
+fn policy_event(action: &str, policy: &RateLimitPolicyRecord) -> AuditEvent {
+    AuditEvent::new(action, targets::RATE_LIMIT_POLICY)
+        .target(policy.rate_limit_policy_id)
+        .label(policy.name.clone())
+}
+
+/// Audit summary of a policy: its settings, without timestamps or the display
+/// labels the view resolves.
+fn policy_summary(policy: &RateLimitPolicyRecord) -> Value {
+    let mut summary =
+        serde_json::to_value(admin_policy_view_from(policy, None, None)).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut() {
+        for field in ["updated_at", "source", "scope_label", "mcp_server_key"] {
+            object.remove(field);
+        }
+    }
+    summary
 }
 
 async fn policy_from_request(

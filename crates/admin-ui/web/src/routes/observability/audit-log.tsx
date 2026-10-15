@@ -31,7 +31,7 @@ export function AuditLogPage() {
       <PageHeader
         section="Observability"
         title="Audit Log"
-        description="Review administrator changes to keys, identity, budgets, sessions and MCP access."
+        description="Review administrator changes to keys, identity, budgets, rate limits, sessions and MCP access."
       />
       <AuditLogTable page={page} search={search} pending={pending} onSearch={navigate} />
     </div>

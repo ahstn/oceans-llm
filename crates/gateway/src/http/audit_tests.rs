@@ -15,7 +15,11 @@ use time::{Duration, OffsetDateTime};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use crate::http::{build_router, state::AppState, test_support::app_state};
+use crate::http::{
+    build_router,
+    state::AppState,
+    test_support::{app_state, install_rate_limits},
+};
 
 const AUDIT_LOGS: &str = "/api/v1/admin/audit-logs";
 const CLIENT_IP: &str = "203.0.113.9";
@@ -525,6 +529,51 @@ async fn repeated_repository_status_changes_record_one_transition() {
     assert_eq!(disabled["before"]["status"], "active");
     let reactivated = harness.entry("review_agent_repository.reactivated").await;
     assert_eq!(reactivated["before"]["status"], "disabled");
+}
+
+#[tokio::test]
+async fn rate_limit_policy_changes_are_audited() {
+    let mut harness = Harness::new().await;
+    install_rate_limits(&mut harness.state, Vec::new());
+    let policy = |limit: i64| {
+        json!({
+            "name": "chat-burst",
+            "operation": "inference",
+            "scope_kind": "global",
+            "metric": "requests",
+            "period": "minute",
+            "limit": limit,
+        })
+    };
+    let (status, created) = harness
+        .admin(Method::POST, "/api/v1/admin/rate-limits", Some(policy(60)))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let policy_id = created["data"]["id"]
+        .as_str()
+        .expect("policy id")
+        .to_string();
+    let path = format!("/api/v1/admin/rate-limits/{policy_id}");
+    // Saving it unchanged records nothing; changing the limit records one update.
+    for limit in [60, 120] {
+        let (status, body) = harness
+            .admin(Method::PATCH, &path, Some(policy(limit)))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let (status, body) = harness.admin(Method::DELETE, &path, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let created_entry = harness.entry("rate_limit_policy.created").await;
+    assert_admin_actor(&created_entry, harness.admin_id);
+    assert_eq!(created_entry["target_id"], policy_id);
+    assert_eq!(created_entry["target_label"], "chat-burst");
+    assert_eq!(created_entry["after"]["limit"], 60);
+    let updated = harness.entry("rate_limit_policy.updated").await;
+    assert_eq!(updated["before"]["limit"], 60);
+    assert_eq!(updated["after"]["limit"], 120);
+    let deleted = harness.entry("rate_limit_policy.deleted").await;
+    assert_eq!(deleted["before"]["limit"], 120);
 }
 
 #[tokio::test]
