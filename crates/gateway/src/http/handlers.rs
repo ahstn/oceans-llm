@@ -2051,9 +2051,14 @@ async fn finalize_successful_usage_accounting_from_parts(
     provider_usage: Option<Value>,
 ) {
     // Token limits count what the provider reported, whatever happens to the
-    // ledger and budget accounting below.
-    let reported =
-        gateway_service::request_logging::usage_summary_from_value(provider_usage.as_ref());
+    // ledger and budget accounting below. The charge starts before anything
+    // here awaits, so a client that drops a finished stream mid-accounting
+    // cannot cancel it, and the drop path never charges it a second time.
+    charge_rate_limit_tokens(
+        service,
+        &context,
+        &gateway_service::request_logging::usage_summary_from_value(provider_usage.as_ref()),
+    );
     match service
         .record_chat_usage(
             context.auth,
@@ -2080,12 +2085,12 @@ async fn finalize_successful_usage_accounting_from_parts(
             metrics.record_usage_record_failure(&context.labels, context.operation);
         }
     }
-    charge_rate_limit_tokens(service, &context, &reported).await;
 }
 
 /// Token limits are checked before a request and charged here, once the
-/// provider has reported usage and before the caller sees the response end.
-async fn charge_rate_limit_tokens(
+/// provider has reported usage. The charge runs detached; the next check on
+/// this replica waits for it, so a sequential caller always sees the usage.
+fn charge_rate_limit_tokens(
     service: &AppGatewayService,
     context: &UsageAccountingContext<'_>,
     usage: &gateway_service::request_logging::UsageSummary,
@@ -2105,8 +2110,7 @@ async fn charge_rate_limit_tokens(
         RateLimitSubject::new(RateLimitOperation::Inference, context.auth).with_models(&model_keys);
     service
         .rate_limiter()
-        .record_tokens(&subject, total_tokens)
-        .await;
+        .record_tokens_detached(&subject, total_tokens);
 }
 
 fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {

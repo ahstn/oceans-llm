@@ -811,3 +811,102 @@ async fn rate_limited_call_tool_returns_a_json_rpc_429_and_is_logged() {
     assert_eq!(denied.metadata["rate_limit"]["policy"], "user tool calls");
     server.abort();
 }
+
+/// A rate-limit store that is down.
+struct DownRateLimitStore;
+
+#[async_trait::async_trait]
+impl gateway_core::RateLimitRepository for DownRateLimitStore {
+    async fn list_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<gateway_core::RateLimitPolicyRecord>, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn get_rate_limit_policy(
+        &self,
+        _: Uuid,
+    ) -> Result<Option<gateway_core::RateLimitPolicyRecord>, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn insert_rate_limit_policy(
+        &self,
+        _: &gateway_core::RateLimitPolicyRecord,
+    ) -> Result<(), gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn update_rate_limit_policy(
+        &self,
+        _: &gateway_core::RateLimitPolicyRecord,
+    ) -> Result<bool, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn delete_rate_limit_policy(&self, _: Uuid) -> Result<bool, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn consume_rate_limits(
+        &self,
+        _: &[gateway_core::RateLimitCounterCharge],
+    ) -> Result<gateway_core::RateLimitConsumeResult, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn add_rate_limit_usage(
+        &self,
+        _: &[gateway_core::RateLimitCounterIncrement],
+    ) -> Result<(), gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+    async fn purge_expired_rate_limit_counters(
+        &self,
+        _: i64,
+        _: i64,
+    ) -> Result<u64, gateway_core::StoreError> {
+        Err(gateway_core::StoreError::Unavailable("down".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn closed_rate_limit_failures_return_http_503_on_call_tool() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    let limiter = gateway_service::RateLimiter::new(
+        Arc::new(DownRateLimitStore),
+        gateway_service::RateLimitSettings {
+            failure_mode: gateway_service::RateLimitFailureMode::Closed,
+            ..Default::default()
+        },
+    );
+    state.service = Arc::new(
+        gateway_service::GatewayService::new(
+            state.store.clone(),
+            Arc::new(gateway_service::WeightedRoutePlanner::default()),
+        )
+        .with_rate_limiter(Arc::new(limiter)),
+    );
+    let (url, requests, server) = spawn_tools_call_upstream(
+        "result",
+        json!({"content": [{"type": "text", "text": "ok"}]}),
+    )
+    .await;
+    let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
+    let response = call_catalog_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(7),
+        CallMcpToolInput {
+            address: "mcp://repository/tools/search".to_string(),
+            arguments: json!({"query": "oceans"}),
+            schema_hash: Some("search-v1".to_string()),
+        },
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 16_384).await.expect("body"))
+            .expect("JSON-RPC error");
+    assert_eq!(body["id"], 7);
+    assert_eq!(body["error"]["code"], -32603);
+    assert!(body.get("result").is_none());
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    server.abort();
+}

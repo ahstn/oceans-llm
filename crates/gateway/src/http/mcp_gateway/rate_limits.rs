@@ -21,6 +21,9 @@ use crate::http::{
 
 /// Implementation-defined JSON-RPC server error for "rate limited".
 pub(super) const JSON_RPC_RATE_LIMITED: i64 = -32029;
+/// JSON-RPC internal error, for a limiter that cannot check a call in
+/// `closed` mode.
+pub(super) const JSON_RPC_INTERNAL_ERROR: i64 = -32603;
 /// The invocation log's `error_code` for a rate-limited call.
 pub(super) const RATE_LIMITED_ERROR_CODE: &str = "rate_limited";
 

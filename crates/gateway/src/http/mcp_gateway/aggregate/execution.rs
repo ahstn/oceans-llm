@@ -26,7 +26,8 @@ use crate::http::{
     mcp_gateway::{
         credentials::credential_guidance,
         rate_limits::{
-            RATE_LIMITED_ERROR_CODE, check_tool_call, rejection_body, rejection_metadata,
+            JSON_RPC_INTERNAL_ERROR, RATE_LIMITED_ERROR_CODE, check_tool_call, rejection_body,
+            rejection_metadata,
         },
     },
     request_policy::RequestPolicyContext,
@@ -106,6 +107,8 @@ pub(super) async fn call_catalog_tool(
 enum CatalogCallError {
     Gateway(GatewayError),
     RateLimited(RateLimitStatus),
+    /// The limiter could not check the call and `failure_mode` is `closed`.
+    RateLimitUnavailable(GatewayError),
     PolicyDenied(&'static str),
     InvalidTransformation(serde_json::Error),
 }
@@ -134,7 +137,7 @@ impl CatalogInvocation<'_> {
         if let Some(rejected) =
             check_tool_call(self.state, self.policy, self.auth, &self.record.server)
                 .await
-                .map_err(CatalogCallError::Gateway)?
+                .map_err(CatalogCallError::RateLimitUnavailable)?
         {
             self.metadata.extend(rejection_metadata(&rejected));
             return Err(CatalogCallError::RateLimited(rejected));
@@ -326,6 +329,19 @@ impl CatalogInvocation<'_> {
                 McpToolInvocationStatus::PolicyDenied,
                 McpToolPolicyResult::Denied,
                 Some(RATE_LIMITED_ERROR_CODE.to_string()),
+            ),
+            // A real HTTP error, like the per-server route's 503, so clients
+            // retry it instead of reading a tool result.
+            Err(CatalogCallError::RateLimitUnavailable(error)) => (
+                json_rpc_response(
+                    StatusCode::from_u16(error.http_status_code())
+                        .unwrap_or(StatusCode::SERVICE_UNAVAILABLE),
+                    json_rpc_error(Some(id), JSON_RPC_INTERNAL_ERROR, error.to_string()),
+                    None,
+                ),
+                McpToolInvocationStatus::GatewayError,
+                McpToolPolicyResult::NotEvaluated,
+                Some(error.error_code().to_string()),
             ),
             Err(CatalogCallError::PolicyDenied(phase)) => {
                 let code = "guardrail_policy_denied";

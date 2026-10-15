@@ -118,7 +118,7 @@ The headers describe the state when the request was admitted. For a token policy
 
 - The gateway checks a request once, before it picks a route. It does not retry or fall back across providers, so one request is counted once.
 - A client retry is a new request and is counted again. The OpenAI and Anthropic Python SDKs retry `429` with backoff by default and read `Retry-After`.
-- Budget rejections use `422` by default, so `429` from this gateway means "slow down". See [Budgets](../access/budgets.md#hard-and-soft-limits).
+- Budget rejections use `422` by default, so `429` from this gateway normally means "slow down". If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection: check `error.code`, which is `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [Budgets](../access/budgets.md#hard-and-soft-limits).
 - Each key may still have at most 8 token counts in flight on each gateway instance. That cap is checked before rate limits and also returns `429`.
 
 ## Storage and replicas
@@ -134,7 +134,7 @@ Counter rows expire one window after the window ends. Each replica deletes up to
 `rate_limits.failure_mode` controls what happens if a counter check fails:
 
 - `open` (default): the request is admitted without rate-limit headers, and the gateway logs a warning.
-- `closed`: the request is rejected with `503`. After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
+- `closed`: the request is rejected with `503`. MCP `tools/call` and aggregate `call_tool` return HTTP `503` with a JSON-RPC error (code `-32603`). After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
 
 Both modes treat a replica that has never loaded the admin policies, and cannot, as a store failure: it cannot tell which policies a request would match. A replica that loaded them before keeps enforcing that set.
 
