@@ -72,13 +72,17 @@ impl AdminApiKeyRepository for PostgresStore {
         validate_api_key_grant_mode(api_key.owner_kind, api_key.model_grant_mode)?;
 
         let api_key_id = api_key_uuid(&api_key.public_id);
-        sqlx::query(
+        // `RETURNING` gives the row this insert wrote, before any later change.
+        let row = sqlx::query(
             r#"
             INSERT INTO api_keys (
                 id, public_id, secret_hash, name, status, model_grant_mode,
                 owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                 created_at, last_used_at, revoked_at
             ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, NULL, NULL)
+            RETURNING id, public_id, secret_hash, name, status, model_grant_mode,
+                      owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
+                      created_at, last_used_at, revoked_at
             "#,
         )
         .bind(api_key_id.to_string())
@@ -95,15 +99,10 @@ impl AdminApiKeyRepository for PostgresStore {
                 .map(|value| value.to_string()),
         )
         .bind(api_key.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_query_error)?;
-
-        AdminApiKeyRepository::get_api_key_by_id(self, api_key_id)
-            .await?
-            .ok_or_else(|| {
-                StoreError::NotFound(format!("api key `{api_key_id}` missing after create"))
-            })
+        decode_api_key(&row)
     }
 
     async fn get_api_key_secret_material(

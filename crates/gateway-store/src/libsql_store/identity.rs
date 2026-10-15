@@ -1,5 +1,8 @@
 use super::*;
 
+/// The service account columns `decode_service_account_record` reads, in order.
+const SERVICE_ACCOUNT_RETURNING: &str = "service_account_id, team_id, service_account_key, service_account_name, status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at";
+
 impl LibsqlStore {
     pub async fn has_platform_admin(&self) -> Result<bool, StoreError> {
         let mut rows = self
@@ -317,14 +320,19 @@ impl LibsqlStore {
         let service_account_id = Uuid::new_v4();
         let created_at = created_at.unix_timestamp();
         let tags_json = crate::shared::serialize_json(tags)?;
-        self.connection
-            .execute(
-                r#"
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    r#"
                 INSERT INTO service_accounts (
                     service_account_id, team_id, service_account_key, service_account_name,
                     status, model_access_mode, metadata_json, tags_json, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?6, ?6)
-                "#,
+                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{{}}', ?5, ?6, ?6)
+                RETURNING {SERVICE_ACCOUNT_RETURNING}
+                "#
+                ),
                 libsql::params![
                     service_account_id.to_string(),
                     team_id.to_string(),
@@ -336,10 +344,12 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-
-        self.get_service_account_by_id(service_account_id)
-            .await?
-            .ok_or_else(|| StoreError::NotFound("created service account missing".to_string()))
+        let row = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .ok_or_else(|| StoreError::Unexpected("insert returned no row".to_string()))?;
+        decode_service_account_record(&row)
     }
 
     pub async fn update_service_account_name(

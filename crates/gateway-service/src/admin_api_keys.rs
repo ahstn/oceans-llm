@@ -432,7 +432,13 @@ where
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
 
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        // The summary describes what this request created: the inserted key row and
+        // the access it granted, not a later read a concurrent change could alter.
+        // Sorted as the store lists a key's models.
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
         let api_key =
             build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 

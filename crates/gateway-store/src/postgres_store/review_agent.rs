@@ -258,7 +258,8 @@ impl ReviewAgentRepository for PostgresStore {
     ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
         let repository_id = Uuid::new_v4();
         let settings_json = serialize_json(&input.settings_json)?;
-        sqlx::query(
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let row = sqlx::query(&format!(
             r#"
             INSERT INTO review_agent_repositories (
                 repository_id, provider, external_repository_id, owner, name, full_name,
@@ -267,8 +268,9 @@ impl ReviewAgentRepository for PostgresStore {
                 linked_issue_assessment_enabled, default_model_key, max_inline_comments,
                 request_changes_on_high_severity, settings_json, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-            "#,
-        )
+            RETURNING {REPOSITORY_COLUMNS}
+            "#
+        ))
         .bind(repository_id.to_string())
         .bind(input.provider.as_str())
         .bind(input.external_repository_id.as_deref())
@@ -286,10 +288,10 @@ impl ReviewAgentRepository for PostgresStore {
         .bind(bool_to_i64(input.settings.request_changes_on_high_severity))
         .bind(settings_json)
         .bind(input.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_repository(&self.pool, repository_id).await
+        decode_repository(&row)
     }
 
     async fn update_review_agent_repository(

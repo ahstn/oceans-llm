@@ -9,6 +9,7 @@ macro_rules! server_columns {
 }
 
 const SERVER_COLUMNS: &str = server_columns!();
+
 const SERVER_SELECT_BY_ID: &str = concat!(
     "SELECT ",
     server_columns!(),
@@ -211,14 +212,16 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<ExternalMcpServerRecord, StoreError> {
         let id = Uuid::new_v4();
         let auth_config_json = serialize_json(&input.auth_config)?;
-        sqlx::query(
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let row = sqlx::query(&format!(
             r#"
             INSERT INTO external_mcp_servers (
                 mcp_server_id, server_key, display_name, description, transport, server_url,
                 auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'active', $10, $10)
-            "#,
-        )
+            RETURNING {SERVER_COLUMNS}
+            "#
+        ))
         .bind(id.to_string())
         .bind(input.server_key.as_str())
         .bind(input.display_name.as_str())
@@ -229,10 +232,10 @@ impl McpRegistryRepository for PostgresStore {
         .bind(auth_config_json)
         .bind(input.timeout_ms)
         .bind(input.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_server(&self.pool, id).await
+        decode_server(&row)
     }
 
     async fn update_external_mcp_server(

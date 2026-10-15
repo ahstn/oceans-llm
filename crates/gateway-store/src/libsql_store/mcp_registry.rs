@@ -153,6 +153,7 @@ macro_rules! server_columns {
 }
 
 const SERVER_COLUMNS: &str = server_columns!();
+
 const SERVER_SELECT_BY_ID: &str = concat!(
     "SELECT ",
     server_columns!(),
@@ -221,14 +222,19 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<ExternalMcpServerRecord, StoreError> {
         let id = Uuid::new_v4();
         let auth_config_json = serialize_json(&input.auth_config)?;
-        self.connection
-            .execute(
-                r#"
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    r#"
                 INSERT INTO external_mcp_servers (
                     mcp_server_id, server_key, display_name, description, transport, server_url,
                     auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10)
-                "#,
+                RETURNING {SERVER_COLUMNS}
+                "#
+                ),
                 libsql::params![
                     id.to_string(),
                     input.server_key.as_str(),
@@ -244,7 +250,12 @@ impl McpRegistryRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_server(&self.connection, id).await
+        let row = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .ok_or_else(|| StoreError::Unexpected("insert returned no row".to_string()))?;
+        decode_server(&row)
     }
 
     async fn update_external_mcp_server(
