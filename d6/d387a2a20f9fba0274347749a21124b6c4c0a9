@@ -1,0 +1,19 @@
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_56409892e094a0::t_eb7bd1a1704b4f 31,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6d387a2a20f9fba0274347749a21124b6c4c0a9",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
