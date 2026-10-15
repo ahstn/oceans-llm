@@ -107,10 +107,23 @@ async fn exercise_human_budget_defaults<S: GatewayStore + ?Sized>(store: &S) {
     };
     let now = OffsetDateTime::now_utc();
 
+    // Callers record audit progress from this flag, so a re-apply must report false.
+    assert!(
+        store
+            .apply_human_budget_defaults_for_user(&defaults, user.user_id, now)
+            .await
+            .expect("apply user defaults")
+    );
     store
         .reconcile_human_budget_defaults(&defaults, now)
         .await
         .expect("apply defaults");
+    assert!(
+        !store
+            .apply_human_budget_defaults_for_user(&defaults, user.user_id, now)
+            .await
+            .expect("re-apply user defaults")
+    );
 
     let user_scope = BudgetScope::User {
         user_id: user.user_id,

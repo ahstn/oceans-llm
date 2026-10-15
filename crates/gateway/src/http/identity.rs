@@ -711,6 +711,13 @@ pub async fn add_identity_team_members(
         ))));
     }
 
+    if assignable_user_ids.is_empty() {
+        // Every requested user is already a member, so nothing changes.
+        return Ok(Json(envelope(
+            reload_team_view(&state.store, team_id).await?,
+        )));
+    }
+
     let added_user_ids = assignable_user_ids.clone();
     let progress = AuditProgress::default();
     let add = async {
@@ -1877,15 +1884,17 @@ pub async fn oidc_callback(
             // redemption if the status write fails after the defaults landed.
             let progress = AuditProgress::default();
             let activate = async {
-                state
+                if state
                     .store
                     .apply_human_budget_defaults_for_user(
                         state.budget_defaults.as_ref(),
                         user.user_id,
                         now,
                     )
-                    .await?;
-                progress.landed();
+                    .await?
+                {
+                    progress.landed();
+                }
                 state
                     .store
                     .update_user_status(user.user_id, UserStatus::Active, now)
@@ -2199,15 +2208,17 @@ pub async fn oauth_callback_github(
             // redemption if the status write fails after the defaults landed.
             let progress = AuditProgress::default();
             let activate = async {
-                state
+                if state
                     .store
                     .apply_human_budget_defaults_for_user(
                         state.budget_defaults.as_ref(),
                         user.user_id,
                         now,
                     )
-                    .await?;
-                progress.landed();
+                    .await?
+                {
+                    progress.landed();
+                }
                 state
                     .store
                     .update_user_status(user.user_id, UserStatus::Active, now)

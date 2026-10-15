@@ -428,7 +428,7 @@ pub trait GatewayStore:
         defaults: &SeedHumanBudgetDefaults,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
 }
 
 #[derive(Clone)]
@@ -2067,7 +2067,7 @@ impl GatewayStore for AnyStore {
         defaults: &SeedHumanBudgetDefaults,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(
             self,
             apply_human_budget_defaults_for_user(defaults, user_id, updated_at)

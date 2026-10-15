@@ -97,6 +97,13 @@ pub struct CreateAdminApiKeyResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct RevokeAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// `false` when the key was already revoked, so nothing changed.
+    pub revoked: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct UpdateAdminApiKeyInput {
     pub model_grant_mode: String,
     pub model_keys: Vec<String>,
@@ -423,16 +430,19 @@ where
         &self,
         api_key_id: Uuid,
         progress: &AuditProgress,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+    ) -> Result<RevokeAdminApiKeyResult, GatewayError> {
         self.repo
             .get_api_key_by_id(api_key_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
 
-        self.repo
+        let revoked = self
+            .repo
             .revoke_api_key(api_key_id, OffsetDateTime::now_utc())
             .await?;
-        progress.landed_on(api_key_id);
+        if revoked {
+            progress.landed_on(api_key_id);
+        }
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
@@ -445,8 +455,10 @@ where
                 GatewayError::Internal(format!("api key `{api_key_id}` missing after revoke"))
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        let api_key =
+            build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        Ok(RevokeAdminApiKeyResult { api_key, revoked })
     }
 
     pub async fn reveal_api_key_secret(

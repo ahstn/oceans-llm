@@ -315,15 +315,18 @@ pub async fn revoke_api_key(
 
     let service = AdminApiKeyService::new(state.store.clone());
     let progress = AuditProgress::default();
-    let api_key = state
+    let result = state
         .audit()
         .audited_steps(
             &meta.user_context(&actor),
             &progress,
             service.revoke_api_key(api_key_id, &progress),
-            |api_key| {
-                api_key_event(actions::API_KEY_REVOKED, api_key)
-                    .after(serde_json::json!({ "status": api_key.status.as_str() }))
+            // Revoking an already-revoked key changes nothing, so it is not recorded.
+            |result| {
+                result.revoked.then(|| {
+                    api_key_event(actions::API_KEY_REVOKED, &result.api_key)
+                        .after(serde_json::json!({ "status": result.api_key.status.as_str() }))
+                })
             },
             |progress, error| {
                 partial_api_key_event(actions::API_KEY_REVOKED, progress, error)
@@ -333,7 +336,7 @@ pub async fn revoke_api_key(
         .await?;
 
     Ok(Json(envelope(RevokeApiKeyResponse {
-        api_key: map_api_key_summary(api_key),
+        api_key: map_api_key_summary(result.api_key),
     })))
 }
 

@@ -22,7 +22,7 @@ Several planned features need a durable record of control-plane changes and will
 Every audit entry goes through `gateway_service::AdminAudit` (`crates/gateway-service/src/admin_audit.rs`). Handlers do not insert rows themselves.
 
 - `AdminAudit::audited(context, mutation, describe)` awaits the mutation future. Only if it succeeds does it call `describe` with the output and write the entry. A failed mutation never reaches `describe`, so it writes nothing.
-- `AdminAudit::audited_steps(context, progress, mutation, describe, partial)` is for a mutation made of several store writes that are not in one transaction, such as creating a user or updating a team. The handler calls `progress.landed()` after each write. On success it behaves like `audited`. If the mutation fails after a write landed, the change is partly applied, so `partial` describes it, the entry carries `outcome: partial` and the failure's error code, and the request still returns the error. A failure before any write records nothing.
+- `AdminAudit::audited_steps(context, progress, mutation, describe, partial)` is for a mutation made of several store writes that are not in one transaction, such as creating a user or updating a team. The handler calls `progress.landed()` after each write. On success it behaves like `audited`. If the mutation fails after a write landed, the change is partly applied, so `partial` describes it, the entry carries `outcome: partial` and the failure's error code, and the request still returns the error. A failure before any write records nothing. A handler marks progress only for a write that changed something, and `describe` returns `None` for a success that changed nothing, such as revoking a revoked key.
 - `AdminAudit::record(context, event)` writes an entry for a change that has already succeeded, when the success point comes after response shaping.
 - `AuditContext` carries the actor and the request IP, user agent and request ID. In HTTP handlers it comes from the `AuditRequestMeta` extractor and the signed-in `UserRecord`: `meta.user_context(&actor)`.
 - `AuditEvent` is a small builder: `AuditEvent::new(actions::API_KEY_CREATED, targets::API_KEY).target(id).label(name).before(..).after(..).meta(key, value)`.
@@ -81,7 +81,7 @@ Summaries are built field by field from response views or domain records that ho
 - Target and actor labels are user-entered names and emails, so they get the same credential check and are capped at 256 characters.
 - Key/value pairs such as entity tags are judged by their `key`, so a `github_pat` tag's value is redacted. Name segments `pat`, `pwd` and `passphrase` also count as secret.
 - Strings starting with common provider token prefixes (`ghp_`, `github_pat_`, `glpat-`, `xoxb-`, `sk-ant-`, `AKIA` and similar) are redacted whatever their field name.
-- Each summary is capped at 16 KiB. A larger one is replaced with `{ "truncated": true, "bytes": n }`.
+- Each summary is capped at 16 KiB. A larger one is replaced with `{ "truncated": true, "bytes": n }`. Oversized metadata keeps its `outcome`, `error` and `request_id`, so a truncated partial entry still reads as partial.
 
 The rules for specific actions are:
 

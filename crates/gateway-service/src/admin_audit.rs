@@ -286,7 +286,7 @@ impl AuditEvent {
             target_label: self.target_label.map(redact_label),
             before: self.before.map(redact_summary),
             after: self.after.map(redact_summary),
-            metadata: redact_summary(Value::Object(self.metadata)),
+            metadata: redact_metadata(self.metadata),
             request_ip: context.request_ip.clone(),
             user_agent: context.user_agent.clone().map(redact_scalar),
         }
@@ -378,7 +378,10 @@ where
     /// not in one transaction. If it fails after `progress` reports a write that
     /// landed, the change is partly applied, so `partial` describes it and the entry
     /// is marked `outcome: partial`. A failure before any write records nothing.
-    pub async fn audited_steps<T, E, Fut, F, P>(
+    ///
+    /// `describe` may return `None` when the mutation succeeded without changing
+    /// anything, such as a repeated revoke, so nothing is recorded.
+    pub async fn audited_steps<T, E, Fut, F, D, P>(
         &self,
         context: &AuditContext,
         progress: &AuditProgress,
@@ -388,12 +391,15 @@ where
     ) -> Result<T, E>
     where
         Fut: Future<Output = Result<T, E>>,
-        F: FnOnce(&T) -> AuditEvent,
+        F: FnOnce(&T) -> D,
+        D: Into<Option<AuditEvent>>,
         P: FnOnce(&AuditProgress, &E) -> AuditEvent,
     {
         match mutation.await {
             Ok(output) => {
-                self.record(context, describe(&output)).await;
+                if let Some(event) = describe(&output).into() {
+                    self.record(context, event).await;
+                }
                 Ok(output)
             }
             Err(error) => {
@@ -624,6 +630,32 @@ fn redact_summary(value: Value) -> Value {
     }
 }
 
+/// Metadata keys that say what kind of entry this is. They survive truncation so
+/// an oversized partial entry still reads as partial.
+const RESERVED_METADATA_KEYS: [&str; 3] = ["outcome", "error", "request_id"];
+const MAX_RESERVED_METADATA_BYTES: usize = 256;
+
+fn redact_metadata(metadata: Map<String, Value>) -> Value {
+    let reserved = RESERVED_METADATA_KEYS
+        .iter()
+        .filter_map(|&key| Some((key, metadata.get(key)?.clone())))
+        .collect::<Vec<_>>();
+    let mut value = redact_summary(Value::Object(metadata));
+    if value.get("truncated") == Some(&Value::Bool(true))
+        && let Value::Object(truncated) = &mut value
+    {
+        for (key, kept) in reserved {
+            let kept = redact_audit_value(kept);
+            let small = serde_json::to_vec(&kept)
+                .is_ok_and(|bytes| bytes.len() <= MAX_RESERVED_METADATA_BYTES);
+            if small && !kept.is_object() && !kept.is_array() {
+                truncated.insert(key.to_string(), kept);
+            }
+        }
+    }
+    value
+}
+
 fn to_value(value: impl Serialize) -> Value {
     serde_json::to_value(value).unwrap_or(Value::Null)
 }
@@ -722,7 +754,7 @@ mod tests {
                 &context(),
                 &untouched,
                 async { Err("validation") },
-                |_| unreachable!(),
+                |_| -> AuditEvent { unreachable!() },
                 |_, _| AuditEvent::new(actions::TEAM_UPDATED, targets::TEAM),
             )
             .await;
@@ -738,7 +770,7 @@ mod tests {
                     progress.landed_on("team-1");
                     Err("tags failed")
                 },
-                |_| unreachable!(),
+                |_| -> AuditEvent { unreachable!() },
                 |progress, error| {
                     AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
                         .target(progress.target_id().unwrap_or_default())
@@ -752,6 +784,59 @@ mod tests {
         assert_eq!(records[0].target_id.as_deref(), Some("team-1"));
         assert_eq!(records[0].metadata["outcome"], json!("partial"));
         assert_eq!(records[0].metadata["error"], json!("tags failed"));
+    }
+
+    #[tokio::test]
+    async fn audited_steps_skips_unchanged_success() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        for changed in [false, true] {
+            let result: Result<bool, ()> = audit
+                .audited_steps(
+                    &context(),
+                    &AuditProgress::default(),
+                    async move { Ok(changed) },
+                    |changed| {
+                        changed.then(|| AuditEvent::new(actions::API_KEY_REVOKED, targets::API_KEY))
+                    },
+                    |_, _| unreachable!(),
+                )
+                .await;
+            assert_eq!(result, Ok(changed));
+        }
+        assert_eq!(repo.records.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn oversized_partial_metadata_keeps_outcome_and_error() {
+        let repo = Arc::new(RecordingRepo::default());
+        let audit = AdminAudit::new(repo.clone());
+        let context = context().with_request(None, None, Some("req-1".to_string()));
+        let progress = AuditProgress::default();
+        let requested = vec!["x".repeat(64); MAX_SUMMARY_BYTES / 32];
+        let _: Result<(), &str> = audit
+            .audited_steps(
+                &context,
+                &progress,
+                async {
+                    progress.landed();
+                    Err("tags_failed")
+                },
+                |_| -> AuditEvent { unreachable!() },
+                |_, error| {
+                    AuditEvent::new(actions::TEAM_CREATED, targets::TEAM)
+                        .meta("error", *error)
+                        .meta("requested", &requested)
+                },
+            )
+            .await;
+        let records = repo.records.lock().unwrap();
+        let metadata = &records[0].metadata;
+        assert_eq!(metadata["truncated"], json!(true));
+        assert_eq!(metadata["outcome"], json!("partial"));
+        assert_eq!(metadata["error"], json!("tags_failed"));
+        assert_eq!(metadata["request_id"], json!("req-1"));
+        assert!(metadata.get("requested").is_none());
     }
 
     #[tokio::test]

@@ -195,6 +195,15 @@ async fn api_key_lifecycle_is_audited_without_the_raw_key() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{revoked}");
+    // Revoking it again changes nothing, so `entry` below still finds one.
+    let (status, body) = harness
+        .admin(
+            Method::POST,
+            &format!("/api/v1/admin/api-keys/{api_key_id}/revoke"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     let created_entry = harness.entry("api_key.created").await;
     assert_admin_actor(&created_entry, harness.admin_id);
@@ -250,6 +259,24 @@ async fn identity_changes_are_audited_without_invite_links() {
     assert_eq!(status, StatusCode::OK, "{user}");
     let invite_url = user["data"]["invite_url"].as_str().expect("invite url");
     let invite_token = invite_url.rsplit('/').next().expect("invite token");
+
+    // Adding a user who is already a member changes nothing.
+    let user_id = user["data"]["user"]["id"].as_str().expect("user id");
+    let (status, body) = harness
+        .admin(
+            Method::POST,
+            &format!("/api/v1/admin/identity/teams/{team_id}/members"),
+            Some(json!({ "user_ids": [user_id] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let entries = harness.entries().await;
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry["action"] != "team.members_added"),
+        "no-op member add was recorded: {entries:#?}"
+    );
 
     let team_entry = harness.entry("team.created").await;
     assert_admin_actor(&team_entry, harness.admin_id);
