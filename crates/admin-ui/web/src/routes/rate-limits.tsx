@@ -41,9 +41,9 @@ import {
   getTeams,
   removeRateLimitPolicy,
 } from '@/server/admin-data.functions'
-import type { RateLimitPolicyView } from '@/types/api'
+import type { ApiKeyView, RateLimitPolicyView } from '@/types/api'
 
-import { PolicyDialog, type PolicyOptions } from './rate-limits/-policy-dialog'
+import { PolicyDialog, type PolicyOption, type PolicyOptions } from './rate-limits/-policy-dialog'
 import { describeLimit, describeScope, describeTarget } from './rate-limits/-policy-model'
 
 export const Route = createFileRoute('/rate-limits')({
@@ -55,9 +55,7 @@ export const Route = createFileRoute('/rate-limits')({
       getMcpServers({ data: { include_disabled: false } }),
     ])
     const options: PolicyOptions = {
-      apiKeys: apiKeys.data.items
-        .filter((key) => !key.revoked_at)
-        .map((key) => ({ value: key.id, label: `${key.name} (${key.prefix})` })),
+      apiKeys: activeKeyOptions(apiKeys.data.items),
       users: apiKeys.data.users.map((user) => ({ value: user.id, label: user.email })),
       teams: teams.data.teams.map((team) => ({ value: team.id, label: team.name })),
       models: apiKeys.data.models.map((model) => ({ value: model.key, label: model.key })),
@@ -70,6 +68,15 @@ export const Route = createFileRoute('/rate-limits')({
   },
   component: RateLimitsPage,
 })
+
+/** Revoked keys cannot be rate limited, so they are left out of the picker. */
+function activeKeyOptions(keys: ApiKeyView[]): PolicyOption[] {
+  const options: PolicyOption[] = []
+  for (const key of keys) {
+    if (!key.revoked_at) options.push({ value: key.id, label: `${key.name} (${key.prefix})` })
+  }
+  return options
+}
 
 export function RateLimitsPage() {
   const { policies, options } = Route.useLoaderData()
