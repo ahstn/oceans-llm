@@ -17,6 +17,7 @@ type ConsentSearch = {
 type ConsentLoaderData =
   | { status: 'ready'; request: OauthAuthorizationRequestView }
   | { status: 'unavailable' }
+  | { status: 'error' }
 
 export const Route = createFileRoute('/oauth/consent')({
   validateSearch: (search: Record<string, unknown>): ConsentSearch => ({
@@ -27,10 +28,11 @@ export const Route = createFileRoute('/oauth/consent')({
     if (!deps.requestId) return { status: 'unavailable' }
     try {
       const request = await getOauthAuthorization({ data: { requestId: deps.requestId } })
-      return { status: 'ready', request }
-    } catch {
       // Expired, already decided, or unknown requests all need a fresh sign-in.
-      return { status: 'unavailable' }
+      return request ? { status: 'ready', request } : { status: 'unavailable' }
+    } catch {
+      // The request may still be valid; let the user retry.
+      return { status: 'error' }
     }
   },
   component: OauthConsentPage,
@@ -39,6 +41,20 @@ export const Route = createFileRoute('/oauth/consent')({
 export function OauthConsentPage() {
   const data = Route.useLoaderData()
   const { session } = Route.useRouteContext()
+
+  if (data.status === 'error') {
+    return (
+      <Alert variant="destructive" data-testid="oauth-consent-error">
+        <AlertTitle>This sign-in request could not be loaded</AlertTitle>
+        <AlertDescription>
+          <p>Oceans could not reach the gateway. Your request may still be valid.</p>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   if (data.status !== 'ready') {
     return (

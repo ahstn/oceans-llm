@@ -706,15 +706,16 @@ export async function startMcpOauthConnection(serverId: string): Promise<McpOaut
   )
 }
 
+/** `null` when the request is unknown, expired, or already decided. */
 export async function getOauthAuthorizationRequest(
   requestId: string,
-): Promise<OauthAuthorizationRequestView> {
+): Promise<OauthAuthorizationRequestView | null> {
   const client = createGatewayApiClient()
-  return unwrapGatewayResponse(
-    await client.GET('/api/v1/oauth/authorization-requests/{request_id}', {
-      params: { path: { request_id: requestId } },
-    }),
-  )
+  const result = await client.GET('/api/v1/oauth/authorization-requests/{request_id}', {
+    params: { path: { request_id: requestId } },
+  })
+  if (result.response.status === 404 || result.response.status === 409) return null
+  return unwrapGatewayResponse(result)
 }
 
 export async function decideOauthAuthorizationRequest(

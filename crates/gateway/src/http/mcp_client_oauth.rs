@@ -7,6 +7,7 @@ mod form;
 mod metadata;
 mod registration;
 mod revocation;
+mod stream_lifetime;
 mod token;
 
 use axum::http::HeaderValue;
@@ -31,6 +32,7 @@ pub use metadata::{
 pub(crate) use registration::MAX_REGISTRATION_BODY_BYTES;
 pub use registration::oauth_register;
 pub use revocation::oauth_revoke;
+pub(crate) use stream_lifetime::bound_to_oauth_access;
 pub use token::oauth_token;
 
 /// The authorization server, or `None` when OAuth for MCP clients is disabled.
