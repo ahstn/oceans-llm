@@ -357,8 +357,9 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
-    let mut evaluated = EvaluatedToolArguments::new();
+    merge_call_id_aliases(&mut tool_fragments);
     for fragments in tool_fragments.values() {
+        let mut evaluated = EvaluatedToolArguments::new();
         if !fragments.name.is_empty() && !fragments.arguments.is_empty() {
             let replacement = guard_stream_tool_arguments(
                 state,
@@ -468,9 +469,10 @@ async fn guard_sse_payload(
     Ok(rendered.into_bytes())
 }
 
-/// Replacements already decided for a tool call, keyed by tool name, shell-command shape,
-/// and canonical arguments. Providers repeat the same call in deltas and up to three
-/// terminal snapshots, and each distinct call should cost one evaluation.
+/// Replacements already decided for one tool call, keyed by tool name, shell-command shape,
+/// and canonical arguments. Providers repeat a call in its deltas and up to three terminal
+/// snapshots, and each call should cost one evaluation per distinct argument set. Distinct
+/// calls never share an entry, even with identical arguments.
 type EvaluatedToolArguments = BTreeMap<(String, bool, String), Option<String>>;
 
 async fn guard_stream_tool_arguments(
@@ -696,6 +698,37 @@ struct ToolCallFragments {
     terminal_arguments: Vec<TerminalArguments>,
     argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
+    /// The item's `call_id` when the call is keyed by its item `id`.
+    call_id: Option<String>,
+}
+
+/// Responses providers can key a call's terminal snapshots by `call_id` alone while its
+/// deltas use the item `id`. Folds those snapshots into the call they belong to, so they
+/// are evaluated with it.
+fn merge_call_id_aliases(calls: &mut BTreeMap<String, ToolCallFragments>) {
+    let aliases = calls
+        .iter()
+        .filter_map(|(key, call)| {
+            let call_id = call.call_id.as_ref()?;
+            (call_id != key).then(|| (call_id.clone(), key.clone()))
+        })
+        .collect::<Vec<_>>();
+    for (alias, key) in aliases {
+        let Some(snapshots) = calls.get(&alias) else {
+            continue;
+        };
+        if !snapshots.arguments.is_empty() || !snapshots.argument_locations.is_empty() {
+            continue;
+        }
+        let snapshots = calls.remove(&alias).expect("alias was just found");
+        let call = calls
+            .get_mut(&key)
+            .expect("alias target is a collected call");
+        if call.name.is_empty() {
+            call.name = snapshots.name;
+        }
+        call.terminal_arguments.extend(snapshots.terminal_arguments);
+    }
 }
 
 struct TerminalArguments {
@@ -733,6 +766,7 @@ fn collect_stream_tool_fragments(
                 if fragments.name.is_empty() {
                     fragments.name.clone_from(&name);
                 }
+                record_call_id(fragments, item);
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
                 let argument_pointer = if shell_call {
@@ -871,6 +905,7 @@ fn collect_stream_tool_fragments(
                 if fragments.name.is_empty() {
                     fragments.name.clone_from(&name);
                 }
+                record_call_id(fragments, object);
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
                 let argument_pointer = if shell_call {
@@ -915,6 +950,16 @@ fn collect_stream_tool_fragments(
             }
         }
         _ => {}
+    }
+}
+
+fn record_call_id(fragments: &mut ToolCallFragments, item: &Map<String, Value>) {
+    if item.contains_key("id")
+        && let Some(call_id) = item.get("call_id")
+    {
+        fragments
+            .call_id
+            .get_or_insert_with(|| identity_key(call_id));
     }
 }
 
@@ -2022,40 +2067,21 @@ mod tests {
         assert!(error.to_string().contains("invalid SSE JSON"));
     }
 
-    #[tokio::test]
-    async fn evaluates_repeated_terminal_snapshots_once() {
-        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
-        let item = |arguments: &str| {
-            json!({
-                "id": "fc_1",
-                "type": "function_call",
-                "call_id": "call_1",
-                "name": "wiki_search",
-                "arguments": arguments,
-            })
-        };
-        let stream = [
-            json!({
-                "type": "response.function_call_arguments.done",
-                "item_id": "fc_1",
-                "arguments": "{\"query\": \"oceans\"}",
-            }),
-            json!({"type": "response.output_item.done", "item": item("{\"query\":\"oceans\"}")}),
-            json!({
-                "type": "response.completed",
-                "response": {"output": [item("{\"query\": \"oceans\"}")]},
-            }),
-        ]
-        .iter()
-        .map(|event| format!("data: {event}"))
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    fn sse_events(events: &[Value]) -> String {
+        events
+            .iter()
+            .map(|event| format!("data: {event}"))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
 
+    /// Guards `stream` in audit mode and returns how many tool-call evaluations it recorded.
+    async fn tool_call_evaluation_count(stream: &str) -> usize {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
         super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
             .await
             .expect("allowed");
-
-        let decisions = state
+        state
             .store
             .list_guardrail_decisions(&GuardrailDecisionQuery {
                 page: 1,
@@ -2066,8 +2092,87 @@ mod tests {
             })
             .await
             .expect("decisions")
-            .items;
-        assert_eq!(decisions.len(), 1, "one evaluation for one tool call");
+            .items
+            .len()
+    }
+
+    fn wiki_search_item(id: Option<&str>, call_id: &str, arguments: &str) -> Value {
+        let mut item = json!({
+            "type": "function_call",
+            "call_id": call_id,
+            "name": "wiki_search",
+            "arguments": arguments,
+        });
+        if let Some(id) = id {
+            item["id"] = json!(id);
+        }
+        item
+    }
+
+    #[tokio::test]
+    async fn evaluates_repeated_terminal_snapshots_once() {
+        let item = |arguments: &str| wiki_search_item(Some("fc_1"), "call_1", arguments);
+        let stream = sse_events(&[
+            json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "fc_1",
+                "arguments": "{\"query\": \"oceans\"}",
+            }),
+            json!({"type": "response.output_item.done", "item": item("{\"query\":\"oceans\"}")}),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [item("{\"query\": \"oceans\"}")]},
+            }),
+        ]);
+
+        assert_eq!(tool_call_evaluation_count(&stream).await, 1, "one call");
+    }
+
+    #[tokio::test]
+    async fn links_snapshots_that_only_carry_the_call_id() {
+        let arguments = "{\"query\":\"oceans\"}";
+        let stream = sse_events(&[
+            json!({
+                "type": "response.output_item.added",
+                "item": wiki_search_item(Some("fc_1"), "call_1", ""),
+            }),
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": "fc_1",
+                "delta": arguments,
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(None, "call_1", arguments),
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [wiki_search_item(None, "call_1", arguments)]},
+            }),
+        ]);
+
+        assert_eq!(
+            tool_call_evaluation_count(&stream).await,
+            1,
+            "snapshots keyed by call_id belong to the call streamed under its item id"
+        );
+    }
+
+    #[tokio::test]
+    async fn evaluates_identical_parallel_calls_separately() {
+        let arguments = "{\"query\":\"oceans\"}";
+        let stream = sse_events(&[
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(Some("fc_1"), "call_1", arguments),
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(Some("fc_2"), "call_2", arguments),
+            }),
+        ]);
+
+        assert_eq!(tool_call_evaluation_count(&stream).await, 2, "two calls");
     }
 
     #[tokio::test]
