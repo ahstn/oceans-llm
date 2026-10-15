@@ -120,10 +120,11 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
         if input.credential_binding_id.is_some() {
-            let changed = self
+            let mut rows = self
                 .connection
-                .execute(
-                    r#"
+                .query(
+                    &format!(
+                        r#"
                         UPDATE mcp_upstream_credential_bindings
                         SET mcp_server_id = ?2, owner_scope_kind = ?3, owner_scope_key = ?4,
                             owner_user_id = ?5, owner_team_id = ?6, owner_service_account_id = ?7,
@@ -132,7 +133,9 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                             secret_ref = ?14, expires_at = ?15, metadata_json = ?16,
                             updated_at = ?17, revoked_at = NULL
                         WHERE credential_binding_id = ?1
-                        "#,
+                        RETURNING {CREDENTIAL_COLUMNS}
+                        "#
+                    ),
                     libsql::params![
                         id.to_string(),
                         input.mcp_server_id.to_string(),
@@ -157,12 +160,15 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                 )
                 .await
                 .map_err(to_write_error)?;
-            if changed > 0 {
-                return Ok((load_credential(&self.connection, id).await?, true));
+            // The row this update wrote, not a later reload another write could change.
+            if let Some(row) = rows.next().await.map_err(to_write_error)? {
+                return Ok((decode_credential(&row)?, true));
             }
         }
-        self.connection
-            .execute(
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
                 r#"
                 INSERT INTO mcp_upstream_credential_bindings (
                     credential_binding_id, mcp_server_id, owner_scope_kind, owner_scope_key,
@@ -170,7 +176,9 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                     header_name, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
                     secret_ref, expires_at, metadata_json, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)
-                "#,
+                RETURNING {CREDENTIAL_COLUMNS}
+                "#
+            ),
                 libsql::params![
                     id.to_string(),
                     input.mcp_server_id.to_string(),
@@ -193,7 +201,10 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok((load_credential(&self.connection, id).await?, false))
+        let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+            StoreError::Unexpected("credential insert returned no row".to_string())
+        })?;
+        Ok((decode_credential(&row)?, false))
     }
 
     async fn get_active_mcp_upstream_credential_binding(

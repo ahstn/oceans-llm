@@ -110,7 +110,7 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         let id = input.credential_binding_id.unwrap_or_else(Uuid::new_v4);
         let metadata_json = serialize_json(&input.metadata)?;
         if input.credential_binding_id.is_some() {
-            let result = sqlx::query(
+            let sql = format!(
                 r#"
                 UPDATE mcp_upstream_credential_bindings
                 SET mcp_server_id = $2, owner_scope_kind = $3, owner_scope_key = $4,
@@ -120,8 +120,51 @@ impl McpUpstreamCredentialRepository for PostgresStore {
                     secret_ref = $14, expires_at = $15, metadata_json = $16::jsonb,
                     updated_at = $17, revoked_at = NULL
                 WHERE credential_binding_id = $1
-                "#,
-            )
+                RETURNING {CREDENTIAL_COLUMNS}
+            "#
+            );
+            let row = sqlx::query(&sql)
+                .bind(id.to_string())
+                .bind(input.mcp_server_id.to_string())
+                .bind(input.owner_scope_kind.as_str())
+                .bind(&input.owner_scope_key)
+                .bind(input.owner_user_id.map(|value| value.to_string()))
+                .bind(input.owner_team_id.map(|value| value.to_string()))
+                .bind(
+                    input
+                        .owner_service_account_id
+                        .map(|value| value.to_string()),
+                )
+                .bind(input.material_kind.as_str())
+                .bind(input.header_name.as_deref())
+                .bind(input.storage_kind.as_str())
+                .bind(input.secret_ciphertext.as_deref())
+                .bind(input.secret_nonce.as_deref())
+                .bind(input.secret_key_id.as_deref())
+                .bind(input.secret_ref.as_deref())
+                .bind(input.expires_at.map(|value| value.unix_timestamp()))
+                .bind(&metadata_json)
+                .bind(input.updated_at.unix_timestamp())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_write_error)?;
+            // The row this update wrote, not a later reload another write could change.
+            if let Some(row) = row {
+                return Ok((decode_credential(&row)?, true));
+            }
+        }
+        let sql = format!(
+            r#"
+            INSERT INTO mcp_upstream_credential_bindings (
+                credential_binding_id, mcp_server_id, owner_scope_kind, owner_scope_key,
+                owner_user_id, owner_team_id, owner_service_account_id, material_kind,
+                header_name, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
+                secret_ref, expires_at, metadata_json, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $17)
+            RETURNING {CREDENTIAL_COLUMNS}
+        "#
+        );
+        let row = sqlx::query(&sql)
             .bind(id.to_string())
             .bind(input.mcp_server_id.to_string())
             .bind(input.owner_scope_kind.as_str())
@@ -143,44 +186,10 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .bind(input.expires_at.map(|value| value.unix_timestamp()))
             .bind(&metadata_json)
             .bind(input.updated_at.unix_timestamp())
-            .execute(&self.pool)
+            .fetch_one(&self.pool)
             .await
             .map_err(to_write_error)?;
-            if result.rows_affected() > 0 {
-                return Ok((load_credential(&self.pool, id).await?, true));
-            }
-        }
-        sqlx::query(
-            r#"
-            INSERT INTO mcp_upstream_credential_bindings (
-                credential_binding_id, mcp_server_id, owner_scope_kind, owner_scope_key,
-                owner_user_id, owner_team_id, owner_service_account_id, material_kind,
-                header_name, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
-                secret_ref, expires_at, metadata_json, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $17)
-            "#,
-        )
-        .bind(id.to_string())
-        .bind(input.mcp_server_id.to_string())
-        .bind(input.owner_scope_kind.as_str())
-        .bind(&input.owner_scope_key)
-        .bind(input.owner_user_id.map(|value| value.to_string()))
-        .bind(input.owner_team_id.map(|value| value.to_string()))
-        .bind(input.owner_service_account_id.map(|value| value.to_string()))
-        .bind(input.material_kind.as_str())
-        .bind(input.header_name.as_deref())
-        .bind(input.storage_kind.as_str())
-        .bind(input.secret_ciphertext.as_deref())
-        .bind(input.secret_nonce.as_deref())
-        .bind(input.secret_key_id.as_deref())
-        .bind(input.secret_ref.as_deref())
-        .bind(input.expires_at.map(|value| value.unix_timestamp()))
-        .bind(&metadata_json)
-        .bind(input.updated_at.unix_timestamp())
-        .execute(&self.pool)
-        .await
-        .map_err(to_write_error)?;
-        Ok((load_credential(&self.pool, id).await?, false))
+        Ok((decode_credential(&row)?, false))
     }
 
     async fn get_active_mcp_upstream_credential_binding(
