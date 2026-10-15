@@ -389,7 +389,7 @@ async fn guard_sse_payload(
                 context,
                 &mut evaluated,
                 name,
-                fragments.shell_command_locations,
+                terminal.shell_command,
                 &terminal.arguments,
             )
             .await?;
@@ -398,7 +398,7 @@ async fn guard_sse_payload(
                     &mut blocks,
                     std::slice::from_ref(&terminal.location),
                     &replacement,
-                    fragments.shell_command_locations,
+                    terminal.shell_command,
                     false,
                 );
             }
@@ -685,9 +685,10 @@ enum StreamLine {
     Other(String),
 }
 
-/// The tool calls in one guarded stream, keyed by call identity. `name` and `arguments`
-/// are reconstructed from the streamed deltas. Each terminal snapshot keeps the name from
-/// its own event, so a snapshot can never change the name the deltas are evaluated under.
+/// The tool calls in one guarded stream, keyed by call identity. `name`, `arguments`, and
+/// `shell_command_locations` describe the streamed deltas. Each terminal snapshot keeps the
+/// name and argument encoding from its own event, so a snapshot can never change how the
+/// deltas, or another snapshot, are evaluated and rewritten.
 #[derive(Default)]
 struct ToolCallFragments {
     name: String,
@@ -702,6 +703,8 @@ struct TerminalArguments {
     name: Option<String>,
     arguments: String,
     location: (usize, String),
+    /// Whether `location` holds a shell action command rather than serialized JSON arguments.
+    shell_command: bool,
 }
 
 fn collect_stream_tool_fragments(
@@ -732,7 +735,6 @@ fn collect_stream_tool_fragments(
                 }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
-                fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
                     shell_argument_pointer(item)
                         .map(|suffix| format!("{pointer}/item/action/{suffix}"))
@@ -745,8 +747,10 @@ fn collect_stream_tool_fragments(
                         name: Some(name),
                         arguments,
                         location: (event_index, argument_pointer),
+                        shell_command: shell_call,
                     });
                 } else {
+                    fragments.shell_command_locations |= shell_call;
                     if fragments.arguments.is_empty() {
                         fragments.arguments = arguments;
                     }
@@ -847,6 +851,7 @@ fn collect_stream_tool_fragments(
                         name: None,
                         arguments: arguments.to_string(),
                         location: (event_index, format!("{pointer}/arguments")),
+                        shell_command: false,
                     });
                 }
             }
@@ -868,7 +873,6 @@ fn collect_stream_tool_fragments(
                 }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
-                fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
                     shell_argument_pointer(object)
                         .map(|suffix| format!("{pointer}/action/{suffix}"))
@@ -880,6 +884,7 @@ fn collect_stream_tool_fragments(
                     name: Some(name),
                     arguments,
                     location: (event_index, argument_pointer),
+                    shell_command: shell_call,
                 });
                 return;
             }
@@ -2063,6 +2068,83 @@ mod tests {
             .expect("decisions")
             .items;
         assert_eq!(decisions.len(), 1, "one evaluation for one tool call");
+    }
+
+    #[tokio::test]
+    async fn rewrites_each_snapshot_in_its_own_argument_encoding() {
+        use gateway_guardrails::{
+            ContentTransformation, GuardPhase, GuardrailEngine, ManagedCheckConfig,
+            ManagedCheckKind, ManagedEvaluator, ManagedOutcome, ManagedService,
+            test_utils::StubManagedEvaluator,
+        };
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let masked = || {
+            Ok(ManagedOutcome::Transformed {
+                transformation: ContentTransformation::new("masked-cmd".into()),
+                reason_code: gateway_guardrails::ReasonCode::new("stub.masked").unwrap(),
+                metadata: Default::default(),
+            })
+        };
+        let stub = Arc::new(StubManagedEvaluator::new(
+            "mask",
+            ManagedService::AmazonBedrock,
+            [masked(), masked()],
+        ));
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([("mask".to_string(), stub as Arc<dyn ManagedEvaluator>)]),
+        ));
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.enabled = true;
+        config.default.managed_checks = vec!["mask".into()];
+        config.managed_checks.insert(
+            "mask".into(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::AmazonBedrock,
+                phases: [GuardPhase::GeneratedToolCall].into(),
+                timeout_ms: 1_000,
+                failure_disposition: Default::default(),
+                max_content_bytes: 1 << 20,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        let stream = [
+            json!({
+                "type": "response.output_item.added",
+                "item": {"id": "call_1", "type": "shell_call", "action": {"command": ["secret-cmd"]}},
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [{
+                    "id": "call_1",
+                    "type": "function_call",
+                    "name": "bash",
+                    "arguments": "{\"command\":\"secret-cmd\"}",
+                }]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("data: {event}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let guarded =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect("masked");
+
+        let completed = String::from_utf8(guarded)
+            .expect("UTF-8")
+            .split("\n\n")
+            .nth(1)
+            .and_then(|block| block.strip_prefix("data: "))
+            .map(|data| serde_json::from_str::<Value>(data).expect("JSON"))
+            .expect("completed event");
+        assert_eq!(
+            completed["response"]["output"][0]["arguments"], "{\"command\":\"masked-cmd\"}",
+            "a function-call snapshot keeps JSON arguments after a shell-call delta"
+        );
     }
 
     #[tokio::test]
