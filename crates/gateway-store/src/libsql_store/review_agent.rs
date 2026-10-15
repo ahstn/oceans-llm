@@ -388,18 +388,26 @@ impl ReviewAgentRepository for LibsqlStore {
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
-        // Only a different status is written, so the row count says whether this
-        // call made the transition. `load_repository` reports a missing row.
-        let rows = self
+        // Only a different status is written. `load_repository` reports a missing row.
+        let mut rows = self
             .connection
-            .execute(
-                "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3 AND status <> ?1",
+            .query(
+                &format!(
+                    "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3 AND status <> ?1 RETURNING {REPOSITORY_COLUMNS}"
+                ),
                 libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        let repository = load_repository(&self.connection, repository_id).await?;
-        Ok((repository, rows > 0))
+        // A transition returns the row it wrote, so a later write cannot change
+        // what this call reports. Without one, the current row is unchanged.
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_repository(&row)?, true));
+        }
+        Ok((
+            load_repository(&self.connection, repository_id).await?,
+            false,
+        ))
     }
 
     async fn upsert_review_agent_pull_request(

@@ -344,19 +344,23 @@ impl ReviewAgentRepository for PostgresStore {
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
-        // Only a different status is written, so the row count says whether this
-        // call made the transition. `load_repository` reports a missing row.
-        let result = sqlx::query(
-            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3 AND status <> $1",
-        )
-        .bind(status.as_str())
-        .bind(updated_at.unix_timestamp())
-        .bind(repository_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_write_error)?;
-        let repository = load_repository(&self.pool, repository_id).await?;
-        Ok((repository, result.rows_affected() > 0))
+        // Only a different status is written. `load_repository` reports a missing row.
+        let sql = format!(
+            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3 AND status <> $1 RETURNING {REPOSITORY_COLUMNS}"
+        );
+        let row = sqlx::query(&sql)
+            .bind(status.as_str())
+            .bind(updated_at.unix_timestamp())
+            .bind(repository_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        // A transition returns the row it wrote, so a later write cannot change
+        // what this call reports. Without one, the current row is unchanged.
+        if let Some(row) = row {
+            return Ok((decode_repository(&row)?, true));
+        }
+        Ok((load_repository(&self.pool, repository_id).await?, false))
     }
 
     async fn upsert_review_agent_pull_request(
