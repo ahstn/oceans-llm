@@ -106,6 +106,63 @@ async fn postgres_rate_limit_counters_hold_across_replicas() {
     drop_postgres_test_database(&test_db).await;
 }
 
+#[tokio::test]
+#[serial]
+async fn postgres_checks_wait_for_an_uncommitted_insert_into_the_previous_window() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres rate limit test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    let raw = sqlx::PgPool::connect(&test_db.database_url)
+        .await
+        .expect("raw pool");
+    // Early in a window, so most of the previous window still counts.
+    let now = OffsetDateTime::now_utc();
+    let now = now - Duration::seconds(i64::from(now.second())) + Duration::seconds(1);
+    let current = charge("key:boundary", RateLimitPeriod::Minute, now, 5);
+    let previous_start = current.window.previous_start.expect("sliding");
+
+    // An old-window request is still inserting the previous window's row.
+    let mut old_window = raw.begin().await.expect("begin");
+    sqlx::query(
+        "INSERT INTO rate_limit_counters (counter_key, window_start, amount, expires_at)
+         VALUES ($1, $2, 10, $3)",
+    )
+    .bind(&current.counter_key)
+    .bind(previous_start)
+    .bind(current.window.end)
+    .execute(&mut *old_window)
+    .await
+    .expect("insert");
+
+    let check = tokio::spawn({
+        let charges = vec![current.clone()];
+        async move { store.consume_rate_limits(&charges).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !check.is_finished(),
+        "the check did not wait for the insert"
+    );
+    old_window.commit().await.expect("commit");
+
+    let result = check.await.expect("join").expect("consume");
+    assert_eq!(result.observations[0].previous, 10);
+    assert!(!result.admitted);
+
+    raw.close().await;
+    drop_postgres_test_database(&test_db).await;
+}
+
 fn charge(
     key: &str,
     period: RateLimitPeriod,
@@ -300,11 +357,20 @@ async fn exercise_counters<S: RateLimitRepository>(store: &S) {
     assert_eq!(exhausted.observations[0].current, 1_000);
 
     // Purge removes rows whose window, and the window that reads them, ended.
+    // Postgres also holds empty previous-window rows that request checks lock,
+    // so it purges more than the four written here.
     let purged = store
         .purge_expired_rate_limit_counters(minute.unix_timestamp() + 10_000, 100)
         .await
         .expect("purge");
-    assert_eq!(purged, 4);
+    assert!(purged >= 4, "purged {purged}");
+    assert_eq!(
+        store
+            .purge_expired_rate_limit_counters(minute.unix_timestamp() + 10_000, 100)
+            .await
+            .expect("purge"),
+        0
+    );
     let fresh = store
         .consume_rate_limits(std::slice::from_ref(&request))
         .await

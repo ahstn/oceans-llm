@@ -103,11 +103,15 @@ export function policyInputFromForm(form: PolicyFormState): RateLimitPolicyInput
   }
 }
 
-export function formError(form: PolicyFormState): string | null {
-  if (!form.name.trim()) return 'Enter a name.'
+export function limitError(form: Pick<PolicyFormState, 'limit'>): string | null {
   const limit = Number(form.limit)
   if (!Number.isInteger(limit) || limit <= 0) return 'Limit must be a whole number above 0.'
   return null
+}
+
+export function formError(form: PolicyFormState): string | null {
+  if (!form.name.trim()) return 'Enter a name.'
+  return limitError(form)
 }
 
 export function describeScope(policy: RateLimitPolicyView): string {

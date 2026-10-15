@@ -57,8 +57,8 @@ We chose a sliding-window counter over a token bucket. A token bucket in SQL nee
 A request check is one transaction:
 
 1. Sort the charges by counter key, so concurrent transactions lock rows in the same order and cannot deadlock.
-2. For each `requests` charge, `INSERT ... ON CONFLICT DO UPDATE SET amount = amount + 1 RETURNING amount`. In Postgres this locks the row until commit, which serializes concurrent checks of the same counter across replicas. libSQL uses an `IMMEDIATE` transaction.
-3. Read the previous window's amount and compute the estimate.
+2. For each `requests` charge, upsert zero into the previous window's row, then `INSERT ... ON CONFLICT DO UPDATE SET amount = amount + 1 RETURNING amount` on the current one. In Postgres each upsert locks its row until commit, which serializes concurrent checks of the same counter across replicas. Upserting the previous row, rather than reading it, also waits for an insert into it that has not committed yet. libSQL uses an `IMMEDIATE` transaction.
+3. Compute the estimate from the two amounts.
 4. If any charge is over its limit, roll back. A rejected request consumes nothing on any scope. Otherwise commit.
 
 **Tokens** are not known until a response finishes. A `tokens` policy is checked before the request (it rejects once the window is already exhausted) and charged afterwards with the response's `total_tokens`. The charge is written before the response is handed back, so a caller sending requests one after another always sees its earlier usage. Only a burst of concurrent requests can overshoot a token limit, by up to one request each. Tokens are charged with the usage the provider reports, including partial usage on a failed request, an interrupted stream, or a stream the client cancelled: the provider consumed those tokens. A response's tokens are added to all of its token policies in one transaction, in the window the response finished in. A cancelled stream is charged in the background; the next check of the same counter on that replica waits up to a second for it. Batches are not rate limited.

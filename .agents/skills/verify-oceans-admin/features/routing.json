@@ -468,6 +468,7 @@
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/{inference,embeddings,decisions,count_tokens}.rs",
         "crates/gateway/src/http/mcp_gateway.rs",
+        "crates/gateway/src/http/mcp_gateway/aggregate.rs",
         "crates/gateway/src/http/mcp_gateway/aggregate/execution.rs",
         "crates/gateway-core/src/rate_limits.rs",
         "crates/gateway-service/src/rate_limits.rs",

@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -33,6 +33,7 @@ import {
   eachScopeLabel,
   emptyPolicyForm,
   formError,
+  limitError,
   policyFormFromView,
   policyInputFromForm,
   type PolicyFormState,
@@ -137,7 +138,6 @@ export function PolicyDialog({
               <FieldLabel htmlFor="rate-limit-enabled">Enforced</FieldLabel>
             </Field>
           </FieldGroup>
-          {error && form.name.trim() && <p className="text-destructive text-sm">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
               Cancel
@@ -238,10 +238,11 @@ function ScopeFields({ form, update, options, pending }: FieldsProps) {
 }
 
 function LimitFields({ form, update, pending }: FieldsProps) {
+  const error = limitError(form)
   return (
     <>
       <div className="grid min-w-0 gap-4 sm:grid-cols-3">
-        <Field>
+        <Field data-invalid={Boolean(error) || undefined}>
           <FieldLabel htmlFor="rate-limit-limit">Limit</FieldLabel>
           <Input
             id="rate-limit-limit"
@@ -253,7 +254,10 @@ function LimitFields({ form, update, pending }: FieldsProps) {
             onChange={(event) => update({ limit: event.target.value })}
             required
             disabled={pending}
+            aria-invalid={Boolean(error) || undefined}
+            aria-describedby={error ? 'rate-limit-limit-error' : undefined}
           />
+          {error && <FieldError id="rate-limit-limit-error">{error}</FieldError>}
         </Field>
         <PolicySelect
           id="rate-limit-metric"

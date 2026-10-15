@@ -232,8 +232,12 @@ describe('RateLimitsPage', () => {
     renderPage([])
     fireEvent.click(screen.getByRole('button', { name: 'New rate limit' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'bad' } })
-    fireEvent.change(screen.getByLabelText('Limit'), { target: { value: '0' } })
-    expect(screen.getByText('Limit must be a whole number above 0.')).toBeTruthy()
+    const limit = screen.getByLabelText('Limit')
+    fireEvent.change(limit, { target: { value: '0' } })
+    const message = screen.getByRole('alert')
+    expect(message.textContent).toBe('Limit must be a whole number above 0.')
+    expect(limit.getAttribute('aria-invalid')).toBe('true')
+    expect(limit.getAttribute('aria-describedby')).toBe(message.id)
     expect(
       (screen.getByRole('button', { name: 'Create rate limit' }) as HTMLButtonElement).disabled,
     ).toBe(true)

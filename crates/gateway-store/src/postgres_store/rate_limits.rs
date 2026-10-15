@@ -44,24 +44,6 @@ async fn read_amount(
     Ok(amount.unwrap_or(0))
 }
 
-async fn read_amount_shared(
-    executor: impl sqlx::PgExecutor<'_>,
-    counter_key: &str,
-    window_start: i64,
-) -> Result<i64, StoreError> {
-    let amount: Option<i64> = sqlx::query_scalar(
-        "SELECT amount FROM rate_limit_counters
-         WHERE counter_key = $1 AND window_start = $2
-         FOR SHARE",
-    )
-    .bind(counter_key)
-    .bind(window_start)
-    .fetch_optional(executor)
-    .await
-    .map_err(to_query_error)?;
-    Ok(amount.unwrap_or(0))
-}
-
 const ADD_AMOUNT: &str =
     "INSERT INTO rate_limit_counters (counter_key, window_start, amount, expires_at)
      VALUES ($1, $2, $3, $4)
@@ -189,15 +171,23 @@ impl RateLimitRepository for PostgresStore {
         let mut admitted = true;
         for index in lock_order(charges) {
             let charge = &charges[index];
-            // A request charge share-locks the previous window's row first,
-            // so a check just after a window boundary waits for writes still
-            // committing to the window it reads. Rows are taken in
-            // (counter, window) order: previous before current within a
-            // counter, counters in key order, as every transaction does.
+            // A request charge upserts zero into the previous window's row
+            // first. Unlike a locking read, the upsert also waits for an
+            // insert of that row that has not committed yet, so a check just
+            // after a window boundary sees every write to the window it reads.
+            // A row created here expires when the current window ends, as the
+            // previous window's row would. Rows are taken in (counter, window)
+            // order: previous before current within a counter, counters in key
+            // order, as every transaction does.
             let previous = match charge.window.previous_start {
-                Some(start) if charge.cost > 0 => {
-                    read_amount_shared(&mut *tx, &charge.counter_key, start).await?
-                }
+                Some(start) if charge.cost > 0 => sqlx::query_scalar(ADD_AMOUNT)
+                    .bind(&charge.counter_key)
+                    .bind(start)
+                    .bind(0_i64)
+                    .bind(charge.window.end)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(to_query_error)?,
                 Some(start) => read_amount(&mut *tx, &charge.counter_key, start).await?,
                 None => 0,
             };
