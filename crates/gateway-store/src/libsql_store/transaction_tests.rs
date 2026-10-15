@@ -223,3 +223,32 @@ async fn shared_cache_memory_store_serializes_transactions() {
         .expect("a shared-cache lock is retried until it is free");
     transaction.rollback().await.expect("waiter rollback");
 }
+
+#[tokio::test]
+async fn shared_cache_reader_does_not_block_a_transaction_write() {
+    let store = LibsqlStore::new_local(":memory:")
+        .await
+        .expect("memory store");
+    store
+        .connection()
+        .execute_batch(
+            "CREATE TABLE probe (value INTEGER); INSERT INTO probe VALUES (1), (2), (3);",
+        )
+        .await
+        .expect("probe table");
+    // An unfinished cursor on the shared connection, as a concurrent request's read would be.
+    let mut reader = store
+        .connection()
+        .query("SELECT value FROM probe", ())
+        .await
+        .expect("reader");
+    reader.next().await.expect("first row").expect("row");
+
+    let transaction = store.begin_transaction().await.expect("transaction");
+    transaction
+        .execute("INSERT INTO probe VALUES (4)", ())
+        .await
+        .expect("a shared-cache reader does not lock the table against this write");
+    transaction.commit().await.expect("commit");
+    drop(reader);
+}

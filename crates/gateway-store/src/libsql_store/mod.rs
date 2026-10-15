@@ -104,12 +104,14 @@ pub struct LibsqlStore {
     database: Arc<libsql::Database>,
     connection: Arc<libsql::Connection>,
     routing_workers: Arc<tokio::sync::Semaphore>,
+    shared_cache: bool,
 }
 
 impl LibsqlStore {
     pub async fn new_local(path: &str) -> anyhow::Result<Self> {
         // Named memory databases share their schema across this store's connections.
-        let database_path = if path == ":memory:" {
+        let shared_cache = path == ":memory:";
+        let database_path = if shared_cache {
             format!("file:oceans-{}?mode=memory&cache=shared", Uuid::new_v4())
         } else {
             path.to_string()
@@ -119,13 +121,14 @@ impl LibsqlStore {
             .await
             .with_context(|| format!("failed building local libsql database at `{path}`"))?;
         let connection = db.connect().context("failed opening libsql connection")?;
-        Self::configure_connection(&connection)
+        Self::configure_connection(&connection, shared_cache)
             .await
             .context("failed configuring LibSQL connection")?;
         Ok(Self {
             database: Arc::new(db),
             connection: Arc::new(connection),
             routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            shared_cache,
         })
     }
 
@@ -176,15 +179,27 @@ impl LibsqlStore {
     /// Opens a connection separate from the shared one, configured the same way.
     pub(super) async fn own_connection(&self) -> Result<libsql::Connection, StoreError> {
         let connection = self.database.connect().map_err(to_query_error)?;
-        Self::configure_connection(&connection)
+        Self::configure_connection(&connection, self.shared_cache)
             .await
             .map_err(to_query_error)?;
         Ok(connection)
     }
 
-    async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
+    async fn configure_connection(
+        connection: &libsql::Connection,
+        shared_cache: bool,
+    ) -> libsql::Result<()> {
         connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.execute("PRAGMA foreign_keys = ON", ()).await?;
+        if shared_cache {
+            // Shared-cache connections lock tables, and the busy timeout does not cover those
+            // locks: a cursor still open on one connection would make another connection's
+            // transaction fail at its first write with `SQLITE_LOCKED`. Uncommitted reads take
+            // no table read locks, at the cost of dirty reads in the in-memory mode only.
+            connection
+                .execute("PRAGMA read_uncommitted = 1", ())
+                .await?;
+        }
         Ok(())
     }
 
