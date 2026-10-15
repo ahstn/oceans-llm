@@ -552,7 +552,25 @@ fn looks_like_credential(text: &str) -> bool {
     // A full gateway key is `gwk_<public id>.<secret>`; the bare `gwk_<public id>`
     // prefix is a display identifier and stays readable. Invite links carry their
     // token in the path.
-    scheme_with_value || text.contains("/invite/") || words.iter().any(|word| is_token_word(word))
+    scheme_with_value
+        || text.contains("/invite/")
+        || has_url_userinfo(text)
+        || words.iter().any(|word| is_token_word(word))
+}
+
+/// Whether the text holds a URL with userinfo, such as `https://user:pass@host`
+/// or `https://<token>@host`. Dedicated URL fields strip it; this catches URLs
+/// written into free text.
+fn has_url_userinfo(text: &str) -> bool {
+    text.match_indices("://").any(|(index, _)| {
+        let authority = text[index + 3..]
+            .split(|character: char| {
+                matches!(character, '/' | '?' | '#') || character.is_whitespace()
+            })
+            .next()
+            .unwrap_or_default();
+        authority.find('@').is_some_and(|at| at > 0)
+    })
 }
 
 fn is_token_word(word: &str) -> bool {
@@ -589,12 +607,14 @@ pub fn is_secret_path_segment(segment: &str) -> bool {
         && segment
             .chars()
             .any(|character| character.is_ascii_alphabetic());
-    // A 32+ character run of letters with no separators is not a path word;
-    // hyphenated words such as `oauth-authorization-server` stay readable.
+    // A 32+ character run of only letters or only digits is not a path word or
+    // a numeric ID; hyphenated words such as `oauth-authorization-server` stay
+    // readable.
     let unbroken_letters = segment
         .chars()
         .all(|character| character.is_ascii_alphabetic());
-    token_charset && (mixed || unbroken_letters)
+    let unbroken_digits = segment.chars().all(|character| character.is_ascii_digit());
+    token_charset && (mixed || unbroken_letters || unbroken_digits)
 }
 
 /// A caller-supplied scalar such as a user agent: redacted when it looks like a credential.
@@ -897,6 +917,9 @@ mod tests {
             "plan_name": "Basic tier",
             "comment": "see (ghp_0123456789abcdefghij)",
             "path": "/srv/data",
+            "mcp_note": "mirror at https://alice:hunter2@mcp.example/sse",
+            "repo_note": "clone https://x-token@git.example/acme/api",
+            "profile": "https://social.example/@alice and bob@example.com",
         }));
         assert_eq!(
             redacted,
@@ -926,6 +949,9 @@ mod tests {
                 "plan_name": "Basic tier",
                 "comment": AUDIT_REDACTED,
                 "path": "/srv/data",
+                "mcp_note": AUDIT_REDACTED,
+                "repo_note": AUDIT_REDACTED,
+                "profile": "https://social.example/@alice and bob@example.com",
             })
         );
     }
@@ -987,6 +1013,9 @@ mod tests {
         ));
         assert!(!is_secret_path_segment("%7Euser"));
         assert!(is_secret_path_segment("0f3c9a2e0d5b4c1e9f7a1b2c3d4e5f60"));
+        assert!(is_secret_path_segment("12345678901234567890123456789012"));
+        // Shorter numeric IDs, such as 19-digit snowflakes, stay readable.
+        assert!(!is_secret_path_segment("1234567890123456789"));
     }
 
     #[tokio::test]

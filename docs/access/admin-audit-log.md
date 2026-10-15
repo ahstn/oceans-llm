@@ -54,7 +54,7 @@ Audit entries never store secret values:
 - **Secrets and credentials.** Raw API keys, passwords, session cookies, invite links and tokens, MCP upstream secrets and OAuth tokens, and provider tokens are never stored.
 - **Credential bindings.** Bindings record metadata only: kind, header name, secret reference, scopes and expiry.
 - **Server URLs.** MCP server URLs are stored without credentials, query strings or token-like path segments, including percent-encoded ones.
-- **Safety net.** Before an entry is stored, values under secret-looking field names and strings that look like credentials are replaced with `[REDACTED]`.
+- **Safety net.** Before an entry is stored, values under secret-looking field names and strings that look like credentials, including URLs with a username or password, are replaced with `[REDACTED]`.
 
 ## Filtering and paging
 
