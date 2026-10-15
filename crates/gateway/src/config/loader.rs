@@ -151,9 +151,11 @@ fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     if !metadata.is_dir() {
         bail!("config directory `{}` is not a directory", dir.display());
     }
+    let root =
+        fs::canonicalize(dir).with_context(|| format!("failed resolving `{}`", dir.display()))?;
     let mut files = Vec::new();
     let mut visited = BTreeSet::new();
-    collect_fragment_files(dir, &mut files, &mut visited)?;
+    collect_fragment_files(&root, dir, &mut files, &mut visited)?;
     files.sort_by(|left, right| {
         left.strip_prefix(dir)
             .ok()
@@ -162,16 +164,31 @@ fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+/// Canonicalizes `path` and rejects it when a symlink resolves outside the config directory.
+/// Kubernetes ConfigMap mounts link only within the mount, so they stay inside `root`.
+fn resolve_inside(root: &Path, path: &Path) -> anyhow::Result<PathBuf> {
+    let canonical =
+        fs::canonicalize(path).with_context(|| format!("failed resolving `{}`", path.display()))?;
+    if !canonical.starts_with(root) {
+        bail!(
+            "config fragment `{}` resolves to `{}`, outside the config directory `{}`",
+            path.display(),
+            canonical.display(),
+            root.display()
+        );
+    }
+    Ok(canonical)
+}
+
 /// `visited` holds canonical paths, so a symlinked directory that points back at an ancestor is
 /// not walked again, and a directory or file reachable through two aliases is read once.
 fn collect_fragment_files(
+    root: &Path,
     dir: &Path,
     files: &mut Vec<PathBuf>,
     visited: &mut BTreeSet<PathBuf>,
 ) -> anyhow::Result<()> {
-    let canonical =
-        fs::canonicalize(dir).with_context(|| format!("failed resolving `{}`", dir.display()))?;
-    if !visited.insert(canonical) {
+    if !visited.insert(resolve_inside(root, dir)?) {
         return Ok(());
     }
     let entries =
@@ -185,16 +202,13 @@ fn collect_fragment_files(
         let metadata =
             fs::metadata(&path).with_context(|| format!("failed reading `{}`", path.display()))?;
         if metadata.is_dir() {
-            collect_fragment_files(&path, files, visited)?;
+            collect_fragment_files(root, &path, files, visited)?;
         } else if metadata.is_file()
             && path
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "yaml" | "yml"))
-            && visited.insert(
-                fs::canonicalize(&path)
-                    .with_context(|| format!("failed resolving `{}`", path.display()))?,
-            )
+            && visited.insert(resolve_inside(root, &path)?)
         {
             files.push(path);
         }
@@ -292,15 +306,38 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
 
 const REDACTED: &str = "<redacted>";
 
+/// Fields that hold credentials. Their raw values are redacted even without a `literal.` prefix;
+/// such values fail at runtime anyway, but `config render` must not print them.
+const CREDENTIAL_FIELDS: &[&str] = &[
+    "access_key_id",
+    "api_key",
+    "client_secret",
+    "password",
+    "private_key",
+    "secret",
+    "secret_access_key",
+    "session_token",
+    "token",
+];
+
 /// Replaces values that can carry credentials. Rendered output still contains identity data,
 /// such as user emails, so it is not anonymized:
-/// `literal.` secret references, every header value, and URL credentials (userinfo, query
-/// values, and fragments). `env.` and
+/// `literal.` secret references, raw values in credential fields, every header value, and URL
+/// credentials (userinfo, query values, and fragments). `env.` and
 /// `file.` references name where a secret lives without containing it, so they stay visible.
 fn redact_secrets(value: &mut Value, in_headers: bool) {
     match value {
         Value::Mapping(mapping) => {
             for (key, entry) in mapping.iter_mut() {
+                if let (Some(name), Value::String(text)) = (key.as_str(), &mut *entry)
+                    && CREDENTIAL_FIELDS.contains(&name)
+                    && !["env.", "file.", "literal."]
+                        .iter()
+                        .any(|prefix| text.starts_with(prefix))
+                {
+                    *text = REDACTED.to_string();
+                    continue;
+                }
                 let headers = in_headers
                     || matches!(
                         key.as_str(),

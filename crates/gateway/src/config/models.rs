@@ -102,8 +102,9 @@ struct RawModelConfig {
     routing: Option<ModelRoutingPolicy>,
     #[serde(default)]
     route: Option<ModelRouteConfig>,
+    /// `None` when absent, so `route` alongside an explicit `routes: []` is still rejected.
     #[serde(default)]
-    routes: Vec<ModelRouteConfig>,
+    routes: Option<Vec<ModelRouteConfig>>,
     #[serde(default)]
     allowlist: Option<ModelAllowlistConfig>,
 }
@@ -112,15 +113,15 @@ impl TryFrom<RawModelConfig> for ModelConfig {
     type Error = String;
 
     fn try_from(raw: RawModelConfig) -> Result<Self, Self::Error> {
-        let routes = match (raw.route, raw.routes.is_empty()) {
-            (Some(_), false) => {
+        let routes = match (raw.route, raw.routes) {
+            (Some(_), Some(_)) => {
                 return Err(format!(
                     "model `{}` cannot define both route and routes",
                     raw.id
                 ));
             }
-            (Some(route), true) => vec![route],
-            (None, _) => raw.routes,
+            (Some(route), None) => vec![route],
+            (None, routes) => routes.unwrap_or_default(),
         };
         Ok(Self {
             id: raw.id,

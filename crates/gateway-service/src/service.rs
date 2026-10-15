@@ -789,11 +789,28 @@ where
         self.warn_on_route_context_override_conflicts().await
     }
 
-    /// Startup check for route overrides. Fails on a context window above the catalog limit and
-    /// logs overrides that only repeat the catalog. Each overridden route is resolved once.
+    /// Startup check that fails on a context window above the catalog limit. It scans only
+    /// routes with a context override, so pricing overrides add no work before readiness.
     pub async fn validate_route_overrides(&self) -> Result<(), GatewayError> {
-        let scan = self.scan_route_overrides(true).await?;
-        for redundant in &scan.redundant {
+        let scan = self.scan_route_overrides(false).await?;
+        let Some(conflict) = scan.context_conflicts.into_iter().next() else {
+            return Ok(());
+        };
+
+        Err(GatewayError::InvalidRequest(format!(
+            "route `{}` ({}/{}) context_window_tokens `{}` exceeds catalog context `{}`",
+            conflict.route_id,
+            conflict.provider_key,
+            conflict.upstream_model,
+            conflict.configured_context,
+            conflict.catalog_context,
+        )))
+    }
+
+    /// Logs route overrides that only repeat the catalog, so admins can delete them and follow
+    /// catalog updates. It only warns, so the gateway runs it in the background after startup.
+    pub async fn warn_on_redundant_route_overrides(&self) -> Result<(), GatewayError> {
+        for redundant in self.scan_route_overrides(true).await?.redundant {
             if redundant.pricing {
                 warn!(
                     model_key = %redundant.model_key,
@@ -812,18 +829,7 @@ where
                 );
             }
         }
-        let Some(conflict) = scan.context_conflicts.into_iter().next() else {
-            return Ok(());
-        };
-
-        Err(GatewayError::InvalidRequest(format!(
-            "route `{}` ({}/{}) context_window_tokens `{}` exceeds catalog context `{}`",
-            conflict.route_id,
-            conflict.provider_key,
-            conflict.upstream_model,
-            conflict.configured_context,
-            conflict.catalog_context,
-        )))
+        Ok(())
     }
 
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
@@ -840,9 +846,9 @@ where
         Ok(())
     }
 
-    /// Resolves metadata once for each enabled route with an override, looking up each provider
-    /// once. `include_redundant` also covers pricing-only overrides and reports overrides that
-    /// equal the catalog; catalog refreshes skip that and check context conflicts only.
+    /// Resolves catalog values once per catalog target for enabled routes with an override,
+    /// looking up each provider once. `include_redundant` also covers pricing-only overrides and
+    /// reports overrides that equal the catalog; otherwise only context conflicts are checked.
     async fn scan_route_overrides(
         &self,
         include_redundant: bool,
@@ -2798,9 +2804,9 @@ mod tests {
         };
 
         service_with(route.clone())
-            .validate_route_overrides()
+            .warn_on_redundant_route_overrides()
             .await
-            .expect("a pricing-only override lookup failure must not block startup");
+            .expect("a pricing-only override lookup failure is only logged");
 
         route.context_window_tokens = Some(128_000);
         service_with(route)
@@ -2842,6 +2848,15 @@ mod tests {
             .validate_route_overrides()
             .await
             .expect("pricing-only overrides cannot block startup");
+        assert_eq!(
+            lookups.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "startup validation skips pricing-only overrides"
+        );
+        service
+            .warn_on_redundant_route_overrides()
+            .await
+            .expect("redundant override scan");
         assert_eq!(lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 

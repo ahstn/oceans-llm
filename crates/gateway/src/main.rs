@@ -282,6 +282,7 @@ async fn run_serve_with_store(
             .context("failed to initialize guardrail evaluators")?,
     );
     let guardrail_config = Arc::new(config.guardrails.clone());
+    spawn_redundant_route_override_check(service.clone());
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     if agent_analysis.capabilities.passive_analysis_enabled {
@@ -636,6 +637,18 @@ fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
     }
 
     Ok(Some(trimmed.trim_end_matches('/').to_string()))
+}
+
+/// Warns about route overrides that repeat the catalog. It runs once after startup so its
+/// catalog lookups never delay readiness.
+fn spawn_redundant_route_override_check(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+) {
+    tokio::spawn(async move {
+        if let Err(error) = service.warn_on_redundant_route_overrides().await {
+            tracing::warn!(error = %error, "checking route overrides against the catalog failed");
+        }
+    });
 }
 
 fn spawn_pricing_catalog_refresh_loop(

@@ -695,6 +695,10 @@ fn rejects_ambiguous_model_shapes() {
             "model `gpt-5` cannot define both route and routes",
         ),
         (
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5 }\n    routes: []\n",
+            "model `gpt-5` cannot define both route and routes",
+        ),
+        (
             "models:\n  - id: gpt-5\n    route: { provider: openai, upstream_model: gpt-5 }\n  - id: gpt-5\n    route: { provider: openai, upstream_model: gpt-5 }\n",
             "model `gpt-5` is defined twice in",
         ),

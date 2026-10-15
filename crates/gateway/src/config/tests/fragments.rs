@@ -251,6 +251,11 @@ providers:
     type: openai_compat
     base_url: https://llm.example.org/v1#fragment-secret
     pricing_provider_id: openai
+  raw-token:
+    type: openai_compat
+    base_url: https://llm.example.com/v2
+    pricing_provider_id: openai
+    auth: { token: raw-secret }
 "#,
     );
     write(tmp.path(), "conf.d/models.yaml", "models: {}\n");
@@ -264,6 +269,7 @@ providers:
         ("URL query value", "query-secret"),
         ("URL username", "token-secret"),
         ("URL fragment", "fragment-secret"),
+        ("raw credential field", "raw-secret"),
     ] {
         assert!(!rendered.contains(secret), "{case} was not redacted");
     }
@@ -282,5 +288,29 @@ providers:
     assert!(
         rendered.contains("api_key=%3Credacted%3E"),
         "query key should stay with a redacted value"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_symlinks_that_resolve_outside_the_config_directory() {
+    let tmp = tempdir().expect("tempdir");
+    write(tmp.path(), "gateway.yaml", MAIN);
+    write(
+        tmp.path(),
+        "elsewhere/models.yaml",
+        "models:\n  gpt-5:\n    route: { provider: openai-prod, upstream_model: gpt-5 }\n",
+    );
+    std::fs::create_dir_all(tmp.path().join("conf.d")).expect("conf.d");
+    std::os::unix::fs::symlink(
+        tmp.path().join("elsewhere/models.yaml"),
+        tmp.path().join("conf.d/models.yaml"),
+    )
+    .expect("outside symlink");
+
+    let error = GatewayConfig::load(&sources(tmp.path())).expect_err("outside symlink");
+    assert!(
+        format!("{error:#}").contains("outside the config directory"),
+        "unexpected error: {error:#}"
     );
 }
