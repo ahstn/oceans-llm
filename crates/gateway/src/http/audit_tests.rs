@@ -529,6 +529,38 @@ async fn repeated_repository_status_changes_record_one_transition() {
     assert_eq!(disabled["before"]["status"], "active");
     let reactivated = harness.entry("review_agent_repository.reactivated").await;
     assert_eq!(reactivated["before"]["status"], "disabled");
+
+    // Disabling through PATCH records the same transition, not a generic update.
+    let created = &repository["data"]["repository"];
+    let (status, body) = harness
+        .admin(
+            Method::PATCH,
+            &format!("/api/v1/admin/review-agent/repositories/{repository_id}"),
+            Some(json!({
+                "owner": "acme",
+                "name": "api",
+                "full_name": "acme/api",
+                "service_account_id": account["data"]["id"],
+                "status": "disabled",
+                "settings": created["settings"],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let actions: Vec<_> = harness
+        .entries()
+        .await
+        .into_iter()
+        .filter(|entry| entry["target_id"] == repository_id)
+        .map(|entry| entry["action"].clone())
+        .collect();
+    assert_eq!(actions[0], "review_agent_repository.disabled");
+    assert!(
+        actions
+            .iter()
+            .all(|action| action != "review_agent_repository.updated"),
+        "{actions:?}"
+    );
 }
 
 #[tokio::test]

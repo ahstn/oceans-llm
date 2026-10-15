@@ -426,11 +426,20 @@ pub async fn update_review_agent_repository(
         })
         .await?;
     let repository = map_repository(repository);
+    // A status change here is the same transition the disable and reactivate
+    // endpoints record, so it gets their action.
+    let action = if before.status == repository.status {
+        actions::REVIEW_AGENT_REPOSITORY_UPDATED
+    } else if repository.status == ReviewAgentRepositoryStatus::Disabled.as_str() {
+        actions::REVIEW_AGENT_REPOSITORY_DISABLED
+    } else {
+        actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+    };
     state
         .audit()
         .record(
             &meta.user_context(&actor),
-            repository_event(actions::REVIEW_AGENT_REPOSITORY_UPDATED, &repository)
+            repository_event(action, &repository)
                 .before(repository_summary(&before))
                 .after(repository_summary(&repository)),
         )
