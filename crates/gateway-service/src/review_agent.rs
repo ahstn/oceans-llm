@@ -106,11 +106,12 @@ where
             .map_err(Into::into)
     }
 
+    /// Sets the status; the flag is `false` when the repository already had it.
     pub async fn set_repository_status(
         &self,
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
-    ) -> Result<ReviewAgentRepositoryRecord, GatewayError> {
+    ) -> Result<(ReviewAgentRepositoryRecord, bool), GatewayError> {
         self.store
             .set_review_agent_repository_status(repository_id, status, OffsetDateTime::now_utc())
             .await

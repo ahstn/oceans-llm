@@ -343,9 +343,11 @@ impl ReviewAgentRepository for PostgresStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
+        // Only a different status is written, so the row count says whether this
+        // call made the transition. `load_repository` reports a missing row.
         let result = sqlx::query(
-            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3",
+            "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3 AND status <> $1",
         )
         .bind(status.as_str())
         .bind(updated_at.unix_timestamp())
@@ -353,12 +355,8 @@ impl ReviewAgentRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            )));
-        }
-        load_repository(&self.pool, repository_id).await
+        let repository = load_repository(&self.pool, repository_id).await?;
+        Ok((repository, result.rows_affected() > 0))
     }
 
     async fn upsert_review_agent_pull_request(

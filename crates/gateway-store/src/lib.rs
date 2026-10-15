@@ -1010,7 +1010,7 @@ pub(crate) mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].run_id, run.run_id);
 
-        let disabled = store
+        let (disabled, changed) = store
             .set_review_agent_repository_status(
                 repository.repository_id,
                 ReviewAgentRepositoryStatus::Disabled,
@@ -1018,6 +1018,16 @@ pub(crate) mod tests {
             )
             .await
             .expect("disable repository");
+        assert!(changed);
+        let (_, changed_again) = store
+            .set_review_agent_repository_status(
+                repository.repository_id,
+                ReviewAgentRepositoryStatus::Disabled,
+                finished_at,
+            )
+            .await
+            .expect("disable repository again");
+        assert!(!changed_again, "the same status is not a transition");
         assert_eq!(disabled.status, ReviewAgentRepositoryStatus::Disabled);
 
         let replacement = store

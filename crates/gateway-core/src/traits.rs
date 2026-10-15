@@ -186,12 +186,14 @@ pub trait ReviewAgentRepository: Send + Sync {
         input: &UpdateReviewAgentRepositoryRecord,
     ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
 
+    /// Sets the status. The flag is `false` when the repository already had it,
+    /// in which case nothing is written.
     async fn set_review_agent_repository_status(
         &self,
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError>;
 
     async fn upsert_review_agent_pull_request(
         &self,

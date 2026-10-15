@@ -387,21 +387,19 @@ impl ReviewAgentRepository for LibsqlStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
+        // Only a different status is written, so the row count says whether this
+        // call made the transition. `load_repository` reports a missing row.
         let rows = self
             .connection
             .execute(
-                "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3",
+                "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3 AND status <> ?1",
                 libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        if rows == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            )));
-        }
-        load_repository(&self.connection, repository_id).await
+        let repository = load_repository(&self.connection, repository_id).await?;
+        Ok((repository, rows > 0))
     }
 
     async fn upsert_review_agent_pull_request(

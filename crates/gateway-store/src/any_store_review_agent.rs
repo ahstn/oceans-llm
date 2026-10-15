@@ -120,7 +120,7 @@ impl ReviewAgentRepository for AnyStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<(ReviewAgentRepositoryRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
