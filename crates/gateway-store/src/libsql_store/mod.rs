@@ -133,15 +133,21 @@ impl LibsqlStore {
     /// write lock at `BEGIN`, where the busy timeout applies, instead of failing on a later
     /// read-to-write upgrade.
     pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
+        // The transaction holds its own handle to the connection and closes it when dropped.
+        self.own_connection()
+            .await?
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+            .await
+            .map_err(to_query_error)
+    }
+
+    /// Opens a connection separate from the shared one, configured the same way.
+    pub(super) async fn own_connection(&self) -> Result<libsql::Connection, StoreError> {
         let connection = self.database.connect().map_err(to_query_error)?;
         Self::configure_connection(&connection)
             .await
             .map_err(to_query_error)?;
-        // The transaction holds its own handle to the connection and closes it when dropped.
-        connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_query_error)
+        Ok(connection)
     }
 
     async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
