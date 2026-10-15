@@ -100,7 +100,7 @@ impl McpAccessRepository for AnyStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<Uuid>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store

@@ -1078,6 +1078,8 @@ pub trait McpAccessRepository: Send + Sync {
         grant: &UpsertMcpToolGrantRecord,
     ) -> Result<(McpToolGrantRecord, bool), StoreError>;
 
+    /// Revokes the active grant and returns its id, or `None` when no matching
+    /// grant was active.
     async fn revoke_mcp_tool_grant(
         &self,
         subject_kind: McpToolGrantSubjectKind,
@@ -1085,7 +1087,7 @@ pub trait McpAccessRepository: Send + Sync {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<Uuid>, StoreError>;
 
     async fn list_mcp_tool_grants(
         &self,

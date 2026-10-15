@@ -715,41 +715,34 @@ pub async fn revoke_mcp_grant(
     let actor = require_platform_admin(&state, &headers).await?;
     let subject_kind = parse_grant_subject_kind(&request.subject_kind)?;
     let target_kind = parse_grant_target_kind(&request.target_kind)?;
-    // Look the grant up first so the entry targets the same ID as `mcp_grant.set`.
-    let grant_id = state
+    // The store returns the id of the grant it revoked, so the entry targets the
+    // same id as that grant's `mcp_grant.set`. Nothing active means no change.
+    let revoked = state
         .store
-        .list_mcp_tool_grants(Some(subject_kind), Some(request.subject_id))
-        .await?
-        .into_iter()
-        .find(|grant| {
-            grant.is_active
-                && grant.target_kind == target_kind
-                && grant.target_id == request.target_id
-        })
-        .map(|grant| grant.grant_id);
-    let revoke = state.store.revoke_mcp_tool_grant(
-        subject_kind,
-        request.subject_id,
-        target_kind,
-        request.target_id,
-        OffsetDateTime::now_utc(),
-    );
-    state
-        .audit()
-        .audited_change(&meta.user_context(&actor), revoke, || {
-            let event = AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT);
-            match grant_id {
-                Some(grant_id) => event.target(grant_id),
-                None => event,
-            }
-            .before(serde_json::json!({
-                "subject_kind": subject_kind.as_str(),
-                "subject_id": request.subject_id,
-                "target_kind": target_kind.as_str(),
-                "target_id": request.target_id,
-            }))
-        })
+        .revoke_mcp_tool_grant(
+            subject_kind,
+            request.subject_id,
+            target_kind,
+            request.target_id,
+            OffsetDateTime::now_utc(),
+        )
         .await?;
+    if let Some(grant_id) = revoked {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                AuditEvent::new(actions::MCP_GRANT_REVOKED, targets::MCP_GRANT)
+                    .target(grant_id)
+                    .before(serde_json::json!({
+                        "subject_kind": subject_kind.as_str(),
+                        "subject_id": request.subject_id,
+                        "target_kind": target_kind.as_str(),
+                        "target_id": request.target_id,
+                    })),
+            )
+            .await;
+    }
     Ok(Json(envelope(McpGrantsPayload { items: Vec::new() })))
 }
 

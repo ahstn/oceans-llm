@@ -334,12 +334,15 @@ impl McpAccessRepository for PostgresStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<Option<Uuid>, StoreError> {
+        // `RETURNING` names the row this update revoked, even if another request
+        // revoked and re-created the grant in between.
+        let row = sqlx::query(
             r#"
             UPDATE mcp_tool_grants
             SET is_active = 0, revoked_at = $1, updated_at = $1
             WHERE subject_kind = $2 AND subject_id = $3 AND target_kind = $4 AND target_id = $5 AND is_active = 1
+            RETURNING grant_id
             "#,
         )
         .bind(revoked_at.unix_timestamp())
@@ -347,10 +350,16 @@ impl McpAccessRepository for PostgresStore {
         .bind(subject_id.to_string())
         .bind(target_kind.as_str())
         .bind(target_id.to_string())
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(result.rows_affected() > 0)
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let grant_id: String = row.try_get("grant_id").map_err(to_query_error)?;
+        Uuid::parse_str(&grant_id)
+            .map(Some)
+            .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
     async fn list_mcp_tool_grants(

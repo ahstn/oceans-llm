@@ -387,14 +387,17 @@ impl McpAccessRepository for LibsqlStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let changed = self
+    ) -> Result<Option<Uuid>, StoreError> {
+        // `RETURNING` names the row this update revoked, even if another request
+        // revoked and re-created the grant in between.
+        let mut rows = self
             .connection
-            .execute(
+            .query(
                 r#"
                 UPDATE mcp_tool_grants
                 SET is_active = 0, revoked_at = ?1, updated_at = ?1
                 WHERE subject_kind = ?2 AND subject_id = ?3 AND target_kind = ?4 AND target_id = ?5 AND is_active = 1
+                RETURNING grant_id
                 "#,
                 libsql::params![
                     revoked_at.unix_timestamp(),
@@ -406,7 +409,13 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(changed > 0)
+        let Some(row) = rows.next().await.map_err(to_write_error)? else {
+            return Ok(None);
+        };
+        let grant_id: String = row.get(0).map_err(to_query_error)?;
+        Uuid::parse_str(&grant_id)
+            .map(Some)
+            .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
     async fn list_mcp_tool_grants(
