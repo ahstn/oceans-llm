@@ -464,8 +464,14 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(oauth_authorization_server_metadata),
         )
         .route("/oauth/authorize", get(oauth_authorize))
-        .route("/oauth/token", post(oauth_token))
-        .route("/oauth/revoke", post(oauth_revoke))
+        .route(
+            "/oauth/token",
+            post(oauth_token).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
+        )
+        .route(
+            "/oauth/revoke",
+            post(oauth_revoke).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
+        )
         .route(
             "/oauth/register",
             post(oauth_register).layer(DefaultBodyLimit::max(

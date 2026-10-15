@@ -26,17 +26,17 @@ pub async fn oauth_authorize(State(state): State<AppState>, RawQuery(query): Raw
         Err(error) => return error_page(&error),
     };
     // A repeated client_id or redirect_uri leaves nothing trustworthy to
-    // redirect to. Any other repeat is reported to the client once the
-    // service has verified both (RFC 6749 section 4.1.2.1).
+    // redirect to, wherever it appears. Any other repeat is reported to the
+    // client once the service has verified both (RFC 6749 section 4.1.2.1).
     if let Some(name) = parsed
         .repeated
-        .as_deref()
-        .filter(|name| matches!(*name, "client_id" | "redirect_uri"))
+        .iter()
+        .find(|name| matches!(name.as_str(), "client_id" | "redirect_uri"))
     {
         return error_page(&repeated_parameter(name));
     }
     let mut params = authorization_params(parsed.pairs);
-    params.invalid_request = parsed.repeated.map(|name| repeated_parameter(&name));
+    params.invalid_request = parsed.repeated.first().map(|name| repeated_parameter(name));
     match service
         .begin_authorization(params, OffsetDateTime::now_utc())
         .await

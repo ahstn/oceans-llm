@@ -120,16 +120,16 @@ impl GatewayAuthMethod {
     }
 }
 
-/// Splits a space-delimited OAuth scope string, dropping duplicates.
+/// Splits a space-delimited OAuth scope string, dropping duplicates and
+/// keeping first-seen order. Linear in the input, since `scope` arrives on
+/// unauthenticated requests.
 #[must_use]
 pub fn parse_scope_list(raw: &str) -> Vec<String> {
-    let mut scopes: Vec<String> = Vec::new();
-    for scope in raw.split(' ').filter(|scope| !scope.is_empty()) {
-        if !scopes.iter().any(|existing| existing == scope) {
-            scopes.push(scope.to_string());
-        }
-    }
-    scopes
+    let mut seen = std::collections::HashSet::new();
+    raw.split(' ')
+        .filter(|scope| !scope.is_empty() && seen.insert(*scope))
+        .map(str::to_string)
+        .collect()
 }
 
 /// How a client authenticates at the token and revocation endpoints.

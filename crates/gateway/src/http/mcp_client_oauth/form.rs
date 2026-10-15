@@ -11,17 +11,20 @@ const MAX_PARAMETERS: usize = 64;
 /// not repeat (RFC 6749 section 3.1), so a repeated name is rejected.
 pub(super) fn parse_unique_pairs(raw: &str) -> Result<Vec<(String, String)>, OauthError> {
     let parsed = parse_pairs(raw)?;
-    match parsed.repeated {
-        Some(name) => Err(repeated_parameter(&name)),
+    match parsed.repeated.first() {
+        Some(name) => Err(repeated_parameter(name)),
         None => Ok(parsed.pairs),
     }
 }
 
+/// Token and revocation request bodies carry a few short parameters.
+pub(crate) const MAX_FORM_BODY_BYTES: usize = 16 * 1024;
+
 /// Form pairs with the first occurrence of each name kept.
 pub(super) struct ParsedPairs {
     pub pairs: Vec<(String, String)>,
-    /// The first name that appeared more than once.
-    pub repeated: Option<String>,
+    /// Names that appeared more than once, in the order they repeated.
+    pub repeated: Vec<String>,
 }
 
 /// Parses pairs without failing on a repeated name, for the authorization
@@ -31,7 +34,7 @@ pub(super) fn parse_pairs(raw: &str) -> Result<ParsedPairs, OauthError> {
     let mut seen = HashSet::new();
     let mut parsed = ParsedPairs {
         pairs: Vec::new(),
-        repeated: None,
+        repeated: Vec::new(),
     };
     for (index, (key, value)) in url::form_urlencoded::parse(raw.as_bytes()).enumerate() {
         if index == MAX_PARAMETERS {
@@ -40,7 +43,7 @@ pub(super) fn parse_pairs(raw: &str) -> Result<ParsedPairs, OauthError> {
             )));
         }
         if !seen.insert(key.clone()) {
-            parsed.repeated.get_or_insert_with(|| key.into_owned());
+            parsed.repeated.push(key.into_owned());
             continue;
         }
         parsed.pairs.push((key.into_owned(), value.into_owned()));
@@ -72,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_first_value_and_reports_the_first_repeat() {
+    fn keeps_the_first_value_and_reports_every_repeat() {
         let parsed = parse_pairs("a=1&b=2&a=3&b=4").unwrap();
         assert_eq!(
             parsed.pairs,
@@ -81,7 +84,7 @@ mod tests {
                 ("b".to_string(), "2".to_string())
             ]
         );
-        assert_eq!(parsed.repeated.as_deref(), Some("a"));
+        assert_eq!(parsed.repeated, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[test]
