@@ -305,9 +305,16 @@ impl McpRegistryRepository for PostgresStore {
             .await
             .map_err(to_write_error)?;
         }
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = sqlx::query(SERVER_SELECT_BY_ID)
+            .bind(input.mcp_server_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)
+            .and_then(|row| decode_server(&row))?;
         tx.commit().await.map_err(to_query_error)?;
         Ok(Updated {
-            current: load_server(&self.pool, input.mcp_server_id).await?,
+            current,
             previous: Some(existing),
         })
     }

@@ -352,9 +352,18 @@ impl ReviewAgentRepository for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = sqlx::query(&format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
+        ))
+        .bind(input.repository_id.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(to_query_error)
+        .and_then(|row| decode_repository(&row))?;
         tx.commit().await.map_err(to_write_error)?;
         Ok(Updated {
-            current: load_repository(&self.pool, input.repository_id).await?,
+            current,
             previous: Some(existing),
         })
     }

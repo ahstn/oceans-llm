@@ -261,9 +261,18 @@ impl McpAccessRepository for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = sqlx::query(&format!(
+            "SELECT {TOOLSET_COLUMNS} FROM mcp_toolsets WHERE toolset_id = $1"
+        ))
+        .bind(input.toolset_id.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(to_query_error)
+        .and_then(|row| decode_toolset(&row))?;
         tx.commit().await.map_err(to_write_error)?;
         Ok(Updated {
-            current: load_toolset(&self.pool, input.toolset_id).await?,
+            current,
             previous: Some(existing),
         })
     }
@@ -333,9 +342,11 @@ impl McpAccessRepository for PostgresStore {
             .execute(&mut *tx)
             .await
             .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the membership this call wrote.
+        let current = toolset_tools_on(&mut *tx, toolset_id).await?;
         tx.commit().await.map_err(to_write_error)?;
         Ok(Updated {
-            current: self.list_mcp_toolset_tools(toolset_id).await?,
+            current,
             previous: Some(existing),
         })
     }

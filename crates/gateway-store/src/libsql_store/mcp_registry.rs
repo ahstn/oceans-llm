@@ -312,9 +312,11 @@ impl McpRegistryRepository for LibsqlStore {
             .await
             .map_err(to_write_error)?;
         }
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = load_server(&tx, input.mcp_server_id).await?;
         tx.commit().await.map_err(to_query_error)?;
         Ok(Updated {
-            current: load_server(&self.connection, input.mcp_server_id).await?,
+            current,
             previous: Some(existing),
         })
     }
