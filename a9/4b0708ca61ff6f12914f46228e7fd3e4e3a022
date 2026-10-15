@@ -1,0 +1,43 @@
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_af4ccbd37c05c0::t_82cd646d1b0ec0 234-235
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_af4ccbd37c05c0::t_4ab5091348eaca 170-171
+crates/gateway-store/src/libsql_store/identity.rs
+  s_ee057229033589::t_ab7466cc67612f 417-418,1038-1039,1138-1139,1268-1269,1523-1524
+crates/gateway-store/src/libsql_store/mcp_credentials.rs
+  s_af4ccbd37c05c0::t_2915ee10986696 137-138
+crates/gateway-store/src/libsql_store/mod.rs
+  s_af4ccbd37c05c0::t_0ee5a6181e41c8 128-138
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_af4ccbd37c05c0::t_cd88677881f9ec 173-174
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_af4ccbd37c05c0::t_a8b8ad3dfa8e7a 271-272,339-340
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_af4ccbd37c05c0::t_6e19298376f09f 257-258
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_af4ccbd37c05c0::t_2f67305f57878b 341-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a94b0708ca61ff6f12914f46228e7fd3e4e3a022",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
