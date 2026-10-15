@@ -141,8 +141,9 @@ Only active users can approve. A user who has no MCP grants can still approve, b
 
 - Every redirect URI must be HTTPS, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Fragments are rejected. Custom URI schemes are rejected, as the MCP spec requires.
 - Matching is exact. The one exception follows RFC 8252: a loopback redirect URI may use any port.
-- `grant_types` must be a subset of `authorization_code` and `refresh_token`. `response_types` may only be `code`.
-- `none` is the default auth method. `client_secret_post` and `client_secret_basic` get a generated secret. Only its Argon2 hash is stored, and the secret is returned once.
+- `grant_types` defaults to `authorization_code` and must be a subset of `authorization_code` and `refresh_token` that includes `authorization_code`. `response_types` may only be `code`.
+- Registration accepts at most 10 redirect URIs and a 16 KiB body. Text fields are limited to 200 printable characters, and `client_uri` and `logo_uri` must be HTTPS.
+- `token_endpoint_auth_method` defaults to `client_secret_basic`, as RFC 7591 specifies. MCP clients without a backend register with `none`. `client_secret_post` and `client_secret_basic` get a generated `ocs_` secret. Only its Argon2 hash is stored, and the secret is returned once.
 - A registered client can do nothing until a user approves it on the consent screen.
 
 `mcp.client_oauth.dynamic_client_registration` (default `true`) turns the endpoint off. When it is off, `registration_endpoint` is left out of the metadata.

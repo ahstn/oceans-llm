@@ -420,6 +420,12 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/oauth/authorize", get(oauth_authorize))
         .route("/oauth/token", post(oauth_token))
         .route(
+            "/oauth/register",
+            post(oauth_register).layer(DefaultBodyLimit::max(
+                mcp_client_oauth::MAX_REGISTRATION_BODY_BYTES,
+            )),
+        )
+        .route(
             "/api/v1/oauth/authorization-requests/{request_id}",
             get(get_oauth_authorization_request),
         )

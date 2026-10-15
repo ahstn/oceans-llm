@@ -29,6 +29,8 @@ struct AuthorizationServerMetadata {
     issuer: String,
     authorization_endpoint: String,
     token_endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    registration_endpoint: Option<String>,
     scopes_supported: [&'static str; 2],
     response_types_supported: [&'static str; 1],
     response_modes_supported: [&'static str; 1],
@@ -116,6 +118,9 @@ fn authorization_server_metadata(settings: &McpClientOauthSettings) -> Authoriza
         issuer: settings.issuer().to_string(),
         authorization_endpoint: settings.endpoint("/oauth/authorize"),
         token_endpoint: settings.endpoint("/oauth/token"),
+        registration_endpoint: settings
+            .dynamic_client_registration()
+            .then(|| settings.endpoint("/oauth/register")),
         scopes_supported: SUPPORTED_SCOPES,
         response_types_supported: ["code"],
         response_modes_supported: ["query"],

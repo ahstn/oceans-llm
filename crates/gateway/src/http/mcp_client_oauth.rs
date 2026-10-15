@@ -5,6 +5,7 @@ mod authorize;
 mod consent;
 mod form;
 mod metadata;
+mod registration;
 mod token;
 
 use axum::http::HeaderValue;
@@ -25,6 +26,8 @@ pub use metadata::{
     oauth_authorization_server_metadata, oauth_protected_resource_metadata_aggregate,
     oauth_protected_resource_metadata_server,
 };
+pub(crate) use registration::MAX_REGISTRATION_BODY_BYTES;
+pub use registration::oauth_register;
 pub use token::oauth_token;
 
 /// The authorization server, or `None` when OAuth for MCP clients is disabled.
@@ -74,5 +77,7 @@ pub(crate) fn bearer_challenge(
 
 #[cfg(test)]
 mod flow_tests;
+#[cfg(test)]
+mod registration_tests;
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,35 @@
 use url::Url;
 
-use super::settings::is_loopback_host;
+use super::{error::OauthError, settings::is_loopback_host};
+
+const MAX_REDIRECT_URI_LENGTH: usize = 2048;
+
+/// Checks a redirect URI offered at registration: HTTPS, or `http` on a
+/// loopback host, with no fragment. Custom schemes are rejected.
+pub(crate) fn validate_redirect_uri(raw: &str) -> Result<(), OauthError> {
+    if raw.len() > MAX_REDIRECT_URI_LENGTH {
+        return Err(OauthError::invalid_redirect_uri("redirect URI is too long"));
+    }
+    let url = Url::parse(raw)
+        .map_err(|_| OauthError::invalid_redirect_uri("redirect URI must be an absolute URL"))?;
+    if url.fragment().is_some() {
+        return Err(OauthError::invalid_redirect_uri(
+            "redirect URI must not include a fragment",
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(OauthError::invalid_redirect_uri(
+            "redirect URI must not include user information",
+        ));
+    }
+    match url.scheme() {
+        "https" if url.host().is_some() => Ok(()),
+        "http" if is_loopback_host(&url) => Ok(()),
+        _ => Err(OauthError::invalid_redirect_uri(
+            "redirect URI must use https, or http on localhost, 127.0.0.1, or [::1]",
+        )),
+    }
+}
 
 #[must_use]
 pub(crate) fn is_loopback_redirect(raw: &str) -> bool {
@@ -35,6 +64,31 @@ fn loopback_without_port(raw: &str) -> Option<Url> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registration_accepts_https_and_loopback_http_only() {
+        for valid in [
+            "https://app.example.com/callback",
+            "http://127.0.0.1:3000/callback",
+            "http://[::1]/callback",
+            "http://localhost:8765/oauth/callback?x=1",
+        ] {
+            assert!(validate_redirect_uri(valid).is_ok(), "{valid}");
+        }
+        for invalid in [
+            "http://app.example.com/callback",
+            "https://app.example.com/callback#frag",
+            "https://user:pw@app.example.com/callback",
+            "custom-scheme://callback",
+            "/relative",
+        ] {
+            assert_eq!(
+                validate_redirect_uri(invalid).unwrap_err().error,
+                "invalid_redirect_uri",
+                "{invalid}"
+            );
+        }
+    }
 
     #[test]
     fn matching_is_exact_except_for_loopback_ports() {
