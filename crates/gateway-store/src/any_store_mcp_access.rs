@@ -86,7 +86,7 @@ impl McpAccessRepository for AnyStore {
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError> {
+    ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => store.upsert_mcp_tool_grant(grant).await,
             Self::Postgres(store) => store.upsert_mcp_tool_grant(grant).await,

@@ -291,7 +291,7 @@ impl McpAccessRepository for PostgresStore {
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError> {
+    ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"
@@ -318,6 +318,11 @@ impl McpAccessRepository for PostgresStore {
                 record.target_kind == grant.target_kind
                     && record.target_id == grant.target_id
                     && record.is_active
+            })
+            // The insert keeps this call's id; an already-active grant keeps its own.
+            .map(|record| {
+                let created = record.grant_id == id;
+                (record, created)
             })
             .ok_or_else(|| StoreError::Unexpected("failed loading upserted MCP grant".to_string()))
     }

@@ -398,10 +398,13 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         "target_kind": "toolset",
         "target_id": toolset_id,
     });
-    let (status, body) = harness
-        .admin(Method::PUT, "/api/v1/admin/mcp/grants", Some(grant.clone()))
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    // Repeating an active grant changes no access, so `entry` below still finds one.
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(Method::PUT, "/api/v1/admin/mcp/grants", Some(grant.clone()))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
     let (status, body) = harness
         .admin(
             Method::DELETE,

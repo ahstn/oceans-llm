@@ -1071,10 +1071,12 @@ pub trait McpAccessRepository: Send + Sync {
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
 
+    /// Grants access. The flag is `true` when this call created the active grant,
+    /// and `false` when an identical grant was already active.
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError>;
+    ) -> Result<(McpToolGrantRecord, bool), StoreError>;
 
     async fn revoke_mcp_tool_grant(
         &self,

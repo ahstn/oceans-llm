@@ -682,20 +682,21 @@ pub async fn upsert_mcp_grant(
         target_id: request.target_id,
         updated_at: OffsetDateTime::now_utc(),
     };
-    let grant = map_grant(
+    let (grant, created) = state.store.upsert_mcp_tool_grant(&record).await?;
+    let grant_id = grant.grant_id;
+    let grant = map_grant(grant);
+    // Repeating an active grant changes no access, so only a new grant is recorded.
+    if created {
         state
             .audit()
-            .audited(
+            .record(
                 &meta.user_context(&actor),
-                state.store.upsert_mcp_tool_grant(&record),
-                |grant| {
-                    AuditEvent::new(actions::MCP_GRANT_SET, targets::MCP_GRANT)
-                        .target(grant.grant_id)
-                        .after(map_grant(grant.clone()))
-                },
+                AuditEvent::new(actions::MCP_GRANT_SET, targets::MCP_GRANT)
+                    .target(grant_id)
+                    .after(&grant),
             )
-            .await?,
-    );
+            .await;
+    }
     Ok(Json(envelope(McpGrantPayload { grant })))
 }
 
