@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use gateway_core::{McpOauthResource, SUPPORTED_SCOPES};
+use gateway_core::{GatewayError, McpOauthResource, SUPPORTED_SCOPES, StoreError};
 use gateway_service::{McpClientOauthSettings, McpGatewayService};
 use serde::Serialize;
 use serde_json::json;
@@ -79,7 +79,7 @@ pub async fn oauth_protected_resource_metadata_server(
         .await
     {
         Ok(server) => server,
-        Err(_) => return not_found(),
+        Err(error) => return lookup_failure(&error),
     };
     Json(protected_resource_metadata(
         settings,
@@ -149,6 +149,26 @@ fn not_enabled() -> Response {
         .into_response()
 }
 
+/// A missing or malformed server is `404`. A store outage must not look like
+/// a missing resource, or clients abandon discovery instead of retrying.
+fn lookup_failure(error: &GatewayError) -> Response {
+    if matches!(
+        error,
+        GatewayError::Store(StoreError::NotFound(_)) | GatewayError::InvalidRequest(_)
+    ) {
+        return not_found();
+    }
+    tracing::warn!(error = %error, "MCP OAuth resource metadata lookup failed");
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({
+            "error": "temporarily_unavailable",
+            "error_description": "MCP server metadata could not be loaded"
+        })),
+    )
+        .into_response()
+}
+
 fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
@@ -158,4 +178,30 @@ fn not_found() -> Response {
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_missing_server_is_not_found() {
+        let status = |error: GatewayError| lookup_failure(&error).status();
+        assert_eq!(
+            status(GatewayError::Store(StoreError::NotFound("gone".into()))),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(GatewayError::InvalidRequest("bad key".into())),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(GatewayError::Store(StoreError::Unavailable("down".into()))),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            status(GatewayError::Store(StoreError::Query("timeout".into()))),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
 }
