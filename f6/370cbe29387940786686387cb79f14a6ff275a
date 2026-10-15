@@ -1,0 +1,63 @@
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_ee057229033589::t_9fbadd08fcf486 275-276
+crates/gateway-store/src/libsql_store/agent_analysis/queue.rs
+  s_6ff66569c6a522::t_598e6fbd16b606 22
+crates/gateway-store/src/libsql_store/agent_analysis/sessions.rs
+  s_6ff66569c6a522::t_712cc26f4ce310 164,338
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_6ff66569c6a522::t_63a24a7ba8fb5e 230
+crates/gateway-store/src/libsql_store/batches.rs
+  s_6ff66569c6a522::t_3c6b7c20bb7e14 140,339,460,530
+crates/gateway-store/src/libsql_store/budget_alerts.rs
+  s_6ff66569c6a522::t_5eb4ad22606724 137,334
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_6ff66569c6a522::t_cb74ffbd73cbd4 69
+crates/gateway-store/src/libsql_store/identity.rs
+  s_6ff66569c6a522::t_cd9ae9b7b4e6c2 1003,1098,1217
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_6ff66569c6a522::t_7c0006320217ee 289
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_6ff66569c6a522::t_feafbda58eed01 245,355,477
+crates/gateway-store/src/libsql_store/mcp_tool_invocations.rs
+  s_6ff66569c6a522::t_81b4286ab51cd3 77
+crates/gateway-store/src/libsql_store/mod.rs
+  s_24d514c38befdd::t_9ad55af9b92673 29-30,129-146
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_6ff66569c6a522::t_8d021a8d9db8be 205
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_ee057229033589::t_d49e81a7ef3fe3 258,716-735,778,792,847
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_ee057229033589::t_a8670eba01f512 1-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f6370cbe29387940786686387cb79f14a6ff275a",
+  "prompts": {},
+  "sessions": {
+    "s_24d514c38befdd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad1917b4c7707bcfb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
