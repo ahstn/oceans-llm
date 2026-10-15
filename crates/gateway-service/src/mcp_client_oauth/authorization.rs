@@ -31,6 +31,10 @@ pub struct AuthorizationParams {
     pub code_challenge: Option<String>,
     pub code_challenge_method: Option<String>,
     pub resource: Option<String>,
+    /// A malformed-request error found while parsing, such as a repeated
+    /// parameter. It is reported only after the client and redirect URI are
+    /// verified, so it can go back to the client.
+    pub invalid_request: Option<OauthError>,
 }
 
 /// Why an authorization request was refused.
@@ -92,6 +96,9 @@ where
                 &error,
             ))
         };
+        if let Some(error) = params.invalid_request.clone() {
+            return Err(reject(error));
+        }
         let validated = self
             .validate_authorization_params(&client, &params)
             .await

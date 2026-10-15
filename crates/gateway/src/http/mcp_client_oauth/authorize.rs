@@ -6,7 +6,10 @@ use axum::{
 use gateway_service::{AuthorizationParams, AuthorizationRejection, OauthError};
 use time::OffsetDateTime;
 
-use super::{form::parse_unique_pairs, oauth_service};
+use super::{
+    form::{parse_pairs, repeated_parameter},
+    oauth_service,
+};
 use crate::http::state::AppState;
 
 /// Where the admin UI shows the consent screen.
@@ -18,10 +21,22 @@ pub async fn oauth_authorize(State(state): State<AppState>, RawQuery(query): Raw
     let Some(service) = oauth_service(&state) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let params = match parse_unique_pairs(query.as_deref().unwrap_or_default()) {
-        Ok(pairs) => authorization_params(pairs),
+    let parsed = match parse_pairs(query.as_deref().unwrap_or_default()) {
+        Ok(parsed) => parsed,
         Err(error) => return error_page(&error),
     };
+    // A repeated client_id or redirect_uri leaves nothing trustworthy to
+    // redirect to. Any other repeat is reported to the client once the
+    // service has verified both (RFC 6749 section 4.1.2.1).
+    if let Some(name) = parsed
+        .repeated
+        .as_deref()
+        .filter(|name| matches!(*name, "client_id" | "redirect_uri"))
+    {
+        return error_page(&repeated_parameter(name));
+    }
+    let mut params = authorization_params(parsed.pairs);
+    params.invalid_request = parsed.repeated.map(|name| repeated_parameter(&name));
     match service
         .begin_authorization(params, OffsetDateTime::now_utc())
         .await

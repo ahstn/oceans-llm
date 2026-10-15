@@ -10,22 +10,46 @@ const MAX_PARAMETERS: usize = 64;
 /// Parses `application/x-www-form-urlencoded` pairs. OAuth parameters must
 /// not repeat (RFC 6749 section 3.1), so a repeated name is rejected.
 pub(super) fn parse_unique_pairs(raw: &str) -> Result<Vec<(String, String)>, OauthError> {
+    let parsed = parse_pairs(raw)?;
+    match parsed.repeated {
+        Some(name) => Err(repeated_parameter(&name)),
+        None => Ok(parsed.pairs),
+    }
+}
+
+/// Form pairs with the first occurrence of each name kept.
+pub(super) struct ParsedPairs {
+    pub pairs: Vec<(String, String)>,
+    /// The first name that appeared more than once.
+    pub repeated: Option<String>,
+}
+
+/// Parses pairs without failing on a repeated name, for the authorization
+/// endpoint: it must check the client and redirect URI before deciding
+/// whether that error can be sent back to the client.
+pub(super) fn parse_pairs(raw: &str) -> Result<ParsedPairs, OauthError> {
     let mut seen = HashSet::new();
-    let mut pairs = Vec::new();
-    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
-        if pairs.len() == MAX_PARAMETERS {
+    let mut parsed = ParsedPairs {
+        pairs: Vec::new(),
+        repeated: None,
+    };
+    for (index, (key, value)) in url::form_urlencoded::parse(raw.as_bytes()).enumerate() {
+        if index == MAX_PARAMETERS {
             return Err(OauthError::invalid_request(format!(
                 "requests may carry at most {MAX_PARAMETERS} parameters"
             )));
         }
         if !seen.insert(key.clone()) {
-            return Err(OauthError::invalid_request(format!(
-                "parameter `{key}` is repeated"
-            )));
+            parsed.repeated.get_or_insert_with(|| key.into_owned());
+            continue;
         }
-        pairs.push((key.into_owned(), value.into_owned()));
+        parsed.pairs.push((key.into_owned(), value.into_owned()));
     }
-    Ok(pairs)
+    Ok(parsed)
+}
+
+pub(super) fn repeated_parameter(name: &str) -> OauthError {
+    OauthError::invalid_request(format!("parameter `{name}` is repeated"))
 }
 
 #[cfg(test)]
@@ -45,6 +69,19 @@ mod tests {
             parse_unique_pairs("a=1&a=2").unwrap_err().error,
             "invalid_request"
         );
+    }
+
+    #[test]
+    fn keeps_the_first_value_and_reports_the_first_repeat() {
+        let parsed = parse_pairs("a=1&b=2&a=3&b=4").unwrap();
+        assert_eq!(
+            parsed.pairs,
+            vec![
+                ("a".to_string(), "1".to_string()),
+                ("b".to_string(), "2".to_string())
+            ]
+        );
+        assert_eq!(parsed.repeated.as_deref(), Some("a"));
     }
 
     #[test]
