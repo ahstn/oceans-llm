@@ -1809,8 +1809,8 @@ impl PostgresStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             DELETE FROM user_oidc_auth
             WHERE user_id = $1
@@ -1822,15 +1822,15 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn delete_user_oauth_auth(
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             DELETE FROM user_oauth_auth
             WHERE user_id = $1
@@ -1842,7 +1842,7 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn find_invited_oidc_user(

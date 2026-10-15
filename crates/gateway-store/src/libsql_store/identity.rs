@@ -2006,8 +2006,9 @@ impl LibsqlStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let deleted = self
+            .connection
             .execute(
                 r#"
                 DELETE FROM user_oidc_auth
@@ -2018,15 +2019,16 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
     pub async fn delete_user_oauth_auth(
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let deleted = self
+            .connection
             .execute(
                 r#"
                 DELETE FROM user_oauth_auth
@@ -2037,7 +2039,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
     pub async fn find_invited_oidc_user(

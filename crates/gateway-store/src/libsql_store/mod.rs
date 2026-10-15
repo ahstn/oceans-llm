@@ -723,7 +723,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oidc_auth(self, user_id, oidc_provider_id).await
     }
 
@@ -731,7 +731,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oauth_auth(self, user_id, oauth_provider_id).await
     }
 

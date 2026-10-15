@@ -1387,8 +1387,12 @@ pub async fn reset_identity_user_onboarding(
     let previous_status = identity_user.user.status;
     let progress = AuditProgress::default();
     let reset = async {
+        // A password reset always issues a fresh invite; SSO resets change
+        // nothing when the link is already gone and the user is still invited.
+        let mut changed = previous_status != UserStatus::Invited;
         match identity_user.user.auth_mode {
             AuthMode::Password => {
+                changed = true;
                 state.store.delete_user_password_auth(user_id).await?;
                 progress.landed();
                 state
@@ -1403,11 +1407,14 @@ pub async fn reset_identity_user_onboarding(
                             .to_string(),
                     ))
                 })?;
-                state
+                if state
                     .store
                     .delete_user_oidc_auth(user_id, provider_id)
-                    .await?;
-                progress.landed();
+                    .await?
+                {
+                    progress.landed();
+                    changed = true;
+                }
             }
             AuthMode::Oauth => {
                 let provider_id = identity_user.oauth_provider_id.as_deref().ok_or_else(|| {
@@ -1416,11 +1423,14 @@ pub async fn reset_identity_user_onboarding(
                             .to_string(),
                     ))
                 })?;
-                state
+                if state
                     .store
                     .delete_user_oauth_auth(user_id, provider_id)
-                    .await?;
-                progress.landed();
+                    .await?
+                {
+                    progress.landed();
+                    changed = true;
+                }
             }
         }
         state
@@ -1428,20 +1438,23 @@ pub async fn reset_identity_user_onboarding(
             .update_user_status(user_id, UserStatus::Invited, now)
             .await?;
         let reloaded = reload_identity_user(&state.store, user_id).await?;
-        build_onboarding_response(&state, &origin, now, reloaded).await
+        let response = build_onboarding_response(&state, &origin, now, reloaded).await?;
+        Ok::<_, AppError>((response, changed))
     };
     let before = serde_json::json!({ "status": previous_status.as_str() });
-    let response = state
+    let (response, _) = state
         .audit()
         .audited_steps(
             &meta.user_context(&actor),
             &progress,
             reset,
-            |_| {
-                user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
-                    .before(&before)
-                    .after(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
-                    .meta("auth_mode", identity_user.user.auth_mode.as_str())
+            |(_, changed)| {
+                changed.then(|| {
+                    user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)
+                        .before(&before)
+                        .after(serde_json::json!({ "status": UserStatus::Invited.as_str() }))
+                        .meta("auth_mode", identity_user.user.auth_mode.as_str())
+                })
             },
             |_, error| {
                 user_event(actions::USER_ONBOARDING_RESET, &identity_user.user)

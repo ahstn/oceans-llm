@@ -384,12 +384,12 @@ pub trait GatewayStore:
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn delete_user_oauth_auth(
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
     async fn find_invited_oidc_user(
         &self,
         email_normalized: &str,
@@ -1984,7 +1984,7 @@ impl GatewayStore for AnyStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, delete_user_oidc_auth(user_id, oidc_provider_id))
     }
 
@@ -1992,7 +1992,7 @@ impl GatewayStore for AnyStore {
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch_store!(self, delete_user_oauth_auth(user_id, oauth_provider_id))
     }
 
