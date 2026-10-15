@@ -23,7 +23,7 @@ Supported phases are:
 
 A guarded stream is buffered up to `stream_buffer_bytes`. The gateway releases no guarded bytes before the final decision. Streams for disabled policies keep their normal streaming behavior.
 
-Some provider streams cannot be inspected: a stream larger than `stream_buffer_bytes`, or one that is not UTF-8 SSE with JSON data. In `deny` mode the gateway rejects them, with `413` for an oversize stream and `500` for an unparseable one. In `audit` mode it releases the stream unchanged and records a `stream_buffer` audit decision with `failure_disposition: fail_open` and reason `stream.buffer_exceeded` or `stream.unparseable`. Managed-check masks are not applied to a released stream.
+Some provider streams cannot be inspected: a stream larger than `stream_buffer_bytes`, or one that is not UTF-8 SSE with JSON data. Each one records a `stream_buffer` decision with reason `stream.buffer_exceeded` or `stream.unparseable`. In `deny` mode the decision is a `fail_closed` deny, and the gateway rejects the stream with `413` for an oversize stream and `500` for an unparseable one. In `audit` mode the decision is a `fail_open` audit, and the gateway releases the stream unchanged. Managed-check masks are not applied to a released stream.
 
 A guarded MCP result is buffered for at most `stream_buffer_timeout_ms` (default `120000`, maximum `600000`). An upstream MCP tool that holds its event stream open past that bound is answered with `504` and a JSON-RPC guardrail error instead of holding the caller connection open.
 

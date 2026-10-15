@@ -218,9 +218,10 @@ pub async fn guard_stream(
     )))
 }
 
-/// Records the guardrail decision for a provider stream the guard cannot inspect, and
-/// returns whether that decision releases the stream unchanged instead of failing the
-/// request. `gateway-guardrails` owns the mode semantics: audit mode releases it.
+/// Records the guardrail decision for a provider stream the guard cannot inspect, whether it
+/// releases or rejects the stream, and returns whether the stream is released unchanged
+/// instead of failing the request. `gateway-guardrails` owns the mode semantics: audit mode
+/// releases it.
 fn release_uninspected_stream(
     state: &AppState,
     context: &InferenceGuardContext,
@@ -243,14 +244,12 @@ fn release_uninspected_stream(
         error,
         content_hash,
     );
-    if decision.action == DecisionAction::Deny {
-        return false;
-    }
+    let released = decision.action != DecisionAction::Deny;
     record_guardrail_decisions_in_background(
         state,
         vec![(context.request_id.clone(), vec![decision])],
     );
-    true
+    released
 }
 
 async fn guard_sse_payload(
@@ -1948,6 +1947,14 @@ mod tests {
         Vec::new()
     }
 
+    async fn stream_decision_actions(state: &AppState) -> Vec<String> {
+        recorded_stream_decisions(state)
+            .await
+            .into_iter()
+            .map(|(decision, _)| decision)
+            .collect()
+    }
+
     fn chunked_stream(chunks: &[&'static str]) -> gateway_core::ProviderStream {
         Box::pin(futures_util::stream::iter(
             chunks
@@ -2008,6 +2015,11 @@ mod tests {
             failure.error,
             GatewayError::PayloadTooLarge { .. }
         ));
+        assert_eq!(
+            stream_decision_actions(&state).await,
+            ["deny:stream.buffer_exceeded"],
+            "the rejection is recorded"
+        );
     }
 
     #[tokio::test]
@@ -2056,6 +2068,11 @@ mod tests {
         .expect_err("deny mode rejects an unparseable stream");
 
         assert!(error.to_string().contains("invalid SSE JSON"));
+        assert_eq!(
+            stream_decision_actions(&state).await,
+            ["deny:stream.unparseable"],
+            "the rejection is recorded"
+        );
     }
 
     fn sse_events(events: &[Value]) -> String {
