@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
 use crate::error::AuthError;
+use crate::mcp_client_oauth::{GatewayAuthMethod, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedGatewayApiKey {
@@ -9,8 +10,24 @@ pub struct ParsedGatewayApiKey {
     pub secret: String,
 }
 
+/// The OAuth grant behind an MCP client `oat_` access token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OauthAccessContext {
+    pub grant_id: Uuid,
+    pub client_id: String,
+    pub resource: McpOauthResource,
+    pub scopes: Vec<String>,
+}
+
+/// The caller of a gateway request.
+///
+/// Usually a `gwk_` API key. On MCP routes it may instead be an OAuth access
+/// token, which acts as its user: `oauth` is then set, `owner_kind` is `User`,
+/// and `id` is the grant ID rather than an `api_keys` row.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedApiKey {
+    /// The `api_keys` row, or the OAuth grant ID. Use [`Self::api_key_id`]
+    /// wherever an `api_keys` foreign key is needed.
     pub id: Uuid,
     pub public_id: String,
     pub name: String,
@@ -19,9 +36,30 @@ pub struct AuthenticatedApiKey {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    pub oauth: Option<OauthAccessContext>,
 }
 
 impl AuthenticatedApiKey {
+    #[must_use]
+    pub fn auth_method(&self) -> GatewayAuthMethod {
+        if self.oauth.is_some() {
+            GatewayAuthMethod::Oauth
+        } else {
+            GatewayAuthMethod::ApiKey
+        }
+    }
+
+    /// The `api_keys` row, or `None` for an OAuth access token.
+    #[must_use]
+    pub fn api_key_id(&self) -> Option<Uuid> {
+        self.oauth.is_none().then_some(self.id)
+    }
+
+    #[must_use]
+    pub fn oauth_grant_id(&self) -> Option<Uuid> {
+        self.oauth.as_ref().map(|oauth| oauth.grant_id)
+    }
+
     #[must_use]
     pub fn is_user_owned(&self) -> bool {
         self.owner_kind == ApiKeyOwnerKind::User
@@ -48,8 +86,17 @@ pub fn extract_bearer_token(header: &str) -> Result<&str, AuthError> {
     Ok(token)
 }
 
+/// Whether `raw` is an MCP client OAuth access token, which only MCP routes accept.
+#[must_use]
+pub fn is_oauth_access_token(raw: &str) -> bool {
+    raw.trim().starts_with(OAUTH_ACCESS_TOKEN_PREFIX)
+}
+
 pub fn parse_gateway_api_key(raw: &str) -> Result<ParsedGatewayApiKey, AuthError> {
     let trimmed = raw.trim();
+    if is_oauth_access_token(trimmed) {
+        return Err(AuthError::OauthTokenNotAccepted);
+    }
     if !trimmed.starts_with("gwk_") {
         return Err(AuthError::InvalidApiKeyFormat);
     }
@@ -90,6 +137,16 @@ mod tests {
         assert!(parse_gateway_api_key("gwk_foo").is_err());
         assert!(parse_gateway_api_key("gwk_.bar").is_err());
         assert!(parse_gateway_api_key("gwk_foo.").is_err());
+    }
+
+    #[test]
+    fn oauth_access_tokens_are_not_api_keys() {
+        assert!(matches!(
+            parse_gateway_api_key("oat_abc"),
+            Err(crate::error::AuthError::OauthTokenNotAccepted)
+        ));
+        assert!(super::is_oauth_access_token(" oat_abc"));
+        assert!(!super::is_oauth_access_token("gwk_abc.def"));
     }
 
     #[test]

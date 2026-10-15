@@ -2722,6 +2722,7 @@ mod tests {
             owner_user_id,
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         }
     }
 

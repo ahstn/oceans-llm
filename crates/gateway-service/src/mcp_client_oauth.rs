@@ -9,6 +9,7 @@ mod registration;
 mod secrets;
 mod settings;
 mod token;
+mod validation;
 
 use std::sync::Arc;
 

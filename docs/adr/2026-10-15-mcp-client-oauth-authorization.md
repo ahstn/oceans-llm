@@ -168,7 +168,7 @@ API-key behavior does not change. Grants given directly to a specific key do not
 
 In code, an OAuth principal is an `AuthenticatedApiKey` whose `oauth` field is set. That keeps the type every MCP handler already takes. In that case `id` is the grant ID, which is a stable identity for aggregate-session binding but not an `api_keys` row. `api_key_id()` returns `None` for OAuth principals, and `auth_method()` reports `api_key` or `oauth`. Grant resolution, invocation logging, and aggregate sessions read those accessors instead of `id`. An OAuth principal only reaches MCP handlers, because no other route accepts `oat_` tokens.
 
-Invocation logs store `auth_method` and `gateway_oauth_grant_id`, and leave `api_key_id` empty for OAuth calls. Aggregate sessions store either `api_key_id` or `gateway_oauth_grant_id`, never both. That gives #448 the auth method to show and filter on.
+Invocation logs leave `api_key_id` empty for OAuth calls and add `auth_method`, `oauth_client_id`, and `oauth_grant_id` to the invocation's `metadata`. #448 owns the invocation schema and can promote those to columns without a data migration from this change. Aggregate sessions store either `api_key_id` or `gateway_oauth_grant_id`, never both, so a session opened with one credential cannot be reused with another.
 
 ### 9. Revocation
 

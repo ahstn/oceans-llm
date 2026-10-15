@@ -82,6 +82,8 @@ mod flow_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
+mod mcp_route_tests;
+#[cfg(test)]
 mod registration_tests;
 #[cfg(test)]
 mod tests;

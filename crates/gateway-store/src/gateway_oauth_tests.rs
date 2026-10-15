@@ -4,10 +4,11 @@ use crate::{
     run_migrations_with_options,
 };
 use gateway_core::{
-    AuthMode, GatewayOauthAuthorizationDecision, GatewayOauthAuthorizationRequestRecord,
-    GatewayOauthAuthorizationStatus, GatewayOauthClientAuthMethod, GatewayOauthClientRecord,
-    GatewayOauthGrantRecord, GatewayOauthRepository, GatewayOauthTokenKind,
-    GatewayOauthTokenRecord, GlobalRole, StoreError, UserStatus,
+    ApiKeyOwnerKind, AuthMode, GatewayOauthAuthorizationDecision,
+    GatewayOauthAuthorizationRequestRecord, GatewayOauthAuthorizationStatus,
+    GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthGrantRecord,
+    GatewayOauthRepository, GatewayOauthTokenKind, GatewayOauthTokenRecord, GlobalRole,
+    McpAggregateSessionRepository, NewMcpAggregateSessionRecord, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -53,7 +54,7 @@ fn timestamp(seconds: i64) -> OffsetDateTime {
 
 async fn exercise_gateway_oauth<S>(store: &S)
 where
-    S: GatewayStore + GatewayOauthRepository,
+    S: GatewayStore + GatewayOauthRepository + McpAggregateSessionRepository,
 {
     let now = timestamp(0);
     let user = store
@@ -245,6 +246,33 @@ where
             .await
             .expect("token");
     }
+
+    // Aggregate sessions belong to exactly one of an API key or a grant.
+    let session = |api_key_id, gateway_oauth_grant_id| NewMcpAggregateSessionRecord {
+        session_id: Uuid::new_v4(),
+        token_hash: Uuid::new_v4().to_string(),
+        api_key_id,
+        gateway_oauth_grant_id,
+        owner_kind: ApiKeyOwnerKind::User,
+        owner_user_id: Some(user.user_id),
+        owner_team_id: None,
+        owner_service_account_id: None,
+        protocol_version: "2025-11-25".to_string(),
+        expires_at: now + Duration::hours(12),
+        created_at: now,
+    };
+    let created = store
+        .create_mcp_aggregate_session(&session(None, Some(grant_id)))
+        .await
+        .expect("OAuth aggregate session");
+    assert_eq!(created.gateway_oauth_grant_id, Some(grant_id));
+    assert_eq!(created.api_key_id, None);
+    assert!(matches!(
+        store
+            .create_mcp_aggregate_session(&session(None, None))
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
 
     let context = store
         .get_gateway_oauth_token_context("access-hash")

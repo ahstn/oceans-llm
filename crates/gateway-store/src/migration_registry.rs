@@ -342,6 +342,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V59__gateway_oauth_authorization.sql"),
         postgres_sql: include_str!("../migrations/postgres/V59__gateway_oauth_authorization.sql"),
     },
+    MigrationManifest {
+        version: 60,
+        name: "mcp_aggregate_session_oauth_grants",
+        checksum: "V60__mcp_aggregate_session_oauth_grants.sql",
+        libsql_sql: include_str!("../migrations/V60__mcp_aggregate_session_oauth_grants.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V60__mcp_aggregate_session_oauth_grants.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

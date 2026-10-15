@@ -38,6 +38,8 @@ pub enum AuthError {
     ServiceAccountBudgetRequired,
     #[error("api key hash verification failed: {0}")]
     HashVerification(String),
+    #[error("oauth access tokens are only accepted on MCP routes")]
+    OauthTokenNotAccepted,
     #[error("oauth access token is invalid, expired, or revoked")]
     OauthTokenInvalid,
     #[error("oauth access token was not issued for this MCP resource")]
@@ -183,6 +185,7 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeySecretMismatch)
             | Self::Auth(AuthError::InvalidApiKeyFormat)
             | Self::Auth(AuthError::ConflictingApiKeyHeaders)
+            | Self::Auth(AuthError::OauthTokenNotAccepted)
             | Self::Auth(AuthError::OauthTokenInvalid)
             | Self::Auth(AuthError::OauthTokenWrongResource) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
@@ -281,6 +284,7 @@ impl GatewayError {
                 "service_account_budget_required"
             }
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
+            Self::Auth(AuthError::OauthTokenNotAccepted) => "oauth_token_not_accepted",
             Self::Auth(AuthError::OauthTokenInvalid) => "invalid_token",
             Self::Auth(AuthError::OauthTokenWrongResource) => "invalid_token_resource",
             Self::Auth(AuthError::OauthInsufficientScope { .. }) => "insufficient_scope",

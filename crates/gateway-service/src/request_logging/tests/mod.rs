@@ -208,6 +208,7 @@ fn sample_auth(user_id: Uuid) -> AuthenticatedApiKey {
         owner_user_id: Some(user_id),
         owner_team_id: None,
         owner_service_account_id: None,
+        oauth: None,
     }
 }
 
@@ -221,6 +222,7 @@ fn sample_service_account_auth() -> AuthenticatedApiKey {
         owner_user_id: None,
         owner_team_id: Some(Uuid::new_v4()),
         owner_service_account_id: Some(Uuid::new_v4()),
+        oauth: None,
     }
 }
 

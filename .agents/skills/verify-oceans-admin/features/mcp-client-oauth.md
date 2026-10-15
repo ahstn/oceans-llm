@@ -47,4 +47,4 @@ Preconditions:
 - The authorization code expires 60 seconds after `Allow`, so exchange it promptly.
 - Signing out of the admin UI revokes every client that session approved. Sign out only at the end of the run.
 - Consent is asked every time; the gateway never remembers it.
-- `http::mcp_client_oauth::flow_tests` and `http::mcp_client_oauth::lifecycle_tests` prove the full protocol against the real router without a browser. This recipe adds the browser consent path and the admin UI.
+- `http::mcp_client_oauth::{flow_tests, registration_tests, lifecycle_tests, mcp_route_tests}` prove the full protocol against the real router, including MCP tool calls through a local upstream, without a browser. This recipe adds the browser consent path and the admin UI.

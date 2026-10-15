@@ -21,10 +21,10 @@ use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpOauthResource,
     McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
-    ProviderError, auth::extract_bearer_token,
+    ProviderError, auth::extract_bearer_token, is_oauth_access_token,
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
-use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
+use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
 use guardrails::{
     enforce_direct_mcp_result, evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata,
     guardrail_denied_response,
@@ -71,12 +71,7 @@ pub async fn mcp_streamable_http_proxy(
 
     let resource = McpOauthResource::from_path(request.uri().path());
 
-    let bearer_token = match extract_mcp_gateway_api_key(&headers) {
-        Ok(token) => token,
-        Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error.into()),
-    };
-
-    let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
+    let auth = match authenticate_mcp_request(&state, &headers, resource.as_ref()).await {
         Ok(auth) => auth,
         Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error),
     };
@@ -604,6 +599,32 @@ fn response_outcome(
             Some(error.to_string()),
         ),
     }
+}
+
+/// Authenticates an MCP request with a `gwk_` API key, or with an `oat_`
+/// OAuth access token issued for `resource` when OAuth for MCP clients is on.
+async fn authenticate_mcp_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    resource: Option<&McpOauthResource>,
+) -> Result<AuthenticatedApiKey, GatewayError> {
+    let token = extract_mcp_gateway_api_key(headers)?;
+    if !is_oauth_access_token(&token) {
+        return state.service.authenticate_bearer_token(&token).await;
+    }
+    // The MCP authorization spec allows access tokens only in `Authorization`.
+    let sent_as_api_key = headers
+        .get(X_OCEANS_API_KEY)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_oauth_access_token);
+    let (Some(settings), Some(resource), false) =
+        (state.mcp_client_oauth.clone(), resource, sent_as_api_key)
+    else {
+        return Err(AuthError::OauthTokenInvalid.into());
+    };
+    McpClientOauthService::new(state.store.clone(), settings)
+        .authenticate_access_token(&token, resource, OffsetDateTime::now_utc())
+        .await
 }
 
 fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {

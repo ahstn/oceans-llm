@@ -472,6 +472,7 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         }
     }
 
@@ -485,6 +486,7 @@ mod tests {
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
             owner_service_account_id: Some(service_account_id),
+            oauth: None,
         }
     }
 
