@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -29,28 +29,30 @@ const utcFormatter = new Intl.DateTimeFormat('en-US', {
  */
 export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpClientsView }) {
   const router = useRouter()
-  const [pendingGrantId, setPendingGrantId] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  // One entry per disconnect in flight, so overlapping clicks on different
+  // rows each keep their own button disabled until their request settles.
+  const [pendingGrantIds, setPendingGrantIds] = useState<ReadonlySet<string>>(() => new Set())
 
   // While OAuth sign-in is off, still show clients that would work again if
   // it were turned back on, so they can be disconnected.
   if (!clients.enabled && clients.items.length === 0) return null
 
-  function disconnect(client: AuthorizedMcpClientView) {
-    setPendingGrantId(client.grant_id)
-    startTransition(async () => {
-      try {
-        await disconnectAuthorizedMcpClient({
-          data: { grantId: client.grant_id },
-        })
-        await router.invalidate()
-        toast.success(`${clientName(client)} disconnected`)
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Unable to disconnect the client')
-      } finally {
-        setPendingGrantId(null)
-      }
-    })
+  async function disconnect(client: AuthorizedMcpClientView) {
+    const grantId = client.grant_id
+    setPendingGrantIds((current) => new Set(current).add(grantId))
+    try {
+      await disconnectAuthorizedMcpClient({ data: { grantId } })
+      await router.invalidate()
+      toast.success(`${clientName(client)} disconnected`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to disconnect the client')
+    } finally {
+      setPendingGrantIds((current) => {
+        const next = new Set(current)
+        next.delete(grantId)
+        return next
+      })
+    }
   }
 
   return (
@@ -83,8 +85,8 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                   </p>
                   <DisconnectButton
                     client={client}
-                    pending={isPending && pendingGrantId === client.grant_id}
-                    onDisconnect={disconnect}
+                    pending={pendingGrantIds.has(client.grant_id)}
+                    onDisconnect={(target) => void disconnect(target)}
                   />
                 </li>
               ))}
@@ -124,8 +126,8 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
                       <TableCell className="w-px px-3 py-3 whitespace-nowrap">
                         <DisconnectButton
                           client={client}
-                          pending={isPending && pendingGrantId === client.grant_id}
-                          onDisconnect={disconnect}
+                          pending={pendingGrantIds.has(client.grant_id)}
+                          onDisconnect={(target) => void disconnect(target)}
                         />
                       </TableCell>
                     </TableRow>

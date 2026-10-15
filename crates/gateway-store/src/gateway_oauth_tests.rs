@@ -331,9 +331,10 @@ where
             .unwrap()
     );
 
-    // Signing out ends the grant through its session.
+    // Signing out ends the grant through its session, and revokes it too.
+    let signed_out = now + Duration::minutes(5);
     store
-        .revoke_user_session(session_id, now + Duration::minutes(5))
+        .revoke_user_session(session_id, signed_out)
         .await
         .expect("logout");
     let context = store
@@ -342,29 +343,25 @@ where
         .unwrap()
         .unwrap();
     assert!(!context.grant_is_live(now + Duration::minutes(6)));
+    assert_eq!(context.grant.revoked_at, Some(signed_out));
+    assert_eq!(
+        context.grant.revoked_reason.as_deref(),
+        Some("session_ended")
+    );
 
+    // Nothing is left to revoke, and the first reason is kept.
     assert_eq!(
         store
             .revoke_gateway_oauth_grants_for_user(user.user_id, "user_deactivated", now)
             .await
             .unwrap(),
-        1
+        0
     );
     assert!(
         !store
             .revoke_gateway_oauth_grant(grant_id, "client_revoked", now)
             .await
             .unwrap()
-    );
-    let context = store
-        .get_gateway_oauth_token_context("access-hash")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(context.grant.revoked_at, Some(now));
-    assert_eq!(
-        context.grant.revoked_reason.as_deref(),
-        Some("user_deactivated")
     );
 }
 
@@ -737,8 +734,16 @@ where
         1
     );
 
-    // Grants whose approving session ended no longer list.
+    // Revoking the approving session revokes its grants at once.
     store.revoke_user_session(other_session, now).await.unwrap();
+    let ended = store
+        .get_gateway_oauth_token_context("others-live")
+        .await
+        .unwrap()
+        .unwrap()
+        .grant;
+    assert_eq!(ended.revoked_at, Some(now));
+    assert_eq!(ended.revoked_reason.as_deref(), Some("session_ended"));
     assert!(
         store
             .list_live_gateway_oauth_grants_for_user(other, Some(AGGREGATE), now, 100)
@@ -757,10 +762,7 @@ where
     );
     assert_eq!(counts.tokens, 1);
     assert_eq!(counts.authorization_requests, 1);
-    assert_eq!(
-        counts.retired_grants, 1,
-        "only the grant whose approving session was revoked"
-    );
+    assert_eq!(counts.retired_grants, 0, "no approving session has expired");
     assert!(
         store
             .get_gateway_oauth_client("unused-old")
@@ -847,14 +849,43 @@ where
         .await
         .unwrap();
     assert_eq!((counts.tokens, counts.authorization_requests), (1, 1));
-    // The owner's four remaining grants retire, but one run stops at its
-    // batch budget (one batch of two in tests) and the next run finishes.
-    assert_eq!(counts.retired_grants, 2);
-    let counts = store
-        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+    assert_eq!(
+        counts.retired_grants, 0,
+        "revoking the session already did it"
+    );
+
+    // Grants of a session that expired retire in cleanup, dated to the
+    // expiry. One run stops at its batch budget (one batch of two in tests)
+    // and the next run finishes.
+    let expired_session = Uuid::new_v4();
+    store
+        .create_user_session(
+            expired_session,
+            owner,
+            "hash-expired",
+            now - Duration::days(2),
+            now - Duration::days(3),
+        )
         .await
         .unwrap();
-    assert_eq!(counts.retired_grants, 2);
+    for _ in 0..3 {
+        store
+            .create_gateway_oauth_grant(&grant(
+                Uuid::new_v4(),
+                owner,
+                expired_session,
+                now - Duration::days(3),
+            ))
+            .await
+            .unwrap();
+    }
+    for expected in [2, 1, 0] {
+        let counts = store
+            .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+            .await
+            .unwrap();
+        assert_eq!(counts.retired_grants, expected);
+    }
     assert!(
         store
             .list_live_gateway_oauth_grants_for_user(owner, None, now, 100)

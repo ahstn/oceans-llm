@@ -334,8 +334,9 @@ impl GatewayOauthRepository for PostgresStore {
         sqlx::query(
             "INSERT INTO gateway_oauth_grants (
                 grant_id, client_id, user_id, user_session_id, resource, scope,
-                created_at, updated_at, revoked_at, revoked_reason
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                created_at, updated_at, revoked_at, revoked_reason, session_expires_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                    (SELECT expires_at FROM user_sessions WHERE session_id = $4))",
         )
         .bind(grant.grant_id.to_string())
         .bind(&grant.client_id)
@@ -590,16 +591,12 @@ impl PostgresStore {
 /// Cleanup statements for `purge_gateway_oauth_records`. Each takes the
 /// cutoff as `$1` and touches at most `$2` rows.
 const RETIRE_ENDED_GRANTS: &str = "UPDATE gateway_oauth_grants
-     SET revoked_at = (SELECT COALESCE(s.revoked_at, s.expires_at) FROM user_sessions s
-          WHERE s.session_id = gateway_oauth_grants.user_session_id),
-         updated_at = (SELECT COALESCE(s.revoked_at, s.expires_at) FROM user_sessions s
-          WHERE s.session_id = gateway_oauth_grants.user_session_id),
+     SET revoked_at = session_expires_at,
+         updated_at = session_expires_at,
          revoked_reason = 'session_ended'
      WHERE grant_id IN (
-         SELECT g.grant_id FROM gateway_oauth_grants g
-         JOIN user_sessions s ON s.session_id = g.user_session_id
-         WHERE g.revoked_at IS NULL
-           AND (s.revoked_at IS NOT NULL OR s.expires_at < $1)
+         SELECT grant_id FROM gateway_oauth_grants
+         WHERE revoked_at IS NULL AND session_expires_at < $1
          LIMIT $2)";
 const PURGE_AUTHORIZATION_REQUESTS: &str = "DELETE FROM gateway_oauth_authorization_requests
      WHERE request_id IN (

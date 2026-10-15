@@ -1008,13 +1008,13 @@ pub async fn deactivate_identity_user(
     ensure_deactivation_allowed(&user).map_err(AppError)?;
     let now = OffsetDateTime::now_utc();
     state.store.deactivate_identity_user(user_id, now).await?;
-    state.store.revoke_user_sessions(user_id, now).await?;
-    // Sessions ending already stops MCP client tokens; revoking the grants
-    // keeps them dead if the user is reactivated.
+    // Revoke the MCP client grants before the sessions, so they record why
+    // they ended; revoking the sessions would otherwise mark them first.
     state
         .store
         .revoke_gateway_oauth_grants_for_user(user_id, "user_deactivated", now)
         .await?;
+    state.store.revoke_user_sessions(user_id, now).await?;
     state
         .store
         .revoke_password_invitations_for_user(user_id, now)

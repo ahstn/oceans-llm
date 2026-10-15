@@ -188,7 +188,7 @@ Every MCP request with an `oat_` token checks all of these:
 
 So access stops at once when:
 
-- **The user signs out.** Logout revokes the session, and every grant that session approved stops working.
+- **The user signs out.** Logout revokes the session and, with it, every grant that session approved.
 - **The user is deactivated.** Deactivation revokes all of the user's sessions and, explicitly, all their grants.
 - **The client revokes a token.** `/oauth/revoke` revokes the grant behind the token, access or refresh. RFC 7009 permits revoking the refresh token along with an access token. Unknown tokens return `200`, as the RFC requires.
 - **A refresh token is reused.** The gateway revokes the grant (section 3).
@@ -199,7 +199,7 @@ The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin
 
 ### 10. Cleanup
 
-An hourly loop runs while the feature is enabled. It first marks grants revoked, with reason `session_ended`, once their approving session has been revoked or has expired, dated to when the session ended. This keeps dead grants out of the live-grant index that the authorized clients listing walks. It then deletes:
+Revoking a session also revokes its grants, with reason `session_ended`. Each grant keeps a copy of its session's expiry, which never changes. An hourly loop runs while the feature is enabled. It first marks grants whose session has expired as revoked, using an index on that copy and dating each grant to its session's expiry. Together these keep dead grants out of the live-grant index that the authorized clients listing walks. The loop then deletes:
 
 - dynamically registered clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
 - authorization requests and tokens that expired more than a day ago, unless their grant can still be used

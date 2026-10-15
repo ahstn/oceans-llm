@@ -127,6 +127,39 @@ describe('AuthorizedMcpClientsCard', () => {
     expect(toastMock.success).toHaveBeenCalledWith('Editor disconnected')
   })
 
+  it('keeps each overlapping disconnect pending until its own request settles', async () => {
+    const settle: Record<string, () => void> = {}
+    disconnectMock.mockImplementation(
+      ({ data }: { data: { grantId: string } }) =>
+        new Promise<void>((resolve) => {
+          settle[data.grantId] = resolve
+        }),
+    )
+    const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')
+    render(
+      <AuthorizedMcpClientsCard
+        clients={{
+          enabled: true,
+          has_more: false,
+          items: [client(), client({ grant_id: 'grant-2', client_name: 'Notebook' })],
+        }}
+      />,
+    )
+    const button = (name: string) => screen.getAllByRole('button', { name })[0]
+
+    fireEvent.click(button('Disconnect Editor'))
+    fireEvent.click(button('Disconnect Notebook'))
+    await waitFor(() => expect(disconnectMock).toHaveBeenCalledTimes(2))
+    expect(button('Disconnect Editor')).toBeDisabled()
+    expect(button('Disconnect Notebook')).toBeDisabled()
+
+    settle['grant-2']()
+    await waitFor(() => expect(button('Disconnect Notebook')).not.toBeDisabled())
+    expect(button('Disconnect Editor')).toBeDisabled()
+    settle['grant-1']()
+    await waitFor(() => expect(button('Disconnect Editor')).not.toBeDisabled())
+  })
+
   it('reports a failed disconnect', async () => {
     disconnectMock.mockRejectedValue(new Error('authorized MCP client was not found'))
     const { AuthorizedMcpClientsCard } = await import('@/routes/account/-authorized-mcp-clients')

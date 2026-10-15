@@ -1632,6 +1632,17 @@ impl LibsqlStore {
         user_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
+        // Grants first: should the session update fail, the clients approved
+        // in it are already cut off, which is the safe direction.
+        self.connection
+            .execute(
+                "UPDATE gateway_oauth_grants
+                 SET revoked_at = ?1, updated_at = ?1, revoked_reason = 'session_ended'
+                 WHERE user_id = ?2 AND revoked_at IS NULL",
+                libsql::params![revoked_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         self.connection
             .execute(
                 r#"
@@ -1652,6 +1663,17 @@ impl LibsqlStore {
         session_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
+        // Grants first: should the session update fail, the clients approved
+        // in it are already cut off, which is the safe direction.
+        self.connection
+            .execute(
+                "UPDATE gateway_oauth_grants
+                 SET revoked_at = ?1, updated_at = ?1, revoked_reason = 'session_ended'
+                 WHERE user_session_id = ?2 AND revoked_at IS NULL",
+                libsql::params![revoked_at.unix_timestamp(), session_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         self.connection
             .execute(
                 r#"
