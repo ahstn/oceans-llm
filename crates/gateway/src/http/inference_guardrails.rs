@@ -369,6 +369,7 @@ async fn guard_sse_payload(
         for terminal in &fragments.terminal_arguments {
             let name = terminal.name.as_deref().unwrap_or(&fragments.name);
             let replacement = if name == fragments.name
+                && terminal.shell_command == fragments.shell_command_locations
                 && streamed_arguments == Some(terminal.arguments.as_str())
             {
                 streamed_replacement.clone()
@@ -377,7 +378,7 @@ async fn guard_sse_payload(
                     state,
                     context,
                     name,
-                    fragments.shell_command_locations,
+                    terminal.shell_command,
                     &terminal.arguments,
                 )
                 .await?
@@ -387,7 +388,7 @@ async fn guard_sse_payload(
                     &mut blocks,
                     std::slice::from_ref(&terminal.location),
                     &replacement,
-                    fragments.shell_command_locations,
+                    terminal.shell_command,
                     false,
                 );
             }
@@ -657,9 +658,11 @@ struct ToolCallFragments {
 }
 
 /// A complete copy of a call's arguments, such as `response.output_item.done`. A snapshot that
-/// names its tool is guarded under that name, so a later snapshot cannot rename an earlier one.
+/// names its tool is guarded under that name and its own call shape, so a later snapshot cannot
+/// change how an earlier one is checked or rewritten.
 struct TerminalArguments {
     name: Option<String>,
+    shell_command: bool,
     arguments: String,
     location: (usize, String),
 }
@@ -693,7 +696,9 @@ fn collect_stream_tool_fragments(
                 }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
-                fragments.shell_command_locations |= shell_call;
+                if !terminal {
+                    fragments.shell_command_locations |= shell_call;
+                }
                 let argument_pointer = if shell_call {
                     shell_argument_pointer(item)
                         .map(|suffix| format!("{pointer}/item/action/{suffix}"))
@@ -704,6 +709,7 @@ fn collect_stream_tool_fragments(
                 if terminal {
                     fragments.terminal_arguments.push(TerminalArguments {
                         name: Some(name),
+                        shell_command: shell_call,
                         arguments,
                         location: (event_index, argument_pointer),
                     });
@@ -804,8 +810,10 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
+                    let shell_command = fragments.shell_command_locations;
                     fragments.terminal_arguments.push(TerminalArguments {
                         name: None,
+                        shell_command,
                         arguments: arguments.to_string(),
                         location: (event_index, format!("{pointer}/arguments")),
                     });
@@ -829,7 +837,6 @@ fn collect_stream_tool_fragments(
                 }
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
-                fragments.shell_command_locations |= shell_call;
                 let argument_pointer = if shell_call {
                     shell_argument_pointer(object)
                         .map(|suffix| format!("{pointer}/action/{suffix}"))
@@ -839,6 +846,7 @@ fn collect_stream_tool_fragments(
                 };
                 fragments.terminal_arguments.push(TerminalArguments {
                     name: Some(name),
+                    shell_command: shell_call,
                     arguments,
                     location: (event_index, argument_pointer),
                 });
@@ -1989,6 +1997,86 @@ mod tests {
             panic!("expected a guardrail denial, got {error:?}");
         };
         assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+
+    #[tokio::test]
+    async fn rewrites_each_terminal_snapshot_in_its_own_call_shape() {
+        use gateway_guardrails::{
+            ContentTransformation, FailureDisposition, GuardrailEngine, ManagedCheckConfig,
+            ManagedCheckKind, ManagedEvaluator, ManagedOutcome, ManagedService, ReasonCode,
+            test_utils::StubManagedEvaluator,
+        };
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.enabled = true;
+        config.default.managed_checks = vec!["mask".into()];
+        config.managed_checks.insert(
+            "mask".into(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::GoogleModelArmor,
+                phases: [GuardPhase::GeneratedToolCall].into(),
+                timeout_ms: 1_000,
+                failure_disposition: FailureDisposition::FailOpen,
+                max_content_bytes: 4_096,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        // The shell snapshot is allowed; the function snapshot's arguments are masked.
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([(
+                "mask".into(),
+                Arc::new(StubManagedEvaluator::new(
+                    "mask",
+                    ManagedService::GoogleModelArmor,
+                    [
+                        Ok(ManagedOutcome::Allow {
+                            reason_code: ReasonCode::new("test.allow").unwrap(),
+                            metadata: Default::default(),
+                        }),
+                        Ok(ManagedOutcome::Transformed {
+                            transformation: ContentTransformation::new(
+                                "{\"query\":\"[masked]\"}".into(),
+                            ),
+                            reason_code: ReasonCode::new("test.masked").unwrap(),
+                            metadata: Default::default(),
+                        }),
+                    ],
+                )) as Arc<dyn ManagedEvaluator>,
+            )]),
+        ));
+        let stream = [
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {"id": "fc_1", "type": "shell_call", "action": {"command": ["echo hi"]}},
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"id": "resp_1", "output": [{
+                    "id": "fc_1",
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "wiki_search",
+                    "arguments": "{\"query\":\"private-query\"}",
+                }]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("event: {}\ndata: {event}", event["type"].as_str().unwrap()))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let guarded =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect("the masked stream is released");
+
+        let guarded = String::from_utf8(guarded).expect("UTF-8");
+        assert!(!guarded.contains("private-query"), "{guarded}");
+        assert!(guarded.contains("[masked]"), "{guarded}");
+        assert!(guarded.contains("echo hi"), "{guarded}");
     }
 
     #[tokio::test]
