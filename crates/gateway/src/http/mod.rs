@@ -417,6 +417,16 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server_metadata),
         )
+        .route("/oauth/authorize", get(oauth_authorize))
+        .route("/oauth/token", post(oauth_token))
+        .route(
+            "/api/v1/oauth/authorization-requests/{request_id}",
+            get(get_oauth_authorization_request),
+        )
+        .route(
+            "/api/v1/oauth/authorization-requests/{request_id}/decision",
+            post(decide_oauth_authorization_request),
+        )
         .route(
             "/mcp",
             post(mcp_aggregate_streamable_http)

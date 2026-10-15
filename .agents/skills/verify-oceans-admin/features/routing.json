@@ -507,6 +507,22 @@
       ]
     },
     {
+      "id": "mcp-client-oauth",
+      "file": "mcp-client-oauth.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/oauth/**",
+        "crates/gateway/src/http/mcp_client_oauth.rs",
+        "crates/gateway/src/http/mcp_client_oauth/**",
+        "crates/gateway-service/src/mcp_client_oauth.rs",
+        "crates/gateway-service/src/mcp_client_oauth/**",
+        "crates/gateway-store/src/any_store_gateway_oauth.rs",
+        "crates/gateway-store/src/libsql_store/gateway_oauth.rs"
+      ]
+    },
+    {
       "id": "profile",
       "file": "profile.md",
       "proof": {

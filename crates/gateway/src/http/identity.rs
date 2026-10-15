@@ -2251,6 +2251,16 @@ pub(crate) async fn resolve_session_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<UserRecord>, AppError> {
+    Ok(resolve_session_user_with_session_id(state, headers)
+        .await?
+        .map(|(user, _)| user))
+}
+
+/// Like [`resolve_session_user`], and also returns the `user_sessions` ID.
+pub(crate) async fn resolve_session_user_with_session_id(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<(UserRecord, Uuid)>, AppError> {
     let Some(current_session) = resolve_session_cookie(state, headers).await? else {
         return Ok(None);
     };
@@ -2278,7 +2288,7 @@ pub(crate) async fn resolve_session_user(
         .store
         .touch_user_session(current_session.session.session_id, now)
         .await?;
-    Ok(Some(user))
+    Ok(Some((user, current_session.session.session_id)))
 }
 
 struct ResolvedSessionCookie {

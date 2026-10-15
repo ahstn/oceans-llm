@@ -3,6 +3,12 @@
 //!
 //! See `docs/adr/2026-10-15-mcp-client-oauth-authorization.md`.
 
+use async_trait::async_trait;
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+use crate::{domain::UserStatus, error::StoreError};
+
 pub const OAUTH_ACCESS_TOKEN_PREFIX: &str = "oat_";
 pub const OAUTH_REFRESH_TOKEN_PREFIX: &str = "ort_";
 
@@ -124,6 +130,314 @@ pub fn parse_scope_list(raw: &str) -> Vec<String> {
         }
     }
     scopes
+}
+
+/// How a client authenticates at the token and revocation endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GatewayOauthClientAuthMethod {
+    /// Public client: PKCE only.
+    None,
+    ClientSecretPost,
+    ClientSecretBasic,
+}
+
+impl GatewayOauthClientAuthMethod {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::ClientSecretPost => "client_secret_post",
+            Self::ClientSecretBasic => "client_secret_basic",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "none" => Some(Self::None),
+            "client_secret_post" => Some(Self::ClientSecretPost),
+            "client_secret_basic" => Some(Self::ClientSecretBasic),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthClientRecord {
+    pub client_id: String,
+    /// Only `dynamic` (RFC 7591) today.
+    pub registration_kind: String,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub logo_uri: Option<String>,
+    pub redirect_uris: Vec<String>,
+    pub grant_types: Vec<String>,
+    pub token_endpoint_auth_method: GatewayOauthClientAuthMethod,
+    /// Argon2 hash; set only for confidential clients.
+    pub client_secret_hash: Option<String>,
+    pub software_id: Option<String>,
+    pub software_version: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+impl GatewayOauthClientRecord {
+    #[must_use]
+    pub fn allows_grant_type(&self, grant_type: &str) -> bool {
+        self.grant_types.iter().any(|value| value == grant_type)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GatewayOauthAuthorizationStatus {
+    /// Waiting on the consent screen.
+    Pending,
+    /// Approved; holds a code that has not been redeemed.
+    Approved,
+    Denied,
+    /// The code was redeemed.
+    Consumed,
+}
+
+impl GatewayOauthAuthorizationStatus {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Denied => "denied",
+            Self::Consumed => "consumed",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "approved" => Some(Self::Approved),
+            "denied" => Some(Self::Denied),
+            "consumed" => Some(Self::Consumed),
+            _ => None,
+        }
+    }
+}
+
+/// One `/oauth/authorize` call, from consent through code redemption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthAuthorizationRequestRecord {
+    pub request_id: Uuid,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub state: Option<String>,
+    pub code_challenge: String,
+    /// Canonical resource URI.
+    pub resource: String,
+    /// Space-delimited scopes.
+    pub scope: String,
+    pub status: GatewayOauthAuthorizationStatus,
+    pub user_id: Option<Uuid>,
+    pub user_session_id: Option<Uuid>,
+    pub code_hash: Option<String>,
+    pub code_expires_at: Option<OffsetDateTime>,
+    /// The grant created when the code was redeemed, revoked if it is replayed.
+    pub grant_id: Option<Uuid>,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    pub decided_at: Option<OffsetDateTime>,
+    pub consumed_at: Option<OffsetDateTime>,
+}
+
+/// The consent outcome written to a pending authorization request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GatewayOauthAuthorizationDecision {
+    Approved {
+        user_id: Uuid,
+        user_session_id: Uuid,
+        code_hash: String,
+        code_expires_at: OffsetDateTime,
+    },
+    Denied {
+        user_id: Uuid,
+    },
+}
+
+/// One approved consent: a token family bound to the approving admin session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthGrantRecord {
+    pub grant_id: Uuid,
+    pub client_id: String,
+    pub user_id: Uuid,
+    pub user_session_id: Uuid,
+    pub resource: String,
+    pub scope: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
+    pub revoked_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GatewayOauthTokenKind {
+    Access,
+    Refresh,
+}
+
+impl GatewayOauthTokenKind {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Access => "access",
+            Self::Refresh => "refresh",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "access" => Some(Self::Access),
+            "refresh" => Some(Self::Refresh),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthTokenRecord {
+    /// SHA-256 hex of the raw token.
+    pub token_hash: String,
+    pub grant_id: Uuid,
+    pub kind: GatewayOauthTokenKind,
+    /// Space-delimited; never wider than the grant's scope.
+    pub scope: String,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    /// Set when a refresh token is rotated.
+    pub consumed_at: Option<OffsetDateTime>,
+}
+
+/// A token with everything needed to decide whether it is still valid.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthTokenContext {
+    pub token: GatewayOauthTokenRecord,
+    pub grant: GatewayOauthGrantRecord,
+    pub session_expires_at: OffsetDateTime,
+    pub session_revoked_at: Option<OffsetDateTime>,
+    pub user_status: UserStatus,
+}
+
+impl GatewayOauthTokenContext {
+    /// Whether the grant, its approving session, and its user are all still live.
+    #[must_use]
+    pub fn grant_is_live(&self, now: OffsetDateTime) -> bool {
+        self.grant.revoked_at.is_none()
+            && self.session_revoked_at.is_none()
+            && self.session_expires_at > now
+            && self.user_status == UserStatus::Active
+    }
+}
+
+/// The admin session that approves a consent, and its user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayOauthSessionState {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub expires_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
+    pub user_status: UserStatus,
+}
+
+impl GatewayOauthSessionState {
+    #[must_use]
+    pub fn is_live(&self, now: OffsetDateTime) -> bool {
+        self.revoked_at.is_none() && self.expires_at > now && self.user_status == UserStatus::Active
+    }
+}
+
+#[async_trait]
+pub trait GatewayOauthRepository: Send + Sync {
+    async fn create_gateway_oauth_client(
+        &self,
+        client: &GatewayOauthClientRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn get_gateway_oauth_client(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<GatewayOauthClientRecord>, StoreError>;
+
+    async fn create_gateway_oauth_authorization_request(
+        &self,
+        request: &GatewayOauthAuthorizationRequestRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn get_gateway_oauth_authorization_request(
+        &self,
+        request_id: Uuid,
+    ) -> Result<Option<GatewayOauthAuthorizationRequestRecord>, StoreError>;
+
+    async fn get_gateway_oauth_authorization_request_by_code_hash(
+        &self,
+        code_hash: &str,
+    ) -> Result<Option<GatewayOauthAuthorizationRequestRecord>, StoreError>;
+
+    /// Records consent on a request that is still pending and unexpired.
+    /// Returns `false` when another decision won or the request expired.
+    async fn decide_gateway_oauth_authorization_request(
+        &self,
+        request_id: Uuid,
+        decision: &GatewayOauthAuthorizationDecision,
+        decided_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    /// Marks an approved request consumed and records the grant it created.
+    /// Returns `false` when the code was already redeemed.
+    async fn consume_gateway_oauth_authorization_code(
+        &self,
+        request_id: Uuid,
+        grant_id: Uuid,
+        consumed_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn create_gateway_oauth_grant(
+        &self,
+        grant: &GatewayOauthGrantRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn create_gateway_oauth_token(
+        &self,
+        token: &GatewayOauthTokenRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn get_gateway_oauth_token_context(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<GatewayOauthTokenContext>, StoreError>;
+
+    async fn get_gateway_oauth_session_state(
+        &self,
+        user_session_id: Uuid,
+    ) -> Result<Option<GatewayOauthSessionState>, StoreError>;
+
+    /// Consumes an unconsumed refresh token. Returns `false` on reuse.
+    async fn consume_gateway_oauth_refresh_token(
+        &self,
+        token_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn revoke_gateway_oauth_grant(
+        &self,
+        grant_id: Uuid,
+        reason: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn revoke_gateway_oauth_grants_for_user(
+        &self,
+        user_id: Uuid,
+        reason: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<u64, StoreError>;
 }
 
 #[cfg(test)]

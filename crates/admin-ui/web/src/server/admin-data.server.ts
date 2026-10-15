@@ -46,6 +46,8 @@ import type {
   McpInvocationPageView,
   McpOauthConnectionView,
   McpOauthStartResponse,
+  OauthAuthorizationDecisionResponse,
+  OauthAuthorizationRequestView,
   McpConnectionInfoPayload,
   McpDiscoveryRefreshPayload,
   McpCredentialBindingPayload,
@@ -685,6 +687,30 @@ export async function startMcpOauthConnection(serverId: string): Promise<McpOaut
       params: { path: { server_id: serverId } },
       // The callback appends `oauth=connected`; `server` names the card to confirm.
       body: { redirect_to: `/admin/account/connections?server=${encodeURIComponent(serverId)}` },
+    }),
+  )
+}
+
+export async function getOauthAuthorizationRequest(
+  requestId: string,
+): Promise<OauthAuthorizationRequestView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/oauth/authorization-requests/{request_id}', {
+      params: { path: { request_id: requestId } },
+    }),
+  )
+}
+
+export async function decideOauthAuthorizationRequest(
+  requestId: string,
+  approve: boolean,
+): Promise<OauthAuthorizationDecisionResponse> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/oauth/authorization-requests/{request_id}/decision', {
+      params: { path: { request_id: requestId } },
+      body: { approve },
     }),
   )
 }

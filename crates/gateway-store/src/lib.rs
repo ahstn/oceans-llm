@@ -5,6 +5,7 @@
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
 mod any_store_batches;
+mod any_store_gateway_oauth;
 mod any_store_guardrail_decisions;
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
@@ -46,6 +47,9 @@ mod agent_analysis_tests;
 
 #[cfg(test)]
 mod budget_increase_tests;
+
+#[cfg(test)]
+mod gateway_oauth_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;

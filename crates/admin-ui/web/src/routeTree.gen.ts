@@ -30,6 +30,7 @@ import { Route as McpIndexRouteImport } from './routes/mcp/index'
 import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
@@ -146,6 +147,11 @@ const McpToolsetsRoute = McpToolsetsRouteImport.update({
   path: '/mcp/toolsets',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ObservabilityAgentHarnessesRoute =
   ObservabilityAgentHarnessesRouteImport.update({
     id: '/observability/agent-harnesses',
@@ -223,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -290,6 +298,7 @@ export interface FileRoutesById {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
@@ -325,6 +334,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -358,6 +368,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -391,6 +402,7 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
     | '/observability/guardrails'
@@ -425,6 +437,7 @@ export interface RootRouteChildren {
   McpAccessRoute: typeof McpAccessRoute
   McpServersRoute: typeof McpServersRoute
   McpToolsetsRoute: typeof McpToolsetsRoute
+  OauthConsentRoute: typeof OauthConsentRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
@@ -587,6 +600,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpToolsetsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/agent-harnesses': {
       id: '/observability/agent-harnesses'
       path: '/observability/agent-harnesses'
@@ -681,6 +701,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpAccessRoute: McpAccessRoute,
   McpServersRoute: McpServersRoute,
   McpToolsetsRoute: McpToolsetsRoute,
+  OauthConsentRoute: OauthConsentRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,

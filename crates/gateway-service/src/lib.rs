@@ -81,7 +81,11 @@ pub use mcp_catalog::{
     McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput, SearchMcpToolsOutput,
     parse_tool_address, tool_address,
 };
-pub use mcp_client_oauth::{McpClientOauthSettings, McpClientOauthSettingsError};
+pub use mcp_client_oauth::{
+    AuthorizationParams, AuthorizationRejection, ClientCredentials, McpClientOauthService,
+    McpClientOauthSettings, McpClientOauthSettingsError, OauthError, PendingAuthorization,
+    TokenRequest, TokenResponse,
+};
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
     UpsertMcpCredentialBindingInput, credential_owner_scope_key,

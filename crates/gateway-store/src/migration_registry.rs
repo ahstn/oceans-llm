@@ -335,6 +335,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
         postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
     },
+    MigrationManifest {
+        version: 59,
+        name: "gateway_oauth_authorization",
+        checksum: "V59__gateway_oauth_authorization.sql",
+        libsql_sql: include_str!("../migrations/V59__gateway_oauth_authorization.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__gateway_oauth_authorization.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -1364,6 +1364,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/oauth/authorization-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_oauth_authorization_request"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/authorization-requests/{request_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["decide_oauth_authorization_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/review-agent/action/config/resolve": {
         parameters: {
             query?: never;
@@ -3962,6 +3994,41 @@ export interface components {
             model_days: components["schemas"]["MyProfileModelDayView"][];
             window_end: string;
             window_start: string;
+        };
+        OauthAuthorizationDecisionRequest: {
+            approve: boolean;
+        };
+        OauthAuthorizationDecisionResponse: {
+            /** @description The client redirect carrying the code, or the `access_denied` error. */
+            redirect_to: string;
+        };
+        /** @description What the consent screen shows for a pending authorization request. */
+        OauthAuthorizationRequestView: {
+            client_id: string;
+            /** @description Self-asserted by the client at registration. */
+            client_name?: string | null;
+            client_uri?: string | null;
+            expires_at: string;
+            /**
+             * @description Every registered redirect URI is on this device, so the client's
+             *     identity cannot be verified.
+             */
+            loopback_redirect_only: boolean;
+            /** @description The host the browser returns to; the consent screen must show it. */
+            redirect_host: string;
+            redirect_uri: string;
+            request_id: string;
+            resource: string;
+            resource_kind: components["schemas"]["OauthResourceKind"];
+            scopes: components["schemas"]["OauthScopeView"][];
+            server_display_name?: string | null;
+            server_key?: string | null;
+        };
+        /** @enum {string} */
+        OauthResourceKind: "aggregate" | "server";
+        OauthScopeView: {
+            description: string;
+            scope: string;
         };
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
@@ -7292,6 +7359,102 @@ export interface operations {
                 };
                 content: {
                     "text/csv": string;
+                };
+            };
+        };
+    };
+    get_oauth_authorization_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Authorization request identifier */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OauthAuthorizationRequestView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    decide_oauth_authorization_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Authorization request identifier */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OauthAuthorizationDecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OauthAuthorizationDecisionResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };
