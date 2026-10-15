@@ -26,6 +26,8 @@ struct MemoryStore {
     /// When set, a usage write waits for a permit before applying.
     add_gate: Option<Arc<tokio::sync::Semaphore>>,
     purges: std::sync::atomic::AtomicUsize,
+    /// Expired rows waiting to be purged.
+    expired: std::sync::atomic::AtomicU64,
 }
 
 #[async_trait]
@@ -154,10 +156,17 @@ impl RateLimitRepository for MemoryStore {
         Ok(())
     }
 
-    async fn purge_expired_rate_limit_counters(&self, _: i64, _: i64) -> Result<u64, StoreError> {
-        self.purges
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(0)
+    async fn purge_expired_rate_limit_counters(
+        &self,
+        _: i64,
+        limit: i64,
+    ) -> Result<u64, StoreError> {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.purges.fetch_add(1, SeqCst);
+        let backlog = self.expired.load(SeqCst);
+        let deleted = backlog.min(limit as u64);
+        self.expired.store(backlog - deleted, SeqCst);
+        Ok(deleted)
     }
 }
 
@@ -1190,13 +1199,49 @@ async fn startup_rejects_config_and_admin_policies_above_the_cap() {
             5,
         )],
     );
-    let error = harness
-        .limiter
-        .validate_policy_capacity()
-        .await
-        .unwrap_err();
+    let error = harness.limiter.validate_policy_set().await.unwrap_err();
     assert_eq!(error.http_status_code(), 400);
 
     let within = Harness::new(MemoryStore::default(), Vec::new());
-    within.limiter.validate_policy_capacity().await.unwrap();
+    within.limiter.validate_policy_set().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_purge_keeps_deleting_while_batches_come_back_full() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let store = MemoryStore::default();
+    store.expired.store(1_200, SeqCst);
+    let harness = Harness::new(store, Vec::new());
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness.limiter.check(&subject).await.unwrap();
+    for _ in 0..200 {
+        if harness.store.expired.load(SeqCst) == 0 {
+            // Two full batches of 500, then one of 200.
+            assert_eq!(harness.store.purges.load(SeqCst), 3);
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the backlog was not drained");
+}
+
+#[tokio::test]
+async fn startup_rejects_a_config_name_used_by_a_paused_admin_policy() {
+    let store = MemoryStore::default();
+    let mut paused = admin_policy("shared name", RateLimitScopeKind::Global, 5);
+    paused.enabled = false;
+    *store.policies.lock().unwrap() = vec![paused];
+    let harness = Harness::new(
+        store,
+        vec![config(
+            "shared name",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            5,
+        )],
+    );
+    let error = harness.limiter.validate_policy_set().await.unwrap_err();
+    assert!(error.to_string().contains("shared name"), "{error}");
 }

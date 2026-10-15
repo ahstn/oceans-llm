@@ -4,18 +4,17 @@
 //! `rate_limits.policies` are listed read-only. Every change goes through
 //! [`record_rate_limit_policy_change`], the hook for the admin audit log (#99).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
-use futures_util::{StreamExt, TryStreamExt, stream};
 use gateway_core::{
-    AdminApiKeyRepository, GatewayError, IdentityRepository, McpRegistryRepository,
-    ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitPolicyRecord,
-    RateLimitScopeKind, UserRecord,
+    AdminApiKeyRepository, AdminIdentityRepository, GatewayError, IdentityRepository,
+    McpRegistryRepository, ModelRepository, RateLimitMetric, RateLimitOperation, RateLimitPeriod,
+    RateLimitPolicyRecord, RateLimitScopeKind, UserRecord,
 };
 use gateway_service::ConfiguredRateLimitPolicy;
 use serde::{Deserialize, Serialize};
@@ -29,10 +28,6 @@ use super::{
     error::AppError,
     state::AppState,
 };
-
-/// Bounds the label lookups one admin listing runs at once, so a large
-/// policy history cannot take over the connection pool.
-const MAX_CONCURRENT_LABEL_LOOKUPS: usize = 8;
 
 macro_rules! contract_enum {
     ($(#[$meta:meta])* $view:ident => $domain:ident { $($variant:ident),+ $(,)? }) => {
@@ -154,8 +149,8 @@ pub async fn list_rate_limit_policies(
         .map(config_policy_view)
         .collect();
     let records = limiter.list_admin_policies().await?;
-    // One query for every MCP server key, and each distinct target principal
-    // looked up once, concurrently, instead of two serial lookups per row.
+    // One query for every MCP server key, and one per principal kind that a
+    // policy targets, instead of a lookup per row.
     let server_keys: HashMap<Uuid, String> = state
         .store
         .list_external_mcp_servers(true)
@@ -163,22 +158,11 @@ pub async fn list_rate_limit_policies(
         .into_iter()
         .map(|server| (server.mcp_server_id, server.server_key))
         .collect();
-    let targets: HashSet<(RateLimitScopeKind, Uuid)> = records
-        .iter()
-        .filter_map(|policy| Some((policy.scope_kind, policy.scope_id?)))
-        .collect();
-    let labels: HashMap<(RateLimitScopeKind, Uuid), Option<String>> = stream::iter(targets)
-        .map(|target| {
-            let state = &state;
-            async move { Ok::<_, AppError>((target, scope_label(state, target.0, target.1).await?)) }
-        })
-        .buffer_unordered(MAX_CONCURRENT_LABEL_LOOKUPS)
-        .try_collect()
-        .await?;
+    let labels = scope_labels(&state, &records).await?;
     policies.extend(records.iter().map(|policy| {
         let label = policy
             .scope_id
-            .and_then(|id| labels.get(&(policy.scope_kind, id)).cloned().flatten());
+            .and_then(|id| labels.get(&(policy.scope_kind, id)).cloned());
         let server_key = policy
             .mcp_server_id
             .and_then(|id| server_keys.get(&id).cloned());
@@ -368,6 +352,56 @@ fn config_policy_view(policy: &ConfiguredRateLimitPolicy) -> RateLimitPolicyView
 }
 
 /// The targeted user's email, team name or API key name.
+/// Labels for every principal the policies target, keyed by scope kind and
+/// id. A principal that no longer exists has no entry.
+async fn scope_labels(
+    state: &AppState,
+    records: &[RateLimitPolicyRecord],
+) -> Result<HashMap<(RateLimitScopeKind, Uuid), String>, AppError> {
+    let targets_kind = |kind| {
+        records
+            .iter()
+            .any(|policy| policy.scope_kind == kind && policy.scope_id.is_some())
+    };
+    let mut labels = HashMap::new();
+    if targets_kind(RateLimitScopeKind::ApiKey) {
+        labels.extend(
+            state
+                .store
+                .list_api_keys()
+                .await?
+                .into_iter()
+                .map(|key| ((RateLimitScopeKind::ApiKey, key.id), key.name)),
+        );
+    }
+    if targets_kind(RateLimitScopeKind::User) {
+        labels.extend(
+            state
+                .store
+                .list_identity_users()
+                .await?
+                .into_iter()
+                .map(|identity| {
+                    (
+                        (RateLimitScopeKind::User, identity.user.user_id),
+                        identity.user.email,
+                    )
+                }),
+        );
+    }
+    if targets_kind(RateLimitScopeKind::Team) {
+        labels.extend(
+            state
+                .store
+                .list_teams()
+                .await?
+                .into_iter()
+                .map(|team| ((RateLimitScopeKind::Team, team.team_id), team.team_name)),
+        );
+    }
+    Ok(labels)
+}
+
 async fn scope_label(
     state: &AppState,
     scope_kind: RateLimitScopeKind,

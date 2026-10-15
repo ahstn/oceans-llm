@@ -28,6 +28,8 @@ use uuid::Uuid;
 /// How often each replica deletes expired counter rows, and how many per pass.
 const PURGE_INTERVAL_SECONDS: i64 = 60;
 const PURGE_BATCH: i64 = 500;
+/// At most this many batches per interval (50,000 rows a minute per replica).
+const PURGE_MAX_BATCHES: usize = 100;
 
 /// What to do when the counter store fails.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -827,11 +829,21 @@ impl RateLimiter {
         }
         let store = Arc::clone(store);
         tokio::spawn(async move {
-            if let Err(error) = store
-                .purge_expired_rate_limit_counters(now, PURGE_BATCH)
-                .await
-            {
-                tracing::warn!(error = %error, "purging expired rate limit counters failed");
+            // Each delete is bounded; keep going while batches come back full,
+            // so a replica that creates more rows than one batch per interval
+            // still drains its backlog.
+            for _ in 0..PURGE_MAX_BATCHES {
+                match store
+                    .purge_expired_rate_limit_counters(now, PURGE_BATCH)
+                    .await
+                {
+                    Ok(deleted) if deleted >= PURGE_BATCH as u64 => tokio::task::yield_now().await,
+                    Ok(_) => return,
+                    Err(error) => {
+                        tracing::warn!(error = %error, "purging expired rate limit counters failed");
+                        return;
+                    }
+                }
             }
         });
     }
@@ -987,18 +999,31 @@ impl RateLimiter {
         Ok(())
     }
 
-    /// Fails when config and enabled admin policies together exceed the
-    /// per-operation cap, so a gateway never starts with an oversized set
-    /// (for example, after config policies were added to a full database).
-    pub async fn validate_policy_capacity(&self) -> Result<(), GatewayError> {
+    /// Fails when a config policy shares its name with an admin policy, or
+    /// when config and enabled admin policies together exceed the
+    /// per-operation cap, so a gateway never starts with an ambiguous or
+    /// oversized set (for example, after config policies were added to a full
+    /// database).
+    pub async fn validate_policy_set(&self) -> Result<(), GatewayError> {
         let Some(store) = &self.store else {
             return Ok(());
         };
-        let admin = store.list_enabled_rate_limit_policies().await?;
+        let admin = store.list_rate_limit_policies().await?;
+        if let Some(policy) = admin.iter().find(|policy| {
+            self.settings
+                .config_policies
+                .iter()
+                .any(|config| config.name == policy.name)
+        }) {
+            return Err(GatewayError::InvalidRequest(format!(
+                "rate limit policy name `{}` is used both in config and by an admin policy; rename one of them",
+                policy.name
+            )));
+        }
         for operation in RateLimitOperation::ALL {
             let count = admin
                 .iter()
-                .filter(|policy| policy.operation == operation)
+                .filter(|policy| policy.enabled && policy.operation == operation)
                 .count()
                 + self
                     .settings

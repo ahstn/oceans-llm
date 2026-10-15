@@ -70,7 +70,7 @@ rate_limits:
       limit: 5000
 ```
 
-Config policies cannot name a specific key, user, or team. Policy names must be unique. Each operation can have at most 100 enabled policies, config and admin combined, which bounds the work a single request can cause. A gateway refuses to start if config and the enabled admin policies together exceed it. A `model` must be a configured gateway model. A policy whose `mcp_server` is not registered logs a warning at startup and applies once a server with that key exists. See [Configuration Reference](configuration-reference.md#rate_limits) for validation rules.
+Config policies cannot name a specific key, user, or team. Policy names must be unique. Each operation can have at most 100 enabled policies, config and admin combined, which bounds the work a single request can cause. A gateway refuses to start if config and the enabled admin policies together exceed it, or if a config policy has the same name as an admin policy, paused or not. A `model` must be a configured gateway model. A policy whose `mcp_server` is not registered logs a warning at startup and applies once a server with that key exists. See [Configuration Reference](configuration-reference.md#rate_limits) for validation rules.
 
 Platform admins manage more policies on the **Rate Limits** page in the admin UI (page id `rate_limits`), or through `GET`/`POST /api/v1/admin/rate-limits` and `PATCH`/`DELETE /api/v1/admin/rate-limits/{policy_id}`. Admin policies can target one key, user, team, or MCP server, and can be paused without deleting them. Config policies appear on the same page, read-only.
 
@@ -127,7 +127,7 @@ Counters live in the gateway database (`rate_limit_counters`), so every replica 
 
 When no policy matches a request, the check makes no database call.
 
-Counter rows expire one window after the window ends. Each replica deletes up to 500 expired rows at most once a minute, on any request that is checked while policies are loaded, whether or not a policy matches it.
+Counter rows expire one window after the window ends. Each replica deletes expired rows at most once a minute, in batches of 500 until a batch comes back short (up to 50,000 rows a minute), on any request that is checked while policies are loaded, whether or not a policy matches it.
 
 ### When the database fails
 
