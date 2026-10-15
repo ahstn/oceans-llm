@@ -5,6 +5,7 @@ pub mod api_keys;
 pub mod batches;
 #[cfg(test)]
 mod budget_status_tests;
+pub mod client_ip;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;
@@ -22,7 +23,11 @@ pub mod models;
 pub mod observability;
 pub mod profile;
 pub mod provider_credentials;
+pub mod rate_limit_policies;
+#[cfg(test)]
+mod rate_limit_tests;
 mod request_body;
+pub mod request_policy;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
@@ -79,7 +84,29 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/decisions", post(v1_decisions))
         .route("/v1/systemone", post(v1_systemone))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
-        .layer(middleware::from_fn(request_body::observe_request_body));
+        .layer(middleware::from_fn(request_body::observe_request_body))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            request_policy::request_policy,
+        ));
+
+    let mcp_router = Router::new()
+        .route(
+            "/mcp",
+            post(mcp_aggregate_streamable_http)
+                .get(mcp_aggregate_streamable_http)
+                .delete(mcp_aggregate_streamable_http),
+        )
+        .route(
+            "/mcp/{server_key}",
+            post(mcp_streamable_http_proxy)
+                .get(mcp_streamable_http_proxy)
+                .delete(mcp_streamable_http_proxy),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            request_policy::request_policy,
+        ));
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -250,6 +277,16 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/spend/budgets/increases",
             post(create_budget_increase),
+        )
+        .route(
+            "/api/v1/admin/rate-limits",
+            get(rate_limit_policies::list_rate_limit_policies)
+                .post(rate_limit_policies::create_rate_limit_policy),
+        )
+        .route(
+            "/api/v1/admin/rate-limits/{policy_id}",
+            patch(rate_limit_policies::update_rate_limit_policy)
+                .delete(rate_limit_policies::delete_rate_limit_policy),
         )
         .route(
             "/api/v1/admin/spend/budget-alerts",
@@ -459,18 +496,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/mcp/authorized-clients/revoke",
             post(admin_revoke_authorized_mcp_clients),
         )
-        .route(
-            "/mcp",
-            post(mcp_aggregate_streamable_http)
-                .get(mcp_aggregate_streamable_http)
-                .delete(mcp_aggregate_streamable_http),
-        )
-        .route(
-            "/mcp/{server_key}",
-            post(mcp_streamable_http_proxy)
-                .get(mcp_streamable_http_proxy)
-                .delete(mcp_streamable_http_proxy),
-        )
+        .merge(mcp_router)
         .with_state(state)
         .layer(middleware::from_fn_with_state(
             identity_guard_state,

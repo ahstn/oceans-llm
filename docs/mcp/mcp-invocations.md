@@ -81,6 +81,8 @@ The gateway must redact and bound arguments and results before persistence. It m
 
 Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operations and do not create MCP invocation rows. Aggregate `call_tool` and direct `/mcp/{server_key}` mediated `tools/call` executions create invocation rows.
 
+A call rejected by a [rate limit](../configuration/rate-limits.md) is recorded with status `policy_denied`, policy result `denied`, and error code `rate_limited`. Its `metadata.rate_limit` names the policy, scope kind, metric, period, limit, and retry delay. Grant denials (`mcp_tool_not_granted`) and guardrail denials (`guardrail_policy_denied`) use the same status, so filter by error code to tell them apart.
+
 ## Relationship to Request Logs
 
 Request logs keep the request-level outcome and tool cardinality. MCP invocation logs keep per-tool audit detail.

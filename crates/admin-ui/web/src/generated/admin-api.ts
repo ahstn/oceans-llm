@@ -793,6 +793,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_rate_limit_policies"];
+        put?: never;
+        post: operations["create_rate_limit_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rate-limits/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_rate_limit_policy"];
+        options?: never;
+        head?: never;
+        patch: operations["update_rate_limit_policy"];
+        trace?: never;
+    };
     "/api/v1/admin/review-agent/repositories": {
         parameters: {
             query?: never;
@@ -2091,7 +2123,7 @@ export interface components {
             sign_in_url: string;
         };
         /** @enum {string} */
-        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
+        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "rate_limits" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
         /** @enum {string} */
         AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
         AdminProviderCredentialStatusView: {
@@ -3554,6 +3586,35 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_RateLimitPoliciesView: {
+            data: {
+                policies: components["schemas"]["RateLimitPolicyView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_RateLimitPolicyView: {
+            data: {
+                enabled: boolean;
+                /** @description `None` for config policies. */
+                id?: string | null;
+                /** Format: int64 */
+                limit: number;
+                mcp_server_id?: string | null;
+                mcp_server_key?: string | null;
+                metric: components["schemas"]["RateLimitMetricView"];
+                model_key?: string | null;
+                name: string;
+                operation: components["schemas"]["RateLimitOperationView"];
+                period: components["schemas"]["RateLimitPeriodView"];
+                scope_id?: string | null;
+                scope_kind: components["schemas"]["RateLimitScopeKindView"];
+                /** @description The targeted user's email, team name or API key name. */
+                scope_label?: string | null;
+                source: components["schemas"]["RateLimitPolicySourceView"];
+                updated_at?: string | null;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_RecommendedMcpServersPayload: {
             data: {
                 items: components["schemas"]["RecommendedMcpServerView"][];
@@ -4286,6 +4347,66 @@ export interface components {
         PublicOidcProvidersPayload: {
             providers: components["schemas"]["PublicOidcProviderView"][];
         };
+        /**
+         * @description `tokens` is only valid for `inference`.
+         * @enum {string}
+         */
+        RateLimitMetricView: "requests" | "tokens";
+        /**
+         * @description `inference` covers chat, responses, messages, embeddings and decisions.
+         * @enum {string}
+         */
+        RateLimitOperationView: "inference" | "count_tokens" | "mcp_tool_call";
+        /**
+         * @description `minute` and `hour` slide; `day` and `month` are UTC calendar quotas.
+         * @enum {string}
+         */
+        RateLimitPeriodView: "minute" | "hour" | "day" | "month";
+        RateLimitPoliciesView: {
+            policies: components["schemas"]["RateLimitPolicyView"][];
+        };
+        /** @description The whole policy; `PATCH` replaces every field. */
+        RateLimitPolicyRequest: {
+            enabled?: boolean;
+            /** Format: int64 */
+            limit: number;
+            mcp_server_id?: string | null;
+            metric: components["schemas"]["RateLimitMetricView"];
+            model_key?: string | null;
+            name: string;
+            operation: components["schemas"]["RateLimitOperationView"];
+            period: components["schemas"]["RateLimitPeriodView"];
+            scope_id?: string | null;
+            scope_kind: components["schemas"]["RateLimitScopeKindView"];
+        };
+        /** @enum {string} */
+        RateLimitPolicySourceView: "config" | "admin";
+        RateLimitPolicyView: {
+            enabled: boolean;
+            /** @description `None` for config policies. */
+            id?: string | null;
+            /** Format: int64 */
+            limit: number;
+            mcp_server_id?: string | null;
+            mcp_server_key?: string | null;
+            metric: components["schemas"]["RateLimitMetricView"];
+            model_key?: string | null;
+            name: string;
+            operation: components["schemas"]["RateLimitOperationView"];
+            period: components["schemas"]["RateLimitPeriodView"];
+            scope_id?: string | null;
+            scope_kind: components["schemas"]["RateLimitScopeKindView"];
+            /** @description The targeted user's email, team name or API key name. */
+            scope_label?: string | null;
+            source: components["schemas"]["RateLimitPolicySourceView"];
+            updated_at?: string | null;
+        };
+        /**
+         * @description Who shares a counter. Without `scope_id`, each principal of the kind
+         *     gets its own counter.
+         * @enum {string}
+         */
+        RateLimitScopeKindView: "global" | "api_key" | "user" | "team";
         RecommendedMcpServerView: {
             auth_config: {
                 [key: string]: unknown;
@@ -6581,6 +6702,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_rate_limit_policies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPoliciesView"];
+                };
+            };
+        };
+    };
+    create_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitPolicyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
+                };
+            };
+        };
+    };
+    delete_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rate-limit policy id */
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
+                };
+            };
+        };
+    };
+    update_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rate-limit policy id */
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitPolicyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
                 };
             };
         };

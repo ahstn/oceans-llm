@@ -264,6 +264,8 @@ mod proxy_policy {
     use crate::http::state::AppState;
 
     const SECRET_TEXT: &str = "private-resource-text";
+    /// `seed_server` key, as `gwk_reader.<secret>`.
+    const READER_SECRET: &str = "reader-secret";
 
     struct Upstream {
         url: String,
@@ -363,7 +365,8 @@ mod proxy_policy {
             .create_api_key(&NewApiKeyRecord {
                 name: "Resource reader".to_string(),
                 public_id: "reader".to_string(),
-                secret_hash: "unused-secret-hash".to_string(),
+                secret_hash: gateway_core::hash_gateway_key_secret(READER_SECRET)
+                    .expect("hash reader key"),
                 model_grant_mode: ApiKeyModelGrantMode::All,
                 owner_kind: ApiKeyOwnerKind::User,
                 owner_user_id: Some(user.user_id),
@@ -493,6 +496,7 @@ mod proxy_policy {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let response = dispatch_mcp_request(
             state,
+            &crate::http::request_policy::RequestPolicyContext::default(),
             auth,
             "notes",
             http_method,
@@ -841,5 +845,137 @@ mod proxy_policy {
         assert_eq!(logged[0].mcp_method, "prompts/get");
         assert_eq!(logged[0].tool_display_key, "summarise");
         assert_eq!(logged[0].status, McpToolInvocationStatus::PolicyDenied);
+    }
+
+    fn limit_tool_calls(state: &mut AppState, limit: i64) -> crate::http::test_support::TestClock {
+        crate::http::test_support::install_rate_limits(
+            state,
+            vec![gateway_service::ConfiguredRateLimitPolicy {
+                name: "notes calls".to_string(),
+                operation: gateway_core::RateLimitOperation::McpToolCall,
+                scope_kind: gateway_core::RateLimitScopeKind::ApiKey,
+                model_key: None,
+                mcp_server_key: Some("notes".to_string()),
+                metric: gateway_core::RateLimitMetric::Requests,
+                period: gateway_core::RateLimitPeriod::Minute,
+                limit,
+            }],
+        )
+    }
+
+    fn search_call(id: i64) -> Value {
+        json!({
+            "jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": "search", "arguments": {"q": "x"}},
+        })
+    }
+
+    #[tokio::test]
+    async fn rate_limited_tool_calls_get_a_json_rpc_429_and_are_logged() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let clock = limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, _) = send(&state, &auth, search_call(1)).await;
+        assert_eq!(status, StatusCode::OK);
+        let upstream_calls = upstream.requests.load(Ordering::SeqCst);
+
+        let (status, body) = send(&state, &auth, search_call(2)).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 2);
+        assert_eq!(body["error"]["code"], -32029);
+        assert_eq!(body["error"]["data"]["error_code"], "rate_limited");
+        assert_eq!(body["error"]["data"]["retry_after_seconds"], 51);
+        assert_eq!(
+            body["error"]["message"],
+            "API key rate limit exceeded: 1 MCP tool calls per minute. Retry after 51 seconds"
+        );
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), upstream_calls);
+
+        let denied = invocations(&state)
+            .await
+            .into_iter()
+            .find(|invocation| invocation.error_code.as_deref() == Some("rate_limited"))
+            .expect("rate-limited invocation");
+        assert_eq!(denied.status, McpToolInvocationStatus::PolicyDenied);
+        assert_eq!(denied.policy_result, McpToolPolicyResult::Denied);
+        assert_eq!(denied.mcp_method, "tools/call");
+        assert_eq!(denied.tool_display_key, "search");
+        assert_eq!(denied.metadata["rate_limit"]["policy"], "notes calls");
+        assert_eq!(denied.metadata["rate_limit"]["period"], "minute");
+        assert_eq!(denied.metadata["rate_limit"]["retry_after_seconds"], 51);
+
+        // Other methods are not tool calls and are never limited.
+        let (status, _) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        clock.advance(51);
+        let (status, _) = send(&state, &auth, search_call(4)).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn the_mcp_route_carries_rate_limit_headers() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        seed_server(&state, &upstream.url, true).await;
+        let router = crate::http::build_router(state, admin_ui::AdminUiConfig::default());
+        let call = |id| {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/mcp/notes")
+                .header(
+                    "authorization",
+                    format!("Bearer gwk_reader.{READER_SECRET}"),
+                )
+                .header("accept", "application/json, text/event-stream")
+                .header("content-type", "application/json")
+                .body(Body::from(search_call(id).to_string()))
+                .unwrap()
+        };
+
+        use tower::ServiceExt as _;
+        let admitted = router.clone().oneshot(call(1)).await.unwrap();
+        assert_eq!(admitted.status(), StatusCode::OK);
+        assert_eq!(admitted.headers()["x-ratelimit-limit"], "1");
+        assert_eq!(admitted.headers()["x-ratelimit-remaining"], "0");
+        assert_eq!(admitted.headers()["x-ratelimit-reset"], "50");
+        assert!(admitted.headers().get("retry-after").is_none());
+
+        let limited = router.oneshot(call(2)).await.unwrap();
+        assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(limited.headers()["retry-after"], "51");
+        assert_eq!(limited.headers()["x-ratelimit-remaining"], "0");
+        let body: Value =
+            serde_json::from_slice(&to_bytes(limited.into_body(), 65_536).await.expect("body"))
+                .expect("JSON-RPC error");
+        assert_eq!(body["error"]["code"], -32029);
+    }
+
+    #[tokio::test]
+    async fn closed_rate_limit_failures_return_a_json_rpc_503() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        crate::http::test_support::install_down_rate_limiter(&mut state);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, body) = send(&state, &auth, search_call(9)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["jsonrpc"], "2.0");
+        assert_eq!(body["id"], 9);
+        assert_eq!(body["error"]["code"], -32603);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+        let logged = invocations(&state).await;
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].status, McpToolInvocationStatus::GatewayError);
     }
 }

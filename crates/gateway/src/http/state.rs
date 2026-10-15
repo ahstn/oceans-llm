@@ -9,6 +9,7 @@ use gateway_store::AnyStore;
 
 use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
+    client_ip::TrustedProxies,
     handlers::CountTokensLimiter,
     response_cache::ResponseCache,
 };
@@ -45,4 +46,5 @@ pub struct AppState {
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
     pub count_tokens_limiter: Arc<CountTokensLimiter>,
+    pub trusted_proxies: TrustedProxies,
 }

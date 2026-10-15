@@ -38,6 +38,7 @@ mod mcp_client_oauth;
 mod models;
 mod openrouter;
 mod providers;
+mod rate_limits;
 mod routes;
 mod routing_account_scope;
 mod skills;
