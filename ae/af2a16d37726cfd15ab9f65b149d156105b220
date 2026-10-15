@@ -1,0 +1,25 @@
+docs/adr/2026-08-04-user-owned-mcp-oauth.md
+  s_7a82db561e19d4::t_02c8a210555399 5,38,43
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_7a82db561e19d4::t_cc90f7cb785fce 1-100
+docs/configuration/mcp-servers.md
+  s_7a82db561e19d4::t_10e9dd0d3eefb4 48-49,126,129,185-312,317,326-348
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_7a82db561e19d4::t_f5ca05ee81cdc6 22,36,124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aeaf2a16d37726cfd15ab9f65b149d156105b220",
+  "prompts": {},
+  "sessions": {
+    "s_7a82db561e19d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd9e51db-6bcf-4a05-bc63-90f1704b3ca9",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
