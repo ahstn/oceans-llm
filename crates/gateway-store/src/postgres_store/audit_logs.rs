@@ -19,6 +19,10 @@ fn decode(row: &PgRow) -> Result<AuditLogRecord, StoreError> {
     let before: Option<String> = row.try_get(10).map_err(to_query_error)?;
     let after: Option<String> = row.try_get(11).map_err(to_query_error)?;
     let details: String = row.try_get(12).map_err(to_query_error)?;
+    let (api_key_id, label) = crate::audit_logs::decode_api_key_actor(
+        actor_api_key_id,
+        row.try_get(5).map_err(to_query_error)?,
+    );
     Ok(AuditLogRecord {
         id: row.try_get(0).map_err(to_query_error)?,
         occurred_at: unix_millis_to_datetime(row.try_get(1).map_err(to_query_error)?)?,
@@ -27,8 +31,8 @@ fn decode(row: &PgRow) -> Result<AuditLogRecord, StoreError> {
                 StoreError::Serialization(format!("unknown audit actor kind `{actor_kind}`"))
             })?,
             user_id: actor_user_id.as_deref().map(parse_uuid).transpose()?,
-            api_key_id: actor_api_key_id.as_deref().map(parse_uuid).transpose()?,
-            label: row.try_get(5).map_err(to_query_error)?,
+            api_key_id,
+            label,
         },
         action: row.try_get(6).map_err(to_query_error)?,
         target_type: row.try_get(7).map_err(to_query_error)?,

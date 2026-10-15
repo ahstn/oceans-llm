@@ -18,6 +18,10 @@ fn decode(row: &libsql::Row) -> Result<AuditLogRecord, StoreError> {
     let before: Option<String> = row.get(10).map_err(to_query_error)?;
     let after: Option<String> = row.get(11).map_err(to_query_error)?;
     let details: String = row.get(12).map_err(to_query_error)?;
+    let (api_key_id, label) = crate::audit_logs::decode_api_key_actor(
+        actor_api_key_id,
+        row.get(5).map_err(to_query_error)?,
+    );
     Ok(AuditLogRecord {
         id: row.get(0).map_err(to_query_error)?,
         occurred_at: unix_millis_to_datetime(row.get(1).map_err(to_query_error)?)?,
@@ -26,8 +30,8 @@ fn decode(row: &libsql::Row) -> Result<AuditLogRecord, StoreError> {
                 StoreError::Serialization(format!("unknown audit actor kind `{actor_kind}`"))
             })?,
             user_id: actor_user_id.as_deref().map(parse_uuid).transpose()?,
-            api_key_id: actor_api_key_id.as_deref().map(parse_uuid).transpose()?,
-            label: row.get(5).map_err(to_query_error)?,
+            api_key_id,
+            label,
         },
         action: row.get(6).map_err(to_query_error)?,
         target_type: row.get(7).map_err(to_query_error)?,
@@ -185,6 +189,34 @@ mod tests {
         assert_eq!(kinds, ["api_key", "system"]);
         // Legacy seconds become milliseconds.
         assert_eq!(timestamps, [1_700_000_000_000, 1_700_000_001_000]);
+        drop(rows);
+        drop(connection);
+        drop(database);
+
+        // The legacy rows list and open through the store, even with a key id
+        // that is not a UUID.
+        let store = LibsqlStore::new_local(database_path.to_str().expect("database path"))
+            .await
+            .expect("store");
+        let page = store
+            .list_audit_logs(&AuditLogQuery::default())
+            .await
+            .expect("list legacy rows");
+        assert_eq!(page.items.len(), 2);
+        let legacy = page
+            .items
+            .iter()
+            .find(|item| item.action == "legacy.action")
+            .expect("legacy key row");
+        assert_eq!(legacy.actor.kind, AuditActorKind::ApiKey);
+        assert_eq!(legacy.actor.api_key_id, None);
+        assert_eq!(legacy.actor.label.as_deref(), Some("API key legacy-key"));
+        let detail = store
+            .get_audit_log(legacy.id)
+            .await
+            .expect("open legacy row")
+            .expect("legacy row exists");
+        assert_eq!(detail.actor.label.as_deref(), Some("API key legacy-key"));
     }
 
     #[tokio::test]

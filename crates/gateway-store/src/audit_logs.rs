@@ -8,6 +8,22 @@ use serde_json::Value;
 
 use crate::shared::datetime_to_unix_millis;
 
+/// Reads the stored API-key actor. Rows written before V61 could hold any text
+/// here, so an id that is not a UUID is kept readable in the label instead of
+/// failing the whole row.
+pub(crate) fn decode_api_key_actor(
+    actor_api_key_id: Option<String>,
+    actor_label: Option<String>,
+) -> (Option<uuid::Uuid>, Option<String>) {
+    match actor_api_key_id {
+        None => (None, actor_label),
+        Some(raw) => match uuid::Uuid::parse_str(&raw) {
+            Ok(id) => (Some(id), actor_label),
+            Err(_) => (None, actor_label.or(Some(format!("API key {raw}")))),
+        },
+    }
+}
+
 /// Column values for one insert, already converted to their stored form.
 pub(crate) struct AuditLogRow {
     pub ts: i64,
