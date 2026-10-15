@@ -543,6 +543,18 @@ fn is_flag(value: &Value) -> bool {
 }
 
 fn looks_like_credential(text: &str) -> bool {
+    if looks_like_credential_as_written(text) {
+        return true;
+    }
+    // `?api%5Fkey=…` hides a secret name behind percent-encoding, so encoded text
+    // is checked again once decoded.
+    text.contains('%') && {
+        let decoded = percent_decode_str(text).decode_utf8_lossy();
+        decoded != text && looks_like_credential_as_written(&decoded)
+    }
+}
+
+fn looks_like_credential_as_written(text: &str) -> bool {
     // Split at anything that cannot be part of a token, so `token=gwk_…`,
     // `(ghp_…)` and `auth=Bearer …` are checked from the token's first character.
     let words: Vec<&str> = text
@@ -962,6 +974,8 @@ mod tests {
             "query_note": "see https://example.test/?api_key=hunter2",
             "setup": "set password=hunter2 first",
             "spaced": "set password = hunter2 first",
+            "encoded_query": "see https://example.test/?api%5Fkey=hunter2",
+            "encoded_path": "docs at https://example.test/guides/100%25-uptime",
             "header_note": "send Authorization: Bearer abc",
             "basic_note": "use Basic dTpw",
             "requirements": "requires a bearer token",
@@ -1001,6 +1015,8 @@ mod tests {
                 "query_note": AUDIT_REDACTED,
                 "setup": AUDIT_REDACTED,
                 "spaced": AUDIT_REDACTED,
+                "encoded_query": AUDIT_REDACTED,
+                "encoded_path": "docs at https://example.test/guides/100%25-uptime",
                 "header_note": AUDIT_REDACTED,
                 "basic_note": AUDIT_REDACTED,
                 "requirements": "requires a bearer token",
