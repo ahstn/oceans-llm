@@ -76,7 +76,7 @@ Summaries are built field by field from response views or domain records that ho
 
 - It redacts a value whose field name matches a request-log secret key, or contains `secret`, `password`, `token`, `authorization`, `cookie`, `private_key`, `api_key`, `ciphertext`, `nonce`, `key_material` or `invite_url`.
 - Names ending in `_id`, `_at`, `_kind`, `_mode`, `_type`, `_status`, `_count`, `_prefix`, `_ref` and similar suffixes describe a secret without holding it, so they are kept. Booleans and nulls are kept too.
-- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, including after punctuation such as `token=` or `(`, an invite link path, `Bearer …` or `Basic …`. The bare `gwk_<id>` display prefix is kept.
+- It redacts any string that looks like a credential, whatever its field name: a full `gwk_<id>.<secret>` key anywhere in the text, including after punctuation such as `token=` or `(`, an invite link path, or a `Bearer` or `Basic` scheme followed by a value anywhere in the text. A tag key shaped like a token is redacted together with its value. The bare `gwk_<id>` display prefix is kept.
 - User agents get the same credential check.
 - Target and actor labels are user-entered names and emails, so they get the same credential check and are capped at 256 characters.
 - Key/value pairs such as entity tags are judged by their `key`, so a `github_pat` tag's value is redacted. Name segments `pat`, `pwd` and `passphrase` also count as secret.
@@ -88,7 +88,7 @@ The rules for specific actions are:
 - API key creation and secret reveal record no key material.
 - Invites record only their expiry, never the URL that carries the token.
 - MCP credential bindings record their metadata view: kind, header name, secret reference, scopes and expiry. A secret reference written as a URL loses its credentials and query.
-- MCP server URLs are stored without credentials, query or fragment.
+- MCP server and OAuth URLs are stored without credentials, query or fragment, and path segments that look like tokens (a known token shape, or a long random value that is not a UUID) become `REDACTED`.
 - Provider credentials record only the user and provider key.
 - Review Agent repositories record only the key names of their free-form `settings_json`, never its values.
 - Password changes and sign-ins record that they happened and how the user signed in.
