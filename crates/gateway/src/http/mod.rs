@@ -323,6 +323,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             post(refresh_mcp_server_discovery),
         )
         .route(
+            "/api/v1/admin/mcp/oauth-discovery",
+            post(discover_mcp_server_oauth),
+        )
+        .route(
             "/api/v1/admin/mcp/toolsets",
             get(list_mcp_toolsets).post(create_mcp_toolset),
         )
@@ -371,6 +375,11 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/mcp/oauth/{provider_key}/callback",
             get(mcp_oauth_callback),
+        )
+        .route("/api/v1/mcp/oauth/callback", get(mcp_oauth_server_callback))
+        .route(
+            "/api/v1/mcp/oauth/client-metadata.json",
+            get(mcp_oauth_client_metadata_document),
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))

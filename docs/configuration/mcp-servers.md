@@ -45,6 +45,8 @@ The page supports:
 
 - importing a recommended catalog entry
 - adding a custom Streamable HTTP server
+- discovering a server's OAuth settings from its URL (**Discover OAuth**), then
+  reviewing and overriding them before saving
 - editing display name, URL, auth mode, auth config, and timeout
 - disabling a server
 - refreshing discovery
@@ -121,10 +123,10 @@ Rules:
 Supported stored auth modes are:
 
 - `none`: no upstream credential is added.
-- `gateway_static_header`: the gateway adds one configured upstream header.
+- `gateway_static_header`: the gateway adds one shared API key, either as a header (optionally wrapped by a value template) or as a URL query parameter. The admin UI labels this mode **Gateway static credential**.
 - `gateway_bearer_token`: the gateway adds an upstream `Authorization: Bearer ...` header.
 - `user_passthrough`: resolve a caller-owned user/service-account/team credential binding at execution time.
-- `oauth_obo`: resolve and refresh a user-owned OAuth credential at execution time.
+- `oauth_obo`: resolve and refresh a user-owned OAuth credential at execution time. The OAuth client comes from a configured provider (`google` or `oauth2`) or from the server's own authorization server, found by [OAuth discovery](#oauth-for-any-mcp-server).
 
 Discovery normally uses `none`, `gateway_static_header`, or `gateway_bearer_token`. An `oauth_obo` server can set `auth_config.discovery_auth` to `none` when its upstream permits public `initialize` and `tools/list` requests. Execution still requires a user OAuth connection.
 
@@ -180,11 +182,139 @@ Google classifies `drive.readonly` as a restricted scope. An external production
 
 Workspace content is untrusted model input. Keep the write tools disabled for the first toolset, review tool grants, and apply the prompt-injection controls in Google's [Workspace MCP security guidance](https://developers.google.com/workspace/guides/configure-mcp-security).
 
+## OAuth for Any MCP Server
+
+Any remote MCP server that follows the MCP authorization spec can use per-user OAuth without a gateway configuration change. Each user connects their own account from `/admin/account/connections`, and Oceans stores and refreshes their tokens the same way it does for Google.
+
+Set `mcp.oauth.public_base_url` first. Every user connection, including the ones below, needs it for the callback URL:
+
+```yaml
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+```
+
+Servers that use their own authorization server share this callback URI:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/callback
+```
+
+### Register a server by URL
+
+1. Open **Add server** on `/admin/mcp/servers` and enter the server URL.
+2. Select **Discover OAuth**. Oceans sends an unauthenticated request to the server, then reads:
+   - the protected-resource metadata (RFC 9728) named by the `WWW-Authenticate` challenge, or at `/.well-known/oauth-protected-resource`
+   - the authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, falling back to OpenID Connect discovery
+3. Review what discovery found: the resource, the authorization server, its endpoints, the default scopes, how Oceans will get a client, and any warnings.
+4. Select **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. Edit it to override any value, such as the scopes, then save.
+
+Discovery only reads metadata. It stores nothing until you save the server. Metadata URLs must use HTTPS. Plain HTTP is accepted only when both the MCP server and the metadata are on a loopback host, for local development. Oceans refuses an authorization server that lists PKCE methods without `S256`.
+
+A discovered server's auth config looks like this:
+
+```json
+{
+  "resource": "https://mcp.linear.example/mcp",
+  "resource_indicator": true,
+  "issuer": "https://auth.linear.example",
+  "authorization_endpoint": "https://auth.linear.example/authorize",
+  "token_endpoint": "https://auth.linear.example/token",
+  "registration_endpoint": "https://auth.linear.example/register",
+  "client_registration": "dynamic",
+  "token_endpoint_auth_method": "client_secret_basic",
+  "scopes": ["read"]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `resource` | The protected resource. It must share an origin with the server URL. |
+| `resource_indicator` | Whether authorization and token requests send the RFC 8707 `resource` parameter. Discovery sets it to `true` when the server publishes protected-resource metadata. Defaults to `true`. |
+| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. |
+| `scopes` | Scopes to request and require. Discovery fills them from the challenge's `scope`, then from the resource's `scopes_supported`. Omit them to let the authorization server choose. |
+| `client_registration` | How Oceans gets its OAuth client: `dynamic`, `metadata_document`, or `manual`. |
+| `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post`, or `none`. |
+
+### Client registration
+
+Discovery recommends a registration method in this order:
+
+- **`dynamic`**, when the authorization server has a `registration_endpoint`. The first user to connect causes Oceans to register itself (RFC 7591) with the shared callback URI. Oceans stores the issued client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the secret expires. A refresh never registers a new client.
+- **`metadata_document`**, when the authorization server sets `client_id_metadata_document_supported`. Oceans uses the URL of a Client ID Metadata Document that the gateway hosts as its client ID. It connects as a public client protected by PKCE:
+
+  ```text
+  https://gateway.example.com/api/v1/mcp/oauth/client-metadata.json
+  ```
+
+  The document is public and lists only the client name, the callback URI, and the grant types.
+- **`manual`**, when the authorization server supports neither. Register an OAuth app with the upstream using the shared callback URI, then set `client_id`. Set `client_secret_ref` to an `env/OCEANS_MCP_DISCOVERY_*` variable for a confidential client:
+
+  ```json
+  {
+    "client_registration": "manual",
+    "client_id": "oceans-gateway",
+    "client_secret_ref": "env/OCEANS_MCP_DISCOVERY_LINEAR_CLIENT_SECRET"
+  }
+  ```
+
+### A configured `oauth2` provider
+
+To share one admin-created OAuth app across servers, or to keep client credentials in gateway configuration, add an `oauth2` provider with explicit endpoints:
+
+```yaml
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: linear
+        provider_type: oauth2
+        client_id: env.OCEANS_MCP_OAUTH_LINEAR_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_LINEAR_CLIENT_SECRET   # optional
+        authorization_url: https://auth.linear.example/authorize
+        token_url: https://auth.linear.example/token
+        scopes: [read]                                            # optional defaults
+        token_endpoint_auth_method: client_secret_basic           # optional
+```
+
+Register this callback URI with the upstream OAuth app:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/linear/callback
+```
+
+A server then references the provider instead of naming an authorization server:
+
+```json
+{
+  "provider_key": "linear",
+  "resource": "https://mcp.linear.example/mcp"
+}
+```
+
+Without `client_secret`, the provider is a public client and `token_endpoint_auth_method` defaults to `none`. With a secret, it defaults to `client_secret_basic`. When the server sets no `scopes`, Oceans requests the provider's `scopes`. Provider keys may use letters, digits, `-`, and `_`. The key `mcp_server` is reserved.
+
+### Tokens, refresh, and expiry
+
+Connections behave the same way for every provider. Oceans:
+
+- runs the authorization code flow with PKCE
+- refreshes the access token five minutes before it expires
+- serializes refreshes across gateway replicas with the same lease
+- replaces the stored refresh token when the provider rotates it
+- revokes the connection and asks the user to reconnect after `invalid_grant`
+
+Some providers return no refresh token. The connection then lasts until the access token expires, and then the user must reconnect. A token with no refresh token and no `expires_in` does not expire.
+
+When a call needs a connection the user has not made, or one that has expired, the `credential_required` or `credential_expired` error includes a connect URL. This works for every OAuth server whose callback is reachable. See [Return a connect URL](../adr/2026-10-13-mcp-credential-connect-url.md).
+
+Changing a server's `provider_key`, `issuer`, `resource`, or required scopes marks existing connections **Expired** on the connections page. Each user must then reconnect.
+
 ## Gateway-Managed Upstream Credentials
 
 Gateway-managed credentials are for the upstream MCP server only. They are not caller credentials and are never returned to admin UI clients.
 
-For `gateway_static_header`:
+For `gateway_static_header`, send the key as a header:
 
 ```json
 {
@@ -192,6 +322,29 @@ For `gateway_static_header`:
   "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
 }
 ```
+
+Wrap the key in a value template when the upstream expects a prefix. The template must contain `{{api_key}}` exactly once:
+
+```json
+{
+  "header_name": "Authorization",
+  "value_template": "Token {{api_key}}",
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
+}
+```
+
+Or send it as a URL query parameter:
+
+```json
+{
+  "query_param": "api_key",
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
+}
+```
+
+Set exactly one of `header_name` or `query_param`. `value_template` applies only to headers. A query parameter name may use letters, digits, `-`, `_`, `.`, and `~`. The stored `server_url` must not already contain the parameter.
+
+The query value never enters the stored `server_url`. Oceans adds it to the URL only when it sends each discovery or proxy request. Debug output redacts it. Transport errors drop the URL before they are logged or returned, so the value does not reach logs, traces, or error messages. Prefer a header when the upstream accepts one, because the upstream's own access logs may still record query strings.
 
 For `gateway_bearer_token`:
 

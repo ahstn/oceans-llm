@@ -21,8 +21,9 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, mcp_oauth_server_config, normalize_mcp_server_key,
-    supports_public_discovery, validate_mcp_auth_config, validate_mcp_server_auth_destination,
+    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, mcp_oauth_server_config,
+    normalize_mcp_server_key, supports_public_discovery, validate_mcp_auth_config,
+    validate_mcp_server_auth_destination,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -97,7 +98,10 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
         let timeout = Duration::from_millis(server.timeout_ms.max(1) as u64);
+        let query_credential = gateway_mcp_upstream_query(server)
+            .map_err(|error| McpClientError::InvalidHeader(error.to_string()))?;
         StreamableHttpClient::new(&server.server_url, timeout)?
+            .with_query_credential(query_credential)
             .list_tools(headers)
             .await
     }
@@ -276,7 +280,11 @@ where
         }
 
         let started_at = OffsetDateTime::now_utc();
-        let headers = match gateway_mcp_upstream_headers(&server) {
+        // The query credential is resolved again by the client; checking it here
+        // records a missing secret as a configuration failure.
+        let headers = match gateway_mcp_upstream_headers(&server)
+            .and_then(|headers| gateway_mcp_upstream_query(&server).map(|_| headers))
+        {
             Ok(headers) => headers,
             Err(error) => {
                 return self

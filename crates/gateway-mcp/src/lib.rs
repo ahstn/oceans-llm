@@ -191,11 +191,54 @@ pub struct NormalizedMcpTool {
     pub schema_hash: String,
 }
 
+/// An API key sent as a URL query parameter. The value is added to the URL
+/// only when a request is built, and `Debug` output redacts it, so it does
+/// not reach logs, traces, or error messages.
+#[derive(Clone, PartialEq, Eq)]
+pub struct McpQueryCredential {
+    name: String,
+    value: String,
+}
+
+impl McpQueryCredential {
+    #[must_use]
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns `url` with this credential appended to its query.
+    #[must_use]
+    pub fn apply(&self, url: &Url) -> Url {
+        let mut url = url.clone();
+        url.query_pairs_mut().append_pair(&self.name, &self.value);
+        url
+    }
+}
+
+impl std::fmt::Debug for McpQueryCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("McpQueryCredential")
+            .field("name", &self.name)
+            .field("value", &"[redacted]")
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamableHttpClient {
     client: Client,
     endpoint: Url,
     protocol_version: String,
+    query_credential: Option<McpQueryCredential>,
 }
 
 impl StreamableHttpClient {
@@ -213,7 +256,14 @@ impl StreamableHttpClient {
             client,
             endpoint,
             protocol_version: CLIENT_PROTOCOL_VERSION.to_string(),
+            query_credential: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_query_credential(mut self, credential: Option<McpQueryCredential>) -> Self {
+        self.query_credential = credential;
+        self
     }
 
     #[must_use]
@@ -348,8 +398,12 @@ impl StreamableHttpClient {
             }
         }
 
+        let endpoint = match &self.query_credential {
+            Some(credential) => credential.apply(&self.endpoint),
+            None => self.endpoint.clone(),
+        };
         self.client
-            .post(self.endpoint.clone())
+            .post(endpoint)
             .headers(request_headers)
             .json(request)
             .build()
@@ -774,6 +828,26 @@ mod tests {
             format!("invalid MCP server URL: {message}")
         );
         assert!(!error.to_string().contains("query-secret"));
+    }
+
+    #[test]
+    fn query_credentials_are_added_per_request_and_redacted_from_debug() {
+        let credential = McpQueryCredential::new("api_key", "query-secret");
+        let client =
+            StreamableHttpClient::new("https://mcp.example.com/mcp?x=1", Duration::from_secs(5))
+                .expect("client")
+                .with_query_credential(Some(credential.clone()));
+
+        let request = client
+            .build_request(&JsonRpcNotification::<Value>::new("ping", None), None)
+            .expect("request");
+        assert_eq!(
+            request.url().as_str(),
+            "https://mcp.example.com/mcp?x=1&api_key=query-secret"
+        );
+        assert!(!format!("{client:?}").contains("query-secret"));
+        assert!(!format!("{credential:?}").contains("query-secret"));
+        assert!(format!("{credential:?}").contains("api_key"));
     }
 
     #[test]
