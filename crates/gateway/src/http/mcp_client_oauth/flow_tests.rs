@@ -770,3 +770,33 @@ async fn loopback_warning_follows_the_selected_redirect_uri() {
     let (_, view) = harness.consent(&request_id).await;
     assert_eq!(view["redirect_is_loopback"], true);
 }
+
+#[tokio::test]
+async fn omitted_token_resource_keeps_the_authorized_per_server_audience() {
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    seed_server(&harness.state, "repository", "http://127.0.0.1:9/mcp").await;
+    let request_id = harness
+        .start(&harness.authorize_query(
+            "editor",
+            &[("resource", "https://oceans.example.com/mcp/repository")],
+        ))
+        .await;
+    let code = harness.approve(&request_id).await;
+    let (status, token) = harness.exchange_code("editor", &code).await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+    assert_eq!(token["scope"], "mcp:proxy");
+    let context = harness
+        .state
+        .store
+        .get_gateway_oauth_token_context(&oauth_token_hash(token["access_token"].as_str().unwrap()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        context.grant.resource,
+        "https://oceans.example.com/mcp/repository"
+    );
+}
