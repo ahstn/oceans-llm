@@ -20,3 +20,9 @@ CREATE INDEX IF NOT EXISTS audit_logs_target_idx
   ON audit_logs (object_type, object_id, ts DESC, id DESC);
 CREATE INDEX IF NOT EXISTS audit_logs_action_idx
   ON audit_logs (action, ts DESC, id DESC);
+-- Combined filters: an actor's actions, and a target ID given without its type.
+-- An action's prefix is its target type, so action + target type needs no index.
+CREATE INDEX IF NOT EXISTS audit_logs_actor_action_idx
+  ON audit_logs (actor_user_id, action, ts DESC, id DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_object_id_idx
+  ON audit_logs (object_id, ts DESC, id DESC);
