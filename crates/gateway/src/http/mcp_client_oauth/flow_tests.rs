@@ -509,6 +509,13 @@ async fn authorize_redirects_parameter_errors_with_state_and_issuer() {
             ),
             "invalid_target",
         ),
+        (
+            format!(
+                "{}&code_challenge_method=S256",
+                harness.authorize_query("editor", &[])
+            ),
+            "invalid_request",
+        ),
     ];
     for (query, expected) in cases {
         let (status, location) = harness.authorize(&query).await;
