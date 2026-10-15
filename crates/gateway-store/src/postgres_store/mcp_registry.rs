@@ -285,13 +285,16 @@ impl McpRegistryRepository for PostgresStore {
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only an enabled server changes, so the row count says whether this
+        // call disabled it. `load_server` reports a missing server.
         let changed = sqlx::query(
             r#"
             UPDATE external_mcp_servers
             SET status = 'disabled', disabled_at = $1, updated_at = $1,
                 last_discovery_status = 'disabled', last_discovery_at = $1
             WHERE mcp_server_id = $2
+              AND status <> 'disabled'
             "#,
         )
         .bind(disabled_at.unix_timestamp())
@@ -299,12 +302,8 @@ impl McpRegistryRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        if changed.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{mcp_server_id}` not found"
-            )));
-        }
-        load_server(&self.pool, mcp_server_id).await
+        let server = load_server(&self.pool, mcp_server_id).await?;
+        Ok((server, changed.rows_affected() > 0))
     }
 
     async fn list_external_mcp_tools(

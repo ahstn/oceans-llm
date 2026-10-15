@@ -220,7 +220,7 @@ mod tests {
             &self,
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             unimplemented!()
         }
 

@@ -1008,11 +1008,13 @@ pub trait McpRegistryRepository: Send + Sync {
         input: &UpdateExternalMcpServerRecord,
     ) -> Result<ExternalMcpServerRecord, StoreError>;
 
+    /// Disables the server. The flag is `false` when it was already disabled,
+    /// in which case nothing is written.
     async fn disable_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError>;
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
     async fn list_external_mcp_tools(
         &self,

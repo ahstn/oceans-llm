@@ -234,9 +234,11 @@ pub async fn disable_mcp_server(
     let server_id = parse_uuid(&server_id, "server_id")?;
     let before = server_before_summary(&state, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
-    let server = map_server(service.disable_server(server_id).await?);
-    // Disabling a disabled server is not a transition.
-    if before["status"] != "disabled" {
+    let (server, disabled) = service.disable_server(server_id).await?;
+    let server = map_server(server);
+    // Disabling a disabled server is not a transition. The store decides this in
+    // its update, so concurrent requests record one entry.
+    if disabled {
         state
             .audit()
             .record(

@@ -225,10 +225,11 @@ where
             .map_err(Into::into)
     }
 
+    /// Disables the server; the flag is `false` when it was already disabled.
     pub async fn disable_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<ExternalMcpServerRecord, GatewayError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
         self.repo
             .disable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -803,7 +804,7 @@ mod tests {
             &self,
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             unimplemented!()
         }
 

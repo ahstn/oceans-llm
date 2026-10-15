@@ -1606,10 +1606,20 @@ pub(crate) mod tests {
         );
         assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
 
-        let disabled = store
+        let (disabled, changed) = store
             .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(9))
             .await
             .expect("disable server");
+        assert!(changed);
+        let (again, changed_again) = store
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
+            .await
+            .expect("disable server again");
+        assert!(
+            !changed_again,
+            "an already-disabled server is not disabled again"
+        );
+        assert_eq!(again.disabled_at, disabled.disabled_at);
         assert_eq!(disabled.status, ExternalMcpServerStatus::Disabled);
         assert!(disabled.disabled_at.is_some());
         assert!(
