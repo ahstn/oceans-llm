@@ -30,8 +30,8 @@ where
     /// The newest MCP clients `user_id` has authorized that can still get
     /// tokens, up to [`MAX_LISTED_AUTHORIZED_CLIENTS`].
     ///
-    /// Grants issued under a previous issuer are left out: their resource no
-    /// longer parses, and token validation already rejects them.
+    /// Grants issued under a previous issuer are left out before the limit
+    /// applies; token validation already rejects them.
     pub async fn authorized_clients(
         &self,
         user_id: Uuid,
@@ -41,6 +41,7 @@ where
             .repo
             .list_live_gateway_oauth_grants_for_user(
                 user_id,
+                &self.settings.resource_uri(&McpOauthResource::Aggregate),
                 now,
                 MAX_LISTED_AUTHORIZED_CLIENTS + 1,
             )

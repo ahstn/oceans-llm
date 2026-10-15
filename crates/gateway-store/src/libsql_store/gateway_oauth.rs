@@ -494,6 +494,7 @@ impl GatewayOauthRepository for LibsqlStore {
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
+        aggregate_resource: &str,
         now: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
@@ -510,6 +511,8 @@ impl GatewayOauthRepository for LibsqlStore {
                  JOIN user_sessions s ON s.session_id = lg.user_session_id
                  JOIN users u ON u.user_id = lg.user_id
                  WHERE lg.user_id = ?1 AND lg.revoked_at IS NULL
+                   AND (lg.resource = ?4
+                        OR substr(lg.resource, 1, length(?4) + 1) = ?4 || '/')
                    AND s.revoked_at IS NULL AND s.expires_at > ?2
                    AND u.status = 'active'
                    AND EXISTS (
@@ -526,7 +529,12 @@ impl GatewayOauthRepository for LibsqlStore {
              GROUP BY g.grant_id, g.client_id, c.client_name, c.client_uri, g.resource, g.scope,
                       g.created_at
              ORDER BY g.created_at DESC, g.grant_id",
-                libsql::params![user_id.to_string(), now.unix_timestamp(), i64::from(limit)],
+                libsql::params![
+                    user_id.to_string(),
+                    now.unix_timestamp(),
+                    i64::from(limit),
+                    aggregate_resource
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -570,7 +578,13 @@ impl GatewayOauthRepository for LibsqlStore {
         let authorization_requests = self
             .connection
             .execute(
-                "DELETE FROM gateway_oauth_authorization_requests WHERE expires_at < ?1 AND (code_expires_at IS NULL OR code_expires_at < ?1)",
+                "DELETE FROM gateway_oauth_authorization_requests
+             WHERE expires_at < ?1 AND (code_expires_at IS NULL OR code_expires_at < ?1)
+               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+                               JOIN user_sessions s ON s.session_id = g.user_session_id
+                               WHERE g.grant_id = gateway_oauth_authorization_requests.grant_id
+                                 AND g.revoked_at IS NULL
+                                 AND s.revoked_at IS NULL AND s.expires_at >= ?1)",
                 [expired_before.unix_timestamp()],
             )
             .await
@@ -578,7 +592,13 @@ impl GatewayOauthRepository for LibsqlStore {
         let tokens = self
             .connection
             .execute(
-                "DELETE FROM gateway_oauth_tokens WHERE expires_at < ?1",
+                "DELETE FROM gateway_oauth_tokens
+             WHERE expires_at < ?1
+               AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+                               JOIN user_sessions s ON s.session_id = g.user_session_id
+                               WHERE g.grant_id = gateway_oauth_tokens.grant_id
+                                 AND g.revoked_at IS NULL
+                                 AND s.revoked_at IS NULL AND s.expires_at >= ?1)",
                 [expired_before.unix_timestamp()],
             )
             .await

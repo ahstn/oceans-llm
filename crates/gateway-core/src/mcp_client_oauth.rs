@@ -470,11 +470,14 @@ pub trait GatewayOauthRepository: Send + Sync {
     /// The user's grants that still work at `now`: not revoked, an active
     /// user, a live approving session, and at least one unexpired, unconsumed
     /// token. This mirrors the liveness check token validation applies.
-    /// Newest first, at most `limit` grants; token history is aggregated only
-    /// for the grants returned.
+    /// Only grants bound to `aggregate_resource` or one of its per-server
+    /// resources count, so grants from a previous issuer cannot fill the
+    /// page. Newest first, at most `limit` grants; token history is
+    /// aggregated only for the grants returned.
     async fn list_live_gateway_oauth_grants_for_user(
         &self,
         user_id: Uuid,
+        aggregate_resource: &str,
         now: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError>;
@@ -492,6 +495,11 @@ pub trait GatewayOauthRepository: Send + Sync {
     /// `expired_before`, then dynamically registered clients created before
     /// `unused_clients_before` that never received a grant and have no
     /// remaining authorization request. Grants are kept as an audit trail.
+    ///
+    /// A consumed code or refresh token is the only link from a replay to
+    /// its grant, so rows of a grant that can still be live are kept: one
+    /// that is not revoked and whose approving session had not ended by
+    /// `expired_before`.
     async fn purge_gateway_oauth_records(
         &self,
         unused_clients_before: OffsetDateTime,

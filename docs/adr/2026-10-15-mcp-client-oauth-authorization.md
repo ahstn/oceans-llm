@@ -202,9 +202,9 @@ The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin
 An hourly loop runs while the feature is enabled. It deletes:
 
 - dynamically registered clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
-- authorization requests and tokens that expired more than a day ago
+- authorization requests and tokens that expired more than a day ago, unless their grant can still be used
 
-The one-day grace keeps a late code or refresh-token replay meeting a consumed record, so it still revokes the grant. Grants are never deleted, because they are the audit trail for which client acted for a user. Invocation metadata refers to them by ID.
+A consumed code or refresh token is the only record that links a replay to its grant. These rows are therefore kept while the grant is not revoked and its approving session has not ended, so a replay at any point in the grant's life still revokes it. After that, the one-day grace still lets a late replay meet the record. The rows a live grant keeps are bounded by the session's lifetime. Grants are never deleted, because they are the audit trail for which client acted for a user. Invocation metadata refers to them by ID.
 
 ## Trade-offs
 

@@ -15,6 +15,8 @@ use tempfile::tempdir;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
+const AGGREGATE: &str = "https://oceans.example.com/mcp";
+
 #[tokio::test]
 #[serial]
 async fn libsql_gateway_oauth_flow_records_round_trip() {
@@ -475,6 +477,37 @@ where
         .create_gateway_oauth_grant(&grant(others, other, other_session, now))
         .await
         .unwrap();
+    // Newer live grants under another issuer, or a resource that only shares
+    // a prefix, never list and never take a place in the page.
+    for (index, resource) in [
+        "https://old.example.com/mcp",
+        "https://oceans.example.com/mcp-old",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let grant_id = Uuid::new_v4();
+        let created_at = now + Duration::minutes(1);
+        store
+            .create_gateway_oauth_grant(&GatewayOauthGrantRecord {
+                resource: resource.to_string(),
+                ..grant(grant_id, owner, owner_session, created_at)
+            })
+            .await
+            .unwrap();
+        store
+            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
+                token_hash: format!("foreign-{index}"),
+                grant_id,
+                kind: GatewayOauthTokenKind::Access,
+                scope: "mcp:aggregate".to_string(),
+                expires_at: now + Duration::hours(1),
+                created_at,
+                consumed_at: None,
+            })
+            .await
+            .unwrap();
+    }
     // `stale` has only an expired access token and a consumed refresh token,
     // so it can never get another token and must not list.
     let hour = Duration::hours(1);
@@ -510,6 +543,16 @@ where
             now,
             now + hour,
             None,
+        ),
+        // Long expired, but `second` is still live, so cleanup keeps it to
+        // catch a replay.
+        (
+            "second-consumed-refresh",
+            second,
+            GatewayOauthTokenKind::Refresh,
+            old,
+            old + hour,
+            Some(old + Duration::minutes(30)),
         ),
         (
             "stale-access",
@@ -572,9 +615,34 @@ where
             .unwrap();
     }
 
+    // The redeemed code behind `second`, kept for replay detection.
+    store
+        .create_gateway_oauth_authorization_request(&GatewayOauthAuthorizationRequestRecord {
+            request_id: Uuid::new_v4(),
+            client_id: "used".to_string(),
+            redirect_uri: "http://127.0.0.1/callback".to_string(),
+            redirect_uri_supplied: true,
+            state: None,
+            code_challenge: "challenge".to_string(),
+            resource: "https://oceans.example.com/mcp".to_string(),
+            scope: "mcp:aggregate".to_string(),
+            status: GatewayOauthAuthorizationStatus::Consumed,
+            user_id: Some(owner),
+            user_session_id: Some(owner_session),
+            code_hash: Some("second-code".to_string()),
+            code_expires_at: Some(old + Duration::minutes(1)),
+            grant_id: Some(second),
+            expires_at: old + Duration::minutes(10),
+            created_at: old,
+            decided_at: Some(old),
+            consumed_at: Some(old + Duration::minutes(1)),
+        })
+        .await
+        .unwrap();
+
     // Newest first; the last token issued counts as the latest activity.
     let listed = store
-        .list_live_gateway_oauth_grants_for_user(owner, now, 100)
+        .list_live_gateway_oauth_grants_for_user(owner, AGGREGATE, now, 100)
         .await
         .unwrap();
     assert_eq!(
@@ -592,7 +660,7 @@ where
 
     // The limit keeps the newest grants, with their own token aggregates.
     let page = store
-        .list_live_gateway_oauth_grants_for_user(owner, now, 1)
+        .list_live_gateway_oauth_grants_for_user(owner, AGGREGATE, now, 1)
         .await
         .unwrap();
     assert_eq!(page.len(), 1);
@@ -613,7 +681,7 @@ where
             .unwrap()
     );
     let listed = store
-        .list_live_gateway_oauth_grants_for_user(owner, now, 100)
+        .list_live_gateway_oauth_grants_for_user(owner, AGGREGATE, now, 100)
         .await
         .unwrap();
     assert_eq!(listed.len(), 1);
@@ -625,7 +693,7 @@ where
         .unwrap();
     assert!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now, 100)
+            .list_live_gateway_oauth_grants_for_user(other, AGGREGATE, now, 100)
             .await
             .unwrap()
             .is_empty()
@@ -636,7 +704,7 @@ where
         .unwrap();
     assert_eq!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now, 100)
+            .list_live_gateway_oauth_grants_for_user(other, AGGREGATE, now, 100)
             .await
             .unwrap()
             .len(),
@@ -647,7 +715,7 @@ where
     store.revoke_user_session(other_session, now).await.unwrap();
     assert!(
         store
-            .list_live_gateway_oauth_grants_for_user(other, now, 100)
+            .list_live_gateway_oauth_grants_for_user(other, AGGREGATE, now, 100)
             .await
             .unwrap()
             .is_empty()
@@ -726,5 +794,34 @@ where
             .await
             .unwrap()
             .is_some()
+    );
+    // Replay markers of a live grant survive cleanup...
+    assert!(
+        store
+            .get_gateway_oauth_token_context("second-consumed-refresh")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_authorization_request_by_code_hash("second-code")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    // ...until the approving session ends and the grant can no longer be used.
+    store.revoke_user_session(owner_session, now).await.unwrap();
+    let counts = store
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+        .await
+        .unwrap();
+    assert_eq!((counts.tokens, counts.authorization_requests), (1, 1));
+    assert!(
+        store
+            .get_gateway_oauth_authorization_request_by_code_hash("second-code")
+            .await
+            .unwrap()
+            .is_none()
     );
 }

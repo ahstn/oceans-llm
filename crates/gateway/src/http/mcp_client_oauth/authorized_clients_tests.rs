@@ -337,7 +337,12 @@ async fn revocation_while_oauth_is_disabled_survives_re_enabling() {
     let grant_id = harness
         .state
         .store
-        .list_live_gateway_oauth_grants_for_user(harness.user_id, OffsetDateTime::now_utc(), 100)
+        .list_live_gateway_oauth_grants_for_user(
+            harness.user_id,
+            "https://oceans.example.com/mcp",
+            OffsetDateTime::now_utc(),
+            100,
+        )
         .await
         .unwrap()
         .into_iter()
