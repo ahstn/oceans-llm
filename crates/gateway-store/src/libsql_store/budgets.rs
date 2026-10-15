@@ -298,36 +298,37 @@ impl BudgetRepository for LibsqlStore {
         updated_at: OffsetDateTime,
     ) -> Result<Option<BudgetRecord>, StoreError> {
         let source = BudgetSource::manual_deactivated();
-        // `RETURNING` gives the budget this call deactivated, with its settings.
-        let mut rows = self
-            .connection
-            .query(
-                r#"
-                UPDATE budgets
-                SET is_active = 0,
-                    updated_at = ?1,
-                    source_kind = ?3,
-                    source_key = ?4
-                WHERE scope_key = ?2
-                  AND is_active = 1
-                RETURNING budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at, source_kind, source_key
-                "#,
-                libsql::params![
-                    updated_at.unix_timestamp(),
-                    scope.scope_key(),
-                    source.kind.as_str(),
-                    source.key,
-                ],
-            )
+        // An immediate transaction holds the write lock, so the budget read here,
+        // with the source the deactivation overwrites, is the one it turns off.
+        let connection = self.transaction_connection().await?;
+        let tx = connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(to_write_error)?;
-        rows.next()
-            .await
-            .map_err(to_write_error)?
-            .map(|row| decode_budget_record(&row))
-            .transpose()
+        let Some(budget) = active_budget_on(&tx, scope).await? else {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        };
+        tx.execute(
+            r#"
+            UPDATE budgets
+            SET is_active = 0,
+                updated_at = ?1,
+                source_kind = ?2,
+                source_key = ?3
+            WHERE budget_id = ?4
+            "#,
+            libsql::params![
+                updated_at.unix_timestamp(),
+                source.kind.as_str(),
+                source.key,
+                budget.budget_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(budget))
     }
 
     async fn deactivate_active_budget_by_source(

@@ -476,8 +476,8 @@ pub trait BudgetRepository: Send + Sync {
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
     /// Like [`BudgetRepository::deactivate_active_budget`], returning the budget
-    /// this call deactivated, with the settings it had, or `None` when none was
-    /// active.
+    /// this call deactivated as it was just before, with its settings and source,
+    /// read under the same write lock, or `None` when none was active.
     async fn deactivate_active_budget_returning(
         &self,
         scope: &BudgetScope,

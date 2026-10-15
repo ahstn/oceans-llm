@@ -529,8 +529,8 @@ pub async fn deactivate_budget(
     }
     let scope_key = scope.scope_key();
 
-    // The update returns the budget it deactivated, so `before` holds the settings
-    // that were actually turned off, even if a save landed just before.
+    // The store returns the budget it deactivated as it was just before, read under
+    // the write lock, so `before` holds the settings and owner actually turned off.
     let deactivated = state
         .store
         .deactivate_active_budget_returning(&scope, OffsetDateTime::now_utc())
@@ -542,7 +542,7 @@ pub async fn deactivate_budget(
                 &meta.user_context(&actor),
                 AuditEvent::new(actions::BUDGET_DEACTIVATED)
                     .target(&scope_key)
-                    .before(budget_to_settings_view(budget)),
+                    .before(budget_audit_summary(budget)),
             )
             .await;
     }

@@ -394,6 +394,23 @@ async fn budget_changes_record_before_and_after() {
     assert_eq!(budget_entries[0]["after"]["source"]["kind"], "manual");
     assert_eq!(budget_entries[1]["before"], Value::Null);
     assert_admin_actor(budget_entries[0], harness.admin_id);
+
+    // Deactivating records the budget as it was, owner included, before the
+    // deactivation rewrote its source.
+    let (status, body) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/spend/budgets/deactivate",
+            Some(json!({ "scope": { "kind": "user", "user_id": user_id.to_string() } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let deactivated = harness.entry("budget.deactivated").await;
+    assert_eq!(deactivated["before"]["settings"]["amount_usd"], "25.0000");
+    assert_eq!(
+        deactivated["before"]["source"], budget_entries[0]["after"]["source"],
+        "the source before deactivation, not the deactivation marker"
+    );
 }
 
 #[tokio::test]
