@@ -3041,13 +3041,13 @@ pub(crate) mod tests {
         // SSO activation moves an invited user to active once.
         assert!(
             store
-                .activate_invited_user(user.user_id, now)
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
                 .await
                 .expect("activate")
         );
         assert!(
             !store
-                .activate_invited_user(user.user_id, now)
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
                 .await
                 .expect("activate again")
         );
@@ -9136,7 +9136,12 @@ pub(crate) mod tests {
         // The redeemed user is already active, so SSO activation changes nothing.
         assert!(
             !store
-                .activate_invited_user(member.user_id, OffsetDateTime::now_utc())
+                .transition_user_status(
+                    member.user_id,
+                    UserStatus::Invited,
+                    UserStatus::Active,
+                    OffsetDateTime::now_utc(),
+                )
                 .await
                 .expect("activate redeemed user")
         );

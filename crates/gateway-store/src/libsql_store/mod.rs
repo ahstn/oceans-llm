@@ -554,12 +554,14 @@ impl GatewayStore for LibsqlStore {
         Self::update_user_status(self, user_id, status, updated_at).await
     }
 
-    async fn activate_invited_user(
+    async fn transition_user_status(
         &self,
         user_id: Uuid,
-        activated_at: OffsetDateTime,
+        from: UserStatus,
+        to: UserStatus,
+        updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        Self::activate_invited_user(self, user_id, activated_at).await
+        Self::transition_user_status(self, user_id, from, to, updated_at).await
     }
 
     async fn update_user_must_change_password(

@@ -1324,12 +1324,19 @@ pub async fn reactivate_identity_user(
         identity_user.user.auth_mode,
         user_has_auth_proof(&state.store, &identity_user).await?,
     );
+    // A concurrent reactivation may already have moved the user, so only the
+    // request whose update changes the status records it.
     state
         .audit()
-        .audited(
+        .audited_change(
             &meta.user_context(&actor),
-            state.store.update_user_status(user_id, next_status, now),
-            |_| {
+            state.store.transition_user_status(
+                user_id,
+                identity_user.user.status,
+                next_status,
+                now,
+            ),
+            || {
                 user_event(actions::USER_REACTIVATED, &identity_user.user)
                     .before(serde_json::json!({ "status": identity_user.user.status.as_str() }))
                     .after(serde_json::json!({ "status": next_status.as_str() }))
@@ -1901,7 +1908,15 @@ pub async fn oidc_callback(
                 {
                     progress.landed();
                 }
-                let activated = state.store.activate_invited_user(user.user_id, now).await?;
+                let activated = state
+                    .store
+                    .transition_user_status(
+                        user.user_id,
+                        UserStatus::Invited,
+                        UserStatus::Active,
+                        now,
+                    )
+                    .await?;
                 Ok::<_, AppError>(activated)
             };
             let activated = match activate.await {
@@ -1963,7 +1978,10 @@ pub async fn oidc_callback(
                     now,
                 )
                 .await?;
-            let activated = state.store.activate_invited_user(user.user_id, now).await?;
+            let activated = state
+                .store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await?;
             Ok::<_, AppError>(activated)
         };
         let activated = match activate.await {
@@ -2231,7 +2249,15 @@ pub async fn oauth_callback_github(
                 {
                     progress.landed();
                 }
-                let activated = state.store.activate_invited_user(user.user_id, now).await?;
+                let activated = state
+                    .store
+                    .transition_user_status(
+                        user.user_id,
+                        UserStatus::Invited,
+                        UserStatus::Active,
+                        now,
+                    )
+                    .await?;
                 Ok::<_, AppError>(activated)
             };
             let activated = match activate.await {
@@ -2293,7 +2319,10 @@ pub async fn oauth_callback_github(
                     now,
                 )
                 .await?;
-            let activated = state.store.activate_invited_user(user.user_id, now).await?;
+            let activated = state
+                .store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await?;
             Ok::<_, AppError>(activated)
         };
         let activated = match activate.await {
