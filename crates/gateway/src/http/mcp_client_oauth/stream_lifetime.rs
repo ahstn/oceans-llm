@@ -44,12 +44,14 @@ pub(crate) fn bound_to_oauth_access(
     )
 }
 
+/// Classifies the media type exactly as the upstream proxy does (case
+/// insensitive), so every response it streams is bounded here.
 fn is_event_stream(response: &Response<Body>) -> bool {
     response
         .headers()
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim_start().starts_with("text/event-stream"))
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }
 
 fn bound_body(
@@ -105,13 +107,17 @@ mod tests {
     use super::*;
 
     fn endless_event_stream() -> Response<Body> {
+        endless_stream_with_type("text/event-stream")
+    }
+
+    fn endless_stream_with_type(content_type: &str) -> Response<Body> {
         let chunks = futures_util::stream::once(async {
             Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"data: hello\n\n"))
         })
         .chain(futures_util::stream::pending());
         Response::builder()
             .status(StatusCode::OK)
-            .header(CONTENT_TYPE, "text/event-stream")
+            .header(CONTENT_TYPE, content_type)
             .body(Body::from_stream(chunks))
             .unwrap()
     }
@@ -149,6 +155,13 @@ mod tests {
         auth.oauth.as_mut().unwrap().expires_at =
             OffsetDateTime::now_utc() + time::Duration::milliseconds(50);
         let response = bound_to_oauth_access(&harness.state, &auth, endless_event_stream());
+        assert_eq!(read_body(response).await, b"data: hello\n\n");
+        // Media types are case-insensitive, and parameters may follow.
+        let response = bound_to_oauth_access(
+            &harness.state,
+            &auth,
+            endless_stream_with_type("Text/Event-Stream; charset=utf-8"),
+        );
         assert_eq!(read_body(response).await, b"data: hello\n\n");
     }
 

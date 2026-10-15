@@ -45,13 +45,31 @@ where
 {
     static SLOTS: OnceLock<Semaphore> = OnceLock::new();
     let slots = SLOTS.get_or_init(|| Semaphore::new(MAX_CONCURRENT_ARGON2));
-    let _slot = tokio::time::timeout(ARGON2_SLOT_WAIT, slots.acquire())
+    run_limited(slots, ARGON2_SLOT_WAIT, work).await
+}
+
+/// Runs `work` on the blocking pool once a slot frees up. The slot moves into
+/// the blocking task, so a caller that disconnects mid-hash cannot release it
+/// while the hash is still running.
+async fn run_limited<T, F>(
+    slots: &'static Semaphore,
+    wait: Duration,
+    work: F,
+) -> Result<T, OauthError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let slot = tokio::time::timeout(wait, slots.acquire())
         .await
         .map_err(|_| OauthError::temporarily_unavailable("the authorization server is busy"))?
         .map_err(|_| OauthError::server_error("credential hashing is unavailable"))?;
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|_| OauthError::server_error("credential hashing failed"))
+    tokio::task::spawn_blocking(move || {
+        let _slot = slot;
+        work()
+    })
+    .await
+    .map_err(|_| OauthError::server_error("credential hashing failed"))
 }
 
 /// RFC 7636 S256: `BASE64URL(SHA256(code_verifier)) == code_challenge`.
@@ -102,6 +120,33 @@ mod tests {
         assert_eq!(first.len(), 4 + 43);
         assert_ne!(first, second);
         assert_eq!(oauth_token_hash(&first).len(), 64);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_caller_keeps_its_slot_until_the_work_finishes() {
+        let slots: &'static Semaphore = Box::leak(Box::new(Semaphore::new(1)));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let caller = tokio::spawn(run_limited(slots, Duration::from_secs(5), move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        }));
+        tokio::task::spawn_blocking(move || started_rx.recv().unwrap())
+            .await
+            .unwrap();
+
+        // The caller goes away while the hash runs; the slot stays taken.
+        caller.abort();
+        let _ = caller.await;
+        assert_eq!(slots.available_permits(), 0);
+        let busy = run_limited(slots, Duration::from_millis(20), || ()).await;
+        assert_eq!(busy.unwrap_err().error, "temporarily_unavailable");
+
+        release_tx.send(()).unwrap();
+        let freed = tokio::time::timeout(Duration::from_secs(5), slots.acquire())
+            .await
+            .expect("the slot is released when the work finishes");
+        drop(freed);
     }
 
     #[test]
