@@ -40,7 +40,7 @@ A failed audit insert is logged at `error` with the action, target and actor, an
 
 ### Record schema
 
-Migration `V61__admin_audit_log.sql` extends the baseline table on both backends. Existing rows become `system` entries, except rows with an `actor_api_key_id`, which become `api_key` entries:
+Migration `V61__admin_audit_log.sql` extends the baseline table on both backends. Existing rows become `system` entries, except rows with an `actor_api_key_id`, which become `api_key` entries, and their second-based `ts` values are converted to milliseconds:
 
 | Column | Meaning |
 |---|---|

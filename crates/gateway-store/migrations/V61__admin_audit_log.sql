@@ -14,6 +14,9 @@ ALTER TABLE audit_logs ADD COLUMN user_agent TEXT;
 
 -- Rows written before this migration name only an API key; keep that actor.
 UPDATE audit_logs SET actor_kind = 'api_key' WHERE actor_api_key_id IS NOT NULL;
+-- They also stored `ts` in seconds. Any value below 10^11 is seconds (as
+-- milliseconds it would be before 1973), so convert it to milliseconds.
+UPDATE audit_logs SET ts = ts * 1000 WHERE ts < 100000000000;
 
 CREATE INDEX IF NOT EXISTS audit_logs_ts_idx
   ON audit_logs (ts DESC, id DESC);

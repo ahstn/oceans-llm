@@ -127,7 +127,7 @@ mod tests {
     use crate::run_migrations;
 
     #[tokio::test]
-    async fn the_migration_keeps_legacy_api_key_actors() {
+    async fn the_migration_keeps_legacy_actors_and_converts_timestamps() {
         use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
 
         let temporary = tempdir().expect("tempdir");
@@ -159,8 +159,8 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO audit_logs (ts, actor_api_key_id, action, object_type, details_json) \
-                 VALUES (1, 'legacy-key', 'legacy.action', 'api_key', '{}'), \
-                        (2, NULL, 'legacy.system', 'api_key', '{}')",
+                 VALUES (1700000000, 'legacy-key', 'legacy.action', 'api_key', '{}'), \
+                        (1700000001, NULL, 'legacy.system', 'api_key', '{}')",
                 (),
             )
             .await
@@ -173,14 +173,18 @@ mod tests {
         }
 
         let mut rows = connection
-            .query("SELECT actor_kind FROM audit_logs ORDER BY ts", ())
+            .query("SELECT actor_kind, ts FROM audit_logs ORDER BY ts", ())
             .await
             .expect("query");
         let mut kinds = Vec::new();
+        let mut timestamps = Vec::new();
         while let Some(row) = rows.next().await.expect("row") {
             kinds.push(row.get::<String>(0).expect("actor kind"));
+            timestamps.push(row.get::<i64>(1).expect("ts"));
         }
         assert_eq!(kinds, ["api_key", "system"]);
+        // Legacy seconds become milliseconds.
+        assert_eq!(timestamps, [1_700_000_000_000, 1_700_000_001_000]);
     }
 
     #[tokio::test]
