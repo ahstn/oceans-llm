@@ -232,23 +232,39 @@ where
         })
         .await
         .expect("grant");
-    for (hash, kind) in [
-        ("access-hash", GatewayOauthTokenKind::Access),
-        ("refresh-hash", GatewayOauthTokenKind::Refresh),
-    ] {
+    let token = |hash: &str, kind| GatewayOauthTokenRecord {
+        token_hash: hash.to_string(),
+        grant_id,
+        kind,
+        scope: "mcp:aggregate".to_string(),
+        expires_at: now + Duration::hours(1),
+        created_at: now,
+        consumed_at: None,
+    };
+    store
+        .create_gateway_oauth_tokens(&[
+            token("access-hash", GatewayOauthTokenKind::Access),
+            token("refresh-hash", GatewayOauthTokenKind::Refresh),
+        ])
+        .await
+        .expect("tokens");
+    // A pair is stored together or not at all.
+    assert!(
         store
-            .create_gateway_oauth_token(&GatewayOauthTokenRecord {
-                token_hash: hash.to_string(),
-                grant_id,
-                kind,
-                scope: "mcp:aggregate".to_string(),
-                expires_at: now + Duration::hours(1),
-                created_at: now,
-                consumed_at: None,
-            })
+            .create_gateway_oauth_tokens(&[
+                token("pair-access", GatewayOauthTokenKind::Access),
+                token("refresh-hash", GatewayOauthTokenKind::Refresh),
+            ])
             .await
-            .expect("token");
-    }
+            .is_err()
+    );
+    assert!(
+        store
+            .get_gateway_oauth_token_context("pair-access")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Aggregate sessions belong to exactly one of an API key or a grant.
     let session = |api_key_id, gateway_oauth_grant_id| NewMcpAggregateSessionRecord {
