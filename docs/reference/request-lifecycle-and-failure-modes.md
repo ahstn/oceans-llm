@@ -28,6 +28,7 @@ The live request path is single-route in this slice.
    - A concrete model key stays concrete.
    - A `tag:` selector picks one allowed gateway model; blocked allowlisted candidates are skipped.
    - An alias resolves to a canonical execution model after gateway-model authorization. Alias and target allowlists are independent.
+   - [Rate limits](../configuration/rate-limits.md) for the key, user, team, and model are checked next. An exhausted limit returns `429 rate_limited` before route planning, guardrails, budgets, or any provider call, and writes no request-log row.
 5. The gateway computes the strictest `max_reasoning_effort` across the requested-model-to-target chain and validates every explicit categorical effort field.
    - omitted policies, omitted effort fields, and explicit `null` values pass
    - above-ceiling, unknown, and malformed values return `invalid_request`
@@ -185,6 +186,13 @@ These failures look similar from far away, but they mean different things.
 - The OpenAI and Anthropic Python SDKs do not retry the default `422`; they do retry `429`. Check other clients before choosing `429`.
 - No provider call occurs on this path.
 - Observability records this as a request outcome rather than as provider execution: a `budget_error` request metric and, when the request-log payload and owner policy records the request, a summary row with the returned status, `error_code = budget_exceeded`, and no attempts. This holds for `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, and `/v1/decisions`. Batch creation enforces the same budget but writes no request-log row for any outcome.
+
+### `rate_limited`
+
+- A matching [rate-limit policy](../configuration/rate-limits.md) was exhausted, or an API key already has 8 token counts in flight on this instance.
+- The HTTP response is `429` with `type: rate_limit_error` and `code: rate_limited`, in the OpenAI or Anthropic envelope for the route. MCP `tools/call` returns a JSON-RPC error with code `-32029`.
+- `Retry-After` gives the seconds until the request would fit. `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` describe the tightest matching policy, on admitted responses too.
+- No provider call occurs and nothing is charged against other policies. Inference rejections write no request-log row; they are counted by the `gateway.rate_limit.decisions` metric. MCP rejections are recorded as invocations with error code `rate_limited`.
 
 ### `unpriced`
 

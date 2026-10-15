@@ -409,3 +409,5 @@ the input schema also changed. See
 On `/mcp`, `search_tools`, `describe_tool`, and `call_tool` resolve only active tools granted to the authenticated API key, owner user, owner service account, or team.
 
 On `/mcp/{server_key}`, `tools/list` responses are filtered to granted active tools for that server. `tools/call` is rejected before upstream when the tool is not granted. Disabled servers, inactive tools, disabled toolsets, revoked grants, inactive memberships, missing credentials, and expired credentials do not resolve as callable access.
+
+Granted tool calls on both endpoints also count against `mcp_tool_call` [rate limits](rate-limits.md), per server and per key, user, team, or the whole gateway. A call over a limit gets HTTP `429` with JSON-RPC error `-32029`, `Retry-After`, and `X-RateLimit-*` headers, and never reaches the upstream server.

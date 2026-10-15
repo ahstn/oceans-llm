@@ -41,6 +41,7 @@ pub struct GatewayMetrics {
     mcp_discovery_refresh_duration: Histogram<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
+    rate_limit_decisions: Counter<u64>,
     admin_view_cache_requests: Counter<u64>,
     admin_view_cache_load_duration: Histogram<f64>,
     #[cfg(any(test, debug_assertions))]
@@ -238,6 +239,10 @@ impl GatewayMetrics {
                 .u64_counter("gateway.chat.usage_record_failures")
                 .with_description("Post-success chat usage record failures")
                 .build(),
+            rate_limit_decisions: meter
+                .u64_counter("gateway.rate_limit.decisions")
+                .with_description("Rate-limit checks by operation and outcome")
+                .build(),
             admin_view_cache_requests: meter
                 .u64_counter("gateway.admin.view_cache.requests")
                 .with_description("Admin global-view cache requests by result")
@@ -380,6 +385,18 @@ impl GatewayMetrics {
         let mut attrs = base_attrs(labels);
         attrs.push(KeyValue::new("operation", operation.to_string()));
         self.usage_record_failures.add(1, &attrs);
+    }
+
+    /// `outcome` is `admitted`, `rejected` or `store_error`; requests no policy
+    /// matched are not counted.
+    pub fn record_rate_limit_decision(&self, operation: &str, outcome: &str) {
+        self.rate_limit_decisions.add(
+            1,
+            &[
+                KeyValue::new("rate_limit.operation", operation.to_string()),
+                KeyValue::new("rate_limit.outcome", outcome.to_string()),
+            ],
+        );
     }
 
     pub fn record_guardrail_decision(

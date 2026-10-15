@@ -166,6 +166,8 @@ Until then the metadata omits `client_id_metadata_document_supported`. Clients t
 
 API-key behavior does not change. Grants given directly to a specific key do not apply to OAuth tokens. They belong to that key, and there is no key in an OAuth call. User and team grants resolve exactly as they do for that user's keys.
 
+Rate limits (#25) treat each OAuth grant as its own credential. An `api_key`-scoped policy counts every grant separately, and a policy pinned to one key ID never matches a grant. `user`- and `global`-scoped policies apply to OAuth calls the same way they apply to the user's keys.
+
 In code, an OAuth principal is an `AuthenticatedApiKey` whose `oauth` field is set. That keeps the type every MCP handler already takes. In that case `id` is the grant ID, which is a stable identity for aggregate-session binding but not an `api_keys` row. `api_key_id()` returns `None` for OAuth principals, and `auth_method()` reports `api_key` or `oauth`. Grant resolution, invocation logging, and aggregate sessions read those accessors instead of `id`. An OAuth principal only reaches MCP handlers, because no other route accepts `oat_` tokens.
 
 Invocation logs leave `api_key_id` empty for OAuth calls and add `auth_method`, `oauth_client_id`, and `oauth_grant_id` to the invocation's `metadata`. #448 owns the invocation schema and can promote those to columns without a data migration from this change. Aggregate sessions store either `api_key_id` or `gateway_oauth_grant_id`, never both, so a session opened with one credential cannot be reused with another.

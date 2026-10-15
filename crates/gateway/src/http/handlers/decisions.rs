@@ -17,6 +17,7 @@ pub async fn v1_decisions(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     Json(body): Json<Value>,
 ) -> Result<Response, AppError> {
@@ -25,6 +26,7 @@ pub async fn v1_decisions(
         state,
         request_id,
         headers,
+        policy,
         auth,
         DecisionsCall {
             body,
@@ -39,6 +41,7 @@ pub async fn v1_systemone(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     Json(body): Json<Value>,
 ) -> Result<Response, AppError> {
@@ -53,6 +56,7 @@ pub async fn v1_systemone(
         state,
         request_id,
         headers,
+        policy,
         auth,
         DecisionsCall {
             body,
@@ -182,6 +186,7 @@ async fn execute_decisions(
     state: AppState,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     auth: AuthenticatedApiKey,
     call: DecisionsCall,
 ) -> Result<Response, AppError> {
@@ -196,20 +201,34 @@ async fn execute_decisions(
     let resolved_model = resolved.selection.execution_model.model_key.clone();
 
     let mut selected_provider = None;
-    let result = dispatch_decisions(
+    // A rate-limit rejection is an exit after resolution, so it is counted too.
+    let result = match enforce_inference_rate_limits(
         &state,
-        &headers,
+        &policy,
         &auth,
-        &call,
-        ResolvedDecisions {
-            request_id,
-            request_started_at,
-            core_request,
-            resolved,
-        },
-        &mut selected_provider,
+        &resolved,
+        RateLimitOperation::Inference,
     )
-    .await;
+    .await
+    {
+        Ok(()) => {
+            dispatch_decisions(
+                &state,
+                &headers,
+                &auth,
+                &call,
+                ResolvedDecisions {
+                    request_id,
+                    request_started_at,
+                    core_request,
+                    resolved,
+                },
+                &mut selected_provider,
+            )
+            .await
+        }
+        Err(error) => Err(AppError(error)),
+    };
 
     let (status_code, outcome) = match &result {
         Ok(response) => (i64::from(response.status().as_u16()), "success"),

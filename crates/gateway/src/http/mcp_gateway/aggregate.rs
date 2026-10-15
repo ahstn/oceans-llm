@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 use super::{
     MAX_MCP_REQUEST_BODY_BYTES, authenticate_mcp_request, body_read_exceeded_limit,
@@ -84,6 +84,11 @@ async fn handle_post(
     headers: HeaderMap,
     request: Request<Body>,
 ) -> Response<Body> {
+    let policy = request
+        .extensions()
+        .get::<RequestPolicyContext>()
+        .cloned()
+        .unwrap_or_default();
     let body = match to_bytes(request.into_body(), MAX_MCP_REQUEST_BODY_BYTES).await {
         Ok(body) => body,
         Err(error) if body_read_exceeded_limit(&error) => {
@@ -159,7 +164,7 @@ async fn handle_post(
             name,
             arguments,
         } => match validate_request_session(&state, &auth, &headers, &id).await {
-            Ok(_) => call_builtin_tool(&state, &auth, id, name, arguments).await,
+            Ok(_) => call_builtin_tool(&state, &policy, &auth, id, name, arguments).await,
             Err(response) => *response,
         },
         McpServerMessage::OtherRequest { id, method } => json_rpc_response(
@@ -344,6 +349,7 @@ fn list_builtin_tools(id: JsonRpcId) -> Response<Body> {
 
 async fn call_builtin_tool(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     id: JsonRpcId,
     name: String,
@@ -399,7 +405,7 @@ async fn call_builtin_tool(
                     );
                 }
             };
-            return call_catalog_tool(state, auth, id, input).await;
+            return call_catalog_tool(state, policy, auth, id, input).await;
         }
         _ => {
             return json_rpc_response(
