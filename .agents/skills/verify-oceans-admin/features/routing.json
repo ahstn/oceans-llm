@@ -405,7 +405,28 @@
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
-        "crates/gateway-store/src/any_store_guardrail_decisions.rs"
+        "crates/gateway-store/src/any_store_guardrail_decisions.rs",
+        "crates/admin-ui/web/src/components/guardrails/{decision-toolbar,inner-panel}.{ts,tsx}"
+      ]
+    },
+    {
+      "id": "audit-log",
+      "file": "audit-log.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/audit-log.tsx",
+        "crates/admin-ui/web/src/components/audit/**",
+        "crates/gateway/src/http/audit.rs",
+        "crates/gateway/src/http/identity_audit.rs",
+        "crates/gateway-service/src/admin_audit.rs",
+        "crates/gateway-core/src/audit.rs",
+        "crates/gateway-store/src/audit_logs.rs",
+        "crates/gateway-store/src/any_store_audit_logs.rs",
+        "crates/gateway-store/src/libsql_store/audit_logs.rs",
+        "crates/gateway-store/migrations/V59__admin_audit_log.sql",
+        "crates/admin-ui/web/src/components/guardrails/{decision-toolbar,inner-panel}.{ts,tsx}"
       ]
     },
     {
@@ -459,7 +480,8 @@
         "crates/gateway/src/http/{identity,identity_lifecycle,identity_views,provider_credentials}.rs",
         "crates/gateway-store/src/libsql_store/{identity,provider_user_credentials}.rs",
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
-        "crates/gateway/src/local_demo_seed/{users,teams}.rs"
+        "crates/gateway/src/local_demo_seed/{users,teams}.rs",
+        "crates/gateway/src/http/identity_audit.rs"
       ]
     },
     {

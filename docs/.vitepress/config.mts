@@ -126,6 +126,7 @@ const primarySidebar = [
         ],
       },
       { text: "Admin Control Plane", link: "/access/admin-control-plane" },
+      { text: "Admin Audit Log", link: "/access/admin-audit-log" },
     ],
   },
   {

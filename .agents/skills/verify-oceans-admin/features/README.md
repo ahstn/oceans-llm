@@ -71,6 +71,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
 - [Guardrails](./guardrails.md) covers effective policy cards, decision filters, and a free evaluate-endpoint decision.
+- [Audit Log](./audit-log.md) covers admin audit entries from one change per area, redaction, filters, cursor paging, and API parity.
 - [Batch requests](./batch-requests.md) covers the seeded batch list, filters, the responses sheet, and the cancel dialog without cancelling.
 - [Identity](./identity.md) covers the Users, Teams, and Service Accounts lists, user management, team membership transfer, and read-only directories.
 - [Account onboarding](./account-onboarding.md) covers password-user creation, the invite URL, `Account ready`, and voluntary password change.
