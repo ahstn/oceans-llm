@@ -167,6 +167,11 @@ pub struct RateLimitPolicyRecord {
 /// The longest policy name config and the admin API accept.
 pub const MAX_RATE_LIMIT_POLICY_NAME_LEN: usize = 100;
 
+/// The most enabled policies, config and admin together, one operation may
+/// have. Every request is checked against its operation's policies, so this
+/// bounds the per-request matching and counter work.
+pub const MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION: usize = 100;
+
 /// The filters and scope a policy matches on, for shape validation.
 #[derive(Debug, Clone, Copy)]
 pub struct RateLimitPolicyShape<'a> {

@@ -163,3 +163,21 @@ fn rejects_invalid_rate_limit_policies() {
         assert!(error.contains(expected), "{yaml}\n=> {error}");
     }
 }
+
+#[test]
+fn rejects_more_policies_per_operation_than_the_cap() {
+    let cap = gateway_core::MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION;
+    let policies: String = (0..=cap)
+        .map(|n| {
+            format!("    - {{name: p{n}, operation: inference, scope: api_key, period: minute, limit: 5}}\n")
+        })
+        .collect();
+    let error = error_chain(&format!("rate_limits:\n  policies:\n{policies}"));
+    assert!(
+        error.contains(&format!(
+            "rate_limits.policies has {} `inference` policies",
+            cap + 1
+        )),
+        "{error}"
+    );
+}

@@ -35,7 +35,7 @@ A specific policy can tighten a default for one principal, but it cannot raise i
 
 Token counts are only known once a response finishes. A `tokens` policy rejects a request once its window is already used up, then charges the response's `total_tokens` after it completes. The charge is written before the response is returned, so requests sent one after another always see earlier usage. Only concurrent requests can each pass the check before the others are charged, so a token limit can be exceeded by up to one response per request in flight.
 
-Token limits count the usage the provider reports, the same usage budgets charge. That includes partial usage from a request that failed, from a stream that ended in an error, and from a stream the client cancelled after usage was reported, because the provider consumed those tokens. A response's usage is charged to all of its token policies or to none. Requests that report no usage and batch jobs are not charged.
+Token limits count the usage the provider reports, the same usage budgets charge. That includes partial usage from a request that failed, from a stream that ended in an error, and from a stream the client cancelled after usage was reported, because the provider consumed those tokens. A response's usage is charged to all of its token policies or to none. A cancelled stream is charged in the background; the next check on the same gateway instance waits up to a second for that charge, so cancelling and retrying straight away still sees the usage. Requests that report no usage and batch jobs are not charged.
 
 ## Configure
 
@@ -70,7 +70,7 @@ rate_limits:
       limit: 5000
 ```
 
-Config policies cannot name a specific key, user, or team. Policy names must be unique. A `model` must be a configured gateway model. A policy whose `mcp_server` is not registered logs a warning at startup and applies once a server with that key exists. See [Configuration Reference](configuration-reference.md#rate_limits) for validation rules.
+Config policies cannot name a specific key, user, or team. Policy names must be unique. Each operation can have at most 100 enabled policies, config and admin combined, which bounds the work a single request can cause. A `model` must be a configured gateway model. A policy whose `mcp_server` is not registered logs a warning at startup and applies once a server with that key exists. See [Configuration Reference](configuration-reference.md#rate_limits) for validation rules.
 
 Platform admins manage more policies on the **Rate Limits** page in the admin UI (page id `rate_limits`), or through `GET`/`POST /api/v1/admin/rate-limits` and `PATCH`/`DELETE /api/v1/admin/rate-limits/{policy_id}`. Admin policies can target one key, user, team, or MCP server, and can be paused without deleting them. Config policies appear on the same page, read-only.
 
@@ -111,6 +111,8 @@ Headers:
 | `X-RateLimit-Reset` | any request a policy matched | Seconds until that policy's current window ends |
 
 The tightest policy is the one that rejected the request, or, when the request was admitted, the one with the least remaining. Requests that no policy matches carry none of these headers.
+
+The headers describe the state when the request was admitted. For a token policy, `X-RateLimit-Remaining` does not include the tokens of the response that carries it, because streamed responses send headers before usage is known; non-streaming responses behave the same way so the two agree. The next request's headers include them.
 
 ### Retries and fallbacks
 

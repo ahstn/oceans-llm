@@ -34,7 +34,7 @@ A rate-limit policy has:
 | `period` | `minute`, `hour`, `day`, `month` |
 | `limit` | positive integer |
 
-A request is checked against every enabled policy that matches it. **The most restrictive wins:** if any matching policy is exhausted, the request is rejected. A specific policy can tighten a default policy for one principal, but it cannot raise it.
+A request is checked against every enabled policy that matches it, and each operation can have at most 100 enabled policies (config and admin together), which bounds the matching and counter work one request can cause. **The most restrictive wins:** if any matching policy is exhausted, the request is rejected. A specific policy can tighten a default policy for one principal, but it cannot raise it.
 
 A `model_key` filter matches either the requested model key or the model it resolves to, so a policy on a model also covers its aliases.
 

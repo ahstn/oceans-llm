@@ -158,10 +158,10 @@ pub use protocol::translate::{
     openai_responses_request_to_core,
 };
 pub use rate_limits::{
-    MAX_RATE_LIMIT_POLICY_NAME_LEN, RateLimitConsumeResult, RateLimitCounterCharge,
-    RateLimitCounterIncrement, RateLimitCounterObservation, RateLimitMetric, RateLimitOperation,
-    RateLimitPeriod, RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind,
-    RateLimitWindow,
+    MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION, MAX_RATE_LIMIT_POLICY_NAME_LEN,
+    RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
+    RateLimitCounterObservation, RateLimitMetric, RateLimitOperation, RateLimitPeriod,
+    RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind, RateLimitWindow,
 };
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,

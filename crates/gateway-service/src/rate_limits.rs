@@ -11,15 +11,16 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicI64, AtomicU64, Ordering},
+        atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
 
 use gateway_core::{
-    AuthenticatedApiKey, GatewayError, RateLimitCounterCharge, RateLimitCounterIncrement,
-    RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitPolicyRecord,
-    RateLimitPolicyShape, RateLimitRepository, RateLimitScopeKind, RateLimitWindow, StoreError,
+    AuthenticatedApiKey, GatewayError, MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION,
+    RateLimitCounterCharge, RateLimitCounterIncrement, RateLimitMetric, RateLimitOperation,
+    RateLimitPeriod, RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitRepository,
+    RateLimitScopeKind, RateLimitWindow, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -350,8 +351,35 @@ const INCOMPLETE_POLICY_RETRY: Duration = Duration::from_secs(1);
 /// In `closed` mode, how long token policies reject after a token usage write
 /// failed. Once it lapses, admitted requests probe the store again.
 const TOKEN_WRITE_FAILURE_HOLD_SECONDS: i64 = 5;
+/// The longest a check waits for this replica's detached token charges.
+const PENDING_CHARGE_WAIT: Duration = Duration::from_secs(1);
 
 type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
+
+/// Counts one detached token charge until dropped, then wakes waiting checks
+/// once none remain. Dropping also covers a charge task that panicked.
+struct PendingCharge {
+    pending: Arc<AtomicUsize>,
+    done: Arc<tokio::sync::Notify>,
+}
+
+impl PendingCharge {
+    fn start(pending: &Arc<AtomicUsize>, done: &Arc<tokio::sync::Notify>) -> Self {
+        pending.fetch_add(1, Ordering::SeqCst);
+        Self {
+            pending: Arc::clone(pending),
+            done: Arc::clone(done),
+        }
+    }
+}
+
+impl Drop for PendingCharge {
+    fn drop(&mut self) {
+        if self.pending.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.done.notify_waiters();
+        }
+    }
+}
 
 pub struct RateLimiter {
     store: Option<Arc<dyn RateLimitRepository>>,
@@ -365,6 +393,10 @@ pub struct RateLimiter {
     last_purge: AtomicI64,
     /// Unix seconds of the last failed token usage write, or 0.
     token_write_failed_at: AtomicI64,
+    /// Detached token charges still being written, and a wake-up for checks
+    /// waiting on them.
+    pending_charges: Arc<AtomicUsize>,
+    charges_done: Arc<tokio::sync::Notify>,
     clock: Clock,
 }
 
@@ -404,6 +436,8 @@ impl RateLimiter {
             generation: AtomicU64::new(0),
             last_purge: AtomicI64::new(0),
             token_write_failed_at: AtomicI64::new(0),
+            pending_charges: Arc::new(AtomicUsize::new(0)),
+            charges_done: Arc::new(tokio::sync::Notify::new()),
             clock: Arc::new(OffsetDateTime::now_utc),
         }
     }
@@ -429,6 +463,7 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
+        self.wait_for_pending_charges().await;
         let set = self.policies().await;
         if !set.complete {
             // Admin policies are unknown, so this request may be one they
@@ -564,6 +599,69 @@ impl RateLimiter {
             return;
         }
         self.add_tokens(subject, total_tokens, (self.clock)()).await;
+    }
+
+    /// [`Self::record_tokens`] for code that cannot await, such as a stream
+    /// the client dropped. The charge runs on its own task, and the next check
+    /// on this replica waits for it, so a caller that cancels and retries
+    /// straight away still sees the usage.
+    pub fn record_tokens_detached(
+        self: &Arc<Self>,
+        subject: &RateLimitSubject<'_>,
+        total_tokens: i64,
+    ) {
+        if total_tokens <= 0 || self.store.is_none() {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let finished_at = (self.clock)();
+        let pending = PendingCharge::start(&self.pending_charges, &self.charges_done);
+        let limiter = Arc::clone(self);
+        let operation = subject.operation;
+        let api_key_id = subject.api_key_id;
+        let user_id = subject.user_id;
+        let team_id = subject.team_id;
+        let model_keys: Vec<String> = subject.model_keys.iter().map(ToString::to_string).collect();
+        runtime.spawn(async move {
+            let _pending = pending;
+            let model_keys: Vec<&str> = model_keys.iter().map(String::as_str).collect();
+            let subject = RateLimitSubject {
+                operation,
+                api_key_id,
+                user_id,
+                team_id,
+                model_keys: &model_keys,
+                mcp_server: None,
+            };
+            limiter
+                .add_tokens(&subject, total_tokens, finished_at)
+                .await;
+        });
+    }
+
+    async fn wait_for_pending_charges(&self) {
+        if self.pending_charges.load(Ordering::SeqCst) == 0 {
+            return;
+        }
+        let drained = async {
+            loop {
+                let notified = self.charges_done.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if self.pending_charges.load(Ordering::SeqCst) == 0 {
+                    return;
+                }
+                notified.await;
+            }
+        };
+        if tokio::time::timeout(PENDING_CHARGE_WAIT, drained)
+            .await
+            .is_err()
+        {
+            tracing::warn!("checking rate limits before a pending token charge finished");
+        }
     }
 
     async fn add_tokens(
@@ -746,6 +844,7 @@ impl RateLimiter {
         policy: RateLimitPolicyRecord,
     ) -> Result<RateLimitPolicyRecord, GatewayError> {
         self.validate_admin_policy(&policy)?;
+        self.ensure_policy_capacity(&policy).await?;
         self.admin_store()?
             .insert_rate_limit_policy(&policy)
             .await
@@ -759,6 +858,7 @@ impl RateLimiter {
         policy: RateLimitPolicyRecord,
     ) -> Result<RateLimitPolicyRecord, GatewayError> {
         self.validate_admin_policy(&policy)?;
+        self.ensure_policy_capacity(&policy).await?;
         let updated = self
             .admin_store()?
             .update_rate_limit_policy(&policy)
@@ -785,6 +885,43 @@ impl RateLimiter {
             ))));
         }
         self.invalidate();
+        Ok(())
+    }
+
+    /// Rejects enabling a policy that would take its operation past
+    /// `MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION`. Two admins enabling
+    /// policies at the same moment can each pass; the cap bounds cost, not
+    /// correctness, so that is acceptable.
+    async fn ensure_policy_capacity(
+        &self,
+        policy: &RateLimitPolicyRecord,
+    ) -> Result<(), GatewayError> {
+        if !policy.enabled {
+            return Ok(());
+        }
+        let others = self
+            .admin_store()?
+            .list_rate_limit_policies()
+            .await?
+            .into_iter()
+            .filter(|other| {
+                other.enabled
+                    && other.operation == policy.operation
+                    && other.rate_limit_policy_id != policy.rate_limit_policy_id
+            })
+            .count();
+        let from_config = self
+            .settings
+            .config_policies
+            .iter()
+            .filter(|config| config.operation == policy.operation)
+            .count();
+        if others + from_config >= MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION {
+            return Err(GatewayError::InvalidRequest(format!(
+                "at most {MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION} rate limit policies can be enabled for `{}`; pause or delete one first",
+                policy.operation.as_str()
+            )));
+        }
         Ok(())
     }
 

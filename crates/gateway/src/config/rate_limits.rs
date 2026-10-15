@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, collections::BTreeSet, time::Duration};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    RateLimitMetric, RateLimitOperation, RateLimitPeriod, RateLimitPolicyShape, RateLimitScopeKind,
+    MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION, RateLimitMetric, RateLimitOperation,
+    RateLimitPeriod, RateLimitPolicyShape, RateLimitScopeKind,
 };
 use gateway_service::{ConfiguredRateLimitPolicy, RateLimitFailureMode, RateLimitSettings};
 use serde::Deserialize;
@@ -81,6 +82,19 @@ impl RateLimitsConfig {
             bail!(
                 "rate_limits.policy_refresh_seconds must be between 1 and {MAX_POLICY_REFRESH_SECONDS}"
             );
+        }
+        for operation in RateLimitOperation::ALL {
+            let count = self
+                .policies
+                .iter()
+                .filter(|policy| policy.operation == operation)
+                .count();
+            if count > MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION {
+                bail!(
+                    "rate_limits.policies has {count} `{}` policies; at most {MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION} are allowed per operation",
+                    operation.as_str()
+                );
+            }
         }
         let mut names = BTreeSet::new();
         for policy in &self.policies {

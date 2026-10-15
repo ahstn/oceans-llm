@@ -1081,22 +1081,16 @@ fn spawn_cancelled_stream_token_charge(state: &LoggingBodyStreamState) {
     ) else {
         return;
     };
-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    let service = state.service.clone();
-    let auth = state.auth.clone();
-    let requested_model = state.requested_model_key.clone();
-    let resolved_model = state.resolved_model_key.clone();
-    runtime.spawn(async move {
-        let model_keys = [requested_model.as_str(), resolved_model.as_str()];
-        let subject =
-            RateLimitSubject::new(RateLimitOperation::Inference, &auth).with_models(&model_keys);
-        service
-            .rate_limiter()
-            .record_tokens(&subject, total_tokens)
-            .await;
-    });
+    let model_keys = [
+        state.requested_model_key.as_str(),
+        state.resolved_model_key.as_str(),
+    ];
+    let subject =
+        RateLimitSubject::new(RateLimitOperation::Inference, &state.auth).with_models(&model_keys);
+    state
+        .service
+        .rate_limiter()
+        .record_tokens_detached(&subject, total_tokens);
 }
 
 /// The tokens a token limit charges: the reported total, or prompt plus
@@ -2056,6 +2050,10 @@ async fn finalize_successful_usage_accounting_from_parts(
     context: UsageAccountingContext<'_>,
     provider_usage: Option<Value>,
 ) {
+    // Token limits count what the provider reported, whatever happens to the
+    // ledger and budget accounting below.
+    let reported =
+        gateway_service::request_logging::usage_summary_from_value(provider_usage.as_ref());
     match service
         .record_chat_usage(
             context.auth,
@@ -2067,10 +2065,7 @@ async fn finalize_successful_usage_accounting_from_parts(
         )
         .await
     {
-        Ok(usage) => {
-            record_usage_metrics_from_ref(metrics, &context.labels, &usage);
-            charge_rate_limit_tokens(service, &context, &usage).await;
-        }
+        Ok(usage) => record_usage_metrics_from_ref(metrics, &context.labels, &usage),
         Err(error) => {
             tracing::warn!(
                 request_id = %context.request_id,
@@ -2085,6 +2080,7 @@ async fn finalize_successful_usage_accounting_from_parts(
             metrics.record_usage_record_failure(&context.labels, context.operation);
         }
     }
+    charge_rate_limit_tokens(service, &context, &reported).await;
 }
 
 /// Token limits are checked before a request and charged here, once the
@@ -2092,7 +2088,7 @@ async fn finalize_successful_usage_accounting_from_parts(
 async fn charge_rate_limit_tokens(
     service: &AppGatewayService,
     context: &UsageAccountingContext<'_>,
-    usage: &gateway_service::RecordedChatUsage,
+    usage: &gateway_service::request_logging::UsageSummary,
 ) {
     let Some(total_tokens) = chargeable_tokens(
         usage.total_tokens,
@@ -2536,18 +2532,10 @@ mod tests {
             &harness.auth,
         )
         .with_models(&models);
-        let remaining = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let decision = limiter.check(&subject).await.expect("check");
-                let remaining = decision.status().map(|status| status.remaining);
-                if remaining != Some(1_000) {
-                    break remaining;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("cancelled stream charged its usage");
+        // The next check waits for the detached charge, so a client that
+        // cancels and retries at once already sees the usage.
+        let decision = limiter.check(&subject).await.expect("check");
+        let remaining = decision.status().map(|status| status.remaining);
         assert_eq!(remaining, Some(958));
     }
 

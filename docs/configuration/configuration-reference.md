@@ -778,6 +778,7 @@ Validation rules:
 
 - unknown fields, operations, scopes, metrics, periods, and failure modes fail startup
 - `limit` must be greater than `0`, and names must be unique after trimming
+- at most 100 policies per operation; admin policies count against the same limit when enabled
 - `tokens` is only valid with `operation: inference`
 - `model` must reference a configured gateway model and cannot be set for `mcp_tool_call`
 - `mcp_server` can only be set for `mcp_tool_call`; an unregistered key logs a warning at startup

@@ -20,9 +20,11 @@ struct MemoryStore {
     fail: bool,
     fail_list: std::sync::atomic::AtomicBool,
     fail_add: std::sync::atomic::AtomicBool,
-    /// When set, a policy list reads the rows, then waits for a permit.
+    /// When set, the first policy list reads the rows, then waits for a permit.
     list_gate: Option<Arc<tokio::sync::Semaphore>>,
     list_started: std::sync::atomic::AtomicBool,
+    /// When set, a usage write waits for a permit before applying.
+    add_gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 #[async_trait]
@@ -32,9 +34,12 @@ impl RateLimitRepository for MemoryStore {
             return Err(StoreError::Unavailable("down".to_string()));
         }
         let rows = self.policies.lock().unwrap().clone();
-        if let Some(gate) = &self.list_gate {
-            self.list_started
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+        // Only the first list (the refresh under test) waits at the gate.
+        if let Some(gate) = &self.list_gate
+            && !self
+                .list_started
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
             gate.acquire().await.unwrap().forget();
         }
         Ok(rows)
@@ -135,6 +140,9 @@ impl RateLimitRepository for MemoryStore {
     ) -> Result<(), StoreError> {
         if self.fail_add.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(StoreError::Unavailable("read only".to_string()));
+        }
+        if let Some(gate) = &self.add_gate {
+            gate.acquire().await.unwrap().forget();
         }
         let mut counters = self.counters.lock().unwrap();
         for increment in increments {
@@ -852,4 +860,82 @@ async fn closed_mode_rejects_token_traffic_after_a_failed_usage_write() {
         harness.limiter.check(&subject).await.unwrap(),
         RateLimitDecision::Admitted(RateLimitStatus { remaining: 600, .. })
     ));
+}
+
+#[tokio::test]
+async fn checks_wait_for_detached_token_charges() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let harness = Harness::new(
+        MemoryStore {
+            add_gate: Some(gate.clone()),
+            ..MemoryStore::default()
+        },
+        vec![config(
+            "user tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::User,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+
+    // The charge is held at the store until another task releases it, so a
+    // check that did not wait would read the old total.
+    harness.limiter.record_tokens_detached(&subject, 400);
+    tokio::spawn(async move {
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        gate.add_permits(1);
+    });
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(RateLimitStatus { remaining: 600, .. })
+    ));
+}
+
+#[tokio::test]
+async fn enabled_policies_are_capped_per_operation() {
+    let cap = gateway_core::MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION;
+    let config_policies = (0..cap - 1)
+        .map(|n| {
+            config(
+                &format!("config {n}"),
+                RateLimitOperation::Inference,
+                RateLimitScopeKind::ApiKey,
+                RateLimitMetric::Requests,
+                RateLimitPeriod::Minute,
+                100,
+            )
+        })
+        .collect();
+    let harness = Harness::new(MemoryStore::default(), config_policies);
+
+    let last = harness
+        .limiter
+        .create_admin_policy(admin_policy("last", RateLimitScopeKind::Global, 5))
+        .await
+        .unwrap();
+    let error = harness
+        .limiter
+        .create_admin_policy(admin_policy("over", RateLimitScopeKind::Global, 5))
+        .await
+        .unwrap_err();
+    assert_eq!(error.http_status_code(), 400);
+
+    // Paused policies and other operations do not count, and editing an
+    // enabled policy does not count it twice.
+    let mut paused = admin_policy("paused", RateLimitScopeKind::Global, 5);
+    paused.enabled = false;
+    harness.limiter.create_admin_policy(paused).await.unwrap();
+    let mut counts = admin_policy("counts", RateLimitScopeKind::Global, 5);
+    counts.operation = RateLimitOperation::CountTokens;
+    harness.limiter.create_admin_policy(counts).await.unwrap();
+    harness
+        .limiter
+        .update_admin_policy(RateLimitPolicyRecord { limit: 9, ..last })
+        .await
+        .unwrap();
 }
