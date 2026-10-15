@@ -506,14 +506,34 @@ pub fn is_sensitive_audit_key(key: &str) -> bool {
 /// Whether a name looks secret, without the safe-suffix allowance. Tag keys are
 /// user-entered, so `password_ref` must not pass as a reference.
 fn is_secret_name(key: &str) -> bool {
-    let normalized = key.to_ascii_lowercase().replace('-', "_");
+    let normalized = snake_case(key);
+    // `apikey` and `privatekey` are the compact forms of `api_key` and `private_key`.
+    let compact = normalized.replace('_', "");
     is_sensitive_json_key(&normalized)
-        || SECRET_KEY_FRAGMENTS
-            .iter()
-            .any(|fragment| normalized.contains(fragment))
+        || SECRET_KEY_FRAGMENTS.iter().any(|fragment| {
+            normalized.contains(fragment) || compact.contains(&fragment.replace('_', ""))
+        })
         || normalized
             .split('_')
             .any(|segment| SECRET_KEY_SEGMENTS.contains(&segment))
+}
+
+/// `apiKey`, `API-Key` and `api_key` all become `api_key`.
+fn snake_case(name: &str) -> String {
+    let mut snake = String::with_capacity(name.len() + 4);
+    let mut previous_lower = false;
+    for character in name.chars() {
+        if character.is_ascii_uppercase() && previous_lower {
+            snake.push('_');
+        }
+        previous_lower = character.is_ascii_lowercase() || character.is_ascii_digit();
+        snake.push(if character == '-' {
+            '_'
+        } else {
+            character.to_ascii_lowercase()
+        });
+    }
+    snake
 }
 
 fn is_key_value_pair(map: &Map<String, Value>) -> bool {
@@ -658,8 +678,25 @@ fn is_token_word(word: &str) -> bool {
 /// The segment is percent-decoded first, so an encoded token is caught too.
 #[must_use]
 pub fn is_secret_path_segment(segment: &str) -> bool {
-    let decoded = percent_decode_str(segment).decode_utf8_lossy();
-    let segment = decoded.as_ref();
+    // A nested URL can encode a token more than once (`%2541` for `A`), so each
+    // decoded layer is classified in turn.
+    let mut current = percent_decode_str(segment).decode_utf8_lossy().into_owned();
+    for _ in 0..MAX_PERCENT_DECODES {
+        if is_secret_decoded_segment(&current) {
+            return true;
+        }
+        let next = percent_decode_str(&current)
+            .decode_utf8_lossy()
+            .into_owned();
+        if next == current {
+            return false;
+        }
+        current = next;
+    }
+    false
+}
+
+fn is_secret_decoded_segment(segment: &str) -> bool {
     if is_token_word(segment) || looks_like_credential(segment) {
         return true;
     }
@@ -980,6 +1017,8 @@ mod tests {
             "password": null,
             "tags": [
                 { "key": "github_pat", "value": "plain-looking-value" },
+                { "key": "apiKey", "value": "hunter2" },
+                { "key": "privatekey", "value": "hunter2" },
                 { "key": "password_ref", "value": "hunter2" },
                 { "key": "glpat-0123456789abcdefghij", "value": "x" },
                 { "key": "team", "value": "platform" },
@@ -996,6 +1035,7 @@ mod tests {
             "query_note": "see https://example.test/?api_key=hunter2",
             "setup": "set password=hunter2 first",
             "spaced": "set password = hunter2 first",
+            "camel": "use apiKey=hunter2 here",
             "quoted": "config has password=\"hunter2\"",
             "single_quoted": "set api_key = 'secret' here",
             "empty_quoted": "password=\"\" means none",
@@ -1026,6 +1066,8 @@ mod tests {
                 "password": null,
                 "tags": [
                     { "key": "github_pat", "value": AUDIT_REDACTED },
+                    { "key": "apiKey", "value": AUDIT_REDACTED },
+                    { "key": "privatekey", "value": AUDIT_REDACTED },
                     { "key": "password_ref", "value": AUDIT_REDACTED },
                     { "key": AUDIT_REDACTED, "value": AUDIT_REDACTED },
                     { "key": "team", "value": "platform" },
@@ -1042,6 +1084,7 @@ mod tests {
                 "query_note": AUDIT_REDACTED,
                 "setup": AUDIT_REDACTED,
                 "spaced": AUDIT_REDACTED,
+                "camel": AUDIT_REDACTED,
                 "quoted": AUDIT_REDACTED,
                 "single_quoted": AUDIT_REDACTED,
                 "empty_quoted": "password=\"\" means none",
@@ -1104,6 +1147,7 @@ mod tests {
         assert!(!is_secret_path_segment("v1"));
         // Percent-encoded tokens are decoded before they are checked.
         assert!(is_secret_path_segment(&"%41".repeat(32)));
+        assert!(is_secret_path_segment(&"%2541".repeat(32)));
         assert!(is_secret_path_segment(
             "%61%31%62%32c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
         ));
