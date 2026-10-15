@@ -57,6 +57,10 @@ describe('signed-in route selection', () => {
   it('reserves guardrail observability for platform admins', () => {
     expect(canAccessSignedInPath(userSession, '/observability/guardrails')).toBe(false)
     expect(canAccessSignedInPath(adminSession, '/observability/guardrails')).toBe(true)
+    // The audit log needs only the platform-admin role, not a borrowed page permission.
+    expect(canAccessSignedInPath(userSession, '/observability/audit-log')).toBe(false)
+    expect(canAccessSignedInPath(adminSession, '/observability/audit-log')).toBe(true)
+    expect(canAccessSignedInPath(platformAdminSession([]), '/observability/audit-log')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/guardrails')).toBe(false)
     expect(canAccessSignedInPath(adminSession, '/guardrails')).toBe(true)
   })

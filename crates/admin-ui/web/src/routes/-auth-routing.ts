@@ -75,9 +75,12 @@ export function canAccessSignedInPath(session: AuthSessionView, path: string) {
   if (pathname === '/') return true
   if (isPersonalPath(pathname)) return true
   if (pathname === '/no-access') return session.permissions.pages.length === 0
-  if (isPlatformAdminOnlyPath(pathname) && !isPlatformAdminSession(session)) return false
+  const platformAdminOnly = isPlatformAdminOnlyPath(pathname)
+  if (platformAdminOnly && !isPlatformAdminSession(session)) return false
   const page = getAdminPageForPath(pathname)
-  return page ? canAccessPage(session, page) : false
+  if (page) return canAccessPage(session, page)
+  // A platform-admin-only route with no page permission needs only the role.
+  return Boolean(platformAdminOnly)
 }
 
 export function signedInAdminHref(session: AuthSessionView, redirect?: string) {

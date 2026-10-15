@@ -148,8 +148,8 @@ export const adminNavSections: AdminNavSection[] = [
         to: '/observability/guardrails',
         icon: Notification03Icon,
       },
+      // Gated on the platform-admin role alone, matching the audit log API.
       {
-        requiredPage: 'request_logs',
         platformAdminOnly: true,
         label: 'Audit Log',
         to: '/observability/audit-log',
