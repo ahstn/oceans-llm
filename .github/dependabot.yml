@@ -75,7 +75,7 @@ updates:
 
   - package-ecosystem: bun
     # A zero version-update limit leaves security updates enabled.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     # tests/harness-integration/ is intentionally omitted.
     directories:
       - docs/
@@ -110,7 +110,7 @@ updates:
   # The review agent pins exact versions. Pi and its extensions release
   # together and share peer dependencies, so they update as one PR.
   - package-ecosystem: bun
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 3
     directory: /actions/review-agent
     schedule:
       interval: cron
@@ -131,7 +131,7 @@ updates:
           - '*'
 
   - package-ecosystem: docker
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 2
     directories:
       - /crates/gateway
       - /crates/admin-ui/web

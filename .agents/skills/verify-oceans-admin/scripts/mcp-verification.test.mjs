@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { verifyNoMcpGrant } from "./mcp-canary.mjs";
+import { attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = process.env.OCEANS_VERIFY_REPO_ROOT ?? path.resolve(scripts, "../../../..");
@@ -110,4 +111,45 @@ test("successful grant checks close their session and return the denial proof", 
     assert.equal(proofs.length, 1);
     assert.equal(proofs[0].status, "policy_denied");
   });
+});
+
+test("each driver attempt in a run gets its own record keys", () => {
+  const runId = "20261014T205646Z-hdr471b-7448";
+  const first = attemptScope(runId, 1_760_000_000_000);
+  const retry = attemptScope(runId, 1_760_000_060_000);
+  assert.notEqual(first.key, retry.key);
+  assert.match(first.key, /hdr471b-7448-[a-z0-9]{5}$/);
+  // Server keys are `verify-<scope>-<candidate>` and must stay within the gateway's 64 characters.
+  assert.ok(first.key.length <= 30);
+  assert.match(first.key, /^[a-z0-9-]+$/);
+});
+
+test("credential aliases come from the launch record, not the driver's environment", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "oceans-mcp-stack-env-"));
+  try {
+    const file = path.join(directory, "stack-env.json");
+    await fs.writeFile(file, JSON.stringify({
+      mcpDiscoveryAliases: ["OCEANS_MCP_DISCOVERY_EXA_VERIFY"], clientConfigBaseUrl: "http://127.0.0.1:38123",
+    }));
+    const driverEnv = { OCEANS_MCP_DISCOVERY_GITHUB_VERIFY: "unused-by-gateway" };
+    const launched = await loadStackEnv(file, driverEnv);
+    assert.equal(launched.source, "launch");
+    assert.deepEqual([...launched.aliases], ["OCEANS_MCP_DISCOVERY_EXA_VERIFY"]);
+    assert.equal(launched.clientConfigBaseUrl, "http://127.0.0.1:38123");
+
+    const fallback = await loadStackEnv(path.join(directory, "missing.json"), driverEnv);
+    assert.equal(fallback.source, "driver");
+    assert.deepEqual([...fallback.aliases], ["OCEANS_MCP_DISCOVERY_GITHUB_VERIFY"]);
+    assert.equal(fallback.clientConfigBaseUrl, null);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the expected MCP endpoint normalizes the base URL like the gateway", () => {
+  assert.equal(mcpEndpointFor("http://127.0.0.1:38123"), "http://127.0.0.1:38123/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/v1"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/v1/"), "https://gateway.example/mcp");
+  assert.equal(mcpEndpointFor("https://gateway.example/llm"), "https://gateway.example/llm/mcp");
 });

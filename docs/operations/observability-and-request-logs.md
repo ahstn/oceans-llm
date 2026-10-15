@@ -58,9 +58,25 @@ Request correlation is anchored on `x-request-id`. The HTTP middleware boundary 
 
 Request outcomes are emitted once per request with bounded labels. Important examples in this slice are:
 
-- `budget_error` for pre-provider hard-limit rejection
+- `budget_error` for pre-provider hard-limit rejection; the request-log row stores `error_code = budget_exceeded` with no provider attempts
 - `invalid_request` for capability mismatch
 - `upstream_error` for upstream execution or stream failure
+
+### Decisions Request Metrics
+
+`POST /v1/decisions` and `POST /v1/systemone` record `gateway.decisions.requests` and `gateway.decisions.request.duration` instead of the chat request metrics. Decisions requests never stream and carry no tools, so they have no `stream` label and no tool-cardinality samples.
+
+The gateway records one sample per request once the model resolves, whether the request succeeds or fails. That covers requests with no compatible route, budget rejections, and provider failures, including a failure after billable upstream usage. Requests that fail authentication, body parsing, or model resolution record no sample.
+
+Labels:
+
+- `http.route`: `/v1/decisions` or `/v1/systemone`
+- `request_format`: the caller's format, `openai` or `system_one`
+- `requested_model` and `resolved_model`
+- `provider`: the selected provider key, or `unavailable` when no route was selected
+- `http.response.status_code` and `outcome`: `success`, or the error type such as `invalid_request_error`, `budget_error` or `upstream_error`
+
+Decisions token, cost, and usage-record totals still go to the `gateway.chat.tokens`, `gateway.chat.cost.usd`, and `gateway.chat.usage_records` metrics, like every other priced request. See [ADR: Decisions Request Metrics](../adr/2026-10-14-decisions-request-metrics.md).
 
 ## Tagging and Attribution
 
@@ -301,7 +317,7 @@ Recent cleanup changed the contract in a few important ways.
 - provider execution attempts now live in `request_log_attempts` instead of summary metadata
 - missing request-log detail rows return strict `404 not_found`
 - stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
-- budget-rejected chat requests record a `budget_error` request outcome without executing the provider
+- budget-rejected chat, Responses, Messages, embeddings, and Decisions requests record a `budget_error` request outcome and a request-log summary row without executing the provider
 
 Admins and maintainers should stop expecting:
 

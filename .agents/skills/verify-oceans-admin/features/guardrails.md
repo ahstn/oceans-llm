@@ -8,11 +8,13 @@ Guardrails is a read-only, platform-admin-only view of the effective guardrail p
 - `guardrails-decisions` lists decision events with UTC time, phase, action badge, evaluator, pack/rule, reason, latency, and decision ID.
 - `guardrails-filter` narrows decisions by `Request ID`, `Evaluator`, phase, and action through URL search.
 - `guardrails-page` pages through decisions when the total exceeds the page size (default 50).
+- `guardrails-settings` is the `Guardrail Settings` page at `/admin/guardrails`. Its `Destructive actions`, `Secret redaction`, and `Integrations` cards each open a dialog through `Manage <area>`, and edits only redraft the `gateway.yaml` preview below the cards. Nothing is saved, so prove that the preview changes and that `/api/v1/admin/guardrails/policies` does not.
 
 ## How to get to it (user POV)
 
 - Sign in as a platform administrator and choose `Guardrails` under `Observability`.
 - Open `/admin/observability/guardrails` directly. Filters are URL search params, for example `?action=audit&phase=harness_pre_tool`.
+- Choose `Configure` on the Guardrails page, or open `/admin/guardrails`, for `Guardrail Settings`. Its `Activity` button returns to the decision view.
 
 ## Driving it with control-oceans-admin
 

@@ -142,7 +142,7 @@ models:
     benchmark_model_id: anthropic/claude-sonnet-4.6
     routes:
       - provider: bedrock
-        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+        upstream_model: us.anthropic.claude-sonnet-4-6
 ```
 
 `benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.
@@ -366,6 +366,7 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.payloads.stream_max_events` defaults to `128`
 - `request_logging.purge.enabled` defaults to `false`
 - `request_logging.purge.retention` defaults to `7d`
+- `budgets.exceeded_status_code` defaults to `422`
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 - `permissions.users.pages` defaults to the 10 shared console pages
@@ -708,10 +709,11 @@ Important `users` fields:
 
 ## `budgets`
 
-`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts.
+`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts. `budgets.exceeded_status_code` sets the HTTP status for every hard-budget rejection, including service-account budgets.
 
 ```yaml
 budgets:
+  exceeded_status_code: 422
   users:
     default:
       cadence: daily
@@ -729,12 +731,14 @@ budgets:
 
 Important fields:
 
+- `exceeded_status_code`: HTTP status for hard-budget rejections. One of `402`, `422` (default) or `429`. The body always has `type: budget_error` and `code: budget_exceeded`. Set `429` only for clients that back off on budget errors; the OpenAI and Anthropic Python SDKs retry it. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md)
 - `users.default`: optional default user budget for all human users
 - `users.model_defaults[].model`: gateway model id from `models[*].id`
 - `users.model_defaults[].budget`: default user model budget applied per human user for that model
 
 Validation rules:
 
+- `exceeded_status_code` must be the number `402`, `422` or `429`; other values fail startup
 - default budget amounts must be non-negative
 - model-default entries must reference an existing configured gateway model
 - duplicate model-default entries are rejected after model id normalization
@@ -1227,7 +1231,7 @@ An omitted capability flag takes the value the route's provider and compatibilit
 
 | Route | Derived capabilities |
 | --- | --- |
-| `typesafe` provider, or `compatibility.openrouter.api: decisions` | `decisions` only |
+| `typesafe` provider, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` only |
 | `github_copilot` provider | From `compatibility.github_copilot`: `chat_api`, `supports_responses`, `supports_embeddings`, and `upstream_supports` |
 | `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions` and `decisions` |
 | `aws_bedrock`, `api_style: runtime_anthropic_invoke` | Everything except `responses`, `json_schema`, `stream`, and `decisions` |
@@ -1240,7 +1244,7 @@ Compatibility metadata is separate from capabilities. Capabilities decide whethe
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
-`decisions` is `true` only on Decisions transports: `type: typesafe` and an OpenRouter route with `compatibility.openrouter.api: decisions`. Those routes derive every other flag as `false`, and validation rejects any other flag set to `true`.
+`decisions` is `true` only on Decisions transports: `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`. Those routes derive every other flag as `false`, and validation rejects any other flag set to `true`.
 
 Vertex embedding-only route:
 
@@ -1365,6 +1369,7 @@ OpenAI-compatible profile defaults:
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+| `decisions_api` | unset | `openai` |
 
 `empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. When an empty array is omitted, neutral `tool_choice` values (`auto`, `none`, or `null`) are omitted with it; `required` and named choices are rejected locally because no tool can satisfy them. `preserve_with_tool_history` omits an otherwise empty array but retains it and `tool_choice` when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
@@ -1382,7 +1387,9 @@ OpenRouter policy fields:
 
 `compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. `api: decisions` can omit all provider policy fields. Other OpenRouter profiles must set at least one provider policy field. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
 
-The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
+`decisions_api: openai` makes the route send the OpenAI Decisions format to `{base_url}/decisions`. It requires an `openai_compat` provider and `capabilities.decisions: true`, and it cannot be combined with `compatibility.openrouter`. See [Model Routing and APIs](model-routing-and-api-behavior.md#decisions) for an example route.
+
+The other `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 

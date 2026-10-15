@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.39.0] - 2026-10-14
+### :rocket: New features
+- *(mcp)* Keep tool annotations, title and output schema by @ahstn
+- *(mcp)* Return a connect URL for missing or expired MCP credentials by @ahstn
+- *(mcp)* Govern direct proxy methods, keep tool metadata, and link credential errors to the connect page by @ahstn in [#464](https://github.com/ahstn/oceans-llm/pull/464)
+- *(budgets)* [**breaking**] Return 422 instead of 429 when a budget is exhausted by @ahstn in [#473](https://github.com/ahstn/oceans-llm/pull/473)
+- *(gateway)* Accept OpenAI Decisions requests and add /v1/systemone by @ahstn in [#476](https://github.com/ahstn/oceans-llm/pull/476)
+
+### :bug: Bug fixes
+- *(mise)* Keep smoke logs when the gateway exits and drop the stale rust lock entry by @ahstn
+- *(store)* Wait for the smoke gateway to exit before the task returns by @ahstn
+- *(verify-skill)* Match renamed Agent Skills heading and sidebar link by @ahstn in [#461](https://github.com/ahstn/oceans-llm/pull/461)
+- *(verify-skill)* Launch Skills proof with unregistered RustFS daemon by @ahstn
+- *(verify-skill)* Retry Upload skill click until the namespace dialog opens by @ahstn
+- *(verify-skill)* Resolve the mise binary instead of its shell function by @ahstn
+- *(verify-skill)* Stabilise Skills upload click and stop runaway cleanup by @ahstn in [#463](https://github.com/ahstn/oceans-llm/pull/463)
+- *(verify-skill)* Launch Skills proof with an unregistered RustFS daemon by @ahstn in [#466](https://github.com/ahstn/oceans-llm/pull/466)
+- *(mcp)* Govern non-tool methods on the per-server proxy by @ahstn
+- *(mcp)* Address review findings on governed methods, tool metadata and connect links by @ahstn
+- *(mcp)* Forward only the client notifications MCP defines by @ahstn
+- *(mcp)* Reject GET and DELETE bodies on the direct proxy by @ahstn
+- *(mcp)* Reconnect stale OAuth bindings from connect links and show closed-world tools by @ahstn
+- *(mcp)* Negotiate 2025-06-18 for discovery and fall back to annotations.title by @ahstn
+- *(mcp)* Stop advertising tasks the direct proxy cannot complete by @ahstn
+- *(admin-ui)* Show a Non-destructive badge for explicit destructiveHint false by @ahstn
+- *(mcp)* Omit the id when denying an ungranted notification by @ahstn
+- *(mcp)* Echo the request id when rejecting an invalid tools/call by @ahstn
+- *(gateway)* Address Decisions review findings by @ahstn
+- *(decisions)* Tighten upstream answer checks and accept empty input lists by @ahstn
+- *(gateway)* Keep the requested stream flag on pre-provider failure rows by @ahstn
+- *(verify)* Normalize the expected MCP endpoint like the gateway by @ahstn
+- *(verify)* Read MCP aliases from launch, scope driver retries, derive gateway URL by @ahstn in [#480](https://github.com/ahstn/oceans-llm/pull/480)
+- *(gateway)* Log hard-budget rejections as request-log summary rows by @ahstn in [#481](https://github.com/ahstn/oceans-llm/pull/481)
+- *(decisions)* Reject repeated probability entries and document decisions_api by @ahstn
+
+### Changed
+- *(mise)* Move project tasks into monorepo config roots by @ahstn in [#437](https://github.com/ahstn/oceans-llm/pull/437)
+- Replace README logo with ocean wave banner by @ahstn in [#460](https://github.com/ahstn/oceans-llm/pull/460)
+- Merge remote-tracking branch 'origin/main' into claude/clever-knuth-d98a29 by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/strange-cannon-27543c by @ahstn
+- *(verify)* Describe chip-based request log filters by @ahstn in [#465](https://github.com/ahstn/oceans-llm/pull/465)
+- *(admin-ui)* Split MCP invocation filters and table out of the page by @ahstn
+- *(mcp)* Skip tool metadata on authorization paths and check server grants with EXISTS by @ahstn
+- *(budgets)* Address review on budget status ADR and docs by @ahstn
+- *(budgets)* Qualify remaining retry claims to the tested SDK defaults by @ahstn
+- Merge branch 'main' of github.com:ahstn/oceans-llm into claude/exciting-jepsen-9b6f89 by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/charming-darwin-800190 by @ahstn
+- *(skills)* Update shadcn skill
+
+
+
+
 ## [0.38.0] - 2026-10-13
 ### :rocket: New features
 - *(verify-skill)* Shared proof envelope with verdict-checking evidence and PR report by @ahstn
@@ -96,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(spend-controls)* Clarify increase supersession and conflict wording by @ahstn
 - *(spend-controls)* Skip increase lookups while spend is under the base budget by @ahstn
 - *(admin-ui)* Move formatIncreaseLastDay into lib/format by @ahstn
+- *(version)* V0.38.0 by @ahstn
 
 
 
@@ -1290,6 +1343,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.39.0]: https://github.com/ahstn/oceans-llm/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/ahstn/oceans-llm/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/ahstn/oceans-llm/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/ahstn/oceans-llm/compare/v0.35.0...v0.36.0

@@ -2,7 +2,7 @@
 
 `See also`: [OpenRouter](openrouter.md), [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
-Oceans exposes TypeSafe System One models through `POST /v1/decisions`. A request sends one `state` value and a map of typed `questions`. The response returns one structured answer for each question.
+Oceans exposes TypeSafe System One models through `POST /v1/decisions` and `POST /v1/systemone`. A System One request sends one `state` value and a map of typed `questions`. The response returns one structured answer for each question. `/v1/decisions` also accepts the OpenAI Decisions format and translates it for System One routes. See [Provider API Compatibility](../reference/provider-api-compatibility.md#decisions-api).
 
 Jev does not generate chat text. Do not send it to Chat Completions or Responses.
 
@@ -97,6 +97,7 @@ Oceans requires a non-empty model, at least one question, valid choice and score
 - Decisions requests use the normal gateway authentication, model access, route selection, budget, request-log, provider-attempt, and usage-accounting paths.
 - Decisions routes skip prompt and response guardrails. The guardrail evaluators currently operate on chat-shaped text and tool-call boundaries.
 - Decisions are non-streaming.
+- OpenAI-format callers can use System One routes. Requests with `safety_identifier` or image inputs return 400 before the upstream call, because System One cannot carry them.
 - Provider `input_tokens` and `output_tokens` normalize to the gateway's prompt and completion token fields. When both are present, Oceans derives total tokens.
 - The Models page displays a **Decisions** capability and does not offer chat-shaped client configuration for a decisions-only model.
 - Request Logs display the operation as **Decisions**.

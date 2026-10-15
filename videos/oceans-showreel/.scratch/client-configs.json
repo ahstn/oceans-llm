@@ -1,0 +1,325 @@
+{
+  "hero": {
+    "id": "claude-sonnet-4.6",
+    "model_id": "170ae0fc-0baa-5e50-889e-ce4590f7d4a8",
+    "resolved_model_key": "claude-sonnet-4.6",
+    "alias_of": null,
+    "aliases": [
+      "bedrock-claude-sonnet"
+    ],
+    "description": "Claude Sonnet on AWS Bedrock",
+    "tags": [],
+    "allowlist": {
+      "users": [
+        "ben@platform.local",
+        "diego@research.local"
+      ],
+      "teams": []
+    },
+    "routing": null,
+    "routes": [
+      {
+        "id": "bffe7c6a-4d0a-5870-bb13-c5b8d6ae89a6",
+        "provider_key": "bedrock-us-east-1",
+        "provider_label": "AWS Bedrock",
+        "provider_icon_key": "aws",
+        "upstream_model": "us.anthropic.claude-sonnet-4-6-v1:0",
+        "priority": 100,
+        "weight": 1,
+        "enabled": true,
+        "provider_configured": true
+      }
+    ],
+    "status": "healthy",
+    "provider_key": "bedrock-us-east-1",
+    "provider_label": "AWS Bedrock",
+    "provider_icon_key": "aws",
+    "upstream_model": "us.anthropic.claude-sonnet-4-6-v1:0",
+    "model_icon_key": "claude",
+    "input_cost_per_million_tokens_usd_10000": 33000,
+    "output_cost_per_million_tokens_usd_10000": 165000,
+    "cache_read_cost_per_million_tokens_usd_10000": 3300,
+    "cache_write_cost_per_million_tokens_usd_10000": 41250,
+    "pricing_source": {
+      "kind": "catalog",
+      "catalog_source": "models_dev_api",
+      "catalog_etag": "\"3f0ac33e0b93b702c921cf0619699735\"",
+      "catalog_fetched_at": "2026-10-13T15:54:39Z"
+    },
+    "pricing_varies_by_route": false,
+    "context_window_tokens": 1000000,
+    "context_window_source": {
+      "kind": "catalog",
+      "catalog_source": "models_dev_api",
+      "catalog_etag": "\"3f0ac33e0b93b702c921cf0619699735\"",
+      "catalog_fetched_at": "2026-10-13T15:54:39Z"
+    },
+    "input_window_tokens": null,
+    "output_window_tokens": 128000,
+    "supports_streaming": false,
+    "supports_vision": true,
+    "supports_tool_calling": true,
+    "supports_structured_output": false,
+    "supports_attachments": true,
+    "benchmark_scores": [
+      {
+        "metric_key": "artificial_analysis_intelligence_index",
+        "label": "Artificial Analysis Intelligence Index",
+        "value": 30.1,
+        "source": "artificial_analysis",
+        "source_model_id": "anthropic/claude-sonnet-4.6",
+        "source_url": "https://openrouter.ai/anthropic/claude-sonnet-4.6",
+        "match_kind": "derived",
+        "updated_at": "2026-09-24T00:59:11Z"
+      },
+      {
+        "metric_key": "artificial_analysis_coding_index",
+        "label": "Artificial Analysis Coding Index",
+        "value": 63,
+        "source": "artificial_analysis",
+        "source_model_id": "anthropic/claude-sonnet-4.6",
+        "source_url": "https://openrouter.ai/anthropic/claude-sonnet-4.6",
+        "match_kind": "derived",
+        "updated_at": "2026-09-24T00:59:11Z"
+      },
+      {
+        "metric_key": "artificial_analysis_agentic_index",
+        "label": "Artificial Analysis Agentic Index",
+        "value": 31.8,
+        "source": "artificial_analysis",
+        "source_model_id": "anthropic/claude-sonnet-4.6",
+        "source_url": "https://openrouter.ai/anthropic/claude-sonnet-4.6",
+        "match_kind": "derived",
+        "updated_at": "2026-09-24T00:59:11Z"
+      }
+    ],
+    "supports_decisions": false,
+    "client_configurations": [
+      {
+        "key": "opencode",
+        "label": "OpenCode",
+        "model_ids": [
+          "claude-sonnet-4.6"
+        ],
+        "setup": [
+          {
+            "label": "Configuration",
+            "value": "~/.config/opencode/opencode.json",
+            "href": null
+          },
+          {
+            "label": "API key",
+            "value": "Set OCEANS_LLM_API_KEY to a gateway API key before using this OpenCode configuration.",
+            "href": null
+          },
+          {
+            "label": "Docs",
+            "value": "https://opencode.ai/docs/config/",
+            "href": "https://opencode.ai/docs/config/"
+          }
+        ],
+        "blocks": [
+          {
+            "label": "opencode.json",
+            "filename": "opencode.json",
+            "content": "{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"model\": \"oceans-llm/claude-sonnet-4.6\",\n  \"provider\": {\n    \"oceans-llm\": {\n      \"models\": {\n        \"claude-sonnet-4.6\": {\n          \"attachment\": true,\n          \"cost\": {\n            \"cache_read\": 0.33,\n            \"input\": 3.3,\n            \"output\": 16.5\n          },\n          \"limit\": {\n            \"context\": 200000,\n            \"output\": 128000\n          },\n          \"name\": \"Claude Sonnet on AWS Bedrock\",\n          \"reasoning\": true,\n          \"tool_call\": true,\n          \"variants\": {\n            \"high\": {\n              \"reasoningEffort\": \"high\"\n            },\n            \"max\": {\n              \"reasoningEffort\": \"xhigh\"\n            }\n          }\n        }\n      },\n      \"name\": \"oceans-llm\",\n      \"npm\": \"@ai-sdk/anthropic\",\n      \"options\": {\n        \"apiKey\": \"{env:OCEANS_LLM_API_KEY}\",\n        \"baseURL\": \"http://127.0.0.1:3000\"\n      }\n    }\n  }\n}"
+          }
+        ],
+        "notes": [
+          "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window."
+        ]
+      },
+      {
+        "key": "pi",
+        "label": "Pi",
+        "model_ids": [
+          "claude-sonnet-4.6"
+        ],
+        "setup": [
+          {
+            "label": "Configuration",
+            "value": "Use ~/.pi/agent/models.json for this provider configuration; use ~/.pi/agent/settings.json or .pi/settings.json for Pi settings.",
+            "href": null
+          },
+          {
+            "label": "API key",
+            "value": "Set OCEANS_LLM_API_KEY to a gateway API key before using this Pi configuration.",
+            "href": null
+          },
+          {
+            "label": "Docs",
+            "value": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md",
+            "href": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md"
+          }
+        ],
+        "blocks": [
+          {
+            "label": "models.json",
+            "filename": "models.json",
+            "content": "{\n  \"providers\": {\n    \"oceans-llm\": {\n      \"api\": \"anthropic-messages\",\n      \"apiKey\": \"$OCEANS_LLM_API_KEY\",\n      \"baseUrl\": \"http://127.0.0.1:3000\",\n      \"compat\": {\n        \"forceAdaptiveThinking\": true\n      },\n      \"models\": [\n        {\n          \"contextWindow\": 200000,\n          \"cost\": {\n            \"cacheRead\": 0.33,\n            \"cacheWrite\": 4.125,\n            \"input\": 3.3,\n            \"output\": 16.5\n          },\n          \"id\": \"claude-sonnet-4.6\",\n          \"input\": [\n            \"text\",\n            \"image\"\n          ],\n          \"maxTokens\": 128000,\n          \"name\": \"Claude Sonnet on AWS Bedrock\",\n          \"reasoning\": true,\n          \"thinkingLevelMap\": {\n            \"high\": \"high\",\n            \"low\": \"low\",\n            \"max\": \"max\",\n            \"medium\": \"medium\",\n            \"minimal\": null,\n            \"off\": null,\n            \"xhigh\": \"xhigh\"\n          }\n        }\n      ]\n    }\n  }\n}"
+          }
+        ],
+        "notes": [
+          "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window."
+        ]
+      },
+      {
+        "key": "claude-code",
+        "label": "Claude Code",
+        "model_ids": [
+          "claude-sonnet-4.6"
+        ],
+        "setup": [
+          {
+            "label": "Configuration",
+            "value": "~/.claude/settings.json for user configuration; .claude/settings.json for project configuration.",
+            "href": null
+          },
+          {
+            "label": "API key",
+            "value": "Replace <gateway api token> with a gateway API key before using this Claude Code configuration.",
+            "href": null
+          },
+          {
+            "label": "Docs",
+            "value": "https://code.claude.com/docs/en/settings",
+            "href": "https://code.claude.com/docs/en/settings"
+          }
+        ],
+        "blocks": [
+          {
+            "label": "Gateway model settings",
+            "filename": "settings.json",
+            "content": "{\n  \"$schema\": \"https://json.schemastore.org/claude-code-settings.json\",\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"<gateway api token>\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:3000\",\n    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"claude-sonnet-4.6\",\n    \"ANTHROPIC_MODEL\": \"claude-sonnet-4.6\",\n    \"ANTHROPIC_SMALL_FAST_MODEL\": \"claude-sonnet-4.6\",\n    \"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY\": \"1\"\n  },\n  \"modelOverrides\": {\n    \"claude-sonnet-4-6\": \"claude-sonnet-4.6\"\n  }\n}"
+          },
+          {
+            "label": "Lower token usage settings",
+            "filename": "settings.json",
+            "content": "{\n  \"$schema\": \"https://json.schemastore.org/claude-code-settings.json\",\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\",\n    \"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\",\n    \"CLAUDE_CODE_DISABLE_1M_CONTEXT\": \"1\",\n    \"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS\": \"1\",\n    \"CLAUDE_CODE_DISABLE_TERMINAL_TITLE\": \"1\",\n    \"CLAUDE_CODE_ENABLE_TELEMETRY\": \"0\",\n    \"CLAUDE_CODE_NO_FLICKER\": \"1\",\n    \"CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT\": \"1\",\n    \"DISABLE_ERROR_REPORTING\": \"1\",\n    \"DISABLE_TELEMETRY\": \"1\",\n    \"ENABLE_TOOL_SEARCH\": \"auto\"\n  }\n}"
+          }
+        ],
+        "notes": [
+          "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window.",
+          "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. OpenCode and Pi also use Anthropic Messages for this model via http://127.0.0.1:3000."
+        ]
+      }
+    ]
+  },
+  "configs": {
+    "data": {
+      "client_configurations": [
+        {
+          "key": "opencode",
+          "label": "OpenCode",
+          "model_ids": [
+            "claude-sonnet-4.6"
+          ],
+          "setup": [
+            {
+              "label": "Configuration",
+              "value": "~/.config/opencode/opencode.json",
+              "href": null
+            },
+            {
+              "label": "API key",
+              "value": "Set OCEANS_LLM_API_KEY to a gateway API key before using this OpenCode configuration.",
+              "href": null
+            },
+            {
+              "label": "Docs",
+              "value": "https://opencode.ai/docs/config/",
+              "href": "https://opencode.ai/docs/config/"
+            }
+          ],
+          "blocks": [
+            {
+              "label": "opencode.json",
+              "filename": "opencode.json",
+              "content": "{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"model\": \"oceans-llm/claude-sonnet-4.6\",\n  \"provider\": {\n    \"oceans-llm\": {\n      \"models\": {\n        \"claude-sonnet-4.6\": {\n          \"attachment\": true,\n          \"cost\": {\n            \"cache_read\": 0.33,\n            \"input\": 3.3,\n            \"output\": 16.5\n          },\n          \"limit\": {\n            \"context\": 200000,\n            \"output\": 128000\n          },\n          \"name\": \"Claude Sonnet on AWS Bedrock\",\n          \"reasoning\": true,\n          \"tool_call\": true,\n          \"variants\": {\n            \"high\": {\n              \"reasoningEffort\": \"high\"\n            },\n            \"max\": {\n              \"reasoningEffort\": \"xhigh\"\n            }\n          }\n        }\n      },\n      \"name\": \"oceans-llm\",\n      \"npm\": \"@ai-sdk/anthropic\",\n      \"options\": {\n        \"apiKey\": \"{env:OCEANS_LLM_API_KEY}\",\n        \"baseURL\": \"http://127.0.0.1:3000\"\n      }\n    }\n  }\n}"
+            }
+          ],
+          "notes": [
+            "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window."
+          ]
+        },
+        {
+          "key": "pi",
+          "label": "Pi",
+          "model_ids": [
+            "claude-sonnet-4.6"
+          ],
+          "setup": [
+            {
+              "label": "Configuration",
+              "value": "Use ~/.pi/agent/models.json for this provider configuration; use ~/.pi/agent/settings.json or .pi/settings.json for Pi settings.",
+              "href": null
+            },
+            {
+              "label": "API key",
+              "value": "Set OCEANS_LLM_API_KEY to a gateway API key before using this Pi configuration.",
+              "href": null
+            },
+            {
+              "label": "Docs",
+              "value": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md",
+              "href": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md"
+            }
+          ],
+          "blocks": [
+            {
+              "label": "models.json",
+              "filename": "models.json",
+              "content": "{\n  \"providers\": {\n    \"oceans-llm\": {\n      \"api\": \"anthropic-messages\",\n      \"apiKey\": \"$OCEANS_LLM_API_KEY\",\n      \"baseUrl\": \"http://127.0.0.1:3000\",\n      \"compat\": {\n        \"forceAdaptiveThinking\": true\n      },\n      \"models\": [\n        {\n          \"contextWindow\": 200000,\n          \"cost\": {\n            \"cacheRead\": 0.33,\n            \"cacheWrite\": 4.125,\n            \"input\": 3.3,\n            \"output\": 16.5\n          },\n          \"id\": \"claude-sonnet-4.6\",\n          \"input\": [\n            \"text\",\n            \"image\"\n          ],\n          \"maxTokens\": 128000,\n          \"name\": \"Claude Sonnet on AWS Bedrock\",\n          \"reasoning\": true,\n          \"thinkingLevelMap\": {\n            \"high\": \"high\",\n            \"low\": \"low\",\n            \"max\": \"max\",\n            \"medium\": \"medium\",\n            \"minimal\": null,\n            \"off\": null,\n            \"xhigh\": \"xhigh\"\n          }\n        }\n      ]\n    }\n  }\n}"
+            }
+          ],
+          "notes": [
+            "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window."
+          ]
+        },
+        {
+          "key": "claude-code",
+          "label": "Claude Code",
+          "model_ids": [
+            "claude-sonnet-4.6"
+          ],
+          "setup": [
+            {
+              "label": "Configuration",
+              "value": "~/.claude/settings.json for user configuration; .claude/settings.json for project configuration.",
+              "href": null
+            },
+            {
+              "label": "API key",
+              "value": "Replace <gateway api token> with a gateway API key before using this Claude Code configuration.",
+              "href": null
+            },
+            {
+              "label": "Docs",
+              "value": "https://code.claude.com/docs/en/settings",
+              "href": "https://code.claude.com/docs/en/settings"
+            }
+          ],
+          "blocks": [
+            {
+              "label": "Gateway model settings",
+              "filename": "settings.json",
+              "content": "{\n  \"$schema\": \"https://json.schemastore.org/claude-code-settings.json\",\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"<gateway api token>\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:3000\",\n    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"claude-sonnet-4.6\",\n    \"ANTHROPIC_MODEL\": \"claude-sonnet-4.6\",\n    \"ANTHROPIC_SMALL_FAST_MODEL\": \"claude-sonnet-4.6\",\n    \"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY\": \"1\"\n  },\n  \"modelOverrides\": {\n    \"claude-sonnet-4-6\": \"claude-sonnet-4.6\"\n  }\n}"
+            },
+            {
+              "label": "Lower token usage settings",
+              "filename": "settings.json",
+              "content": "{\n  \"$schema\": \"https://json.schemastore.org/claude-code-settings.json\",\n  \"env\": {\n    \"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\",\n    \"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\",\n    \"CLAUDE_CODE_DISABLE_1M_CONTEXT\": \"1\",\n    \"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS\": \"1\",\n    \"CLAUDE_CODE_DISABLE_TERMINAL_TITLE\": \"1\",\n    \"CLAUDE_CODE_ENABLE_TELEMETRY\": \"0\",\n    \"CLAUDE_CODE_NO_FLICKER\": \"1\",\n    \"CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT\": \"1\",\n    \"DISABLE_ERROR_REPORTING\": \"1\",\n    \"DISABLE_TELEMETRY\": \"1\",\n    \"ENABLE_TOOL_SEARCH\": \"auto\"\n  }\n}"
+            }
+          ],
+          "notes": [
+            "Generated client configs cap the input context window at 200000 tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window.",
+            "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. OpenCode and Pi also use Anthropic Messages for this model via http://127.0.0.1:3000."
+          ]
+        }
+      ]
+    },
+    "meta": {
+      "generated_at": "2026-10-13T16:00:04.104205Z"
+    }
+  }
+}

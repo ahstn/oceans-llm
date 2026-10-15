@@ -356,6 +356,7 @@ async fn run_serve_with_store(
         admin_permissions,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+        count_tokens_limiter: Arc::default(),
     };
     gateway::batch_worker::spawn(state.clone());
     let app = build_router(state, load_admin_ui_config(args.admin_ui_upstream));
@@ -742,6 +743,7 @@ fn build_gateway_service(
             budget_alert_sender,
             payload_policy,
         )
+        .with_budget_exceeded_status(config.budgets.exceeded_status_code)
         .with_agent_analysis_enabled(agent_analysis_enabled)
         .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
         .with_agent_analysis_policy(analysis_policy),

@@ -3,6 +3,8 @@ pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
 pub mod batches;
+#[cfg(test)]
+mod budget_status_tests;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;
@@ -63,10 +65,18 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
     let inference_router = Router::new()
         .route("/v1/messages", post(v1_messages))
         .route("/messages", post(v1_messages))
+        .route("/v1/messages/count_tokens", post(v1_messages_count_tokens))
+        .route("/messages/count_tokens", post(v1_messages_count_tokens))
+        // Unversioned aliases for clients whose base URL already ends at the gateway root.
+        .route("/chat/completions", post(v1_chat_completions))
+        .route("/responses", post(v1_responses))
+        .route("/embeddings", post(v1_embeddings))
+        .route("/decisions", post(v1_decisions))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
         .route("/v1/decisions", post(v1_decisions))
+        .route("/v1/systemone", post(v1_systemone))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
         .layer(middleware::from_fn(request_body::observe_request_body));
 
@@ -390,6 +400,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(oauth_callback_github),
         )
         .route("/v1/models", get(v1_models))
+        .route("/models", get(v1_models))
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
         .merge(skills::router())

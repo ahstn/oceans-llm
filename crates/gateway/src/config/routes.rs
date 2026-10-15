@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use anyhow::{Context, bail};
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, GitHubCopilotRouteCompatibility, Money4,
-    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
-    OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
-    OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort, RouteCompatibility,
-    RoutePricingOverride, enforce_reasoning_effort_map, github_copilot_route_capabilities,
+    OpenAiCompatDecisionsApi, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
+    RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
+    github_copilot_route_capabilities,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
@@ -68,7 +69,15 @@ impl ModelRouteConfig {
             .openrouter
             .as_ref()
             .is_some_and(|openrouter| openrouter.api.is_decisions());
-        if openrouter_decisions || matches!(provider, Some(ProviderConfig::TypeSafe(_))) {
+        let openai_decisions = self
+            .compatibility
+            .openai_compat
+            .as_ref()
+            .is_some_and(|compat| compat.decisions_api.is_some());
+        if openrouter_decisions
+            || openai_decisions
+            || matches!(provider, Some(ProviderConfig::TypeSafe(_)))
+        {
             return ProviderCapabilities {
                 decisions: true,
                 ..ProviderCapabilities::none()
@@ -367,6 +376,8 @@ pub struct OpenAiCompatRouteCompatibilityConfig {
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,
+    #[serde(default)]
+    pub decisions_api: Option<OpenAiCompatDecisionsApi>,
 }
 
 impl OpenAiCompatRouteCompatibilityConfig {
@@ -378,6 +389,7 @@ impl OpenAiCompatRouteCompatibilityConfig {
             reasoning_effort: self.reasoning_effort,
             supports_stream_usage: self.supports_stream_usage,
             empty_tools: self.empty_tools,
+            decisions_api: self.decisions_api,
         }
     }
 }
@@ -442,8 +454,33 @@ fn validate_decisions_route_capability(
         .openrouter
         .as_ref()
         .is_some_and(|openrouter| openrouter.api.is_decisions());
+    let openai_decisions = route
+        .compatibility
+        .openai_compat
+        .as_ref()
+        .is_some_and(|compat| compat.decisions_api.is_some());
     let is_typesafe = matches!(provider, Some(ProviderConfig::TypeSafe(_)));
 
+    if openai_decisions {
+        if !matches!(provider, Some(ProviderConfig::OpenAiCompat(_))) {
+            bail!(
+                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but requires an openai_compat provider",
+                route.provider
+            );
+        }
+        if route.compatibility.openrouter.is_some() {
+            bail!(
+                "model `{model_id}` route for provider `{}` cannot set both compatibility.openai_compat.decisions_api and compatibility.openrouter",
+                route.provider
+            );
+        }
+        if !capabilities.decisions {
+            bail!(
+                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled",
+                route.provider
+            );
+        }
+    }
     if openrouter_decisions && !capabilities.decisions {
         bail!(
             "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but capabilities.decisions is not enabled",
@@ -459,9 +496,9 @@ fn validate_decisions_route_capability(
     if !capabilities.decisions {
         return Ok(());
     }
-    if !is_typesafe && !openrouter_decisions {
+    if !is_typesafe && !openrouter_decisions && !openai_decisions {
         bail!(
-            "model `{model_id}` route for provider `{}` enables capabilities.decisions but decisions requires a typesafe provider or compatibility.openrouter.api `decisions`",
+            "model `{model_id}` route for provider `{}` enables capabilities.decisions but decisions requires a typesafe provider, compatibility.openai_compat.decisions_api, or compatibility.openrouter.api `decisions`",
             route.provider
         );
     }

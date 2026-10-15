@@ -1,0 +1,65 @@
+
+> check
+> npx --yes hyperframes@0.8.144 check
+
+◆  Checking oceans-showreel
+[HyperFrames] Not inlining "assets/fonts/jetbrains-mono-nl-regular.ttf" (2.4 MB exceeds the 2 MB inline limit). The bundle may not be self-contained.
+[HyperFrames] Not inlining "assets/fonts/jetbrains-mono-nl-regular.ttf" (2.4 MB exceeds the 2 MB inline limit). The bundle may not be self-contained.
+[hyperframes] browserGpuMode probe → hardware (WebGL renderer vendor="Google Inc. (Apple)" renderer="ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)")
+
+Lint
+  ⚠ composition_file_too_large: This HTML composition file has 653 lines. Smaller sub-compositions are easier to read, iterate on, and diff.
+    /Users/ahstn/git/oceans-llm/videos/oceans-showreel/compositions/frames/f2-flight.html [data-composition-id] t=0s
+    Fix: Split this sub-composition further into smaller .html files, then mount them from the parent with data-composition-src so each file stays small enough to inspect, revise, and validate independently.
+  0 error(s), 1 warning(s), 0 info(s)
+
+Runtime
+  ◇ 0 errors, 0 warnings
+
+Layout
+  ℹ t=9.167s text_occluded #f2-chip-0 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-p-mcp > div:nth-of-type(1) > img:nth-of-type(1) "search_code" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-2 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-p-mcp > div:nth-of-type(1) > img:nth-of-type(1) "create_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-3 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-p-mcp > div:nth-of-type(1) > img:nth-of-type(1) "create_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-6 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-pool "github." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-6 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-p-fd > div:nth-of-type(1) > img:nth-of-type(1) "merge_pull_request" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-9 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-p-fd > div:nth-of-type(1) > img:nth-of-type(1) "linear." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-10 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-p-fd > div:nth-of-type(1) > img:nth-of-type(1) "sentry." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-10 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-p-fd > div:nth-of-type(1) > img:nth-of-type(1) "resolve_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-11 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-pool "postgres." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-11 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-pool "query" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.375s content_overlap div.f2-abs.f2-c4-name inside #f2-chip-0 > div:nth-of-type(1) > span:nth-of-type(2) "triage" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=9.5s content_overlap span.f2-mono.f2-fgc inside #f2-chip-2 > div:nth-of-type(1) > span:nth-of-type(2) "tools/call" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=10.833s text_occluded #f2-c4-n > span:nth-of-type(1) inside #f2-p-mcp > div:nth-of-type(1) > img:nth-of-type(1) "0" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=10.833s text_occluded #f2-c4-n > span:nth-of-type(2) inside #f2-p-mcp > div:nth-of-type(1) > img:nth-of-type(1) "1" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=10.833s content_overlap #f2-chip-4 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-pack "delete_repository" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=13s content_overlap #f3-rail-strip > div:nth-of-type(1) > span:nth-of-type(1) inside #f3-fly "every" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=14.167s container_overflow #f3-sheen inside #f3-pill-url overflowed left 109.75px — Element extends outside a clipping layout container.
+        Fix: Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.
+  0 error(s), 0 warning(s), 17 info(s)
+
+Motion
+  ◇ 0 errors, 0 warnings
+
+Contrast
+  ◇ 3/3 text checks pass WCAG AA
+
+Snapshots
+  ◇ disabled
+
+◇  Check passed

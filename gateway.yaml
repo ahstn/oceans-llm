@@ -456,7 +456,7 @@ models:
     description: Claude Sonnet on AWS Bedrock
     route:
       provider: bedrock-us-east-1
-      upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+      upstream_model: us.anthropic.claude-sonnet-4-6
       compatibility:
         aws_bedrock:
           api_style: runtime_anthropic_invoke

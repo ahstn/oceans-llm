@@ -330,12 +330,14 @@ test('service-account budget update triggers hard-limit enforcement for service-
       messages: [{ role: 'user', content: 'should be blocked by service account budget' }],
     },
   })
-  expect(blockedResponse.status()).toBe(429)
+  expect(blockedResponse.status()).toBe(422)
   const blockedBody = (await blockedResponse.json()) as {
     error: {
+      type: string
       code: string
     }
   }
+  expect(blockedBody.error.type).toBe('budget_error')
   expect(blockedBody.error.code).toBe('budget_exceeded')
 
   const capturedResponse = await request.get(stubAdminUrl('/__admin/requests'))
