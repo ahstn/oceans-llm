@@ -416,6 +416,34 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
     assert!(!everything.contains(secret), "credential secret leaked");
     assert!(!everything.contains("pass@"), "URL credentials leaked");
     assert!(!everything.contains("token=abc"), "URL query leaked");
+
+    // A caller-chosen ID that does not exist yet creates the binding; reusing it replaces.
+    let chosen_id = Uuid::new_v4().to_string();
+    for chosen_secret in ["first-chosen-id-secret", "second-chosen-id-secret"] {
+        let (status, body) = harness
+            .admin(
+                Method::PUT,
+                "/api/v1/admin/mcp/credential-bindings",
+                Some(json!({
+                    "credential_binding_id": chosen_id,
+                    "server_id": server_id,
+                    "owner_scope_kind": "user",
+                    "owner_user_id": harness.admin_id,
+                    "material_kind": "bearer_token",
+                    "secret": chosen_secret,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let operations: Vec<_> = harness
+        .entries()
+        .await
+        .into_iter()
+        .filter(|entry| entry["target_id"] == chosen_id.as_str())
+        .map(|entry| entry["metadata"]["operation"].clone())
+        .collect();
+    assert_eq!(operations, vec![json!("replace"), json!("create")]);
 }
 
 #[tokio::test]

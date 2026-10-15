@@ -40,6 +40,24 @@ impl McpUpstreamCredentialRepository for AnyStore {
         }
     }
 
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .get_mcp_upstream_credential_binding(credential_binding_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .get_mcp_upstream_credential_binding(credential_binding_id)
+                    .await
+            }
+        }
+    }
+
     async fn compare_and_swap_mcp_oauth_credential_refresh(
         &self,
         input: &RefreshMcpOauthCredentialBindingRecord,

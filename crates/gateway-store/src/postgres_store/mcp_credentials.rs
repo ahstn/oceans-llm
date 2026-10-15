@@ -73,10 +73,10 @@ fn decode_oauth_client(row: &PgRow) -> Result<McpOauthClientRecord, StoreError> 
     })
 }
 
-async fn load_credential(
+async fn find_credential(
     pool: &PgPool,
     credential_binding_id: Uuid,
-) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
     let sql = format!(
         "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = $1"
     );
@@ -85,9 +85,15 @@ async fn load_credential(
         .fetch_optional(pool)
         .await
         .map_err(to_query_error)?;
-    row.as_ref()
-        .map(decode_credential)
-        .transpose()?
+    row.as_ref().map(decode_credential).transpose()
+}
+
+async fn load_credential(
+    pool: &PgPool,
+    credential_binding_id: Uuid,
+) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    find_credential(pool, credential_binding_id)
+        .await?
         .ok_or_else(|| {
             StoreError::Unexpected(format!(
                 "MCP credential binding `{credential_binding_id}` was not found"
@@ -192,6 +198,13 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .await
             .map_err(to_query_error)?;
         row.as_ref().map(decode_credential).transpose()
+    }
+
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        find_credential(&self.pool, credential_binding_id).await
     }
 
     async fn compare_and_swap_mcp_oauth_credential_refresh(

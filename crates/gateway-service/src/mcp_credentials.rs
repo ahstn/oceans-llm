@@ -244,6 +244,16 @@ where
         ))
     }
 
+    /// Whether a binding with this ID exists, including a revoked one. An upsert
+    /// with an unknown ID creates the binding rather than replacing one.
+    pub async fn binding_exists(&self, credential_binding_id: Uuid) -> Result<bool, GatewayError> {
+        Ok(self
+            .repo
+            .get_mcp_upstream_credential_binding(credential_binding_id)
+            .await?
+            .is_some())
+    }
+
     pub async fn upsert_oauth_user_binding(
         &self,
         mcp_server_id: Uuid,
@@ -1032,6 +1042,13 @@ mod tests {
                 .expect("bindings")
                 .get(&(mcp_server_id, owner_scope_key.to_string()))
                 .cloned())
+        }
+
+        async fn get_mcp_upstream_credential_binding(
+            &self,
+            _credential_binding_id: Uuid,
+        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+            unimplemented!()
         }
 
         async fn compare_and_swap_mcp_oauth_credential_refresh(

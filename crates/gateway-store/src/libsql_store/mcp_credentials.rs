@@ -80,10 +80,10 @@ fn decode_oauth_client(row: &libsql::Row) -> Result<McpOauthClientRecord, StoreE
     })
 }
 
-async fn load_credential(
+async fn find_credential(
     connection: &libsql::Connection,
     credential_binding_id: Uuid,
-) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
     let sql = format!(
         "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = ?1"
     );
@@ -95,7 +95,15 @@ async fn load_credential(
         .await
         .map_err(to_query_error)?
         .map(|row| decode_credential(&row))
-        .transpose()?
+        .transpose()
+}
+
+async fn load_credential(
+    connection: &libsql::Connection,
+    credential_binding_id: Uuid,
+) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    find_credential(connection, credential_binding_id)
+        .await?
         .ok_or_else(|| {
             StoreError::Unexpected(format!(
                 "MCP credential binding `{credential_binding_id}` was not found"
@@ -209,6 +217,13 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .map_err(to_query_error)?
             .map(|row| decode_credential(&row))
             .transpose()
+    }
+
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        find_credential(&self.connection, credential_binding_id).await
     }
 
     async fn compare_and_swap_mcp_oauth_credential_refresh(
