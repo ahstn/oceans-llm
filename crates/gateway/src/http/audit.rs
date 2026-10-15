@@ -4,7 +4,12 @@
 //! [`AuditRequestMeta`], then write through [`AppState::audit`]. See
 //! `docs/adr/2026-10-15-admin-audit-log.md`.
 
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
+
+use admin_ui::client_ip::{CLIENT_IP_HEADER, verify_client_ip};
 
 use axum::{
     Json,
@@ -41,10 +46,13 @@ pub struct AuditRequestMeta {
 }
 
 impl AuditRequestMeta {
+    /// `signing_key` verifies the admin UI proxy's signed client address. Without a
+    /// valid signature the direct peer is recorded; forwarding headers are never trusted.
     #[must_use]
-    pub fn from_parts(peer: Option<IpAddr>, headers: &HeaderMap) -> Self {
+    pub fn from_parts(peer: Option<IpAddr>, headers: &HeaderMap, signing_key: &[u8]) -> Self {
         Self {
-            request_ip: resolve_client_ip(peer, headers).map(|ip| ip.to_string()),
+            request_ip: resolve_client_ip(peer, headers, signing_key, now_unix_secs())
+                .map(|ip| ip.to_string()),
             user_agent: header_text(headers, "user-agent")
                 .map(|value| value.chars().take(MAX_USER_AGENT_CHARS).collect()),
             request_id: header_text(headers, "x-request-id"),
@@ -67,15 +75,22 @@ impl AuditRequestMeta {
     }
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for AuditRequestMeta {
+impl FromRequestParts<AppState> for AuditRequestMeta {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let peer = parts
             .extensions
             .get::<ConnectInfo<SocketAddr>>()
             .map(|ConnectInfo(address)| address.ip());
-        Ok(Self::from_parts(peer, &parts.headers))
+        Ok(Self::from_parts(
+            peer,
+            &parts.headers,
+            &state.client_ip_signing_key(),
+        ))
     }
 }
 
@@ -85,52 +100,36 @@ impl AppState {
     pub fn audit(&self) -> AdminAudit<AnyStore> {
         AdminAudit::new(self.store.clone())
     }
+
+    /// Key shared with the admin UI proxy for signing the browser's address.
+    #[must_use]
+    pub fn client_ip_signing_key(&self) -> Arc<[u8]> {
+        Arc::from(self.identity_token_secret.as_bytes())
+    }
 }
 
-/// Resolves the client address for an audit entry.
+/// Resolves the client address for an audit entry: the address the admin UI
+/// proxy signed when its signature is valid and fresh, otherwise the direct peer.
 ///
-/// A direct peer on a public address is the client. When the peer is a local or
-/// private hop, such as the admin UI server or an ingress, `X-Forwarded-For` is
-/// read right to left and the first public address wins; with only private
-/// addresses in the chain, the left-most one is used.
+/// `X-Forwarded-For` is ignored, because without a configured trusted-proxy chain
+/// any client could choose its own value. Behind a load balancer the peer is the
+/// balancer's address.
 #[must_use]
-pub fn resolve_client_ip(peer: Option<IpAddr>, headers: &HeaderMap) -> Option<IpAddr> {
-    if let Some(peer) = peer
-        && !is_internal_hop(peer)
-    {
-        return Some(peer);
-    }
-    let forwarded: Vec<IpAddr> = headers
-        .get_all("x-forwarded-for")
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.split(','))
-        .filter_map(parse_forwarded_ip)
-        .collect();
-    forwarded
-        .iter()
-        .rev()
-        .find(|ip| !is_internal_hop(**ip))
-        .or_else(|| forwarded.first())
-        .copied()
+pub fn resolve_client_ip(
+    peer: Option<IpAddr>,
+    headers: &HeaderMap,
+    signing_key: &[u8],
+    now_unix_secs: i64,
+) -> Option<IpAddr> {
+    headers
+        .get(CLIENT_IP_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| verify_client_ip(signing_key, value, now_unix_secs))
         .or(peer)
 }
 
-fn parse_forwarded_ip(raw: &str) -> Option<IpAddr> {
-    let raw = raw.trim();
-    raw.parse::<IpAddr>()
-        .ok()
-        .or_else(|| raw.parse::<SocketAddr>().ok().map(|address| address.ip()))
-}
-
-fn is_internal_hop(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
-        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
-            Some(mapped) => is_internal_hop(IpAddr::V4(mapped)),
-            None => ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local(),
-        },
-    }
+fn now_unix_secs() -> i64 {
+    OffsetDateTime::now_utc().unix_timestamp()
 }
 
 fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -288,50 +287,41 @@ fn invalid_request(message: &str) -> AppError {
 
 #[cfg(test)]
 mod tests {
+    use admin_ui::client_ip::sign_client_ip;
     use axum::http::HeaderValue;
 
     use super::*;
 
-    fn forwarded(value: &str) -> HeaderMap {
+    const KEY: &[u8] = b"test-secret";
+    const NOW: i64 = 1_800_000_000;
+
+    fn headers(pairs: &[(&'static str, String)]) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", HeaderValue::from_str(value).unwrap());
+        for (name, value) in pairs {
+            headers.insert(*name, HeaderValue::from_str(value).unwrap());
+        }
         headers
     }
 
     #[test]
-    fn a_public_peer_is_the_client_and_forwarded_headers_are_ignored() {
-        let peer = "198.51.100.4".parse().ok();
-        assert_eq!(
-            resolve_client_ip(peer, &forwarded("203.0.113.9")),
-            "198.51.100.4".parse().ok()
-        );
-    }
-
-    #[test]
-    fn a_private_hop_yields_the_right_most_public_forwarded_address() {
+    fn a_valid_signed_address_wins_over_the_peer() {
+        let signed = sign_client_ip(KEY, "203.0.113.9".parse().unwrap(), NOW);
         let peer = "127.0.0.1".parse().ok();
         assert_eq!(
-            resolve_client_ip(peer, &forwarded("192.0.2.1, 203.0.113.9, 10.0.0.5")),
+            resolve_client_ip(peer, &headers(&[(CLIENT_IP_HEADER, signed)]), KEY, NOW),
             "203.0.113.9".parse().ok()
         );
     }
 
     #[test]
-    fn an_all_private_chain_yields_the_left_most_address() {
-        let peer = "127.0.0.1".parse().ok();
-        assert_eq!(
-            resolve_client_ip(peer, &forwarded("10.1.2.3, 127.0.0.1")),
-            "10.1.2.3".parse().ok()
-        );
-        assert_eq!(resolve_client_ip(peer, &HeaderMap::new()), peer);
-    }
-
-    #[test]
-    fn garbage_forwarded_entries_are_skipped() {
-        let peer = "::1".parse().ok();
-        assert_eq!(
-            resolve_client_ip(peer, &forwarded("unknown, 203.0.113.9:4430")),
-            "203.0.113.9".parse().ok()
-        );
+    fn forwarding_headers_and_bad_signatures_fall_back_to_the_peer() {
+        let peer = "10.0.0.5".parse().ok();
+        let forged = sign_client_ip(b"guessed", "198.51.100.1".parse().unwrap(), NOW);
+        let spoofed = headers(&[
+            ("x-forwarded-for", "198.51.100.1".to_string()),
+            (CLIENT_IP_HEADER, forged),
+        ]);
+        assert_eq!(resolve_client_ip(peer, &spoofed, KEY, NOW), peer);
+        assert_eq!(resolve_client_ip(None, &spoofed, KEY, NOW), None);
     }
 }

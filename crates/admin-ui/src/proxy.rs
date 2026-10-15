@@ -14,7 +14,10 @@ use axum::{
 use serde_json::json;
 use tracing::warn;
 
-use crate::AdminUiConfig;
+use crate::{
+    AdminUiConfig,
+    client_ip::{CLIENT_IP_HEADER, sign_client_ip},
+};
 
 #[derive(Clone)]
 struct ProxyState {
@@ -22,6 +25,7 @@ struct ProxyState {
     upstream: String,
     client: reqwest::Client,
     max_multipart_body_bytes: usize,
+    client_ip_signing_key: Option<std::sync::Arc<[u8]>>,
 }
 
 impl ProxyState {
@@ -42,6 +46,7 @@ impl ProxyState {
             upstream,
             client,
             max_multipart_body_bytes: config.max_multipart_body_bytes,
+            client_ip_signing_key: config.client_ip_signing_key.clone(),
         }
     }
 }
@@ -148,12 +153,13 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
 
     let connection_tokens = parse_connection_tokens(&inbound_headers);
     for (name, value) in &inbound_headers {
-        if name != X_FORWARDED_FOR && should_forward_request_header(name, &connection_tokens) {
+        // A client must never supply its own signed address.
+        if name != CLIENT_IP_HEADER && should_forward_request_header(name, &connection_tokens) {
             outbound = outbound.header(name, value);
         }
     }
-    if let Some(forwarded_for) = forwarded_for_chain(&inbound_headers, peer) {
-        outbound = outbound.header(X_FORWARDED_FOR, forwarded_for);
+    if let Some(signed) = signed_client_ip(&state, peer) {
+        outbound = outbound.header(CLIENT_IP_HEADER, signed);
     }
 
     if !body_bytes.is_empty() {
@@ -234,22 +240,15 @@ fn should_forward_request_header(name: &HeaderName, connection_tokens: &[HeaderN
     !is_hop_by_hop_header(name) && !connection_tokens.iter().any(|token| token == name)
 }
 
-const X_FORWARDED_FOR: &str = "x-forwarded-for";
-
-/// Appends the browser-facing peer to any inbound `X-Forwarded-For` chain, so the
-/// gateway API can attribute admin audit entries to the client address.
-fn forwarded_for_chain(headers: &HeaderMap, peer: Option<std::net::IpAddr>) -> Option<String> {
-    let mut chain: Vec<String> = headers
-        .get_all(X_FORWARDED_FOR)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
-    if let Some(peer) = peer {
-        chain.push(peer.to_string());
-    }
-    (!chain.is_empty()).then(|| chain.join(", "))
+/// Signs the browser-facing peer so the gateway API can attribute admin audit
+/// entries to it without trusting any client-supplied forwarding header.
+fn signed_client_ip(state: &ProxyState, peer: Option<std::net::IpAddr>) -> Option<String> {
+    let key = state.client_ip_signing_key.as_deref()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(sign_client_ip(key, peer?, i64::try_from(now).ok()?))
 }
 
 fn should_forward_response_header(name: &HeaderName, connection_tokens: &[HeaderName]) -> bool {
@@ -299,7 +298,7 @@ mod tests {
     use tokio::net::TcpListener;
     use tower::ServiceExt;
 
-    use super::{AdminUiConfig, X_FORWARDED_FOR, forwarded_for_chain, mount_admin_ui};
+    use super::{AdminUiConfig, CLIENT_IP_HEADER, mount_admin_ui};
 
     #[derive(Debug, Clone, Serialize)]
     struct CapturedRequest {
@@ -307,23 +306,55 @@ mod tests {
         headers: Vec<(String, String)>,
     }
 
-    #[test]
-    fn forwarded_for_appends_the_peer_to_the_inbound_chain() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            X_FORWARDED_FOR,
-            HeaderValue::from_static("203.0.113.9, 10.0.0.2"),
+    #[tokio::test]
+    async fn proxy_replaces_client_ip_headers_with_a_signed_peer() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+        let key: Arc<[u8]> = Arc::from(&b"proxy-test-key"[..]);
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                client_ip_signing_key: Some(key.clone()),
+                ..AdminUiConfig::default()
+            },
         );
-        let peer = "10.0.0.3".parse().ok();
+        let forged =
+            crate::client_ip::sign_client_ip(b"guessed", "198.51.100.1".parse().unwrap(), 0);
+        for peer in [Some("203.0.113.9:5000"), None] {
+            let mut request = Request::builder()
+                .uri("/admin/models")
+                .header(CLIENT_IP_HEADER, &forged)
+                .body(Body::empty())
+                .expect("request must build");
+            if let Some(peer) = peer {
+                let peer: std::net::SocketAddr = peer.parse().unwrap();
+                request
+                    .extensions_mut()
+                    .insert(axum::extract::ConnectInfo(peer));
+            }
+            let response = app.clone().oneshot(request).await.expect("proxy response");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let captured = captured.lock().expect("capture lock");
+        let header = |index: usize| {
+            captured[index]
+                .headers
+                .iter()
+                .find(|(name, _)| name == CLIENT_IP_HEADER)
+                .map(|(_, value)| value.clone())
+        };
+        let signed = header(0).expect("signed client ip for a known peer");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         assert_eq!(
-            forwarded_for_chain(&headers, peer).as_deref(),
-            Some("203.0.113.9, 10.0.0.2, 10.0.0.3")
+            crate::client_ip::verify_client_ip(&key, &signed, now),
+            "203.0.113.9".parse().ok()
         );
-        assert_eq!(
-            forwarded_for_chain(&HeaderMap::new(), peer).as_deref(),
-            Some("10.0.0.3")
-        );
-        assert_eq!(forwarded_for_chain(&HeaderMap::new(), None), None);
+        assert_eq!(header(1), None, "a forged header must not pass through");
     }
 
     #[tokio::test]

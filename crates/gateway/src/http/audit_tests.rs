@@ -2,6 +2,7 @@
 //! the router, that failed mutations write none, and that secrets never land in
 //! an entry.
 
+use admin_ui::client_ip::{CLIENT_IP_HEADER, sign_client_ip};
 use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header::COOKIE},
@@ -77,9 +78,19 @@ impl Harness {
             COOKIE,
             HeaderValue::from_str(&format!("ogw_session={token}")).expect("cookie"),
         );
-        headers.insert("x-forwarded-for", HeaderValue::from_static(CLIENT_IP));
+        headers.insert(CLIENT_IP_HEADER, self.signed_client_ip());
         headers.insert("user-agent", HeaderValue::from_static("audit-tests/1.0"));
         (user.user_id, headers)
+    }
+
+    /// What the admin UI proxy forwards for a browser at `CLIENT_IP`.
+    fn signed_client_ip(&self) -> HeaderValue {
+        let value = sign_client_ip(
+            &self.state.client_ip_signing_key(),
+            CLIENT_IP.parse().unwrap(),
+            OffsetDateTime::now_utc().unix_timestamp(),
+        );
+        HeaderValue::from_str(&value).unwrap()
     }
 
     async fn send(
@@ -368,10 +379,10 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
         harness.entry("mcp_grant.set").await["after"]["target_id"],
         toolset_id
     );
-    assert_eq!(
-        harness.entry("mcp_grant.revoked").await["before"]["subject_kind"],
-        "user"
-    );
+    let granted = harness.entry("mcp_grant.set").await;
+    let revoked = harness.entry("mcp_grant.revoked").await;
+    assert_eq!(revoked["before"]["subject_kind"], "user");
+    assert_eq!(revoked["target_id"], granted["target_id"]);
     let binding_entry = harness.entry("mcp_credential_binding.set").await;
     assert_eq!(binding_entry["target_id"], binding_id);
     assert_eq!(binding_entry["metadata"]["operation"], "create");
@@ -464,7 +475,7 @@ async fn password_sign_in_and_sign_out_are_audited_without_the_password() {
         .unwrap();
 
     let mut anonymous = HeaderMap::new();
-    anonymous.insert("x-forwarded-for", HeaderValue::from_static(CLIENT_IP));
+    anonymous.insert(CLIENT_IP_HEADER, harness.signed_client_ip());
     let (status, _) = harness
         .send(
             Method::POST,
@@ -490,6 +501,29 @@ async fn password_sign_in_and_sign_out_are_audited_without_the_password() {
     assert_eq!(entry["request_ip"], CLIENT_IP);
     let everything = serde_json::to_string(&harness.entries().await).unwrap();
     assert!(!everything.contains(password));
+}
+
+#[tokio::test]
+async fn forged_client_addresses_are_not_recorded() {
+    let harness = Harness::new().await;
+    let mut headers = harness.admin.clone();
+    headers.insert("x-forwarded-for", HeaderValue::from_static("198.51.100.1"));
+    let forged = sign_client_ip(b"guessed-key", "198.51.100.1".parse().unwrap(), 0);
+    headers.insert(CLIENT_IP_HEADER, HeaderValue::from_str(&forged).unwrap());
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/admin/mcp/toolsets",
+            &headers,
+            Some(json!({ "toolset_key": "spoof", "display_name": "Spoof" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Without a valid signature only the direct peer counts, and a test request has none.
+    assert_eq!(
+        harness.entry("mcp_toolset.created").await["request_ip"],
+        Value::Null
+    );
 }
 
 #[tokio::test]

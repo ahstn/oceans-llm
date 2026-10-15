@@ -103,10 +103,11 @@ export function forwardRequestHeadersFromRequest(request: Request, initHeaders?:
     headers.set('x-forwarded-host', requestHost)
   }
 
-  // The gateway records the client address and agent on admin audit entries.
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  if (forwardedFor && !headers.has('x-forwarded-for')) {
-    headers.set('x-forwarded-for', forwardedFor)
+  // The gateway proxy signs the browser's address; the gateway records it, and the
+  // browser's agent, on admin audit entries.
+  const clientIp = request.headers.get('x-oceans-client-ip')
+  if (clientIp && !headers.has('x-oceans-client-ip')) {
+    headers.set('x-oceans-client-ip', clientIp)
   }
 
   const userAgent = request.headers.get('user-agent')
