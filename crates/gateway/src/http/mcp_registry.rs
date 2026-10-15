@@ -985,10 +985,8 @@ async fn toolset_before_summary(
 ) -> Result<serde_json::Value, AppError> {
     Ok(state
         .store
-        .list_mcp_toolsets(true)
+        .get_mcp_toolset(toolset_id)
         .await?
-        .into_iter()
-        .find(|toolset| toolset.toolset_id == toolset_id)
         .map(|toolset| {
             serde_json::json!({
                 "display_name": toolset.display_name,

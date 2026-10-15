@@ -139,16 +139,22 @@ fn decode_catalog_tool(row: &PgRow) -> Result<McpCatalogToolRecord, StoreError> 
     })
 }
 
-async fn load_toolset(pool: &PgPool, toolset_id: Uuid) -> Result<McpToolsetRecord, StoreError> {
+async fn find_toolset(
+    pool: &PgPool,
+    toolset_id: Uuid,
+) -> Result<Option<McpToolsetRecord>, StoreError> {
     let sql = format!("SELECT {TOOLSET_COLUMNS} FROM mcp_toolsets WHERE toolset_id = $1");
     let row = sqlx::query(&sql)
         .bind(toolset_id.to_string())
         .fetch_optional(pool)
         .await
         .map_err(to_query_error)?;
-    row.as_ref()
-        .map(decode_toolset)
-        .transpose()?
+    row.as_ref().map(decode_toolset).transpose()
+}
+
+async fn load_toolset(pool: &PgPool, toolset_id: Uuid) -> Result<McpToolsetRecord, StoreError> {
+    find_toolset(pool, toolset_id)
+        .await?
         .ok_or_else(|| StoreError::NotFound(format!("MCP toolset `{toolset_id}` was not found")))
 }
 
@@ -167,6 +173,13 @@ impl McpAccessRepository for PostgresStore {
             .await
             .map_err(to_query_error)?;
         rows.iter().map(decode_toolset).collect()
+    }
+
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        find_toolset(&self.pool, toolset_id).await
     }
 
     async fn create_mcp_toolset(

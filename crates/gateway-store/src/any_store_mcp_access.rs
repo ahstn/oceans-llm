@@ -22,6 +22,16 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_toolset(toolset_id).await,
+            Self::Postgres(store) => store.get_mcp_toolset(toolset_id).await,
+        }
+    }
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,

@@ -166,10 +166,10 @@ fn decode_catalog_tool(row: &libsql::Row) -> Result<McpCatalogToolRecord, StoreE
     })
 }
 
-async fn load_toolset(
+async fn find_toolset(
     connection: &libsql::Connection,
     toolset_id: Uuid,
-) -> Result<McpToolsetRecord, StoreError> {
+) -> Result<Option<McpToolsetRecord>, StoreError> {
     let sql = format!("SELECT {TOOLSET_COLUMNS} FROM mcp_toolsets WHERE toolset_id = ?1");
     let mut rows = connection
         .query(&sql, [toolset_id.to_string()])
@@ -179,7 +179,15 @@ async fn load_toolset(
         .await
         .map_err(to_query_error)?
         .map(|row| decode_toolset(&row))
-        .transpose()?
+        .transpose()
+}
+
+async fn load_toolset(
+    connection: &libsql::Connection,
+    toolset_id: Uuid,
+) -> Result<McpToolsetRecord, StoreError> {
+    find_toolset(connection, toolset_id)
+        .await?
         .ok_or_else(|| StoreError::NotFound(format!("MCP toolset `{toolset_id}` was not found")))
 }
 
@@ -202,6 +210,13 @@ impl McpAccessRepository for LibsqlStore {
             toolsets.push(decode_toolset(&row)?);
         }
         Ok(toolsets)
+    }
+
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        find_toolset(&self.connection, toolset_id).await
     }
 
     async fn create_mcp_toolset(

@@ -1053,6 +1053,12 @@ pub trait McpAccessRepository: Send + Sync {
         include_disabled: bool,
     ) -> Result<Vec<McpToolsetRecord>, StoreError>;
 
+    /// Loads one tool set, including a disabled one.
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError>;
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,
