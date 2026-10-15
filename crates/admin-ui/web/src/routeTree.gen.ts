@@ -19,6 +19,7 @@ import { Route as GuardrailsRouteImport } from './routes/guardrails'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as NoAccessRouteImport } from './routes/no-access'
+import { Route as RateLimitsRouteImport } from './routes/rate-limits'
 import { Route as ReviewAgentRouteImport } from './routes/review-agent'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
@@ -89,6 +90,11 @@ const ModelsRoute = ModelsRouteImport.update({
 const NoAccessRoute = NoAccessRouteImport.update({
   id: '/no-access',
   path: '/no-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RateLimitsRoute = RateLimitsRouteImport.update({
+  id: '/rate-limits',
+  path: '/rate-limits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReviewAgentRoute = ReviewAgentRouteImport.update({
@@ -213,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -280,6 +288,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -315,6 +324,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -348,6 +358,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -415,6 +427,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
   NoAccessRoute: typeof NoAccessRoute
+  RateLimitsRoute: typeof RateLimitsRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
   AccountConnectionsRoute: typeof AccountConnectionsRoute
@@ -508,6 +521,13 @@ declare module '@tanstack/react-router' {
       path: '/no-access'
       fullPath: '/no-access'
       preLoaderRoute: typeof NoAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rate-limits': {
+      id: '/rate-limits'
+      path: '/rate-limits'
+      fullPath: '/rate-limits'
+      preLoaderRoute: typeof RateLimitsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/review-agent': {
@@ -671,6 +691,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
   NoAccessRoute: NoAccessRoute,
+  RateLimitsRoute: RateLimitsRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
   AccountConnectionsRoute: AccountConnectionsRoute,

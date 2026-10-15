@@ -96,6 +96,7 @@ pub async fn v1_messages_count_tokens(
     State(state): State<AppState>,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
     request: Result<Json<AnthropicMessagesRequest>, JsonRejection>,
 ) -> Response {
@@ -105,7 +106,7 @@ pub async fn v1_messages_count_tokens(
         Ok(Json(request)) => request,
         Err(rejection) => return anthropic_error_response(json_rejection_error(&rejection)),
     };
-    match count_tokens_inner(state, request_id, headers, auth, request).await {
+    match count_tokens_inner(state, request_id, headers, policy, auth, request).await {
         Ok(response) => response,
         Err(error) => anthropic_error_response(error.0),
     }
@@ -125,6 +126,7 @@ async fn count_tokens_inner(
     state: AppState,
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
+    policy: RequestPolicyContext,
     auth: AuthenticatedApiKey,
     request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
@@ -145,6 +147,14 @@ async fn count_tokens_inner(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    enforce_inference_rate_limits(
+        &state,
+        &policy,
+        &auth,
+        &resolved,
+        RateLimitOperation::CountTokens,
+    )
+    .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
 
     let request_headers = extract_request_headers(&headers);

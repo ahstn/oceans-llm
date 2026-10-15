@@ -50,14 +50,30 @@ impl Endpoint {
                     "stream": stream,
                 }))
                 .unwrap();
-                v1_chat_completions(State(state), request_id, headers, auth, Json(request)).await
+                v1_chat_completions(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
             Self::Responses => {
                 let request = serde_json::from_value(json!({
                     "model": "fast", "input": "hello", "stream": stream,
                 }))
                 .unwrap();
-                v1_responses(State(state), request_id, headers, auth, Json(request)).await
+                v1_responses(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
             Self::Messages => {
                 let request = serde_json::from_value(json!({
@@ -65,14 +81,30 @@ impl Endpoint {
                     "messages": [{"role": "user", "content": "hello"}],
                 }))
                 .unwrap();
-                v1_messages_inner(state, request_id, headers, auth.0, request).await
+                v1_messages_inner(
+                    state,
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth.0,
+                    request,
+                )
+                .await
             }
             Self::Embeddings => {
                 let request = serde_json::from_value(json!({
                     "model": "fast", "input": "hello",
                 }))
                 .unwrap();
-                v1_embeddings(State(state), request_id, headers, auth, Json(request)).await
+                v1_embeddings(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
             Self::Decisions => {
                 let request = serde_json::from_value(json!({
@@ -80,7 +112,15 @@ impl Endpoint {
                     "questions": {"urgent": {"type": "noul", "instructions": "Is it urgent?"}},
                 }))
                 .unwrap();
-                v1_decisions(State(state), request_id, headers, auth, Json(request)).await
+                v1_decisions(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
         }
     }

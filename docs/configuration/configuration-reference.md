@@ -29,6 +29,7 @@ Unknown fields are rejected at the top level and in models, routes, route `capab
 - `skills`
 - `budgets`
 - `budget_alerts`
+- `rate_limits`
 - `request_logging`
 - `agent_analysis`
 - `guardrails`
@@ -413,6 +414,7 @@ permissions:
       - mcp
       - review_agent
       - spend_controls
+      - rate_limits
     actions: []
     default_page: api_keys
 ```
@@ -431,11 +433,11 @@ Each `actions` list uses the same direct-grant and inheritance rules:
 
 Repeated page or action names are valid and appear once in the effective set. An explicit empty list removes that group's direct grants, but inherited grants still apply. If a group, `pages`, or `actions` field is absent, the gateway uses the direct defaults shown above.
 
-The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `leaderboard`, `agent_harnesses`, `agent_sessions`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
+The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `rate_limits`, `leaderboard`, `agent_harnesses`, `agent_sessions`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
 
 The first action catalog contains `create_api_key`, `update_api_key`, `revoke_api_key`, and `reveal_api_key`. Users can receive the first three actions. Team admins and platform admins can receive all four. Other admin operations keep their existing authorization rules until they have a typed action and resource-scope policy.
 
-The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. Only `platform_admins` can receive `mcp` or `review_agent`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
+The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. Only `platform_admins` can receive `mcp`, `review_agent`, or `rate_limits`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
 
 If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. The session returns this value, but the admin UI no longer uses it for landing: users with any effective page land on their personal `/admin/profile` page. A group with no effective pages uses the signed-in `/admin/no-access` page. See the [profile landing page ADR](../adr/2026-09-26-profile-landing-page.md).
 
@@ -453,6 +455,7 @@ Important fields:
 - `otel_metrics_endpoint`
 - `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
+- `trusted_proxies` (list of IP addresses or CIDR ranges, default empty): proxies whose `X-Forwarded-For` header the gateway trusts when it resolves a client IP. See [Rate Limits](rate-limits.md#client-ip-and-trusted-proxies)
 
 For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 
@@ -781,6 +784,57 @@ Seed semantics that matter:
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
 
 For OIDC and OAuth users, config seeding creates the invited identity and its provider association. It does not generate an onboarding URL. Config-seeded OIDC and OAuth users can sign in through the shared `/admin/login` page after deployment. A per-user SSO link from the control plane is optional. Config-seeded password users still require a unique password invite URL from the control plane. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for the complete sign-in contract.
+
+## `rate_limits`
+
+`rate_limits` sets platform-wide rate-limit defaults and how enforcement behaves. Platform admins add policies for specific keys, users, teams, and MCP servers on the Rate Limits page. See [Rate Limits](rate-limits.md) for windows, precedence, and responses.
+
+```yaml
+rate_limits:
+  failure_mode: open
+  policy_refresh_seconds: 10
+  policies:
+    - name: inference per key
+      operation: inference
+      scope: api_key
+      period: minute
+      limit: 600
+    - name: tokens per team
+      operation: inference
+      scope: team
+      model: fable-5
+      metric: tokens
+      period: hour
+      limit: 5000000
+    - name: tool calls per key
+      operation: mcp_tool_call
+      scope: api_key
+      mcp_server: notes
+      period: day
+      limit: 5000
+```
+
+Important fields:
+
+- `failure_mode`: `open` (default) admits requests when the counter store fails; `closed` rejects them with `503`
+- `policy_refresh_seconds`: how often each replica reloads admin policies, `1` to `3600`, default `10`
+- `policies[].name`: unique, 1 to 100 characters
+- `policies[].operation`: `inference`, `count_tokens`, or `mcp_tool_call`
+- `policies[].scope`: `global`, `api_key`, `user`, or `team`; non-global scopes give each principal its own counter
+- `policies[].model`: optional gateway model id, for `inference` and `count_tokens`
+- `policies[].mcp_server`: optional MCP server key, for `mcp_tool_call`
+- `policies[].metric`: `requests` (default) or `tokens`
+- `policies[].period`: `minute` or `hour` (sliding), `day` or `month` (UTC calendar quotas)
+- `policies[].limit`: positive integer
+
+Validation rules:
+
+- unknown fields, operations, scopes, metrics, periods, and failure modes fail startup
+- `limit` must be greater than `0`, and names must be unique after trimming
+- at most 100 policies per operation; admin policies count against the same limit when enabled
+- `tokens` is only valid with `operation: inference`
+- `model` must reference a configured gateway model and cannot be set for `mcp_tool_call`
+- `mcp_server` can only be set for `mcp_tool_call`; an unregistered key logs a warning at startup
 
 ## `budget_alerts`
 

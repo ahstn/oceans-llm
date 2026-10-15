@@ -41,6 +41,7 @@ permissions:
       - mcp
       - review_agent
       - spend_controls
+      - rate_limits
       - agent_sessions
     actions: []
     default_page: api_keys

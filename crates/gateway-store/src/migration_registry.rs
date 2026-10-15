@@ -344,10 +344,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 60,
+        name: "rate_limits",
+        checksum: "V60__rate_limits.sql",
+        libsql_sql: include_str!("../migrations/V60__rate_limits.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V60__rate_limits.sql"),
+    },
+    MigrationManifest {
+        version: 61,
         name: "batch_jobs_route_index",
-        checksum: "V60__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V60__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V60__batch_jobs_route_index.sql"),
+        checksum: "V61__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V61__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V61__batch_jobs_route_index.sql"),
     },
 ];
 
