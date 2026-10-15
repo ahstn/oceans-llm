@@ -69,8 +69,14 @@ fn authorization_params(pairs: Vec<(String, String)>) -> AuthorizationParams {
 }
 
 /// Shown when the client or redirect URI cannot be trusted, so the gateway
-/// must not redirect (RFC 6749 section 4.1.2.1).
+/// must not redirect (RFC 6749 section 4.1.2.1). A server failure keeps a
+/// `5xx` status so it reads as retryable rather than as a bad request.
 fn error_page(error: &OauthError) -> Response {
+    let status = match error.error {
+        "server_error" => StatusCode::INTERNAL_SERVER_ERROR,
+        "temporarily_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::BAD_REQUEST,
+    };
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Authorization failed</title></head>\
          <body><h1>Authorization failed</h1><p>{}</p><p><code>{}</code></p>\
@@ -78,12 +84,7 @@ fn error_page(error: &OauthError) -> Response {
         escape_html(&error.description),
         escape_html(error.error),
     );
-    (
-        StatusCode::BAD_REQUEST,
-        [(CACHE_CONTROL, "no-store")],
-        Html(body),
-    )
-        .into_response()
+    (status, [(CACHE_CONTROL, "no-store")], Html(body)).into_response()
 }
 
 fn escape_html(value: &str) -> String {
@@ -93,4 +94,30 @@ fn escape_html(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_pages_keep_server_failures_retryable() {
+        let status = |error: OauthError| error_page(&error).status();
+        assert_eq!(
+            status(OauthError::invalid_request("bad")),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(OauthError::invalid_client("unknown")),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(OauthError::server_error("store down")),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            status(OauthError::temporarily_unavailable("busy")),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
 }

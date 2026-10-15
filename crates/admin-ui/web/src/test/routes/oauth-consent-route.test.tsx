@@ -125,6 +125,22 @@ describe('OauthConsentPage', () => {
     expect(assignMock).not.toHaveBeenCalled()
   })
 
+  it('offers a retry when the request could not be loaded', async () => {
+    routeMock.useLoaderData.mockReturnValue({ status: 'error' })
+    const reloadMock = vi.fn()
+    vi.stubGlobal('location', { assign: assignMock, reload: reloadMock })
+    const { OauthConsentPage } = await import('@/routes/oauth/consent')
+
+    render(<OauthConsentPage />)
+
+    expect(screen.getByTestId('oauth-consent-error')).toHaveTextContent(
+      'Your request may still be valid.',
+    )
+    expect(screen.queryByTestId('oauth-consent-unavailable')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(reloadMock).toHaveBeenCalled()
+  })
+
   it('explains an expired or used request', async () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'unavailable' })
     const { OauthConsentPage } = await import('@/routes/oauth/consent')

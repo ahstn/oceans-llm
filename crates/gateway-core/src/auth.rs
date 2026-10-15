@@ -1,3 +1,4 @@
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
@@ -17,6 +18,10 @@ pub struct OauthAccessContext {
     pub client_id: String,
     pub resource: McpOauthResource,
     pub scopes: Vec<String>,
+    /// Lookup key of the presented access token, to recheck it later.
+    pub token_hash: String,
+    /// When the presented access token expires.
+    pub expires_at: OffsetDateTime,
 }
 
 /// The caller of a gateway request.

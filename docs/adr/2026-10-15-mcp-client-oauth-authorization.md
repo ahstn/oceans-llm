@@ -206,6 +206,8 @@ An hourly loop runs while the feature is enabled. It deletes:
 
 A consumed code or refresh token is the only record that links a replay to its grant. These rows are therefore kept while the grant is not revoked and its approving session has not ended, so a replay at any point in the grant's life still revokes it. After that, the one-day grace still lets a late replay meet the record. The rows a live grant keeps are bounded by the session's lifetime. Grants are never deleted, because they are the audit trail for which client acted for a user. Invocation metadata refers to them by ID.
 
+A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval.
+
 ## Trade-offs
 
 - Signing out of the admin UI also disconnects the MCP clients that session approved. That is the guarantee #441 asks for, but it can surprise someone who signs out to switch accounts. The consent page says so.

@@ -41,7 +41,9 @@ use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
 use crate::http::{
-    mcp_client_oauth::bearer_challenge, request_policy::RequestPolicyContext, state::AppState,
+    mcp_client_oauth::{bearer_challenge, bound_to_oauth_access},
+    request_policy::RequestPolicyContext,
+    state::AppState,
 };
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
@@ -121,6 +123,7 @@ pub async fn mcp_streamable_http_proxy(
         started_at,
     )
     .await;
+    let response = bound_to_oauth_access(&state, &auth, response);
     tracing::Span::current().record("status_code", i64::from(response.status().as_u16()));
     tracing::debug!(
         elapsed_ms = started_at.elapsed().as_millis(),

@@ -22,9 +22,10 @@ where
         route: &McpOauthResource,
         now: OffsetDateTime,
     ) -> Result<AuthenticatedApiKey, GatewayError> {
+        let token_hash = oauth_token_hash(raw.trim());
         let context = self
             .repo
-            .get_gateway_oauth_token_context(&oauth_token_hash(raw.trim()))
+            .get_gateway_oauth_token_context(&token_hash)
             .await?
             .filter(|context| {
                 context.token.kind == GatewayOauthTokenKind::Access
@@ -47,6 +48,7 @@ where
             }
             .into());
         }
+        let expires_at = context.token.expires_at;
         let grant = context.grant;
         Ok(AuthenticatedApiKey {
             id: grant.grant_id,
@@ -63,6 +65,8 @@ where
                 client_id: grant.client_id,
                 resource,
                 scopes,
+                token_hash,
+                expires_at,
             }),
         })
     }
