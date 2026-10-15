@@ -115,6 +115,13 @@ export function forwardRequestHeadersFromRequest(request: Request, initHeaders?:
     headers.set('user-agent', userAgent)
   }
 
+  // The gateway keeps an incoming request ID, so the audit entry can be matched to
+  // the browser's request. The gateway redacts and bounds it before storing it.
+  const requestId = request.headers.get('x-request-id')
+  if (requestId && !headers.has('x-request-id')) {
+    headers.set('x-request-id', requestId)
+  }
+
   return headers
 }
 
