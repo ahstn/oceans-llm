@@ -344,14 +344,18 @@ impl McpAccessRepository for LibsqlStore {
         grant: &UpsertMcpToolGrantRecord,
     ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
-        self.connection
-            .execute(
+        // `RETURNING` gives the row this statement wrote, so `created` cannot be
+        // confused by a concurrent revoke and re-grant.
+        let mut rows = self
+            .connection
+            .query(
                 r#"
                 INSERT INTO mcp_tool_grants (
                     grant_id, subject_kind, subject_id, target_kind, target_id, is_active, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)
                 ON CONFLICT(subject_kind, subject_id, target_kind, target_id) WHERE is_active = 1
                 DO UPDATE SET updated_at = excluded.updated_at, revoked_at = NULL
+                RETURNING grant_id, subject_kind, subject_id, target_kind, target_id, is_active, created_at, updated_at, revoked_at
                 "#,
                 libsql::params![
                     id.to_string(),
@@ -364,20 +368,13 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        self.list_mcp_tool_grants(Some(grant.subject_kind), Some(grant.subject_id))
-            .await?
-            .into_iter()
-            .find(|record| {
-                record.target_kind == grant.target_kind
-                    && record.target_id == grant.target_id
-                    && record.is_active
-            })
-            // The insert keeps this call's id; an already-active grant keeps its own.
-            .map(|record| {
-                let created = record.grant_id == id;
-                (record, created)
-            })
-            .ok_or_else(|| StoreError::Unexpected("failed loading upserted MCP grant".to_string()))
+        let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+            StoreError::Unexpected("MCP grant upsert returned no row".to_string())
+        })?;
+        let record = decode_grant(&row)?;
+        // The insert keeps this call's id; an already-active grant keeps its own.
+        let created = record.grant_id == id;
+        Ok((record, created))
     }
 
     async fn revoke_mcp_tool_grant(
