@@ -1128,7 +1128,6 @@ models:
     routes:
       - provider: vertex-global
         upstream_model: anthropic/claude-fable-5-1
-        context_window_tokens: 1000000
 ```
 
 The accepted values, from least to greatest effort, are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. The gateway compares values using this order; it does not clamp or rewrite a request. Omitting the field or setting it to `null` leaves the model without a categorical ceiling.

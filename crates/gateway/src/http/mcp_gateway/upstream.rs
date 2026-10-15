@@ -179,8 +179,11 @@ fn upstream_request(
     body: Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<reqwest::RequestBuilder, GatewayError> {
-    let url = Url::parse(&upstream.server.server_url)
+    let mut url = Url::parse(&upstream.server.server_url)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    if let Some(credential) = &upstream.query_credential {
+        url = credential.apply(&url);
+    }
     let request = client.request(method.clone(), url).body(body);
     let request = apply_forwarded_request_headers(request, inbound_headers)?;
     match &upstream.headers {

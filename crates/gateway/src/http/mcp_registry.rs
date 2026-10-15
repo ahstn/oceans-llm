@@ -252,6 +252,61 @@ pub async fn list_mcp_server_tools(
 
 #[utoipa::path(
     post,
+    path = "/api/v1/admin/mcp/oauth-discovery",
+    request_body = McpOauthDiscoveryRequest,
+    responses(
+        (status = 200, body = Envelope<McpOauthDiscoveryPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+/// Reads an MCP server's OAuth metadata so an admin can register it by URL.
+/// Nothing is stored; the admin saves the suggested auth config, or an
+/// edited copy, with the server.
+pub async fn discover_mcp_server_oauth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<McpOauthDiscoveryRequest>,
+) -> Result<Json<Envelope<McpOauthDiscoveryPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let discovery = state
+        .mcp_oauth_runtime
+        .discover(request.server_url.trim())
+        .await?;
+    let mut warnings = discovery.warnings.clone();
+    if state.mcp_oauth_runtime.public_base_url().is_none() {
+        warnings.push(
+            "mcp.oauth.public_base_url is not configured, so users cannot connect yet.".to_string(),
+        );
+    }
+    Ok(Json(envelope(McpOauthDiscoveryPayload {
+        suggested_auth_config: discovery.suggested_auth_config(),
+        callback_url: state
+            .mcp_oauth_runtime
+            .public_base_url()
+            .map(|base| format!("{base}/api/v1/mcp/oauth/callback")),
+        client_metadata_document_url: state.mcp_oauth_runtime.client_metadata_document_url().ok(),
+        resource: discovery.resource,
+        resource_metadata_url: discovery.resource_metadata_url,
+        authorization_servers: discovery.authorization_servers,
+        issuer: discovery.issuer,
+        authorization_server_metadata_url: discovery.authorization_server_metadata_url,
+        authorization_endpoint: discovery.authorization_endpoint,
+        token_endpoint: discovery.token_endpoint,
+        registration_endpoint: discovery.registration_endpoint,
+        scopes_supported: discovery.scopes_supported,
+        default_scopes: discovery.default_scopes,
+        token_endpoint_auth_methods_supported: discovery.token_endpoint_auth_methods_supported,
+        code_challenge_methods_supported: discovery.code_challenge_methods_supported,
+        client_id_metadata_document_supported: discovery.client_id_metadata_document_supported,
+        recommended_client_registration: discovery.recommended_client_registration.to_string(),
+        resource_indicator: discovery.resource_indicator,
+        warnings,
+    })))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh",
     params(("server_id" = String, Path, description = "External MCP server identifier")),
     responses(

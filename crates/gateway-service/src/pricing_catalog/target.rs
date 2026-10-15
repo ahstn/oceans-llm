@@ -138,38 +138,22 @@ fn vertex_catalog_target(route: &ModelRoute) -> PricingTarget {
 
     PricingTarget::Exact {
         pricing_provider_id: pricing_provider_id.to_string(),
-        model_id: normalize_vertex_pricing_model_id(pricing_provider_id, model_id),
+        model_id: model_id.to_string(),
     }
 }
 
-pub(super) fn normalize_vertex_pricing_model_id(
+/// Second catalog id to try when the exact target id is missing.
+///
+/// models.dev publishes Vertex Anthropic models under a versioned id
+/// (`claude-sonnet-4-6@default`, `claude-haiku-4-5@20251001`), while routes usually
+/// name the unversioned model. Lookups try the exact id first, then `<id>@default`,
+/// so new families resolve without a hard-coded list.
+pub(crate) fn catalog_model_id_fallback(
     pricing_provider_id: &str,
     model_id: &str,
-) -> String {
-    if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID
-        && !model_id.contains('@')
-        && is_default_vertex_anthropic_model_id(model_id)
-    {
-        return format!("{model_id}@default");
-    }
-
-    model_id.to_string()
-}
-
-fn is_default_vertex_anthropic_model_id(model_id: &str) -> bool {
-    if model_id == "claude-sonnet-5" {
-        return true;
-    }
-
-    let Some((family, minor)) = model_id.rsplit_once('-') else {
-        return false;
-    };
-    let Ok(minor) = minor.parse::<u16>() else {
-        return false;
-    };
-
-    matches!(family, "claude-sonnet-4" if minor >= 6)
-        || matches!(family, "claude-opus-4" if minor >= 6)
+) -> Option<String> {
+    (pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID && !model_id.contains('@'))
+        .then(|| format!("{model_id}@default"))
 }
 
 pub(super) fn normalize_bedrock_pricing_model_id(upstream_model: &str) -> String {

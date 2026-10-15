@@ -31,10 +31,10 @@ use crate::{
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
         HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
         McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolProjection,
-        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpGrantSubject, McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
         McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
         ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
         NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
@@ -1203,6 +1203,26 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         credential_binding_id: Uuid,
         lease_token: Uuid,
     ) -> Result<bool, StoreError>;
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError>;
+
+    /// Stores a registered client unless the server already has one, and
+    /// returns the row that is stored afterwards. Concurrent registrations
+    /// therefore converge on a single client.
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError>;
+
+    /// Deletes the registered client only when it is still `client_id`.
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]
@@ -1307,6 +1327,24 @@ pub trait PricingCatalogRepository: Send + Sync {
         pricing_model_id: &str,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<ModelPricingRecord>, StoreError>;
+    /// Resolve `pricing_model_id`, or `fallback_model_id` when the exact id has no
+    /// effective row. Stores override this to answer with a single query.
+    async fn resolve_model_pricing_with_fallback_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError> {
+        if let Some(record) = self
+            .resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
+            .await?
+        {
+            return Ok(Some(record));
+        }
+        self.resolve_model_pricing_at(pricing_provider_id, fallback_model_id, occurred_at)
+            .await
+    }
 }
 
 #[async_trait]
