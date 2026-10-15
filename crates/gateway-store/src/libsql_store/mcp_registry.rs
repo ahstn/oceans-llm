@@ -337,24 +337,29 @@ impl McpRegistryRepository for LibsqlStore {
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
-        // Only an enabled server changes, so the row count says whether this
-        // call disabled it. `load_server` reports a missing server.
-        let changed = self
+        // Only an enabled server changes. `RETURNING` gives the row this call
+        // disabled; with no row, the server was already disabled or is missing,
+        // which `load_server` reports.
+        let mut rows = self
             .connection
-            .execute(
-                r#"
-                UPDATE external_mcp_servers
-                SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
-                    last_discovery_status = 'disabled', last_discovery_at = ?1
-                WHERE mcp_server_id = ?2
-                  AND status <> 'disabled'
-                "#,
+            .query(
+                &format!(
+                    "UPDATE external_mcp_servers
+                     SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
+                         last_discovery_status = 'disabled', last_discovery_at = ?1
+                     WHERE mcp_server_id = ?2
+                       AND status <> 'disabled'
+                     RETURNING {SERVER_COLUMNS}"
+                ),
                 libsql::params![disabled_at.unix_timestamp(), mcp_server_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        let server = load_server(&self.connection, mcp_server_id).await?;
-        Ok((server, changed > 0))
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_server(&row)?, true));
+        }
+        drop(rows);
+        Ok((load_server(&self.connection, mcp_server_id).await?, false))
     }
 
     async fn list_external_mcp_tools(
