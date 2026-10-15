@@ -1139,7 +1139,7 @@ impl PostgresStore {
             ));
         }
 
-        sqlx::query(
+        let moved = sqlx::query(
             r#"
             UPDATE team_memberships
             SET team_id = $1,
@@ -1157,6 +1157,13 @@ impl PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
+        // A concurrent transfer may have moved the user after the read above; then
+        // this update matches nothing and the transfer did not happen.
+        if moved.rows_affected() == 0 {
+            return Err(StoreError::Conflict(
+                "user is no longer a member of the source team".to_string(),
+            ));
+        }
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }
