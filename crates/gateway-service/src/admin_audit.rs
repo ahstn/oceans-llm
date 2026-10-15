@@ -574,7 +574,9 @@ fn looks_encoded(word: &str) -> bool {
 /// `password=hunter2`, `?api_key=…` or `Authorization: Basic …`.
 fn has_secret_assignment(text: &str) -> bool {
     text.match_indices(['=', ':']).any(|(index, _)| {
+        // `password = hunter2` puts spaces between the name and the separator.
         let name = text[..index]
+            .trim_end()
             .rsplit(|character: char| {
                 !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
             })
@@ -953,6 +955,7 @@ mod tests {
             "profile": "https://social.example/@alice and bob@example.com",
             "query_note": "see https://example.test/?api_key=hunter2",
             "setup": "set password=hunter2 first",
+            "spaced": "set password = hunter2 first",
             "header_note": "send Authorization: Bearer abc",
             "basic_note": "use Basic dTpw",
             "requirements": "requires a bearer token",
@@ -991,6 +994,7 @@ mod tests {
                 "profile": "https://social.example/@alice and bob@example.com",
                 "query_note": AUDIT_REDACTED,
                 "setup": AUDIT_REDACTED,
+                "spaced": AUDIT_REDACTED,
                 "header_note": AUDIT_REDACTED,
                 "basic_note": AUDIT_REDACTED,
                 "requirements": "requires a bearer token",
