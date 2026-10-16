@@ -241,6 +241,10 @@ export default defineConfig({
   description: "Operator and maintainer docs for the Oceans LLM gateway.",
   lang: "en-US",
   appearance: "dark",
+  markdown: {
+    // Code blocks match the admin UI and the Tokyo Night chart palette in dark mode.
+    theme: { light: "github-light", dark: "tokyo-night" },
+  },
   head: [
     [
       "link",
