@@ -514,6 +514,22 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/oauth/authorization-requests/{request_id}/decision",
             post(decide_oauth_authorization_request),
         )
+        .route(
+            "/api/v1/me/authorized-mcp-clients",
+            get(list_my_authorized_mcp_clients),
+        )
+        .route(
+            "/api/v1/me/authorized-mcp-clients/{grant_id}",
+            delete(revoke_my_authorized_mcp_client),
+        )
+        .route(
+            "/api/v1/admin/mcp/authorized-clients",
+            get(admin_list_authorized_mcp_clients),
+        )
+        .route(
+            "/api/v1/admin/mcp/authorized-clients/revoke",
+            post(admin_revoke_authorized_mcp_clients),
+        )
         .merge(mcp_router)
         .with_state(state)
         .layer(middleware::from_fn_with_state(

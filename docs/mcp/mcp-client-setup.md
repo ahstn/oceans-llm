@@ -109,6 +109,8 @@ What the token can do:
 
 When access ends:
 
+- The user disconnects it under `/admin/account/connections`, in the `Authorized MCP clients` card.
+- A platform admin revokes it through `POST /api/v1/admin/mcp/authorized-clients/revoke`.
 - Signing out of the admin UI ends every client that session approved.
 - Deactivating the user revokes all of their grants.
 - The client can revoke its tokens at `/oauth/revoke`.

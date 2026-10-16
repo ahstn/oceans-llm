@@ -346,6 +346,7 @@ async fn run_serve_with_store(
         trusted_proxies: TrustedProxies::new(config.server.trusted_proxy_networks()?),
     };
     gateway::batch_worker::spawn(state.clone());
+    spawn_mcp_client_oauth_cleanup_loop(state.store.clone(), state.mcp_client_oauth.clone());
     let app = build_router(state, load_admin_ui_config(args.admin_ui_upstream));
 
     let listener = TcpListener::bind(bind_address)
@@ -690,6 +691,38 @@ fn spawn_agent_analysis_retention_loop(
         }
     });
 }
+/// Hourly: removes registered MCP OAuth clients that never received a grant,
+/// and long-expired authorization codes and tokens.
+fn spawn_mcp_client_oauth_cleanup_loop(
+    store: Arc<AnyStore>,
+    settings: Option<Arc<gateway_service::McpClientOauthSettings>>,
+) {
+    let Some(settings) = settings else {
+        return;
+    };
+    let service = gateway_service::McpClientOauthService::new(store, settings);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match service
+                .purge_stale_records(time::OffsetDateTime::now_utc())
+                .await
+            {
+                Ok(counts) if counts != Default::default() => tracing::info!(
+                    retired_grants = counts.retired_grants,
+                    clients = counts.clients,
+                    authorization_requests = counts.authorization_requests,
+                    tokens = counts.tokens,
+                    "purged stale MCP client OAuth records"
+                ),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(error = %error, "MCP client OAuth cleanup failed"),
+            }
+        }
+    });
+}
+
 fn spawn_budget_alert_delivery_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
     config: &BudgetAlertEmailConfig,

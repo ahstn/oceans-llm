@@ -9,9 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   connectMcpOauthServer,
   disconnectMcpOauthServer,
+  getAuthorizedMcpClients,
   getMcpOauthConnections,
 } from '@/server/admin-data.functions'
 import type { McpOauthConnectionView } from '@/types/api'
+
+import { AuthorizedMcpClientsCard } from './-authorized-mcp-clients'
 
 type ConnectionsSearch = {
   /** Server key from an MCP `connect_url`; starts the OAuth flow on load. */
@@ -35,14 +38,20 @@ export const Route = createFileRoute('/account/connections')({
     oauth_error: typeof search.oauth_error === 'string' ? search.oauth_error : undefined,
     server: typeof search.server === 'string' ? search.server : undefined,
   }),
-  loader: () => getMcpOauthConnections(),
+  loader: async () => {
+    const [connections, authorizedClients] = await Promise.all([
+      getMcpOauthConnections(),
+      getAuthorizedMcpClients(),
+    ])
+    return { connections, authorizedClients }
+  },
   component: ConnectionsPage,
 })
 
 // Redirect and disconnect transitions belong with their single connection-card workflow.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function ConnectionsPage() {
-  const connections = Route.useLoaderData()
+  const { connections, authorizedClients } = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
   const navigate = useNavigate()
@@ -189,6 +198,8 @@ export function ConnectionsPage() {
           })}
         </div>
       )}
+
+      <AuthorizedMcpClientsCard clients={authorizedClients} />
     </div>
   )
 }

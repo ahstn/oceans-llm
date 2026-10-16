@@ -12,6 +12,8 @@ Workspace connections lets any signed-in user link or unlink their own account o
 - `connections-client-metadata` is the public Client ID Metadata Document at `/api/v1/mcp/oauth/client-metadata.json`. Servers that use `metadata_document` registration send its URL as their client ID. It returns 404 when `mcp.oauth.public_base_url` is not set.
 - `connections-connect-link` handles `?connect=<server_key>`, the `connect_url` that MCP clients receive with `credential_required` and `credential_expired`. It drops the parameter, then starts consent for that server. A connected server shows `<name> is already connected`. A connection that no longer matches the server's provider, resource, or required scopes lists as `Expired`, so the link starts consent again; an unknown server shows `No workspace connection is available for MCP server <key>.`; an unavailable server shows its availability error.
 
+- `connections-authorized-clients` shows the `Authorized MCP clients` card when OAuth sign-in for MCP clients is enabled. It lists each client the user allowed, with its access, last token time, and expiry, and `Disconnect <client>` revokes it. With no clients it reads `No MCP clients are authorized.`
+
 ## How to get to it (user POV)
 
 - Open `/admin/account/connections` directly; it has no sidebar link. It is a personal page and needs no page permission, and the OAuth callback also returns here.
@@ -31,6 +33,8 @@ Preconditions:
 - **Metadata document.** Fetch `/api/v1/mcp/oauth/client-metadata.json` without a session. The default stack sets no `mcp.oauth.public_base_url`, so it returns 404.
 - **Connect link, unknown server.** Open `/admin/account/connections?connect=google_drive`. The toast `No workspace connection is available for MCP server google_drive.` appears, the URL drops the `connect` parameter, and the browser does not leave the page.
 - **Connect, connect link and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a registered oauth_obo server, and interactive consent at the upstream. A Google server also needs a Google entry under `mcp.oauth.providers`. Report them as skipped and name that unmet precondition.
+- **Authorized clients, empty.** The `Authorized MCP clients` card reads `No MCP clients are authorized.`, which matches `/api/v1/me/authorized-mcp-clients` (`enabled: true`, empty `items`).
+- **Authorized clients, disconnect.** Authorize a client through the [MCP client OAuth](./mcp-client-oauth.md) consent flow, then reload the page. The card lists the client by name. Choose `Disconnect <client>`. A `<client> disconnected` toast appears, the row disappears, and the client's access token now gets `401` on `/mcp`.
 - **Proof.** Capture the card, the alert, and the API response.
 
 ## Gotchas

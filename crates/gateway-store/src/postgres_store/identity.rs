@@ -1604,6 +1604,19 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
+        // The session first, then its grants: a grant created concurrently
+        // either sees the revoked session and is refused, or exists in time
+        // for this update to revoke it.
+        sqlx::query(
+            "UPDATE gateway_oauth_grants
+             SET revoked_at = $1, updated_at = $1, revoked_reason = 'session_ended'
+             WHERE user_id = $2 AND revoked_at IS NULL",
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
         Ok(())
     }
 
@@ -1619,6 +1632,19 @@ impl PostgresStore {
             WHERE session_id = $2
               AND revoked_at IS NULL
             "#,
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(session_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        // The session first, then its grants: a grant created concurrently
+        // either sees the revoked session and is refused, or exists in time
+        // for this update to revoke it.
+        sqlx::query(
+            "UPDATE gateway_oauth_grants
+             SET revoked_at = $1, updated_at = $1, revoked_reason = 'session_ended'
+             WHERE user_session_id = $2 AND revoked_at IS NULL",
         )
         .bind(revoked_at.unix_timestamp())
         .bind(session_id.to_string())

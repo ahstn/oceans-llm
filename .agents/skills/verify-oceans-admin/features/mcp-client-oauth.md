@@ -11,7 +11,7 @@ MCP clients without a `gwk_` key can sign in through the gateway. An unauthentic
 - `oauth-token` exchanges the code with PKCE at `/oauth/token` and returns `oat_` and `ort_` tokens.
 - `oauth-mcp-call` accepts the `oat_` token on `/mcp` and records the invocation with auth method `oauth`.
 - `oauth-refresh` rotates the refresh token; a reused refresh token revokes the grant.
-- `oauth-revocation` ends access through `/oauth/revoke`, and through sign-out of the approving session.
+- `oauth-revocation` ends access through `/oauth/revoke`, through `Disconnect` in the `Authorized MCP clients` card, and through sign-out of the approving session.
 - `oauth-route-boundary` rejects `oat_` tokens on non-MCP routes such as `/v1/models`.
 
 ## How to get to it (user POV)
@@ -39,6 +39,7 @@ Preconditions:
 - **Route boundary.** `GET /v1/models` with the same token. Expect `401`.
 - **Refresh.** `POST /oauth/token` with `grant_type=refresh_token`, the `client_id`, and the refresh token. Expect a new `ort_` token. Send the old refresh token again. Expect `invalid_grant`, and the newest access token now fails on `/mcp` with `401`.
 - **Revocation.** Repeat consent and token exchange, then `POST /oauth/revoke` with `token=<oat_…>` and the `client_id`. Expect `200`, after which `/mcp` returns `401`.
+- **Disconnect from the account page.** Repeat consent and token exchange, then open `/admin/account/connections`. The `Authorized MCP clients` card lists `Verify client`. Choose `Disconnect Verify client`, and the access token then gets `401` on `/mcp`. As platform admin, `GET /api/v1/admin/mcp/authorized-clients?user_id=<id>` agrees with the card before and after.
 - **Deny.** Start another authorization and press `Deny`. The browser returns to the callback with `error=access_denied` and `iss`.
 - **Proof.** Record each check with `control-oceans-admin record`, with the consent screenshot and ARIA snapshot as artifacts.
 
@@ -49,4 +50,4 @@ Preconditions:
 - The authorization code expires 60 seconds after `Allow`, so exchange it promptly.
 - Signing out of the admin UI revokes every client that session approved. Sign out only at the end of the run.
 - Consent is asked every time; the gateway never remembers it.
-- `http::mcp_client_oauth::{flow_tests, registration_tests, lifecycle_tests, mcp_route_tests}` prove the full protocol against the real router, including MCP tool calls through a local upstream, without a browser. This recipe adds the browser consent path and the admin UI.
+- `http::mcp_client_oauth::{flow_tests, registration_tests, lifecycle_tests, mcp_route_tests, authorized_clients_tests}` prove the full protocol against the real router, including MCP tool calls through a local upstream, without a browser. This recipe adds the browser consent path and the admin UI.

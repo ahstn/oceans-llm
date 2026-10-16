@@ -581,6 +581,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/oauth/**",
+        "crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx",
         "crates/gateway/src/http/mcp_client_oauth.rs",
         "crates/gateway/src/http/mcp_client_oauth/**",
         "crates/gateway-service/src/mcp_client_oauth.rs",

@@ -3,6 +3,7 @@
 //! See `docs/adr/2026-10-15-mcp-client-oauth-authorization.md`.
 
 mod authorization;
+mod authorized_clients;
 mod error;
 mod redirect;
 mod registration;
@@ -14,12 +15,13 @@ mod validation;
 use std::sync::Arc;
 
 pub use authorization::{AuthorizationParams, AuthorizationRejection, PendingAuthorization};
+pub use authorized_clients::{AuthorizedClients, MAX_LISTED_AUTHORIZED_CLIENTS};
 pub use error::OauthError;
 pub use registration::{ClientRegistrationRequest, ClientRegistrationResponse};
 pub use secrets::oauth_token_hash;
 pub use settings::{
-    DEFAULT_ACCESS_TOKEN_TTL_SECONDS, DEFAULT_REFRESH_TOKEN_TTL_SECONDS, McpClientOauthSettings,
-    McpClientOauthSettingsError,
+    DEFAULT_ACCESS_TOKEN_TTL_SECONDS, DEFAULT_REFRESH_TOKEN_TTL_SECONDS,
+    DEFAULT_UNUSED_CLIENT_RETENTION_DAYS, McpClientOauthSettings, McpClientOauthSettingsError,
 };
 pub use token::{ClientCredentials, TokenRequest, TokenResponse};
 

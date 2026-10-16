@@ -4,20 +4,19 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AuthError, GatewayError, McpOauthResource, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, StoreError,
-    UserStatus,
+    GatewayError, McpOauthResource, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, StoreError,
 };
-use gateway_service::PendingAuthorization;
+use gateway_service::{AuditEvent, PendingAuthorization, admin_audit::actions};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::oauth_service;
+use super::{oauth_service, require_active_session};
 use crate::http::{
     admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
-    identity::resolve_session_user_with_session_id,
     state::AppState,
 };
 
@@ -111,35 +110,53 @@ pub async fn get_oauth_authorization_request(
 pub async fn decide_oauth_authorization_request(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(request_id): Path<String>,
     Json(decision): Json<OauthAuthorizationDecisionRequest>,
 ) -> Result<Json<OauthAuthorizationDecisionResponse>, AppError> {
-    let (user_id, session_id) = require_active_session(&state, &headers).await?;
+    let (user, session_id) = require_active_session(&state, &headers).await?;
     let service = oauth_service(&state).ok_or_else(not_enabled)?;
     let request_id = parse_request_id(&request_id)?;
+    let now = OffsetDateTime::now_utc();
+    // What the user saw on the consent page, for the audit entry.
+    let pending = service.pending_authorization(request_id, now).await?;
     let redirect_to = service
-        .decide_authorization(
-            request_id,
-            user_id,
-            session_id,
-            decision.approve,
-            OffsetDateTime::now_utc(),
-        )
+        .decide_authorization(request_id, user.user_id, session_id, decision.approve, now)
         .await?;
+    let action = if decision.approve {
+        actions::MCP_CLIENT_GRANT_AUTHORIZED
+    } else {
+        actions::MCP_CLIENT_GRANT_DENIED
+    };
+    state
+        .audit()
+        .record(
+            &meta.user_context(&user),
+            AuditEvent::new(action)
+                .target(request_id)
+                .label(
+                    pending
+                        .client
+                        .client_name
+                        .clone()
+                        .unwrap_or_else(|| pending.client.client_id.clone()),
+                )
+                .after(consent_summary(&pending)),
+        )
+        .await;
     Ok(Json(OauthAuthorizationDecisionResponse { redirect_to }))
 }
 
-async fn require_active_session(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<(Uuid, Uuid), AppError> {
-    let (user, session_id) = resolve_session_user_with_session_id(state, headers)
-        .await?
-        .ok_or(AppError(AuthError::SessionRequired.into()))?;
-    if user.status != UserStatus::Active {
-        return Err(AppError(AuthError::InsufficientPrivileges.into()));
-    }
-    Ok((user.user_id, session_id))
+/// The consent fields an audit entry keeps: never the code, state, or PKCE
+/// values.
+fn consent_summary(pending: &PendingAuthorization) -> serde_json::Value {
+    serde_json::json!({
+        "client_id": pending.client.client_id,
+        "redirect_host": redirect_host(&pending.request.redirect_uri),
+        "redirect_is_loopback": pending.redirect_is_loopback,
+        "resource": pending.request.resource,
+        "scopes": pending.scopes,
+    })
 }
 
 fn parse_request_id(raw: &str) -> Result<Uuid, AppError> {
@@ -200,7 +217,7 @@ fn redirect_host(redirect_uri: &str) -> String {
         .unwrap_or_else(|| redirect_uri.to_string())
 }
 
-fn scope_description(scope: &str) -> &'static str {
+pub(super) fn scope_description(scope: &str) -> &'static str {
     match scope {
         SCOPE_MCP_AGGREGATE => "Search and call your MCP tools through the aggregate endpoint",
         SCOPE_MCP_PROXY => "Connect directly to MCP servers you have access to",

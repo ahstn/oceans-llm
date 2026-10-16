@@ -21,6 +21,10 @@ pub struct McpClientOauthConfig {
     pub refresh_token_ttl_seconds: i64,
     #[serde(default = "default_true")]
     pub dynamic_client_registration: bool,
+    /// Days a dynamically registered client may go without a grant before
+    /// the hourly cleanup deletes it.
+    #[serde(default = "default_unused_client_retention_days")]
+    pub unused_client_retention_days: i64,
 }
 
 impl Default for McpClientOauthConfig {
@@ -31,6 +35,7 @@ impl Default for McpClientOauthConfig {
             access_token_ttl_seconds: default_access_token_ttl_seconds(),
             refresh_token_ttl_seconds: default_refresh_token_ttl_seconds(),
             dynamic_client_registration: true,
+            unused_client_retention_days: default_unused_client_retention_days(),
         }
     }
 }
@@ -41,6 +46,10 @@ fn default_access_token_ttl_seconds() -> i64 {
 
 fn default_refresh_token_ttl_seconds() -> i64 {
     mcp_client_oauth::DEFAULT_REFRESH_TOKEN_TTL_SECONDS
+}
+
+fn default_unused_client_retention_days() -> i64 {
+    mcp_client_oauth::DEFAULT_UNUSED_CLIENT_RETENTION_DAYS
 }
 
 fn default_true() -> bool {
@@ -81,7 +90,9 @@ impl GatewayConfig {
             config.refresh_token_ttl_seconds,
             config.dynamic_client_registration,
         )
-        .with_context(|| format!("{field} cannot be used as the MCP OAuth issuer"))
+        .with_context(|| format!("{field} cannot be used as the MCP OAuth issuer"))?
+        .with_unused_client_retention_days(config.unused_client_retention_days)
+        .context("mcp.client_oauth.unused_client_retention_days")
         .map(Some)
     }
 }

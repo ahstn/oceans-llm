@@ -188,28 +188,45 @@ Every MCP request with an `oat_` token checks all of these:
 
 So access stops at once when:
 
-- **The user signs out.** Logout revokes the session, and every grant that session approved stops working.
+- **The user signs out.** Logout revokes the session and, with it, every grant that session approved.
 - **The user is deactivated.** Deactivation revokes all of the user's sessions and, explicitly, all their grants.
 - **The client revokes a token.** `/oauth/revoke` revokes the grant behind the token, access or refresh. RFC 7009 permits revoking the refresh token along with an access token. Unknown tokens return `200`, as the RFC requires.
 - **A refresh token is reused.** The gateway revokes the grant (section 3).
+- **The user disconnects the client.** The `Authorized MCP clients` card on `/admin/account/connections` lists the user's live grants and revokes one with `Disconnect`. The card uses `GET /api/v1/me/authorized-mcp-clients` and `DELETE /api/v1/me/authorized-mcp-clients/{grant_id}`. A user can only revoke their own grants.
+- **A platform admin revokes it.** `GET /api/v1/admin/mcp/authorized-clients?user_id=…` lists a user's live grants. `POST /api/v1/admin/mcp/authorized-clients/revoke` revokes one grant, or every grant when `grant_id` is omitted.
+
+The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin_revoked`, `client_revoked`, `user_deactivated`, `refresh_token_reused`, or `authorization_code_replayed`.
+
+### 10. Cleanup
+
+Revoking a session also revokes its grants, with reason `session_ended`. The session is revoked first and its grants second. A grant is stored only while its session is unrevoked, checked in the same statement, and on Postgres that statement takes a share lock on the session row. A code exchange racing a sign-out therefore either sees the revocation and is refused, or its grant exists in time to be revoked. Each grant keeps a copy of its session's expiry, which never changes. An hourly loop runs while the feature is enabled. It first marks grants whose session has expired by the time of the run as revoked, using an index on that copy and dating each grant to its session's expiry. Together these keep dead grants out of the live-grant index that the authorized clients listing walks. The loop then deletes:
+
+- dynamically registered clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
+- authorization requests that expired more than a day ago, unless their grant can still be used
+- tokens that expired more than a day ago, except consumed refresh tokens of a grant that can still be used
+
+A consumed code or refresh token is the only record that links a replay to its grant. These rows are therefore kept while the grant is not revoked and its approving session has not ended, so a replay at any point in the grant's life still revokes it. After that, the one-day grace still lets a late replay meet the record. The rows a live grant keeps are bounded by the session's lifetime. Every step runs in batches of 1,000 rows, so a backlog after downtime never becomes one long transaction. A run does at most 50 batches per step and leaves the rest of a backlog for later runs, so it cannot tie up the database for long. Every replica runs the loop. On Postgres, each run takes an advisory lock first (`pg_try_advisory_lock`), and a replica that cannot get it skips that run. A libSQL gateway is a single process. Grants are never deleted, because they are the audit trail for which client acted for a user. Invocation metadata refers to them by ID.
 
 A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval. One shared watcher does the rechecks: each tick looks up every open stream's token in one batched query, so the database load depends on the interval, not on how many streams are open.
+
+The admin audit log records each consent decision (`mcp_client_grant.authorized` or `.denied`, with the client, redirect host, resource, and scopes the user saw). It also records a user's own disconnect and a platform admin's revoke (`mcp_client_grant.revoked`, naming the grant, its client, resource, and scope). No entry holds a token, code, `state`, or PKCE value.
+
+Turning `mcp.client_oauth` off stops all OAuth access, but it does not revoke anything. Grants come back if the feature is turned on again. Listing and revoking authorized clients therefore keep working while it is off, both on the account page and through the admin API. With no issuer configured, the listing shows every live grant.
 
 ## Trade-offs
 
 - Signing out of the admin UI also disconnects the MCP clients that session approved. That is the guarantee #441 asks for, but it can surprise someone who signs out to switch accounts. The consent page says so.
 - OAuth calls cannot use grants given to a specific key. An admin who relies on per-key MCP grants has to give the user or team the grant before OAuth users see those tools.
 - Asking for consent on every authorization adds a click each time a client signs in again. Remembered consent can come later, with an allowlist of trusted clients.
-- Open registration lets anyone create client rows. The rows are inert without consent, but they pile up. Cleaning up clients that are never authorized is a follow-up.
+- Open registration lets anyone create client rows. The rows are inert without consent, and cleanup removes the unused ones after the retention window. Until then they take space.
 - The issuer must be configured. A deployment that serves the gateway at more than one origin can expose OAuth on only one of them.
 - Plain `http` loopback issuers break the HTTPS rule for authorization servers. They are allowed only so the local stack and tests work.
 
 ## Follow-up
 
 - Client ID Metadata Documents, once #442 provides an SSRF-safe fetcher.
-- A page where users can list and revoke the MCP clients they have authorized, plus an admin view.
+- An admin UI view of a user's authorized clients. The admin API exists; the user management sheet does not show it yet.
 - Pre-registered clients that admins manage, with an option to skip consent for trusted clients.
-- Clean up unused dynamically registered clients.
 - CORS on the metadata, token, registration, and revocation endpoints for browser-based clients.
 - Show `auth_method` in the invocation-log UI and filters (#448).
 - Capability scopes on API keys (#446), using the same names.
