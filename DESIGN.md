@@ -130,7 +130,7 @@ This system rejects decorative SaaS dashboards, glossy vanity-metric cards and c
 
 ### Dark Only
 
-The admin UI is dark only, on purpose. `<html>` always carries `.dark` so shadcn's `dark:` variants apply, every token lives on `:root` with `color-scheme: dark`, and there is no theme toggle or light palette. The shadcn design-system checklist expects a working theme toggle; this is a deliberate exception. Deriving a light theme is future work, not a gap to fill piecemeal.
+The admin UI is dark only, on purpose. `<html>` always carries `.dark` so shadcn's `dark:` variants apply, every token lives on `:root` with `color-scheme: dark`, and there is no theme toggle or light palette. The shadcn design-system checklist expects a working theme toggle; this is a deliberate exception. Deriving a light theme is future work, not a gap to fill piecemeal. [ADR: Admin UI Design System, Dark Only](docs/adr/2026-10-16-admin-ui-design-system-dark-only.md) records the decision and its trade-offs.
 
 ## 2. Colors
 
