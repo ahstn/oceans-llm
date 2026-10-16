@@ -496,15 +496,17 @@ async fn handle_tools_call(
     };
     let outcome =
         match proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await {
-            Ok(response) => Ok(enforce_direct_mcp_result(
-                state,
-                &upstream.server.server_key,
-                &tool.upstream_name,
-                id.as_ref(),
-                mcp_tool_invocation_id,
-                response,
-            )
-            .await),
+            Ok(response) => {
+                enforce_direct_mcp_result(
+                    state,
+                    &upstream.server.server_key,
+                    &tool.upstream_name,
+                    id.as_ref(),
+                    mcp_tool_invocation_id,
+                    response,
+                )
+                .await
+            }
             Err(error) => Err(error),
         };
     let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);

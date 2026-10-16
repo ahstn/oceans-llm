@@ -136,6 +136,7 @@ impl TestContext {
         let response = create_budget_increase(
             State(self.state.clone()),
             headers,
+            crate::http::audit::AuditRequestMeta::default(),
             Json(CreateBudgetIncreaseRequest {
                 user_id: user_id.to_string(),
                 amount_usd: amount_usd.to_string(),

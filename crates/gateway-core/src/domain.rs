@@ -454,6 +454,13 @@ pub enum ApiKeyModelGrantMode {
     Explicit,
 }
 
+/// An API key's grant mode and the models it is granted, in id order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiKeyModelAccess {
+    pub model_grant_mode: ApiKeyModelGrantMode,
+    pub model_ids: Vec<Uuid>,
+}
+
 impl ApiKeyModelGrantMode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {

@@ -137,11 +137,7 @@ async fn load_job(
 impl BatchRepository for LibsqlStore {
     async fn insert_batch(&self, batch: &NewBatchJob) -> Result<BatchJobRecord, StoreError> {
         let job = &batch.job;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let result = tx
             .execute(
                 "INSERT INTO batch_jobs (batch_id, idempotency_key, request_hash, api_key_id, user_id, team_id, service_account_id, model_id, model_key, resolved_model_key, route_id, provider_key, upstream_model, endpoint, status, provider_batch_id, request_count, completed_count, failed_count, cost_usd_10000, pricing_status, provider_usage_json, error_json, created_at, submitted_at, completed_at, updated_at, next_poll_at, lease_owner, lease_expires_at, provider_context_json, pricing_snapshot_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)",
@@ -340,11 +336,7 @@ impl BatchRepository for LibsqlStore {
         lease_expires_at: OffsetDateTime,
         limit: u32,
     ) -> Result<Vec<BatchJobRecord>, StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let mut rows = tx.query("SELECT batch_id FROM batch_jobs WHERE status IN ('queued', 'validating', 'in_progress', 'finalizing', 'cancel_requested', 'cancelling') AND (next_poll_at IS NULL OR next_poll_at <= ?1) AND (lease_expires_at IS NULL OR lease_expires_at <= ?1) ORDER BY created_at ASC LIMIT ?2", libsql::params![now.unix_timestamp(), i64::from(limit)]).await.map_err(to_query_error)?;
         let mut ids = Vec::new();
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
@@ -465,11 +457,7 @@ impl BatchRepository for LibsqlStore {
         worker_id: &str,
         update: &BatchPollUpdate,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         let state = &update.state;
         let changed = tx.execute("UPDATE batch_jobs SET status = ?1, completed_count = ?2, failed_count = ?3, cost_usd_10000 = ?4, pricing_status = ?5, provider_usage_json = ?6, error_json = ?7, submitted_at = COALESCE(?8, submitted_at), completed_at = ?9, updated_at = ?10, next_poll_at = ?11, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?12 AND lease_owner = ?13", libsql::params![state.status.as_str(), state.completed_count, state.failed_count, state.provider_cost_usd.map(Money4::as_scaled_i64), update.pricing_status.unwrap_or(if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }).as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), update.next_poll_at.map(|time| time.unix_timestamp()), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
         if changed == 0 {
@@ -539,11 +527,7 @@ impl BatchRepository for LibsqlStore {
         batch_id: Uuid,
         requests: &[gateway_core::ProviderBatchRequestItem],
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let tx = self.begin_transaction().await?;
         for request in requests {
             tx.execute(
                 "UPDATE batch_items SET request_body_json = ?1, updated_at = ?2 WHERE batch_id = ?3 AND custom_id = ?4",

@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 macro_rules! server_columns {
     () => {
@@ -8,6 +9,7 @@ macro_rules! server_columns {
 }
 
 const SERVER_COLUMNS: &str = server_columns!();
+
 const SERVER_SELECT_BY_ID: &str = concat!(
     "SELECT ",
     server_columns!(),
@@ -131,6 +133,17 @@ fn discovery_config_changed(
         || existing.auth_config != input.auth_config
 }
 
+/// Whether saving `input` would leave the server's settings as they are.
+fn server_settings_match(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.display_name == input.display_name
+        && existing.description == input.description
+        && existing.timeout_ms == input.timeout_ms
+        && !discovery_config_changed(existing, input)
+}
+
 async fn load_server(
     pool: &PgPool,
     mcp_server_id: Uuid,
@@ -199,14 +212,16 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<ExternalMcpServerRecord, StoreError> {
         let id = Uuid::new_v4();
         let auth_config_json = serialize_json(&input.auth_config)?;
-        sqlx::query(
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let row = sqlx::query(&format!(
             r#"
             INSERT INTO external_mcp_servers (
                 mcp_server_id, server_key, display_name, description, transport, server_url,
                 auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'active', $10, $10)
-            "#,
-        )
+            RETURNING {SERVER_COLUMNS}
+            "#
+        ))
         .bind(id.to_string())
         .bind(input.server_key.as_str())
         .bind(input.display_name.as_str())
@@ -217,20 +232,36 @@ impl McpRegistryRepository for PostgresStore {
         .bind(auth_config_json)
         .bind(input.timeout_ms)
         .bind(input.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_server(&self.pool, id).await
+        decode_server(&row)
     }
 
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let existing = load_server(&self.pool, input.mcp_server_id).await?;
-        let invalidate_discovery = discovery_config_changed(&existing, input);
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the row makes the server read here the one this update replaces.
+        let existing = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
+            .bind(input.mcp_server_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "external MCP server `{}` not found",
+                    input.mcp_server_id
+                ))
+            })
+            .and_then(|row| decode_server(&row))?;
+        if server_settings_match(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         sqlx::query(
             r#"
             UPDATE external_mcp_servers
@@ -277,34 +308,45 @@ impl McpRegistryRepository for PostgresStore {
             .await
             .map_err(to_write_error)?;
         }
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = sqlx::query(SERVER_SELECT_BY_ID)
+            .bind(input.mcp_server_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)
+            .and_then(|row| decode_server(&row))?;
         tx.commit().await.map_err(to_query_error)?;
-        load_server(&self.pool, input.mcp_server_id).await
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let changed = sqlx::query(
-            r#"
-            UPDATE external_mcp_servers
-            SET status = 'disabled', disabled_at = $1, updated_at = $1,
-                last_discovery_status = 'disabled', last_discovery_at = $1
-            WHERE mcp_server_id = $2
-            "#,
-        )
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only an enabled server changes. `RETURNING` gives the row this call
+        // disabled; with no row, the server was already disabled or is missing,
+        // which `load_server` reports.
+        let disabled = sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET status = 'disabled', disabled_at = $1, updated_at = $1,
+                 last_discovery_status = 'disabled', last_discovery_at = $1
+             WHERE mcp_server_id = $2
+               AND status <> 'disabled'
+             RETURNING {SERVER_COLUMNS}"
+        ))
         .bind(disabled_at.unix_timestamp())
         .bind(mcp_server_id.to_string())
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(to_write_error)?;
-        if changed.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{mcp_server_id}` not found"
-            )));
+        match disabled {
+            Some(row) => Ok((decode_server(&row)?, true)),
+            None => Ok((load_server(&self.pool, mcp_server_id).await?, false)),
         }
-        load_server(&self.pool, mcp_server_id).await
     }
 
     async fn list_external_mcp_tools(

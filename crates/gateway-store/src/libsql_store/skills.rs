@@ -19,11 +19,7 @@ const VERSION_SELECT: &str = "SELECT skill_id, version, description, sha256, obj
 impl LibsqlStore {
     // Separate connections prevent a skill write from joining another request's transaction.
     pub(super) async fn skill_connection(&self) -> Result<libsql::Connection, StoreError> {
-        let connection = self.database.connect().map_err(to_query_error)?;
-        Self::configure_connection(&connection)
-            .await
-            .map_err(to_query_error)?;
-        Ok(connection)
+        self.own_connection().await
     }
 }
 

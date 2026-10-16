@@ -47,6 +47,44 @@ function maskStructuredText(text) {
   }
 }
 
+// Results the gateway guard cannot inspect. The E2E stack sets a 64 KiB buffer and a
+// 1 s buffer timeout for the audit-mode MCP server that calls these fixtures.
+function sendUninspectableMcpResult(res, body) {
+  const query = body.params?.arguments?.query
+  const result = (text) => ({ content: [{ type: 'text', text }], isError: false })
+  if (query === 'guardrail-e2e-result-oversize') {
+    sendJson(res, 200, {
+      jsonrpc: '2.0',
+      id: body.id,
+      result: result(`guardrail-e2e-oversize:${'x'.repeat(128 * 1024)}`),
+    })
+    return true
+  }
+  if (query === 'guardrail-e2e-result-slow') {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.write(': guardrail-e2e-slow\n\n')
+    setTimeout(() => {
+      res.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: body.id, result: result('slow') })}\n\n`)
+    }, 1500)
+    return true
+  }
+  if (query === 'guardrail-e2e-result-invalid-sse') {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end('data: guardrail-e2e-invalid-sse\n\n')
+    return true
+  }
+  if (query === 'guardrail-e2e-result-invalid-json-rpc') {
+    sendJson(res, 200, {
+      jsonrpc: '2.0',
+      id: body.id,
+      result: result('guardrail-e2e-invalid-json-rpc'),
+      error: { code: -32000, message: 'both result and error' },
+    })
+    return true
+  }
+  return false
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'content-type': 'application/json' })
   res.end(JSON.stringify(payload))
@@ -152,6 +190,9 @@ const server = createServer(async (req, res) => {
             isError: false,
           },
         })}\n\n`)
+        return
+      }
+      if (sendUninspectableMcpResult(res, body)) {
         return
       }
       const resultText = body.params?.arguments?.query === 'guardrail-e2e-result-sensitive'
