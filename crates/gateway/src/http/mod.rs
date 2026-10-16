@@ -2,6 +2,9 @@ pub mod admin_auth;
 pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
+pub mod audit;
+#[cfg(test)]
+mod audit_tests;
 pub mod batches;
 #[cfg(test)]
 mod budget_status_tests;
@@ -12,6 +15,7 @@ pub mod guardrail_events;
 pub mod guardrails;
 pub mod handlers;
 pub mod identity;
+mod identity_audit;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod inference_guardrails;
@@ -54,9 +58,24 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_client_oauth::*,
-    mcp_gateway::*, mcp_oauth::*, mcp_registry::*, models::*, observability::*, profile::*,
-    provider_credentials::*, review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
+    api_keys::*,
+    audit::{get_audit_log, list_audit_logs},
+    batches::*,
+    guardrails::*,
+    handlers::*,
+    identity::*,
+    mcp_client_oauth::*,
+    mcp_gateway::*,
+    mcp_oauth::*,
+    mcp_registry::*,
+    models::*,
+    observability::*,
+    profile::*,
+    provider_credentials::*,
+    review_agent::*,
+    spend::*,
+    spend_budget_increases::*,
+    state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -65,6 +84,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             .expect("configured archive limit fits usize")
             .saturating_add(64 * 1024);
     }
+    // The admin UI proxy resolves the browser through trusted proxies and signs its
+    // address for audit entries.
+    admin_ui.client_ip_signing_key = Some(state.client_ip_signing_key());
+    admin_ui.trusted_proxies = state.trusted_proxies.clone();
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
 
@@ -323,6 +346,11 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
             get(get_mcp_tool_invocation_detail),
+        )
+        .route("/api/v1/admin/audit-logs", get(list_audit_logs))
+        .route(
+            "/api/v1/admin/audit-logs/{audit_log_id}",
+            get(get_audit_log),
         )
         .route(
             "/api/v1/admin/guardrails/policies",

@@ -362,6 +362,15 @@ mod tests {
             unimplemented!("not exercised by guard tests")
         }
 
+        async fn set_manual_budget(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
+            unimplemented!()
+        }
+
         async fn upsert_active_budget_with_source(
             &self,
             _scope: &BudgetScope,
@@ -388,6 +397,14 @@ mod tests {
             _scope: &BudgetScope,
             _updated_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
+            unimplemented!("not exercised by guard tests")
+        }
+
+        async fn deactivate_active_budget_returning(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
             unimplemented!("not exercised by guard tests")
         }
 

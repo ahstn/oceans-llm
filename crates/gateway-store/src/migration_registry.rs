@@ -351,18 +351,25 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 61,
-        name: "gateway_oauth_authorization",
-        checksum: "V61__gateway_oauth_authorization.sql",
-        libsql_sql: include_str!("../migrations/V61__gateway_oauth_authorization.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V61__gateway_oauth_authorization.sql"),
+        name: "admin_audit_log",
+        checksum: "V61__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V61__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V61__admin_audit_log.sql"),
     },
     MigrationManifest {
         version: 62,
+        name: "gateway_oauth_authorization",
+        checksum: "V62__gateway_oauth_authorization.sql",
+        libsql_sql: include_str!("../migrations/V62__gateway_oauth_authorization.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V62__gateway_oauth_authorization.sql"),
+    },
+    MigrationManifest {
+        version: 63,
         name: "mcp_aggregate_session_oauth_grants",
-        checksum: "V62__mcp_aggregate_session_oauth_grants.sql",
-        libsql_sql: include_str!("../migrations/V62__mcp_aggregate_session_oauth_grants.sql"),
+        checksum: "V63__mcp_aggregate_session_oauth_grants.sql",
+        libsql_sql: include_str!("../migrations/V63__mcp_aggregate_session_oauth_grants.sql"),
         postgres_sql: include_str!(
-            "../migrations/postgres/V62__mcp_aggregate_session_oauth_grants.sql"
+            "../migrations/postgres/V63__mcp_aggregate_session_oauth_grants.sql"
         ),
     },
 ];

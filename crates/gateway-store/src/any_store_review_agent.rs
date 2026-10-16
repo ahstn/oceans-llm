@@ -108,7 +108,7 @@ impl ReviewAgentRepository for AnyStore {
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<gateway_core::Updated<ReviewAgentRepositoryRecord>, StoreError> {
         match self {
             Self::Libsql(store) => store.update_review_agent_repository(input).await,
             Self::Postgres(store) => store.update_review_agent_repository(input).await,
@@ -120,7 +120,13 @@ impl ReviewAgentRepository for AnyStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    > {
         match self {
             Self::Libsql(store) => {
                 store

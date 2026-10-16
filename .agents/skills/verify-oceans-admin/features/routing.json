@@ -86,6 +86,7 @@
         "scripts/*sync-model-metadata.py",
         "scripts/copilot-*",
         "scripts/mock-openai-upstream.mjs",
+        "scripts/register-e2e-mcp-server.mjs",
         "scripts/start-e2e-stack.sh"
       ]
     }
@@ -116,6 +117,7 @@
         "crates/admin-ui/web/*.{json,ts,lock}",
         "crates/admin-ui/src/**",
         "crates/admin-ui/Cargo.toml",
+        "crates/gateway-client-ip/**",
         "crates/gateway/src/http/mod.rs",
         "crates/gateway/src/http/state.rs",
         "crates/gateway/src/http/error.rs",
@@ -407,7 +409,35 @@
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
-        "crates/gateway-store/src/any_store_guardrail_decisions.rs"
+        "crates/gateway-store/src/any_store_guardrail_decisions.rs",
+        "crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx",
+        "crates/admin-ui/web/src/components/shared/{inner-panel,search-field}.{ts,tsx}"
+      ]
+    },
+    {
+      "id": "audit-log",
+      "file": "audit-log.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/audit-log.tsx",
+        "crates/admin-ui/web/src/components/audit/**",
+        "crates/gateway/src/http/audit.rs",
+        "crates/gateway/src/http/identity_audit.rs",
+        "crates/gateway/src/http/{api_keys,identity,mcp_oauth,mcp_registry,models,provider_credentials,rate_limit_policies,review_agent,spend,spend_budget_increases,client_ip}.rs",
+        "crates/gateway/src/http/mcp_registry/views.rs",
+        "crates/gateway-service/src/admin_api_keys.rs",
+        "crates/admin-ui/src/proxy.rs",
+        "crates/gateway-client-ip/**",
+        "crates/gateway-service/src/admin_audit.rs",
+        "crates/gateway-core/src/audit.rs",
+        "crates/gateway-store/src/audit_logs.rs",
+        "crates/gateway-store/src/any_store_audit_logs.rs",
+        "crates/gateway-store/src/libsql_store/audit_logs.rs",
+        "crates/gateway-store/migrations/V61__admin_audit_log.sql",
+        "crates/gateway-store/migrations/postgres/V61__admin_audit_log.sql",
+        "crates/admin-ui/web/src/components/shared/{inner-panel,search-field}.{ts,tsx}"
       ]
     },
     {
@@ -493,7 +523,8 @@
         "crates/gateway/src/http/{identity,identity_lifecycle,identity_views,provider_credentials}.rs",
         "crates/gateway-store/src/libsql_store/{identity,provider_user_credentials}.rs",
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
-        "crates/gateway/src/local_demo_seed/{users,teams}.rs"
+        "crates/gateway/src/local_demo_seed/{users,teams}.rs",
+        "crates/gateway/src/http/identity_audit.rs"
       ]
     },
     {

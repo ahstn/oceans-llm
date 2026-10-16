@@ -235,12 +235,24 @@ async fn exercise_policies<S: RateLimitRepository>(store: &S) {
         updated_at: first.updated_at + Duration::seconds(5),
         ..first.clone()
     };
-    assert!(
-        store
-            .update_rate_limit_policy(&updated)
-            .await
-            .expect("update")
-    );
+    let saved = store
+        .update_rate_limit_policy(&updated)
+        .await
+        .expect("update")
+        .expect("policy exists");
+    assert_eq!(saved.current, updated);
+    assert_eq!(saved.previous, Some(first.clone()));
+    // Saving the same settings again writes nothing, even with a newer timestamp.
+    let repeated = store
+        .update_rate_limit_policy(&RateLimitPolicyRecord {
+            updated_at: updated.updated_at + Duration::seconds(5),
+            ..updated.clone()
+        })
+        .await
+        .expect("repeat update")
+        .expect("policy exists");
+    assert!(!repeated.changed());
+    assert_eq!(repeated.current, updated);
     assert_eq!(
         store.list_rate_limit_policies().await.expect("list"),
         vec![updated.clone()]
@@ -254,23 +266,27 @@ async fn exercise_policies<S: RateLimitRepository>(store: &S) {
             .is_empty()
     );
 
-    assert!(
+    assert_eq!(
         store
             .delete_rate_limit_policy(first.rate_limit_policy_id)
             .await
             .expect("delete")
+            .map(|policy| policy.rate_limit_policy_id),
+        Some(first.rate_limit_policy_id)
     );
     assert!(
-        !store
+        store
             .delete_rate_limit_policy(first.rate_limit_policy_id)
             .await
             .expect("delete again")
+            .is_none()
     );
     assert!(
-        !store
+        store
             .update_rate_limit_policy(&updated)
             .await
             .expect("update missing")
+            .is_none()
     );
 }
 

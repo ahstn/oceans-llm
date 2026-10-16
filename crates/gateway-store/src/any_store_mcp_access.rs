@@ -22,6 +22,16 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_toolset(toolset_id).await,
+            Self::Postgres(store) => store.get_mcp_toolset(toolset_id).await,
+        }
+    }
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,
@@ -35,7 +45,7 @@ impl McpAccessRepository for AnyStore {
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError> {
+    ) -> Result<gateway_core::Updated<McpToolsetRecord>, StoreError> {
         match self {
             Self::Libsql(store) => store.update_mcp_toolset(input).await,
             Self::Postgres(store) => store.update_mcp_toolset(input).await,
@@ -58,7 +68,7 @@ impl McpAccessRepository for AnyStore {
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    ) -> Result<gateway_core::Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
@@ -86,7 +96,7 @@ impl McpAccessRepository for AnyStore {
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError> {
+    ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => store.upsert_mcp_tool_grant(grant).await,
             Self::Postgres(store) => store.upsert_mcp_tool_grant(grant).await,
@@ -100,7 +110,7 @@ impl McpAccessRepository for AnyStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<Uuid>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store

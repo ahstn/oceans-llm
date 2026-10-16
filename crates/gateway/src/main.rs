@@ -349,7 +349,7 @@ async fn run_serve_with_store(
 
     tracing::info!(address = %bind_address, "gateway started");
 
-    // Connection info lets request policy resolve the client IP.
+    // Peer addresses feed request policy and the request IP on admin audit entries.
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
@@ -754,7 +754,7 @@ fn env_u64(key: &str, default: u64) -> u64 {
 
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
-        .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+        .unwrap_or_else(|_| gateway::http::audit::DEV_IDENTITY_TOKEN_SECRET.to_string())
 }
 
 #[cfg(test)]

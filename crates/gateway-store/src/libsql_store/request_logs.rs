@@ -255,11 +255,7 @@ impl RequestLogRepository for LibsqlStore {
         attempts: &[RequestAttemptRecord],
     ) -> Result<(), StoreError> {
         let metadata_json = serialize_json(&log.metadata)?;
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         tx.execute(
             r#"
@@ -717,20 +713,26 @@ impl RequestLogRepository for LibsqlStore {
         dry_run: bool,
     ) -> Result<RequestLogPurgeResult, StoreError> {
         let cutoff_unix = cutoff.unix_timestamp();
-        let mut count_rows = self
-            .connection
-            .query(
-                "SELECT COUNT(*) FROM request_logs WHERE occurred_at < ?1",
-                [cutoff_unix],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-        let count_row = count_rows
-            .next()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?
-            .ok_or_else(|| StoreError::Query("request log purge count row missing".to_string()))?;
-        let matched_count: i64 = count_row.get(0).map_err(to_query_error)?;
+        // Reads on the shared connection finish before each batch commits on its own
+        // connection: an unfinished statement holds a read lock that blocks that commit.
+        let matched_count: i64 = {
+            let mut count_rows = self
+                .connection
+                .query(
+                    "SELECT COUNT(*) FROM request_logs WHERE occurred_at < ?1",
+                    [cutoff_unix],
+                )
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            let count_row = count_rows
+                .next()
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?
+                .ok_or_else(|| {
+                    StoreError::Query("request log purge count row missing".to_string())
+                })?;
+            count_row.get(0).map_err(to_query_error)?
+        };
         let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
 
         if dry_run {
@@ -773,6 +775,7 @@ impl RequestLogRepository for LibsqlStore {
             {
                 request_log_ids.push(row.get(0).map_err(to_query_error)?);
             }
+            drop(rows);
 
             if request_log_ids.is_empty() {
                 break;
@@ -786,11 +789,7 @@ impl RequestLogRepository for LibsqlStore {
                 .iter()
                 .map(|id| libsql::Value::Text(id.clone()))
                 .collect::<Vec<_>>();
-            let tx = self
-                .connection
-                .transaction()
-                .await
-                .map_err(|error| StoreError::Query(error.to_string()))?;
+            let tx = self.begin_transaction().await?;
             for table in [
                 "request_log_payloads",
                 "request_log_tags",
@@ -845,11 +844,7 @@ impl RequestLogRepository for LibsqlStore {
             .iter()
             .map(|id| libsql::Value::Text(id.clone()))
             .collect::<Vec<_>>();
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
         for table in [
             "request_log_payloads",
             "request_log_tags",

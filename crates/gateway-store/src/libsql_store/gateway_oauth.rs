@@ -365,11 +365,7 @@ impl GatewayOauthRepository for LibsqlStore {
         &self,
         tokens: &[GatewayOauthTokenRecord],
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_write_error)?;
+        let tx = self.begin_transaction().await?;
         for token in tokens {
             tx.execute(
                 "INSERT INTO gateway_oauth_tokens (

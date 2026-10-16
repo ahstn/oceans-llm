@@ -20,7 +20,7 @@ use gateway_core::{
     AuthenticatedApiKey, GatewayError, MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION,
     RateLimitCounterCharge, RateLimitCounterIncrement, RateLimitMetric, RateLimitOperation,
     RateLimitPeriod, RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitRepository,
-    RateLimitScopeKind, RateLimitWindow, StoreError,
+    RateLimitScopeKind, RateLimitWindow, StoreError, Updated,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -986,36 +986,42 @@ impl RateLimiter {
     pub async fn update_admin_policy(
         &self,
         policy: RateLimitPolicyRecord,
-    ) -> Result<RateLimitPolicyRecord, GatewayError> {
+    ) -> Result<Updated<RateLimitPolicyRecord>, GatewayError> {
         self.validate_admin_policy(&policy)?;
         self.ensure_policy_capacity(&policy).await?;
-        let updated = self
+        let Some(updated) = self
             .admin_store()?
             .update_rate_limit_policy(&policy)
             .await
-            .map_err(name_conflict)?;
-        if !updated {
+            .map_err(name_conflict)?
+        else {
             return Err(GatewayError::Store(StoreError::NotFound(format!(
                 "rate limit policy `{}`",
                 policy.rate_limit_policy_id
             ))));
+        };
+        if updated.changed() {
+            self.invalidate();
         }
-        self.invalidate();
-        Ok(policy)
+        Ok(updated)
     }
 
-    pub async fn delete_admin_policy(&self, policy_id: Uuid) -> Result<(), GatewayError> {
-        if !self
+    /// Deletes the policy and returns it as it was when deleted.
+    pub async fn delete_admin_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<RateLimitPolicyRecord, GatewayError> {
+        let Some(deleted) = self
             .admin_store()?
             .delete_rate_limit_policy(policy_id)
             .await?
-        {
+        else {
             return Err(GatewayError::Store(StoreError::NotFound(format!(
                 "rate limit policy `{policy_id}`"
             ))));
-        }
+        };
         self.invalidate();
-        Ok(())
+        Ok(deleted)
     }
 
     /// Fails when a config policy shares its name with an admin policy, or

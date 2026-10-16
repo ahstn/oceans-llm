@@ -118,6 +118,25 @@ describe('forwardRequestHeadersFromRequest', () => {
     expect(headers.get('x-forwarded-origin')).toBe('http://localhost:3001')
   })
 
+  it('forwards the signed client address, user agent and request ID for audit attribution', () => {
+    const request = new Request('http://localhost:3001/admin/identity/users', {
+      headers: {
+        host: 'localhost:3001',
+        'x-oceans-client-ip': '203.0.113.9;1800000000;abcd',
+        'x-forwarded-for': '198.51.100.1',
+        'user-agent': 'Browser/1.0',
+        'x-request-id': 'req-123',
+      },
+    })
+
+    const headers = forwardRequestHeadersFromRequest(request)
+
+    expect(headers.get('x-oceans-client-ip')).toBe('203.0.113.9;1800000000;abcd')
+    expect(headers.get('x-forwarded-for')).toBeNull()
+    expect(headers.get('user-agent')).toBe('Browser/1.0')
+    expect(headers.get('x-request-id')).toBe('req-123')
+  })
+
   it('derives forwarded origin from the host header for loopback IPv6 requests', () => {
     const request = new Request('http://[::1]:3001/admin/login', {
       headers: {

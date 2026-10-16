@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
+use gateway_core::ManualBudgetSave;
 
 #[async_trait]
 impl BudgetRepository for LibsqlStore {
@@ -61,32 +62,7 @@ impl BudgetRepository for LibsqlStore {
         &self,
         scope: &BudgetScope,
     ) -> Result<Option<BudgetRecord>, StoreError> {
-        let mut rows = self
-            .connection
-            .query(
-                r#"
-                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at, source_kind, source_key
-                FROM budgets
-                WHERE scope_key = ?1
-                  AND is_active = 1
-                LIMIT 1
-                "#,
-                [scope.scope_key()],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
-        let Some(row) = rows
-            .next()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?
-        else {
-            return Ok(None);
-        };
-
-        decode_budget_record(&row).map(Some)
+        active_budget_on(&self.connection, scope).await
     }
 
     async fn get_latest_budget_by_scope(
@@ -178,50 +154,47 @@ impl BudgetRepository for LibsqlStore {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
-        self.connection
-            .execute(
-                r#"
-                INSERT INTO budgets (
-                    budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                    upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                    created_at, updated_at, source_kind, source_key
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, ?15)
-                ON CONFLICT(scope_key) WHERE is_active = 1
-                DO UPDATE SET
-                    cadence = excluded.cadence,
-                    amount_10000 = excluded.amount_10000,
-                    hard_limit = excluded.hard_limit,
-                    timezone = excluded.timezone,
-                    source_kind = excluded.source_kind,
-                    source_key = excluded.source_key,
-                    updated_at = excluded.updated_at
-                "#,
-                libsql::params![
-                    Uuid::new_v4().to_string(),
-                    scope.kind().as_str(),
-                    scope.scope_key(),
-                    scope.user_id().map(|id| id.to_string()),
-                    scope.service_account_id().map(|id| id.to_string()),
-                    scope.model_id().map(|id| id.to_string()),
-                    scope.upstream_model().map(ToOwned::to_owned),
-                    settings.cadence.as_str(),
-                    settings.amount_usd.as_scaled_i64(),
-                    if settings.hard_limit { 1 } else { 0 },
-                    settings.timezone.as_str(),
-                    updated_at.unix_timestamp(),
-                    updated_at.unix_timestamp(),
-                    source.kind.as_str(),
-                    source.key.as_deref(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-
-        self.get_active_budget_by_scope(scope)
+        self.write_active_budget(&self.connection, scope, settings, source, updated_at, false)
             .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected("active budget missing after successful upsert".to_string())
-            })
+            .ok_or_else(|| StoreError::Unexpected("budget upsert returned no row".to_string()))
+    }
+
+    async fn set_manual_budget(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        updated_at: OffsetDateTime,
+    ) -> Result<ManualBudgetSave, StoreError> {
+        // An immediate transaction holds the write lock, so the budget read here is
+        // exactly the one the save below overwrites.
+        let tx = self.begin_transaction().await?;
+        let replaced = active_budget_on(&tx, scope).await?;
+        let written = self
+            .write_active_budget(
+                &tx,
+                scope,
+                settings,
+                &BudgetSource::manual(),
+                updated_at,
+                true,
+            )
+            .await?;
+        tx.commit().await.map_err(to_write_error)?;
+        // With no write, the active budget already had these settings.
+        match written {
+            Some(budget) => Ok(ManualBudgetSave {
+                budget,
+                changed: true,
+                replaced,
+            }),
+            None => Ok(ManualBudgetSave {
+                budget: replaced.ok_or_else(|| {
+                    StoreError::Unexpected("active budget missing after unchanged save".to_string())
+                })?,
+                changed: false,
+                replaced: None,
+            }),
+        }
     }
 
     async fn upsert_active_budget_with_source_guard(
@@ -309,29 +282,45 @@ impl BudgetRepository for LibsqlStore {
         scope: &BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
+        Ok(self
+            .deactivate_active_budget_returning(scope, updated_at)
+            .await?
+            .is_some())
+    }
+
+    async fn deactivate_active_budget_returning(
+        &self,
+        scope: &BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
         let source = BudgetSource::manual_deactivated();
-        let updated = self
-            .connection
-            .execute(
-                r#"
-                UPDATE budgets
-                SET is_active = 0,
-                    updated_at = ?1,
-                    source_kind = ?3,
-                    source_key = ?4
-                WHERE scope_key = ?2
-                  AND is_active = 1
-                "#,
-                libsql::params![
-                    updated_at.unix_timestamp(),
-                    scope.scope_key(),
-                    source.kind.as_str(),
-                    source.key,
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        Ok(updated > 0)
+        // An immediate transaction holds the write lock, so the budget read here,
+        // with the source the deactivation overwrites, is the one it turns off.
+        let tx = self.begin_transaction().await?;
+        let Some(budget) = active_budget_on(&tx, scope).await? else {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        };
+        tx.execute(
+            r#"
+            UPDATE budgets
+            SET is_active = 0,
+                updated_at = ?1,
+                source_kind = ?2,
+                source_key = ?3
+            WHERE budget_id = ?4
+            "#,
+            libsql::params![
+                updated_at.unix_timestamp(),
+                source.kind.as_str(),
+                source.key,
+                budget.budget_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(budget))
     }
 
     async fn deactivate_active_budget_by_source(
@@ -1733,3 +1722,115 @@ fn token_usage_buckets_from_row(
         cache_write_tokens: row.get(offset + 5).map_err(to_query_error)?,
     })
 }
+
+impl LibsqlStore {
+    /// Inserts or replaces the active budget for the scope and returns the written
+    /// row. With `only_when_changed`, an active budget with the same settings and
+    /// source is left alone and `None` is returned.
+    async fn write_active_budget(
+        &self,
+        connection: &libsql::Connection,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        updated_at: OffsetDateTime,
+        only_when_changed: bool,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
+        let condition = if only_when_changed {
+            ACTIVE_BUDGET_CHANGED
+        } else {
+            ""
+        };
+        let sql = format!(
+            r#"
+                INSERT INTO budgets (
+                    budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                    upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                    created_at, updated_at, source_kind, source_key
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, ?15)
+                ON CONFLICT(scope_key) WHERE is_active = 1
+                DO UPDATE SET
+                    cadence = excluded.cadence,
+                    amount_10000 = excluded.amount_10000,
+                    hard_limit = excluded.hard_limit,
+                    timezone = excluded.timezone,
+                    source_kind = excluded.source_kind,
+                    source_key = excluded.source_key,
+                    updated_at = excluded.updated_at{condition}
+                RETURNING budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at, source_kind, source_key
+                "#
+        );
+        let mut rows = connection
+            .query(
+                &sql,
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    scope.kind().as_str(),
+                    scope.scope_key(),
+                    scope.user_id().map(|id| id.to_string()),
+                    scope.service_account_id().map(|id| id.to_string()),
+                    scope.model_id().map(|id| id.to_string()),
+                    scope.upstream_model().map(ToOwned::to_owned),
+                    settings.cadence.as_str(),
+                    settings.amount_usd.as_scaled_i64(),
+                    if settings.hard_limit { 1 } else { 0 },
+                    settings.timezone.as_str(),
+                    updated_at.unix_timestamp(),
+                    updated_at.unix_timestamp(),
+                    source.kind.as_str(),
+                    source.key.as_deref(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let written = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_budget_record(&row))
+            .transpose()?;
+        // A transaction cannot commit while the statement still has rows pending.
+        while rows.next().await.map_err(to_write_error)?.is_some() {}
+        Ok(written)
+    }
+}
+
+async fn active_budget_on(
+    connection: &libsql::Connection,
+    scope: &BudgetScope,
+) -> Result<Option<BudgetRecord>, StoreError> {
+    let mut rows = connection
+        .query(
+            r#"
+            SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                   upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                   created_at, updated_at, source_kind, source_key
+            FROM budgets
+            WHERE scope_key = ?1
+              AND is_active = 1
+            LIMIT 1
+            "#,
+            [scope.scope_key()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let budget = rows
+        .next()
+        .await
+        .map_err(to_query_error)?
+        .map(|row| decode_budget_record(&row))
+        .transpose()?;
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    Ok(budget)
+}
+
+/// Appended to the upsert's `DO UPDATE` so an unchanged active budget is not rewritten.
+const ACTIVE_BUDGET_CHANGED: &str = "
+                WHERE budgets.cadence IS NOT excluded.cadence
+                   OR budgets.amount_10000 IS NOT excluded.amount_10000
+                   OR budgets.hard_limit IS NOT excluded.hard_limit
+                   OR budgets.timezone IS NOT excluded.timezone
+                   OR budgets.source_kind IS NOT excluded.source_kind
+                   OR budgets.source_key IS NOT excluded.source_key";

@@ -1,4 +1,5 @@
 pub mod agent_analysis;
+pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
@@ -33,6 +34,11 @@ pub use agent_session_analysis::{
     SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
     ToolInvocationFact, ToolServerDiagnostics,
 };
+pub use audit::{
+    AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
+    AuditLogRepository, DEFAULT_AUDIT_LOG_PAGE_SIZE, MAX_AUDIT_LOG_PAGE_SIZE, NewAuditLogRecord,
+    Updated,
+};
 pub use auth::{
     AuthenticatedApiKey, OauthAccessContext, ParsedGatewayApiKey, extract_bearer_token,
     is_oauth_access_token, parse_gateway_api_key,
@@ -48,18 +54,18 @@ pub use batch::{
 pub use budgets::{
     BudgetContact, BudgetExceededStatus, BudgetIncreaseBasis, BudgetIncreaseRecord,
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetScopeWindow,
-    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert,
+    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
 };
 pub use domain::{
-    ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,
-    ApiKeySecretStorageKind, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
-    AwsBedrockRouteCompatibility, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
-    BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+    AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
+    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
+    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode,
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
+    ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,

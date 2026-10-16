@@ -164,6 +164,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
     let response = update_mcp_server(
         State(context.state.clone()),
         headers,
+        crate::http::audit::AuditRequestMeta::default(),
         Path(server.mcp_server_id.to_string()),
         Json(request),
     )

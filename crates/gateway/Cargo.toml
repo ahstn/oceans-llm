@@ -13,6 +13,7 @@ axum.workspace = true
 futures-util.workspace = true
 gateway-core.workspace = true
 gateway-client-config.workspace = true
+gateway-client-ip.workspace = true
 gateway-guardrails.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true

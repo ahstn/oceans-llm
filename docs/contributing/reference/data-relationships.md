@@ -55,7 +55,7 @@ This document is schema-oriented. It describes the persistent relationships that
 - `gateway_models`: gateway model registry; rows can be provider-backed or alias-backed
 - `model_routes`: execution targets for provider-backed models only
 - `api_key_model_grants`: explicit model grants attached to an API key
-- `audit_logs`: control-plane audit baseline
+- `audit_logs`: admin audit trail. One row per successful control-plane mutation, written only through `gateway_service::AdminAudit`. It stores the actor (`actor_kind`, `actor_user_id`, `actor_api_key_id`, `actor_label`), the `action`, the target (`object_type`, `object_id`, `target_label`), redacted `before_json` and `after_json` summaries, redacted metadata in `details_json`, and `request_ip` and `user_agent`. `ts` is unix milliseconds. Labels are snapshots, `actor_user_id` has no foreign key, and request-log retention never purges these rows. See [ADR: Admin Audit Log](../../adr/2026-10-15-admin-audit-log.md).
 
 `model_routes` stores two distinct route execution metadata documents:
 

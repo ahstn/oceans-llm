@@ -1,4 +1,5 @@
 pub mod admin_api_keys;
+pub mod admin_audit;
 pub mod admin_models;
 mod agent_analysis;
 pub mod authenticator;
@@ -40,7 +41,12 @@ pub mod skills;
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    PersonalApiKey, RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, api_key_display_prefix,
+    PersonalApiKey, RevealAdminApiKeySecretResult, RevokeAdminApiKeyResult, UpdateAdminApiKeyInput,
+    UpdateAdminApiKeyResult, api_key_display_prefix,
+};
+pub use admin_audit::{
+    AdminAudit, AuditAction, AuditContext, AuditEvent, AuditProgress, is_secret_path_segment,
+    redact_audit_value,
 };
 pub use admin_models::{
     AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,
