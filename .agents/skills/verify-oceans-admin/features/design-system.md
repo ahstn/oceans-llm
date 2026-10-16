@@ -24,7 +24,7 @@ Preconditions: a launched stack with the local demo seed, signed in as `alice@pl
 - **Reduced motion.** With `prefers-reduced-motion: reduce` emulated, the Data display chart shows every bar at its final shape in its first frame and settles within a frame or two, once its legend is measured. Without the preference the bars draw in over about 600ms, across dozens of distinct frames.
 - **Overlays.** `Open alert dialog` opens `Revoke ci-pipeline?` on the floating layer with the dialog shadow, and Escape closes it.
 - **Responsive.** At 375px the document is no wider than the viewport.
-- **Coverage.** In `crates/admin-ui/web`, `bunx vitest run src/test/design-system-coverage.test.ts` passes. It fails when a component in `src/components/ui/` (tests aside) is missing from the page, and CI runs it with the other admin UI tests.
+- **Coverage.** In `crates/admin-ui/web`, `bunx vitest run src/test/design-system-coverage.test.ts` passes. It fails when the page doesn't render a component in `src/components/ui/` (tests aside): an imported name must appear as a JSX element, so a stale or type-only import doesn't count. CI runs it with the other admin UI tests.
 - **Proof.** Capture the page, then `control-oceans-admin record design-system --check sections=pass --check contrast=pass --check reduced-motion=pass --check overlays=pass --check responsive=pass --check coverage=pass --artifact <screenshot>`.
 
 ## Gotchas
