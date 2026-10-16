@@ -130,7 +130,7 @@ description = "Regenerate the shadcn theme (registry.json and docs/public/r) fro
 run = "node scripts/build-shadcn-theme.mjs --build"
 
 [tasks.shadcn-theme-check]
-description = "Fail when registry.json no longer matches the admin UI tokens in globals.css"
+description = "Fail when registry.json, docs/public/r or the docs dark theme no longer match the admin UI tokens in globals.css"
 run = "node scripts/build-shadcn-theme.mjs --check"
 
 [tasks.lint]

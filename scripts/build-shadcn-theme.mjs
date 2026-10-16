@@ -4,7 +4,8 @@
 //
 //   node scripts/build-shadcn-theme.mjs          write registry.json
 //   node scripts/build-shadcn-theme.mjs --build  also build docs/public/r with the shadcn CLI
-//   node scripts/build-shadcn-theme.mjs --check  exit 1 if registry.json or docs/public/r is out of date
+//   node scripts/build-shadcn-theme.mjs --check  exit 1 if registry.json or docs/public/r is out of date,
+//                                                or the docs site's dark theme stops mirroring the tokens
 //
 // Consumers install it with `npx shadcn@latest add ahstn/oceans-llm/oceans-theme`, or from the
 // built item the docs site serves at https://docs.oceans-llm.com/r/oceans-theme.json.
@@ -26,7 +27,7 @@ const css = readFileSync(cssPath, 'utf8')
 // The block body that starts at `selector {` (brace-matched, so nested at-rules stay inside).
 function block(source, selector, from = 0) {
   const start = source.indexOf(`${selector} {`, from)
-  if (start === -1) throw new Error(`${selector} not found in globals.css`)
+  if (start === -1) throw new Error(`no "${selector.trim()} {" block found`)
   let depth = 0
   for (let i = source.indexOf('{', start); i < source.length; i++) {
     if (source[i] === '{') depth++
@@ -49,30 +50,26 @@ function rules(body) {
 
 // Tokens on :root. Colours go to `dark` (the system is dark only); radius, motion and the panel glow
 // apply in every mode, so they go to `light` (which the CLI writes to :root).
-const shadcnColours = new Set([
-  'background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground', 'primary',
-  'primary-foreground', 'secondary', 'secondary-foreground', 'muted', 'muted-foreground', 'accent',
-  'accent-foreground', 'destructive', 'border', 'input', 'ring', 'chart-1', 'chart-2', 'chart-3',
-  'chart-4', 'chart-5', 'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground',
-  'sidebar-accent', 'sidebar-accent-foreground', 'sidebar-border', 'sidebar-ring',
-])
 const rootTokens = declarations(block(css, '\n:root').body).filter(
   ([name]) => !name.startsWith('color-') && !name.startsWith('scrollbar-') && !name.startsWith('font-'),
 )
 const light = {}
 const dark = {}
+for (const [name, value] of rootTokens) {
+  if (name === 'radius' || name.startsWith('duration-') || name === 'panel-glow') light[name] = value
+  else dark[name] = value
+}
+
+// The CLI writes `theme` into the consumer's `@theme inline`, so it mirrors ours: a Tailwind mapping
+// for every colour, the radius scale, and the admin-only utilities (text-subtle-foreground,
+// tracking-label, text-2xs, text-display, shadow-sticky-edge). The fonts are literal because ours
+// point at --font-display, which isn't exported.
 const theme = {
   'font-sans': "'Geist Variable', ui-sans-serif, sans-serif",
   'font-heading': "'Geist Variable', ui-sans-serif, sans-serif",
 }
-for (const [name, value] of rootTokens) {
-  if (name === 'radius' || name.startsWith('duration-') || name === 'panel-glow') {
-    light[name] = value
-    continue
-  }
-  dark[name] = value
-  // Extra colours need a Tailwind mapping so bg-*, text-* and friends exist in the consuming app.
-  if (!shadcnColours.has(name)) theme[`color-${name}`] = `var(--${name})`
+for (const [name, value] of declarations(block(css, '\n@theme inline').body)) {
+  if (!name.startsWith('font-')) theme[name] = value
 }
 
 // Elevation, easing and the page entrance from the `@theme {` block.
@@ -150,17 +147,80 @@ function sameData(text, expected) {
   }
 }
 
+// The docs site's dark theme repeats these admin tokens by hand (VitePress variable: admin token).
+// Its light theme, and dark values with no admin counterpart (text-2, text-3, the -2 hover steps and
+// the hero gradient), are tuned for the docs and aren't checked.
+const docsCssPath = 'docs/.vitepress/theme/custom.css'
+const docsDarkMirrors = {
+  'vp-c-bg': 'background',
+  'vp-c-bg-alt': 'sidebar',
+  'vp-c-bg-soft': 'card',
+  'vp-c-bg-elv': 'popover',
+  'vp-c-gutter': 'sidebar',
+  'vp-c-text-1': 'foreground',
+  'vp-c-divider': 'border',
+  'vp-c-border': 'input',
+  'vp-c-brand-1': 'primary',
+  'vp-c-brand-3': 'primary',
+  'vp-home-hero-name-color': 'primary',
+  'vp-button-brand-text': 'primary-foreground',
+  'vp-button-brand-hover-text': 'primary-foreground',
+  'vp-button-brand-active-text': 'primary-foreground',
+  'vp-c-green-1': 'success',
+  'vp-c-green-3': 'success',
+  'vp-c-red-1': 'destructive',
+  'vp-c-red-3': 'destructive',
+  'vp-c-yellow-1': 'warning',
+  'vp-c-yellow-3': 'warning',
+  'vp-c-indigo-1': 'chart-1',
+  'vp-c-indigo-3': 'chart-1',
+}
+// Each soft tint is its colour at a low alpha, so it must keep that colour's channels.
+const docsDarkTints = {
+  'vp-c-brand-soft': 'primary',
+  'vp-c-green-soft': 'success',
+  'vp-c-red-soft': 'destructive',
+  'vp-c-yellow-soft': 'warning',
+  'vp-c-indigo-soft': 'chart-1',
+}
+
+// #rrggbb or rgb(r g b / alpha), with alpha as a fraction or a percentage, to [r, g, b, alpha].
+function rgba(value = '') {
+  const hex = /^#([\da-f]{6})$/i.exec(value)
+  if (hex) return [0, 2, 4].map((at) => Number.parseInt(hex[1].slice(at, at + 2), 16)).concat(1)
+  const rgb = /^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+)(%?))?\)$/.exec(value)
+  if (!rgb) return null
+  const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]) / (rgb[5] ? 100 : 1)
+  return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Math.round(alpha * 1000) / 1000]
+}
+
+function docsThemeDrift() {
+  const docsDark = Object.fromEntries(declarations(block(readText(join(root, docsCssPath)), '\n.dark').body))
+  const drift = []
+  for (const [variable, token] of Object.entries(docsDarkMirrors)) {
+    const [docs, admin] = [rgba(docsDark[variable]), rgba(dark[token])]
+    if (!docs || !admin || docs.join() !== admin.join()) drift.push(`--${variable} should be ${dark[token]} (--${token})`)
+  }
+  for (const [variable, token] of Object.entries(docsDarkTints)) {
+    const [docs, admin] = [rgba(docsDark[variable]), rgba(dark[token])]
+    if (!docs || !admin || docs.slice(0, 3).join() !== admin.slice(0, 3).join()) {
+      drift.push(`--${variable} should be ${dark[token]} (--${token}) at a low alpha`)
+    }
+  }
+  return drift
+}
+
 const output = `${JSON.stringify(registry, null, 2)}\n`
 if (process.argv.includes('--check')) {
   const stale = readText(registryPath) === output ? [] : ['registry.json']
   for (const [file, expected] of published) {
     if (!sameData(readText(join(outDir, file)), expected)) stale.push(`docs/public/r/${file}`)
   }
-  if (stale.length > 0) {
-    console.error(`${stale.join(', ')} out of date with globals.css. Run: mise run shadcn-theme`)
-    process.exit(1)
-  }
-  console.log('registry.json and docs/public/r match globals.css')
+  const drift = docsThemeDrift()
+  if (stale.length > 0) console.error(`${stale.join(', ')} out of date with globals.css. Run: mise run shadcn-theme`)
+  if (drift.length > 0) console.error(`${docsCssPath} .dark no longer mirrors globals.css:\n  ${drift.join('\n  ')}`)
+  if (stale.length > 0 || drift.length > 0) process.exit(1)
+  console.log('registry.json, docs/public/r and the docs dark theme match globals.css')
 } else {
   writeFileSync(registryPath, output)
   console.log(`wrote registry.json: ${Object.keys(dark).length} dark tokens, ${Object.keys(theme).length} theme entries`)
