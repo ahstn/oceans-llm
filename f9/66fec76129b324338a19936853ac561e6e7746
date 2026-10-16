@@ -1,0 +1,43 @@
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_eaf7116ccea134::t_a01689e94f170a 25,110-114,240,274,309,345,379,413,448,547-553,712
+crates/admin-ui/web/src/routes/-auth-routing.ts
+  s_eaf7116ccea134::t_05587ae912e628 22
+crates/admin-ui/web/src/routes/design-system/-components/actions-inputs.tsx
+  s_eaf7116ccea134::t_1098b56aa579b2 1-311
+crates/admin-ui/web/src/routes/design-system/-components/data-display.tsx
+  s_eaf7116ccea134::t_11fc8d185aa802 1-298
+crates/admin-ui/web/src/routes/design-system/-components/foundations.tsx
+  s_eaf7116ccea134::t_fc979214cdc11e 1-417
+crates/admin-ui/web/src/routes/design-system/-components/overlays.tsx
+  s_eaf7116ccea134::t_d9daf73dc7a1f2 1-272
+crates/admin-ui/web/src/routes/design-system/-components/patterns.tsx
+  s_eaf7116ccea134::t_ca13833d4b355d 1-194
+crates/admin-ui/web/src/routes/design-system/-components/showcase-chart.tsx
+  s_eaf7116ccea134::t_b84ec758004047 1-69
+crates/admin-ui/web/src/routes/design-system/-components/showcase-sidebar.tsx
+  s_eaf7116ccea134::t_ca708af10b15da 1-73
+crates/admin-ui/web/src/routes/design-system/index.tsx
+  s_eaf7116ccea134::t_33170ba1553c27 1-56
+crates/admin-ui/web/src/test/routes/auth-routing.test.ts
+  s_eaf7116ccea134::t_954fb2a1113697 38-44
+crates/admin-ui/web/src/routes/design-system/-components/feedback.tsx
+  s_eaf7116ccea134::t_92cf9717fdbc71 1-134
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  s_eaf7116ccea134::t_3a12f226353708 1-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f966fec76129b324338a19936853ac561e6e7746",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
