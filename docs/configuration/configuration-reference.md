@@ -696,6 +696,7 @@ mcp:
     access_token_ttl_seconds: 3600
     refresh_token_ttl_seconds: 2592000
     dynamic_client_registration: true
+    unused_client_retention_days: 7
 ```
 
 - `enabled` defaults to `false`. When it is `false`, the metadata, authorization, token, registration, and revocation endpoints return `404`, and MCP routes accept only `gwk_` keys.
@@ -703,6 +704,7 @@ mcp:
 - `access_token_ttl_seconds` defaults to 3600 and must be between 60 and 86400.
 - `refresh_token_ttl_seconds` defaults to 2592000 (30 days), must be at least the access-token lifetime, and at most 7776000 (90 days). Every token also expires when the admin session that approved it ends.
 - `dynamic_client_registration` defaults to `true`. When it is `false`, `/oauth/register` returns `404` and is left out of the metadata.
+- `unused_client_retention_days` defaults to 7 and must be between 1 and 365. An hourly cleanup deletes dynamically registered clients older than this that never received a grant. It also deletes authorization requests and tokens that expired more than a day ago.
 
 For client setup, see [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
 

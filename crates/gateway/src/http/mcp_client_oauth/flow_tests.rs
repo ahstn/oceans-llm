@@ -184,6 +184,25 @@ impl Harness {
         .await
     }
 
+    /// Audit entries for `action`, newest first, each read in full (listing
+    /// leaves out summaries and metadata).
+    pub async fn audit_entries(&self, action: &str) -> Vec<gateway_core::AuditLogRecord> {
+        use gateway_core::AuditLogRepository;
+        let store = &self.state.store;
+        let page = store
+            .list_audit_logs(&gateway_core::AuditLogQuery {
+                action: Some(action.to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let mut entries = Vec::new();
+        for item in page.items {
+            entries.push(store.get_audit_log(item.id).await.unwrap().unwrap());
+        }
+        entries
+    }
+
     /// Approves `request_id` and returns the authorization code.
     pub async fn approve(&self, request_id: &str) -> String {
         let (status, body) = self.decide(request_id, true).await;
@@ -261,6 +280,16 @@ async fn code_flow_issues_an_audience_bound_access_token() {
     assert_eq!(view["scopes"][0]["scope"], "mcp:aggregate");
 
     let code = harness.approve(&request_id).await;
+    // The approval is audited against the request, without the code.
+    let approved = harness.audit_entries("mcp_client_grant.authorized").await;
+    assert_eq!(approved.len(), 1);
+    assert_eq!(approved[0].actor.user_id, Some(harness.user_id));
+    assert_eq!(approved[0].target_id.as_deref(), Some(request_id.as_str()));
+    assert_eq!(approved[0].target_label.as_deref(), Some("Test Editor"));
+    let summary = approved[0].after.as_ref().unwrap();
+    assert_eq!(summary["redirect_host"], "127.0.0.1:43123");
+    assert_eq!(summary["scopes"], json!(["mcp:aggregate"]));
+    assert!(!serde_json::to_string(&approved[0]).unwrap().contains(&code));
     let (status, headers, token) = harness
         .token(
             &[
@@ -551,6 +580,17 @@ async fn denying_consent_returns_access_denied_and_the_request_cannot_be_reused(
     assert_eq!(status, StatusCode::CONFLICT);
     let (status, _) = harness.consent(&request_id).await;
     assert_eq!(status, StatusCode::CONFLICT);
+
+    // Only the denial is audited; the refused second decision records nothing.
+    let denied = harness.audit_entries("mcp_client_grant.denied").await;
+    assert_eq!(denied.len(), 1);
+    assert_eq!(denied[0].target_id.as_deref(), Some(request_id.as_str()));
+    assert!(
+        harness
+            .audit_entries("mcp_client_grant.authorized")
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]

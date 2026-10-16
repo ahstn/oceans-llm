@@ -374,10 +374,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 64,
+        name: "gateway_oauth_cleanup_indexes",
+        checksum: "V64__gateway_oauth_cleanup_indexes.sql",
+        libsql_sql: include_str!("../migrations/V64__gateway_oauth_cleanup_indexes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 65,
         name: "batch_jobs_route_index",
-        checksum: "V64__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V64__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V64__batch_jobs_route_index.sql"),
+        checksum: "V65__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V65__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V65__batch_jobs_route_index.sql"),
     },
 ];
 

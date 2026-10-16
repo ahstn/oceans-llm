@@ -2,6 +2,7 @@
 //! MCP clients. See `docs/adr/2026-10-15-mcp-client-oauth-authorization.md`.
 
 mod authorize;
+mod authorized_clients;
 mod consent;
 mod form;
 mod metadata;
@@ -10,14 +11,25 @@ mod revocation;
 mod stream_lifetime;
 mod token;
 
-use axum::http::HeaderValue;
-use gateway_core::{AuthError, GatewayError, McpOauthResource};
+use axum::http::{HeaderMap, HeaderValue};
+use gateway_core::{AuthError, GatewayError, McpOauthResource, UserRecord, UserStatus};
 use gateway_service::{McpClientOauthService, McpClientOauthSettings};
 use gateway_store::AnyStore;
+use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{
+    error::AppError, identity::resolve_session_user_with_session_id, state::AppState,
+};
 
 pub use authorize::oauth_authorize;
+pub use authorized_clients::{
+    __path_admin_list_authorized_mcp_clients, __path_admin_revoke_authorized_mcp_clients,
+    __path_list_my_authorized_mcp_clients, __path_revoke_my_authorized_mcp_client,
+    AdminRevokeAuthorizedMcpClientsRequest, AuthorizedMcpClientView, AuthorizedMcpClientsView,
+    RevokeAuthorizedMcpClientsResponse, admin_list_authorized_mcp_clients,
+    admin_revoke_authorized_mcp_clients, list_my_authorized_mcp_clients,
+    revoke_my_authorized_mcp_client,
+};
 pub use consent::{
     __path_decide_oauth_authorization_request, __path_get_oauth_authorization_request,
     OauthAuthorizationDecisionRequest, OauthAuthorizationDecisionResponse,
@@ -35,6 +47,20 @@ pub use revocation::oauth_revoke;
 pub(crate) use stream_lifetime::bound_to_oauth_access;
 pub use stream_lifetime::{OAUTH_STREAM_RECHECK_INTERVAL, OauthStreamWatcher};
 pub use token::oauth_token;
+
+/// The signed-in active user and their `user_sessions` ID.
+pub(super) async fn require_active_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, Uuid), AppError> {
+    let (user, session_id) = resolve_session_user_with_session_id(state, headers)
+        .await?
+        .ok_or(AppError(AuthError::SessionRequired.into()))?;
+    if user.status != UserStatus::Active {
+        return Err(AppError(AuthError::InsufficientPrivileges.into()));
+    }
+    Ok((user, session_id))
+}
 
 /// The authorization server, or `None` when OAuth for MCP clients is disabled.
 fn oauth_service(state: &AppState) -> Option<McpClientOauthService<AnyStore>> {
@@ -81,6 +107,8 @@ pub(crate) fn bearer_challenge(
     HeaderValue::from_str(&challenge).ok()
 }
 
+#[cfg(test)]
+mod authorized_clients_tests;
 #[cfg(test)]
 mod flow_tests;
 #[cfg(test)]

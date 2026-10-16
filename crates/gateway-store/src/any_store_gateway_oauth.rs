@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use gateway_core::{
     GatewayOauthAuthorizationDecision, GatewayOauthAuthorizationRequestRecord,
-    GatewayOauthClientRecord, GatewayOauthGrantRecord, GatewayOauthRepository,
-    GatewayOauthSessionState, GatewayOauthTokenContext, GatewayOauthTokenRecord, StoreError,
+    GatewayOauthClientRecord, GatewayOauthGrantRecord, GatewayOauthGrantSummary,
+    GatewayOauthPurgeCounts, GatewayOauthRepository, GatewayOauthSessionState,
+    GatewayOauthTokenContext, GatewayOauthTokenRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -85,7 +86,7 @@ impl GatewayOauthRepository for AnyStore {
     async fn create_gateway_oauth_grant(
         &self,
         grant: &GatewayOauthGrantRecord,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch!(self, create_gateway_oauth_grant(grant))
     }
 
@@ -150,6 +151,44 @@ impl GatewayOauthRepository for AnyStore {
         dispatch!(
             self,
             revoke_gateway_oauth_grants_for_user(user_id, reason, revoked_at)
+        )
+    }
+
+    async fn list_live_gateway_oauth_grants_for_user(
+        &self,
+        user_id: Uuid,
+        aggregate_resource: Option<&str>,
+        now: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError> {
+        dispatch!(
+            self,
+            list_live_gateway_oauth_grants_for_user(user_id, aggregate_resource, now, limit)
+        )
+    }
+
+    async fn revoke_gateway_oauth_grant_for_user(
+        &self,
+        grant_id: Uuid,
+        user_id: Uuid,
+        reason: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<GatewayOauthGrantRecord>, StoreError> {
+        dispatch!(
+            self,
+            revoke_gateway_oauth_grant_for_user(grant_id, user_id, reason, revoked_at)
+        )
+    }
+
+    async fn purge_gateway_oauth_records(
+        &self,
+        unused_clients_before: OffsetDateTime,
+        expired_before: OffsetDateTime,
+        retire_before: OffsetDateTime,
+    ) -> Result<GatewayOauthPurgeCounts, StoreError> {
+        dispatch!(
+            self,
+            purge_gateway_oauth_records(unused_clients_before, expired_before, retire_before)
         )
     }
 }

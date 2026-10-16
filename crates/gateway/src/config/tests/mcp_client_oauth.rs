@@ -29,6 +29,7 @@ mcp:
     access_token_ttl_seconds: 900
     refresh_token_ttl_seconds: 86400
     dynamic_client_registration: false
+    unused_client_retention_days: 14
 "#,
     )
     .expect("valid config");
@@ -40,6 +41,7 @@ mcp:
     assert_eq!(settings.access_token_ttl().whole_seconds(), 900);
     assert_eq!(settings.refresh_token_ttl().whole_seconds(), 86400);
     assert!(!settings.dynamic_client_registration());
+    assert_eq!(settings.unused_client_retention().whole_days(), 14);
 }
 
 #[test]
@@ -194,5 +196,23 @@ mcp:
             .unwrap()
             .issuer(),
         "https://env.example.com"
+    );
+}
+
+#[test]
+fn mcp_client_oauth_rejects_out_of_range_client_retention() {
+    let error = load(
+        r#"
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://oceans.example.com
+    unused_client_retention_days: 0
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("unused_client_retention_days"),
+        "{error:#}"
     );
 }

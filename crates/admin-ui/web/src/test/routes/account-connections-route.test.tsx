@@ -9,7 +9,11 @@ const routeMock = {
 }
 const navigateMock = vi.fn()
 const connectMock = vi.fn()
-const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -23,7 +27,16 @@ vi.mock('@/server/admin-data.functions', () => ({
   connectMcpOauthServer: (...args: unknown[]) => connectMock(...args),
   disconnectMcpOauthServer: vi.fn(),
   getMcpOauthConnections: vi.fn(),
+  getAuthorizedMcpClients: vi.fn(),
+  disconnectAuthorizedMcpClient: vi.fn(),
 }))
+
+function loaderData(connections: McpOauthConnectionView[]) {
+  return {
+    connections,
+    authorizedClients: { enabled: false, has_more: false, items: [] },
+  }
+}
 
 function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthConnectionView {
   return {
@@ -41,32 +54,39 @@ function connection(overrides: Partial<McpOauthConnectionView> = {}): McpOauthCo
   }
 }
 
+const assignMock = vi.fn()
+
+function resetPageMocks() {
+  navigateMock.mockReset()
+  connectMock.mockReset()
+  assignMock.mockReset()
+  Object.values(toastMock).forEach((mock) => mock.mockReset())
+  vi.stubGlobal('location', { assign: assignMock })
+}
+
+function restorePageMocks() {
+  cleanup()
+  vi.unstubAllGlobals()
+}
+
 describe('ConnectionsPage connect links', () => {
-  const assignMock = vi.fn()
-
-  beforeEach(() => {
-    navigateMock.mockReset()
-    connectMock.mockReset()
-    assignMock.mockReset()
-    Object.values(toastMock).forEach((mock) => mock.mockReset())
-    vi.stubGlobal('location', { assign: assignMock })
-  })
-
-  afterEach(() => {
-    cleanup()
-    vi.unstubAllGlobals()
-  })
+  beforeEach(resetPageMocks)
+  afterEach(restorePageMocks)
 
   it('starts the OAuth flow for the named server and drops the parameter', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection()])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://accounts.example/consent',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 
     await waitFor(() =>
-      expect(connectMock).toHaveBeenCalledWith({ data: { serverId: 'server-1' } }),
+      expect(connectMock).toHaveBeenCalledWith({
+        data: { serverId: 'server-1' },
+      }),
     )
     await waitFor(() => expect(assignMock).toHaveBeenCalledWith('https://accounts.example/consent'))
     expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({ replace: true }))
@@ -78,9 +98,11 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('reconnects an expired connection', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'expired' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'expired' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://accounts.example/consent' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://accounts.example/consent',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
@@ -89,7 +111,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('does not start the flow when the server is already connected', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'connected' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
@@ -102,9 +124,13 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('reports unknown and unavailable servers instead of starting the flow', async () => {
-    routeMock.useLoaderData.mockReturnValue([
-      connection({ availability_error: 'OAuth provider `google` is not configured' }),
-    ])
+    routeMock.useLoaderData.mockReturnValue(
+      loaderData([
+        connection({
+          availability_error: 'OAuth provider `google` is not configured',
+        }),
+      ]),
+    )
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
@@ -125,7 +151,7 @@ describe('ConnectionsPage connect links', () => {
   })
 
   it('handles a second link to the same server after the first was consumed', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection()])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     connectMock.mockRejectedValue(new Error('consent failed'))
     const { ConnectionsPage } = await import('@/routes/account/connections')
@@ -140,10 +166,18 @@ describe('ConnectionsPage connect links', () => {
 
     await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(2))
   })
+})
+
+describe('ConnectionsPage callbacks and discovered servers', () => {
+  beforeEach(resetPageMocks)
+  afterEach(restorePageMocks)
 
   it('names the server the OAuth callback returned from and toasts once', async () => {
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'connected' })])
-    routeMock.useSearch.mockReturnValue({ oauth: 'connected', server: 'server-1' })
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
+    routeMock.useSearch.mockReturnValue({
+      oauth: 'connected',
+      server: 'server-1',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     const { rerender } = render(<ConnectionsPage />)
@@ -159,24 +193,28 @@ describe('ConnectionsPage connect links', () => {
 
     // A loader refresh, such as the one after a disconnect, must not repeat the toast.
     routeMock.useSearch.mockReturnValue({})
-    routeMock.useLoaderData.mockReturnValue([connection({ status: 'disconnected' })])
+    routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'disconnected' })]))
     rerender(<ConnectionsPage />)
     expect(toastMock.success).toHaveBeenCalledTimes(1)
   })
 
   it('shows servers that use a discovered authorization server', async () => {
-    routeMock.useLoaderData.mockReturnValue([
-      connection({
-        server_id: 'server-2',
-        server_key: 'linear',
-        display_name: 'Linear',
-        provider_key: 'mcp_server',
-        provider_label: 'auth.linear.example',
-        required_scopes: [],
-      }),
-    ])
+    routeMock.useLoaderData.mockReturnValue(
+      loaderData([
+        connection({
+          server_id: 'server-2',
+          server_key: 'linear',
+          display_name: 'Linear',
+          provider_key: 'mcp_server',
+          provider_label: 'auth.linear.example',
+          required_scopes: [],
+        }),
+      ]),
+    )
     routeMock.useSearch.mockReturnValue({ connect: 'linear' })
-    connectMock.mockResolvedValue({ authorization_url: 'https://auth.linear.example/authorize' })
+    connectMock.mockResolvedValue({
+      authorization_url: 'https://auth.linear.example/authorize',
+    })
     const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
@@ -184,7 +222,9 @@ describe('ConnectionsPage connect links', () => {
     expect(screen.getByText('linear · via auth.linear.example')).toBeTruthy()
     expect(screen.getByText('Provider default')).toBeTruthy()
     await waitFor(() =>
-      expect(connectMock).toHaveBeenCalledWith({ data: { serverId: 'server-2' } }),
+      expect(connectMock).toHaveBeenCalledWith({
+        data: { serverId: 'server-2' },
+      }),
     )
     await waitFor(() =>
       expect(assignMock).toHaveBeenCalledWith('https://auth.linear.example/authorize'),

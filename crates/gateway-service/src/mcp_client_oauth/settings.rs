@@ -8,6 +8,8 @@ pub const DEFAULT_ACCESS_TOKEN_TTL_SECONDS: i64 = 60 * 60;
 pub const MAX_ACCESS_TOKEN_TTL_SECONDS: i64 = 24 * 60 * 60;
 pub const DEFAULT_REFRESH_TOKEN_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
 pub const MAX_REFRESH_TOKEN_TTL_SECONDS: i64 = 90 * 24 * 60 * 60;
+pub const DEFAULT_UNUSED_CLIENT_RETENTION_DAYS: i64 = 7;
+pub const MAX_UNUSED_CLIENT_RETENTION_DAYS: i64 = 365;
 const MIN_TOKEN_TTL_SECONDS: i64 = 60;
 
 /// Runtime settings for the gateway's OAuth authorization server.
@@ -20,6 +22,7 @@ pub struct McpClientOauthSettings {
     access_token_ttl: Duration,
     refresh_token_ttl: Duration,
     dynamic_client_registration: bool,
+    unused_client_retention: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -38,6 +41,10 @@ pub enum McpClientOauthSettingsError {
         "refresh_token_ttl_seconds must be at least access_token_ttl_seconds and at most {MAX_REFRESH_TOKEN_TTL_SECONDS}"
     )]
     RefreshTokenTtl,
+    #[error(
+        "unused_client_retention_days must be between 1 and {MAX_UNUSED_CLIENT_RETENTION_DAYS}"
+    )]
+    UnusedClientRetention,
 }
 
 impl McpClientOauthSettings {
@@ -63,7 +70,26 @@ impl McpClientOauthSettings {
             access_token_ttl: Duration::seconds(access_token_ttl_seconds),
             refresh_token_ttl: Duration::seconds(refresh_token_ttl_seconds),
             dynamic_client_registration,
+            unused_client_retention: Duration::days(DEFAULT_UNUSED_CLIENT_RETENTION_DAYS),
         })
+    }
+
+    /// How long a dynamically registered client may go without a grant
+    /// before cleanup deletes it.
+    pub fn with_unused_client_retention_days(
+        mut self,
+        days: i64,
+    ) -> Result<Self, McpClientOauthSettingsError> {
+        if !(1..=MAX_UNUSED_CLIENT_RETENTION_DAYS).contains(&days) {
+            return Err(McpClientOauthSettingsError::UnusedClientRetention);
+        }
+        self.unused_client_retention = Duration::days(days);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn unused_client_retention(&self) -> Duration {
+        self.unused_client_retention
     }
 
     #[must_use]
@@ -183,6 +209,24 @@ mod tests {
             McpClientOauthSettings::new("https://oceans.example.com/gw", 3600, 86400, true)
                 .unwrap_err(),
             McpClientOauthSettingsError::IssuerNotOrigin
+        );
+    }
+
+    #[test]
+    fn unused_client_retention_is_bounded() {
+        let defaults = settings("https://o.example");
+        assert_eq!(defaults.unused_client_retention(), Duration::days(7));
+        assert_eq!(
+            defaults
+                .clone()
+                .with_unused_client_retention_days(30)
+                .unwrap()
+                .unused_client_retention(),
+            Duration::days(30)
+        );
+        assert_eq!(
+            defaults.with_unused_client_retention_days(0).unwrap_err(),
+            McpClientOauthSettingsError::UnusedClientRetention
         );
     }
 
