@@ -3,8 +3,8 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use gateway_core::{GuardrailDecisionEventRecord, GuardrailDecisionRepository};
 use gateway_guardrails::{
-    DecisionAction, DecisionId, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
-    GuardrailEvaluation, ManagedService, ReasonCode,
+    DecisionAction, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
+    GuardrailEvaluation, ManagedService,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -27,30 +27,16 @@ pub async fn record_guardrail_evaluation(
     .await;
 }
 
-/// Builds the `fail_open` audit decision for content an audit-mode policy releases without
-/// inspecting it, such as a stream larger than its buffer. `content` is whatever was read
-/// before inspection stopped.
-pub fn uninspected_content_decision(
-    phase: GuardPhase,
-    scope: EffectiveScope,
-    reason_code: &'static str,
-    content: &[u8],
-) -> DecisionRecord {
-    DecisionRecord {
-        decision_id: DecisionId::new(),
-        phase,
-        scope,
-        evaluator: "stream_buffer".to_string(),
-        managed_service: None,
-        managed_metadata: None,
-        action: DecisionAction::Audit,
-        reason_code: ReasonCode::new(reason_code).expect("static reason code is valid"),
-        matched_rule: None,
-        latency_micros: 0,
-        failure_disposition: Some(FailureDisposition::FailOpen),
-        transformed: false,
-        content_hash: format!("sha256:{:x}", Sha256::digest(content)),
-    }
+/// The decision-log content hash for content the guard stopped reading before it could
+/// inspect it, such as a stream larger than its buffer. `parts` are the bytes read so far.
+pub fn uninspected_content_hash(parts: &[&[u8]]) -> String {
+    format!(
+        "sha256:{:x}",
+        parts
+            .iter()
+            .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
+            .finalize()
+    )
 }
 
 /// Persists decisions on a background task, so a slow or unavailable store adds

@@ -11,7 +11,8 @@ use futures_util::{
 use gateway_core::{GatewayError, ProviderError};
 use gateway_guardrails::{
     DecisionAction, EffectivePolicy, EvaluationInput, EvaluationPayload, GuardPhase,
-    GuardrailEvaluation, McpCall, PolicyMode, PolicyResolver, PolicyTarget,
+    GuardrailEvaluation, McpCall, PolicyResolver, PolicyTarget, UninspectedContent,
+    uninspected_content_decision,
 };
 use serde_json::{Map, Value, json};
 use tokio::time::{Instant, timeout_at};
@@ -23,7 +24,7 @@ use super::{
 };
 use crate::http::{
     guardrail_events::{
-        record_guardrail_decisions, record_guardrail_evaluation, uninspected_content_decision,
+        record_guardrail_decisions, record_guardrail_evaluation, uninspected_content_hash,
     },
     state::AppState,
 };
@@ -155,22 +156,24 @@ pub(super) async fn enforce_direct_mcp_result(
         BufferedMcpResult::Partial {
             failure,
             prefix,
+            overflow,
             rest,
         } => {
-            let released = release_uninspected_result(
+            let evaluation = record_uninspected_result(
                 state,
                 &policy,
                 &request_id,
                 mcp_tool_invocation_id,
-                failure.reason_code(),
-                &prefix,
+                failure.reason(),
+                &[&prefix, overflow.as_deref().unwrap_or_default()],
             );
-            let Some(evaluation) = released else {
-                return Ok((failure.response(id), None, true));
-            };
-            // The consumed prefix is replayed ahead of the unread remainder, so the caller
+            if evaluation.denied() {
+                return Ok((failure.response(id), Some(evaluation), true));
+            }
+            // Everything consumed is replayed ahead of the unread remainder, so the caller
             // receives the upstream result unchanged.
-            let body = stream::iter([Ok(Bytes::from(prefix))]).chain(rest);
+            let consumed = [Some(Bytes::from(prefix)), overflow];
+            let body = stream::iter(consumed.into_iter().flatten().map(Ok)).chain(rest);
             return Ok((
                 Response::from_parts(parts, Body::from_stream(body)),
                 Some(evaluation),
@@ -219,21 +222,16 @@ pub(super) async fn enforce_direct_mcp_result(
             true,
         ),
         Err(None) => {
-            let released = release_uninspected_result(
+            let evaluation = record_uninspected_result(
                 state,
                 &policy,
                 &request_id,
                 mcp_tool_invocation_id,
-                "stream.unparseable",
-                &bytes,
+                UninspectedContent::Unparseable,
+                &[&bytes],
             );
-            match released {
-                Some(evaluation) => (
-                    Response::from_parts(parts, Body::from(bytes)),
-                    Some(evaluation),
-                    false,
-                ),
-                None => (
+            if evaluation.denied() {
+                (
                     mcp_jsonrpc_error_response(
                         StatusCode::FORBIDDEN,
                         id,
@@ -244,9 +242,15 @@ pub(super) async fn enforce_direct_mcp_result(
                             "MCP result was not a valid guarded response"
                         },
                     ),
-                    None,
+                    Some(evaluation),
                     true,
-                ),
+                )
+            } else {
+                (
+                    Response::from_parts(parts, Body::from(bytes)),
+                    Some(evaluation),
+                    false,
+                )
             }
         }
     })
@@ -258,11 +262,12 @@ pub(super) type GuardedMcpResult = (Response<Body>, Option<GuardrailEvaluation>,
 /// An upstream MCP result read into memory for inspection.
 enum BufferedMcpResult {
     Complete(Bytes),
-    /// Reading stopped before the end. `prefix` holds every byte consumed so far and `rest`
-    /// the remainder, starting with any chunk that was read but not buffered.
+    /// Reading stopped before the end. `prefix` holds the buffered bytes, `overflow` the chunk
+    /// that would have exceeded the buffer, and `rest` the unread remainder.
     Partial {
         failure: BufferFailure,
         prefix: Vec<u8>,
+        overflow: Option<Bytes>,
         rest: BoxStream<'static, Result<Bytes, axum::Error>>,
     },
 }
@@ -274,10 +279,10 @@ enum BufferFailure {
 }
 
 impl BufferFailure {
-    fn reason_code(self) -> &'static str {
+    fn reason(self) -> UninspectedContent {
         match self {
-            Self::Exceeded => "stream.buffer_exceeded",
-            Self::TimedOut => "stream.buffer_timeout",
+            Self::Exceeded => UninspectedContent::BufferExceeded,
+            Self::TimedOut => UninspectedContent::BufferTimeout,
         }
     }
 
@@ -306,7 +311,7 @@ async fn buffer_mcp_result(
     let deadline = Instant::now() + Duration::from_millis(policy.stream_buffer_timeout_ms);
     let mut upstream = body.into_data_stream();
     let mut buffered = Vec::new();
-    let (failure, unbuffered) = loop {
+    let (failure, overflow) = loop {
         match timeout_at(deadline, upstream.next()).await {
             Ok(None) => return Ok(BufferedMcpResult::Complete(Bytes::from(buffered))),
             Ok(Some(Ok(chunk)))
@@ -314,7 +319,7 @@ async fn buffer_mcp_result(
             {
                 buffered.extend_from_slice(&chunk);
             }
-            Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(Ok(chunk))),
+            Ok(Some(Ok(chunk))) => break (BufferFailure::Exceeded, Some(chunk)),
             // The upstream error can carry its URL, so it is not passed through.
             Ok(Some(Err(_))) => {
                 return Err(ProviderError::Transport(
@@ -328,39 +333,38 @@ async fn buffer_mcp_result(
     Ok(BufferedMcpResult::Partial {
         failure,
         prefix: buffered,
-        rest: stream::iter(unbuffered).chain(upstream).boxed(),
+        overflow,
+        rest: upstream.boxed(),
     })
 }
 
-/// Records an audit decision for an MCP result the guard cannot inspect. Returns the
-/// evaluation when the policy is in audit mode, which releases the result unchanged instead
-/// of failing the call; deny mode returns `None` and the caller rejects the result.
-fn release_uninspected_result(
+/// Records the decision for an MCP result the guard cannot inspect and returns it. In audit
+/// mode it is a `fail_open` audit and the caller releases the result unchanged; in deny mode
+/// it is a `fail_closed` deny and the caller rejects the result.
+fn record_uninspected_result(
     state: &AppState,
     policy: &EffectivePolicy,
     request_id: &str,
     mcp_tool_invocation_id: Uuid,
-    reason_code: &'static str,
-    content: &[u8],
-) -> Option<GuardrailEvaluation> {
-    if policy.mode != PolicyMode::Audit {
-        return None;
-    }
+    reason: UninspectedContent,
+    content: &[&[u8]],
+) -> GuardrailEvaluation {
+    let decision = uninspected_content_decision(
+        policy,
+        GuardPhase::McpResult,
+        reason,
+        uninspected_content_hash(content),
+    );
     let evaluation = GuardrailEvaluation {
-        action: DecisionAction::Audit,
-        decisions: vec![uninspected_content_decision(
-            GuardPhase::McpResult,
-            policy.scope.clone(),
-            reason_code,
-            content,
-        )],
+        action: decision.action,
+        decisions: vec![decision],
         output: EvaluationPayload::McpResult {
             server: String::new(),
             tool: String::new(),
             result: Value::Null,
         },
     };
-    // Persisting on a background task keeps the released result from waiting on the store.
+    // Persisting on a background task keeps the result or rejection from waiting on the store.
     let (state, request_id, decisions) = (
         state.clone(),
         request_id.to_string(),
@@ -375,7 +379,7 @@ fn release_uninspected_result(
         )
         .await;
     });
-    Some(evaluation)
+    evaluation
 }
 
 async fn guard_mcp_json_result(

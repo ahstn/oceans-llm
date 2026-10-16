@@ -6,6 +6,8 @@ Date: 2026-08-22
 
 Accepted
 
+> **Supersession note (2026-10-15):** Audit mode never stops an operation. The failure handling below applies only in `deny` mode. In `audit` mode, every failure is recorded as a `fail_open` audit decision and the operation continues. That covers `fail_closed` managed checks and deterministic evaluator failures such as `tool_call.malformed_arguments`. A guarded stream that cannot be inspected, because it exceeds the buffer or is not parseable SSE, is released unchanged in `audit` mode and rejected in `deny` mode. See [Gateway Guardrails](../operations/gateway-guardrails.md) and [PR #512](https://github.com/ahstn/oceans-llm/pull/512). The original decision remains below as history.
+
 ## Decision
 
 Oceans uses `crates/gateway-guardrails` as the primary domain boundary for guardrails. The crate owns protocol-neutral policy types, effective-policy resolution, guard phases, decisions, deterministic pack evaluation, structured MCP selectors, managed evaluator interfaces, managed-service adapters, and ordered composition.

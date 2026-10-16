@@ -5,14 +5,16 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
     DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
-    GuardrailEvaluation, PolicyMode, PolicyResolver, PolicyTarget, redact_prompt_secrets,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, redact_prompt_secrets,
+    uninspected_content_decision,
 };
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
 use crate::http::{
     guardrail_events::{
         record_guardrail_decisions_in_background, record_guardrail_evaluation,
-        uninspected_content_decision,
+        uninspected_content_hash,
     },
     state::AppState,
 };
@@ -186,7 +188,12 @@ pub async fn guard_stream(
         };
         collector.observe_chunk(&chunk);
         if buffered.len().saturating_add(chunk.len()) > context.stream_buffer_bytes {
-            if release_uninspected_stream(state, context, "stream.buffer_exceeded", &buffered) {
+            if release_uninspected_stream(
+                state,
+                context,
+                UninspectedContent::BufferExceeded,
+                &[&buffered, &chunk],
+            ) {
                 let inspected = stream::iter([Ok(Bytes::from(buffered)), Ok(chunk)]);
                 return Ok(Box::pin(inspected.chain(upstream)));
             }
@@ -214,31 +221,30 @@ pub async fn guard_stream(
     )))
 }
 
-/// Records an audit decision for a provider stream the guard cannot inspect, and returns
-/// whether the policy is in audit mode, which releases the stream unchanged instead of
-/// failing the request.
+/// Records the guardrail decision for a provider stream the guard cannot inspect, whether it
+/// releases or rejects the stream, and returns whether the stream is released unchanged
+/// instead of failing the request. `gateway-guardrails` owns the mode semantics: audit mode
+/// releases it.
 fn release_uninspected_stream(
     state: &AppState,
     context: &InferenceGuardContext,
-    reason_code: &'static str,
-    content: &[u8],
+    reason: UninspectedContent,
+    content: &[&[u8]],
 ) -> bool {
     let policy = PolicyResolver::new(&state.guardrail_config)
         .resolve(PolicyTarget::ModelRoute(&context.route_key));
-    if policy.mode != PolicyMode::Audit {
-        return false;
-    }
     let decision = uninspected_content_decision(
+        &policy,
         GuardPhase::ModelResponse,
-        policy.scope,
-        reason_code,
-        content,
+        reason,
+        uninspected_content_hash(content),
     );
+    let released = decision.action != DecisionAction::Deny;
     record_guardrail_decisions_in_background(
         state,
         vec![(context.request_id.clone(), vec![decision])],
     );
-    true
+    released
 }
 
 async fn guard_sse_payload(
@@ -248,7 +254,14 @@ async fn guard_sse_payload(
 ) -> Result<Vec<u8>, GatewayError> {
     let source = match std::str::from_utf8(payload) {
         Ok(source) => source,
-        Err(_) if release_uninspected_stream(state, context, "stream.unparseable", payload) => {
+        Err(_)
+            if release_uninspected_stream(
+                state,
+                context,
+                UninspectedContent::Unparseable,
+                &[payload],
+            ) =>
+        {
             return Ok(payload.to_vec());
         }
         Err(error) => {
@@ -296,8 +309,8 @@ async fn guard_sse_payload(
                         if release_uninspected_stream(
                             state,
                             context,
-                            "stream.unparseable",
-                            source.as_bytes(),
+                            UninspectedContent::Unparseable,
+                            &[source.as_bytes()],
                         ) =>
                     {
                         return Ok(source.as_bytes().to_vec());
@@ -338,19 +351,19 @@ async fn guard_sse_payload(
         blocks.push(lines);
     }
 
-    for fragments in tool_fragments.values() {
-        if fragments.name.is_empty() {
-            continue;
-        }
-        let streamed_arguments =
-            (!fragments.arguments.is_empty()).then_some(fragments.arguments.as_str());
-        let streamed_replacement = if let Some(arguments) = streamed_arguments {
+    let owners = call_id_owners(&tool_fragments);
+    let mut evaluated_by_call = BTreeMap::<&str, EvaluatedToolArguments>::new();
+    for (key, fragments) in &tool_fragments {
+        let call = owners.get(key.as_str()).copied().unwrap_or(key);
+        let evaluated = evaluated_by_call.entry(call).or_default();
+        if !fragments.name.is_empty() && !fragments.arguments.is_empty() {
             let replacement = guard_stream_tool_arguments(
                 state,
                 context,
+                evaluated,
                 &fragments.name,
                 fragments.shell_command_locations,
-                arguments,
+                &fragments.arguments,
             )
             .await?;
             if let Some(replacement) = &replacement {
@@ -362,27 +375,21 @@ async fn guard_sse_payload(
                     true,
                 );
             }
-            replacement
-        } else {
-            None
-        };
+        }
         for terminal in &fragments.terminal_arguments {
             let name = terminal.name.as_deref().unwrap_or(&fragments.name);
-            let replacement = if name == fragments.name
-                && terminal.shell_command == fragments.shell_command_locations
-                && streamed_arguments == Some(terminal.arguments.as_str())
-            {
-                streamed_replacement.clone()
-            } else {
-                guard_stream_tool_arguments(
-                    state,
-                    context,
-                    name,
-                    terminal.shell_command,
-                    &terminal.arguments,
-                )
-                .await?
-            };
+            if name.is_empty() {
+                continue;
+            }
+            let replacement = guard_stream_tool_arguments(
+                state,
+                context,
+                evaluated,
+                name,
+                terminal.shell_command,
+                &terminal.arguments,
+            )
+            .await?;
             if let Some(replacement) = replacement {
                 replace_stream_arguments(
                     &mut blocks,
@@ -458,15 +465,44 @@ async fn guard_sse_payload(
     Ok(rendered.into_bytes())
 }
 
+/// Replacements already decided for one tool call, keyed by tool name, shell-command shape,
+/// and a digest of the canonical arguments. Providers repeat a call in its deltas and up to
+/// three terminal snapshots, and each call should cost one evaluation per distinct argument
+/// set. Distinct calls never share an entry, even with identical arguments.
+type EvaluatedToolArguments = BTreeMap<(String, bool, [u8; 32]), Option<String>>;
+
 async fn guard_stream_tool_arguments(
     state: &AppState,
     context: &InferenceGuardContext,
+    evaluated: &mut EvaluatedToolArguments,
     name: &str,
     shell_command_locations: bool,
     argument_text: &str,
 ) -> Result<Option<String>, GatewayError> {
-    let arguments = serde_json::from_str(argument_text)
-        .unwrap_or_else(|_| Value::String(argument_text.to_string()));
+    let parsed = serde_json::from_str::<Value>(argument_text);
+    let canonical = match &parsed {
+        Ok(value) => Sha256::digest(value.to_string()),
+        Err(_) => Sha256::digest(argument_text),
+    };
+    let key = (name.to_string(), shell_command_locations, canonical.into());
+    if let Some(replacement) = evaluated.get(&key) {
+        return Ok(replacement.clone());
+    }
+    let arguments = parsed.unwrap_or_else(|_| Value::String(argument_text.to_string()));
+    let replacement =
+        evaluate_stream_tool_arguments(state, context, name, shell_command_locations, arguments)
+            .await?;
+    evaluated.insert(key, replacement.clone());
+    Ok(replacement)
+}
+
+async fn evaluate_stream_tool_arguments(
+    state: &AppState,
+    context: &InferenceGuardContext,
+    name: &str,
+    shell_command_locations: bool,
+    arguments: Value,
+) -> Result<Option<String>, GatewayError> {
     let payload = shell_command(name, &arguments)
         .map(|command| EvaluationPayload::ShellCommand { command })
         .unwrap_or_else(|| EvaluationPayload::ToolCall {
@@ -648,6 +684,10 @@ enum StreamLine {
     Other(String),
 }
 
+/// The tool calls in one guarded stream, keyed by call identity. `name`, `arguments`, and
+/// `shell_command_locations` describe the streamed deltas. Each terminal snapshot keeps the
+/// name and argument encoding from its own event, so a snapshot can never change how the
+/// deltas, or another snapshot, are evaluated and rewritten.
 #[derive(Default)]
 struct ToolCallFragments {
     name: String,
@@ -655,16 +695,33 @@ struct ToolCallFragments {
     terminal_arguments: Vec<TerminalArguments>,
     argument_locations: Vec<(usize, String)>,
     shell_command_locations: bool,
+    /// The item's `call_id` when the call is keyed by its item `id`.
+    call_id: Option<String>,
 }
 
-/// A complete copy of a call's arguments, such as `response.output_item.done`. A snapshot that
-/// names its tool is guarded under that name and its own call shape, so a later snapshot cannot
-/// change how an earlier one is checked or rewritten.
+/// Responses providers can key some of a call's events by `call_id` alone while others
+/// use the item `id`. Maps each such `call_id` key to the `id` key of the call it belongs
+/// to, so both share one evaluation cache. Each keeps its own locations and encoding.
+fn call_id_owners(calls: &BTreeMap<String, ToolCallFragments>) -> BTreeMap<&str, &str> {
+    let mut owners = BTreeMap::new();
+    for (key, call) in calls {
+        if let Some(call_id) = call.call_id.as_deref()
+            && call_id != key
+            && calls.contains_key(call_id)
+        {
+            owners.entry(call_id).or_insert(key.as_str());
+        }
+    }
+    owners
+}
+
 struct TerminalArguments {
+    /// `None` when the event carries no name, such as `function_call_arguments.done`.
     name: Option<String>,
-    shell_command: bool,
     arguments: String,
     location: (usize, String),
+    /// Whether `location` holds a shell action command rather than serialized JSON arguments.
+    shell_command: bool,
 }
 
 fn collect_stream_tool_fragments(
@@ -690,15 +747,12 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 let event_type = object.get("type").and_then(Value::as_str);
                 let fragments = output.entry(key).or_default();
-                let terminal = event_type == Some("response.output_item.done");
-                if !terminal || fragments.name.is_empty() {
+                if fragments.name.is_empty() {
                     fragments.name.clone_from(&name);
                 }
+                record_call_id(fragments, item);
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(item);
-                if !terminal {
-                    fragments.shell_command_locations |= shell_call;
-                }
                 let argument_pointer = if shell_call {
                     shell_argument_pointer(item)
                         .map(|suffix| format!("{pointer}/item/action/{suffix}"))
@@ -706,18 +760,20 @@ fn collect_stream_tool_fragments(
                 } else {
                     format!("{pointer}/item/arguments")
                 };
-                if terminal {
+                if event_type == Some("response.output_item.done") {
                     fragments.terminal_arguments.push(TerminalArguments {
                         name: Some(name),
-                        shell_command: shell_call,
                         arguments,
                         location: (event_index, argument_pointer),
+                        shell_command: shell_call,
                     });
                 } else {
-                    if fragments.arguments.is_empty() {
+                    fragments.shell_command_locations |= shell_call;
+                    // An added item usually opens an empty call that deltas fill in. When it
+                    // already carries the whole call, as a shell call's command does, it is
+                    // released with those arguments, so a rewrite must reach it too.
+                    if fragments.arguments.is_empty() && !arguments.is_empty() {
                         fragments.arguments = arguments;
-                    }
-                    if event_type != Some("response.output_item.added") {
                         fragments
                             .argument_locations
                             .push((event_index, argument_pointer));
@@ -810,12 +866,11 @@ fn collect_stream_tool_fragments(
                     .unwrap_or_else(|| "default".to_string());
                 if let Some(arguments) = object.get("arguments").and_then(Value::as_str) {
                     let fragments = output.entry(key).or_default();
-                    let shell_command = fragments.shell_command_locations;
                     fragments.terminal_arguments.push(TerminalArguments {
                         name: None,
-                        shell_command,
                         arguments: arguments.to_string(),
                         location: (event_index, format!("{pointer}/arguments")),
+                        shell_command: false,
                     });
                 }
             }
@@ -835,6 +890,7 @@ fn collect_stream_tool_fragments(
                 if fragments.name.is_empty() {
                     fragments.name.clone_from(&name);
                 }
+                record_call_id(fragments, object);
                 let arguments = serialized_arguments(&arguments);
                 let shell_call = is_responses_shell_call(object);
                 let argument_pointer = if shell_call {
@@ -846,9 +902,9 @@ fn collect_stream_tool_fragments(
                 };
                 fragments.terminal_arguments.push(TerminalArguments {
                     name: Some(name),
-                    shell_command: shell_call,
                     arguments,
                     location: (event_index, argument_pointer),
+                    shell_command: shell_call,
                 });
                 return;
             }
@@ -879,6 +935,16 @@ fn collect_stream_tool_fragments(
             }
         }
         _ => {}
+    }
+}
+
+fn record_call_id(fragments: &mut ToolCallFragments, item: &Map<String, Value>) {
+    if item.contains_key("id")
+        && let Some(call_id) = item.get("call_id")
+    {
+        fragments
+            .call_id
+            .get_or_insert_with(|| identity_key(call_id));
     }
 }
 
@@ -1700,7 +1766,16 @@ mod tests {
     }
 
     fn responses_function_call_stream(name: &str, completed_arguments: &str) -> String {
-        let item = |arguments: &str| {
+        responses_tool_call_stream(name, "{\"query\":\"oceans\"}", name, completed_arguments)
+    }
+
+    fn responses_tool_call_stream(
+        name: &str,
+        streamed_arguments: &str,
+        completed_name: &str,
+        completed_arguments: &str,
+    ) -> String {
+        let item = |name: &str, arguments: &str| {
             json!({
                 "id": "fc_1",
                 "type": "function_call",
@@ -1709,35 +1784,36 @@ mod tests {
                 "arguments": arguments,
             })
         };
+        let (first_delta, second_delta) = streamed_arguments.split_at(streamed_arguments.len() / 2);
         [
             json!({"type": "response.created", "response": {"id": "resp_1", "output": []}}),
-            json!({"type": "response.output_item.added", "output_index": 0, "item": item("")}),
+            json!({"type": "response.output_item.added", "output_index": 0, "item": item(name, "")}),
             json!({
                 "type": "response.function_call_arguments.delta",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "delta": "{\"query\":",
+                "delta": first_delta,
             }),
             json!({
                 "type": "response.function_call_arguments.delta",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "delta": "\"oceans\"}",
+                "delta": second_delta,
             }),
             json!({
                 "type": "response.function_call_arguments.done",
                 "item_id": "fc_1",
                 "output_index": 0,
-                "arguments": "{\"query\":\"oceans\"}",
+                "arguments": streamed_arguments,
             }),
             json!({
                 "type": "response.output_item.done",
                 "output_index": 0,
-                "item": item("{\"query\":\"oceans\"}"),
+                "item": item(name, streamed_arguments),
             }),
             json!({
                 "type": "response.completed",
-                "response": {"id": "resp_1", "output": [item(completed_arguments)]},
+                "response": {"id": "resp_1", "output": [item(completed_name, completed_arguments)]},
             }),
         ]
         .iter()
@@ -1835,7 +1911,7 @@ mod tests {
         (directory, state)
     }
 
-    async fn recorded_stream_decisions(state: &AppState) -> Vec<String> {
+    async fn recorded_stream_decisions(state: &AppState) -> Vec<(String, String)> {
         // Stream failure decisions are written in the background, so wait for the write.
         for _ in 0..100 {
             let items = state
@@ -1853,12 +1929,25 @@ mod tests {
             if !items.is_empty() {
                 return items
                     .iter()
-                    .map(|item| format!("{}:{}", item.action, item.reason_code))
+                    .map(|item| {
+                        (
+                            format!("{}:{}", item.action, item.reason_code),
+                            item.content_hash.clone(),
+                        )
+                    })
                     .collect();
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         Vec::new()
+    }
+
+    async fn stream_decision_actions(state: &AppState) -> Vec<String> {
+        recorded_stream_decisions(state)
+            .await
+            .into_iter()
+            .map(|(decision, _)| decision)
+            .collect()
     }
 
     fn chunked_stream(chunks: &[&'static str]) -> gateway_core::ProviderStream {
@@ -1895,9 +1984,14 @@ mod tests {
         };
 
         assert_eq!(collect_stream(stream).await, chunks.concat());
+        let consumed = chunks[..2].concat();
         assert_eq!(
             recorded_stream_decisions(&state).await,
-            ["audit:stream.buffer_exceeded"]
+            [(
+                "audit:stream.buffer_exceeded".to_string(),
+                format!("sha256:{:x}", Sha256::digest(consumed.as_bytes())),
+            )],
+            "the hash covers the chunk that overflowed the buffer"
         );
     }
 
@@ -1916,6 +2010,11 @@ mod tests {
             failure.error,
             GatewayError::PayloadTooLarge { .. }
         ));
+        assert_eq!(
+            stream_decision_actions(&state).await,
+            ["deny:stream.buffer_exceeded"],
+            "the rejection is recorded"
+        );
     }
 
     #[tokio::test]
@@ -1929,8 +2028,12 @@ mod tests {
                 .expect("audit mode releases an unparseable stream");
 
         assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
+        let decisions = recorded_stream_decisions(&state).await;
         assert_eq!(
-            recorded_stream_decisions(&state).await,
+            decisions
+                .iter()
+                .map(|(decision, _)| decision.as_str())
+                .collect::<Vec<_>>(),
             ["audit:stream.unparseable"]
         );
     }
@@ -1960,6 +2063,256 @@ mod tests {
         .expect_err("deny mode rejects an unparseable stream");
 
         assert!(error.to_string().contains("invalid SSE JSON"));
+        assert_eq!(
+            stream_decision_actions(&state).await,
+            ["deny:stream.unparseable"],
+            "the rejection is recorded"
+        );
+    }
+
+    fn sse_events(events: &[Value]) -> String {
+        events
+            .iter()
+            .map(|event| format!("data: {event}"))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    /// Guards `stream` in audit mode and returns how many tool-call evaluations it recorded.
+    async fn tool_call_evaluation_count(stream: &str) -> usize {
+        let (_directory, state) = stream_state(gateway_guardrails::PolicyMode::Audit).await;
+        super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+            .await
+            .expect("allowed");
+        state
+            .store
+            .list_guardrail_decisions(&GuardrailDecisionQuery {
+                page: 1,
+                page_size: 10,
+                request_id: Some("request-1".into()),
+                evaluator: Some("built_in".into()),
+                ..Default::default()
+            })
+            .await
+            .expect("decisions")
+            .items
+            .len()
+    }
+
+    fn wiki_search_item(id: Option<&str>, call_id: &str, arguments: &str) -> Value {
+        let mut item = json!({
+            "type": "function_call",
+            "call_id": call_id,
+            "name": "wiki_search",
+            "arguments": arguments,
+        });
+        if let Some(id) = id {
+            item["id"] = json!(id);
+        }
+        item
+    }
+
+    #[tokio::test]
+    async fn evaluates_repeated_terminal_snapshots_once() {
+        let item = |arguments: &str| wiki_search_item(Some("fc_1"), "call_1", arguments);
+        let stream = sse_events(&[
+            json!({
+                "type": "response.function_call_arguments.done",
+                "item_id": "fc_1",
+                "arguments": "{\"query\": \"oceans\"}",
+            }),
+            json!({"type": "response.output_item.done", "item": item("{\"query\":\"oceans\"}")}),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [item("{\"query\": \"oceans\"}")]},
+            }),
+        ]);
+
+        assert_eq!(tool_call_evaluation_count(&stream).await, 1, "one call");
+    }
+
+    #[tokio::test]
+    async fn links_snapshots_that_only_carry_the_call_id() {
+        let arguments = "{\"query\":\"oceans\"}";
+        let stream = sse_events(&[
+            json!({
+                "type": "response.output_item.added",
+                "item": wiki_search_item(Some("fc_1"), "call_1", ""),
+            }),
+            json!({
+                "type": "response.function_call_arguments.delta",
+                "item_id": "fc_1",
+                "delta": arguments,
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(None, "call_1", arguments),
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [wiki_search_item(None, "call_1", arguments)]},
+            }),
+        ]);
+
+        assert_eq!(
+            tool_call_evaluation_count(&stream).await,
+            1,
+            "snapshots keyed by call_id belong to the call streamed under its item id"
+        );
+    }
+
+    fn shell_call_added(id: Option<&str>, command: &str) -> Value {
+        let mut item = json!({
+            "type": "shell_call",
+            "call_id": "call_1",
+            "action": {"command": [command]},
+        });
+        if let Some(id) = id {
+            item["id"] = json!(id);
+        }
+        json!({"type": "response.output_item.added", "item": item})
+    }
+
+    #[tokio::test]
+    async fn shares_evaluations_between_complete_call_id_aliases() {
+        let same = sse_events(&[
+            shell_call_added(Some("sc_1"), "ls"),
+            shell_call_added(None, "ls"),
+        ]);
+        let different = sse_events(&[
+            shell_call_added(Some("sc_1"), "ls"),
+            shell_call_added(None, "pwd"),
+        ]);
+
+        assert_eq!(
+            tool_call_evaluation_count(&same).await,
+            1,
+            "one call carried under its id and its call_id"
+        );
+        assert_eq!(
+            tool_call_evaluation_count(&different).await,
+            2,
+            "distinct arguments of one call are each evaluated"
+        );
+    }
+
+    #[tokio::test]
+    async fn evaluates_identical_parallel_calls_separately() {
+        let arguments = "{\"query\":\"oceans\"}";
+        let stream = sse_events(&[
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(Some("fc_1"), "call_1", arguments),
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": wiki_search_item(Some("fc_2"), "call_2", arguments),
+            }),
+        ]);
+
+        assert_eq!(tool_call_evaluation_count(&stream).await, 2, "two calls");
+    }
+
+    #[tokio::test]
+    async fn rewrites_each_snapshot_in_its_own_argument_encoding() {
+        use gateway_guardrails::{
+            ContentTransformation, GuardPhase, GuardrailEngine, ManagedCheckConfig,
+            ManagedCheckKind, ManagedEvaluator, ManagedOutcome, ManagedService,
+            test_utils::StubManagedEvaluator,
+        };
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        let masked = || {
+            Ok(ManagedOutcome::Transformed {
+                transformation: ContentTransformation::new("masked-cmd".into()),
+                reason_code: gateway_guardrails::ReasonCode::new("stub.masked").unwrap(),
+                metadata: Default::default(),
+            })
+        };
+        let stub = Arc::new(StubManagedEvaluator::new(
+            "mask",
+            ManagedService::AmazonBedrock,
+            [masked(), masked()],
+        ));
+        state.guardrail_engine = Arc::new(GuardrailEngine::new(
+            Vec::new(),
+            BTreeMap::from([("mask".to_string(), stub as Arc<dyn ManagedEvaluator>)]),
+        ));
+        let config = Arc::make_mut(&mut state.guardrail_config);
+        config.default.enabled = true;
+        config.default.managed_checks = vec!["mask".into()];
+        config.managed_checks.insert(
+            "mask".into(),
+            ManagedCheckConfig {
+                kind: ManagedCheckKind::AmazonBedrock,
+                phases: [GuardPhase::GeneratedToolCall].into(),
+                timeout_ms: 1_000,
+                failure_disposition: Default::default(),
+                max_content_bytes: 1 << 20,
+                bedrock: None,
+                model_armor: None,
+            },
+        );
+        let stream = [
+            json!({
+                "type": "response.output_item.added",
+                "item": {"id": "call_1", "type": "shell_call", "action": {"command": ["secret-cmd"]}},
+            }),
+            json!({
+                "type": "response.completed",
+                "response": {"output": [{
+                    "id": "call_1",
+                    "type": "function_call",
+                    "name": "bash",
+                    "arguments": "{\"command\":\"secret-cmd\"}",
+                }]},
+            }),
+        ]
+        .iter()
+        .map(|event| format!("data: {event}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+        let guarded =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect("masked");
+
+        let events = String::from_utf8(guarded)
+            .expect("UTF-8")
+            .split("\n\n")
+            .map(|block| {
+                let data = block.strip_prefix("data: ").expect("data line");
+                serde_json::from_str::<Value>(data).expect("JSON")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events[0]["item"]["action"]["command"],
+            json!(["masked-cmd"]),
+            "the added item carrying the command is rewritten too"
+        );
+        assert_eq!(
+            events[1]["response"]["output"][0]["arguments"], "{\"command\":\"masked-cmd\"}",
+            "a function-call snapshot keeps JSON arguments after a shell-call delta"
+        );
+    }
+
+    #[tokio::test]
+    async fn snapshot_tool_name_does_not_rename_streamed_arguments() {
+        let (_directory, mut state) = stream_state(gateway_guardrails::PolicyMode::Deny).await;
+        Arc::make_mut(&mut state.guardrail_config).default.packs =
+            vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack id")];
+        let command = "{\"command\":\"rm -rf /tmp/work\"}";
+        let stream = responses_tool_call_stream("bash", command, "wiki_search", command);
+
+        let error =
+            super::guard_sse_payload(&state, &stream_guard_context(1 << 20), stream.as_bytes())
+                .await
+                .expect_err("streamed bash arguments are evaluated as bash");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected a guardrail denial, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
     }
 
     #[tokio::test]
