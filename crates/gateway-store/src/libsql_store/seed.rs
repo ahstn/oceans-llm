@@ -262,9 +262,11 @@ impl LibsqlStore {
             String,
             std::collections::HashMap<(String, String, i64), String>,
         >::new();
-        // `IN ()` is invalid SQL, and a config without models has no survivors to reuse.
-        if !configured_model_ids.is_empty() {
-            let placeholders = (1..=configured_model_ids.len())
+        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
+        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
+        const SURVIVOR_QUERY_CHUNK: usize = 500;
+        for chunk in configured_model_ids.chunks(SURVIVOR_QUERY_CHUNK) {
+            let placeholders = (1..=chunk.len())
                 .map(|index| format!("?{index}"))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -274,11 +276,10 @@ impl LibsqlStore {
                     &format!(
                         "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders}) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)"
                     ),
-                    libsql::params::Params::Positional(configured_model_ids),
+                    libsql::params::Params::Positional(chunk.to_vec()),
                 )
                 .await
                 .map_err(to_query_error)?;
-
             while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
                 let id: String = row.get(0).map_err(to_query_error)?;
                 let model_id: String = row.get(1).map_err(to_query_error)?;

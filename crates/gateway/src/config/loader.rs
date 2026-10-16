@@ -54,6 +54,9 @@ pub struct ConfigEntitySource {
 pub struct LoadedConfig {
     pub config: GatewayConfig,
     pub sources: Vec<ConfigEntitySource>,
+    /// The text of every file the load read, main file first, so `render_config` merges
+    /// exactly what was loaded without walking or reading the sources again.
+    documents: Vec<(PathBuf, String)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +72,11 @@ const FRAGMENT_COLLECTIONS: [&str; 2] = ["providers", "models"];
 
 impl GatewayConfig {
     pub fn load(sources: &ConfigSources) -> anyhow::Result<LoadedConfig> {
-        let mut config = read_main_file(sources)?;
+        let (mut config, main_text) = read_main_file(sources)?;
+        let mut documents = Vec::new();
+        if let Some(text) = main_text {
+            documents.push((sources.path.clone(), text));
+        }
         let mut tracker = SourceTracker::default();
         tracker.record_main(&config, &sources.path)?;
 
@@ -96,6 +103,7 @@ impl GatewayConfig {
                 }
                 config.providers.extend(fragment.providers);
                 config.models.extend(fragment.models);
+                documents.push((path, raw));
             }
         }
 
@@ -112,6 +120,7 @@ impl GatewayConfig {
         Ok(LoadedConfig {
             config,
             sources: tracker.sources,
+            documents,
         })
     }
 
@@ -126,18 +135,22 @@ impl GatewayConfig {
     }
 }
 
-fn read_main_file(sources: &ConfigSources) -> anyhow::Result<GatewayConfig> {
+/// Returns the typed main config and its text, or the default config and `None` when the
+/// implicit default path is absent.
+fn read_main_file(sources: &ConfigSources) -> anyhow::Result<(GatewayConfig, Option<String>)> {
     let path = &sources.path;
     if !path.exists() {
         if sources.path_is_explicit {
             bail!("gateway configuration `{}` does not exist", path.display());
         }
-        return Ok(GatewayConfig::default());
+        return Ok((GatewayConfig::default(), None));
     }
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed reading config file `{}`", path.display()))?;
-    serde_yaml::from_str(&raw)
-        .with_context(|| format!("failed parsing yaml config `{}`", path.display()))
+    // Typed config is parsed straight from the text so errors keep line and column numbers.
+    let config = serde_yaml::from_str(&raw)
+        .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;
+    Ok((config, Some(raw)))
 }
 
 /// YAML files under `dir`, recursively, in lexical order of their relative path.
@@ -270,12 +283,19 @@ impl SourceTracker {
 pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Result<String> {
     let loaded = GatewayConfig::load(sources)?;
 
-    let mut merged = read_yaml_mapping(&sources.path)?;
+    // Merge the same documents the load used. Only the main file contributes sections other
+    // than providers and models, which the load already enforced for fragments.
+    let has_main = loaded
+        .documents
+        .first()
+        .is_some_and(|(path, _)| path == &sources.path);
+    let mut merged = Mapping::new();
     let mut collections: BTreeMap<&str, Mapping> = BTreeMap::new();
-    take_collections(&mut merged, &mut collections)?;
-    if let Some(dir) = &sources.dir {
-        for path in fragment_files(dir)? {
-            take_collections(&mut read_yaml_mapping(&path)?, &mut collections)?;
+    for (index, (path, text)) in loaded.documents.iter().enumerate() {
+        let mut document = parse_yaml_mapping(path, text)?;
+        take_collections(&mut document, &mut collections)?;
+        if index == 0 && has_main {
+            merged = document;
         }
     }
     for collection in FRAGMENT_COLLECTIONS {
@@ -442,17 +462,12 @@ fn take_collections(
     Ok(())
 }
 
-fn read_yaml_mapping(path: &Path) -> anyhow::Result<Mapping> {
-    if !path.exists() {
+fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
+    // A comment-only or `---`-only main file is valid; fragments like that were never recorded.
+    if is_blank_yaml(raw) {
         return Ok(Mapping::new());
     }
-    let raw =
-        fs::read_to_string(path).with_context(|| format!("failed reading `{}`", path.display()))?;
-    // Match `GatewayConfig::load`, which skips comment-only and `---`-only fragments.
-    if is_blank_yaml(&raw) {
-        return Ok(Mapping::new());
-    }
-    match serde_yaml::from_str(&raw)
+    match serde_yaml::from_str(raw)
         .with_context(|| format!("failed parsing yaml `{}`", path.display()))?
     {
         Value::Mapping(mapping) => Ok(mapping),
