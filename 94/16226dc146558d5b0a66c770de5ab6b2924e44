@@ -1,0 +1,21 @@
+docs/adr/2026-10-16-admin-ui-design-system-dark-only.md
+  s_eaf7116ccea134::t_8fef5d91da69ff 1-78
+DESIGN.md
+  s_eaf7116ccea134::t_ce42ab6a6365a7 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9416226dc146558d5b0a66c770de5ab6b2924e44",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
