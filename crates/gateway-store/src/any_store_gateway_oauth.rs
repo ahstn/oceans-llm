@@ -86,7 +86,7 @@ impl GatewayOauthRepository for AnyStore {
     async fn create_gateway_oauth_grant(
         &self,
         grant: &GatewayOauthGrantRecord,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         dispatch!(self, create_gateway_oauth_grant(grant))
     }
 
@@ -184,10 +184,11 @@ impl GatewayOauthRepository for AnyStore {
         &self,
         unused_clients_before: OffsetDateTime,
         expired_before: OffsetDateTime,
+        retire_before: OffsetDateTime,
     ) -> Result<GatewayOauthPurgeCounts, StoreError> {
         dispatch!(
             self,
-            purge_gateway_oauth_records(unused_clients_before, expired_before)
+            purge_gateway_oauth_records(unused_clients_before, expired_before, retire_before)
         )
     }
 }

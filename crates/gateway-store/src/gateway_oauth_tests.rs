@@ -7,8 +7,9 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthMode, GatewayOauthAuthorizationDecision,
     GatewayOauthAuthorizationRequestRecord, GatewayOauthAuthorizationStatus,
     GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthGrantRecord,
-    GatewayOauthRepository, GatewayOauthTokenKind, GatewayOauthTokenRecord, GlobalRole,
-    McpAggregateSessionRepository, NewMcpAggregateSessionRecord, StoreError, UserStatus,
+    GatewayOauthPurgeCounts, GatewayOauthRepository, GatewayOauthTokenKind,
+    GatewayOauthTokenRecord, GlobalRole, McpAggregateSessionRepository,
+    NewMcpAggregateSessionRecord, StoreError, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -376,6 +377,17 @@ where
         "signing out ends the stream check too"
     );
 
+    // A grant can no longer be created for the signed-out session.
+    assert!(
+        !store
+            .create_gateway_oauth_grant(&GatewayOauthGrantRecord {
+                grant_id: Uuid::new_v4(),
+                ..context.grant.clone()
+            })
+            .await
+            .unwrap()
+    );
+
     // Nothing is left to revoke, and the first reason is kept.
     assert_eq!(
         store
@@ -421,6 +433,40 @@ async fn postgres_gateway_oauth_grants_list_revoke_and_purge() {
         .await
         .expect("store");
     exercise_grant_management(&store).await;
+
+    // While another replica holds the cleanup lock, this one skips its run.
+    use sqlx::Connection;
+    let now = timestamp(0);
+    store
+        .create_gateway_oauth_client(&dynamic_client("lock-old", now - Duration::days(30)))
+        .await
+        .unwrap();
+    let mut other_replica = sqlx::PgConnection::connect(&test_db.database_url)
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_lock(hashtext('oceans_llm_gateway_oauth_purge'))")
+        .execute(&mut other_replica)
+        .await
+        .unwrap();
+    let skipped = store
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1), now)
+        .await
+        .unwrap();
+    assert_eq!(skipped, GatewayOauthPurgeCounts::default());
+    assert!(
+        store
+            .get_gateway_oauth_client("lock-old")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    other_replica.close().await.unwrap();
+    let ran = store
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1), now)
+        .await
+        .unwrap();
+    assert_eq!(ran.clients, 1);
+
     drop(store);
     drop_postgres_test_database(&test_db).await;
 }
@@ -582,6 +628,16 @@ where
             GatewayOauthTokenKind::Access,
             now,
             now + hour,
+            None,
+        ),
+        // Long expired on the still-live `second`: an access token is no
+        // replay marker, so cleanup deletes it.
+        (
+            "second-old-access",
+            second,
+            GatewayOauthTokenKind::Access,
+            old,
+            old + hour,
             None,
         ),
         // Long expired, but `second` is still live, so cleanup keeps it to
@@ -783,14 +839,17 @@ where
     );
 
     let counts = store
-        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1), now)
         .await
         .unwrap();
     assert_eq!(
         counts.clients, 1,
         "only the old client with no grant and no authorization in flight"
     );
-    assert_eq!(counts.tokens, 1);
+    assert_eq!(
+        counts.tokens, 2,
+        "the revoked grant's token and the old access token"
+    );
     assert_eq!(counts.authorization_requests, 1);
     assert_eq!(counts.retired_grants, 0, "no approving session has expired");
     assert!(
@@ -857,6 +916,13 @@ where
             .unwrap()
             .is_some()
     );
+    assert!(
+        store
+            .get_gateway_oauth_token_context("second-old-access")
+            .await
+            .unwrap()
+            .is_none()
+    );
     // Replay markers of a live grant survive cleanup...
     assert!(
         store
@@ -875,7 +941,7 @@ where
     // ...until the approving session ends and the grant can no longer be used.
     store.revoke_user_session(owner_session, now).await.unwrap();
     let counts = store
-        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+        .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1), now)
         .await
         .unwrap();
     assert_eq!((counts.tokens, counts.authorization_requests), (1, 1));
@@ -911,7 +977,7 @@ where
     }
     for expected in [2, 1, 0] {
         let counts = store
-            .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1))
+            .purge_gateway_oauth_records(now - Duration::days(7), now - Duration::days(1), now)
             .await
             .unwrap();
         assert_eq!(counts.retired_grants, expected);

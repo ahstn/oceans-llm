@@ -370,14 +370,19 @@ impl GatewayOauthRepository for LibsqlStore {
     async fn create_gateway_oauth_grant(
         &self,
         grant: &GatewayOauthGrantRecord,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        // SQLite serialises writes, so with sign-out revoking the session
+        // before its grants, this check cannot miss a revocation.
+        let inserted = self
+            .connection
             .execute(
                 "INSERT INTO gateway_oauth_grants (
                     grant_id, client_id, user_id, user_session_id, resource, scope,
                     created_at, updated_at, revoked_at, revoked_reason, session_expires_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                    (SELECT expires_at FROM user_sessions WHERE session_id = ?4))",
+                 )
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, s.expires_at
+                 FROM user_sessions s
+                 WHERE s.session_id = ?4 AND s.revoked_at IS NULL",
                 libsql::params![
                     grant.grant_id.to_string(),
                     grant.client_id.as_str(),
@@ -393,7 +398,7 @@ impl GatewayOauthRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(inserted > 0)
     }
 
     async fn create_gateway_oauth_tokens(
@@ -632,9 +637,12 @@ impl GatewayOauthRepository for LibsqlStore {
         &self,
         unused_clients_before: OffsetDateTime,
         expired_before: OffsetDateTime,
+        retire_before: OffsetDateTime,
     ) -> Result<GatewayOauthPurgeCounts, StoreError> {
         let expired = expired_before.unix_timestamp();
-        let retired_grants = self.purge_in_batches(RETIRE_ENDED_GRANTS, expired).await?;
+        let retired_grants = self
+            .purge_in_batches(RETIRE_ENDED_GRANTS, retire_before.unix_timestamp())
+            .await?;
         let authorization_requests = self
             .purge_in_batches(PURGE_AUTHORIZATION_REQUESTS, expired)
             .await?;
@@ -696,11 +704,14 @@ const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
      WHERE token_hash IN (
          SELECT t.token_hash FROM gateway_oauth_tokens t
          WHERE t.expires_at < ?1
-           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+           -- Only a consumed refresh token is a replay marker; other expired
+           -- tokens can go even while their grant lives.
+           AND (t.token_kind <> 'refresh' OR t.consumed_at IS NULL
+                OR NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
                            JOIN user_sessions s ON s.session_id = g.user_session_id
                            WHERE g.grant_id = t.grant_id
                              AND g.revoked_at IS NULL
-                             AND s.revoked_at IS NULL AND s.expires_at >= ?1)
+                             AND s.revoked_at IS NULL AND s.expires_at >= ?1))
          LIMIT ?2)";
 const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
      WHERE client_id IN (

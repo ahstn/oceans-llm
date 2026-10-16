@@ -348,13 +348,18 @@ impl GatewayOauthRepository for PostgresStore {
     async fn create_gateway_oauth_grant(
         &self,
         grant: &GatewayOauthGrantRecord,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        // `FOR SHARE` makes a concurrent sign-out wait for this insert, or
+        // this insert see its revocation, so a grant is never missed.
+        let result = sqlx::query(
             "INSERT INTO gateway_oauth_grants (
                 grant_id, client_id, user_id, user_session_id, resource, scope,
                 created_at, updated_at, revoked_at, revoked_reason, session_expires_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                    (SELECT expires_at FROM user_sessions WHERE session_id = $4))",
+             )
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, s.expires_at
+             FROM user_sessions s
+             WHERE s.session_id = $4 AND s.revoked_at IS NULL
+             FOR SHARE",
         )
         .bind(grant.grant_id.to_string())
         .bind(&grant.client_id)
@@ -369,7 +374,7 @@ impl GatewayOauthRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     async fn create_gateway_oauth_tokens(
@@ -597,46 +602,78 @@ impl GatewayOauthRepository for PostgresStore {
         &self,
         unused_clients_before: OffsetDateTime,
         expired_before: OffsetDateTime,
+        retire_before: OffsetDateTime,
     ) -> Result<GatewayOauthPurgeCounts, StoreError> {
-        let expired = expired_before.unix_timestamp();
-        let retired_grants = self.purge_in_batches(RETIRE_ENDED_GRANTS, expired).await?;
-        let authorization_requests = self
-            .purge_in_batches(PURGE_AUTHORIZATION_REQUESTS, expired)
-            .await?;
-        let tokens = self.purge_in_batches(PURGE_TOKENS, expired).await?;
-        let clients = self
-            .purge_in_batches(PURGE_UNUSED_CLIENTS, unused_clients_before.unix_timestamp())
-            .await?;
-        Ok(GatewayOauthPurgeCounts {
-            retired_grants,
-            clients,
-            authorization_requests,
-            tokens,
-        })
+        // Every replica runs the hourly cleanup; one advisory lock per run
+        // lets the first take it and the others skip instead of repeating it.
+        let mut connection = self.pool.acquire().await.map_err(to_query_error)?;
+        let locked: bool = sqlx::query_scalar(PURGE_LOCK)
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(to_query_error)?;
+        if !locked {
+            return Ok(GatewayOauthPurgeCounts::default());
+        }
+        let purged = async {
+            let expired = expired_before.unix_timestamp();
+            Ok::<_, StoreError>(GatewayOauthPurgeCounts {
+                retired_grants: purge_in_batches(
+                    &mut connection,
+                    RETIRE_ENDED_GRANTS,
+                    retire_before.unix_timestamp(),
+                )
+                .await?,
+                authorization_requests: purge_in_batches(
+                    &mut connection,
+                    PURGE_AUTHORIZATION_REQUESTS,
+                    expired,
+                )
+                .await?,
+                tokens: purge_in_batches(&mut connection, PURGE_TOKENS, expired).await?,
+                clients: purge_in_batches(
+                    &mut connection,
+                    PURGE_UNUSED_CLIENTS,
+                    unused_clients_before.unix_timestamp(),
+                )
+                .await?,
+            })
+        }
+        .await;
+        let unlocked = sqlx::query(PURGE_UNLOCK).execute(&mut *connection).await;
+        if unlocked.is_err() {
+            // A connection still holding the lock must not return to the pool.
+            drop(connection.detach());
+        }
+        purged
     }
 }
 
-impl PostgresStore {
-    /// Repeats a cleanup statement until a batch comes back short, or for at
-    /// most `PURGE_MAX_BATCHES` rounds; the next run continues a backlog.
-    async fn purge_in_batches(&self, sql: &str, cutoff: i64) -> Result<u64, StoreError> {
-        let mut total = 0;
-        for _ in 0..PURGE_MAX_BATCHES {
-            let affected = sqlx::query(sql)
-                .bind(cutoff)
-                .bind(PURGE_BATCH_SIZE)
-                .execute(&self.pool)
-                .await
-                .map_err(to_write_error)?
-                .rows_affected();
-            total += affected;
-            if affected < PURGE_BATCH_SIZE.unsigned_abs() {
-                break;
-            }
+/// Repeats a cleanup statement until a batch comes back short, or for at
+/// most `PURGE_MAX_BATCHES` rounds; the next run continues a backlog.
+async fn purge_in_batches(
+    connection: &mut sqlx::PgConnection,
+    sql: &str,
+    cutoff: i64,
+) -> Result<u64, StoreError> {
+    let mut total = 0;
+    for _ in 0..PURGE_MAX_BATCHES {
+        let affected = sqlx::query(sql)
+            .bind(cutoff)
+            .bind(PURGE_BATCH_SIZE)
+            .execute(&mut *connection)
+            .await
+            .map_err(to_write_error)?
+            .rows_affected();
+        total += affected;
+        if affected < PURGE_BATCH_SIZE.unsigned_abs() {
+            break;
         }
-        Ok(total)
     }
+    Ok(total)
 }
+
+const PURGE_LOCK: &str = "SELECT pg_try_advisory_lock(hashtext('oceans_llm_gateway_oauth_purge'))";
+const PURGE_UNLOCK: &str = "SELECT pg_advisory_unlock(hashtext('oceans_llm_gateway_oauth_purge'))";
 
 /// Cleanup statements for `purge_gateway_oauth_records`. Each takes the
 /// cutoff as `$1` and touches at most `$2` rows.
@@ -663,11 +700,14 @@ const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
      WHERE token_hash IN (
          SELECT t.token_hash FROM gateway_oauth_tokens t
          WHERE t.expires_at < $1
-           AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
+           -- Only a consumed refresh token is a replay marker; other expired
+           -- tokens can go even while their grant lives.
+           AND (t.token_kind <> 'refresh' OR t.consumed_at IS NULL
+                OR NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g
                            JOIN user_sessions s ON s.session_id = g.user_session_id
                            WHERE g.grant_id = t.grant_id
                              AND g.revoked_at IS NULL
-                             AND s.revoked_at IS NULL AND s.expires_at >= $1)
+                             AND s.revoked_at IS NULL AND s.expires_at >= $1))
          LIMIT $2)";
 const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
      WHERE client_id IN (

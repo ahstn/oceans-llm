@@ -227,7 +227,10 @@ where
             revoked_at: None,
             revoked_reason: None,
         };
-        self.repo.create_gateway_oauth_grant(&grant).await?;
+        if !self.repo.create_gateway_oauth_grant(&grant).await? {
+            // The approving session was signed out after the check above.
+            return Err(OauthError::invalid_grant("the approving session has ended"));
+        }
         let refresh_scope = client
             .allows_grant_type("refresh_token")
             .then_some(grant.scope.as_str());

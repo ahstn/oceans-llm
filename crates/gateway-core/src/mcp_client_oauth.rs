@@ -428,10 +428,14 @@ pub trait GatewayOauthRepository: Send + Sync {
         consumed_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
+    /// Stores a new grant only while its approving session is unrevoked, and
+    /// returns whether it did. Checking the session in the same statement
+    /// closes the race with sign-out, which revokes the session and then its
+    /// grants.
     async fn create_gateway_oauth_grant(
         &self,
         grant: &GatewayOauthGrantRecord,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
 
     /// Stores `tokens` in one transaction: either all of them or none.
     async fn create_gateway_oauth_tokens(
@@ -505,8 +509,8 @@ pub trait GatewayOauthRepository: Send + Sync {
     ) -> Result<Option<GatewayOauthGrantRecord>, StoreError>;
 
     /// Marks grants revoked (`session_ended`) once their approving session
-    /// has been revoked or expired before `expired_before`, so dead grants
-    /// leave the live-grant index. Then deletes authorization requests and
+    /// expired before `retire_before`, so dead grants leave the live-grant
+    /// index; revoking a session already revokes its grants. Then deletes authorization requests and
     /// tokens that expired before `expired_before`, and dynamically
     /// registered clients created before `unused_clients_before` that never
     /// received a grant and have no remaining authorization request. Grants
@@ -522,6 +526,7 @@ pub trait GatewayOauthRepository: Send + Sync {
         &self,
         unused_clients_before: OffsetDateTime,
         expired_before: OffsetDateTime,
+        retire_before: OffsetDateTime,
     ) -> Result<GatewayOauthPurgeCounts, StoreError>;
 }
 

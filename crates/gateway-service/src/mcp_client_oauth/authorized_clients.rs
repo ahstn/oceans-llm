@@ -69,6 +69,7 @@ where
             .purge_gateway_oauth_records(
                 now - self.settings.unused_client_retention(),
                 now - EXPIRED_RECORD_GRACE,
+                now,
             )
             .await?)
     }
