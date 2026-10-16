@@ -46,7 +46,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-import { ShowcaseBlock, ShowcaseRow, ShowcaseSection, StateMatrix, previewState } from './showcase'
+import { previewState } from './preview-state'
+import { ShowcaseBlock, ShowcaseRow, ShowcaseSection, StateMatrix } from './showcase'
 
 const buttonVariants = ['default', 'secondary', 'outline', 'ghost', 'destructive', 'link'] as const
 const buttonSizes = ['xs', 'sm', 'default', 'lg'] as const

@@ -61,6 +61,10 @@
       "paths": ["registry.json", "scripts/build-shadcn-theme.mjs"]
     },
     {
+      "reason": "admin UI lint configuration; mise run lint and the React Doctor workflow run it",
+      "paths": ["crates/admin-ui/web/.oxlintrc.json", "crates/admin-ui/web/doctor.config.json"]
+    },
+    {
       "reason": "agent harness and repository wiring",
       "paths": [
         ".claude/skills/**",

@@ -7,7 +7,8 @@ import {
   SecurityCheckIcon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons'
-import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
+import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -215,12 +216,12 @@ const spacingSteps = [
 ] as const
 
 const featureIcons = [
-  UserCircleIcon,
-  Key01Icon,
-  McpServerIcon,
-  SaveMoneyDollarIcon,
-  SecurityCheckIcon,
-  RefreshIcon,
+  { name: 'user', icon: UserCircleIcon },
+  { name: 'key', icon: Key01Icon },
+  { name: 'mcp-server', icon: McpServerIcon },
+  { name: 'spend', icon: SaveMoneyDollarIcon },
+  { name: 'security', icon: SecurityCheckIcon },
+  { name: 'refresh', icon: RefreshIcon },
 ] as const
 
 export function FoundationsSection() {
@@ -297,51 +298,57 @@ export function FoundationsSection() {
   )
 }
 
+// Token reference table shared by the type scale and motion tokens; rows come from the caller.
+function SpecTable({ columns, children }: { columns: string[]; children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-xl text-left text-sm">
+        <thead className="text-muted-foreground">
+          <tr className="border-b">
+            {columns.map((column) => (
+              <th key={column} className="py-2 pr-4 font-normal last:pr-0">
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  )
+}
+
 function TypographyBlock() {
   return (
     <ShowcaseBlock
       title="Typography"
       description="One family, Geist Variable. Monospace only for machine-like strings."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-xl text-left text-sm">
-          <thead className="text-muted-foreground">
-            <tr className="border-b">
-              <th className="py-2 pr-4 font-normal">Token</th>
-              <th className="py-2 pr-4 font-normal">Spec</th>
-              <th className="py-2 pr-4 font-normal">Use</th>
-              <th className="py-2 font-normal">Specimen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {typeScale.map((row) => (
-              <tr key={row.token} className="border-b last:border-b-0">
-                <td className="py-3 pr-4 font-mono text-xs whitespace-nowrap">{row.token}</td>
-                <td className="text-muted-foreground py-3 pr-4 text-xs whitespace-nowrap">
-                  {row.spec}
-                </td>
-                <td className="text-muted-foreground py-3 pr-4 text-xs">{row.use}</td>
-                <td className="max-w-xs py-3">{row.sample}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <SpecTable columns={['Token', 'Spec', 'Use', 'Specimen']}>
+        {typeScale.map((row) => (
+          <tr key={row.token} className="border-b last:border-b-0">
+            <td className="py-3 pr-4 font-mono text-xs whitespace-nowrap">{row.token}</td>
+            <td className="text-muted-foreground py-3 pr-4 text-xs whitespace-nowrap">
+              {row.spec}
+            </td>
+            <td className="text-muted-foreground py-3 pr-4 text-xs">{row.use}</td>
+            <td className="max-w-xs py-3">{row.sample}</td>
+          </tr>
+        ))}
+      </SpecTable>
       <p className="type-body text-muted-foreground max-w-2xl">
         Requests made with a revoked key fail with <code className="font-mono text-sm">401</code>{' '}
         and still appear in{' '}
-        <a href="/admin/observability/request-logs" className="text-foreground underline">
+        <Link to="/observability/request-logs" className="text-foreground underline">
           Request Logs
-        </a>
+        </Link>
         , so operators can trace who tried to use it and when.
       </p>
       <div className="flex flex-wrap items-center gap-4">
-        {featureIcons.map((icon, index) => (
+        {featureIcons.map((item, index) => (
           <HugeiconsIcon
-            // Static list; the icon object has no stable string key.
-            // oxlint-disable-next-line react/no-array-index-key
-            key={index}
-            icon={icon}
+            key={item.name}
+            icon={item.icon}
             className={index % 2 === 0 ? 'text-foreground' : 'text-muted-foreground'}
           />
         ))}
@@ -380,28 +387,16 @@ function MotionBlock() {
       title="Motion"
       description="One entrance per page, colour fades on hover and fills that glide to their value. All of it stops when the viewer prefers reduced motion."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-xl text-left text-sm">
-          <thead className="text-muted-foreground">
-            <tr className="border-b">
-              <th className="py-2 pr-4 font-normal">Token</th>
-              <th className="py-2 pr-4 font-normal">Duration</th>
-              <th className="py-2 pr-4 font-normal">Easing</th>
-              <th className="py-2 font-normal">Use</th>
-            </tr>
-          </thead>
-          <tbody>
-            {motionTokens.map((row) => (
-              <tr key={row.token} className="border-b last:border-b-0">
-                <td className="py-3 pr-4 font-mono text-xs whitespace-nowrap">{row.token}</td>
-                <td className="py-3 pr-4 text-xs tabular-nums">{row.value}</td>
-                <td className="text-muted-foreground py-3 pr-4 font-mono text-xs">{row.easing}</td>
-                <td className="text-muted-foreground py-3 text-xs">{row.use}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <SpecTable columns={['Token', 'Duration', 'Easing', 'Use']}>
+        {motionTokens.map((row) => (
+          <tr key={row.token} className="border-b last:border-b-0">
+            <td className="py-3 pr-4 font-mono text-xs whitespace-nowrap">{row.token}</td>
+            <td className="py-3 pr-4 text-xs tabular-nums">{row.value}</td>
+            <td className="text-muted-foreground py-3 pr-4 font-mono text-xs">{row.easing}</td>
+            <td className="text-muted-foreground py-3 text-xs">{row.use}</td>
+          </tr>
+        ))}
+      </SpecTable>
       <div className="flex flex-wrap items-center gap-4">
         <Button variant="outline" size="sm" onClick={() => setRun((count) => count + 1)}>
           <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />

@@ -4,7 +4,7 @@
 //
 //   node scripts/build-shadcn-theme.mjs          write registry.json
 //   node scripts/build-shadcn-theme.mjs --build  also build docs/public/r with the shadcn CLI
-//   node scripts/build-shadcn-theme.mjs --check  exit 1 if registry.json is out of date
+//   node scripts/build-shadcn-theme.mjs --check  exit 1 if registry.json or docs/public/r is out of date
 //
 // Consumers install it with `npx shadcn@latest add ahstn/oceans-llm/oceans-theme`, or from the
 // built item the docs site serves at https://docs.oceans-llm.com/r/oceans-theme.json.
@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const cssPath = join(root, 'crates/admin-ui/web/src/styles/globals.css')
 const registryPath = join(root, 'registry.json')
+const outDir = join(root, 'docs/public/r')
 const css = readFileSync(cssPath, 'utf8')
 
 // The block body that starts at `selector {` (brace-matched, so nested at-rules stay inside).
@@ -111,22 +112,55 @@ const registry = {
   ],
 }
 
+// The copies the docs site serves come from the shadcn CLI, which reorders keys, so they are compared
+// as data: the registry itself, and each item with the item schema the CLI adds.
+const published = [
+  ['registry.json', registry],
+  ...registry.items.map((item) => [
+    `${item.name}.json`,
+    { $schema: 'https://ui.shadcn.com/schema/registry-item.json', ...item },
+  ]),
+]
+
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(value[key])]))
+  }
+  return value
+}
+
+function readText(path) {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function sameData(text, expected) {
+  try {
+    return JSON.stringify(sortKeys(JSON.parse(text))) === JSON.stringify(sortKeys(expected))
+  } catch {
+    return false
+  }
+}
+
 const output = `${JSON.stringify(registry, null, 2)}\n`
 if (process.argv.includes('--check')) {
-  let current = ''
-  try {
-    current = readFileSync(registryPath, 'utf8')
-  } catch {}
-  if (current !== output) {
-    console.error('registry.json is out of date with globals.css. Run: mise run shadcn-theme')
+  const stale = readText(registryPath) === output ? [] : ['registry.json']
+  for (const [file, expected] of published) {
+    if (!sameData(readText(join(outDir, file)), expected)) stale.push(`docs/public/r/${file}`)
+  }
+  if (stale.length > 0) {
+    console.error(`${stale.join(', ')} out of date with globals.css. Run: mise run shadcn-theme`)
     process.exit(1)
   }
-  console.log('registry.json matches globals.css')
+  console.log('registry.json and docs/public/r match globals.css')
 } else {
   writeFileSync(registryPath, output)
   console.log(`wrote registry.json: ${Object.keys(dark).length} dark tokens, ${Object.keys(theme).length} theme entries`)
   if (process.argv.includes('--build')) {
-    const outDir = join(root, 'docs/public/r')
     const build = spawnSync('npx', ['--yes', 'shadcn@latest', 'build', 'registry.json', '--output', 'docs/public/r'], { cwd: root, stdio: 'inherit' })
     if (build.status !== 0) process.exit(build.status ?? 1)
     // The CLI omits the trailing newline the repository's end-of-file hook requires.

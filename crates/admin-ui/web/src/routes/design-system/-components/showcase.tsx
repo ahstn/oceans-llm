@@ -108,15 +108,6 @@ export function StateMatrix<Row extends string>({
   )
 }
 
-/** Spread onto a component to pin a state without interaction. */
-export function previewState(state: string) {
-  if (state === 'disabled') return { disabled: true }
-  if (state === 'hover' || state === 'focus' || state === 'active') {
-    return { 'data-preview': state }
-  }
-  return {}
-}
-
 // Resolves any CSS color (hex, rgb, oklch, color-mix) to sRGB by painting one pixel.
 // Translucent colors are composited over the backdrop, as the browser would.
 function toRgb(color: string, backdrop: string) {
@@ -145,12 +136,12 @@ function luminance(rgb: number[]) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-export function contrastRatio(a: number[], b: number[]) {
+function contrastRatio(a: number[], b: number[]) {
   const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
   return (light + 0.05) / (dark + 0.05)
 }
 
-export function wcagLevel(ratio: number) {
+function wcagLevel(ratio: number) {
   if (ratio >= 7) return 'AAA'
   if (ratio >= 4.5) return 'AA'
   if (ratio >= 3) return 'AA Large'

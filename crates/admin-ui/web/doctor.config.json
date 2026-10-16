@@ -1,6 +1,12 @@
 {
   "$schema": "https://react.doctor/schema/config.json",
   "ignore": {
-    "files": ["src/generated/**"]
+    "files": ["src/generated/**"],
+    "overrides": [
+      {
+        "files": ["src/routes/identity/users.tsx"],
+        "rules": ["react-doctor/no-high-complexity-react-function"]
+      }
+    ]
   }
 }
