@@ -137,7 +137,10 @@ const userDetailsSections = [
 type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
 // User selection coordinates creation, onboarding, provider credentials, and lifecycle transitions.
-// oxlint-disable-next-line eslint/max-lines-per-function
+// Its length and complexity are exempt here, and only here, until it is split into focused parts.
+// The oxlint exemption is a range so React Doctor's directive can sit directly above the function.
+/* oxlint-disable eslint/max-lines-per-function */
+// react-doctor-disable-next-line react-doctor/no-high-complexity-react-function
 export function UsersPage() {
   const router = useRouter()
   const { session } = Route.useRouteContext()
@@ -1478,6 +1481,7 @@ export function UsersPage() {
     </div>
   )
 }
+/* oxlint-enable eslint/max-lines-per-function */
 
 function UserDetailRow({ label, value }: { label: string; value: string }) {
   return (
