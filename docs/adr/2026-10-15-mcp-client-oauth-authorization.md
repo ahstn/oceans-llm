@@ -208,7 +208,7 @@ A consumed code or refresh token is the only record that links a replay to its g
 
 A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval. One shared watcher does the rechecks: each tick looks up every open stream's token in one batched query, so the database load depends on the interval, not on how many streams are open.
 
-A user's own disconnect and a platform admin's revoke each record an `mcp_client_grant.revoked` entry in the admin audit log. The entry names the grant, its client, resource, and scope, and never a token or code.
+The admin audit log records each consent decision (`mcp_client_grant.authorized` or `.denied`, with the client, redirect host, resource, and scopes the user saw). It also records a user's own disconnect and a platform admin's revoke (`mcp_client_grant.revoked`, naming the grant, its client, resource, and scope). No entry holds a token, code, `state`, or PKCE value.
 
 Turning `mcp.client_oauth` off stops all OAuth access, but it does not revoke anything. Grants come back if the feature is turned on again. Listing and revoking authorized clients therefore keep working while it is off, both on the account page and through the admin API. With no issuer configured, the listing shows every live grant.
 

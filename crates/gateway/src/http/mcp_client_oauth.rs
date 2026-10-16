@@ -12,7 +12,7 @@ mod stream_lifetime;
 mod token;
 
 use axum::http::{HeaderMap, HeaderValue};
-use gateway_core::{AuthError, GatewayError, McpOauthResource, UserStatus};
+use gateway_core::{AuthError, GatewayError, McpOauthResource, UserRecord, UserStatus};
 use gateway_service::{McpClientOauthService, McpClientOauthSettings};
 use gateway_store::AnyStore;
 use uuid::Uuid;
@@ -52,14 +52,14 @@ pub use token::oauth_token;
 pub(super) async fn require_active_session(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(Uuid, Uuid), AppError> {
+) -> Result<(UserRecord, Uuid), AppError> {
     let (user, session_id) = resolve_session_user_with_session_id(state, headers)
         .await?
         .ok_or(AppError(AuthError::SessionRequired.into()))?;
     if user.status != UserStatus::Active {
         return Err(AppError(AuthError::InsufficientPrivileges.into()));
     }
-    Ok((user.user_id, session_id))
+    Ok((user, session_id))
 }
 
 /// The authorization server, or `None` when OAuth for MCP clients is disabled.

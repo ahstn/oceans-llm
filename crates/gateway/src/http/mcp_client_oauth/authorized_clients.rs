@@ -91,8 +91,10 @@ pub async fn list_my_authorized_mcp_clients(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AuthorizedMcpClientsView>, AppError> {
-    let (user_id, _) = require_active_session(&state, &headers).await?;
-    authorized_clients_view(&state, user_id).await.map(Json)
+    let (user, _) = require_active_session(&state, &headers).await?;
+    authorized_clients_view(&state, user.user_id)
+        .await
+        .map(Json)
 }
 
 #[utoipa::path(

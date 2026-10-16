@@ -154,6 +154,12 @@ pub mod actions {
     pub const MCP_GRANT_REVOKED: AuditAction = AuditAction("mcp_grant.revoked");
 
     pub const MCP_CREDENTIAL_BINDING_SET: AuditAction = AuditAction("mcp_credential_binding.set");
+    /// A user allowed an MCP client on the OAuth consent page. The grant is
+    /// created when the client redeems the code, so the target is the
+    /// authorization request.
+    pub const MCP_CLIENT_GRANT_AUTHORIZED: AuditAction = AuditAction("mcp_client_grant.authorized");
+    /// A user denied an MCP client on the OAuth consent page.
+    pub const MCP_CLIENT_GRANT_DENIED: AuditAction = AuditAction("mcp_client_grant.denied");
     /// An MCP client's OAuth grant was revoked, by its user or a platform admin.
     pub const MCP_CLIENT_GRANT_REVOKED: AuditAction = AuditAction("mcp_client_grant.revoked");
 
@@ -217,6 +223,8 @@ pub mod actions {
         MCP_GRANT_REVOKED,
         MCP_CREDENTIAL_BINDING_SET,
         MCP_CREDENTIAL_BINDING_REVOKED,
+        MCP_CLIENT_GRANT_AUTHORIZED,
+        MCP_CLIENT_GRANT_DENIED,
         MCP_CLIENT_GRANT_REVOKED,
         PRICING_CATALOG_REFRESHED,
         REVIEW_AGENT_REPOSITORY_CREATED,
