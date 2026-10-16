@@ -1,0 +1,149 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "oceans-theme",
+  "title": "Oceans Gateway",
+  "description": "The Oceans Gateway admin theme: Reef surfaces, Tokyo Night lilac for actions and Tokyo Night colours for data and status. Dark only.",
+  "cssVars": {
+    "theme": {
+      "font-sans": "'Geist Variable', ui-sans-serif, sans-serif",
+      "font-heading": "'Geist Variable', ui-sans-serif, sans-serif",
+      "color-surface-muted": "var(--surface-muted)",
+      "color-destructive-foreground": "var(--destructive-foreground)",
+      "color-success": "var(--success)",
+      "color-success-foreground": "var(--success-foreground)",
+      "color-warning": "var(--warning)",
+      "color-warning-foreground": "var(--warning-foreground)",
+      "color-invert": "var(--invert)",
+      "color-invert-foreground": "var(--invert-foreground)",
+      "color-chart-other": "var(--chart-other)",
+      "color-chart-hero": "var(--chart-hero)",
+      "color-heatmap-0": "var(--heatmap-0)",
+      "color-heatmap-1": "var(--heatmap-1)",
+      "color-heatmap-2": "var(--heatmap-2)",
+      "color-heatmap-3": "var(--heatmap-3)",
+      "color-heatmap-4": "var(--heatmap-4)",
+      "color-wave-deep": "var(--wave-deep)",
+      "color-wave-foam": "var(--wave-foam)",
+      "color-mist": "var(--mist)",
+      "shadow-panel": "0 8px 24px -12px rgb(0 0 0 / 0.6)",
+      "shadow-popover": "0 12px 28px -8px rgb(0 0 0 / 0.55)",
+      "shadow-dialog": "0 24px 64px -16px rgb(0 0 0 / 0.7)",
+      "inset-shadow-highlight": "inset 0 1px 0 rgb(255 255 255 / 0.05)",
+      "ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
+      "ease-emphasized": "cubic-bezier(0.22, 1, 0.36, 1)",
+      "ease-exit": "cubic-bezier(0.4, 0, 1, 1)",
+      "animate-page-in": "page-in var(--duration-base) cubic-bezier(0.22, 1, 0.36, 1) both"
+    },
+    "light": {
+      "panel-glow": "radial-gradient(900px 300px at 50% -60px, rgb(1 111 159 / 0.24), transparent)",
+      "radius": "0.45rem",
+      "duration-fast": "120ms",
+      "duration-base": "200ms",
+      "duration-slow": "320ms",
+      "duration-chart": "600ms"
+    },
+    "dark": {
+      "sidebar": "#040c15",
+      "background": "#07111c",
+      "card": "#0c1a29",
+      "popover": "#0e2133",
+      "secondary": "#102336",
+      "muted": "#0c1f31",
+      "accent": "#0d2841",
+      "surface-muted": "#0c1e2f",
+      "foreground": "#e8edf3",
+      "card-foreground": "#e8edf3",
+      "popover-foreground": "#e8edf3",
+      "secondary-foreground": "#e8edf3",
+      "accent-foreground": "#e8edf3",
+      "muted-foreground": "#94a7bb",
+      "primary": "#bb9af7",
+      "primary-foreground": "#040c15",
+      "ring": "#bb9af7",
+      "border": "rgb(236 240 247 / 0.08)",
+      "input": "rgb(236 240 247 / 0.12)",
+      "destructive": "#fb7185",
+      "destructive-foreground": "var(--color-red-600)",
+      "success": "#73daca",
+      "success-foreground": "var(--color-emerald-600)",
+      "warning": "#eaa518",
+      "warning-foreground": "var(--color-yellow-600)",
+      "invert": "var(--color-zinc-700)",
+      "invert-foreground": "var(--color-zinc-50)",
+      "sidebar-foreground": "#cad2db",
+      "sidebar-primary": "#016f9f",
+      "sidebar-primary-foreground": "#ffffff",
+      "sidebar-accent": "#0c1f31",
+      "sidebar-accent-foreground": "#e8edf3",
+      "sidebar-border": "transparent",
+      "sidebar-ring": "#bb9af7",
+      "chart-1": "#7aa2f7",
+      "chart-2": "#9ece6a",
+      "chart-3": "#41a6b5",
+      "chart-4": "#7dcfff",
+      "chart-5": "#9d7cd8",
+      "chart-other": "#737aa2",
+      "chart-hero": "#7aa2f7",
+      "heatmap-0": "#172432",
+      "heatmap-1": "#2c437f",
+      "heatmap-2": "#5070bc",
+      "heatmap-3": "#7aa2f7",
+      "heatmap-4": "#89ddff",
+      "wave-deep": "#01294b",
+      "wave-foam": "#d6f7f9",
+      "mist": "#b5dde5"
+    }
+  },
+  "css": {
+    "@keyframes page-in": {
+      "from": {
+        "opacity": "0",
+        "transform": "translateY(4px)"
+      }
+    },
+    "@layer base": {
+      "@media (prefers-reduced-motion: reduce)": {
+        "*, ::before, ::after": {
+          "animation-duration": "0.01ms !important",
+          "animation-iteration-count": "1 !important",
+          "transition-duration": "0.01ms !important",
+          "scroll-behavior": "auto !important"
+        }
+      }
+    },
+    "@utility type-display": {
+      "font-family": "var(--font-heading)",
+      "font-size": "clamp(2.25rem, 2vw + 1.5rem, 3rem)",
+      "font-weight": "500",
+      "line-height": "1.1"
+    },
+    "@utility type-headline": {
+      "font-family": "var(--font-heading)",
+      "font-size": "1rem",
+      "font-weight": "500",
+      "line-height": "1.375"
+    },
+    "@utility type-title": {
+      "font-size": "0.875rem",
+      "font-weight": "500",
+      "line-height": "1.25"
+    },
+    "@utility type-body": {
+      "font-size": "clamp(15px, 0.28vw + 14px, 16px)",
+      "font-weight": "400",
+      "line-height": "1.5"
+    },
+    "@utility type-label": {
+      "font-size": "0.875rem",
+      "font-weight": "500",
+      "line-height": "1.25"
+    },
+    "@utility type-caption": {
+      "font-size": "0.75rem",
+      "font-weight": "500",
+      "line-height": "1rem"
+    }
+  },
+  "docs": "Dark only: keep class=\"dark\" on <html>, which these tokens target. The type utilities use Geist; install @fontsource-variable/geist and import it, or swap --font-sans. Generated from crates/admin-ui/web/src/styles/globals.css by scripts/build-shadcn-theme.mjs; DESIGN.md describes how to use each token.",
+  "type": "registry:theme"
+}

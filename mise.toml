@@ -125,11 +125,20 @@ diff -u crates/gateway/openapi/admin-api.json "$tmpdir/admin-api.json"
 diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 """
 
+[tasks.shadcn-theme]
+description = "Regenerate the shadcn theme (registry.json and docs/public/r) from the admin UI tokens"
+run = "node scripts/build-shadcn-theme.mjs --build"
+
+[tasks.shadcn-theme-check]
+description = "Fail when registry.json no longer matches the admin UI tokens in globals.css"
+run = "node scripts/build-shadcn-theme.mjs --check"
+
 [tasks.lint]
 description = "Run repository formatting checks, linting, and static checks"
 depends = [
   "rust-fmt-check",
   "rust-lint",
+  "shadcn-theme-check",
   "//crates/admin-ui/web:fmt-check",
   "//crates/admin-ui/web:lint",
   "//actions/review-agent:typecheck",
