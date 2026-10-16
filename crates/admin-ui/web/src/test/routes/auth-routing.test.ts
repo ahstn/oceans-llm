@@ -35,6 +35,13 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(modelsOnlySession, '/profiles')).toBe(false)
   })
 
+  it('lets any signed-in user open the design system reference', () => {
+    const modelsOnlySession = regularUserSession(['models'])
+
+    expect(canAccessSignedInPath(modelsOnlySession, '/design-system')).toBe(true)
+    expect(canAccessSignedInPath(modelsOnlySession, '/design-systems')).toBe(false)
+  })
+
   it('allows regular users to return to self-service routes', () => {
     expect(canAccessSignedInPath(userSession, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/models?page=2')).toBe(true)

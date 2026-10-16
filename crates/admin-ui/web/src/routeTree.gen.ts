@@ -22,6 +22,7 @@ import { Route as NoAccessRouteImport } from './routes/no-access'
 import { Route as ReviewAgentRouteImport } from './routes/review-agent'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
+import { Route as DesignSystemIndexRouteImport } from './routes/design-system/index'
 import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
@@ -104,6 +105,11 @@ const SpendControlsRoute = SpendControlsRouteImport.update({
 const AccountConnectionsRoute = AccountConnectionsRouteImport.update({
   id: '/account/connections',
   path: '/account/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DesignSystemIndexRoute = DesignSystemIndexRouteImport.update({
+  id: '/design-system/',
+  path: '/design-system/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
@@ -231,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/skills/$id': typeof SkillsIdRoute
+  '/design-system/': typeof DesignSystemIndexRoute
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -264,6 +271,7 @@ export interface FileRoutesByTo {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/skills/$id': typeof SkillsIdRoute
+  '/design-system': typeof DesignSystemIndexRoute
   '/mcp': typeof McpIndexRoute
   '/profile': typeof ProfileIndexRoute
   '/skills': typeof SkillsIndexRoute
@@ -298,6 +306,7 @@ export interface FileRoutesById {
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
   '/skills/$id': typeof SkillsIdRoute
+  '/design-system/': typeof DesignSystemIndexRoute
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
   '/skills/': typeof SkillsIndexRoute
@@ -333,6 +342,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/skills/$id'
+    | '/design-system/'
     | '/mcp/'
     | '/profile/'
     | '/skills/'
@@ -366,6 +376,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/skills/$id'
+    | '/design-system'
     | '/mcp'
     | '/profile'
     | '/skills'
@@ -399,6 +410,7 @@ export interface FileRouteTypes {
     | '/observability/request-logs'
     | '/observability/usage-costs'
     | '/skills/$id'
+    | '/design-system/'
     | '/mcp/'
     | '/profile/'
     | '/skills/'
@@ -433,6 +445,7 @@ export interface RootRouteChildren {
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
   SkillsIdRoute: typeof SkillsIdRoute
+  DesignSystemIndexRoute: typeof DesignSystemIndexRoute
   McpIndexRoute: typeof McpIndexRoute
   ProfileIndexRoute: typeof ProfileIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
@@ -529,6 +542,13 @@ declare module '@tanstack/react-router' {
       path: '/account/connections'
       fullPath: '/account/connections'
       preLoaderRoute: typeof AccountConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/design-system/': {
+      id: '/design-system/'
+      path: '/design-system'
+      fullPath: '/design-system/'
+      preLoaderRoute: typeof DesignSystemIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/identity/service-accounts': {
@@ -689,6 +709,7 @@ const rootRouteChildren: RootRouteChildren = {
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
   SkillsIdRoute: SkillsIdRoute,
+  DesignSystemIndexRoute: DesignSystemIndexRoute,
   McpIndexRoute: McpIndexRoute,
   ProfileIndexRoute: ProfileIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,

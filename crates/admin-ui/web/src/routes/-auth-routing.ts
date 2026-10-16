@@ -19,6 +19,7 @@ function isPersonalPath(pathname: string) {
     PERSONAL_ACCOUNT_PATHS.has(pathname) ||
     pathname === '/agent-plugins' ||
     pathname === '/skills' ||
+    pathname === '/design-system' ||
     pathname.startsWith('/skills/') ||
     pathname === PROFILE_PATH ||
     pathname.startsWith(`${PROFILE_PATH}/`)
