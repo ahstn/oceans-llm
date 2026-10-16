@@ -40,97 +40,91 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  --background: oklch(0.995 0.004 226);
-  --foreground: oklch(0.145 0.012 238);
-  --card: oklch(1 0.003 226);
-  --card-foreground: oklch(0.145 0.012 238);
-  --popover: oklch(1 0.003 226);
-  --popover-foreground: oklch(0.145 0.012 238);
-  --primary: oklch(0.513 0.112 237.173);
-  --primary-foreground: oklch(0.983 0.011 225.977);
-  --secondary: oklch(0.967 0.006 230);
-  --secondary-foreground: oklch(0.21 0.018 238);
-  --muted: oklch(0.97 0.006 226);
-  --muted-foreground: oklch(0.5 0.026 238);
-  --accent: oklch(0.958 0.014 226);
-  --accent-foreground: oklch(0.205 0.018 238);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.596 0.145 163.225);
-  --border: oklch(0.91 0.01 226);
-  --input: oklch(0.91 0.01 226);
-  --ring: oklch(0.572 0.112 230.199);
-  --chart-1: oklch(0.873 0.041 210.013);
-  --chart-2: oklch(0.72 0.085 225);
-  --chart-3: oklch(0.623 0.125 231.921);
-  --chart-4: oklch(0.513 0.112 237.173);
-  --chart-5: oklch(0.448 0.101 238.886);
-  --radius: 0.45rem;
-  --sidebar: oklch(0.985 0.006 226);
-  --sidebar-foreground: oklch(0.145 0.012 238);
-  --sidebar-primary: oklch(0.513 0.112 237.173);
-  --sidebar-primary-foreground: oklch(0.983 0.011 225.977);
-  --sidebar-accent: oklch(0.958 0.014 226);
-  --sidebar-accent-foreground: oklch(0.205 0.018 238);
-  --sidebar-border: oklch(0.91 0.01 226);
-  --sidebar-ring: oklch(0.572 0.112 230.199);
-  --surface-muted: oklch(0.97 0.006 226);
-  --destructive-foreground: var(--color-red-800);
-  --success-foreground: var(--color-emerald-900);
-  --info: var(--color-violet-500);
-  --info-foreground: var(--color-violet-900);
-  --warning: var(--color-yellow-500);
-  --warning-foreground: var(--color-yellow-900);
-  --invert: var(--color-zinc-900);
-  --invert-foreground: var(--color-zinc-50);
+/* Lets /design-system pin interaction states with data-preview="hover focus active". */
+@custom-variant hover {
+  @media (hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+  &[data-preview~='hover'] {
+    @slot;
+  }
 }
+@custom-variant focus-visible (&:focus-visible, &[data-preview~='focus']);
+@custom-variant active (&:active, &[data-preview~='active']);
 
-.dark {
-  --background: oklch(0.145 0.012 238);
-  --foreground: oklch(0.985 0.004 226);
-  --card: oklch(0.205 0.016 238);
-  --card-foreground: oklch(0.985 0.004 226);
-  --popover: oklch(0.205 0.016 238);
-  --popover-foreground: oklch(0.985 0.004 226);
-  --primary: oklch(0.513 0.112 237.173);
-  --primary-foreground: oklch(0.983 0.011 225.977);
-  --secondary: oklch(0.274 0.016 238);
-  --secondary-foreground: oklch(0.985 0.004 226);
-  --muted: oklch(0.269 0.014 238);
-  --muted-foreground: oklch(0.708 0.018 230);
-  --accent: oklch(0.269 0.018 238);
-  --accent-foreground: oklch(0.985 0.004 226);
-  --destructive: oklch(0.704 0.191 22.216);
-  --success: oklch(0.696 0.17 162.48);
-  --border: oklch(0.985 0.004 226 / 10%);
-  --input: oklch(0.985 0.004 226 / 15%);
-  --ring: oklch(0.572 0.112 230.199);
-  --chart-1: oklch(0.873 0.041 210.013);
-  --chart-2: oklch(0.72 0.085 225);
-  --chart-3: oklch(0.623 0.125 231.921);
-  --chart-4: oklch(0.513 0.112 237.173);
-  --chart-5: oklch(0.448 0.101 238.886);
-  --sidebar: oklch(0.205 0.016 238);
-  --sidebar-foreground: oklch(0.985 0.004 226);
-  --sidebar-primary: oklch(0.513 0.112 237.173);
-  --sidebar-primary-foreground: oklch(0.983 0.011 225.977);
-  --sidebar-accent: oklch(0.269 0.018 238);
-  --sidebar-accent-foreground: oklch(0.985 0.004 226);
-  --sidebar-border: oklch(0.985 0.004 226 / 10%);
-  --sidebar-ring: oklch(0.572 0.112 230.199);
-  --surface-muted: oklch(0.245 0.018 238);
+/* Dark only (see DESIGN.md). <html> carries .dark so shadcn's dark: variants apply, but every token
+   lives on :root and there is no light theme. Reef surfaces, Tokyo Night lilac actions and Tokyo Night
+   data colours. */
+:root {
+  color-scheme: dark;
+  /* Surfaces, darkest to lightest: frame (sidebar), panel (page), card, popover. */
+  --sidebar: #040c15;
+  --background: #07111c;
+  --card: #0c1a29;
+  --popover: #0e2133;
+  --secondary: #102336;
+  --muted: #0c1f31;
+  --accent: #0d2841;
+  --surface-muted: #0c1e2f;
+  --foreground: #e8edf3;
+  --card-foreground: #e8edf3;
+  --popover-foreground: #e8edf3;
+  --secondary-foreground: #e8edf3;
+  --accent-foreground: #e8edf3;
+  --muted-foreground: #94a7bb;
+  /* Actions, links and focus: Tokyo Night lilac with dark text (white fails on it). */
+  --primary: #bb9af7;
+  --primary-foreground: #040c15;
+  --ring: #bb9af7;
+  --border: rgb(236 240 247 / 0.08);
+  --input: rgb(236 240 247 / 0.12);
+  /* Status. Rose-400 keeps destructive apart from every action colour and passes AA on cards,
+     popovers and its own tint. Success is Tokyo Night's green1: lighter than rose, so the pair stays
+     distinct for colour-blind readers. */
+  --destructive: #fb7185;
   --destructive-foreground: var(--color-red-600);
+  --success: #73daca;
   --success-foreground: var(--color-emerald-600);
-  --info: var(--color-violet-500);
-  --info-foreground: var(--color-violet-600);
-  --warning: var(--color-yellow-500);
+  --warning: #eaa518;
   --warning-foreground: var(--color-yellow-600);
   --invert: var(--color-zinc-700);
   --invert-foreground: var(--color-zinc-50);
-}
-
-:root,
-.dark {
+  /* The brand tile keeps the logo's ocean blue; the sidebar is the frame around the content panel. */
+  --sidebar-foreground: #cad2db;
+  --sidebar-primary: #016f9f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0c1f31;
+  --sidebar-accent-foreground: #e8edf3;
+  --sidebar-border: transparent;
+  --sidebar-ring: #bb9af7;
+  /* Data: Tokyo Night. Series 1-5, the grouped "Other" series, single-series charts and ranked meters
+     (hero), and the activity heatmap from empty (0) to busiest (4). Never used for actions. */
+  --chart-1: #7aa2f7;
+  --chart-2: #9ece6a;
+  --chart-3: #41a6b5;
+  --chart-4: #7dcfff;
+  --chart-5: #9d7cd8;
+  --chart-other: #737aa2;
+  --chart-hero: #7aa2f7;
+  --heatmap-0: #172432;
+  --heatmap-1: #2c437f;
+  --heatmap-2: #5070bc;
+  --heatmap-3: #7aa2f7;
+  --heatmap-4: #89ddff;
+  /* Logo-wave colours for illustration and brand surfaces, never for actions. */
+  --wave-deep: #01294b;
+  --wave-foam: #d6f7f9;
+  --mist: #b5dde5;
+  /* Ocean-blue light behind the top of the content panel. */
+  --panel-glow: radial-gradient(900px 300px at 50% -60px, rgb(1 111 159 / 0.24), transparent);
+  --radius: 0.45rem;
+  /* Motion: hover and press, menus and page entrances, dialogs and sheets, chart draw-in. */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --duration-chart: 600ms;
   --font-sans: 'Geist Variable', ui-sans-serif, sans-serif;
   --font-display: 'Geist Variable', ui-sans-serif, sans-serif;
   --color-bg: var(--background);
@@ -152,15 +146,13 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-success: var(--success);
   --color-success-soft: color-mix(in oklch, var(--success) 24%, transparent);
-  --color-warning: oklch(0.769 0.156 77.727);
-  --color-warning-soft: color-mix(in oklch, oklch(0.769 0.156 77.727) 24%, transparent);
+  --color-warning: var(--warning);
+  --color-warning-soft: color-mix(in oklch, var(--warning) 24%, transparent);
   --color-danger: var(--destructive);
   --color-danger-soft: color-mix(in oklch, var(--destructive) 24%, transparent);
   --scrollbar-track: transparent;
   --scrollbar-thumb: color-mix(in oklch, var(--border) 62%, var(--foreground) 38%);
   --scrollbar-thumb-hover: color-mix(in oklch, var(--border) 46%, var(--foreground) 54%);
-  --shadow-panel: 0 20px 45px color-mix(in oklch, black 86%, var(--primary) 14% / 0.24);
-  --shadow-soft: 0 12px 28px color-mix(in oklch, black 88%, var(--primary) 12% / 0.14);
 }
 
 * {
@@ -226,6 +218,13 @@ a {
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-chart-other: var(--chart-other);
+  --color-chart-hero: var(--chart-hero);
+  --color-heatmap-0: var(--heatmap-0);
+  --color-heatmap-1: var(--heatmap-1);
+  --color-heatmap-2: var(--heatmap-2);
+  --color-heatmap-3: var(--heatmap-3);
+  --color-heatmap-4: var(--heatmap-4);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -255,14 +254,16 @@ a {
   --color-invert: var(--invert);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
-  --color-info-foreground: var(--info-foreground);
-  --color-info: var(--info);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-destructive-foreground: var(--destructive-foreground);
   /* Admin surfaces: a text step between foreground and muted-foreground, and table header fills. */
   --color-subtle-foreground: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%);
   --color-surface-muted: var(--surface-muted);
+  /* Logo-wave accents for illustration and brand surfaces, never for actions. */
+  --color-wave-deep: var(--wave-deep);
+  --color-wave-foam: var(--wave-foam);
+  --color-mist: var(--mist);
   /* Uppercase eyebrow labels. */
   --tracking-label: 0.08em;
   --tracking-eyebrow: 0.18em;
@@ -273,6 +274,26 @@ a {
   --text-display-sm: clamp(1.9rem, 2vw, 2.6rem);
   /* Edge of a horizontally sticky table column. */
   --shadow-sticky-edge: 8px 0 12px -12px rgb(0 0 0 / 0.8);
+}
+
+/* Elevation and motion, as Tailwind theme scales: shadow-panel, shadow-popover, shadow-dialog,
+   inset-shadow-highlight, ease-standard, ease-emphasized, ease-exit and animate-page-in. */
+@theme {
+  --shadow-panel: 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-popover: 0 12px 28px -8px rgb(0 0 0 / 0.55);
+  --shadow-dialog: 0 24px 64px -16px rgb(0 0 0 / 0.7);
+  --inset-shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --animate-page-in: page-in var(--duration-base) var(--ease-emphasized) both;
+
+  @keyframes page-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
 }
 
 @layer base {
@@ -323,4 +344,54 @@ a {
   html {
     @apply font-sans;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Type scale from DESIGN.md. Utilities, not --text-* keys, so cn() keeps them beside text colors. */
+@utility type-display {
+  font-family: var(--font-heading);
+  font-size: clamp(2.25rem, 2vw + 1.5rem, 3rem);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+@utility type-headline {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.375;
+}
+
+@utility type-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+@utility type-body {
+  font-size: clamp(15px, 0.28vw + 14px, 16px);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+@utility type-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+@utility type-caption {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
 }

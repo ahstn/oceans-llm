@@ -85,7 +85,10 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-6 p-4 sm:p-6">
+          <div
+            key={pathname}
+            className="animate-page-in mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-6 p-4 sm:p-6"
+          >
             {children}
           </div>
         </main>

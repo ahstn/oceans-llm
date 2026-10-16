@@ -92,7 +92,7 @@ export function ProviderConfiguration({
                       : 'No token has been stored.'}
                   </p>
                 </div>
-                <Badge variant={status?.configured ? 'success' : 'default'}>
+                <Badge variant={status?.configured ? 'success' : 'secondary'}>
                   {status?.configured ? 'Configured' : 'Not configured'}
                 </Badge>
               </div>

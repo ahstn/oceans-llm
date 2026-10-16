@@ -361,6 +361,6 @@ describe('usage costs token series helpers', () => {
     const chart = modelTokenChart(series)
     expect(chart.rows[0]).toMatchObject({ model_1: 1_500, model_2: 500 })
     expect(chart.keys[0].color).toBe('var(--chart-1)')
-    expect(chart.keys[1].color).not.toMatch(/--chart-/)
+    expect(chart.keys[1].color).toBe('var(--chart-other)')
   })
 })

@@ -1,5 +1,7 @@
 import { lazy } from 'react'
 
+import { chartAnimation } from '@/lib/chart-motion'
+
 import { formatDay, PERCENT_FORMATTER } from './shared'
 import { COMPACT_FORMATTER, type SeriesChart } from './token-series'
 
@@ -60,7 +62,13 @@ export const ModelShareBarChart = lazy(async () => {
           />
           <ChartLegend content={<ChartLegendContent />} />
           {chart.keys.map((series) => (
-            <Bar key={series.key} dataKey={series.key} stackId="share" fill={series.color} />
+            <Bar
+              key={series.key}
+              dataKey={series.key}
+              stackId="share"
+              fill={series.color}
+              {...chartAnimation}
+            />
           ))}
         </BarChart>
       </ChartContainer>

@@ -13,13 +13,13 @@ import {
   type HeatmapCell,
 } from './profile-data'
 
-/** Primary blue at rising strength reads the same way in light and dark themes. */
+/** The activity ramp from empty to busiest. Data colours, never the action colour. */
 const LEVEL_BACKGROUND: Record<HeatmapCell['level'], string> = {
-  0: 'var(--color-surface-muted)',
-  1: 'color-mix(in oklch, var(--primary) 28%, transparent)',
-  2: 'color-mix(in oklch, var(--primary) 50%, transparent)',
-  3: 'color-mix(in oklch, var(--primary) 75%, transparent)',
-  4: 'var(--primary)',
+  0: 'var(--heatmap-0)',
+  1: 'var(--heatmap-1)',
+  2: 'var(--heatmap-2)',
+  3: 'var(--heatmap-3)',
+  4: 'var(--heatmap-4)',
 }
 
 /** Sunday-first rows; alternate labels keep the axis readable at small cell sizes. */

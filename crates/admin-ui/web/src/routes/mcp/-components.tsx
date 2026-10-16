@@ -251,7 +251,7 @@ function ToolDisclosureRow({
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
-          <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+          <Badge variant={tool.is_active ? 'success' : 'secondary'}>
             {tool.is_active ? 'Active' : 'Inactive'}
           </Badge>
           <CollapsibleTrigger asChild>
@@ -767,7 +767,7 @@ export function ServerFormFields({
 
 export function ServerStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+    <Badge variant={status === 'active' ? 'success' : 'secondary'}>
       {status === 'active' ? 'Active' : 'Disabled'}
     </Badge>
   )
@@ -775,7 +775,7 @@ export function ServerStatusBadge({ status }: { status: string }) {
 
 export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
   const label = status ?? 'not run'
-  const variant = status === 'success' ? 'default' : status ? 'secondary' : 'outline'
+  const variant = status === 'success' ? 'success' : status ? 'secondary' : 'outline'
   return <Badge variant={variant}>{label}</Badge>
 }
 

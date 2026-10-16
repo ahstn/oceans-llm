@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { chartAnimation } from '@/lib/chart-motion'
 import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
@@ -198,6 +199,7 @@ export function AgentHarnessesPage() {
                 <ChartLegend content={<ChartLegendContent />} />
                 {chartSeries.map((harness) => (
                   <Area
+                    {...chartAnimation}
                     key={harness.agent_harness_key}
                     dataKey={harness.key}
                     type="monotone"

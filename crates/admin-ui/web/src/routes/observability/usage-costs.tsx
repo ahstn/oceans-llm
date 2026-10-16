@@ -15,6 +15,7 @@ import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { chartAnimation } from '@/lib/chart-motion'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getUsageCosts } from '@/server/admin-data.functions'
 import type { SpendReportView } from '@/types/api'
@@ -48,7 +49,7 @@ const BREAKDOWN_LIMIT = 10
 const ROW_CARD_CLASS = 'min-w-0 xl:row-span-2 xl:grid xl:grid-rows-subgrid'
 
 const CHART_CONFIG: ChartConfig = {
-  cost: { label: 'Priced spend', color: 'var(--chart-3)' },
+  cost: { label: 'Priced spend', color: 'var(--chart-hero)' },
 }
 type SpendChartDatum = {
   day: string
@@ -105,6 +106,7 @@ const SpendTrendChart = lazy(async () => {
             }
           />
           <Area
+            {...chartAnimation}
             dataKey="cost"
             type="monotone"
             stroke="var(--color-cost)"

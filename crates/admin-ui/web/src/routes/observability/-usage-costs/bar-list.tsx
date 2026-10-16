@@ -12,7 +12,7 @@ export function BarListRow({
   value,
   progress,
   progressLabel,
-  tone,
+  tone = 'var(--chart-hero)',
 }: {
   label: string
   mono?: boolean
@@ -23,7 +23,7 @@ export function BarListRow({
   progress: number
   /** Announces the bar when it carries data not repeated in the text. */
   progressLabel?: string
-  /** CSS colour for the bar; the track takes a faint wash of it. Defaults to primary. */
+  /** CSS colour for the bar; the track takes a faint wash of it. Defaults to the chart hero colour. */
   tone?: string
 }) {
   return (

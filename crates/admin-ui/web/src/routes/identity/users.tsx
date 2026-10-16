@@ -827,7 +827,7 @@ export function UsersPage() {
                             ? 'success'
                             : user.status === 'invited'
                               ? 'warning'
-                              : 'default'
+                              : 'secondary'
                         }
                       >
                         {user.status}
@@ -912,7 +912,7 @@ export function UsersPage() {
                                 ? 'success'
                                 : user.status === 'invited'
                                   ? 'warning'
-                                  : 'default'
+                                  : 'secondary'
                             }
                           >
                             {user.status}
@@ -1010,7 +1010,7 @@ export function UsersPage() {
                             ? 'success'
                             : selectedUser.status === 'invited'
                               ? 'warning'
-                              : 'default'
+                              : 'secondary'
                         }
                       >
                         {selectedUser.status}

@@ -58,7 +58,7 @@ export function AlertTimeline({ items }: { items: BudgetAlertHistoryItemView[] }
               <Badge variant="outline">
                 {alert.owner_kind === 'service_account' ? 'service account' : alert.owner_kind}
               </Badge>
-              <Badge variant={DELIVERY_BADGE_VARIANT[alert.delivery_status] ?? 'default'}>
+              <Badge variant={DELIVERY_BADGE_VARIANT[alert.delivery_status] ?? 'secondary'}>
                 {alert.delivery_status}
               </Badge>
             </TimelineTitle>

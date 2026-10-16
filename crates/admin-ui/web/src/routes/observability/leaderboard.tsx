@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { chartAnimation } from '@/lib/chart-motion'
 import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
@@ -200,6 +201,7 @@ export function ObservabilityLeaderboardPage() {
                 <ChartLegend content={<ChartLegendContent />} />
                 {chartSeries.map((user) => (
                   <Area
+                    {...chartAnimation}
                     key={user.user_id}
                     dataKey={user.key}
                     type="monotone"
