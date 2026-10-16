@@ -318,6 +318,49 @@ describe('UsersPage', () => {
     )
   })
 
+  it('drops a reset onboarding URL when another user is selected', async () => {
+    const firstUser = invitedUser()
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: firstUser.id, user_section: 'auth' })
+    resetOnboardingMock.mockResolvedValue({
+      data: {
+        kind: 'password_invite',
+        invite_url: 'http://example.test/invite/reset-user-1',
+        expires_at: '2026-03-14T12:00:00Z',
+        user: firstUser,
+      },
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Generated URL')).toHaveValue(
+        'http://example.test/invite/reset-user-1',
+      ),
+    )
+
+    routeMock.useSearch.mockReturnValue({ user_id: secondUser.id, user_section: 'auth' })
+    rerender(<UsersPage />)
+    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+
+    routeMock.useSearch.mockReturnValue({ user_id: firstUser.id, user_section: 'auth' })
+    rerender(<UsersPage />)
+    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+  })
+
   it('clears a stale reset onboarding URL before retrying', async () => {
     const user = invitedUser()
     routeMock.useLoaderData.mockReturnValue({
