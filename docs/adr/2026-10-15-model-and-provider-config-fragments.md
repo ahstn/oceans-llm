@@ -112,7 +112,7 @@ The chart supports two ways to split model config.
 
 ### 7. Startup warning for redundant overrides
 
-After startup the gateway logs a warning for each route whose `pricing_override` or `context_window_tokens` equals the current catalog value. The check runs in the background, so it never delays readiness, and it looks up each distinct catalog target once. Rejecting a context window above the catalog limit stays a blocking startup check, as before. Such an override stops the route from following catalog updates. `EffectiveRouteMetadata` now carries `catalog_pricing` alongside the effective pricing so this comparison is possible.
+After startup the gateway logs a warning for each route whose `pricing_override` or `context_window_tokens` equals the current catalog value. The check runs in the background, so it never delays readiness. It reuses the overridden routes that the blocking startup check already collected, and it looks up each distinct catalog target once. Rejecting a context window above the catalog limit stays a blocking startup check, as before. Such an override stops the route from following catalog updates. `EffectiveRouteMetadata` now carries `catalog_pricing` alongside the effective pricing so this comparison is possible.
 
 ## Implementation
 

@@ -75,6 +75,10 @@ fn pricing_override_matches_catalog(
             == configured.cache_write_cost_per_million_tokens
 }
 
+/// Enabled routes that carry a pricing or context override, paired with their model key.
+#[derive(Debug, Default)]
+pub struct OverriddenRoutes(Vec<(String, ModelRoute)>);
+
 #[derive(Debug, Default)]
 struct RouteOverrideScan {
     context_conflicts: Vec<RouteContextOverrideConflict>,
@@ -816,12 +820,15 @@ where
         self.warn_on_route_context_override_conflicts().await
     }
 
-    /// Startup check that fails on a context window above the catalog limit. It scans only
-    /// routes with a context override, so pricing overrides add no work before readiness.
-    pub async fn validate_route_overrides(&self) -> Result<(), GatewayError> {
-        let scan = self.scan_route_overrides(false).await?;
+    /// Startup check that fails on a context window above the catalog limit. It reads models
+    /// and routes once and resolves catalog values only for context overrides, so pricing
+    /// overrides add no catalog lookups before readiness. The returned routes feed
+    /// [`Self::warn_on_redundant_route_overrides`] without reading the route table again.
+    pub async fn validate_route_overrides(&self) -> Result<OverriddenRoutes, GatewayError> {
+        let routes = self.collect_overridden_routes().await?;
+        let scan = self.scan_route_overrides(&routes.0, false).await?;
         let Some(conflict) = scan.context_conflicts.into_iter().next() else {
-            return Ok(());
+            return Ok(routes);
         };
 
         Err(GatewayError::InvalidRequest(format!(
@@ -835,9 +842,13 @@ where
     }
 
     /// Logs route overrides that only repeat the catalog, so admins can delete them and follow
-    /// catalog updates. It only warns, so the gateway runs it in the background after startup.
-    pub async fn warn_on_redundant_route_overrides(&self) -> Result<(), GatewayError> {
-        for redundant in self.scan_route_overrides(true).await?.redundant {
+    /// catalog updates. It only warns, so the gateway runs it in the background after startup,
+    /// over the routes [`Self::validate_route_overrides`] already collected.
+    pub async fn warn_on_redundant_route_overrides(
+        &self,
+        routes: &OverriddenRoutes,
+    ) -> Result<(), GatewayError> {
+        for redundant in self.scan_route_overrides(&routes.0, true).await?.redundant {
             if redundant.pricing {
                 warn!(
                     model_key = %redundant.model_key,
@@ -860,7 +871,12 @@ where
     }
 
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
-        for conflict in self.scan_route_overrides(false).await?.context_conflicts {
+        let routes = self.collect_overridden_routes().await?;
+        for conflict in self
+            .scan_route_overrides(&routes.0, false)
+            .await?
+            .context_conflicts
+        {
             warn!(
                 route_id = %conflict.route_id,
                 provider_key = %conflict.provider_key,
@@ -873,11 +889,30 @@ where
         Ok(())
     }
 
-    /// Resolves catalog values once per catalog target for enabled routes with an override,
-    /// looking up each provider once. `include_redundant` also covers pricing-only overrides and
-    /// reports overrides that equal the catalog; otherwise only context conflicts are checked.
+    /// Enabled routes with a pricing or context override, with their model keys, in one pass
+    /// over models and routes.
+    async fn collect_overridden_routes(&self) -> Result<OverriddenRoutes, GatewayError> {
+        let mut routes = Vec::new();
+        for model in self.store.list_models().await? {
+            for route in self.store.list_routes_for_model(model.id).await? {
+                // Disabled rows include batch-referenced routes that config no longer declares.
+                if !route.enabled || route.weight <= 0.0 {
+                    continue;
+                }
+                if route.context_window_tokens.is_some() || route.pricing_override.is_some() {
+                    routes.push((model.model_key.clone(), route));
+                }
+            }
+        }
+        Ok(OverriddenRoutes(routes))
+    }
+
+    /// Resolves catalog values once per catalog target, looking up each provider once.
+    /// `include_redundant` also covers pricing-only overrides and reports overrides that equal
+    /// the catalog; otherwise only context overrides are checked, for conflicts.
     async fn scan_route_overrides(
         &self,
+        routes: &[(String, ModelRoute)],
         include_redundant: bool,
     ) -> Result<RouteOverrideScan, GatewayError> {
         let now = OffsetDateTime::now_utc();
@@ -890,12 +925,8 @@ where
             (Option<crate::EffectiveRoutePricing>, Option<i64>),
         >::new();
         let mut scan = RouteOverrideScan::default();
-        for model in self.store.list_models().await? {
-            for route in self.store.list_routes_for_model(model.id).await? {
-                // Disabled rows include batch-referenced routes that config no longer declares.
-                if !route.enabled || route.weight <= 0.0 {
-                    continue;
-                }
+        for (model_key, route) in routes {
+            {
                 let has_pricing_override = include_redundant && route.pricing_override.is_some();
                 if route.context_window_tokens.is_none() && !has_pricing_override {
                     continue;
@@ -914,7 +945,7 @@ where
                     match resolve_effective_route_metadata(
                         self.store.as_ref(),
                         provider,
-                        &route,
+                        route,
                         now,
                     )
                     .await
@@ -930,7 +961,7 @@ where
                         Err(error) => {
                             warn!(
                                 error = %error,
-                                model_key = %model.model_key,
+                                model_key = %model_key,
                                 provider_key = %route.provider_key,
                                 upstream_model = %route.upstream_model,
                                 "skipping redundant route override check; route metadata lookup failed"
@@ -966,9 +997,9 @@ where
                     .filter(|_| route.context_window_tokens == catalog_context);
                 if pricing || context_window_tokens.is_some() {
                     scan.redundant.push(RedundantRouteOverride {
-                        model_key: model.model_key.clone(),
-                        provider_key: route.provider_key,
-                        upstream_model: route.upstream_model,
+                        model_key: model_key.clone(),
+                        provider_key: route.provider_key.clone(),
+                        upstream_model: route.upstream_model.clone(),
                         pricing,
                         context_window_tokens,
                     });
@@ -2848,8 +2879,13 @@ mod tests {
             )
         };
 
-        service_with(route.clone())
-            .warn_on_redundant_route_overrides()
+        let service = service_with(route.clone());
+        let routes = service
+            .validate_route_overrides()
+            .await
+            .expect("a pricing-only override does not reach the catalog during startup");
+        service
+            .warn_on_redundant_route_overrides(&routes)
             .await
             .expect("a pricing-only override lookup failure is only logged");
 
@@ -2889,7 +2925,7 @@ mod tests {
             Arc::new(PassThroughPlanner),
         );
 
-        service
+        let routes = service
             .validate_route_overrides()
             .await
             .expect("pricing-only overrides cannot block startup");
@@ -2899,7 +2935,7 @@ mod tests {
             "startup validation skips pricing-only overrides"
         );
         service
-            .warn_on_redundant_route_overrides()
+            .warn_on_redundant_route_overrides(&routes)
             .await
             .expect("redundant override scan");
         assert_eq!(lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
