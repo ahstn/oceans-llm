@@ -49,14 +49,20 @@ function rules(body) {
 }
 
 // Tokens on :root. Colours go to `dark` (the system is dark only); radius, motion and the panel glow
-// apply in every mode, so they go to `light` (which the CLI writes to :root).
+// apply in every mode, so they go to `light` (which the CLI writes to :root). The scrollbar and font
+// tokens stay behind: the scrollbar rule isn't exported, and the theme's fonts below are literal.
 const rootTokens = declarations(block(css, '\n:root').body).filter(
-  ([name]) => !name.startsWith('color-') && !name.startsWith('scrollbar-') && !name.startsWith('font-'),
+  ([name]) => !name.startsWith('scrollbar-') && !name.startsWith('font-'),
 )
 const light = {}
 const dark = {}
+// The --color-* aliases are plain variables that components read with var(), such as the badge's
+// --color-success-soft. They go in `css` rather than cssVars: the CLI maps every cssVars colour into
+// @theme inline, and for a name that already starts with `color-` that mapping points at itself.
+const aliases = {}
 for (const [name, value] of rootTokens) {
-  if (name === 'radius' || name.startsWith('duration-') || name === 'panel-glow') light[name] = value
+  if (name.startsWith('color-')) aliases[`--${name}`] = value
+  else if (name === 'radius' || name.startsWith('duration-') || name === 'panel-glow') light[name] = value
   else dark[name] = value
 }
 
@@ -86,6 +92,8 @@ const fromRules = rules(block(keyframes, 'from').body)
 const cssRules = {
   '@keyframes page-in': { from: fromRules },
   '@layer base': {
+    // Under .dark, where the tokens they reference are defined.
+    '.dark': aliases,
     '@media (prefers-reduced-motion: reduce)': {
       '*, ::before, ::after': rules(block(css, '@media (prefers-reduced-motion: reduce)').body.replace(/^[\s\S]*?\{/, '').replace(/\}\s*$/, '')),
     },

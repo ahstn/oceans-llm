@@ -154,6 +154,31 @@
           }
         },
         "@layer base": {
+          ".dark": {
+            "--color-bg": "var(--background)",
+            "--color-bg-accent": "color-mix(in oklch, var(--background) 74%, var(--primary) 26%)",
+            "--color-surface": "color-mix(in oklch, var(--card) 90%, var(--background) 10%)",
+            "--color-surface-muted": "var(--surface-muted)",
+            "--color-surface-strong": "color-mix(in oklch, var(--card) 76%, var(--foreground) 24%)",
+            "--color-surface-contrast": "color-mix(in oklch, var(--secondary) 82%, var(--primary) 18%)",
+            "--color-card": "var(--card)",
+            "--color-card-auth": "color-mix(in oklch, var(--card) 88%, var(--primary) 12%)",
+            "--color-border": "var(--border)",
+            "--color-border-strong": "color-mix(in oklch, var(--border) 55%, var(--primary) 45%)",
+            "--color-text": "var(--foreground)",
+            "--color-text-muted": "color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%)",
+            "--color-text-soft": "var(--muted-foreground)",
+            "--color-primary": "var(--primary)",
+            "--color-primary-strong": "color-mix(in oklch, var(--primary) 80%, white 20%)",
+            "--color-primary-soft": "color-mix(in oklch, var(--primary) 26%, transparent)",
+            "--color-primary-foreground": "var(--primary-foreground)",
+            "--color-success": "var(--success)",
+            "--color-success-soft": "color-mix(in oklch, var(--success) 24%, transparent)",
+            "--color-warning": "var(--warning)",
+            "--color-warning-soft": "color-mix(in oklch, var(--warning) 24%, transparent)",
+            "--color-danger": "var(--destructive)",
+            "--color-danger-soft": "color-mix(in oklch, var(--destructive) 24%, transparent)"
+          },
           "@media (prefers-reduced-motion: reduce)": {
             "*, ::before, ::after": {
               "animation-duration": "0.01ms !important",
