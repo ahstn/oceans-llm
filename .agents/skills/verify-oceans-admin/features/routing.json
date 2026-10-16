@@ -57,6 +57,10 @@
       ]
     },
     {
+      "reason": "shadcn theme package generated from globals.css; mise run lint checks it stays in sync",
+      "paths": ["registry.json", "scripts/build-shadcn-theme.mjs"]
+    },
+    {
       "reason": "agent harness and repository wiring",
       "paths": [
         ".claude/skills/**",
@@ -553,6 +557,18 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/agent-plugins.tsx"
+      ]
+    },
+    {
+      "id": "design-system",
+      "file": "design-system.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/design-system/**",
+        "crates/admin-ui/web/src/components/ui/**",
+        "crates/admin-ui/web/src/styles/**"
       ]
     }
   ]
