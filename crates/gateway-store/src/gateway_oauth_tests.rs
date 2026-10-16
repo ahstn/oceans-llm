@@ -331,6 +331,25 @@ where
             .unwrap()
     );
 
+    // Only the live access token passes the batched stream check; refresh
+    // tokens and unknown hashes never do.
+    let candidates = ["access-hash", "refresh-hash", "unknown-hash"].map(String::from);
+    assert_eq!(
+        store
+            .live_gateway_oauth_access_tokens(&candidates, now)
+            .await
+            .unwrap(),
+        vec!["access-hash".to_string()]
+    );
+    assert!(
+        store
+            .live_gateway_oauth_access_tokens(&candidates, now + Duration::hours(2))
+            .await
+            .unwrap()
+            .is_empty(),
+        "an expired access token is not live"
+    );
+
     // Signing out ends the grant through its session, and revokes it too.
     let signed_out = now + Duration::minutes(5);
     store
@@ -347,6 +366,14 @@ where
     assert_eq!(
         context.grant.revoked_reason.as_deref(),
         Some("session_ended")
+    );
+    assert!(
+        store
+            .live_gateway_oauth_access_tokens(&candidates, now + Duration::minutes(6))
+            .await
+            .unwrap()
+            .is_empty(),
+        "signing out ends the stream check too"
     );
 
     // Nothing is left to revoke, and the first reason is kept.

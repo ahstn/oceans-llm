@@ -45,6 +45,7 @@ pub(crate) use registration::MAX_REGISTRATION_BODY_BYTES;
 pub use registration::oauth_register;
 pub use revocation::oauth_revoke;
 pub(crate) use stream_lifetime::bound_to_oauth_access;
+pub use stream_lifetime::{OAUTH_STREAM_RECHECK_INTERVAL, OauthStreamWatcher};
 pub use token::oauth_token;
 
 /// The signed-in active user and their `user_sessions` ID.

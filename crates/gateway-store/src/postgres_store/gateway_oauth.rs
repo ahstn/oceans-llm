@@ -402,6 +402,37 @@ impl GatewayOauthRepository for PostgresStore {
         row.as_ref().map(decode_token_context).transpose()
     }
 
+    async fn live_gateway_oauth_access_tokens(
+        &self,
+        token_hashes: &[String],
+        now: OffsetDateTime,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut live = Vec::new();
+        for hashes in token_hashes.chunks(500) {
+            let rows = sqlx::query(
+                "SELECT t.token_hash
+                 FROM gateway_oauth_tokens t
+                 JOIN gateway_oauth_grants g ON g.grant_id = t.grant_id
+                 JOIN user_sessions s ON s.session_id = g.user_session_id
+                 JOIN users u ON u.user_id = g.user_id
+                 WHERE t.token_hash = ANY($1)
+                   AND t.token_kind = 'access' AND t.expires_at > $2
+                   AND g.revoked_at IS NULL
+                   AND s.revoked_at IS NULL AND s.expires_at > $2
+                   AND u.status = 'active'",
+            )
+            .bind(hashes)
+            .bind(now.unix_timestamp())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+            for row in rows {
+                live.push(row.try_get::<String, _>(0).map_err(to_query_error)?);
+            }
+        }
+        Ok(live)
+    }
+
     async fn get_gateway_oauth_session_state(
         &self,
         user_session_id: Uuid,

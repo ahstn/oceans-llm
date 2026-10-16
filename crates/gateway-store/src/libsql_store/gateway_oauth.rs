@@ -426,6 +426,44 @@ impl GatewayOauthRepository for LibsqlStore {
         .await
     }
 
+    async fn live_gateway_oauth_access_tokens(
+        &self,
+        token_hashes: &[String],
+        now: OffsetDateTime,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut live = Vec::new();
+        // Bound SQL parameters however many streams are open.
+        for hashes in token_hashes.chunks(500) {
+            let placeholders = vec!["?"; hashes.len()].join(", ");
+            let query = format!(
+                "SELECT t.token_hash
+                 FROM gateway_oauth_tokens t
+                 JOIN gateway_oauth_grants g ON g.grant_id = t.grant_id
+                 JOIN user_sessions s ON s.session_id = g.user_session_id
+                 JOIN users u ON u.user_id = g.user_id
+                 WHERE t.token_hash IN ({placeholders})
+                   AND t.token_kind = 'access' AND t.expires_at > {now}
+                   AND g.revoked_at IS NULL
+                   AND s.revoked_at IS NULL AND s.expires_at > {now}
+                   AND u.status = 'active'",
+                now = now.unix_timestamp(),
+            );
+            let params = hashes
+                .iter()
+                .map(|hash| libsql::Value::Text(hash.clone()))
+                .collect::<Vec<_>>();
+            let mut rows = self
+                .connection
+                .query(&query, params)
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                live.push(row.get::<String>(0).map_err(to_query_error)?);
+            }
+        }
+        Ok(live)
+    }
+
     async fn get_gateway_oauth_session_state(
         &self,
         user_session_id: Uuid,

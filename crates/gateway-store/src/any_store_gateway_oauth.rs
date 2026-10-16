@@ -104,6 +104,14 @@ impl GatewayOauthRepository for AnyStore {
         dispatch!(self, get_gateway_oauth_token_context(token_hash))
     }
 
+    async fn live_gateway_oauth_access_tokens(
+        &self,
+        token_hashes: &[String],
+        now: OffsetDateTime,
+    ) -> Result<Vec<String>, StoreError> {
+        dispatch!(self, live_gateway_oauth_access_tokens(token_hashes, now))
+    }
+
     async fn get_gateway_oauth_session_state(
         &self,
         user_session_id: Uuid,
