@@ -1,0 +1,23 @@
+crates/admin-ui/web/doctor.config.json
+  s_eaf7116ccea134::t_7b2c00dc5e78d5 4
+crates/admin-ui/web/src/lib/chart-motion.ts
+  s_eaf7116ccea134::t_9dd12b3f59e09e 4-10,12-16
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_eaf7116ccea134::t_f0e8d7d2e7926e 140-143,1484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f54bd81494ec38332cfcbd4ad2a303331f7f8a2",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
