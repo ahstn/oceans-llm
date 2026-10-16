@@ -21,10 +21,11 @@ Preconditions: a launched stack with the local demo seed, signed in as `alice@pl
 - **Sections.** The page has sections with the IDs `foundations`, `actions`, `inputs`, `data-display`, `navigation`, `feedback`, `overlays`, `guidelines`, and `recipes`.
 - **Contrast.** There are 12 `contrast-ratio` badges and every one is at least `AA`. `Content panel` reads `16.13 AAA`, `Primary action` reads `8.50 AAA`, `Link text on card` reads `7.59 AAA`, `Destructive on card` reads `6.53 AA`, `Success on card` reads `10.55 AAA`, and the lowest, `Soft text on card`, reads `7.11 AAA`.
 - **Motion.** The Motion block lists `--duration-fast`, `--duration-base`, `--duration-slow` and `--duration-chart`, and `Replay` replays the page-entrance card and moves the fill bar.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` emulated, the Data display chart shows every bar at its final shape in its first frame and settles within a frame or two, once its legend is measured. Without the preference the bars draw in over about 600ms, across dozens of distinct frames.
 - **Overlays.** `Open alert dialog` opens `Revoke ci-pipeline?` on the floating layer with the dialog shadow, and Escape closes it.
 - **Responsive.** At 375px the document is no wider than the viewport.
-- **Coverage.** `node .agents/skills/shadcn/scripts/showcase-coverage.mjs crates/admin-ui/web/src/components/ui crates/admin-ui/web/src/routes/design-system` reports every component except the two `*.test` files.
-- **Proof.** Capture the page, then `control-oceans-admin record design-system --check sections=pass --check contrast=pass --check overlays=pass --check responsive=pass --artifact <screenshot>`.
+- **Coverage.** In `crates/admin-ui/web`, `bunx vitest run src/test/design-system-coverage.test.ts` passes. It fails when a component in `src/components/ui/` (tests aside) is missing from the page, and CI runs it with the other admin UI tests.
+- **Proof.** Capture the page, then `control-oceans-admin record design-system --check sections=pass --check contrast=pass --check reduced-motion=pass --check overlays=pass --check responsive=pass --check coverage=pass --artifact <screenshot>`.
 
 ## Gotchas
 
