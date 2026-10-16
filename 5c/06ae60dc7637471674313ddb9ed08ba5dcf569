@@ -1,0 +1,23 @@
+docs/.vitepress/config.mts
+  s_eaf7116ccea134::t_700db57997a25e 244-247
+docs/.vitepress/theme/custom.css
+  s_eaf7116ccea134::t_d26decd4d1445e 1-3,5-37,54-57,60,67-100,111-114,117,182-183,207,237
+docs/contributing/reference/screenshots.md
+  s_eaf7116ccea134::t_40d289a47723fb 7-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c06ae60dc7637471674313ddb9ed08ba5dcf569",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
