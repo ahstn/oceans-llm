@@ -394,6 +394,113 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
     }
 }
 
+/// Audit summary of a server. The auth config is already allowlisted by
+/// [`map_server`]; credentials, query strings and fragments are stripped from the
+/// server URL and from every URL in the auth config (OAuth issuer, endpoints and
+/// resource).
+pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
+    let mut summary = serde_json::to_value(server).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut() {
+        for volatile in ["created_at", "updated_at", "last_discovery_at"] {
+            object.remove(volatile);
+        }
+        object.insert(
+            "server_url".to_string(),
+            Value::String(audit_safe_url(&server.server_url)),
+        );
+        if let Some(Value::Object(auth_config)) = object.get_mut("auth_config") {
+            for value in auth_config.values_mut() {
+                if let Value::String(text) = value
+                    && is_web_url(text)
+                {
+                    *text = audit_safe_url(text);
+                }
+            }
+        }
+    }
+    summary
+}
+
+fn is_web_url(text: &str) -> bool {
+    url::Url::parse(text).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+}
+
+/// Audit summary of a credential binding. The view never holds secret material;
+/// a `secret_ref` written as a URL is stripped of credentials and query like
+/// other audited URLs, and plain references such as `env/NAME` are kept.
+pub(super) fn credential_binding_audit_summary(binding: &McpCredentialBindingView) -> Value {
+    let mut summary = serde_json::to_value(binding).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut()
+        && let Some(Value::String(secret_ref)) = object.get_mut("secret_ref")
+        && is_web_url(secret_ref)
+    {
+        *secret_ref = audit_safe_url(secret_ref);
+    }
+    summary
+}
+
+const AUDIT_REDACTED_SEGMENT: &str = "REDACTED";
+
+pub(super) fn audit_safe_url(raw: &str) -> String {
+    match url::Url::parse(raw) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.set_query(None);
+            url.set_fragment(None);
+            // Some servers take a token as a path segment, e.g. `/connect/<token>`.
+            // Segments stay in their encoded form; `set_path` keeps existing escapes.
+            let path = url.path_segments().map(|segments| {
+                segments
+                    .map(|segment| {
+                        if gateway_service::is_secret_path_segment(segment) {
+                            AUDIT_REDACTED_SEGMENT
+                        } else {
+                            segment
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/")
+            });
+            if let Some(path) = path {
+                url.set_path(&format!("/{path}"));
+            }
+            url.to_string()
+        }
+        Err(_) => "[unparseable]".to_string(),
+    }
+}
+
+impl McpServerView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn server_key(&self) -> &str {
+        &self.server_key
+    }
+}
+
+impl McpToolsetView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn toolset_key(&self) -> &str {
+        &self.toolset_key
+    }
+}
+
+impl McpCredentialBindingView {
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn owner_scope_key(&self) -> &str {
+        &self.owner_scope_key
+    }
+}
+
 pub(super) fn map_credential_binding(
     binding: RedactedMcpCredentialBinding,
 ) -> McpCredentialBindingView {
@@ -565,4 +672,106 @@ fn sanitized_auth_config(
                 .map(|value| ((*field).to_string(), value.clone()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod audit_summary_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn auth_config_urls_lose_credentials_and_queries() {
+        let mut auth_config = Map::new();
+        auth_config.insert(
+            "resource".to_string(),
+            json!("https://mcp.example/?access_key=secret"),
+        );
+        auth_config.insert(
+            "token_endpoint".to_string(),
+            json!("https://user:pass@auth.example/token#frag"),
+        );
+        auth_config.insert("provider_key".to_string(), json!("github"));
+        let server = McpServerView {
+            id: "s-1".to_string(),
+            server_key: "tickets".to_string(),
+            display_name: "Tickets".to_string(),
+            description: None,
+            transport: "streamable_http".to_string(),
+            server_url: "https://mcp.example/mcp?token=abc".to_string(),
+            auth_mode: "oauth_obo".to_string(),
+            auth_config,
+            timeout_ms: 1000,
+            status: "active".to_string(),
+            last_discovery_status: None,
+            last_discovery_at: None,
+            last_successful_discovery_at: None,
+            last_error_summary: None,
+            last_tool_count: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            disabled_at: None,
+        };
+        let summary = server_audit_summary(&server);
+        assert_eq!(summary["server_url"], "https://mcp.example/mcp");
+        assert_eq!(summary["auth_config"]["resource"], "https://mcp.example/");
+        assert_eq!(
+            summary["auth_config"]["token_endpoint"],
+            "https://auth.example/token"
+        );
+        assert_eq!(summary["auth_config"]["provider_key"], "github");
+        assert!(!summary.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn credential_binding_secret_refs_lose_url_credentials() {
+        let binding = |secret_ref: &str| McpCredentialBindingView {
+            id: "b-1".to_string(),
+            server_id: "s-1".to_string(),
+            owner_scope_kind: "user".to_string(),
+            owner_scope_key: "user:1".to_string(),
+            owner_user_id: Some("1".to_string()),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            material_kind: "bearer_token".to_string(),
+            header_name: None,
+            storage_kind: "reference".to_string(),
+            secret_ref: Some(secret_ref.to_string()),
+            expires_at: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            last_used_at: None,
+            revoked_at: None,
+            oauth_provider_key: None,
+            granted_scopes: Vec::new(),
+        };
+        let url = credential_binding_audit_summary(&binding(
+            "https://vault.example/v1/secret/mcp?token=abc",
+        ));
+        assert_eq!(url["secret_ref"], "https://vault.example/v1/secret/mcp");
+        let plain = credential_binding_audit_summary(&binding("env/OCEANS_MCP_DISCOVERY_X"));
+        assert_eq!(plain["secret_ref"], "env/OCEANS_MCP_DISCOVERY_X");
+    }
+
+    #[test]
+    fn url_path_tokens_are_redacted_and_ordinary_paths_kept() {
+        assert_eq!(
+            audit_safe_url("https://mcp.example/connect/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8/sse"),
+            "https://mcp.example/connect/REDACTED/sse"
+        );
+        assert_eq!(
+            audit_safe_url("https://mcp.example/v1/mcp"),
+            "https://mcp.example/v1/mcp"
+        );
+        let encoded = format!("https://mcp.example/connect/{}/sse", "%41".repeat(32));
+        assert_eq!(
+            audit_safe_url(&encoded),
+            "https://mcp.example/connect/REDACTED/sse"
+        );
+        // Encoded segments that are not secrets keep their encoding.
+        assert_eq!(
+            audit_safe_url("https://mcp.example/team%20a/mcp"),
+            "https://mcp.example/team%20a/mcp"
+        );
+    }
 }

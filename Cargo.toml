@@ -3,6 +3,7 @@ members = [
   "crates/agent-session-analysis",
   "crates/admin-ui",
   "crates/gateway-client-config",
+  "crates/gateway-client-ip",
   "crates/gateway-guardrails",
   "crates/gateway",
   "crates/gateway-core",
@@ -21,6 +22,7 @@ admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
 gateway-guardrails = { path = "crates/gateway-guardrails" }
 gateway-client-config = { path = "crates/gateway-client-config" }
+gateway-client-ip = { path = "crates/gateway-client-ip" }
 gateway-mcp = { path = "crates/gateway-mcp" }
 gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }

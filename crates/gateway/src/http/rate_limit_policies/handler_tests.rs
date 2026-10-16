@@ -2,7 +2,7 @@ use axum::{
     http::{HeaderValue, StatusCode, header::COOKIE},
     response::IntoResponse,
 };
-use gateway_core::{AuthMode, GlobalRole, UserStatus};
+use gateway_core::{AuthMode, GlobalRole, UserRecord, UserStatus};
 use gateway_service::{RateLimitDecision, RateLimitSubject};
 use gateway_store::GatewayStore;
 use serde_json::{Value, json};
@@ -92,8 +92,13 @@ impl TestContext {
 
     async fn create(&self, headers: &HeaderMap, body: Value) -> Result<Value, StatusCode> {
         let request = serde_json::from_value(body).unwrap();
-        match create_rate_limit_policy(State(self.state.clone()), headers.clone(), Json(request))
-            .await
+        match create_rate_limit_policy(
+            State(self.state.clone()),
+            headers.clone(),
+            AuditRequestMeta::default(),
+            Json(request),
+        )
+        .await
         {
             Ok(Json(envelope)) => Ok(serde_json::to_value(envelope.data).unwrap()),
             Err(error) => Err(error.into_response().status()),
@@ -164,6 +169,7 @@ async fn platform_admins_create_update_list_and_delete_policies() {
     let Json(updated) = update_rate_limit_policy(
         State(context.state.clone()),
         headers.clone(),
+        AuditRequestMeta::default(),
         Path(policy_id.clone()),
         Json(serde_json::from_value(update).unwrap()),
     )
@@ -185,6 +191,7 @@ async fn platform_admins_create_update_list_and_delete_policies() {
     let Json(deleted) = delete_rate_limit_policy(
         State(context.state.clone()),
         headers.clone(),
+        AuditRequestMeta::default(),
         Path(policy_id.clone()),
     )
     .await
@@ -197,10 +204,15 @@ async fn platform_admins_create_update_list_and_delete_policies() {
             .len(),
         1
     );
-    let missing = delete_rate_limit_policy(State(context.state.clone()), headers, Path(policy_id))
-        .await
-        .err()
-        .unwrap();
+    let missing = delete_rate_limit_policy(
+        State(context.state.clone()),
+        headers,
+        AuditRequestMeta::default(),
+        Path(policy_id),
+    )
+    .await
+    .err()
+    .unwrap();
     assert_eq!(missing.into_response().status(), StatusCode::NOT_FOUND);
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
@@ -117,6 +118,17 @@ fn discovery_config_changed(
         || existing.auth_config != input.auth_config
 }
 
+/// Whether saving `input` would leave the server's settings as they are.
+fn server_settings_match(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.display_name == input.display_name
+        && existing.description == input.description
+        && existing.timeout_ms == input.timeout_ms
+        && !discovery_config_changed(existing, input)
+}
+
 async fn load_server(
     connection: &libsql::Connection,
     mcp_server_id: Uuid,
@@ -141,6 +153,7 @@ macro_rules! server_columns {
 }
 
 const SERVER_COLUMNS: &str = server_columns!();
+
 const SERVER_SELECT_BY_ID: &str = concat!(
     "SELECT ",
     server_columns!(),
@@ -209,14 +222,19 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<ExternalMcpServerRecord, StoreError> {
         let id = Uuid::new_v4();
         let auth_config_json = serialize_json(&input.auth_config)?;
-        self.connection
-            .execute(
-                r#"
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    r#"
                 INSERT INTO external_mcp_servers (
                     mcp_server_id, server_key, display_name, description, transport, server_url,
                     auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10)
-                "#,
+                RETURNING {SERVER_COLUMNS}
+                "#
+                ),
                 libsql::params![
                     id.to_string(),
                     input.server_key.as_str(),
@@ -232,17 +250,28 @@ impl McpRegistryRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_server(&self.connection, id).await
+        let row = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .ok_or_else(|| StoreError::Unexpected("insert returned no row".to_string()))?;
+        decode_server(&row)
     }
 
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let existing = load_server(&self.connection, input.mcp_server_id).await?;
-        let invalidate_discovery = discovery_config_changed(&existing, input);
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
+        // An immediate transaction holds the write lock, so the server read here is
+        // exactly the one this update replaces.
         let tx = self.begin_transaction().await?;
+        let existing = load_server(&tx, input.mcp_server_id).await?;
+        if server_settings_match(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         tx.execute(
             r#"
             UPDATE external_mcp_servers
@@ -290,34 +319,43 @@ impl McpRegistryRepository for LibsqlStore {
             .await
             .map_err(to_write_error)?;
         }
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = load_server(&tx, input.mcp_server_id).await?;
         tx.commit().await.map_err(to_query_error)?;
-        load_server(&self.connection, input.mcp_server_id).await
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let changed = self
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only an enabled server changes. `RETURNING` gives the row this call
+        // disabled; with no row, the server was already disabled or is missing,
+        // which `load_server` reports.
+        let mut rows = self
             .connection
-            .execute(
-                r#"
-                UPDATE external_mcp_servers
-                SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
-                    last_discovery_status = 'disabled', last_discovery_at = ?1
-                WHERE mcp_server_id = ?2
-                "#,
+            .query(
+                &format!(
+                    "UPDATE external_mcp_servers
+                     SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
+                         last_discovery_status = 'disabled', last_discovery_at = ?1
+                     WHERE mcp_server_id = ?2
+                       AND status <> 'disabled'
+                     RETURNING {SERVER_COLUMNS}"
+                ),
                 libsql::params![disabled_at.unix_timestamp(), mcp_server_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        if changed == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{mcp_server_id}` not found"
-            )));
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_server(&row)?, true));
         }
-        load_server(&self.connection, mcp_server_id).await
+        drop(rows);
+        Ok((load_server(&self.connection, mcp_server_id).await?, false))
     }
 
     async fn list_external_mcp_tools(

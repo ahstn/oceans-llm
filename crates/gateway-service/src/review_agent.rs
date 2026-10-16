@@ -86,7 +86,7 @@ where
     pub async fn update_repository(
         &self,
         input: UpdateReviewAgentRepositoryInput,
-    ) -> Result<ReviewAgentRepositoryRecord, GatewayError> {
+    ) -> Result<gateway_core::Updated<ReviewAgentRepositoryRecord>, GatewayError> {
         self.validate_service_account(input.service_account_id)
             .await?;
         self.store
@@ -106,11 +106,19 @@ where
             .map_err(Into::into)
     }
 
+    /// Sets the status. Returns the status it replaced, or `None` when the
+    /// repository already had this one.
     pub async fn set_repository_status(
         &self,
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
-    ) -> Result<ReviewAgentRepositoryRecord, GatewayError> {
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        GatewayError,
+    > {
         self.store
             .set_review_agent_repository_status(repository_id, status, OffsetDateTime::now_utc())
             .await

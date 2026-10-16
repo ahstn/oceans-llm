@@ -5,6 +5,7 @@ use gateway_core::McpToolProjection;
 use super::mcp_registry::decode_tool_metadata;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
 const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json, t.output_schema_json";
@@ -166,10 +167,10 @@ fn decode_catalog_tool(row: &libsql::Row) -> Result<McpCatalogToolRecord, StoreE
     })
 }
 
-async fn load_toolset(
+async fn find_toolset(
     connection: &libsql::Connection,
     toolset_id: Uuid,
-) -> Result<McpToolsetRecord, StoreError> {
+) -> Result<Option<McpToolsetRecord>, StoreError> {
     let sql = format!("SELECT {TOOLSET_COLUMNS} FROM mcp_toolsets WHERE toolset_id = ?1");
     let mut rows = connection
         .query(&sql, [toolset_id.to_string()])
@@ -179,8 +180,35 @@ async fn load_toolset(
         .await
         .map_err(to_query_error)?
         .map(|row| decode_toolset(&row))
-        .transpose()?
+        .transpose()
+}
+
+async fn load_toolset(
+    connection: &libsql::Connection,
+    toolset_id: Uuid,
+) -> Result<McpToolsetRecord, StoreError> {
+    find_toolset(connection, toolset_id)
+        .await?
         .ok_or_else(|| StoreError::NotFound(format!("MCP toolset `{toolset_id}` was not found")))
+}
+
+async fn toolset_tools_on(
+    connection: &libsql::Connection,
+    toolset_id: Uuid,
+) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    load_toolset(connection, toolset_id).await?;
+    let mut rows = connection
+        .query(
+            "SELECT toolset_id, mcp_tool_id, created_at FROM mcp_toolset_tools WHERE toolset_id = ?1 ORDER BY mcp_tool_id",
+            [toolset_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut tools = Vec::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        tools.push(decode_toolset_tool(&row)?);
+    }
+    Ok(tools)
 }
 
 #[async_trait]
@@ -204,18 +232,28 @@ impl McpAccessRepository for LibsqlStore {
         Ok(toolsets)
     }
 
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        find_toolset(&self.connection, toolset_id).await
+    }
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,
     ) -> Result<McpToolsetRecord, StoreError> {
         let id = Uuid::new_v4();
-        self.connection
-            .execute(
-                r#"
-                INSERT INTO mcp_toolsets (
-                    toolset_id, toolset_key, display_name, description, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)
-                "#,
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "INSERT INTO mcp_toolsets (
+                        toolset_id, toolset_key, display_name, description, status, created_at, updated_at
+                    ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)
+                    RETURNING {TOOLSET_COLUMNS}"
+                ),
                 libsql::params![
                     id.to_string(),
                     input.toolset_key.as_str(),
@@ -226,37 +264,54 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_toolset(&self.connection, id).await
+        let row =
+            rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+                StoreError::Unexpected("tool set insert returned no row".to_string())
+            })?;
+        decode_toolset(&row)
     }
 
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError> {
-        let changed = self
-            .connection
-            .execute(
-                r#"
+    ) -> Result<Updated<McpToolsetRecord>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        let existing = find_toolset(&tx, input.toolset_id)
+            .await?
+            .filter(|toolset| toolset.status != McpToolsetStatus::Disabled)
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "active MCP toolset `{}` was not found",
+                    input.toolset_id
+                ))
+            })?;
+        if existing.display_name == input.display_name && existing.description == input.description
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        tx.execute(
+            r#"
                 UPDATE mcp_toolsets
                 SET display_name = ?1, description = ?2, updated_at = ?3
-                WHERE toolset_id = ?4 AND status != 'disabled'
+                WHERE toolset_id = ?4
                 "#,
-                libsql::params![
-                    input.display_name.as_str(),
-                    input.description.as_deref(),
-                    input.updated_at.unix_timestamp(),
-                    input.toolset_id.to_string(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        if changed == 0 {
-            return Err(StoreError::NotFound(format!(
-                "active MCP toolset `{}` was not found",
-                input.toolset_id
-            )));
-        }
-        load_toolset(&self.connection, input.toolset_id).await
+            libsql::params![
+                input.display_name.as_str(),
+                input.description.as_deref(),
+                input.updated_at.unix_timestamp(),
+                input.toolset_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = load_toolset(&tx, input.toolset_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn disable_mcp_toolset(
@@ -285,8 +340,13 @@ impl McpAccessRepository for LibsqlStore {
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         let tx = self.begin_transaction().await?;
+        let existing = toolset_tools_on(&tx, toolset_id).await?;
+        if same_tool_ids(&existing, tool_ids) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
         tx.execute(
             "DELETE FROM mcp_toolset_tools WHERE toolset_id = ?1",
             [toolset_id.to_string()],
@@ -311,43 +371,39 @@ impl McpAccessRepository for LibsqlStore {
         )
         .await
         .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the membership this call wrote.
+        let current = toolset_tools_on(&tx, toolset_id).await?;
         tx.commit().await.map_err(to_write_error)?;
-        self.list_mcp_toolset_tools(toolset_id).await
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn list_mcp_toolset_tools(
         &self,
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
-        load_toolset(&self.connection, toolset_id).await?;
-        let mut rows = self
-            .connection
-            .query(
-                "SELECT toolset_id, mcp_tool_id, created_at FROM mcp_toolset_tools WHERE toolset_id = ?1 ORDER BY mcp_tool_id",
-                [toolset_id.to_string()],
-            )
-            .await
-            .map_err(to_query_error)?;
-        let mut tools = Vec::new();
-        while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            tools.push(decode_toolset_tool(&row)?);
-        }
-        Ok(tools)
+        toolset_tools_on(&self.connection, toolset_id).await
     }
 
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError> {
+    ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
-        self.connection
-            .execute(
+        // `RETURNING` gives the row this statement wrote, so `created` cannot be
+        // confused by a concurrent revoke and re-grant.
+        let mut rows = self
+            .connection
+            .query(
                 r#"
                 INSERT INTO mcp_tool_grants (
                     grant_id, subject_kind, subject_id, target_kind, target_id, is_active, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)
                 ON CONFLICT(subject_kind, subject_id, target_kind, target_id) WHERE is_active = 1
                 DO UPDATE SET updated_at = excluded.updated_at, revoked_at = NULL
+                RETURNING grant_id, subject_kind, subject_id, target_kind, target_id, is_active, created_at, updated_at, revoked_at
                 "#,
                 libsql::params![
                     id.to_string(),
@@ -360,15 +416,13 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        self.list_mcp_tool_grants(Some(grant.subject_kind), Some(grant.subject_id))
-            .await?
-            .into_iter()
-            .find(|record| {
-                record.target_kind == grant.target_kind
-                    && record.target_id == grant.target_id
-                    && record.is_active
-            })
-            .ok_or_else(|| StoreError::Unexpected("failed loading upserted MCP grant".to_string()))
+        let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+            StoreError::Unexpected("MCP grant upsert returned no row".to_string())
+        })?;
+        let record = decode_grant(&row)?;
+        // The insert keeps this call's id; an already-active grant keeps its own.
+        let created = record.grant_id == id;
+        Ok((record, created))
     }
 
     async fn revoke_mcp_tool_grant(
@@ -378,14 +432,17 @@ impl McpAccessRepository for LibsqlStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let changed = self
+    ) -> Result<Option<Uuid>, StoreError> {
+        // `RETURNING` names the row this update revoked, even if another request
+        // revoked and re-created the grant in between.
+        let mut rows = self
             .connection
-            .execute(
+            .query(
                 r#"
                 UPDATE mcp_tool_grants
                 SET is_active = 0, revoked_at = ?1, updated_at = ?1
                 WHERE subject_kind = ?2 AND subject_id = ?3 AND target_kind = ?4 AND target_id = ?5 AND is_active = 1
+                RETURNING grant_id
                 "#,
                 libsql::params![
                     revoked_at.unix_timestamp(),
@@ -397,7 +454,13 @@ impl McpAccessRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(changed > 0)
+        let Some(row) = rows.next().await.map_err(to_write_error)? else {
+            return Ok(None);
+        };
+        let grant_id: String = row.get(0).map_err(to_query_error)?;
+        Uuid::parse_str(&grant_id)
+            .map(Some)
+            .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
     async fn list_mcp_tool_grants(
@@ -735,4 +798,13 @@ async fn collect_catalog_toolset_tools(
         out.insert(record.tool.mcp_tool_id, record);
     }
     Ok(())
+}
+
+/// Whether `requested` names exactly the tools already in the set, ignoring order
+/// and repeats.
+fn same_tool_ids(existing: &[McpToolsetToolRecord], requested: &[Uuid]) -> bool {
+    let existing: std::collections::BTreeSet<Uuid> =
+        existing.iter().map(|tool| tool.mcp_tool_id).collect();
+    let requested: std::collections::BTreeSet<Uuid> = requested.iter().copied().collect();
+    existing == requested
 }

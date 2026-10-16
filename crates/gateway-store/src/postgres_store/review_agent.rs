@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 const REPOSITORY_COLUMNS: &str = "repository_id, provider, external_repository_id, owner, name, full_name, service_account_id, status, inline_review_enabled, pr_summary_enabled, diagrams_enabled, linked_issue_detection_enabled, linked_issue_assessment_enabled, default_model_key, max_inline_comments, request_changes_on_high_severity, settings_json, created_at, updated_at";
 const ALIASED_REPOSITORY_COLUMNS: &str = "r.repository_id, r.provider, r.external_repository_id, r.owner, r.name, r.full_name, r.service_account_id, r.status, r.inline_review_enabled, r.pr_summary_enabled, r.diagrams_enabled, r.linked_issue_detection_enabled, r.linked_issue_assessment_enabled, r.default_model_key, r.max_inline_comments, r.request_changes_on_high_severity, r.settings_json, r.created_at, r.updated_at";
@@ -138,28 +139,6 @@ fn decode_run(row: &PgRow) -> Result<ReviewAgentRunRecord, StoreError> {
     })
 }
 
-async fn load_repository(
-    pool: &PgPool,
-    repository_id: Uuid,
-) -> Result<ReviewAgentRepositoryRecord, StoreError> {
-    let sql = format!(
-        "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
-    );
-    let row = sqlx::query(&sql)
-        .bind(repository_id.to_string())
-        .fetch_optional(pool)
-        .await
-        .map_err(to_query_error)?;
-    row.as_ref()
-        .map(decode_repository)
-        .transpose()?
-        .ok_or_else(|| {
-            StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            ))
-        })
-}
-
 async fn load_run(pool: &PgPool, run_id: Uuid) -> Result<ReviewAgentRunRecord, StoreError> {
     let sql = format!("SELECT {RUN_COLUMNS} FROM review_agent_runs WHERE run_id = $1");
     let row = sqlx::query(&sql)
@@ -257,7 +236,8 @@ impl ReviewAgentRepository for PostgresStore {
     ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
         let repository_id = Uuid::new_v4();
         let settings_json = serialize_json(&input.settings_json)?;
-        sqlx::query(
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let row = sqlx::query(&format!(
             r#"
             INSERT INTO review_agent_repositories (
                 repository_id, provider, external_repository_id, owner, name, full_name,
@@ -266,8 +246,9 @@ impl ReviewAgentRepository for PostgresStore {
                 linked_issue_assessment_enabled, default_model_key, max_inline_comments,
                 request_changes_on_high_severity, settings_json, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-            "#,
-        )
+            RETURNING {REPOSITORY_COLUMNS}
+            "#
+        ))
         .bind(repository_id.to_string())
         .bind(input.provider.as_str())
         .bind(input.external_repository_id.as_deref())
@@ -285,18 +266,40 @@ impl ReviewAgentRepository for PostgresStore {
         .bind(bool_to_i64(input.settings.request_changes_on_high_severity))
         .bind(settings_json)
         .bind(input.created_at.unix_timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
-        load_repository(&self.pool, repository_id).await
+        decode_repository(&row)
     }
 
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<Updated<ReviewAgentRepositoryRecord>, StoreError> {
         let settings_json = serialize_json(&input.settings_json)?;
-        let result = sqlx::query(
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let sql = format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1 FOR UPDATE"
+        );
+        let existing = sqlx::query(&sql)
+            .bind(input.repository_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_repository)
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "review agent repository `{}` was not found",
+                    input.repository_id
+                ))
+            })?;
+        if crate::shared::review_agent_repository_matches(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        sqlx::query(
             r#"
             UPDATE review_agent_repositories
             SET external_repository_id = $1, owner = $2, name = $3, full_name = $4,
@@ -326,16 +329,23 @@ impl ReviewAgentRepository for PostgresStore {
         .bind(settings_json)
         .bind(input.updated_at.unix_timestamp())
         .bind(input.repository_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{}` was not found",
-                input.repository_id
-            )));
-        }
-        load_repository(&self.pool, input.repository_id).await
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = sqlx::query(&format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
+        ))
+        .bind(input.repository_id.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(to_query_error)
+        .and_then(|row| decode_repository(&row))?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn set_review_agent_repository_status(
@@ -343,22 +353,53 @@ impl ReviewAgentRepository for PostgresStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    > {
+        // Locking the row makes the status read here the one this call replaces.
+        // Only a different status is written.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let select = format!(
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE repository_id = $1"
+        );
+        let existing = sqlx::query(&format!("{select} FOR UPDATE"))
+            .bind(repository_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_repository)
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!(
+                    "review agent repository `{repository_id}` was not found"
+                ))
+            })?;
+        if existing.status == status {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok((existing, None));
+        }
+        sqlx::query(
             "UPDATE review_agent_repositories SET status = $1, updated_at = $2 WHERE repository_id = $3",
         )
         .bind(status.as_str())
         .bind(updated_at.unix_timestamp())
         .bind(repository_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            )));
-        }
-        load_repository(&self.pool, repository_id).await
+        let current = sqlx::query(&select)
+            .bind(repository_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)
+            .and_then(|row| decode_repository(&row))?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok((current, Some(existing.status)))
     }
 
     async fn upsert_review_agent_pull_request(

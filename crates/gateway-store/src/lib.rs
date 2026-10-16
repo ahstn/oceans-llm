@@ -4,6 +4,7 @@
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
+mod any_store_audit_logs;
 mod any_store_batches;
 mod any_store_guardrail_decisions;
 mod any_store_mcp_access;
@@ -16,6 +17,7 @@ mod any_store_rate_limits;
 mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
+mod audit_logs;
 mod budget_batch;
 mod budget_increases;
 mod libsql_store;
@@ -48,6 +50,9 @@ mod agent_analysis_tests;
 
 #[cfg(test)]
 mod budget_increase_tests;
+
+#[cfg(test)]
+mod change_report_tests;
 
 #[cfg(test)]
 mod budget_reconciliation_tests;
@@ -426,6 +431,18 @@ pub(crate) mod tests {
             .revoke_api_key(api_key.id, disabled_at)
             .await
             .expect("revoke managed key");
+        // The access replacement rechecks the status under its lock, so a revoke
+        // that lands first leaves the key's grants alone.
+        assert!(matches!(
+            store
+                .replace_api_key_model_access(
+                    api_key.id,
+                    gateway_core::ApiKeyModelGrantMode::Explicit,
+                    &[],
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
 
         store
             .seed_from_inputs(
@@ -1008,7 +1025,7 @@ pub(crate) mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].run_id, run.run_id);
 
-        let disabled = store
+        let (disabled, replaced) = store
             .set_review_agent_repository_status(
                 repository.repository_id,
                 ReviewAgentRepositoryStatus::Disabled,
@@ -1016,6 +1033,16 @@ pub(crate) mod tests {
             )
             .await
             .expect("disable repository");
+        assert_eq!(replaced, Some(ReviewAgentRepositoryStatus::Active));
+        let (_, replaced_again) = store
+            .set_review_agent_repository_status(
+                repository.repository_id,
+                ReviewAgentRepositoryStatus::Disabled,
+                finished_at,
+            )
+            .await
+            .expect("disable repository again");
+        assert_eq!(replaced_again, None, "the same status is not a transition");
         assert_eq!(disabled.status, ReviewAgentRepositoryStatus::Disabled);
 
         let replacement = store
@@ -1448,7 +1475,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::seconds(1),
             })
             .await
-            .expect("update MCP server");
+            .expect("update MCP server")
+            .current;
         assert_eq!(updated.display_name, "GitHub");
         assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
 
@@ -1567,7 +1595,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::seconds(6),
             })
             .await
-            .expect("invalidate discovery on config update");
+            .expect("invalidate discovery on config update")
+            .current;
         assert_eq!(invalidated.last_discovery_status, None);
         assert_eq!(invalidated.last_tool_count, Some(0));
         assert_eq!(invalidated.last_error_summary, None);
@@ -1604,10 +1633,20 @@ pub(crate) mod tests {
         );
         assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
 
-        let disabled = store
+        let (disabled, changed) = store
             .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(9))
             .await
             .expect("disable server");
+        assert!(changed);
+        let (again, changed_again) = store
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
+            .await
+            .expect("disable server again");
+        assert!(
+            !changed_again,
+            "an already-disabled server is not disabled again"
+        );
+        assert_eq!(again.disabled_at, disabled.disabled_at);
         assert_eq!(disabled.status, ExternalMcpServerStatus::Disabled);
         assert!(disabled.disabled_at.is_some());
         assert!(
@@ -1883,6 +1922,8 @@ pub(crate) mod tests {
             })
             .await
             .expect("create credential binding");
+        let (binding, replaced) = binding;
+        assert!(replaced.is_none(), "a new binding is a create");
         assert_eq!(binding.owner_scope_key, scope_key);
         assert_eq!(
             binding.secret_ref.as_deref(),
@@ -2002,15 +2043,16 @@ pub(crate) mod tests {
                 .expect("release refresh lease")
         );
 
-        assert!(
-            store
-                .revoke_mcp_upstream_credential_binding(
-                    binding.credential_binding_id,
-                    now + Duration::minutes(10),
-                )
-                .await
-                .expect("revoke credential")
-        );
+        let revoked = store
+            .revoke_mcp_upstream_credential_binding(
+                binding.credential_binding_id,
+                now + Duration::minutes(10),
+            )
+            .await
+            .expect("revoke credential")
+            .expect("active binding revoked");
+        assert_eq!(revoked.credential_binding_id, binding.credential_binding_id);
+        assert!(revoked.revoked_at.is_some());
         assert!(
             store
                 .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
@@ -2070,7 +2112,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(11),
             })
             .await
-            .expect("create replacement credential");
+            .expect("create replacement credential")
+            .0;
         assert_eq!(
             replacement.material_kind,
             McpUpstreamCredentialMaterialKind::StaticHeader
@@ -2109,7 +2152,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(20),
             })
             .await
-            .expect("create OAuth credential");
+            .expect("create OAuth credential")
+            .0;
         let refreshed = store
             .compare_and_swap_mcp_oauth_credential_refresh(
                 &RefreshMcpOauthCredentialBindingRecord {
@@ -2164,6 +2208,12 @@ pub(crate) mod tests {
             })
             .await
             .expect("reconnect OAuth credential");
+        let (reconnected, replaced) = reconnected;
+        let replaced = replaced.expect("reusing an existing id replaces the binding");
+        assert_eq!(
+            replaced.credential_binding_id,
+            oauth_binding.credential_binding_id
+        );
         assert!(
             !store
                 .revoke_mcp_oauth_credential_if_unchanged(
@@ -2987,6 +3037,116 @@ pub(crate) mod tests {
         .await
         .expect("insert oidc provider");
         provider_id
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_password_invitation_revoke_reports_whether_it_changed() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "Invitee",
+                "invitee@example.com",
+                "invitee@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Invited,
+            )
+            .await
+            .expect("create user");
+        let now = OffsetDateTime::now_utc();
+        // SSO activation moves an invited user to active once.
+        assert!(
+            store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await
+                .expect("activate")
+        );
+        assert!(
+            !store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await
+                .expect("activate again")
+        );
+        store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("invitation");
+        // Audit progress is marked from this flag, so a retry must report false.
+        assert!(
+            store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke again")
+        );
+
+        // Redeeming claims an invitation once; a racing second redemption gets
+        // `false` and changes nothing.
+        let invitation = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash-2",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("second invitation");
+        assert!(
+            store
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "first-hash",
+                    now
+                )
+                .await
+                .expect("redeem")
+        );
+        assert!(
+            !store
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "second-hash",
+                    now
+                )
+                .await
+                .expect("redeem again")
+        );
+        let redeemed = store
+            .get_user_by_id(user.user_id)
+            .await
+            .expect("load user")
+            .expect("user exists");
+        assert_eq!(redeemed.status, UserStatus::Active);
+        assert_eq!(
+            store
+                .get_user_password_auth(user.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash",
+            "the losing redemption must not replace the password"
+        );
     }
 
     #[tokio::test]
@@ -5971,11 +6131,12 @@ pub(crate) mod tests {
             .expect("platform admin");
         let now = OffsetDateTime::now_utc();
 
-        assert!(
-            !store
+        assert_eq!(
+            store
                 .remove_team_membership(source_team.team_id, member.user_id)
                 .await
-                .expect("remove non-member")
+                .expect("remove non-member"),
+            None
         );
 
         store
@@ -6005,11 +6166,12 @@ pub(crate) mod tests {
         assert_eq!(transferred_membership.team_id, destination_team.team_id);
         assert_eq!(transferred_membership.role, MembershipRole::Member);
 
-        assert!(
+        assert_eq!(
             store
                 .remove_team_membership(destination_team.team_id, member.user_id)
                 .await
-                .expect("remove transferred member")
+                .expect("remove transferred member"),
+            Some(MembershipRole::Member)
         );
         assert!(
             store
@@ -6080,10 +6242,19 @@ pub(crate) mod tests {
             )
             .await
             .expect("create second session");
-        store
-            .revoke_user_session(session.session_id, now)
-            .await
-            .expect("revoke one session");
+        assert!(
+            store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke one session")
+        );
+        // A second logout with the same cookie changes nothing.
+        assert!(
+            !store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke it again")
+        );
         assert!(
             store
                 .get_user_session(session.session_id)
@@ -8940,6 +9111,63 @@ pub(crate) mod tests {
                 .await
                 .expect("load invitation")
                 .is_some()
+        );
+        assert!(
+            store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations again")
+        );
+        let redeemable = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                member.user_id,
+                "token-hash-2",
+                OffsetDateTime::now_utc() + time::Duration::days(7),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("redeemable invitation");
+        for (hash, expected) in [("first-hash", true), ("second-hash", false)] {
+            assert_eq!(
+                store
+                    .redeem_password_invitation(
+                        redeemable.invitation_id,
+                        member.user_id,
+                        hash,
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await
+                    .expect("redeem invitation"),
+                expected
+            );
+        }
+        assert_eq!(
+            store
+                .get_user_password_auth(member.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash"
+        );
+        // The redeemed user is already active, so SSO activation changes nothing.
+        assert!(
+            !store
+                .transition_user_status(
+                    member.user_id,
+                    UserStatus::Invited,
+                    UserStatus::Active,
+                    OffsetDateTime::now_utc(),
+                )
+                .await
+                .expect("activate redeemed user")
         );
 
         let cache = PricingCatalogCacheRecord {

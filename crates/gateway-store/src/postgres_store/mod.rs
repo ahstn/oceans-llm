@@ -1,5 +1,6 @@
 mod agent_analysis;
 mod api_keys;
+mod audit_logs;
 mod batches;
 mod budget_alerts;
 mod budget_batch;
@@ -235,7 +236,7 @@ impl GatewayStore for PostgresStore {
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::update_service_account_profile(
             self,
             service_account_id,
@@ -250,7 +251,7 @@ impl GatewayStore for PostgresStore {
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::disable_service_account(self, service_account_id, disabled_at).await
     }
 
@@ -343,7 +344,7 @@ impl GatewayStore for PostgresStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_name(self, team_id, team_name, updated_at).await
     }
 
@@ -352,7 +353,7 @@ impl GatewayStore for PostgresStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_tags(self, team_id, tags, updated_at).await
     }
 
@@ -383,7 +384,7 @@ impl GatewayStore for PostgresStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
     }
 
@@ -392,7 +393,7 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_tags(self, user_id, tags, updated_at).await
     }
 
@@ -400,7 +401,7 @@ impl GatewayStore for PostgresStore {
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         Self::deactivate_identity_user(self, user_id, updated_at).await
     }
 
@@ -417,7 +418,7 @@ impl GatewayStore for PostgresStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         Self::remove_team_membership(self, team_id, user_id).await
     }
 
@@ -428,7 +429,7 @@ impl GatewayStore for PostgresStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         Self::transfer_team_membership(self, user_id, from_team_id, to_team_id, role, updated_at)
             .await
     }
@@ -453,7 +454,7 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_membership_role(self, team_id, user_id, role, updated_at).await
     }
 
@@ -469,7 +470,7 @@ impl GatewayStore for PostgresStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_password_invitations_for_user(self, user_id, revoked_at).await
     }
 
@@ -499,12 +500,15 @@ impl GatewayStore for PostgresStore {
         Self::get_password_invitation(self, invitation_id).await
     }
 
-    async fn mark_password_invitation_consumed(
+    async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        Self::mark_password_invitation_consumed(self, invitation_id, consumed_at).await
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        Self::redeem_password_invitation(self, invitation_id, user_id, password_hash, redeemed_at)
+            .await
     }
 
     async fn store_user_password(
@@ -521,8 +525,18 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_status(self, user_id, status, updated_at).await
+    }
+
+    async fn transition_user_status(
+        &self,
+        user_id: Uuid,
+        from: UserStatus,
+        to: UserStatus,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        Self::transition_user_status(self, user_id, from, to, updated_at).await
     }
 
     async fn update_user_must_change_password(
@@ -576,7 +590,7 @@ impl GatewayStore for PostgresStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_user_session(self, session_id, revoked_at).await
     }
 
@@ -620,11 +634,11 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oidc_link(self, user_id, oidc_provider_id, created_at).await
     }
 
-    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oidc_link(self, user_id).await
     }
 
@@ -668,15 +682,15 @@ impl GatewayStore for PostgresStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oauth_link(self, user_id, oauth_provider_id, created_at).await
     }
 
-    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oauth_link(self, user_id).await
     }
 
-    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::delete_user_password_auth(self, user_id).await
     }
 
@@ -684,7 +698,7 @@ impl GatewayStore for PostgresStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oidc_auth(self, user_id, oidc_provider_id).await
     }
 
@@ -692,7 +706,7 @@ impl GatewayStore for PostgresStore {
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oauth_auth(self, user_id, oauth_provider_id).await
     }
 
@@ -800,7 +814,7 @@ impl GatewayStore for PostgresStore {
         defaults: &gateway_core::SeedHumanBudgetDefaults,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::apply_human_budget_defaults_for_user(self, defaults, user_id, updated_at).await
     }
 }

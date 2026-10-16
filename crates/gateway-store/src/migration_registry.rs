@@ -349,6 +349,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V60__rate_limits.sql"),
         postgres_sql: include_str!("../migrations/postgres/V60__rate_limits.sql"),
     },
+    MigrationManifest {
+        version: 61,
+        name: "admin_audit_log",
+        checksum: "V61__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V61__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V61__admin_audit_log.sql"),
+    },
 ];
 
 #[cfg(test)]

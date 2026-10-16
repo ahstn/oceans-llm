@@ -158,6 +158,7 @@ async fn callback(state: &AppState, headers: &HeaderMap, raw_state: &str) -> Str
     let response = mcp_oauth_server_callback(
         State(state.clone()),
         headers.clone(),
+        crate::http::audit::AuditRequestMeta::default(),
         Query(McpOauthCallbackQuery {
             code: Some("auth-code".to_string()),
             state: Some(raw_state.to_string()),

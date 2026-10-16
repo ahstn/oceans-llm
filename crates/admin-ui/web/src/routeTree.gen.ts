@@ -33,6 +33,7 @@ import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
+import { Route as ObservabilityAuditLogRouteImport } from './routes/observability/audit-log'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
@@ -164,6 +165,11 @@ const ObservabilityAgentSessionsRoute =
     path: '/observability/agent-sessions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityAuditLogRoute = ObservabilityAuditLogRouteImport.update({
+  id: '/observability/audit-log',
+  path: '/observability/audit-log',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ObservabilityGuardrailsRoute = ObservabilityGuardrailsRouteImport.update({
   id: '/observability/guardrails',
   path: '/observability/guardrails',
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -301,6 +309,7 @@ export interface FileRoutesById {
   '/mcp/toolsets': typeof McpToolsetsRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -337,6 +346,7 @@ export interface FileRouteTypes {
     | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -405,6 +416,7 @@ export interface FileRouteTypes {
     | '/mcp/toolsets'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   McpToolsetsRoute: typeof McpToolsetsRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
+  ObservabilityAuditLogRoute: typeof ObservabilityAuditLogRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
@@ -621,6 +634,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityAgentSessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/audit-log': {
+      id: '/observability/audit-log'
+      path: '/observability/audit-log'
+      fullPath: '/observability/audit-log'
+      preLoaderRoute: typeof ObservabilityAuditLogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/guardrails': {
       id: '/observability/guardrails'
       path: '/observability/guardrails'
@@ -704,6 +724,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpToolsetsRoute: McpToolsetsRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
+  ObservabilityAuditLogRoute: ObservabilityAuditLogRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,

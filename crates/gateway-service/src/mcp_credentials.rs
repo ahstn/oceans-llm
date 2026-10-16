@@ -178,10 +178,18 @@ where
         })
     }
 
+    /// Creates or replaces a binding. Returns the written binding and, when an
+    /// existing one was replaced, that binding as it was, both without secrets.
     pub async fn upsert_binding(
         &self,
         input: UpsertMcpCredentialBindingInput,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         validate_credential_input(&input)?;
         let now = OffsetDateTime::now_utc();
         let owner_scope_key = credential_owner_scope_key(
@@ -237,11 +245,11 @@ where
             metadata: input.metadata,
             updated_at: now,
         };
-        Ok(redact_binding(
-            self.repo
-                .upsert_mcp_upstream_credential_binding(&record)
-                .await?,
-        ))
+        let (binding, replaced) = self
+            .repo
+            .upsert_mcp_upstream_credential_binding(&record)
+            .await?;
+        Ok((redact_binding(binding), replaced.map(redact_binding)))
     }
 
     pub async fn upsert_oauth_user_binding(
@@ -249,7 +257,13 @@ where
         mcp_server_id: Uuid,
         user_id: Uuid,
         grant: McpOauthTokenGrant,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         let owner_scope_key = credential_owner_scope_key(
             McpUpstreamCredentialOwnerScopeKind::User,
             Some(user_id),
@@ -301,14 +315,20 @@ where
             .collect())
     }
 
-    pub async fn revoke_binding(&self, credential_binding_id: Uuid) -> Result<bool, GatewayError> {
+    /// Revokes the binding and returns it, without secret material, or `None` when
+    /// it was missing or already revoked.
+    pub async fn revoke_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
         Ok(self
             .repo
             .revoke_mcp_upstream_credential_binding(
                 credential_binding_id,
                 OffsetDateTime::now_utc(),
             )
-            .await?)
+            .await?
+            .map(redact_binding))
     }
 }
 
@@ -1017,7 +1037,13 @@ mod tests {
         async fn upsert_mcp_upstream_credential_binding(
             &self,
             _input: &UpsertMcpUpstreamCredentialBindingRecord,
-        ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+        ) -> Result<
+            (
+                McpUpstreamCredentialBindingRecord,
+                Option<McpUpstreamCredentialBindingRecord>,
+            ),
+            StoreError,
+        > {
             unimplemented!()
         }
 
@@ -1064,7 +1090,7 @@ mod tests {
             &self,
             _credential_binding_id: Uuid,
             _revoked_at: OffsetDateTime,
-        ) -> Result<bool, StoreError> {
+        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
             unimplemented!()
         }
 

@@ -96,7 +96,7 @@ async fn store_write_waits_for_another_store_transaction() {
         .await
         .expect("update task")
         .expect("update commits once the lock is free");
-    assert_eq!(updated.display_name, "Renamed docs");
+    assert_eq!(updated.current.display_name, "Renamed docs");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

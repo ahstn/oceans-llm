@@ -24,6 +24,7 @@ use crate::{
     RequestLogContext, RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging,
     ResolvedGatewayRequest, ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
     StreamResponseCollector,
+    admin_audit::AuditProgress,
     agent_analysis::{
         PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
         finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
@@ -769,7 +770,19 @@ where
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_now_and_sync().await?;
+        self.refresh_pricing_catalog_now_tracked(&AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_pricing_catalog_now`], marking `progress` once the
+    /// catalog cache is written.
+    pub async fn refresh_pricing_catalog_now_tracked(
+        &self,
+        progress: &AuditProgress,
+    ) -> Result<(), GatewayError> {
+        self.pricing_catalog
+            .refresh_now_and_sync_tracked(progress)
+            .await?;
         self.warn_on_route_context_override_conflicts().await
     }
 
@@ -2212,6 +2225,15 @@ mod tests {
             ))
         }
 
+        async fn set_manual_budget(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
+            unimplemented!()
+        }
+
         async fn upsert_active_budget_with_source(
             &self,
             _scope: &BudgetScope,
@@ -2242,6 +2264,14 @@ mod tests {
             _updated_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
             Ok(false)
+        }
+
+        async fn deactivate_active_budget_returning(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
         }
 
         async fn deactivate_active_budget_by_source(
