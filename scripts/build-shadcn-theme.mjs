@@ -13,6 +13,10 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// Pinned so a CLI release can't change docs/public/r without a change here. To bump it, update this
+// and run `mise run shadcn-theme`, then commit what it regenerates.
+const SHADCN_VERSION = '4.21.4'
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const cssPath = join(root, 'crates/admin-ui/web/src/styles/globals.css')
 const registryPath = join(root, 'registry.json')
@@ -161,7 +165,7 @@ if (process.argv.includes('--check')) {
   writeFileSync(registryPath, output)
   console.log(`wrote registry.json: ${Object.keys(dark).length} dark tokens, ${Object.keys(theme).length} theme entries`)
   if (process.argv.includes('--build')) {
-    const build = spawnSync('npx', ['--yes', 'shadcn@latest', 'build', 'registry.json', '--output', 'docs/public/r'], { cwd: root, stdio: 'inherit' })
+    const build = spawnSync('npx', ['--yes', `shadcn@${SHADCN_VERSION}`, 'build', 'registry.json', '--output', 'docs/public/r'], { cwd: root, stdio: 'inherit' })
     if (build.status !== 0) process.exit(build.status ?? 1)
     // The CLI omits the trailing newline the repository's end-of-file hook requires.
     for (const file of readdirSync(outDir).filter((name) => name.endsWith('.json'))) {
