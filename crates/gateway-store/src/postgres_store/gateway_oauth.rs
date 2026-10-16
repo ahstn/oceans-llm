@@ -124,6 +124,24 @@ fn decode_token_context(row: &PgRow) -> Result<GatewayOauthTokenContext, StoreEr
     })
 }
 
+fn decode_grant(row: &PgRow) -> Result<GatewayOauthGrantRecord, StoreError> {
+    let grant_id: String = row.try_get(0).map_err(to_query_error)?;
+    let user_id: String = row.try_get(2).map_err(to_query_error)?;
+    let user_session_id: String = row.try_get(3).map_err(to_query_error)?;
+    Ok(GatewayOauthGrantRecord {
+        grant_id: parse_uuid(&grant_id)?,
+        client_id: row.try_get(1).map_err(to_query_error)?,
+        user_id: parse_uuid(&user_id)?,
+        user_session_id: parse_uuid(&user_session_id)?,
+        resource: row.try_get(4).map_err(to_query_error)?,
+        scope: row.try_get(5).map_err(to_query_error)?,
+        created_at: unix_to_datetime(row.try_get(6).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.try_get(7).map_err(to_query_error)?)?,
+        revoked_at: optional_time(row.try_get(8).map_err(to_query_error)?)?,
+        revoked_reason: row.try_get(9).map_err(to_query_error)?,
+    })
+}
+
 fn decode_session_state(row: &PgRow) -> Result<GatewayOauthSessionState, StoreError> {
     let session_id: String = row.try_get(0).map_err(to_query_error)?;
     let user_id: String = row.try_get(1).map_err(to_query_error)?;
@@ -558,20 +576,21 @@ impl GatewayOauthRepository for PostgresStore {
         user_id: Uuid,
         reason: &str,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<Option<GatewayOauthGrantRecord>, StoreError> {
+        let row = sqlx::query(
             "UPDATE gateway_oauth_grants
              SET revoked_at = $1, revoked_reason = $2, updated_at = $1
-             WHERE grant_id = $3 AND user_id = $4 AND revoked_at IS NULL",
+             WHERE grant_id = $3 AND user_id = $4 AND revoked_at IS NULL
+             RETURNING grant_id, client_id, user_id, user_session_id, resource, scope, created_at, updated_at, revoked_at, revoked_reason",
         )
         .bind(revoked_at.unix_timestamp())
         .bind(reason)
         .bind(grant_id.to_string())
         .bind(user_id.to_string())
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(result.rows_affected() > 0)
+        row.as_ref().map(decode_grant).transpose()
     }
 
     async fn purge_gateway_oauth_records(
@@ -625,7 +644,8 @@ const RETIRE_ENDED_GRANTS: &str = "UPDATE gateway_oauth_grants
      SET revoked_at = session_expires_at,
          updated_at = session_expires_at,
          revoked_reason = 'session_ended'
-     WHERE grant_id IN (
+     WHERE revoked_at IS NULL
+       AND grant_id IN (
          SELECT grant_id FROM gateway_oauth_grants
          WHERE revoked_at IS NULL AND session_expires_at < $1
          LIMIT $2)";

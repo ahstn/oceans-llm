@@ -494,14 +494,15 @@ pub trait GatewayOauthRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<GatewayOauthGrantSummary>, StoreError>;
 
-    /// Revokes `grant_id` only if it belongs to `user_id`.
+    /// Revokes `grant_id` only if it belongs to `user_id` and is still
+    /// unrevoked, and returns the grant as revoked, for the audit log.
     async fn revoke_gateway_oauth_grant_for_user(
         &self,
         grant_id: Uuid,
         user_id: Uuid,
         reason: &str,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<GatewayOauthGrantRecord>, StoreError>;
 
     /// Marks grants revoked (`session_ended`) once their approving session
     /// has been revoked or expired before `expired_before`, so dead grants

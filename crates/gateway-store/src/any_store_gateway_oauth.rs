@@ -173,7 +173,7 @@ impl GatewayOauthRepository for AnyStore {
         user_id: Uuid,
         reason: &str,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<GatewayOauthGrantRecord>, StoreError> {
         dispatch!(
             self,
             revoke_gateway_oauth_grant_for_user(grant_id, user_id, reason, revoked_at)

@@ -6,9 +6,10 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    GatewayError, GatewayOauthGrantSummary, GatewayOauthRepository, McpOauthResource, StoreError,
-    parse_scope_list,
+    GatewayError, GatewayOauthGrantRecord, GatewayOauthGrantSummary, GatewayOauthRepository,
+    McpOauthResource, StoreError, UserRecord, parse_scope_list,
 };
+use gateway_service::{AuditEvent, admin_audit::actions};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::{IntoParams, ToSchema};
@@ -18,8 +19,9 @@ use gateway_service::mcp_client_oauth::MAX_LISTED_AUTHORIZED_CLIENTS;
 
 use super::{consent::scope_description, oauth_service, require_active_session};
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::{require_active_session as require_session_user, require_platform_admin},
     admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
     mcp_client_oauth::{OauthResourceKind, OauthScopeView},
     state::AppState,
@@ -107,24 +109,24 @@ pub async fn list_my_authorized_mcp_clients(
 pub async fn revoke_my_authorized_mcp_client(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(grant_id): Path<String>,
 ) -> Result<Json<RevokeAuthorizedMcpClientsResponse>, AppError> {
-    let (user_id, _) = require_active_session(&state, &headers).await?;
+    let user = require_session_user(&state, &headers).await?;
     let grant_id = Uuid::parse_str(&grant_id).map_err(|_| grant_not_found())?;
     // Revocation does not depend on the runtime setting: a grant left live
     // while OAuth is disabled would work again once it is re-enabled.
-    if !state
+    let revoked = state
         .store
         .revoke_gateway_oauth_grant_for_user(
             grant_id,
-            user_id,
+            user.user_id,
             "user_revoked",
             OffsetDateTime::now_utc(),
         )
         .await?
-    {
-        return Err(grant_not_found());
-    }
+        .ok_or_else(grant_not_found)?;
+    audit_grant_revoked(&state, &meta, &user, &revoked, "user_disconnect").await;
     Ok(Json(RevokeAuthorizedMcpClientsResponse {
         revoked_count: 1,
     }))
@@ -166,15 +168,16 @@ pub async fn admin_list_authorized_mcp_clients(
 pub async fn admin_revoke_authorized_mcp_clients(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<AdminRevokeAuthorizedMcpClientsRequest>,
 ) -> Result<Json<RevokeAuthorizedMcpClientsResponse>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     // Works while OAuth is disabled too, so a compromised client stays
     // disconnected when the feature is turned back on.
     let now = OffsetDateTime::now_utc();
     let revoked_count = match request.grant_id {
-        Some(grant_id) => u64::from(
-            state
+        Some(grant_id) => {
+            let revoked = state
                 .store
                 .revoke_gateway_oauth_grant_for_user(
                     grant_id,
@@ -182,16 +185,69 @@ pub async fn admin_revoke_authorized_mcp_clients(
                     "admin_revoked",
                     now,
                 )
-                .await?,
-        ),
+                .await?;
+            if let Some(revoked) = &revoked {
+                audit_grant_revoked(&state, &meta, &actor, revoked, "admin_revoke").await;
+            }
+            u64::from(revoked.is_some())
+        }
         None => {
-            state
+            let revoked_count = state
                 .store
                 .revoke_gateway_oauth_grants_for_user(request.user_id, "admin_revoked", now)
-                .await?
+                .await?;
+            // One entry for the bulk revoke; it has no single grant to target.
+            if revoked_count > 0 {
+                state
+                    .audit()
+                    .record(
+                        &meta.user_context(&actor),
+                        AuditEvent::new(actions::MCP_CLIENT_GRANT_REVOKED)
+                            .meta("operation", "admin_revoke_all")
+                            .meta("user_id", request.user_id)
+                            .meta("revoked_count", revoked_count),
+                    )
+                    .await;
+            }
+            revoked_count
         }
     };
     Ok(Json(RevokeAuthorizedMcpClientsResponse { revoked_count }))
+}
+
+/// Records one revoked grant: which client lost access to whose account.
+/// Holds no token or code, only the grant's identifiers and access.
+async fn audit_grant_revoked(
+    state: &AppState,
+    meta: &AuditRequestMeta,
+    actor: &UserRecord,
+    grant: &GatewayOauthGrantRecord,
+    operation: &str,
+) {
+    let client_name = state
+        .store
+        .get_gateway_oauth_client(&grant.client_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|client| client.client_name);
+    state
+        .audit()
+        .record(
+            &meta.user_context(actor),
+            AuditEvent::new(actions::MCP_CLIENT_GRANT_REVOKED)
+                .target(grant.grant_id)
+                .label(client_name.unwrap_or_else(|| grant.client_id.clone()))
+                .meta("operation", operation)
+                .meta("user_id", grant.user_id)
+                .before(serde_json::json!({
+                    "client_id": grant.client_id,
+                    "resource": grant.resource,
+                    "scope": grant.scope,
+                    "authorized_at": format_timestamp(grant.created_at),
+                })),
+        )
+        .await;
 }
 
 async fn authorized_clients_view(

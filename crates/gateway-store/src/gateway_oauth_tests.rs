@@ -719,16 +719,19 @@ where
 
     // A user cannot revoke someone else's grant.
     assert!(
-        !store
+        store
             .revoke_gateway_oauth_grant_for_user(others, owner, "user_revoked", now)
             .await
             .unwrap()
+            .is_none()
     );
     assert!(
         store
             .revoke_gateway_oauth_grant_for_user(first, owner, "user_revoked", now)
             .await
             .unwrap()
+            .is_some_and(|grant| grant.grant_id == first
+                && grant.revoked_reason.as_deref() == Some("user_revoked"))
     );
     let listed = store
         .list_live_gateway_oauth_grants_for_user(owner, Some(AGGREGATE), now, 100)

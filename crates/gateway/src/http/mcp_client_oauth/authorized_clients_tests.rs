@@ -16,6 +16,25 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use super::flow_tests::Harness;
+
+/// The audit entries for MCP client grant revocations, newest first, each
+/// read in full (listing leaves out metadata).
+async fn grant_revocation_entries(harness: &Harness) -> Vec<gateway_core::AuditLogRecord> {
+    use gateway_core::AuditLogRepository;
+    let store = &harness.state.store;
+    let page = store
+        .list_audit_logs(&gateway_core::AuditLogQuery {
+            action: Some("mcp_client_grant.revoked".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let mut entries = Vec::new();
+    for item in page.items {
+        entries.push(store.get_audit_log(item.id).await.unwrap().unwrap());
+    }
+    entries
+}
 use super::tests::send;
 
 /// Creates an active user with a session and returns its cookie.
@@ -145,6 +164,18 @@ async fn users_list_and_disconnect_their_authorized_clients() {
         harness.grant_revoked_reason(access).await.as_deref(),
         Some("user_revoked")
     );
+    // The audit log records who disconnected which client, without tokens.
+    let entries = grant_revocation_entries(&harness).await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].target_type, "mcp_client_grant");
+    assert_eq!(entries[0].target_id.as_deref(), Some(grant_id.as_str()));
+    assert_eq!(entries[0].target_label.as_deref(), Some("Test Editor"));
+    assert_eq!(entries[0].metadata["operation"], "user_disconnect");
+    assert_eq!(
+        entries[0].before.as_ref().unwrap()["scope"],
+        "mcp:aggregate"
+    );
+    assert!(!serde_json::to_string(&entries[0]).unwrap().contains(access));
     let (_, body) = request(
         &harness,
         "GET",
@@ -241,6 +272,15 @@ async fn platform_admins_list_and_revoke_a_users_clients() {
             Some("admin_revoked")
         );
     }
+    // One entry per admin revoke: the single grant, then the bulk revoke.
+    let entries = grant_revocation_entries(&harness).await;
+    let operations: Vec<_> = entries
+        .iter()
+        .map(|entry| entry.metadata["operation"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(operations, ["admin_revoke_all", "admin_revoke"]);
+    assert_eq!(entries[0].metadata["revoked_count"], 1);
+    assert_eq!(entries[1].target_id.as_deref(), Some(grant_id));
     let (status, _) = request(
         &harness,
         "POST",

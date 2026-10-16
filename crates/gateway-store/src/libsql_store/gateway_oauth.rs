@@ -124,6 +124,24 @@ fn decode_token_context(row: &libsql::Row) -> Result<GatewayOauthTokenContext, S
     })
 }
 
+fn decode_grant(row: &libsql::Row) -> Result<GatewayOauthGrantRecord, StoreError> {
+    let grant_id: String = row.get(0).map_err(to_query_error)?;
+    let user_id: String = row.get(2).map_err(to_query_error)?;
+    let user_session_id: String = row.get(3).map_err(to_query_error)?;
+    Ok(GatewayOauthGrantRecord {
+        grant_id: parse_uuid(&grant_id)?,
+        client_id: row.get(1).map_err(to_query_error)?,
+        user_id: parse_uuid(&user_id)?,
+        user_session_id: parse_uuid(&user_session_id)?,
+        resource: row.get(4).map_err(to_query_error)?,
+        scope: row.get(5).map_err(to_query_error)?,
+        created_at: unix_to_datetime(row.get(6).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.get(7).map_err(to_query_error)?)?,
+        revoked_at: optional_time(row.get(8).map_err(to_query_error)?)?,
+        revoked_reason: row.get(9).map_err(to_query_error)?,
+    })
+}
+
 fn decode_session_state(row: &libsql::Row) -> Result<GatewayOauthSessionState, StoreError> {
     let session_id: String = row.get(0).map_err(to_query_error)?;
     let user_id: String = row.get(1).map_err(to_query_error)?;
@@ -592,23 +610,22 @@ impl GatewayOauthRepository for LibsqlStore {
         user_id: Uuid,
         reason: &str,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let changed = self
-            .connection
-            .execute(
-                "UPDATE gateway_oauth_grants
-                 SET revoked_at = ?1, revoked_reason = ?2, updated_at = ?1
-                 WHERE grant_id = ?3 AND user_id = ?4 AND revoked_at IS NULL",
-                libsql::params![
-                    revoked_at.unix_timestamp(),
-                    reason,
-                    grant_id.to_string(),
-                    user_id.to_string()
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        Ok(changed > 0)
+    ) -> Result<Option<GatewayOauthGrantRecord>, StoreError> {
+        query_one(
+            &self.connection,
+            "UPDATE gateway_oauth_grants
+             SET revoked_at = ?1, revoked_reason = ?2, updated_at = ?1
+             WHERE grant_id = ?3 AND user_id = ?4 AND revoked_at IS NULL
+             RETURNING grant_id, client_id, user_id, user_session_id, resource, scope, created_at, updated_at, revoked_at, revoked_reason",
+            libsql::params![
+                revoked_at.unix_timestamp(),
+                reason,
+                grant_id.to_string(),
+                user_id.to_string()
+            ],
+            decode_grant,
+        )
+        .await
     }
 
     async fn purge_gateway_oauth_records(
@@ -660,7 +677,8 @@ const RETIRE_ENDED_GRANTS: &str = "UPDATE gateway_oauth_grants
      SET revoked_at = session_expires_at,
          updated_at = session_expires_at,
          revoked_reason = 'session_ended'
-     WHERE grant_id IN (
+     WHERE revoked_at IS NULL
+       AND grant_id IN (
          SELECT grant_id FROM gateway_oauth_grants
          WHERE revoked_at IS NULL AND session_expires_at < ?1
          LIMIT ?2)";
