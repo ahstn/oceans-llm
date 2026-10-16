@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::{PostgresStore, to_query_error, to_write_error};
 use crate::rate_limits::{MAX_PURGE_BATCH, POLICY_COLUMNS, RawPolicyRow, lock_order};
+use gateway_core::Updated;
 
 fn decode(row: &PgRow) -> Result<RateLimitPolicyRecord, StoreError> {
     RawPolicyRow {
@@ -120,8 +121,28 @@ impl RateLimitRepository for PostgresStore {
     async fn update_rate_limit_policy(
         &self,
         policy: &RateLimitPolicyRecord,
-    ) -> Result<bool, StoreError> {
-        let result = sqlx::query(
+    ) -> Result<Option<Updated<RateLimitPolicyRecord>>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the row makes the policy read here the one this update replaces.
+        let Some(existing) = sqlx::query(&format!(
+            "SELECT {POLICY_COLUMNS} FROM rate_limit_policies WHERE rate_limit_policy_id = $1 FOR UPDATE"
+        ))
+        .bind(policy.rate_limit_policy_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .as_ref()
+        .map(decode)
+        .transpose()?
+        else {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        };
+        if existing.same_settings(policy) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Some(Updated::unchanged(existing)));
+        }
+        sqlx::query(
             "UPDATE rate_limit_policies SET
                 name = $2, operation = $3, scope_kind = $4, scope_id = $5, model_key = $6,
                 mcp_server_id = $7, metric = $8, period = $9, limit_value = $10, enabled = $11,
@@ -140,19 +161,29 @@ impl RateLimitRepository for PostgresStore {
         .bind(policy.limit)
         .bind(i64::from(policy.enabled))
         .bind(policy.updated_at.unix_timestamp())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        Ok(result.rows_affected() > 0)
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(Updated {
+            current: policy.clone(),
+            previous: Some(existing),
+        }))
     }
 
-    async fn delete_rate_limit_policy(&self, policy_id: Uuid) -> Result<bool, StoreError> {
-        let result = sqlx::query("DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = $1")
-            .bind(policy_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(to_query_error)?;
-        Ok(result.rows_affected() > 0)
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError> {
+        // `RETURNING` gives the policy this call removed, as it was at deletion.
+        let row = sqlx::query(&format!(
+            "DELETE FROM rate_limit_policies WHERE rate_limit_policy_id = $1 RETURNING {POLICY_COLUMNS}"
+        ))
+        .bind(policy_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        row.as_ref().map(decode).transpose()
     }
 
     async fn consume_rate_limits(

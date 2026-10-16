@@ -202,11 +202,7 @@ impl PricingCatalogRepository for LibsqlStore {
         changes: &ModelPricingSyncChanges,
         effective_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         let mut rows = tx
             .query(

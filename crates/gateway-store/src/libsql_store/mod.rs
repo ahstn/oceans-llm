@@ -1,5 +1,6 @@
 mod agent_analysis;
 mod api_keys;
+mod audit_logs;
 mod batches;
 mod budget_alerts;
 mod budget_batch;
@@ -26,8 +27,10 @@ mod skills;
 #[cfg(test)]
 mod skills_tests;
 mod support;
+#[cfg(test)]
+mod transaction_tests;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -94,17 +97,22 @@ use crate::{
 
 use support::*;
 
+/// How long a libSQL connection waits for a lock another connection holds.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct LibsqlStore {
     database: Arc<libsql::Database>,
     connection: Arc<libsql::Connection>,
     routing_workers: Arc<tokio::sync::Semaphore>,
+    shared_cache: bool,
 }
 
 impl LibsqlStore {
     pub async fn new_local(path: &str) -> anyhow::Result<Self> {
         // Named memory databases share their schema across this store's connections.
-        let database_path = if path == ":memory:" {
+        let shared_cache = path == ":memory:";
+        let database_path = if shared_cache {
             format!("file:oceans-{}?mode=memory&cache=shared", Uuid::new_v4())
         } else {
             path.to_string()
@@ -114,19 +122,85 @@ impl LibsqlStore {
             .await
             .with_context(|| format!("failed building local libsql database at `{path}`"))?;
         let connection = db.connect().context("failed opening libsql connection")?;
-        Self::configure_connection(&connection)
+        Self::configure_connection(&connection, shared_cache)
             .await
             .context("failed configuring LibSQL connection")?;
         Ok(Self {
             database: Arc::new(db),
             connection: Arc::new(connection),
             routing_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            shared_cache,
         })
     }
 
-    async fn configure_connection(connection: &libsql::Connection) -> libsql::Result<()> {
-        connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    /// Begins a write transaction on a connection of its own. Most store calls share
+    /// `self.connection` (skills, routing, and rate limits open their own), so a transaction
+    /// there would fail with "cannot start a transaction within a transaction" whenever another
+    /// request already holds one, and would pull that request's statements into this
+    /// transaction's commit or rollback. `IMMEDIATE` takes the
+    /// write lock at `BEGIN` instead of failing on a later read-to-write upgrade.
+    pub(super) async fn begin_transaction(&self) -> Result<libsql::Transaction, StoreError> {
+        let connection = self.own_connection().await?;
+        // Local libSQL calls are synchronous, so SQLite's busy handler would park a Tokio
+        // worker for up to the busy timeout while another writer holds the lock. Wait for the
+        // write lock asynchronously instead, then restore the handler: once this transaction
+        // holds the lock, only its commit waits, and only for readers to finish.
+        connection
+            .busy_timeout(Duration::ZERO)
+            .map_err(to_query_error)?;
+        let deadline = tokio::time::Instant::now() + BUSY_TIMEOUT;
+        let mut retry_delay = Duration::from_millis(1);
+        // The transaction holds its own handle to the connection and closes it when dropped.
+        let transaction = loop {
+            match connection
+                .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
+                .await
+            {
+                Ok(transaction) => break transaction,
+                // A shared-cache (`:memory:`) store reports a competing writer as
+                // `SQLITE_LOCKED` instead of `SQLITE_BUSY`.
+                Err(libsql::Error::SqliteFailure(code, _))
+                    if matches!(
+                        code & 0xff,
+                        libsql::ffi::SQLITE_BUSY | libsql::ffi::SQLITE_LOCKED
+                    ) && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(Duration::from_millis(50));
+                }
+                Err(error) => return Err(to_query_error(error)),
+            }
+        };
+        connection
+            .busy_timeout(BUSY_TIMEOUT)
+            .map_err(to_query_error)?;
+        Ok(transaction)
+    }
+
+    /// Opens a connection separate from the shared one, configured the same way.
+    pub(super) async fn own_connection(&self) -> Result<libsql::Connection, StoreError> {
+        let connection = self.database.connect().map_err(to_query_error)?;
+        Self::configure_connection(&connection, self.shared_cache)
+            .await
+            .map_err(to_query_error)?;
+        Ok(connection)
+    }
+
+    async fn configure_connection(
+        connection: &libsql::Connection,
+        shared_cache: bool,
+    ) -> libsql::Result<()> {
+        connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.execute("PRAGMA foreign_keys = ON", ()).await?;
+        if shared_cache {
+            // Shared-cache connections lock tables, and the busy timeout does not cover those
+            // locks: a cursor still open on one connection would make another connection's
+            // transaction fail at its first write with `SQLITE_LOCKED`. Uncommitted reads take
+            // no table read locks, at the cost of dirty reads in the in-memory mode only.
+            connection
+                .execute("PRAGMA read_uncommitted = 1", ())
+                .await?;
+        }
         Ok(())
     }
 
@@ -260,7 +334,7 @@ impl GatewayStore for LibsqlStore {
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::update_service_account_profile(
             self,
             service_account_id,
@@ -275,7 +349,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::disable_service_account(self, service_account_id, disabled_at).await
     }
 
@@ -368,7 +442,7 @@ impl GatewayStore for LibsqlStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_name(self, team_id, team_name, updated_at).await
     }
 
@@ -377,7 +451,7 @@ impl GatewayStore for LibsqlStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_tags(self, team_id, tags, updated_at).await
     }
 
@@ -408,7 +482,7 @@ impl GatewayStore for LibsqlStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
     }
 
@@ -417,7 +491,7 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_tags(self, user_id, tags, updated_at).await
     }
 
@@ -425,7 +499,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<UserStatus, StoreError> {
         Self::deactivate_identity_user(self, user_id, updated_at).await
     }
 
@@ -442,7 +516,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         Self::remove_team_membership(self, team_id, user_id).await
     }
 
@@ -453,7 +527,7 @@ impl GatewayStore for LibsqlStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<MembershipRole, StoreError> {
         Self::transfer_team_membership(self, user_id, from_team_id, to_team_id, role, updated_at)
             .await
     }
@@ -478,7 +552,7 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_team_membership_role(self, team_id, user_id, role, updated_at).await
     }
 
@@ -494,7 +568,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_password_invitations_for_user(self, user_id, revoked_at).await
     }
 
@@ -524,12 +598,15 @@ impl GatewayStore for LibsqlStore {
         Self::get_password_invitation(self, invitation_id).await
     }
 
-    async fn mark_password_invitation_consumed(
+    async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        Self::mark_password_invitation_consumed(self, invitation_id, consumed_at).await
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        Self::redeem_password_invitation(self, invitation_id, user_id, password_hash, redeemed_at)
+            .await
     }
 
     async fn store_user_password(
@@ -546,8 +623,18 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::update_user_status(self, user_id, status, updated_at).await
+    }
+
+    async fn transition_user_status(
+        &self,
+        user_id: Uuid,
+        from: UserStatus,
+        to: UserStatus,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        Self::transition_user_status(self, user_id, from, to, updated_at).await
     }
 
     async fn update_user_must_change_password(
@@ -601,7 +688,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::revoke_user_session(self, session_id, revoked_at).await
     }
 
@@ -645,11 +732,11 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oidc_link(self, user_id, oidc_provider_id, created_at).await
     }
 
-    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oidc_link(self, user_id).await
     }
 
@@ -693,15 +780,15 @@ impl GatewayStore for LibsqlStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::set_user_oauth_link(self, user_id, oauth_provider_id, created_at).await
     }
 
-    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::clear_user_oauth_link(self, user_id).await
     }
 
-    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
         Self::delete_user_password_auth(self, user_id).await
     }
 
@@ -709,7 +796,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oidc_auth(self, user_id, oidc_provider_id).await
     }
 
@@ -717,7 +804,7 @@ impl GatewayStore for LibsqlStore {
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::delete_user_oauth_auth(self, user_id, oauth_provider_id).await
     }
 
@@ -825,7 +912,7 @@ impl GatewayStore for LibsqlStore {
         defaults: &gateway_core::SeedHumanBudgetDefaults,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         Self::apply_human_budget_defaults_for_user(self, defaults, user_id, updated_at).await
     }
 }

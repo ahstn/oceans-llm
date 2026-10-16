@@ -89,6 +89,7 @@ async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state(
         let response = mcp_oauth_callback(
             State(state.clone()),
             headers,
+            crate::http::audit::AuditRequestMeta::default(),
             Path(provider_key.to_string()),
             Query(McpOauthCallbackQuery {
                 code: Some("unused-code".to_string()),
@@ -111,6 +112,7 @@ async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state(
             let retry = mcp_oauth_callback(
                 State(state.clone()),
                 initiator_headers.clone(),
+                crate::http::audit::AuditRequestMeta::default(),
                 Path("google".to_string()),
                 Query(McpOauthCallbackQuery {
                     code: None,

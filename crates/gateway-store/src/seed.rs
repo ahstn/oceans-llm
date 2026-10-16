@@ -926,7 +926,8 @@ where
                     next_role,
                     now,
                 )
-                .await
+                .await?;
+            Ok(())
         }
     }
 }

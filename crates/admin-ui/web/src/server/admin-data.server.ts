@@ -41,6 +41,9 @@ import type {
   HarnessUsageRange,
   HarnessUsageView,
   LogoutResult,
+  AuditLogFiltersInput,
+  AuditLogPageView,
+  AuditLogView,
   GuardrailDecisionFiltersInput,
   GuardrailDecisionPageView,
   GuardrailPoliciesView,
@@ -428,6 +431,26 @@ export async function listMcpInvocations(
 export async function getGuardrailPolicies(): Promise<ApiEnvelope<GuardrailPoliciesView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.GET('/api/v1/admin/guardrails/policies'))
+}
+
+export async function listAuditLogs(
+  filters: AuditLogFiltersInput = {},
+): Promise<ApiEnvelope<AuditLogPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/audit-logs', {
+      params: { query: filters },
+    }),
+  )
+}
+
+export async function getAuditLog(auditLogId: string): Promise<ApiEnvelope<AuditLogView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/audit-logs/{audit_log_id}', {
+      params: { path: { audit_log_id: auditLogId } },
+    }),
+  )
 }
 
 export async function listGuardrailDecisions(

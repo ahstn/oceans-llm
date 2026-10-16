@@ -164,6 +164,23 @@ pub struct RateLimitPolicyRecord {
     pub updated_at: OffsetDateTime,
 }
 
+impl RateLimitPolicyRecord {
+    /// Whether the two policies enforce the same limit, ignoring timestamps.
+    #[must_use]
+    pub fn same_settings(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.operation == other.operation
+            && self.scope_kind == other.scope_kind
+            && self.scope_id == other.scope_id
+            && self.model_key == other.model_key
+            && self.mcp_server_id == other.mcp_server_id
+            && self.metric == other.metric
+            && self.period == other.period
+            && self.limit == other.limit
+            && self.enabled == other.enabled
+    }
+}
+
 /// The longest policy name config and the admin API accept, in characters.
 pub const MAX_RATE_LIMIT_POLICY_NAME_LEN: usize = 100;
 

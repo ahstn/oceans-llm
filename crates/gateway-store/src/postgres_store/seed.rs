@@ -920,7 +920,7 @@ impl PostgresStore {
         defaults: &gateway_core::SeedHumanBudgetDefaults,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         apply_human_budget_defaults_for_user(self, defaults, user_id, updated_at).await
     }
 }

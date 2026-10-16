@@ -109,7 +109,7 @@ Handlers run the rate-limit check because only they know the principal and the m
 - `PATCH /api/v1/admin/rate-limits/{policy_id}`
 - `DELETE /api/v1/admin/rate-limits/{policy_id}`
 
-Every endpoint requires a platform admin. Admin page id: `rate_limits`. Each mutation calls `record_rate_limit_policy_change`, which emits a structured `admin_audit` tracing event with the actor, action, and the policy before and after. This is the hook for the admin audit log (#99).
+Every endpoint requires a platform admin. Admin page id: `rate_limits`. Each mutation is recorded in the admin audit log as `rate_limit_policy.created`, `.updated` or `.deleted`, with the policy's settings before and after. Saving a policy unchanged records nothing.
 
 ## Consequences
 
@@ -130,7 +130,6 @@ Trade-offs:
 
 ## Follow-up work
 
-- Write policy changes to the admin audit log once #99 lands.
 - Consider an `UNLOGGED` counter table on Postgres if write volume becomes a concern.
 - Allow a specific policy to raise a default for one principal, if admins need that.
 - Rate limit batch creation, `/v1/models`, and the aggregate MCP `search_tools` and `describe_tool` catalog reads, if needed.

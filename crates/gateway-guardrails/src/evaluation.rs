@@ -154,24 +154,25 @@ impl GuardrailEngine {
                     content_hash,
                 )),
                 Err(error) => {
-                    decisions.push(DecisionRecord {
-                        action: DecisionAction::Deny,
-                        reason_code: error.reason_code(),
-                        failure_disposition: Some(FailureDisposition::FailClosed),
-                        ..base_decision(
-                            &input,
-                            policy,
-                            evaluator.id(),
-                            None,
-                            DecisionRecord::latency(started.elapsed()),
-                            content_hash,
-                        )
-                    });
-                    return GuardrailEvaluation {
-                        action: DecisionAction::Deny,
-                        decisions,
-                        output: input.payload,
-                    };
+                    let decision = failure_decision(
+                        evaluator.id(),
+                        None,
+                        &input,
+                        policy,
+                        FailureDisposition::FailClosed,
+                        error,
+                        DecisionRecord::latency(started.elapsed()),
+                    );
+                    let denied = decision.action == DecisionAction::Deny;
+                    decisions.push(decision);
+                    if denied {
+                        return GuardrailEvaluation {
+                            action: DecisionAction::Deny,
+                            decisions,
+                            output: input.payload,
+                        };
+                    }
+                    final_action = DecisionAction::Audit;
                 }
             }
         }
@@ -188,12 +189,17 @@ impl GuardrailEngine {
                     error,
                     0,
                 );
+                let denied = decision.action == DecisionAction::Deny;
                 decisions.push(decision);
-                return GuardrailEvaluation {
-                    action: DecisionAction::Deny,
-                    decisions,
-                    output: input.payload,
-                };
+                if denied {
+                    return GuardrailEvaluation {
+                        action: DecisionAction::Deny,
+                        decisions,
+                        output: input.payload,
+                    };
+                }
+                final_action = DecisionAction::Audit;
+                continue;
             };
             if !check.phases.contains(&input.phase) {
                 continue;
@@ -209,7 +215,7 @@ impl GuardrailEngine {
                     error,
                     0,
                 );
-                let denied = check.failure_disposition == FailureDisposition::FailClosed;
+                let denied = decision.action == DecisionAction::Deny;
                 decisions.push(decision);
                 if denied {
                     return GuardrailEvaluation {
@@ -296,7 +302,7 @@ impl GuardrailEngine {
                             EvaluationError::InvalidTransformation,
                             latency_micros,
                         );
-                        let denied = check.failure_disposition == FailureDisposition::FailClosed;
+                        let denied = decision.action == DecisionAction::Deny;
                         decisions.push(decision);
                         if denied {
                             return GuardrailEvaluation {
@@ -336,7 +342,7 @@ impl GuardrailEngine {
                         error,
                         latency_micros,
                     );
-                    let denied = check.failure_disposition == FailureDisposition::FailClosed;
+                    let denied = decision.action == DecisionAction::Deny;
                     decisions.push(decision);
                     if denied {
                         return GuardrailEvaluation {
@@ -399,6 +405,12 @@ fn failure_decision(
     error: EvaluationError,
     latency_micros: u64,
 ) -> DecisionRecord {
+    // Audit mode never stops an operation, so a failure there is recorded as fail-open
+    // whatever the configured disposition.
+    let disposition = match policy.mode {
+        PolicyMode::Audit => FailureDisposition::FailOpen,
+        PolicyMode::Deny => disposition,
+    };
     DecisionRecord {
         action: match disposition {
             FailureDisposition::FailOpen => DecisionAction::Audit,
@@ -523,6 +535,105 @@ mod tests {
         assert_eq!(result.action, DecisionAction::Deny);
         assert_eq!(result.decisions.len(), 1);
         assert_eq!(result.decisions[0].evaluator, "built_in");
+    }
+
+    fn malformed_tool_call() -> EvaluationInput {
+        EvaluationInput::new(
+            GuardPhase::GeneratedToolCall,
+            EvaluationPayload::ToolCall {
+                name: "wiki_search".into(),
+                arguments: serde_json::Value::String("{\"query\":".into()),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn audit_mode_records_deterministic_failures_without_denying() {
+        let managed = Arc::new(StubManagedEvaluator::new(
+            "aws",
+            ManagedService::AmazonBedrock,
+            [Ok(ManagedOutcome::Allow {
+                reason_code: reason("aws.allow"),
+                metadata: Default::default(),
+            })],
+        ));
+        let engine = GuardrailEngine::new(
+            vec![Arc::new(BuiltInEvaluator)],
+            BTreeMap::from([("aws".to_string(), managed as Arc<dyn ManagedEvaluator>)]),
+        );
+
+        let result = engine
+            .evaluate(
+                &policy(PolicyMode::Audit, vec!["aws".into()]),
+                &config(&["aws"], FailureDisposition::FailOpen, 100),
+                malformed_tool_call(),
+            )
+            .await;
+
+        assert_eq!(result.action, DecisionAction::Audit);
+        let failure = &result.decisions[0];
+        assert_eq!(failure.action, DecisionAction::Audit);
+        assert_eq!(
+            failure.reason_code.as_str(),
+            "tool_call.malformed_arguments"
+        );
+        assert_eq!(
+            failure.failure_disposition,
+            Some(FailureDisposition::FailOpen)
+        );
+        assert_eq!(result.decisions.len(), 2, "managed checks still run");
+    }
+
+    #[tokio::test]
+    async fn deny_mode_fails_closed_on_deterministic_failures() {
+        let engine = GuardrailEngine::deterministic_only(Arc::new(BuiltInEvaluator));
+
+        let result = engine
+            .evaluate(
+                &policy(PolicyMode::Deny, Vec::new()),
+                &GuardrailConfig::default(),
+                malformed_tool_call(),
+            )
+            .await;
+
+        assert_eq!(result.action, DecisionAction::Deny);
+        assert_eq!(
+            result.decisions[0].failure_disposition,
+            Some(FailureDisposition::FailClosed)
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_mode_does_not_enforce_fail_closed_managed_failures() {
+        let failing = Arc::new(StubManagedEvaluator::new(
+            "aws",
+            ManagedService::AmazonBedrock,
+            [Err(EvaluationError::Unavailable("down".into()))],
+        ));
+        let engine = GuardrailEngine::new(
+            vec![],
+            BTreeMap::from([("aws".to_string(), failing as Arc<dyn ManagedEvaluator>)]),
+        );
+
+        let result = engine
+            .evaluate(
+                &policy(PolicyMode::Audit, vec!["aws".into(), "unconfigured".into()]),
+                &config(&["aws"], FailureDisposition::FailClosed, 100),
+                prompt("input"),
+            )
+            .await;
+
+        assert_eq!(result.action, DecisionAction::Audit);
+        assert!(
+            result
+                .decisions
+                .iter()
+                .all(|decision| decision.action == DecisionAction::Audit
+                    && decision.failure_disposition == Some(FailureDisposition::FailOpen)),
+            "{:?}",
+            result.decisions
+        );
+        assert_eq!(result.decisions.len(), 2);
     }
 
     #[tokio::test]

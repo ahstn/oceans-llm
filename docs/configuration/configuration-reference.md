@@ -455,7 +455,7 @@ Important fields:
 - `otel_metrics_endpoint`
 - `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
-- `trusted_proxies` (list of IP addresses or CIDR ranges, default empty): proxies whose `X-Forwarded-For` header the gateway trusts when it resolves a client IP. See [Rate Limits](rate-limits.md#client-ip-and-trusted-proxies)
+- `trusted_proxies` (list of IP addresses or CIDR ranges, default empty): proxies whose `X-Forwarded-For` header the gateway trusts when it resolves a client IP for request policy and admin audit entries. See [Rate Limits](rate-limits.md#client-ip-and-trusted-proxies)
 
 For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 

@@ -14,7 +14,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret, hash_gateway_key_secret,
+    admin_audit::AuditProgress, decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret,
+    hash_gateway_key_secret,
 };
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
@@ -95,6 +96,23 @@ pub struct CreateAdminApiKeyResult {
     pub raw_key: String,
 }
 
+/// An API key after an access update, with the access the update replaced.
+#[derive(Debug, Clone)]
+pub struct UpdateAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// The grant mode and model keys before the update, read under the same lock
+    /// as the write, or `None` when the key already had this access and nothing
+    /// was written.
+    pub replaced_access: Option<(ApiKeyModelGrantMode, Vec<String>)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RevokeAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// `false` when the key was already revoked, so nothing changed.
+    pub revoked: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct UpdateAdminApiKeyInput {
     pub model_grant_mode: String,
@@ -103,6 +121,9 @@ pub struct UpdateAdminApiKeyInput {
 
 pub struct RevealAdminApiKeySecretResult {
     pub raw_key: String,
+    /// The key's name and owner kind, for the audit entry; never the secret.
+    pub name: String,
+    pub owner_kind: ApiKeyOwnerKind,
 }
 
 impl<R> AdminApiKeyService<R>
@@ -302,9 +323,12 @@ where
         })
     }
 
+    /// `progress` is marked once the key row is written, so an audit entry can
+    /// record a create that fails afterwards.
     pub async fn create_api_key(
         &self,
         request: CreateAdminApiKeyInput,
+        progress: &AuditProgress,
     ) -> Result<CreateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
@@ -381,6 +405,7 @@ where
                 created_at: now,
             })
             .await?;
+        progress.landed_on(api_key.id);
         if let Some(encrypted) = secret_material
             && let Err(error) = self
                 .repo
@@ -407,7 +432,13 @@ where
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
 
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        // The summary describes what this request created: the inserted key row and
+        // the access it granted, not a later read a concurrent change could alter.
+        // Sorted as the store lists a key's models.
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
         let api_key =
             build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
@@ -417,15 +448,20 @@ where
     pub async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+        progress: &AuditProgress,
+    ) -> Result<RevokeAdminApiKeyResult, GatewayError> {
         self.repo
             .get_api_key_by_id(api_key_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
 
-        self.repo
+        let revoked = self
+            .repo
             .revoke_api_key(api_key_id, OffsetDateTime::now_utc())
             .await?;
+        if revoked {
+            progress.landed_on(api_key_id);
+        }
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
@@ -438,8 +474,10 @@ where
                 GatewayError::Internal(format!("api key `{api_key_id}` missing after revoke"))
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        let api_key =
+            build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        Ok(RevokeAdminApiKeyResult { api_key, revoked })
     }
 
     pub async fn reveal_api_key_secret(
@@ -475,14 +513,19 @@ where
             .touch_api_key_secret_material_retrieved(api_key_id, OffsetDateTime::now_utc())
             .await?;
 
-        Ok(RevealAdminApiKeySecretResult { raw_key })
+        Ok(RevealAdminApiKeySecretResult {
+            raw_key,
+            name: api_key.name,
+            owner_kind: api_key.owner_kind,
+        })
     }
 
     pub async fn update_api_key(
         &self,
         api_key_id: Uuid,
         request: UpdateAdminApiKeyInput,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+        progress: &AuditProgress,
+    ) -> Result<UpdateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
         let service_accounts = self.repo.list_service_accounts().await?;
@@ -512,14 +555,47 @@ where
             .iter()
             .map(|model| model.id)
             .collect::<Vec<_>>();
-        self.repo
+        let replaced = self
+            .repo
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
+        if replaced.is_some() {
+            progress.landed_on(api_key.id);
+        }
+        // Grants name models by id; a grant to a model no longer listed keeps its id.
+        let replaced_access = replaced.map(|access| {
+            let model_keys = access
+                .model_ids
+                .iter()
+                .map(|model_id| {
+                    models
+                        .iter()
+                        .find(|model| model.id == *model_id)
+                        .map_or_else(|| model_id.to_string(), |model| model.model_key.clone())
+                })
+                .collect();
+            (access.model_grant_mode, model_keys)
+        });
 
+        // The result describes this update's write: the access it granted, not a
+        // later read a concurrent update could have changed. Sorted as the store
+        // lists a key's models.
         let mut api_key = api_key;
         api_key.model_grant_mode = model_grant_mode;
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
+        Ok(UpdateAdminApiKeyResult {
+            api_key: build_api_key_summary(
+                &api_key,
+                &users,
+                &teams,
+                &service_accounts,
+                &granted_models,
+            )?,
+            replaced_access,
+        })
     }
 }
 

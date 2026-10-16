@@ -1,4 +1,5 @@
 import {
+  Audit01Icon,
   DashboardSpeed01Icon,
   GitPullRequestIcon,
   HomeIcon,
@@ -155,6 +156,13 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Guardrails',
         to: '/observability/guardrails',
         icon: Notification03Icon,
+      },
+      // Gated on the platform-admin role alone, matching the audit log API.
+      {
+        platformAdminOnly: true,
+        label: 'Audit Log',
+        to: '/observability/audit-log',
+        icon: Audit01Icon,
       },
     ],
   },

@@ -13,8 +13,8 @@ use gateway_core::{
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
 };
 use gateway_service::{
-    MCP_SERVER_OAUTH_PROVIDER_KEY, McpCredentialService, McpOauthServerConfig,
-    credential_owner_scope_key, mcp_oauth_server_config,
+    AuditEvent, MCP_SERVER_OAUTH_PROVIDER_KEY, McpCredentialService, McpOauthServerConfig,
+    admin_audit::actions, credential_owner_scope_key, mcp_oauth_server_config,
 };
 use gateway_store::GatewayStore;
 use openidconnect::{CsrfToken, PkceCodeChallenge};
@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
     identity::resolve_session_user,
     state::AppState,
@@ -268,10 +269,11 @@ pub async fn start_mcp_oauth_connection(
 pub async fn mcp_oauth_callback(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(provider_key): Path<String>,
     Query(query): Query<McpOauthCallbackQuery>,
 ) -> Result<Response, AppError> {
-    complete_oauth_callback(&state, &headers, &provider_key, query).await
+    complete_oauth_callback(&state, &headers, &meta, &provider_key, query).await
 }
 
 #[utoipa::path(
@@ -289,14 +291,23 @@ pub async fn mcp_oauth_callback(
 pub async fn mcp_oauth_server_callback(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Query(query): Query<McpOauthCallbackQuery>,
 ) -> Result<Response, AppError> {
-    complete_oauth_callback(&state, &headers, MCP_SERVER_OAUTH_PROVIDER_KEY, query).await
+    complete_oauth_callback(
+        &state,
+        &headers,
+        &meta,
+        MCP_SERVER_OAUTH_PROVIDER_KEY,
+        query,
+    )
+    .await
 }
 
 async fn complete_oauth_callback(
     state: &AppState,
     headers: &HeaderMap,
+    meta: &AuditRequestMeta,
     provider_key: &str,
     query: McpOauthCallbackQuery,
 ) -> Result<Response, AppError> {
@@ -328,8 +339,35 @@ async fn complete_oauth_callback(
             return Ok(connection_error_redirect("provider_failure"));
         }
     };
-    McpCredentialService::new(state.store.clone())
-        .upsert_oauth_user_binding(transaction.mcp_server_id, transaction.user_id, grant)
+    let credentials = McpCredentialService::new(state.store.clone());
+    let connect = credentials.upsert_oauth_user_binding(
+        transaction.mcp_server_id,
+        transaction.user_id,
+        grant,
+    );
+    // Token values never leave the service; the entry keeps binding metadata only.
+    // A reconnect replaces the user's binding, so it also records what it replaced.
+    state
+        .audit()
+        .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
+            let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+                .target(binding.credential_binding_id)
+                .label(binding.owner_scope_key.clone())
+                .meta(
+                    "operation",
+                    if replaced.is_some() {
+                        "oauth_reconnect"
+                    } else {
+                        "oauth_connect"
+                    },
+                )
+                .meta("mcp_server_id", binding.mcp_server_id)
+                .after(oauth_binding_summary(binding));
+            match replaced {
+                Some(replaced) => event.before(oauth_binding_summary(replaced)),
+                None => event,
+            }
+        })
         .await?;
     Ok(connection_success_redirect(&transaction.redirect_to))
 }
@@ -407,6 +445,7 @@ pub async fn mcp_oauth_client_metadata_document(
 pub async fn revoke_mcp_oauth_connection(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<Uuid>,
 ) -> Result<Json<McpOauthRevokeResponse>, AppError> {
     let user = require_session_user(&state, &headers).await?;
@@ -421,11 +460,40 @@ pub async fn revoke_mcp_oauth_connection(
         .get_active_mcp_upstream_credential_binding(server_id, &owner_scope_key)
         .await?
     {
-        McpCredentialService::new(state.store.clone())
+        let credentials = McpCredentialService::new(state.store.clone());
+        // The revoke returns the binding it removed, so the entry records that
+        // access, not just its id. An already-revoked binding records nothing.
+        if let Some(revoked) = credentials
             .revoke_binding(binding.credential_binding_id)
-            .await?;
+            .await?
+        {
+            state
+                .audit()
+                .record(
+                    &meta.user_context(&user),
+                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                        .target(revoked.credential_binding_id)
+                        .label(revoked.owner_scope_key.clone())
+                        .meta("operation", "oauth_disconnect")
+                        .meta("mcp_server_id", server_id)
+                        .before(oauth_binding_summary(&revoked)),
+                )
+                .await;
+        }
     }
     Ok(Json(McpOauthRevokeResponse { revoked: true }))
+}
+
+/// The OAuth binding fields an entry keeps: never the token values.
+fn oauth_binding_summary(
+    binding: &gateway_service::RedactedMcpCredentialBinding,
+) -> serde_json::Value {
+    serde_json::json!({
+        "material_kind": binding.material_kind.as_str(),
+        "oauth_provider_key": binding.oauth_provider_key,
+        "granted_scopes": binding.granted_scopes,
+        "expires_at": binding.expires_at.map(format_timestamp),
+    })
 }
 
 async fn require_session_user(

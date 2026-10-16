@@ -351,10 +351,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 61,
+        name: "admin_audit_log",
+        checksum: "V61__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V61__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V61__admin_audit_log.sql"),
+    },
+    MigrationManifest {
+        version: 62,
         name: "batch_jobs_route_index",
-        checksum: "V61__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V61__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V61__batch_jobs_route_index.sql"),
+        checksum: "V62__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V62__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V62__batch_jobs_route_index.sql"),
     },
 ];
 
