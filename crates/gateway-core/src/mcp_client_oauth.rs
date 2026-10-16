@@ -417,6 +417,15 @@ pub trait GatewayOauthRepository: Send + Sync {
         token_hash: &str,
     ) -> Result<Option<GatewayOauthTokenContext>, StoreError>;
 
+    /// Which of `token_hashes` are access tokens that still work at `now`:
+    /// unexpired, with a live grant, approving session, and user. One query
+    /// checks many open streams at once.
+    async fn live_gateway_oauth_access_tokens(
+        &self,
+        token_hashes: &[String],
+        now: OffsetDateTime,
+    ) -> Result<Vec<String>, StoreError>;
+
     async fn get_gateway_oauth_session_state(
         &self,
         user_session_id: Uuid,

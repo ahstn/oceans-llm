@@ -193,7 +193,7 @@ So access stops at once when:
 - **The client revokes a token.** `/oauth/revoke` revokes the grant behind the token, access or refresh. RFC 7009 permits revoking the refresh token along with an access token. Unknown tokens return `200`, as the RFC requires.
 - **A refresh token is reused.** The gateway revokes the grant (section 3).
 
-A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval.
+A response that streams events, such as a server's `GET` stream, outlives the check made when it opened. The gateway therefore closes an OAuth caller's event stream when its access token expires. It also rechecks the token, grant, session, and user every 30 seconds, and closes the stream as soon as any of them stops being valid. Revocation reaches an open stream within that interval. One shared watcher does the rechecks: each tick looks up every open stream's token in one batched query, so the database load depends on the interval, not on how many streams are open.
 
 ## Trade-offs
 

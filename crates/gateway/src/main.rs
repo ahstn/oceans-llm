@@ -10,6 +10,7 @@ use gateway::{
     http::{
         build_router,
         client_ip::TrustedProxies,
+        mcp_client_oauth::{OAUTH_STREAM_RECHECK_INTERVAL, OauthStreamWatcher},
         response_cache::ResponseCache,
         state::{AppSkillService, AppState},
     },
@@ -312,6 +313,10 @@ async fn run_serve_with_store(
             .mcp_client_oauth_settings()
             .context("failed resolving MCP client OAuth configuration")?
             .map(Arc::new),
+        oauth_streams: OauthStreamWatcher::new(
+            service.store().clone(),
+            OAUTH_STREAM_RECHECK_INTERVAL,
+        ),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config
