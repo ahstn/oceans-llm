@@ -5419,6 +5419,148 @@
         ]
       }
     },
+    "/api/v1/oauth/authorization-requests/{request_id}": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "get_oauth_authorization_request",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Authorization request identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthAuthorizationRequestView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/oauth/authorization-requests/{request_id}/decision": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "decide_oauth_authorization_request",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Authorization request identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OauthAuthorizationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthAuthorizationDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/review-agent/action/config/resolve": {
       "post": {
         "tags": [
@@ -16447,6 +16589,125 @@
             "type": "string"
           },
           "window_start": {
+            "type": "string"
+          }
+        }
+      },
+      "OauthAuthorizationDecisionRequest": {
+        "type": "object",
+        "required": [
+          "approve"
+        ],
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OauthAuthorizationDecisionResponse": {
+        "type": "object",
+        "required": [
+          "redirect_to"
+        ],
+        "properties": {
+          "redirect_to": {
+            "type": "string",
+            "description": "The client redirect carrying the code, or the `access_denied` error."
+          }
+        }
+      },
+      "OauthAuthorizationRequestView": {
+        "type": "object",
+        "description": "What the consent screen shows for a pending authorization request.",
+        "required": [
+          "request_id",
+          "client_id",
+          "redirect_uri",
+          "redirect_host",
+          "redirect_is_loopback",
+          "resource",
+          "resource_kind",
+          "scopes",
+          "expires_at"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Self-asserted by the client at registration."
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "redirect_host": {
+            "type": "string",
+            "description": "The host the browser returns to; the consent screen must show it."
+          },
+          "redirect_is_loopback": {
+            "type": "boolean",
+            "description": "The code goes to a URI on this device, so the client's identity\ncannot be verified."
+          },
+          "redirect_uri": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_kind": {
+            "$ref": "#/components/schemas/OauthResourceKind"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OauthScopeView"
+            }
+          },
+          "server_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OauthResourceKind": {
+        "type": "string",
+        "enum": [
+          "aggregate",
+          "server"
+        ]
+      },
+      "OauthScopeView": {
+        "type": "object",
+        "required": [
+          "scope",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "scope": {
             "type": "string"
           }
         }

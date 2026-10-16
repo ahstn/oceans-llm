@@ -93,12 +93,15 @@ where
 pub fn grant_subjects(auth: &AuthenticatedApiKey) -> Vec<McpGrantSubject> {
     let mut subjects = Vec::new();
     let mut seen = HashSet::new();
-    push_subject(
-        &mut subjects,
-        &mut seen,
-        McpToolGrantSubjectKind::ApiKey,
-        auth.id,
-    );
+    // Grants made to one key belong to that key; an OAuth token has none.
+    if let Some(api_key_id) = auth.api_key_id() {
+        push_subject(
+            &mut subjects,
+            &mut seen,
+            McpToolGrantSubjectKind::ApiKey,
+            api_key_id,
+        );
+    }
     if let Some(user_id) = auth.owner_user_id {
         push_subject(
             &mut subjects,

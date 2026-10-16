@@ -76,6 +76,8 @@ import {
   discoverMcpServerOauth,
   revokeMcpCredentialBinding,
   revokeMcpOauthConnection,
+  decideOauthAuthorizationRequest,
+  getOauthAuthorizationRequest,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
@@ -559,6 +561,43 @@ export const disconnectMcpOauthServer = createServerFn({ method: 'POST' })
   .validator(validateMcpOauthServerInput)
   .handler(async ({ data }) => {
     return revokeMcpOauthConnection(data.serverId)
+  })
+
+function validateOauthAuthorizationRequestInput(input: unknown): { requestId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'requestId' in input &&
+    typeof input.requestId === 'string' &&
+    input.requestId.length > 0
+  ) {
+    return { requestId: input.requestId }
+  }
+  throw new Error('A valid authorization request ID is required')
+}
+
+function validateOauthAuthorizationDecisionInput(input: unknown): {
+  requestId: string
+  approve: boolean
+} {
+  const { requestId } = validateOauthAuthorizationRequestInput(input)
+  if (typeof input === 'object' && input !== null && 'approve' in input) {
+    const { approve } = input as { approve: unknown }
+    if (typeof approve === 'boolean') return { requestId, approve }
+  }
+  throw new Error('An authorization decision is required')
+}
+
+export const getOauthAuthorization = createServerFn({ method: 'GET' })
+  .validator(validateOauthAuthorizationRequestInput)
+  .handler(async ({ data }) => {
+    return getOauthAuthorizationRequest(data.requestId)
+  })
+
+export const decideOauthAuthorization = createServerFn({ method: 'POST' })
+  .validator(validateOauthAuthorizationDecisionInput)
+  .handler(async ({ data }) => {
+    return decideOauthAuthorizationRequest(data.requestId, data.approve)
   })
 
 export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(

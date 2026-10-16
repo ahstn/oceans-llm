@@ -114,6 +114,7 @@ mod tests {
             owner_user_id: user,
             owner_team_id: None,
             owner_service_account_id: sa,
+            oauth: None,
         }
     }
 

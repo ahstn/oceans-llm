@@ -1,7 +1,7 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
 
-const SESSION_COLUMNS: &str = "session_id, token_hash, api_key_id, owner_kind, owner_user_id, owner_team_id, owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at, revoked_at";
+const SESSION_COLUMNS: &str = "session_id, token_hash, api_key_id, owner_kind, owner_user_id, owner_team_id, owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at, revoked_at, gateway_oauth_grant_id";
 
 fn decode_session(row: &PgRow) -> Result<McpAggregateSessionRecord, StoreError> {
     let owner_kind: String = row.try_get(3).map_err(to_query_error)?;
@@ -9,10 +9,16 @@ fn decode_session(row: &PgRow) -> Result<McpAggregateSessionRecord, StoreError> 
     let owner_team_id: Option<String> = row.try_get(5).map_err(to_query_error)?;
     let owner_service_account_id: Option<String> = row.try_get(6).map_err(to_query_error)?;
     let revoked_at: Option<i64> = row.try_get(12).map_err(to_query_error)?;
+    let api_key_id: Option<String> = row.try_get(2).map_err(to_query_error)?;
+    let gateway_oauth_grant_id: Option<String> = row.try_get(13).map_err(to_query_error)?;
     Ok(McpAggregateSessionRecord {
         session_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
         token_hash: row.try_get(1).map_err(to_query_error)?,
-        api_key_id: parse_uuid(&row.try_get::<String, _>(2).map_err(to_query_error)?)?,
+        api_key_id: api_key_id.as_deref().map(parse_uuid).transpose()?,
+        gateway_oauth_grant_id: gateway_oauth_grant_id
+            .as_deref()
+            .map(parse_uuid)
+            .transpose()?,
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!(
                 "invalid MCP aggregate session owner `{owner_kind}`"
@@ -60,13 +66,14 @@ impl McpAggregateSessionRepository for PostgresStore {
             r#"
             INSERT INTO mcp_aggregate_sessions (
                 session_id, token_hash, api_key_id, owner_kind, owner_user_id, owner_team_id,
-                owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $10)
+                owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at,
+                gateway_oauth_grant_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $10, $11)
             "#,
         )
         .bind(session.session_id.to_string())
         .bind(&session.token_hash)
-        .bind(session.api_key_id.to_string())
+        .bind(session.api_key_id.map(|value| value.to_string()))
         .bind(session.owner_kind.as_str())
         .bind(session.owner_user_id.map(|value| value.to_string()))
         .bind(session.owner_team_id.map(|value| value.to_string()))
@@ -74,6 +81,7 @@ impl McpAggregateSessionRepository for PostgresStore {
         .bind(&session.protocol_version)
         .bind(session.expires_at.unix_timestamp())
         .bind(session.created_at.unix_timestamp())
+        .bind(session.gateway_oauth_grant_id.map(|value| value.to_string()))
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;

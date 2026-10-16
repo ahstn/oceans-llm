@@ -633,6 +633,26 @@ mcp:
 
 `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
 
+OAuth sign-in for MCP clients connecting to the gateway is the opposite direction: Oceans is the authorization server. Configure it under `mcp.client_oauth`:
+
+```yaml
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://gateway.example.com
+    access_token_ttl_seconds: 3600
+    refresh_token_ttl_seconds: 2592000
+    dynamic_client_registration: true
+```
+
+- `enabled` defaults to `false`. When it is `false`, the metadata, authorization, token, registration, and revocation endpoints return `404`, and MCP routes accept only `gwk_` keys.
+- `public_base_url` is the issuer and the origin of every MCP resource URI that tokens are bound to. It accepts `env.*` and `literal.*` references. When it is unset, the issuer falls back to `mcp.oauth.public_base_url`, then `auth.oidc.public_base_url`, then `auth.oauth.public_base_url`. Startup fails when the feature is enabled and none is set. The issuer must be an HTTPS origin; plain `http` is accepted only for `localhost`, `127.0.0.1`, and `[::1]`.
+- `access_token_ttl_seconds` defaults to 3600 and must be between 60 and 86400.
+- `refresh_token_ttl_seconds` defaults to 2592000 (30 days), must be at least the access-token lifetime, and at most 7776000 (90 days). Every token also expires when the admin session that approved it ends.
+- `dynamic_client_registration` defaults to `true`. When it is `false`, `/oauth/register` returns `404` and is left out of the metadata.
+
+For client setup, see [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
+
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## Declarative Teams And Users

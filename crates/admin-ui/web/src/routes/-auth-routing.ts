@@ -9,7 +9,7 @@ import {
 
 export { normalizeAdminPath }
 
-const PERSONAL_ACCOUNT_PATHS = new Set(['/account/connections'])
+const PERSONAL_ACCOUNT_PATHS = new Set(['/account/connections', '/oauth/consent'])
 
 /** Self-scoped pages every signed-in user can open. */
 export const PROFILE_PATH = '/profile'

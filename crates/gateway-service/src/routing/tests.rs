@@ -172,6 +172,7 @@ impl TestRequest {
                     owner_user_id: Some(Uuid::from_u128(201)),
                     owner_team_id: None,
                     owner_service_account_id: None,
+                    oauth: None,
                 },
                 selection: ResolvedModelSelection {
                     requested_model: GatewayModel {
