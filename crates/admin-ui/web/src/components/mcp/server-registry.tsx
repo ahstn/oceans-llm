@@ -3,6 +3,7 @@ import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@t
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
+import { needsAttention } from '@/components/mcp/server-attention'
 import {
   DataGrid,
   DataGridContainer,
@@ -457,13 +458,6 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
         <span className="text-muted-foreground text-xs">No discovery yet</span>
       )}
     </div>
-  )
-}
-
-function needsAttention(server: McpServerView) {
-  return (
-    server.status === 'active' &&
-    ['failed', 'auth_required'].includes(server.last_discovery_status ?? '')
   )
 }
 

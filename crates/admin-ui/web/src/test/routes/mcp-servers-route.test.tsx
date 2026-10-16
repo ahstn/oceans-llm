@@ -450,6 +450,46 @@ describe('ServersTab', () => {
     ).toBeDisabled()
   })
 
+  it('marks failed discovery in the server details only while the server is active', async () => {
+    const failed: McpServerView = {
+      ...server,
+      id: 'failed',
+      display_name: 'Notion',
+      server_key: 'notion',
+      last_discovery_status: 'failed',
+    }
+    const authRequired: McpServerView = {
+      ...server,
+      id: 'auth',
+      display_name: 'Figma',
+      server_key: 'figma',
+      last_discovery_status: 'auth_required',
+    }
+    const disabled: McpServerView = {
+      ...failed,
+      id: 'disabled',
+      display_name: 'Legacy',
+      server_key: 'legacy',
+      status: 'disabled',
+    }
+    const servers = [server, failed, authRequired, disabled]
+
+    for (const [selected, name, status, variant] of [
+      ['failed', 'Notion', 'failed', 'destructive'],
+      ['auth', 'Figma', 'auth_required', 'destructive'],
+      ['disabled', 'Legacy', 'failed', 'secondary'],
+      ['server_1', 'GitHub', 'success', 'success'],
+    ] as const) {
+      await renderServersTab(selected, servers)
+      const header = screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement
+      expect(within(header).getByText(status, { exact: true })).toHaveAttribute(
+        'data-variant',
+        variant,
+      )
+      cleanup()
+    }
+  })
+
   it('retains discovery, count, endpoint, and authentication details in mobile rows', async () => {
     await renderServersTab()
     const mobile = within(screen.getByTestId('mcp-server-list-mobile'))

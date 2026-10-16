@@ -773,10 +773,22 @@ export function ServerStatusBadge({ status }: { status: string }) {
   )
 }
 
-export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
-  const label = status ?? 'not run'
-  const variant = status === 'success' ? 'success' : status ? 'secondary' : 'outline'
-  return <Badge variant={variant}>{label}</Badge>
+// `attention` matches the server registry's rule (needsAttention), so a failed or blocked discovery
+// on an active server reads as destructive in the details too, not as a neutral state.
+export function DiscoveryStatusBadge({
+  status,
+  attention = false,
+}: {
+  status?: string | null
+  attention?: boolean
+}) {
+  return <Badge variant={discoveryVariant(status, attention)}>{status ?? 'not run'}</Badge>
+}
+
+function discoveryVariant(status: string | null | undefined, attention: boolean) {
+  if (attention) return 'destructive'
+  if (status === 'success') return 'success'
+  return status ? 'secondary' : 'outline'
 }
 
 function formatOverviewValue(value: string) {
