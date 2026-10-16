@@ -148,6 +148,10 @@ The matching local Authentik application must use:
 4. Log in as `sso-user@example.com` / `sso-user-password`.
 5. Confirm the browser returns to `/admin` with an `ogw_session` cookie.
 
+## MCP Client Sign-In
+
+When `mcp.client_oauth` is enabled, MCP clients sign users in through the same admin session. The gateway's `/oauth/authorize` endpoint sends the browser to `/admin/oauth/consent`. A signed-out user goes through `/admin/login` with any configured method, OIDC and GitHub included, and returns to the consent page. Tokens issued after consent are tied to that `ogw_session` session: signing out, session expiry, or deactivation ends them. See [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
+
 ## Current Boundaries
 
 - provider policy owns JIT defaults

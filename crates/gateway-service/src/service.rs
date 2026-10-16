@@ -2714,6 +2714,7 @@ mod tests {
             owner_user_id: Some(Uuid::new_v4()),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         }
     }
 

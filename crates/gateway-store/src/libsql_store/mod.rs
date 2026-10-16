@@ -6,6 +6,7 @@ mod budget_alerts;
 mod budget_batch;
 mod budget_increases;
 mod budgets;
+mod gateway_oauth;
 mod guardrail_decisions;
 mod identity;
 mod mcp_access;

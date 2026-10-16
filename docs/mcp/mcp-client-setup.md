@@ -37,7 +37,7 @@ Direct per-server proxying remains available when a client should talk to one up
 https://<gateway-origin>/mcp/{server_key}
 ```
 
-Use an Oceans API key for inbound auth. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
+Clients authenticate with an Oceans API key, or with an OAuth access token from the gateway when [OAuth sign-in](#oauth-sign-in) is enabled. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
 
 ## Connection info in the admin UI
 
@@ -81,6 +81,43 @@ x-oceans-api-key: <oceans-api-key>
 If both headers are present, they must contain the same raw Oceans key after Bearer extraction. The gateway rejects a malformed `Authorization` header even when `x-oceans-api-key` is valid.
 
 Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers with gateway-managed credentials or principal-bound upstream credential bindings.
+
+## OAuth sign-in
+
+Clients that follow the MCP authorization specification can connect without an API key. A platform admin enables `mcp.client_oauth` (see the [configuration reference](../configuration/configuration-reference.md)). Users then add only the MCP URL to their client:
+
+```text
+https://gateway.example.com/mcp
+https://gateway.example.com/mcp/{server_key}
+```
+
+The client handles the rest:
+
+1. Its first request gets `401` with `WWW-Authenticate: Bearer resource_metadata="https://gateway.example.com/.well-known/oauth-protected-resource/mcp", scope="mcp:aggregate"`. A per-server URL names its own metadata document and `scope="mcp:proxy"`.
+2. It reads the protected-resource metadata, then the authorization-server metadata at `/.well-known/oauth-authorization-server`.
+3. It registers at `/oauth/register` (RFC 7591 Dynamic Client Registration).
+4. It opens `/oauth/authorize` in the browser with PKCE (`S256`) and `resource` set to the MCP URL. The user signs in to Oceans the usual way, with a password, OIDC, or GitHub, and sees the consent page at `/admin/oauth/consent`. It names the client, the host it returns to, and the MCP access requested. The user chooses `Allow` or `Deny`.
+5. It exchanges the code at `/oauth/token` for an `oat_` access token (one hour by default) and, when it registered for refresh, an `ort_` refresh token.
+6. It sends `Authorization: Bearer oat_…` on every MCP request and refreshes when the token expires.
+
+What the token can do:
+
+- It acts as the user who approved it. User and team grants apply exactly as they do for that user's API keys. Grants made to one specific API key do not apply.
+- A token for `https://gateway.example.com/mcp` with `mcp:aggregate` reaches the aggregate endpoint. Add `mcp:proxy` to also reach every per-server route. A token for `https://gateway.example.com/mcp/{server_key}` reaches only that server.
+- It works only on `/mcp` routes, only in the `Authorization` header. Model, admin, batch, and Skills routes reject it with `oauth_token_not_accepted`.
+- MCP invocation records show the user, with `auth_method`, `oauth_client_id`, and `oauth_grant_id` in their metadata.
+
+When access ends:
+
+- Signing out of the admin UI ends every client that session approved.
+- Deactivating the user revokes all of their grants.
+- The client can revoke its tokens at `/oauth/revoke`.
+- Reusing a refresh token that was already rotated revokes the grant.
+- Tokens never outlive the session that approved them. Expect to sign in again when that session expires (30 days).
+
+Consent is asked every time a client signs in. When the code goes to a loopback redirect URI, the consent page shows a warning, because Oceans cannot verify who published the client. Client ID Metadata Documents are not supported yet, so clients fall back to registration.
+
+API keys keep working on the same URLs. Clients that support custom headers can use either method.
 
 ## Claude Code
 

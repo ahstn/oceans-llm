@@ -2058,7 +2058,10 @@ pub struct McpAccessResolution {
 pub struct McpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
-    pub api_key_id: Uuid,
+    /// Set for API-key sessions; exactly one of this and the grant is set.
+    pub api_key_id: Option<Uuid>,
+    /// Set for sessions opened with an MCP client OAuth token.
+    pub gateway_oauth_grant_id: Option<Uuid>,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -2075,7 +2078,10 @@ pub struct McpAggregateSessionRecord {
 pub struct NewMcpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
-    pub api_key_id: Uuid,
+    /// Set for API-key sessions; exactly one of this and the grant is set.
+    pub api_key_id: Option<Uuid>,
+    /// Set for sessions opened with an MCP client OAuth token.
+    pub gateway_oauth_grant_id: Option<Uuid>,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,

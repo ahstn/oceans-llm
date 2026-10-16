@@ -768,6 +768,7 @@ mod tests {
             owner_user_id: None,
             owner_team_id: Some(team_id),
             owner_service_account_id: Some(service_account_id),
+            oauth: None,
         };
 
         let resolved = service
@@ -830,6 +831,7 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         };
 
         let resolved = service
@@ -875,6 +877,7 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         };
 
         let error = service
@@ -909,6 +912,7 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         };
 
         let error = service
@@ -949,6 +953,7 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            oauth: None,
         };
 
         let error = service

@@ -725,6 +725,7 @@ async fn seed_authorized_tool_with_config(
         owner_user_id: key.owner_user_id,
         owner_team_id: key.owner_team_id,
         owner_service_account_id: key.owner_service_account_id,
+        oauth: None,
     }
 }
 

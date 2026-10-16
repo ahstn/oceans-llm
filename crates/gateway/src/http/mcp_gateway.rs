@@ -20,12 +20,12 @@ use axum::{
 };
 use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpToolInvocationStatus,
-    McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope, ProviderError,
-    auth::extract_bearer_token,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpOauthResource,
+    McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
+    ProviderError, auth::extract_bearer_token, is_oauth_access_token,
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
-use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput};
+use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
 use guardrails::{
     enforce_direct_mcp_result, evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata,
     guardrail_denied_response,
@@ -40,7 +40,11 @@ use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
-use crate::http::{request_policy::RequestPolicyContext, state::AppState};
+use crate::http::{
+    mcp_client_oauth::{bearer_challenge, bound_to_oauth_access},
+    request_policy::RequestPolicyContext,
+    state::AppState,
+};
 
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
@@ -75,14 +79,11 @@ pub async fn mcp_streamable_http_proxy(
         .cloned()
         .unwrap_or_default();
 
-    let bearer_token = match extract_mcp_gateway_api_key(&headers) {
-        Ok(token) => token,
-        Err(error) => return mcp_error_response(error.into()),
-    };
+    let resource = McpOauthResource::from_path(request.uri().path());
 
-    let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
+    let auth = match authenticate_mcp_request(&state, &headers, resource.as_ref()).await {
         Ok(auth) => auth,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error),
     };
     tracing::Span::current().record("owner_kind", auth.owner_kind.as_str());
     if !matches!(
@@ -122,6 +123,7 @@ pub async fn mcp_streamable_http_proxy(
         started_at,
     )
     .await;
+    let response = bound_to_oauth_access(&state, &auth, response);
     tracing::Span::current().record("status_code", i64::from(response.status().as_u16()));
     tracing::debug!(
         elapsed_ms = started_at.elapsed().as_millis(),
@@ -661,7 +663,35 @@ fn response_outcome(
     }
 }
 
-fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {
+/// Authenticates an MCP request with a `gwk_` API key, or with an `oat_`
+/// OAuth access token issued for `resource` when OAuth for MCP clients is on.
+async fn authenticate_mcp_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    resource: Option<&McpOauthResource>,
+) -> Result<AuthenticatedApiKey, GatewayError> {
+    let token = extract_mcp_bearer_token(headers)?;
+    if !is_oauth_access_token(&token) {
+        return state.service.authenticate_bearer_token(&token).await;
+    }
+    // The MCP authorization spec allows access tokens only in `Authorization`.
+    let sent_as_api_key = headers
+        .get(X_OCEANS_API_KEY)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_oauth_access_token);
+    let (Some(settings), Some(resource), false) =
+        (state.mcp_client_oauth.clone(), resource, sent_as_api_key)
+    else {
+        return Err(AuthError::OauthTokenInvalid.into());
+    };
+    McpClientOauthService::new(state.store.clone(), settings)
+        .authenticate_access_token(&token, resource, OffsetDateTime::now_utc())
+        .await
+}
+
+/// The credential from `Authorization: Bearer` or `x-oceans-api-key`: a
+/// `gwk_` API key, or an `oat_` OAuth access token.
+fn extract_mcp_bearer_token(headers: &HeaderMap) -> Result<String, AuthError> {
     let authorization_token = headers
         .get(AUTHORIZATION)
         .map(|value| {
@@ -699,6 +729,25 @@ fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError>
         (None, Some(explicit_key)) => Ok(explicit_key),
         (None, None) => Err(AuthError::MissingAuthorizationHeader),
     }
+}
+
+/// An authentication failure on an MCP route. When OAuth for MCP clients is
+/// enabled, the `WWW-Authenticate` header points at the route's metadata.
+fn mcp_auth_error_response(
+    state: &AppState,
+    resource: Option<&McpOauthResource>,
+    error: GatewayError,
+) -> Response<Body> {
+    let challenge = state
+        .mcp_client_oauth
+        .as_deref()
+        .zip(resource)
+        .and_then(|(settings, resource)| bearer_challenge(settings, resource, &error));
+    let mut response = mcp_error_response(error);
+    if let Some(challenge) = challenge {
+        response.headers_mut().insert(WWW_AUTHENTICATE, challenge);
+    }
+    response
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

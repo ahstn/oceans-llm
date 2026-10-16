@@ -11,7 +11,7 @@ use axum::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpAggregateSessionRepository,
-    NewMcpAggregateSessionRecord,
+    McpOauthResource, NewMcpAggregateSessionRecord,
 };
 use gateway_mcp::{
     DEFAULT_PROTOCOL_VERSION, JsonRpcId, MCP_PROTOCOL_VERSION_HEADER, MCP_SESSION_ID_HEADER,
@@ -33,8 +33,9 @@ use uuid::Uuid;
 use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 use super::{
-    MAX_MCP_REQUEST_BODY_BYTES, body_read_exceeded_limit, evaluate_mcp_call, evaluate_mcp_result,
-    extract_mcp_gateway_api_key, guardrail_decision_metadata, mcp_error_response,
+    MAX_MCP_REQUEST_BODY_BYTES, authenticate_mcp_request, body_read_exceeded_limit,
+    evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, mcp_auth_error_response,
+    mcp_error_response,
 };
 
 const AGGREGATE_SERVER_NAME: &str = "oceans-mcp-gateway";
@@ -58,13 +59,10 @@ pub async fn mcp_aggregate_streamable_http(
     if method != axum::http::Method::POST && method != axum::http::Method::DELETE {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
-    let bearer_token = match extract_mcp_gateway_api_key(&headers) {
-        Ok(token) => token,
-        Err(error) => return mcp_error_response(error.into()),
-    };
-    let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
+    let resource = Some(&McpOauthResource::Aggregate);
+    let auth = match authenticate_mcp_request(&state, &headers, resource).await {
         Ok(auth) => auth,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return mcp_auth_error_response(&state, resource, error),
     };
     if !matches!(
         auth.owner_kind,
@@ -196,7 +194,8 @@ async fn initialize_session(
     let session = NewMcpAggregateSessionRecord {
         session_id,
         token_hash,
-        api_key_id: auth.id,
+        api_key_id: auth.api_key_id(),
+        gateway_oauth_grant_id: auth.oauth_grant_id(),
         owner_kind: auth.owner_kind,
         owner_user_id: auth.owner_user_id,
         owner_team_id: auth.owner_team_id,
@@ -304,7 +303,8 @@ async fn validate_session(
         }
         Err(error) => return Err(Box::new(mcp_error_response(error.into()))),
     };
-    if session.api_key_id != auth.id
+    if session.api_key_id != auth.api_key_id()
+        || session.gateway_oauth_grant_id != auth.oauth_grant_id()
         || session.owner_kind != auth.owner_kind
         || session.owner_user_id != auth.owner_user_id
         || session.owner_team_id != auth.owner_team_id

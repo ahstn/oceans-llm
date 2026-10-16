@@ -123,7 +123,7 @@ where
             mcp_tool_invocation_id,
             request_log_id: input.request_log_id,
             request_id: input.request_id,
-            api_key_id: Some(auth.id),
+            api_key_id: auth.api_key_id(),
             user_id: auth.owner_user_id,
             team_id: auth.owner_team_id,
             owner_kind: auth.owner_kind,
@@ -142,7 +142,7 @@ where
             result_payload_truncated: result_truncated,
             arguments_payload_redacted: payload.is_some(),
             result_payload_redacted: payload.is_some(),
-            metadata: input.metadata,
+            metadata: with_auth_metadata(input.metadata, auth),
             mcp_method: input.mcp_method,
             occurred_at: input.occurred_at,
         };
@@ -204,6 +204,29 @@ where
             result_truncated,
         )
     }
+}
+
+/// OAuth calls have no API key, so the invocation records which client and
+/// grant made them. #448 will promote these to columns.
+fn with_auth_metadata(
+    mut metadata: Map<String, Value>,
+    auth: &AuthenticatedApiKey,
+) -> Map<String, Value> {
+    if let Some(oauth) = &auth.oauth {
+        metadata.insert(
+            "auth_method".to_string(),
+            Value::String(auth.auth_method().as_str().to_string()),
+        );
+        metadata.insert(
+            "oauth_client_id".to_string(),
+            Value::String(oauth.client_id.clone()),
+        );
+        metadata.insert(
+            "oauth_grant_id".to_string(),
+            Value::String(oauth.grant_id.to_string()),
+        );
+    }
+    metadata
 }
 
 fn validate_owner(auth: &AuthenticatedApiKey) -> Result<(), GatewayError> {

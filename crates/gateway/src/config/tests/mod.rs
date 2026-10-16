@@ -35,6 +35,7 @@ mod github_copilot;
 mod identity;
 mod infrastructure;
 mod mcp;
+mod mcp_client_oauth;
 mod models;
 mod openrouter;
 mod providers;

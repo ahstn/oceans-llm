@@ -19,6 +19,7 @@ mod identity_audit;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod inference_guardrails;
+pub mod mcp_client_oauth;
 pub mod mcp_gateway;
 pub mod mcp_oauth;
 pub mod mcp_registry;
@@ -63,6 +64,7 @@ use self::{
     guardrails::*,
     handlers::*,
     identity::*,
+    mcp_client_oauth::*,
     mcp_gateway::*,
     mcp_oauth::*,
     mcp_registry::*,
@@ -477,6 +479,41 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
         .merge(skills::router())
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(oauth_protected_resource_metadata_aggregate),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp/{server_key}",
+            get(oauth_protected_resource_metadata_server),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth_authorization_server_metadata),
+        )
+        .route("/oauth/authorize", get(oauth_authorize))
+        .route(
+            "/oauth/token",
+            post(oauth_token).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
+        )
+        .route(
+            "/oauth/revoke",
+            post(oauth_revoke).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
+        )
+        .route(
+            "/oauth/register",
+            post(oauth_register).layer(DefaultBodyLimit::max(
+                mcp_client_oauth::MAX_REGISTRATION_BODY_BYTES,
+            )),
+        )
+        .route(
+            "/api/v1/oauth/authorization-requests/{request_id}",
+            get(get_oauth_authorization_request),
+        )
+        .route(
+            "/api/v1/oauth/authorization-requests/{request_id}/decision",
+            post(decide_oauth_authorization_request),
+        )
         .merge(mcp_router)
         .with_state(state)
         .layer(middleware::from_fn_with_state(

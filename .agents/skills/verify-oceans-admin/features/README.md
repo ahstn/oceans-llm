@@ -78,6 +78,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Account onboarding](./account-onboarding.md) covers password-user creation, the invite URL, `Account ready`, and voluntary password change.
 - [Review agent](./review-agent.md) covers repository registration, review settings, workflow generation, run listing, and disable cleanup.
 - [Workspace connections](./workspace-connections.md) covers the personal OAuth MCP connections page and its default empty state.
+- [MCP client OAuth](./mcp-client-oauth.md) covers the `401` challenge, discovery metadata, client registration, the consent page, token exchange, `oat_` MCP calls, refresh rotation, and revocation.
 - [MCP](./mcp.md) covers registry discovery, Tool Sets, generated client configuration, explicit grants, direct and aggregate tool calls, upstream authentication failure, invocation records, and cleanup.
 - [Skills](./skills.md) covers namespace claims, ZIP uploads, previews, immutable versions, browser downloads, shared reads, owner-only updates, service-account access, and scoped RustFS cleanup.
 - [Profile](./profile.md) covers the post-sign-in landing page, budget meter API parity, usage heatmap, personal keys, and the prefilled create-key link.

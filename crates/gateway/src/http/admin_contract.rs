@@ -2108,7 +2108,9 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_oauth::revoke_mcp_oauth_connection,
         crate::http::mcp_oauth::mcp_oauth_callback,
         crate::http::mcp_oauth::mcp_oauth_server_callback,
-        crate::http::mcp_oauth::mcp_oauth_client_metadata_document
+        crate::http::mcp_oauth::mcp_oauth_client_metadata_document,
+        crate::http::mcp_client_oauth::get_oauth_authorization_request,
+        crate::http::mcp_client_oauth::decide_oauth_authorization_request
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)

@@ -15,6 +15,7 @@ mod guardrails;
 mod identity;
 mod loader;
 mod mcp;
+mod mcp_client_oauth;
 mod models;
 mod normalization;
 mod permissions;
@@ -52,6 +53,7 @@ pub use identity::{
 };
 pub use loader::{ConfigEntitySource, ConfigSources, LoadedConfig, render_config};
 pub use mcp::{McpConfig, McpOauthConfig, McpOauthProviderConfig};
+pub use mcp_client_oauth::McpClientOauthConfig;
 pub use models::{ModelAllowlistConfig, ModelConfig};
 pub use rate_limits::{RateLimitFailureModeConfig, RateLimitPolicyConfig, RateLimitsConfig};
 pub use request_logging::{
@@ -142,6 +144,7 @@ impl GatewayConfig {
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
         self.mcp.oauth.validate()?;
+        self.mcp_client_oauth_settings()?;
 
         let provider_by_id = self
             .providers

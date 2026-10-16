@@ -8,10 +8,10 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use gateway_core::{
-    AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord,
-    OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
-    UserSessionRecord, UserStatus, validate_entity_tags,
+    AuthError, AuthMode, GatewayError, GatewayOauthRepository, GlobalRole, IdentityRepository,
+    IdentityUserRecord, MembershipRole, OauthLoginStateRecord, OauthProviderRecord,
+    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord,
+    TeamRecord, UserRecord, UserSessionRecord, UserStatus, validate_entity_tags,
 };
 use gateway_service::{AuditEvent, AuditProgress, admin_audit::actions};
 use gateway_store::{AnyStore, GatewayStore};
@@ -1293,6 +1293,12 @@ pub async fn deactivate_identity_user(
         let _ = replaced.set(state.store.deactivate_identity_user(user_id, now).await?);
         progress.landed();
         state.store.revoke_user_sessions(user_id, now).await?;
+        // Sessions ending already stops MCP client tokens; revoking the grants
+        // keeps them dead if the user is reactivated.
+        state
+            .store
+            .revoke_gateway_oauth_grants_for_user(user_id, "user_deactivated", now)
+            .await?;
         state
             .store
             .revoke_password_invitations_for_user(user_id, now)
@@ -2916,6 +2922,16 @@ pub(crate) async fn resolve_session_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<UserRecord>, AppError> {
+    Ok(resolve_session_user_with_session_id(state, headers)
+        .await?
+        .map(|(user, _)| user))
+}
+
+/// Like [`resolve_session_user`], and also returns the `user_sessions` ID.
+pub(crate) async fn resolve_session_user_with_session_id(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<(UserRecord, Uuid)>, AppError> {
     let Some(current_session) = resolve_session_cookie(state, headers).await? else {
         return Ok(None);
     };
@@ -2943,7 +2959,7 @@ pub(crate) async fn resolve_session_user(
         .store
         .touch_user_session(current_session.session.session_id, now)
         .await?;
-    Ok(Some(user))
+    Ok(Some((user, current_session.session.session_id)))
 }
 
 struct ResolvedSessionCookie {
