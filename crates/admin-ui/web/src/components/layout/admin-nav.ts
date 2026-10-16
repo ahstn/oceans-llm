@@ -239,7 +239,7 @@ export function matchesAdminPath(currentPath: string, to: string) {
   return current === target || current.startsWith(`${target}/`)
 }
 
-function stripTrailingSlash(path: string) {
+export function stripTrailingSlash(path: string) {
   return path.length > 1 ? path.replace(/\/+$/, '') : path
 }
 

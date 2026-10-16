@@ -5,6 +5,7 @@ import {
   getAdminPagePath,
   isPlatformAdminOnlyPath,
   normalizeAdminPath,
+  stripTrailingSlash,
 } from '@/components/layout/admin-nav'
 
 export { normalizeAdminPath }
@@ -72,7 +73,8 @@ export function canPerformAdminAction(
 }
 
 export function canAccessSignedInPath(session: AuthSessionView, path: string) {
-  const pathname = normalizeAdminPath(path.split(/[?#]/, 1)[0])
+  // The router drops a trailing slash before it checks access, but a login `redirect` keeps it.
+  const pathname = stripTrailingSlash(normalizeAdminPath(path.split(/[?#]/, 1)[0]))
   if (pathname === '/') return true
   if (isPersonalPath(pathname)) return true
   if (pathname === '/no-access') return session.permissions.pages.length === 0
