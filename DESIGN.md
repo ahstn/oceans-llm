@@ -31,8 +31,8 @@ colors:
   chart-purple: "#9d7cd8"
   chart-other: "#737aa2"
   heatmap-empty: "#172432"
-  heatmap-1: "#2c437f"
-  heatmap-2: "#5070bc"
+  heatmap-1: "#4d68a7"
+  heatmap-2: "#6183d1"
   heatmap-3: "#7aa2f7"
   heatmap-4: "#89ddff"
 typography:
@@ -178,7 +178,7 @@ Charts read colours from tokens, never from the action colour.
 - **Series** (`--chart-1` to `--chart-5`), always in this order: blue `#7aa2f7`, green `#9ece6a`, teal `#41a6b5`, cyan `#7dcfff`, purple `#9d7cd8`. Every series is at least 5.2:1 on cards.
 - **Other** (`#737aa2`, `--chart-other`): the grouped series after the top five.
 - **Hero** (`#7aa2f7`, `--chart-hero`): single-series charts (spend trend) and ranked meters (spend by model, spend by owner).
-- **Heatmap** (`--heatmap-0` to `--heatmap-4`): `#172432` (empty), `#2c437f`, `#5070bc`, `#7aa2f7`, `#89ddff`, in perceptually even steps from empty to busiest.
+- **Heatmap** (`--heatmap-0` to `--heatmap-4`): `#172432` (empty), `#4d68a7`, `#6183d1`, `#7aa2f7`, `#89ddff`, from empty to busiest. Every active level is at least 3:1 on cards (3.2, 4.8, 7.0 and 11.6), so a day with a little activity never reads as empty; the empty level stays close to the card on purpose.
 
 Two pairs sit close together, and both are accepted:
 
@@ -316,12 +316,25 @@ Where motion appears:
 
 Tables, virtualised lists, filters, sheets and detail panes are signature surfaces. Preserve density, make selected and detail state obvious, and keep filters close to the data they affect. Tables keep thin row lines; dense tables such as request logs and API keys need them to stay scannable. Empty states should teach the next operational step, not merely say that nothing exists.
 
+**Numbers and time.** Each kind of value has one format, so a column compares at a glance:
+
+- Numbers in tables are right-aligned and use `tabular-nums`.
+- Counts group their digits (`9,812`). From 100,000 up they go compact (`34.4M`), with the exact count in a tooltip.
+- Durations carry a unit and scale with size: `810 ms`, `3.96 s`, `1 h 6 min`. Never a bare `3964980ms`.
+- Money keeps one precision per column: two decimals for totals, budgets and spend (`$34.40`, `formatUsd10000`), four for a single request's cost (`$0.0457`).
+- Timestamps read `16 Oct 2026, 02:04 UTC`: 24-hour, always with the zone, and `whitespace-nowrap` so they never wrap. Add seconds only where order within a minute matters, as in request logs.
+- A missing value is an em dash (`—`), never `n/a`.
+
+Request logs, API keys and the leaderboard predate this rule; bringing them in line is follow-up work.
+
 ### Charts
 
 - Series take `--chart-1` to `--chart-5` in order, then `--chart-other` for everything grouped.
 - Single-series charts and ranked meters take `--chart-hero`.
 - The activity heatmap takes `--heatmap-0` to `--heatmap-4`.
 - Keep legends and tooltips on multi-series charts, so no series depends on colour alone.
+- In a stack, neighbouring bands differ in lightness as well as hue. A stack whose series have fixed meanings alternates light and dark: Profile token volume runs Output `--chart-2`, Input `--chart-5`, Cached input `--chart-4`, bottom to top.
+- Series and active heatmap levels are graphics, so they need 3:1 against the card (WCAG 1.4.11). The design-system page grades them, and `src/test/design-contrast.test.ts` fails the build when they, or a text pair under 4.5:1, slip.
 
 ## 7. Packaging and Reuse
 

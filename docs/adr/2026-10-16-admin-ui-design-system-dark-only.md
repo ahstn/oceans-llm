@@ -46,6 +46,7 @@ Success is Tokyo Night green1 `#73daca`, and warning is `#eaa518`. Destructive i
 - The docs site's dark theme repeats the admin surfaces, text, lilac, and status colors. `mise run lint` fails when they differ.
 - Recharts needs the chart duration as a number, so `src/lib/chart-motion.ts` repeats it. An admin UI test fails when it differs from `--duration-chart`.
 - Another admin UI test fails when the design-system page misses an installed component.
+- A third fails when a text pair drops below 4.5:1, or a chart series or active heatmap level below 3:1 on the card (WCAG 1.4.11). The design-system page grades the same pairs in the browser.
 
 ## Consequences
 
@@ -53,7 +54,7 @@ Benefits:
 
 - A token change in `globals.css` reaches the app, the shadcn package, and the design-system page. Lint and tests fail until the hand-kept copies follow.
 - Actions, data, and state no longer share a color, so each can change without blurring the others.
-- Every text pair on the design-system page passes WCAG AA, and all but one pass AAA.
+- Every text pair on the design-system page passes WCAG AA, and all but one pass AAA. Every chart series and active heatmap level clears 3:1 on cards.
 - Other projects can install the theme with `npx shadcn@latest add ahstn/oceans-llm/oceans-theme`.
 
 Trade-offs:
@@ -69,7 +70,6 @@ Trade-offs:
 - Derive a light theme: a palette, contrast checks on the design-system page, then a `.dark` split and a toggle. The docs site's light palette is a starting point.
 - Decide whether budget and pricing-coverage bars, healthy cache-hit bars, and stat-card icon tiles are data or actions. They use lilac today.
 - Give models and harnesses a stable chart color by name instead of by rank.
-- Add an automated contrast test. The verification recipe measures ratios on the design-system page, but CI doesn't.
 - Choose a focus style, the sidebar brand mark, and an avatar palette.
 - Move team-role and model-capability badges off the default variant.
 
