@@ -28,7 +28,7 @@ Teams already have Owner, Admin and Member roles, and Spend Controls already let
 | `owner_contact` | Free text, up to 256 characters: an email address, a chat channel or an on-call alias. |
 | `visibility` | `team` or `organisation`. |
 
-Existing servers become platform-owned and `organisation`, so nothing changes for them. The API returns `owner_team_id: null` for a platform-owned server, and the UI shows its owner as "Platform admins", so it cannot be mistaken for a team named "Platform".
+Existing servers become platform-owned and `organisation`, so nothing changes for them. The team reference restricts deletion: a team that still owns servers cannot be deleted, so a team-only server never loses its owner. Teams are deactivated, not deleted, today. The API returns `owner_team_id: null` for a platform-owned server, and the UI shows its owner as "Platform admins", so it cannot be mistaken for a team named "Platform".
 
 A team owner or admin who registers a server always registers it for their own team. The contact defaults to their email address. A platform admin may register a server for any team, or for the platform.
 
@@ -77,7 +77,7 @@ Team owners and admins reach a scoped MCP area when the `team_admins` permission
 | Effective access preview | Subjects in their team, limited to one of their team's servers |
 | OAuth discovery, connection info, recommended servers | Yes. These are reads |
 
-A server or tool that a team admin cannot see returns `404`, so its existence does not leak. An action they cannot take on a server they can see returns `403`.
+A server or tool that a team admin cannot see returns `404`, so its existence does not leak. An action they cannot take on a server they can see returns `403`. For a server they can see but not manage, the view drops the URL's credentials, query and token-like path segments, its auth config and its discovery error summary.
 
 ### 5. Gateway-managed credentials
 
@@ -92,7 +92,7 @@ PUT /api/v1/admin/mcp/servers/{server_id}/owner
 { "owner_team_id": null | "<team uuid>", "owner_contact": "...", "visibility": "team" | "organisation" }
 ```
 
-`owner_team_id: null` moves the server to the platform and forces `organisation`, which can never strand access. Moving it to a team follows the narrowing rule in section 2. The route is platform-admin only, so a team admin cannot give a server away or claim another team's.
+`owner_team_id` is required, so a request that only changes the contact cannot move a server by accident. `null` moves the server to the platform and forces `organisation`, which can never strand access. Moving it to a team follows the narrowing rule in section 2. The route is platform-admin only, so a team admin cannot give a server away or claim another team's.
 
 ### 7. Audit
 

@@ -5121,9 +5121,11 @@ export interface components {
             owner_contact?: string | null;
             /**
              * Format: uuid
-             * @description The new owning team; `null` moves the server to the platform.
+             * @description Required. The new owning team, or `null` to move the server to the
+             *     platform. Omitting it is rejected, so a request that only changes the
+             *     contact cannot take the server away from its team.
              */
-            owner_team_id?: string | null;
+            owner_team_id: string | null;
             /**
              * @description Omitted keeps the current visibility. Platform-owned servers are always
              *     `organisation`.

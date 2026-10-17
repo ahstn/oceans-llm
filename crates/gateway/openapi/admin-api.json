@@ -19522,6 +19522,9 @@
       "TransferMcpServerOwnershipRequest": {
         "type": "object",
         "description": "A platform admin's ownership transfer.",
+        "required": [
+          "owner_team_id"
+        ],
         "properties": {
           "owner_contact": {
             "type": [
@@ -19536,7 +19539,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "The new owning team; `null` moves the server to the platform."
+            "description": "Required. The new owning team, or `null` to move the server to the\nplatform. Omitting it is rejected, so a request that only changes the\ncontact cannot take the server away from its team."
           },
           "visibility": {
             "type": [

@@ -377,13 +377,26 @@ pub struct UpdateMcpServerRequest {
 /// A platform admin's ownership transfer.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferMcpServerOwnershipRequest {
-    /// The new owning team; `null` moves the server to the platform.
-    pub(super) owner_team_id: Option<Uuid>,
+    /// Required. The new owning team, or `null` to move the server to the
+    /// platform. Omitting it is rejected, so a request that only changes the
+    /// contact cannot take the server away from its team.
+    #[serde(default, deserialize_with = "present_nullable")]
+    #[schema(value_type = Option<Uuid>, required = true, nullable)]
+    pub(super) owner_team_id: Option<Option<Uuid>>,
     /// Omitted keeps the current contact; an empty string clears it.
     pub(super) owner_contact: Option<String>,
     /// Omitted keeps the current visibility. Platform-owned servers are always
     /// `organisation`.
     pub(super) visibility: Option<String>,
+}
+
+/// Distinguishes an explicit `null` (`Some(None)`) from an omitted field (`None`).
+fn present_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 pub(super) fn map_recommended_server(
@@ -436,9 +449,17 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
 impl McpServerView {
     /// Adds what depends on who is asking: the owning team's name and whether the
     /// caller may manage the server.
+    /// A caller who cannot manage the server sees its URL without credentials,
+    /// query or token-like path segments, and none of its auth settings or
+    /// discovery errors, which may embed upstream details.
     pub(super) fn for_viewer(mut self, owner_team_name: Option<String>, can_manage: bool) -> Self {
         self.owner_team_name = owner_team_name;
         self.can_manage = can_manage;
+        if !can_manage {
+            self.server_url = audit_safe_url(&self.server_url);
+            self.auth_config = Map::new();
+            self.last_error_summary = None;
+        }
         self
     }
 }

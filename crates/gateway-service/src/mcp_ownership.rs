@@ -418,34 +418,48 @@ where
     }
 
     /// The team a grant subject belongs to: the team itself, a user's team, a
-    /// service account's team, or the team behind an API key's owner.
+    /// service account's team, or the team behind an API key's owner. A subject
+    /// that does not exist is an invalid request.
     pub async fn subject_team(
         &self,
         subject: McpGrantSubject,
     ) -> Result<Option<Uuid>, GatewayError> {
+        let missing = subject_not_found(subject.clone());
+        self.resolve_subject_team(subject).await?.ok_or(missing)
+    }
+
+    /// Like [`Self::subject_team`], but `Ok(None)` when the subject, or the user
+    /// or service account behind an API key, no longer exists. Store failures are
+    /// returned as errors, never treated as a missing subject.
+    async fn resolve_subject_team(
+        &self,
+        subject: McpGrantSubject,
+    ) -> Result<Option<Option<Uuid>>, GatewayError> {
         let subject_id = subject.subject_id;
         match subject.subject_kind {
-            McpToolGrantSubjectKind::Team => self
-                .existing_team(subject_id)
-                .await
-                .map(Some)
-                .map_err(|_| subject_not_found(subject)),
-            McpToolGrantSubjectKind::User => self.user_team(subject_id).await,
+            McpToolGrantSubjectKind::Team => {
+                Ok(IdentityRepository::get_team_by_id(&*self.repo, subject_id)
+                    .await?
+                    .map(|team| Some(team.team_id)))
+            }
+            McpToolGrantSubjectKind::User => self.resolve_user_team(subject_id).await,
             McpToolGrantSubjectKind::ServiceAccount => {
-                Ok(Some(self.service_account_team(subject_id).await?))
+                self.resolve_service_account_team(subject_id).await
             }
             McpToolGrantSubjectKind::ApiKey => {
-                let key = AdminApiKeyRepository::get_api_key_by_id(&*self.repo, subject_id)
-                    .await?
-                    .ok_or_else(|| subject_not_found(subject))?;
+                let Some(key) =
+                    AdminApiKeyRepository::get_api_key_by_id(&*self.repo, subject_id).await?
+                else {
+                    return Ok(None);
+                };
                 if let Some(team_id) = key.owner_team_id {
-                    Ok(Some(team_id))
+                    Ok(Some(Some(team_id)))
                 } else if let Some(service_account_id) = key.owner_service_account_id {
-                    Ok(Some(self.service_account_team(service_account_id).await?))
+                    self.resolve_service_account_team(service_account_id).await
                 } else if let Some(user_id) = key.owner_user_id {
-                    self.user_team(user_id).await
+                    self.resolve_user_team(user_id).await
                 } else {
-                    Ok(None)
+                    Ok(Some(None))
                 }
             }
         }
@@ -492,10 +506,12 @@ where
                 subject_kind: grant.subject_kind,
                 subject_id: grant.subject_id,
             };
-            // A subject that no longer exists holds no access.
-            match self.subject_team(subject).await {
-                Ok(subject_team) if subject_team != Some(team_id) => outside += 1,
-                _ => {}
+            // A subject that no longer exists holds no access. Any other lookup
+            // failure stops the write, so it never proceeds on a partial check.
+            if let Some(subject_team) = self.resolve_subject_team(subject).await?
+                && subject_team != Some(team_id)
+            {
+                outside += 1;
             }
         }
         if outside > 0 {
@@ -561,33 +577,30 @@ where
             .ok_or_else(|| GatewayError::InvalidRequest(format!("team `{team_id}` not found")))
     }
 
-    async fn user_team(&self, user_id: Uuid) -> Result<Option<Uuid>, GatewayError> {
+    async fn resolve_user_team(&self, user_id: Uuid) -> Result<Option<Option<Uuid>>, GatewayError> {
         if IdentityRepository::get_user_by_id(&*self.repo, user_id)
             .await?
             .is_none()
         {
-            return Err(subject_not_found(McpGrantSubject {
-                subject_kind: McpToolGrantSubjectKind::User,
-                subject_id: user_id,
-            }));
+            return Ok(None);
         }
-        Ok(self
-            .repo
-            .get_team_membership_for_user(user_id)
-            .await?
-            .map(|membership| membership.team_id))
+        Ok(Some(
+            self.repo
+                .get_team_membership_for_user(user_id)
+                .await?
+                .map(|membership| membership.team_id),
+        ))
     }
 
-    async fn service_account_team(&self, service_account_id: Uuid) -> Result<Uuid, GatewayError> {
-        IdentityRepository::get_service_account_by_id(&*self.repo, service_account_id)
-            .await?
-            .map(|service_account| service_account.team_id)
-            .ok_or_else(|| {
-                subject_not_found(McpGrantSubject {
-                    subject_kind: McpToolGrantSubjectKind::ServiceAccount,
-                    subject_id: service_account_id,
-                })
-            })
+    async fn resolve_service_account_team(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<Option<Uuid>>, GatewayError> {
+        Ok(
+            IdentityRepository::get_service_account_by_id(&*self.repo, service_account_id)
+                .await?
+                .map(|service_account| Some(service_account.team_id)),
+        )
     }
 }
 

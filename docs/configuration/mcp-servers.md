@@ -104,7 +104,7 @@ includes the `mcp` page, which it does by default. Team members do not.
 
 | Action | Team owner or admin |
 |---|---|
-| See servers | Their team's servers, and every `organisation` server read-only |
+| See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, the URL loses its credentials, query and token-like path segments, and the auth config and discovery errors are hidden |
 | Register a server | Yes. It is owned by their team and starts as `team` |
 | Edit, disable, refresh discovery | Their team's servers |
 | Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
@@ -127,8 +127,8 @@ PUT /api/v1/admin/mcp/servers/{server_id}/owner
 { "owner_team_id": null }
 ```
 
-`owner_team_id: null` moves the server to the platform and publishes it to the
-organisation. The request can also set `owner_contact` and `visibility`. Each
+`owner_team_id` is required: a team ID, or `null` to move the server to the
+platform and publish it to the organisation. The request can also set `owner_contact` and `visibility`. Each
 change is recorded as `mcp_server.ownership_transferred` in the
 [admin audit log](../access/admin-audit-log.md).
 

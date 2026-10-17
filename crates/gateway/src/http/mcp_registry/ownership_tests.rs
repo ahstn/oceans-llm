@@ -1058,3 +1058,80 @@ async fn team_admins_cannot_manage_tool_sets() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn a_transfer_must_name_the_new_owner() {
+    let context = TestContext::new().await;
+    let own = context
+        .server(
+            "own",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let platform = context.platform_admin().await;
+    // Omitting owner_team_id must not move the server to the platform.
+    let (status, body) = context
+        .transfer(
+            &platform,
+            own.id,
+            json!({ "owner_contact": "new@example.test" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let server = context
+        .state
+        .store
+        .get_external_mcp_server(own.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(server.ownership.owner_team_id, Some(context.team_a));
+}
+
+#[tokio::test]
+async fn servers_a_caller_cannot_manage_hide_their_url_secrets_and_auth_config() {
+    let context = TestContext::new().await;
+    let now = OffsetDateTime::now_utc();
+    let mut auth_config = Map::new();
+    auth_config.insert("header_name".to_string(), json!("X-Api-Key"));
+    auth_config.insert(
+        "secret_ref".to_string(),
+        json!("env/OCEANS_MCP_DISCOVERY_SHARED"),
+    );
+    context
+        .state
+        .store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "published".to_string(),
+            display_name: "Published".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://mcp.example.test/mcp?token=query-secret".to_string(),
+            auth_mode: ExternalMcpAuthMode::GatewayStaticHeader,
+            auth_config,
+            timeout_ms: 5_000,
+            ownership: context.team_owned(context.team_b, McpServerVisibility::Organisation),
+            created_at: now,
+        })
+        .await
+        .unwrap();
+
+    let admin = context.team_admin(context.team_a).await;
+    let (_, body) = context.list(&admin, None).await;
+    let view = &body["data"]["items"][0];
+    assert_eq!(view["can_manage"], false);
+    assert_eq!(view["server_url"], "https://mcp.example.test/mcp");
+    assert_eq!(view["auth_config"], json!({}));
+    assert!(!body.to_string().contains("query-secret"));
+
+    // The owning team still sees the full settings.
+    let owner = context.team_admin(context.team_b).await;
+    let (_, body) = context.list(&owner, None).await;
+    let view = &body["data"]["items"][0];
+    assert_eq!(view["can_manage"], true);
+    assert_eq!(
+        view["server_url"],
+        "https://mcp.example.test/mcp?token=query-secret"
+    );
+    assert_eq!(view["auth_config"]["header_name"], "X-Api-Key");
+}

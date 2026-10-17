@@ -339,7 +339,12 @@ pub async fn transfer_mcp_server_ownership(
             &scope,
             &existing,
             RequestedMcpServerOwnership {
-                owner_team_id: request.owner_team_id,
+                owner_team_id: request.owner_team_id.ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "owner_team_id is required; use null to move the server to the platform"
+                            .to_string(),
+                    ))
+                })?,
                 owner_contact: request.owner_contact,
                 visibility: request
                     .visibility
