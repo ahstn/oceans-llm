@@ -1149,8 +1149,12 @@ Routing and pricing caveats:
 - `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix; `google/...` routes use Google Vertex pricing and `anthropic/...` routes use Anthropic-on-Vertex pricing
 - Anthropic-on-Vertex pricing is only supported for `location=global`
-- route capabilities default permissively, so partial Vertex routes should explicitly disable unsupported API families
-- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
+- route capabilities derive from `upstream_model`:
+  - supported Google chat models: chat, streaming, tools, vision, `json_schema`, and developer role
+  - `anthropic/...` models: the same without `json_schema`
+  - `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, and `google/text-multilingual-embedding-002`: embeddings only
+  - any other model: chat, streaming, vision, and developer role only, so tools and structured output are rejected
+- the gateway applies the same limits at request time, so setting a capability flag to `true` cannot enable a feature the gateway does not recognize for that model; flags can only narrow these defaults
 - provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
