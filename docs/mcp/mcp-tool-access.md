@@ -34,6 +34,10 @@ Toolsets can contain tools from more than one registered server. Keep them small
 and purpose-oriented; they are the main way to keep agent-visible tool catalogs
 understandable.
 
+Toolsets are platform-managed and granted organisation-wide, so they hold only
+tools of servers published to the organisation. Adding a tool of a `team` server
+returns `400`. See [Team-Managed Servers](#team-managed-servers).
+
 ## Grants
 
 Grant subjects are:
@@ -68,6 +72,34 @@ The Access tab supports:
 
 Use direct tool grants for exceptions. Prefer toolset grants when teams, service
 accounts, users, or API keys need the same bundle.
+
+## Team-Managed Servers
+
+Team owners and admins manage access for the servers their team owns. They use the
+same Access tab, limited to their team:
+
+- The target is always one tool of one of their team's servers. Toolsets are
+  platform-managed.
+- The subject must be inside their team: the team itself, a member, one of the
+  team's service accounts, or an API key owned by one of those. Granting to anyone
+  else returns `403`.
+- They can revoke any grant on their team's servers' tools, including one a
+  platform admin made.
+- They see only grants on their team's servers' tools.
+- The access preview needs one of their team's servers and a subject inside their
+  team.
+
+A server's visibility bounds every actor, platform admins included. A `team`
+server's tools can be granted only to subjects of its owning team; granting one to
+anyone else returns `400`. Publish the server to the organisation first. See
+[Ownership and Visibility](../configuration/mcp-servers.md#ownership-and-visibility).
+
+Visibility is checked when a grant is written. A user grant stays after the user
+leaves the team, like any other user grant, so revoke it when someone moves teams.
+
+Every grant change is written to the [admin audit log](../access/admin-audit-log.md)
+with the actor's `actor_access` (`platform_admin` or `team_admin`) and, when they
+belong to a team, `actor_team_id` and `actor_team_role`.
 
 ## Runtime Behavior
 

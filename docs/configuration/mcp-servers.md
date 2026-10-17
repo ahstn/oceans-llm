@@ -31,7 +31,7 @@ Discovered tools are not automatically callable. Configure explicit MCP tool or 
 
 ## Add a Server
 
-Platform admins manage servers in the admin UI:
+Platform admins, and team owners and admins, manage servers in the admin UI:
 
 ```text
 /admin/mcp/servers
@@ -52,8 +52,88 @@ The page supports:
 - refreshing discovery
 - opening a server detail dialog to inspect overview, configuration, discovered
   tools, and credential bindings
+- filtering the registry by owner, and showing each server's owner and visibility
+
+Team owners and admins see their team's servers and the servers published to the
+organisation. They manage only their team's servers. See
+[Ownership and Visibility](#ownership-and-visibility).
 
 The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md).
+
+## Ownership and Visibility
+
+Every server has an owner: a team, or the platform. Servers registered before
+ownership existed are platform-owned and published to the organisation, so their
+access did not change.
+
+| Field | Meaning |
+|---|---|
+| `owner_team_id` | The owning team. `null` means the platform owns the server. |
+| `owner_contact` | Who to ask about the server, such as an email or a chat channel. Up to 256 characters. It defaults to the email of whoever registered the server. |
+| `visibility` | `team` or `organisation`. |
+
+Visibility decides who may be granted the server's tools. It never grants access
+by itself:
+
+- **`team`**, the default for a team-owned server. Its tools can be granted only
+  to the owning team, its members, its service accounts, and API keys they own.
+  This applies to platform admins too. Its tools cannot join a tool set. Other
+  teams' admins do not see the server.
+- **`organisation`**. Every team admin sees the server in the registry, read-only
+  unless their team owns it. Platform admins can grant its tools to anyone and add
+  them to tool sets. A platform-owned server is always `organisation`.
+
+Setting `organisation` publishes the server. By default only platform admins can
+publish. To let team owners and admins publish their own team's servers, set:
+
+```yaml
+mcp:
+  registry:
+    organisation_publishing: team_admins   # default: platform_admins
+```
+
+A team admin can always unpublish their own server. Narrowing a server to `team`,
+or moving a team-only server to another team, fails with `409` while one of its
+tools is in a tool set or granted to a subject outside the new owning team. Revoke
+those first.
+
+### What team owners and admins can do
+
+Team owners and admins reach the MCP area when the `team_admins` permission group
+includes the `mcp` page, which it does by default. Team members do not.
+
+| Action | Team owner or admin |
+|---|---|
+| See servers | Their team's servers, and every `organisation` server read-only |
+| Register a server | Yes. It is owned by their team and starts as `team` |
+| Edit, disable, refresh discovery | Their team's servers |
+| Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
+| Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
+| Revoke grants | Any grant on their team's servers' tools |
+| Tool sets | No. Tool sets are platform-managed |
+| Credential bindings | On their team's servers: set team and service-account credentials, and revoke any binding |
+| Change the owning team | No |
+
+A server they cannot see returns `404`. An action they cannot take on a server
+they can see returns `403`.
+
+### Take over a server
+
+Platform admins move a server to another team, or take it over for the
+platform, from the server's **Overview** in the admin UI, or with:
+
+```text
+PUT /api/v1/admin/mcp/servers/{server_id}/owner
+{ "owner_team_id": null }
+```
+
+`owner_team_id: null` moves the server to the platform and publishes it to the
+organisation. The request can also set `owner_contact` and `visibility`. Each
+change is recorded as `mcp_server.ownership_transferred` in the
+[admin audit log](../access/admin-audit-log.md).
+
+See [Delegated MCP Server Ownership](../adr/2026-10-17-delegated-mcp-server-ownership.md)
+for the reasoning behind these rules.
 
 ## View Discovered Tools
 
@@ -360,7 +440,7 @@ Inbound Oceans credentials are always stripped before forwarding upstream. The g
 
 ## Principal-Bound Upstream Credentials
 
-For `user_passthrough`, admins can configure MCP credential bindings in the control plane. For a configured `oauth_obo` server, users should create and revoke their own binding from **Workspace connections**. Bindings are separate from server registry records and grants:
+For `user_passthrough`, admins can configure MCP credential bindings in the control plane. Team owners and admins can set team and service-account bindings on their own team's servers; user bindings stay with each user or a platform admin. For a configured `oauth_obo` server, users should create and revoke their own binding from **Workspace connections**. Bindings are separate from server registry records and grants:
 
 - owner scopes are `user`, `team`, or `service_account`
 - material kinds are `static_header`, `bearer_token`, or `oauth_tokens`

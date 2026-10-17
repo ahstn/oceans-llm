@@ -112,7 +112,7 @@ Audited:
 - Service accounts: create, update and disable.
 - Budgets: set, deactivate and temporary increase.
 - Sessions: password, OIDC and OAuth sign-in, and logout. An invited user's first OIDC or OAuth sign-in also records `user.invite_redeemed`.
-- MCP: server create, update, disable and discovery refresh. Tool set create, update, disable and tool replacement. Grant set and revoke. Credential binding create, replace and revoke, including a user's own OAuth connect and disconnect. MCP client grants: a user allowing or denying a client on the OAuth consent page (`mcp_client_grant.authorized` and `.denied`, targeting the authorization request, because the grant only exists once the client redeems the code), a user disconnecting their own client, and a platform admin revoking one client or all of a user's clients (`mcp_client_grant.revoked`).
+- MCP: server create, update, disable, discovery refresh and ownership transfer. Tool set create, update, disable and tool replacement. Grant set and revoke. Credential binding create, replace and revoke, including a user's own OAuth connect and disconnect. MCP client grants: a user allowing or denying a client on the OAuth consent page (`mcp_client_grant.authorized` and `.denied`, targeting the authorization request, because the grant only exists once the client redeems the code), a user disconnecting their own client, and a platform admin revoking one client or all of a user's clients (`mcp_client_grant.revoked`).
 - Provider credentials, set by an admin or by the user's own API key.
 - Pricing catalog refresh, and Review Agent repository create, update, disable and reactivate.
 

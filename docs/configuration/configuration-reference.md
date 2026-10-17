@@ -318,7 +318,7 @@ Important defaults from config parsing and domain deserialization:
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 - `permissions.users.pages` defaults to the 10 shared console pages
-- `permissions.team_admins.pages` defaults to `spend_controls` and `agent_sessions`, then inherits the user pages; team admins see Spend Controls only for their own team
+- `permissions.team_admins.pages` defaults to `mcp`, `spend_controls` and `agent_sessions`, then inherits the user pages; team admins see Spend Controls only for their own team, and MCP only for their team's servers and the published catalog
 - `permissions.platform_admins.pages` defaults to `mcp`, `review_agent`, and `spend_controls`, then inherits both lower groups
 - `permissions.users.actions` defaults to create, update, and revoke for personal API keys
 - `permissions.team_admins.actions` defaults to reveal for team service-account keys, then inherits the user actions
@@ -351,6 +351,7 @@ permissions:
     default_page: usage_costs
   team_admins:
     pages:
+      - mcp
       - spend_controls
       - agent_sessions
     actions:
@@ -384,7 +385,7 @@ The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_cos
 
 The first action catalog contains `create_api_key`, `update_api_key`, `revoke_api_key`, and `reveal_api_key`. Users can receive the first three actions. Team admins and platform admins can receive all four. Other admin operations keep their existing authorization rules until they have a typed action and resource-scope policy.
 
-The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. Only `platform_admins` can receive `mcp`, `review_agent`, or `rate_limits`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
+The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `mcp`, `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`, and `mcp` only for their team's servers and the published catalog; see [Ownership and Visibility](mcp-servers.md#ownership-and-visibility). Only `platform_admins` can receive `review_agent` or `rate_limits`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
 
 If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. The session returns this value, but the admin UI no longer uses it for landing: users with any effective page land on their personal `/admin/profile` page. A group with no effective pages uses the signed-in `/admin/no-access` page. See the [profile landing page ADR](../adr/2026-09-26-profile-landing-page.md).
 
@@ -654,6 +655,16 @@ mcp:
 - `unused_client_retention_days` defaults to 7 and must be between 1 and 365. An hourly cleanup deletes dynamically registered clients older than this that never received a grant. It also deletes authorization requests and tokens that expired more than a day ago.
 
 For client setup, see [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
+
+Team ownership of MCP servers is configured under `mcp.registry`:
+
+```yaml
+mcp:
+  registry:
+    organisation_publishing: platform_admins
+```
+
+- `organisation_publishing` is `platform_admins` (default) or `team_admins`. It decides who may set a server's visibility to `organisation`. Team owners and admins can always register servers for their own team and unpublish them. See [Ownership and Visibility](mcp-servers.md#ownership-and-visibility).
 
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
