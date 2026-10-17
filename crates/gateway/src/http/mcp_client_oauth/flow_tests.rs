@@ -21,7 +21,9 @@ use time::{Duration, OffsetDateTime};
 use url::Url;
 use uuid::Uuid;
 
-use super::tests::{ISSUER, oauth_state, router, seed_server, send, send_with_headers};
+use super::tests::{
+    ISSUER, oauth_settings, oauth_state_with, router, seed_server, send, send_with_headers,
+};
 use crate::http::state::AppState;
 
 pub(super) const REDIRECT_URI: &str = "http://127.0.0.1:43123/callback";
@@ -42,7 +44,11 @@ pub(super) fn code_challenge(verifier: &str) -> String {
 
 impl Harness {
     pub async fn new() -> Self {
-        let (directory, state) = oauth_state().await;
+        Self::with_settings(oauth_settings()).await
+    }
+
+    pub async fn with_settings(settings: gateway_service::McpClientOauthSettings) -> Self {
+        let (directory, state) = oauth_state_with(settings).await;
         let user = state
             .store
             .create_identity_user(

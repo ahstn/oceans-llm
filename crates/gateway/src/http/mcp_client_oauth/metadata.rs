@@ -40,6 +40,7 @@ struct AuthorizationServerMetadata {
     revocation_endpoint_auth_methods_supported: [&'static str; 3],
     code_challenge_methods_supported: [&'static str; 1],
     authorization_response_iss_parameter_supported: bool,
+    client_id_metadata_document_supported: bool,
 }
 
 pub(super) const TOKEN_ENDPOINT_AUTH_METHODS: [&str; 3] =
@@ -135,6 +136,7 @@ fn authorization_server_metadata(settings: &McpClientOauthSettings) -> Authoriza
         revocation_endpoint_auth_methods_supported: TOKEN_ENDPOINT_AUTH_METHODS,
         code_challenge_methods_supported: ["S256"],
         authorization_response_iss_parameter_supported: true,
+        client_id_metadata_document_supported: settings.client_id_metadata_documents().is_some(),
     }
 }
 

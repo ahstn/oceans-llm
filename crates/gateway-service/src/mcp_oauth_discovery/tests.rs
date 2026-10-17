@@ -21,11 +21,8 @@ async fn serve(router: impl FnOnce(String) -> Router) -> String {
     origin
 }
 
-fn http() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("client")
+fn http() -> OutboundFetcher {
+    OutboundFetcher::new(crate::outbound_fetch::OutboundAddressScope::Loopback)
 }
 
 fn json_route(value: Value) -> axum::routing::MethodRouter {
@@ -256,19 +253,64 @@ async fn rejects_metadata_for_another_issuer_or_without_s256() {
 
 #[test]
 fn remote_servers_cannot_point_discovery_at_loopback() {
-    let remote = Url::parse("https://mcp.example.com/mcp").expect("url");
-    let local = Url::parse("http://127.0.0.1:9000/meta").expect("url");
-    assert!(ensure_fetchable(&local, &remote, "resource_metadata").is_err());
-    assert!(
-        ensure_fetchable(
-            &Url::parse("http://mcp.example.com/x").unwrap(),
-            &remote,
-            "x"
-        )
-        .is_err()
-    );
-    let loopback_server = Url::parse("http://localhost:8080/mcp").expect("url");
-    ensure_fetchable(&local, &loopback_server, "resource_metadata").expect("local development");
+    use crate::outbound_fetch::OutboundAddressScope;
+
+    let url = |raw: &str| Url::parse(raw).expect("url");
+    // A public server's fetcher refuses loopback and plain http.
+    let remote = OutboundFetcher::new(OutboundAddressScope::Public);
+    for (raw, reason) in [
+        ("http://127.0.0.1:9000/meta", "https"),
+        ("https://127.0.0.1:9000/meta", "not allowed"),
+        ("https://[::ffff:127.0.0.1]/meta", "not allowed"),
+        ("http://mcp.example.com/x", "https"),
+    ] {
+        let error = ensure_fetchable(&remote, &url(raw), "resource_metadata")
+            .expect_err("refused")
+            .to_string();
+        assert!(
+            error.contains("resource_metadata is not allowed"),
+            "{raw}: {error}"
+        );
+        assert!(error.contains(reason), "{raw}: {error}");
+    }
+    // A loopback server, for local development, may use loopback over http.
+    let local = OutboundFetcher::new(OutboundAddressScope::Loopback);
+    ensure_fetchable(
+        &local,
+        &url("http://127.0.0.1:9000/meta"),
+        "resource_metadata",
+    )
+    .expect("local development");
+}
+
+#[tokio::test]
+async fn a_publicly_scoped_discovery_cannot_reach_internal_addresses() {
+    // A public server's metadata naming an internal https host is refused at
+    // the address, not just the scheme.
+    let public = OutboundFetcher::new(crate::outbound_fetch::OutboundAddressScope::Public);
+    for server in [
+        "https://127.0.0.1:9/mcp",
+        "https://10.0.0.5/mcp",
+        "https://169.254.169.254/mcp",
+    ] {
+        let error = discover_mcp_oauth(&public, server)
+            .await
+            .expect_err("internal metadata must be refused");
+        assert!(
+            error.to_string().contains("address that is not allowed"),
+            "{server}: {error}"
+        );
+    }
+    let error = register_oauth_client(
+        &public,
+        "https://192.168.1.10/register",
+        "https://oceans.example.com/api/v1/mcp/oauth/callback",
+        McpOauthTokenEndpointAuthMethod::None,
+        &[],
+    )
+    .await
+    .expect_err("internal registration endpoint must be refused");
+    assert!(error.to_string().contains("not allowed"), "{error}");
 }
 
 #[test]

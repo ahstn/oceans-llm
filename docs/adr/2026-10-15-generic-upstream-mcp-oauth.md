@@ -3,6 +3,7 @@
 - Date: 2026-10-15
 - Status: Accepted
 - Extends: [User-Owned OAuth for Upstream MCP Servers](./2026-08-04-user-owned-mcp-oauth.md)
+- Updated: 2026-10-17. Discovery, registration, and token requests for server-level clients now go through the [SSRF-safe outbound fetcher](./2026-10-17-ssrf-safe-outbound-fetch.md), scoped to the address class of the admin-entered server.
 
 ## Current state
 

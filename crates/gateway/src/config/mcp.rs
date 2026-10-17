@@ -24,6 +24,12 @@ pub struct McpOauthConfig {
     pub public_base_url: Option<String>,
     #[serde(default)]
     pub providers: Vec<McpOauthProviderConfig>,
+    /// Hosts of MCP servers on a private network. Their OAuth discovery,
+    /// registration, and token requests may reach private-network addresses;
+    /// every other hostname reaches public addresses only. Each entry also
+    /// covers its subdomains.
+    #[serde(default)]
+    pub private_network_hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,6 +74,8 @@ impl McpOauthConfig {
                 .resolved(&key)
                 .map_err(|error| anyhow::anyhow!("MCP OAuth provider `{key}` {error:#}"))?;
         }
+        gateway_service::outbound_fetch::normalize_domains(self.private_network_hosts.clone())
+            .context("mcp.oauth.private_network_hosts")?;
         Ok(())
     }
 
@@ -85,10 +93,9 @@ impl McpOauthConfig {
             .iter()
             .map(|provider| provider.resolved(&normalize_config_auth_provider_key(&provider.key)?))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        Ok(McpOauthRuntime::new(
-            self.resolved_public_base_url()?,
-            providers,
-        ))
+        McpOauthRuntime::new(self.resolved_public_base_url()?, providers)
+            .with_private_network_hosts(self.private_network_hosts.clone())
+            .context("mcp.oauth.private_network_hosts")
     }
 }
 
