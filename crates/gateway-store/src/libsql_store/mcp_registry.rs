@@ -1,7 +1,8 @@
 use super::*;
 use crate::shared::{
-    foreign_credentials_conflict, foreign_credentials_sql, grants_outside_team_sql,
-    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+    active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
+    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json, stranded_grants,
+    stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
@@ -685,6 +686,41 @@ impl McpRegistryRepository for LibsqlStore {
         if existing.ownership == input.ownership {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
+        }
+        // Only a narrowing (to team-only, or to another team) can strand access.
+        if input.require_no_stranded_access
+            && input.ownership.visibility == McpServerVisibility::Team
+            && let Some(team_id) = input.ownership.owner_team_id
+            && (existing.ownership.visibility != McpServerVisibility::Team
+                || existing.ownership.owner_team_id != Some(team_id))
+        {
+            let mut rows = tx
+                .query(
+                    &active_toolset_for_server_sql("?1"),
+                    [input.mcp_server_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            if let Some(row) = rows.next().await.map_err(to_query_error)? {
+                let toolset_key: String = row.get(0).map_err(to_query_error)?;
+                return Err(stranded_toolset(&toolset_key));
+            }
+            drop(rows);
+            let mut rows = tx
+                .query(
+                    &grants_outside_team_sql("?1", "?2"),
+                    [input.mcp_server_id.to_string(), team_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let outside: i64 = match rows.next().await.map_err(to_query_error)? {
+                Some(row) => row.get(0).map_err(to_query_error)?,
+                None => 0,
+            };
+            drop(rows);
+            if outside > 0 {
+                return Err(stranded_grants(outside));
+            }
         }
         tx.execute(
             r#"

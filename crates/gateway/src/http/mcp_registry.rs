@@ -296,13 +296,13 @@ pub async fn update_mcp_server(
     }
     let service = McpRegistryService::new(state.store.clone());
     // Narrowing to `team` is applied first, on its own and only while the
-    // ownership is still what was authorized above. The stranded-access check
-    // runs after it, as a grant's check runs after the grant, so whichever
-    // lands second sees the other. Undoing it then touches nothing else: the
-    // URL, auth settings, discovery state and OAuth client are saved after.
+    // ownership is still what was authorized above. The store checks for
+    // stranded access inside that write, with the server row locked, so a
+    // racing grant is either counted or refused by its own guard. If the
+    // settings save then fails, undoing the narrowing touches nothing else.
     let mut expected_visibility = existing.ownership.visibility;
     let narrowed = match (existing.ownership.owner_team_id, visibility) {
-        (Some(team_id), Some(gateway_core::McpServerVisibility::Team))
+        (Some(_), Some(gateway_core::McpServerVisibility::Team))
             if existing.ownership.visibility == gateway_core::McpServerVisibility::Organisation =>
         {
             let narrowed = gateway_core::McpServerOwnership {
@@ -316,13 +316,6 @@ pub async fn update_mcp_server(
                     Some(existing.ownership.clone()),
                 )
                 .await?;
-            if let Err(error) = ownership
-                .confirm_no_stranded_access(server_id, team_id)
-                .await
-            {
-                undo_transfer(&state, &service, server_id, &existing.ownership, narrowed).await?;
-                return Err(error.into());
-            }
             expected_visibility = gateway_core::McpServerVisibility::Team;
             true
         }
@@ -505,27 +498,8 @@ pub async fn transfer_mcp_server_ownership(
     let update = service
         .transfer_ownership_if(server_id, resolved, Some(existing.ownership.clone()))
         .await?;
-    // A grant that raced the narrowing check checks after its own write; this
-    // side checks after the transfer, so whichever lands second sees the
-    // other. Undo the transfer if access is now stranded.
-    if let (Some(previous), Some(team_id), gateway_core::McpServerVisibility::Team) = (
-        &update.previous,
-        update.current.ownership.owner_team_id,
-        update.current.ownership.visibility,
-    ) && let Err(error) = ownership
-        .confirm_no_stranded_access(server_id, team_id)
-        .await
-    {
-        undo_transfer(
-            &state,
-            &service,
-            server_id,
-            &previous.ownership,
-            update.current.ownership.clone(),
-        )
-        .await?;
-        return Err(error.into());
-    }
+    // The store refuses a narrowing that would strand access inside this
+    // write, with the server row locked, so there is nothing to undo here.
     // The store writes nothing when the ownership already matches.
     if let Some(previous) = update.previous {
         let current = map_server(update.current.clone());
@@ -1867,11 +1841,14 @@ async fn list_member_servers(
         .iter()
         .any(|server| server.ownership.owner_team_id.is_some())
     {
-        gateway_core::AdminIdentityRepository::list_teams(&*state.store)
-            .await?
-            .into_iter()
-            .map(|team| (team.team_id, team.team_name))
-            .collect()
+        gateway_core::AdminIdentityRepository::list_teams_by_ids(
+            &*state.store,
+            &owner_team_ids(&servers),
+        )
+        .await?
+        .into_iter()
+        .map(|team| (team.team_id, team.team_name))
+        .collect()
     } else {
         std::collections::HashMap::new()
     };
@@ -1889,6 +1866,16 @@ async fn list_member_servers(
         items,
         can_publish_to_organisation: false,
     })))
+}
+
+/// The distinct owning teams of `servers`, whose names a response needs.
+fn owner_team_ids(servers: &[ExternalMcpServerRecord]) -> Vec<Uuid> {
+    servers
+        .iter()
+        .filter_map(|server| server.ownership.owner_team_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn ownership(state: &AppState) -> McpOwnership<AnyStore> {
@@ -1957,11 +1944,14 @@ async fn present_servers(
         .iter()
         .any(|server| server.ownership.owner_team_id.is_some())
     {
-        gateway_core::AdminIdentityRepository::list_teams(&*state.store)
-            .await?
-            .into_iter()
-            .map(|team| (team.team_id, team.team_name))
-            .collect()
+        gateway_core::AdminIdentityRepository::list_teams_by_ids(
+            &*state.store,
+            &owner_team_ids(&servers),
+        )
+        .await?
+        .into_iter()
+        .map(|team| (team.team_id, team.team_name))
+        .collect()
     } else {
         std::collections::HashMap::new()
     };

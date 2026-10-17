@@ -156,6 +156,15 @@ pub trait GatewayStore:
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OauthLoginStateRecord>, StoreError>;
     async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError>;
+    /// Like [`Self::create_mcp_oauth_state`], but only while the server still
+    /// matches `expected_server`, checked under the lock a settings change
+    /// takes. A change that lands first refuses the state; one that lands
+    /// after it deletes the state, so the flow cannot finish either way.
+    async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError>;
     /// Atomically consumes an unexpired, unused state for its initiating user and provider.
     async fn consume_mcp_oauth_state(
         &self,
@@ -750,6 +759,10 @@ impl AdminIdentityRepository for AnyStore {
 
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_teams())
+    }
+
+    async fn list_teams_by_ids(&self, team_ids: &[Uuid]) -> Result<Vec<TeamRecord>, StoreError> {
+        dispatch_store!(self, list_teams_by_ids(team_ids))
     }
 
     async fn list_active_service_accounts(
@@ -1504,6 +1517,14 @@ impl GatewayStore for AnyStore {
 
     async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError> {
         dispatch_store!(self, create_mcp_oauth_state(state))
+    }
+
+    async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, create_mcp_oauth_state_guarded(state, expected_server))
     }
 
     async fn consume_mcp_oauth_state(

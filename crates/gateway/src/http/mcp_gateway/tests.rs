@@ -701,6 +701,7 @@ mod proxy_policy {
                     },
                     expected_ownership: None,
                     updated_at: OffsetDateTime::now_utc(),
+                    require_no_stranded_access: false,
                 },
             )
             .await

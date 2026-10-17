@@ -448,6 +448,7 @@ async fn team_only_servers_are_hidden_from_users_outside_the_team() {
                 ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
                 expected_ownership: None,
                 updated_at: OffsetDateTime::now_utc(),
+                require_no_stranded_access: false,
             },
         )
         .await

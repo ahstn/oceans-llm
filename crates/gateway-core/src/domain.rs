@@ -1866,6 +1866,12 @@ pub struct TransferExternalMcpServerOwnershipRecord {
     /// ownership, checked under the write lock; otherwise it is a conflict.
     /// Rollbacks use it so they never overwrite a newer transfer.
     pub expected_ownership: Option<McpServerOwnership>,
+    /// When the new ownership limits the server to a team, refuse the write
+    /// while access would be stranded: a grant held outside that team, or one
+    /// of the server's tools in an active tool set. Checked inside the write
+    /// with the server row locked, so a racing grant either is counted or is
+    /// refused by its own guard.
+    pub require_no_stranded_access: bool,
     pub updated_at: OffsetDateTime,
 }
 

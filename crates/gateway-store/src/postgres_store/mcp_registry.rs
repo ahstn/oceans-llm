@@ -1,7 +1,8 @@
 use super::*;
 use crate::shared::{
-    foreign_credentials_conflict, foreign_credentials_sql, grants_outside_team_sql,
-    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+    active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
+    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json, stranded_grants,
+    stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
@@ -653,6 +654,34 @@ impl McpRegistryRepository for PostgresStore {
         if existing.ownership == input.ownership {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
+        }
+        // Read with the row locked `FOR UPDATE`: a grant write holds it `FOR
+        // SHARE` until it commits, so one in flight is counted here.
+        // Only a narrowing (to team-only, or to another team) can strand access.
+        if input.require_no_stranded_access
+            && input.ownership.visibility == McpServerVisibility::Team
+            && let Some(team_id) = input.ownership.owner_team_id
+            && (existing.ownership.visibility != McpServerVisibility::Team
+                || existing.ownership.owner_team_id != Some(team_id))
+        {
+            let toolset_key: Option<String> =
+                sqlx::query_scalar(&active_toolset_for_server_sql("$1"))
+                    .bind(input.mcp_server_id.to_string())
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(to_query_error)?;
+            if let Some(toolset_key) = toolset_key {
+                return Err(stranded_toolset(&toolset_key));
+            }
+            let outside: i64 = sqlx::query_scalar(&grants_outside_team_sql("$1", "$2"))
+                .bind(input.mcp_server_id.to_string())
+                .bind(team_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(to_query_error)?;
+            if outside > 0 {
+                return Err(stranded_grants(outside));
+            }
         }
         let current = sqlx::query(&format!(
             r#"

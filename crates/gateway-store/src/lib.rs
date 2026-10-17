@@ -1777,6 +1777,7 @@ pub(crate) mod tests {
             ownership: McpServerOwnership::default(),
             expected_ownership: None,
             updated_at: now + Duration::seconds(2),
+            require_no_stranded_access: false,
         };
         let taken_over = store
             .transfer_external_mcp_server_ownership(&transfer)
@@ -1816,6 +1817,7 @@ pub(crate) mod tests {
                     ownership: owned.clone(),
                     expected_ownership: Some(owned.clone()),
                     updated_at: now + Duration::seconds(2),
+                    require_no_stranded_access: false,
                 })
                 .await,
             Err(StoreError::Conflict(_))
@@ -1957,6 +1959,29 @@ pub(crate) mod tests {
                 ownership: owned.clone(),
                 expected_ownership: None,
                 updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: true,
+            })
+            .await
+            .map(|_| ())
+            .expect_err("a tool set and outside grants would be stranded");
+        assert_eq!(
+            store
+                .get_external_mcp_server(server.mcp_server_id)
+                .await
+                .expect("reload")
+                .expect("server")
+                .ownership
+                .owner_team_id,
+            None,
+            "a refused narrowing writes nothing"
+        );
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
             })
             .await
             .expect("move back to the team");
@@ -2167,8 +2192,45 @@ pub(crate) mod tests {
                 .await,
             Err(StoreError::Conflict(_))
         ));
-        // An OAuth flow started now cannot finish once the settings change.
+        // An OAuth flow started now cannot finish once the settings change. A
+        // state for settings that have already changed is not stored at all.
         let state_hash = "retarget-state-hash";
+        let flow_state = |hash: &str| gateway_core::McpOauthStateRecord {
+            state_hash: hash.to_string(),
+            user_id: user.user_id,
+            mcp_server_id,
+            provider_key: "mcp_server".to_string(),
+            pkce_verifier: "verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: current.server_url.clone(),
+            scopes: Vec::new(),
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+        assert!(matches!(
+            store
+                .create_mcp_oauth_state_guarded(
+                    &flow_state("stale-state-hash"),
+                    &gateway_core::McpServerOwnershipGuard::of(&current)
+                        .with_auth_settings(&stale_settings),
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            !store
+                .mcp_oauth_state_exists("stale-state-hash")
+                .await
+                .expect("state")
+        );
+        store
+            .create_mcp_oauth_state_guarded(
+                &flow_state("current-state-hash"),
+                &gateway_core::McpServerOwnershipGuard::of(&current).with_auth_settings(&current),
+            )
+            .await
+            .expect("guarded state");
         store
             .create_mcp_oauth_state(&gateway_core::McpOauthStateRecord {
                 state_hash: state_hash.to_string(),

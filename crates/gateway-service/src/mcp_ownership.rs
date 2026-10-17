@@ -249,17 +249,6 @@ where
         Ok(())
     }
 
-    /// Re-runs the narrowing check after a write that limited a server to
-    /// `team_id`. Each side of a race between a grant and a transfer checks
-    /// after its own write, so whichever lands second sees the other.
-    pub async fn confirm_no_stranded_access(
-        &self,
-        mcp_server_id: Uuid,
-        team_id: Uuid,
-    ) -> Result<(), GatewayError> {
-        self.check_no_stranded_access(mcp_server_id, team_id).await
-    }
-
     /// Checks a visibility change on a server the caller manages.
     pub async fn authorize_visibility_change(
         &self,

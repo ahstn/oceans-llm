@@ -249,21 +249,26 @@ pub async fn start_mcp_oauth_connection(
     let authorization_url =
         client.authorization_url(&config, csrf_state.secret(), pkce_challenge.as_str())?;
     let now = OffsetDateTime::now_utc();
+    // Stored only while the server keeps the settings this authorization URL
+    // was built from; a settings change deletes its states under the same lock.
     state
         .store
-        .create_mcp_oauth_state(&McpOauthStateRecord {
-            state_hash: token_hash(csrf_state.secret()),
-            user_id: user.user_id,
-            mcp_server_id: server_id,
-            provider_key: config.provider_key,
-            pkce_verifier: pkce_verifier.secret().to_string(),
-            redirect_to,
-            resource: config.resource,
-            scopes: config.scopes,
-            expires_at: now + Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
-            consumed_at: None,
-            created_at: now,
-        })
+        .create_mcp_oauth_state_guarded(
+            &McpOauthStateRecord {
+                state_hash: token_hash(csrf_state.secret()),
+                user_id: user.user_id,
+                mcp_server_id: server_id,
+                provider_key: config.provider_key,
+                pkce_verifier: pkce_verifier.secret().to_string(),
+                redirect_to,
+                resource: config.resource,
+                scopes: config.scopes,
+                expires_at: now + Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
+                consumed_at: None,
+                created_at: now,
+            },
+            &gateway_core::McpServerOwnershipGuard::of(&server).with_auth_settings(&server),
+        )
         .await?;
     Ok(Json(McpOauthStartResponse { authorization_url }))
 }

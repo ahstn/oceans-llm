@@ -396,6 +396,15 @@ pub trait AdminIdentityRepository: Send + Sync {
     ) -> Result<Option<crate::IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
+    /// The teams with these IDs, in one read.
+    async fn list_teams_by_ids(&self, team_ids: &[Uuid]) -> Result<Vec<TeamRecord>, StoreError> {
+        Ok(self
+            .list_teams()
+            .await?
+            .into_iter()
+            .filter(|team| team_ids.contains(&team.team_id))
+            .collect())
+    }
     async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
         Err(StoreError::Unexpected(
             "list_active_service_accounts is not implemented for this repository".to_string(),

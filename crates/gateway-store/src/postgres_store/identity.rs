@@ -447,6 +447,28 @@ impl PostgresStore {
         rows.iter().map(decode_team_record).collect()
     }
 
+    pub async fn list_teams_by_ids(
+        &self,
+        team_ids: &[Uuid],
+    ) -> Result<Vec<TeamRecord>, StoreError> {
+        if team_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            r#"
+            SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
+            FROM teams
+            WHERE team_id = ANY($1)
+            ORDER BY team_name ASC
+            "#,
+        )
+        .bind(team_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_team_record).collect()
+    }
+
     pub async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
@@ -701,6 +723,47 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError> {
+        let scopes_json = crate::shared::serialize_json(&state.scopes)?;
+        // `FOR SHARE` on the server row waits for, or blocks, a settings change,
+        // which deletes the server's states in its own write.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        super::mcp_registry::check_ownership_guard(&mut tx, expected_server, None).await?;
+        sqlx::query("DELETE FROM mcp_oauth_states WHERE expires_at <= $1")
+            .bind(state.created_at.unix_timestamp())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
+        sqlx::query(
+            r#"
+            INSERT INTO mcp_oauth_states (
+                state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+            "#,
+        )
+        .bind(&state.state_hash)
+        .bind(state.user_id.to_string())
+        .bind(state.mcp_server_id.to_string())
+        .bind(&state.provider_key)
+        .bind(&state.pkce_verifier)
+        .bind(&state.redirect_to)
+        .bind(&state.resource)
+        .bind(scopes_json)
+        .bind(state.expires_at.unix_timestamp())
+        .bind(state.consumed_at.map(|value| value.unix_timestamp()))
+        .bind(state.created_at.unix_timestamp())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
         Ok(())
     }
 

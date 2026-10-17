@@ -114,6 +114,27 @@ pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
     )
 }
 
+/// SQL for the first active tool set holding one of a server's tools.
+pub(crate) fn active_toolset_for_server_sql(server: &str) -> String {
+    format!(
+        "SELECT ts.toolset_key FROM mcp_toolset_tools tst JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id WHERE t.mcp_server_id = {server} AND ts.status = 'active' ORDER BY ts.toolset_key LIMIT 1"
+    )
+}
+
+/// A narrowing refused because a tool set holds the server's tools.
+pub(crate) fn stranded_toolset(toolset_key: &str) -> StoreError {
+    StoreError::Conflict(format!(
+        "tool set `{toolset_key}` contains this server's tools; remove them before limiting the server to one team"
+    ))
+}
+
+/// A narrowing refused because grants are held outside the new owning team.
+pub(crate) fn stranded_grants(count: i64) -> StoreError {
+    StoreError::Conflict(format!(
+        "{count} active grant(s) on this server's tools are held outside the owning team; revoke them before limiting the server to one team"
+    ))
+}
+
 /// A grant write whose subject changed team since it was authorized.
 pub(crate) fn subject_team_changed() -> StoreError {
     StoreError::Conflict(
