@@ -1443,7 +1443,11 @@ pub(crate) mod tests {
     /// changes nothing reports no previous record.
     async fn exercise_mcp_server_ownership_repository<S>(store: &S)
     where
-        S: GatewayStore + McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
+        S: GatewayStore
+            + McpRegistryRepository
+            + gateway_core::McpAccessRepository
+            + gateway_core::McpUpstreamCredentialRepository
+            + Sync,
     {
         use gateway_core::{
             McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord,
@@ -1553,6 +1557,53 @@ pub(crate) mod tests {
             .expect("resave server");
         assert!(resaved.previous.is_none());
         // A save authorized against another owner is rejected under the write lock.
+        // Changing the auth settings drops a dynamically registered OAuth
+        // client, so it is never reused against new endpoints.
+        store
+            .insert_mcp_oauth_client_if_absent(&gateway_core::McpOauthClientRecord {
+                mcp_server_id: server.mcp_server_id,
+                issuer: "https://auth.example.com".to_string(),
+                redirect_uri: "https://gateway.example.com/callback".to_string(),
+                client_id: "dynamic-client".to_string(),
+                token_endpoint_auth_method: "none".to_string(),
+                secret_ciphertext: None,
+                secret_nonce: None,
+                secret_key_id: None,
+                client_secret_expires_at: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .expect("store OAuth client");
+        let mut retargeted = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
+        retargeted.auth_config = Map::from_iter([(
+            "token_endpoint".to_string(),
+            json!("https://new.example.com/token"),
+        )]);
+        store
+            .update_external_mcp_server(&retargeted)
+            .await
+            .expect("change auth settings");
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("load OAuth client")
+                .is_none()
+        );
+        // Restore the settings the rest of this test expects.
+        store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+                McpServerVisibility::Organisation,
+            ))
+            .await
+            .expect("restore settings");
         // A save authorized against an older visibility is rejected too, so it
         // cannot republish a server another request narrowed.
         let narrowed_view = settings(

@@ -361,6 +361,15 @@ impl McpRegistryRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
+            // A dynamically registered OAuth client belongs to the endpoints it
+            // was registered against. Drop it so the next connection registers
+            // again, and its secret and users' codes never go to a new endpoint.
+            tx.execute(
+                "DELETE FROM mcp_oauth_clients WHERE mcp_server_id = ?1",
+                libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         }
         // Read inside the transaction, so `current` is the row this update wrote.
         let current = load_server(&tx, input.mcp_server_id).await?;

@@ -1012,7 +1012,21 @@ pub async fn upsert_mcp_grant(
     if let Some(server) = &authorized_server
         && !ownership.ownership_unchanged(server).await?
     {
-        if created {
+        // Undo only the row this call created: if another request has since
+        // replaced it with its own grant, that grant stands.
+        let still_ours = created
+            && state
+                .store
+                .list_mcp_tool_grants(Some(record.subject_kind), Some(record.subject_id))
+                .await?
+                .iter()
+                .any(|active| {
+                    active.is_active
+                        && active.grant_id == grant.grant_id
+                        && active.target_kind == record.target_kind
+                        && active.target_id == record.target_id
+                });
+        if still_ours {
             state
                 .store
                 .revoke_mcp_tool_grant(

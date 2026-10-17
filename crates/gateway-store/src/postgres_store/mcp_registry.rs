@@ -350,6 +350,14 @@ impl McpRegistryRepository for PostgresStore {
             .execute(&mut *tx)
             .await
             .map_err(to_write_error)?;
+            // A dynamically registered OAuth client belongs to the endpoints it
+            // was registered against. Drop it so the next connection registers
+            // again, and its secret and users' codes never go to a new endpoint.
+            sqlx::query("DELETE FROM mcp_oauth_clients WHERE mcp_server_id = $1")
+                .bind(input.mcp_server_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(to_write_error)?;
         }
         // Read inside the transaction, so `current` is the row this update wrote.
         let current = sqlx::query(SERVER_SELECT_BY_ID)
