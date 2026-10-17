@@ -1512,6 +1512,12 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
 /// they reach any of the user's MCP clients. A grant to one of their API keys
 /// counts only while that key may call MCP at all and its server list, if it
 /// has one, includes the tool's server, as runtime resolution enforces.
+/// Restricted-key groups resolved at once for a member's access.
+const MEMBER_ACCESS_CONCURRENCY: usize = 4;
+
+/// Resolves which tools a member can call, as identities and lifecycle only
+/// (callers need tool and server IDs, not metadata).
+///
 /// `server_id` limits the resolution to one server's tools; `servers` must
 /// include every server the result may name.
 async fn member_access(
@@ -1554,7 +1560,7 @@ async fn member_access(
     subjects.extend(unrestricted.iter().map(|key| key_subject(key.id)));
     let mut tools = state
         .store
-        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Full)
+        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Access)
         .await?
         .allowed_tools;
     if restricted.is_empty() {
@@ -1576,15 +1582,25 @@ async fn member_access(
             .or_default()
             .push(key_subject(key.id));
     }
-    let resolutions = futures_util::future::try_join_all(groups.values().map(|subjects| {
-        state
-            .store
-            .resolve_mcp_access_for_subjects(subjects, server_id, McpToolProjection::Full)
-    }))
-    .await?;
+    // A few groups at a time, so one user's many keys cannot fan out without
+    // bound; results keep the groups' order.
+    let groups: Vec<_> = groups.into_iter().collect();
+    let mut resolutions = Vec::with_capacity(groups.len());
+    for chunk in groups.chunks(MEMBER_ACCESS_CONCURRENCY) {
+        resolutions.extend(
+            futures_util::future::try_join_all(chunk.iter().map(|(_, subjects)| {
+                state.store.resolve_mcp_access_for_subjects(
+                    subjects,
+                    server_id,
+                    McpToolProjection::Access,
+                )
+            }))
+            .await?,
+        );
+    }
     let mut seen: std::collections::HashSet<Uuid> =
         tools.iter().map(|tool| tool.mcp_tool_id).collect();
-    for (allow_list, resolution) in groups.keys().zip(resolutions) {
+    for ((allow_list, _), resolution) in groups.iter().zip(resolutions) {
         for tool in resolution.allowed_tools {
             let allowed = server_keys
                 .get(&tool.mcp_server_id)
@@ -1751,11 +1767,7 @@ async fn find_credential_binding(
     service: &McpCredentialService<AnyStore>,
     credential_binding_id: Uuid,
 ) -> Result<Option<RedactedMcpCredentialBinding>, AppError> {
-    Ok(service
-        .list_bindings(None, None, None, true)
-        .await?
-        .into_iter()
-        .find(|binding| binding.credential_binding_id == credential_binding_id))
+    Ok(service.binding(credential_binding_id).await?)
 }
 
 /// The audited details of a tool set.

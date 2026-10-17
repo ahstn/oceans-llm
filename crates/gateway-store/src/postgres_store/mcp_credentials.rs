@@ -228,6 +228,22 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         Ok((inserted, None))
     }
 
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        sqlx::query(&format!(
+            "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = $1"
+        ))
+        .bind(credential_binding_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .as_ref()
+        .map(decode_credential)
+        .transpose()
+    }
+
     async fn get_active_mcp_upstream_credential_binding(
         &self,
         mcp_server_id: Uuid,
@@ -438,7 +454,14 @@ impl McpUpstreamCredentialRepository for PostgresStore {
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // `FOR SHARE` on the server row waits for, or blocks, a settings change,
+        // so the guard is checked against the settings this insert commits with.
+        if let Some(guard) = expected_server {
+            check_ownership_guard(&mut tx, guard, None).await?;
+        }
         sqlx::query(
             r#"
             INSERT INTO mcp_oauth_clients (
@@ -464,9 +487,10 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         )
         .bind(record.created_at.unix_timestamp())
         .bind(record.updated_at.unix_timestamp())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
         self.get_mcp_oauth_client(record.mcp_server_id)
             .await?
             .ok_or_else(|| {

@@ -596,25 +596,33 @@ impl McpOauthRuntime {
         } else {
             None
         };
+        // Stored only while the server keeps the settings it registered
+        // against: a settings change in between drops clients under the same
+        // lock, and this insert must not bring one back.
+        let registered_against =
+            gateway_core::McpServerOwnershipGuard::of(server).with_auth_settings(server);
         let stored = repo
-            .insert_mcp_oauth_client_if_absent(&McpOauthClientRecord {
-                mcp_server_id,
-                issuer: endpoints.issuer.clone(),
-                redirect_uri: redirect_uri.to_string(),
-                client_id: registered.client_id,
-                token_endpoint_auth_method: registered
-                    .token_endpoint_auth_method
-                    .as_str()
-                    .to_string(),
-                secret_ciphertext: encrypted.as_ref().map(|value| value.ciphertext.clone()),
-                secret_nonce: encrypted.as_ref().map(|value| value.nonce.clone()),
-                secret_key_id: encrypted.as_ref().map(|value| value.key_id.to_string()),
-                client_secret_expires_at: registered
-                    .client_secret_expires_at
-                    .and_then(|value| OffsetDateTime::from_unix_timestamp(value).ok()),
-                created_at: now,
-                updated_at: now,
-            })
+            .insert_mcp_oauth_client_if_absent(
+                &McpOauthClientRecord {
+                    mcp_server_id,
+                    issuer: endpoints.issuer.clone(),
+                    redirect_uri: redirect_uri.to_string(),
+                    client_id: registered.client_id,
+                    token_endpoint_auth_method: registered
+                        .token_endpoint_auth_method
+                        .as_str()
+                        .to_string(),
+                    secret_ciphertext: encrypted.as_ref().map(|value| value.ciphertext.clone()),
+                    secret_nonce: encrypted.as_ref().map(|value| value.nonce.clone()),
+                    secret_key_id: encrypted.as_ref().map(|value| value.key_id.to_string()),
+                    client_secret_expires_at: registered
+                        .client_secret_expires_at
+                        .and_then(|value| OffsetDateTime::from_unix_timestamp(value).ok()),
+                    created_at: now,
+                    updated_at: now,
+                },
+                Some(&registered_against),
+            )
             .await?;
         // A concurrent registration may have won; use whichever row is stored.
         StoredClient::decrypt(stored)

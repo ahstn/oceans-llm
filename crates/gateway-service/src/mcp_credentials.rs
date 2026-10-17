@@ -263,6 +263,7 @@ where
         mcp_server_id: Uuid,
         user_id: Uuid,
         grant: McpOauthTokenGrant,
+        expected_server: Option<McpServerOwnershipGuard>,
     ) -> Result<
         (
             RedactedMcpCredentialBinding,
@@ -296,9 +297,21 @@ where
             secret_ref: None,
             expires_at: grant.expires_at,
             metadata,
-            expected_server: None,
+            expected_server,
         })
         .await
+    }
+
+    /// One binding by ID, revoked or not, without its secret.
+    pub async fn binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .get_mcp_upstream_credential_binding(credential_binding_id)
+            .await?
+            .map(redact_binding))
     }
 
     pub async fn list_bindings(
@@ -1147,6 +1160,7 @@ mod tests {
         async fn insert_mcp_oauth_client_if_absent(
             &self,
             record: &gateway_core::McpOauthClientRecord,
+            _expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
         ) -> Result<gateway_core::McpOauthClientRecord, StoreError> {
             Ok(record.clone())
         }

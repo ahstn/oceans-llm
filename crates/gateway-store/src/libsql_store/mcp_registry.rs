@@ -4,7 +4,7 @@ use crate::shared::{
     json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
-    McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
+    McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
     TransferExternalMcpServerOwnershipRecord, Updated,
 };
 
@@ -191,11 +191,11 @@ pub(super) async fn check_ownership_guard(
 ) -> Result<(), StoreError> {
     let (sql, id) = match tool_id {
         Some(tool_id) => (
-            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility, s.server_url FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
+            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility, s.server_url, s.auth_mode, s.auth_config_json FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
             tool_id,
         ),
         None => (
-            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility, server_url FROM external_mcp_servers WHERE mcp_server_id = ?1",
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility, server_url, auth_mode, auth_config_json FROM external_mcp_servers WHERE mcp_server_id = ?1",
             guard.mcp_server_id,
         ),
     };
@@ -208,12 +208,19 @@ pub(super) async fn check_ownership_guard(
             let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
             let ownership = decode_server_ownership(&row, 1)?;
             let server_url: String = row.get(4).map_err(to_query_error)?;
-            guard.matches(
-                parse_uuid(&mcp_server_id)?,
-                ownership.owner_team_id,
-                ownership.visibility,
-                &server_url,
-            )
+            let auth_mode: String = row.get(5).map_err(to_query_error)?;
+            let auth_config_json: String = row.get(6).map_err(to_query_error)?;
+            let auth_config = json_object_from_str(&auth_config_json)?;
+            guard.matches(&McpServerGuardRow {
+                mcp_server_id: parse_uuid(&mcp_server_id)?,
+                owner_team_id: ownership.owner_team_id,
+                visibility: ownership.visibility,
+                server_url: &server_url,
+                auth_mode: ExternalMcpAuthMode::from_db(&auth_mode).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP auth mode `{auth_mode}`"))
+                })?,
+                auth_config: &auth_config,
+            })
         }
         None => false,
     };

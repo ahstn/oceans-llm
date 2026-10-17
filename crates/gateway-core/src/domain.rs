@@ -1687,11 +1687,23 @@ impl McpServerOwnership {
     }
 }
 
+/// The server columns a store reads under the write lock to check a
+/// [`McpServerOwnershipGuard`].
+#[derive(Debug, Clone, Copy)]
+pub struct McpServerGuardRow<'a> {
+    pub mcp_server_id: Uuid,
+    pub owner_team_id: Option<Uuid>,
+    pub visibility: McpServerVisibility,
+    pub server_url: &'a str,
+    pub auth_mode: ExternalMcpAuthMode,
+    pub auth_config: &'a Map<String, Value>,
+}
+
 /// The owner and visibility a grant or credential write was authorized
 /// against. A store write that carries one happens only while the server
 /// still has them, checked in the same transaction with the server row
 /// locked; otherwise it is a conflict and nothing is written.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct McpServerOwnershipGuard {
     pub mcp_server_id: Uuid,
     pub owner_team_id: Option<Uuid>,
@@ -1700,6 +1712,10 @@ pub struct McpServerOwnershipGuard {
     /// pin it, so a credential is never stored for a destination it was not
     /// authorized for.
     pub server_url: Option<String>,
+    /// When set, the server must also still have this auth mode and config.
+    /// OAuth writes pin it, so a token bundle or registered client is never
+    /// stored for endpoints a settings change has since replaced.
+    pub auth_settings: Option<(ExternalMcpAuthMode, Map<String, Value>)>,
 }
 
 impl McpServerOwnershipGuard {
@@ -1710,7 +1726,17 @@ impl McpServerOwnershipGuard {
             owner_team_id: server.ownership.owner_team_id,
             visibility: server.ownership.visibility,
             server_url: None,
+            auth_settings: None,
         }
+    }
+
+    /// Also requires the server's current URL, auth mode and auth config, the
+    /// settings an OAuth exchange or registration ran against.
+    #[must_use]
+    pub fn with_auth_settings(self, server: &ExternalMcpServerRecord) -> Self {
+        let mut guard = self.with_server_url(&server.server_url);
+        guard.auth_settings = Some((server.auth_mode, server.auth_config.clone()));
+        guard
     }
 
     /// Also requires the server's current URL.
@@ -1722,20 +1748,20 @@ impl McpServerOwnershipGuard {
 
     /// Whether a server row read under the write lock still matches.
     #[must_use]
-    pub fn matches(
-        &self,
-        mcp_server_id: Uuid,
-        owner_team_id: Option<Uuid>,
-        visibility: McpServerVisibility,
-        server_url: &str,
-    ) -> bool {
-        self.mcp_server_id == mcp_server_id
-            && self.owner_team_id == owner_team_id
-            && self.visibility == visibility
+    pub fn matches(&self, server: &McpServerGuardRow<'_>) -> bool {
+        self.mcp_server_id == server.mcp_server_id
+            && self.owner_team_id == server.owner_team_id
+            && self.visibility == server.visibility
             && self
                 .server_url
                 .as_deref()
-                .is_none_or(|url| url == server_url)
+                .is_none_or(|url| url == server.server_url)
+            && self
+                .auth_settings
+                .as_ref()
+                .is_none_or(|(auth_mode, auth_config)| {
+                    *auth_mode == server.auth_mode && auth_config == server.auth_config
+                })
     }
 
     /// The conflict a store returns when the server no longer matches.

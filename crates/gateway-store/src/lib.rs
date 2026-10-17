@@ -1587,19 +1587,22 @@ pub(crate) mod tests {
         // Changing the auth settings drops a dynamically registered OAuth
         // client, so it is never reused against new endpoints.
         store
-            .insert_mcp_oauth_client_if_absent(&gateway_core::McpOauthClientRecord {
-                mcp_server_id: server.mcp_server_id,
-                issuer: "https://auth.example.com".to_string(),
-                redirect_uri: "https://gateway.example.com/callback".to_string(),
-                client_id: "dynamic-client".to_string(),
-                token_endpoint_auth_method: "none".to_string(),
-                secret_ciphertext: None,
-                secret_nonce: None,
-                secret_key_id: None,
-                client_secret_expires_at: None,
-                created_at: now,
-                updated_at: now,
-            })
+            .insert_mcp_oauth_client_if_absent(
+                &gateway_core::McpOauthClientRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    issuer: "https://auth.example.com".to_string(),
+                    redirect_uri: "https://gateway.example.com/callback".to_string(),
+                    client_id: "dynamic-client".to_string(),
+                    token_endpoint_auth_method: "none".to_string(),
+                    secret_ciphertext: None,
+                    secret_nonce: None,
+                    secret_key_id: None,
+                    client_secret_expires_at: None,
+                    created_at: now,
+                    updated_at: now,
+                },
+                None,
+            )
             .await
             .expect("store OAuth client");
         // Users' OAuth tokens are revoked with it; other credentials stand.
@@ -2219,6 +2222,7 @@ pub(crate) mod tests {
             owner_team_id: Some(team_id),
             visibility: McpServerVisibility::Team,
             server_url: None,
+            auth_settings: None,
         };
         // As a check made before a transfer to the team would have seen it.
         let stale = McpServerOwnershipGuard {
@@ -2327,6 +2331,52 @@ pub(crate) mod tests {
             .map(|_| ())
             .expect_err("a binding pinned to another URL is refused");
         assert_eq!(bindings_for_server().await, before);
+        // OAuth writes pin the auth settings too: once they are replaced, a token
+        // bundle or registered client from the old ones is refused.
+        let replaced_settings = McpServerOwnershipGuard {
+            auth_settings: Some((
+                server.auth_mode,
+                Map::from_iter([(
+                    "token_endpoint".to_string(),
+                    json!("https://replaced.example.com/token"),
+                )]),
+            )),
+            ..current.clone()
+        };
+        assert!(matches!(
+            store
+                .upsert_mcp_upstream_credential_binding(&binding(replaced_settings.clone()))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(bindings_for_server().await, before);
+        let client = gateway_core::McpOauthClientRecord {
+            mcp_server_id: server.mcp_server_id,
+            issuer: "https://auth.example.com".to_string(),
+            redirect_uri: "https://gateway.example.com/callback".to_string(),
+            client_id: "stale-client".to_string(),
+            token_endpoint_auth_method: "none".to_string(),
+            secret_ciphertext: None,
+            secret_nonce: None,
+            secret_key_id: None,
+            client_secret_expires_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(matches!(
+            store
+                .insert_mcp_oauth_client_if_absent(&client, Some(&replaced_settings))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("load OAuth client")
+                .is_none(),
+            "a refused registration stores nothing"
+        );
         let (kept, _) = store
             .upsert_mcp_upstream_credential_binding(&binding(
                 current.clone().with_server_url(&server.server_url),
@@ -2334,6 +2384,21 @@ pub(crate) mod tests {
             .await
             .expect("binding under the current owner");
         assert_eq!(bindings_for_server().await, before + 1);
+        assert_eq!(
+            store
+                .get_mcp_upstream_credential_binding(kept.credential_binding_id)
+                .await
+                .expect("binding by ID")
+                .map(|binding| binding.credential_binding_id),
+            Some(kept.credential_binding_id)
+        );
+        assert!(
+            store
+                .get_mcp_upstream_credential_binding(Uuid::new_v4())
+                .await
+                .expect("missing binding")
+                .is_none()
+        );
         // A binding stays on its server: replacing it by ID onto another one
         // is refused, whatever guard the write carries.
         let mut moved = binding(current.clone());
@@ -3277,7 +3342,7 @@ pub(crate) mod tests {
             updated_at: now,
         };
         let stored = store
-            .insert_mcp_oauth_client_if_absent(&client)
+            .insert_mcp_oauth_client_if_absent(&client, None)
             .await
             .expect("insert OAuth client");
         assert_eq!(stored.client_id, "first-client");
@@ -3297,7 +3362,7 @@ pub(crate) mod tests {
         };
         assert_eq!(
             store
-                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .insert_mcp_oauth_client_if_absent(&losing_writer, None)
                 .await
                 .expect("insert racing OAuth client")
                 .client_id,
@@ -3317,7 +3382,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store
-                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .insert_mcp_oauth_client_if_absent(&losing_writer, None)
                 .await
                 .expect("insert replacement client")
                 .secret_ciphertext,

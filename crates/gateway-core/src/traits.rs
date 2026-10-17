@@ -1331,6 +1331,18 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
+    /// One binding by ID, revoked or not.
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        Ok(self
+            .list_mcp_upstream_credential_bindings(None, None, None, true)
+            .await?
+            .into_iter()
+            .find(|binding| binding.credential_binding_id == credential_binding_id))
+    }
+
     async fn list_mcp_upstream_credential_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -1374,10 +1386,14 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
 
     /// Stores a registered client unless the server already has one, and
     /// returns the row that is stored afterwards. Concurrent registrations
-    /// therefore converge on a single client.
+    /// therefore converge on a single client. With `expected_server`, the
+    /// insert happens only while the server still matches it, checked under
+    /// the lock a settings change takes, so a client registered against
+    /// replaced endpoints is never stored.
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&crate::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError>;
 
     /// Deletes the registered client only when it is still `client_id`.

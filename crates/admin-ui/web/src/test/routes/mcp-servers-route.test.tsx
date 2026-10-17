@@ -897,6 +897,36 @@ describe('ServersTab', () => {
     })
   })
 
+  it('publishes a server again when a platform admin switches the owner back to the platform', async () => {
+    await renderServersTab(null, [server], {
+      platformAdmin: true,
+      canPublish: true,
+      teamId: null,
+      teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Team A' }))
+    expect(screen.getByRole('combobox', { name: 'Visibility' })).toHaveTextContent('Team only')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Platform admins' }))
+    expect(screen.getByRole('combobox', { name: 'Visibility' })).toHaveTextContent('Organisation')
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'docs' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Docs' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://docs.example.test/mcp' },
+    })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({ owner_team_id: null, visibility: 'organisation' }),
+      })
+    })
+  })
+
   it('shows members the servers they can connect to without admin controls', async () => {
     await renderServersTab(null, [{ ...server, can_manage: false }], {
       ...teamAdminScope,

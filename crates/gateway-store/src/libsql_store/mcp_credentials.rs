@@ -262,6 +262,27 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         Ok((inserted, None))
     }
 
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = ?1"
+                ),
+                [credential_binding_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_credential(&row))
+            .transpose()
+    }
+
     async fn get_active_mcp_upstream_credential_binding(
         &self,
         mcp_server_id: Uuid,
@@ -509,10 +530,16 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
-        self.connection
-            .execute(
-                r#"
+        // An immediate transaction holds the write lock a settings change also
+        // takes, so the guard is checked against the settings this insert sees.
+        let tx = self.begin_transaction().await?;
+        if let Some(guard) = expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
+        tx.execute(
+            r#"
                 INSERT INTO mcp_oauth_clients (
                     mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method,
                     secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at,
@@ -520,24 +547,25 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 ON CONFLICT(mcp_server_id) DO NOTHING
                 "#,
-                libsql::params![
-                    record.mcp_server_id.to_string(),
-                    record.issuer.clone(),
-                    record.redirect_uri.clone(),
-                    record.client_id.clone(),
-                    record.token_endpoint_auth_method.clone(),
-                    record.secret_ciphertext.clone(),
-                    record.secret_nonce.clone(),
-                    record.secret_key_id.clone(),
-                    record
-                        .client_secret_expires_at
-                        .map(OffsetDateTime::unix_timestamp),
-                    record.created_at.unix_timestamp(),
-                    record.updated_at.unix_timestamp(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
+            libsql::params![
+                record.mcp_server_id.to_string(),
+                record.issuer.clone(),
+                record.redirect_uri.clone(),
+                record.client_id.clone(),
+                record.token_endpoint_auth_method.clone(),
+                record.secret_ciphertext.clone(),
+                record.secret_nonce.clone(),
+                record.secret_key_id.clone(),
+                record
+                    .client_secret_expires_at
+                    .map(OffsetDateTime::unix_timestamp),
+                record.created_at.unix_timestamp(),
+                record.updated_at.unix_timestamp(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
         self.get_mcp_oauth_client(record.mcp_server_id)
             .await?
             .ok_or_else(|| {

@@ -27,6 +27,24 @@ impl McpUpstreamCredentialRepository for AnyStore {
         }
     }
 
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .get_mcp_upstream_credential_binding(credential_binding_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .get_mcp_upstream_credential_binding(credential_binding_id)
+                    .await
+            }
+        }
+    }
+
     async fn get_active_mcp_upstream_credential_binding(
         &self,
         mcp_server_id: Uuid,
@@ -230,10 +248,19 @@ impl McpUpstreamCredentialRepository for AnyStore {
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
         match self {
-            Self::Libsql(store) => store.insert_mcp_oauth_client_if_absent(record).await,
-            Self::Postgres(store) => store.insert_mcp_oauth_client_if_absent(record).await,
+            Self::Libsql(store) => {
+                store
+                    .insert_mcp_oauth_client_if_absent(record, expected_server)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .insert_mcp_oauth_client_if_absent(record, expected_server)
+                    .await
+            }
         }
     }
 
