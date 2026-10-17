@@ -3,12 +3,11 @@ use std::collections::HashMap;
 
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
-    HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite,
+    HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
-    reuse_historical_versions,
+    reuse_historical_versions, review_ops, reviewable_version, tool_write_ops,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::mcp_tool_review::status_after_rejection;
 use gateway_core::{
     McpAnnotationOverrides, McpToolApprovalStatus, McpToolDefinition, McpToolPolicy,
     McpToolReviewDecision, McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord,
@@ -639,63 +638,19 @@ impl McpRegistryRepository for LibsqlStore {
         let existing = find_tool(&tx, mcp_tool_id).await?.ok_or_else(|| {
             StoreError::NotFound(format!("MCP tool `{mcp_tool_id}` was not found"))
         })?;
-        let version = find_version(&tx, mcp_tool_id, schema_version)
-            .await?
-            .ok_or_else(|| {
-                StoreError::NotFound(format!(
-                    "MCP tool `{mcp_tool_id}` has no version {schema_version}"
-                ))
-            })?;
-        if version.status != McpToolVersionStatus::Pending {
-            return Err(StoreError::Conflict(format!(
-                "version {schema_version} of MCP tool `{mcp_tool_id}` is {}, not pending",
-                version.status.as_str()
-            )));
-        }
-        let at = reviewed_at.unix_timestamp();
-        let reviewer = reviewed_by_user_id.map(|id| id.to_string());
-        match decision {
-            McpToolReviewDecision::Approve => {
-                write_tool_definition(&tx, mcp_tool_id, &version.definition, schema_version)
-                    .await?;
-                tx.execute(
-                    "UPDATE external_mcp_tools SET approval_status = 'approved', approved_schema_version = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",
-                    libsql::params![schema_version, mcp_tool_id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-                set_version_status(
-                    &tx,
-                    mcp_tool_id,
-                    schema_version,
-                    McpToolVersionStatus::Approved,
-                    Some(at),
-                    reviewer.as_deref(),
-                )
-                .await?;
-                supersede_pending(&tx, mcp_tool_id, schema_version).await?;
-            }
-            McpToolReviewDecision::Reject => {
-                let status = status_after_rejection(
-                    existing.review.approval_status,
-                    existing.review.approved_schema_version,
-                );
-                tx.execute(
-                    "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",
-                    libsql::params![status.as_str(), mcp_tool_id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-                set_version_status(
-                    &tx,
-                    mcp_tool_id,
-                    schema_version,
-                    McpToolVersionStatus::Rejected,
-                    Some(at),
-                    reviewer.as_deref(),
-                )
-                .await?;
-            }
+        let version = reviewable_version(
+            mcp_tool_id,
+            schema_version,
+            find_version(&tx, mcp_tool_id, schema_version).await?,
+        )?;
+        for op in review_ops(
+            decision,
+            &existing,
+            &version,
+            reviewed_at,
+            reviewed_by_user_id,
+        ) {
+            apply_version_op(&tx, mcp_tool_id, &op).await?;
         }
         let current = find_tool(&tx, mcp_tool_id).await?.ok_or_else(|| {
             StoreError::Unexpected("MCP tool disappeared during review".to_string())
@@ -1086,16 +1041,111 @@ async fn find_versions_by_definition(
 async fn supersede_pending(
     connection: &libsql::Connection,
     mcp_tool_id: Uuid,
-    keep: i64,
+    keep: Option<i64>,
 ) -> Result<(), StoreError> {
     connection
         .execute(
-            "UPDATE mcp_tool_versions SET status = 'superseded' WHERE mcp_tool_id = ?1 AND status = 'pending' AND schema_version != ?2",
+            "UPDATE mcp_tool_versions SET status = 'superseded' WHERE mcp_tool_id = ?1 AND status = 'pending' AND (?2 IS NULL OR schema_version != ?2)",
             libsql::params![mcp_tool_id.to_string(), keep],
         )
         .await
         .map_err(to_write_error)?;
     Ok(())
+}
+
+/// Runs one shared version-write statement for a tool.
+async fn apply_version_op(
+    connection: &libsql::Connection,
+    mcp_tool_id: Uuid,
+    op: &VersionOp<'_>,
+) -> Result<(), StoreError> {
+    match op {
+        VersionOp::WriteDefinition {
+            definition,
+            version,
+        } => write_tool_definition(connection, mcp_tool_id, definition, *version).await,
+        VersionOp::RewriteVersion {
+            definition,
+            version,
+        } => {
+            let (input_schema_json, annotations_json, output_schema_json) =
+                definition_json(definition)?;
+            connection
+                .execute(
+                    "UPDATE mcp_tool_versions SET schema_hash = ?1, description = ?2, input_schema_json = ?3, title = ?4, annotations_json = ?5, output_schema_json = ?6 WHERE mcp_tool_id = ?7 AND schema_version = ?8",
+                    libsql::params![
+                        definition.schema_hash.as_str(),
+                        definition.description.as_deref(),
+                        input_schema_json,
+                        definition.title.as_deref(),
+                        annotations_json,
+                        output_schema_json,
+                        mcp_tool_id.to_string(),
+                        *version,
+                    ],
+                )
+                .await
+                .map_err(to_write_error)?;
+            Ok(())
+        }
+        VersionOp::InsertVersion {
+            definition,
+            version,
+            status,
+            discovered_at,
+        } => {
+            insert_version(
+                connection,
+                mcp_tool_id,
+                *version,
+                definition,
+                *status,
+                *discovered_at,
+            )
+            .await
+        }
+        VersionOp::SetVersionStatus {
+            version,
+            status,
+            reviewed_at,
+            reviewed_by_user_id,
+        } => {
+            set_version_status(
+                connection,
+                mcp_tool_id,
+                *version,
+                *status,
+                reviewed_at.map(OffsetDateTime::unix_timestamp),
+                reviewed_by_user_id.map(|id| id.to_string()).as_deref(),
+            )
+            .await
+        }
+        VersionOp::AutoApproveVersion { version } => {
+            auto_approve_version(connection, mcp_tool_id, *version).await
+        }
+        VersionOp::SupersedePending { keep } => {
+            supersede_pending(connection, mcp_tool_id, *keep).await
+        }
+        VersionOp::SetToolReview {
+            status,
+            approved_version,
+            pending_version,
+        } => {
+            connection
+                .execute(
+                    "UPDATE external_mcp_tools SET approval_status = ?1, approved_schema_version = COALESCE(?2, approved_schema_version), pending_schema_version = ?3 WHERE mcp_tool_id = ?4",
+                    libsql::params![
+                        status.as_str(),
+                        *approved_version,
+                        *pending_version,
+                        mcp_tool_id.to_string(),
+                    ],
+                )
+                .await
+                .map_err(to_write_error)?;
+            Ok(())
+        }
+    }
 }
 
 /// Runs what discovery planned for one tool.
@@ -1172,126 +1222,13 @@ async fn apply_tool_write(
         )
         .await
         .map_err(to_write_error)?;
-    match write {
-        ToolWrite::Insert { .. } => {
-            return Err(StoreError::Unexpected(
-                "an existing MCP tool cannot be inserted".to_string(),
-            ));
-        }
-        ToolWrite::Touch => {}
-        ToolWrite::CaptureMetadata { version } => {
-            write_tool_definition(connection, id, &definition, *version).await?;
-            let (input_schema_json, annotations_json, output_schema_json) =
-                definition_json(&definition)?;
-            connection
-                .execute(
-                    "UPDATE mcp_tool_versions SET schema_hash = ?1, description = ?2, input_schema_json = ?3, title = ?4, annotations_json = ?5, output_schema_json = ?6 WHERE mcp_tool_id = ?7 AND schema_version = ?8",
-                    libsql::params![
-                        definition.schema_hash.as_str(),
-                        definition.description.as_deref(),
-                        input_schema_json,
-                        definition.title.as_deref(),
-                        annotations_json,
-                        output_schema_json,
-                        id.to_string(),
-                        *version,
-                    ],
-                )
-                .await
-                .map_err(to_write_error)?;
-        }
-        ToolWrite::Serve {
-            version,
-            insert_version: insert,
-        } => {
-            write_tool_definition(connection, id, &definition, *version).await?;
-            connection
-                .execute(
-                    "UPDATE external_mcp_tools SET approval_status = 'approved', approved_schema_version = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",
-                    libsql::params![*version, id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-            supersede_pending(connection, id, *version).await?;
-            if *insert {
-                insert_version(
-                    connection,
-                    id,
-                    *version,
-                    &definition,
-                    McpToolVersionStatus::Approved,
-                    discovered_at,
-                )
-                .await?;
-            } else {
-                auto_approve_version(connection, id, *version).await?;
-            }
-        }
-        ToolWrite::Hold {
-            version,
-            status,
-            write_definition,
-            insert_version: insert,
-        } => {
-            supersede_pending(connection, id, *version).await?;
-            if *insert {
-                insert_version(
-                    connection,
-                    id,
-                    *version,
-                    &definition,
-                    McpToolVersionStatus::Pending,
-                    discovered_at,
-                )
-                .await?;
-            } else {
-                set_version_status(
-                    connection,
-                    id,
-                    *version,
-                    McpToolVersionStatus::Pending,
-                    None,
-                    None,
-                )
-                .await?;
-            }
-            if *write_definition {
-                write_tool_definition(connection, id, &definition, *version).await?;
-            }
-            connection
-                .execute(
-                    "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = ?2 WHERE mcp_tool_id = ?3",
-                    libsql::params![status.as_str(), *version, id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-        }
-        ToolWrite::Settle {
-            status,
-            restore_version,
-        } => {
-            supersede_pending(connection, id, -1).await?;
-            if let Some(version) = restore_version {
-                write_tool_definition(connection, id, &definition, *version).await?;
-            }
-            connection
-                .execute(
-                    "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",
-                    libsql::params![status.as_str(), id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-        }
-        ToolWrite::Revert => {
-            supersede_pending(connection, id, -1).await?;
-            connection
-                .execute(
-                    "UPDATE external_mcp_tools SET approval_status = 'approved', pending_schema_version = NULL WHERE mcp_tool_id = ?1",
-                    [id.to_string()],
-                )
-                .await
-                .map_err(to_write_error)?;
-        }
+    if matches!(write, ToolWrite::Insert { .. }) {
+        return Err(StoreError::Unexpected(
+            "an existing MCP tool cannot be inserted".to_string(),
+        ));
+    }
+    for op in tool_write_ops(write, &definition, discovered_at) {
+        apply_version_op(connection, id, &op).await?;
     }
     Ok(())
 }
