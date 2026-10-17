@@ -62,12 +62,14 @@ export function TagRulesSection({
   tools,
   subjectKinds,
   subjectOptions,
+  onRulesChanged,
 }: {
   rules: McpTagRuleView[]
   servers: McpServerView[]
   tools: McpToolView[]
   subjectKinds: readonly { value: string; label: string }[]
   subjectOptions: (kind: string) => ComboOption[]
+  onRulesChanged: () => void
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -154,6 +156,7 @@ export function TagRulesSection({
         })
         toast.success('Tag rule saved')
         setRequested(null)
+        onRulesChanged()
         await router.invalidate()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to save the tag rule')
@@ -166,6 +169,7 @@ export function TagRulesSection({
       try {
         await removeMcpTagRule({ data: { ruleId: rule.id } })
         toast.success('Tag rule revoked')
+        onRulesChanged()
         await router.invalidate()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to revoke the tag rule')
@@ -262,7 +266,7 @@ export function TagRulesSection({
         <div className="flex flex-col gap-2" data-testid="mcp-tag-rule-preview">
           <div className="text-subtle-foreground text-xs font-medium">
             {preview.truncated
-              ? `First ${preview.tools.length} matching tools`
+              ? `${preview.tools.length} matching tool${preview.tools.length === 1 ? '' : 's'} shown; more may match`
               : `${preview.tools.length} matching tool${preview.tools.length === 1 ? '' : 's'}`}
           </div>
           {preview.tools.map((tool) => (

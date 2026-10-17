@@ -144,7 +144,9 @@ An override:
   and a **Use upstream**, **Yes**, or **No** choice. **Admin tags** takes a
   comma-separated list. **Access tags** shows the tags rules match.
 - **Rules:** open `/admin/mcp?tab=access` and use **Tag rules**. **Preview
-  matches** lists the active tools the rule would select before you save it. Use
+  matches** lists the active tools the rule would select before you save it. It
+  checks at most 5,120 tools and lists at most 200 matches, and says when more
+  may match. Use
   **Preview access** to see a subject's resolved tools with every rule applied.
   The preview expands the subject as a real request would: an API key brings
   its owner and team, and a user or service account brings its team, so their

@@ -3828,7 +3828,10 @@ export interface components {
                  *     applied.
                  */
                 tools: components["schemas"]["McpToolView"][];
-                /** @description More tools match than the preview returns. */
+                /**
+                 * @description The preview stopped early, after 200 matches or after checking 5,120
+                 *     tools, so more tools may match than it lists.
+                 */
                 truncated: boolean;
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -4455,7 +4458,10 @@ export interface components {
              *     applied.
              */
             tools: components["schemas"]["McpToolView"][];
-            /** @description More tools match than the preview returns. */
+            /**
+             * @description The preview stopped early, after 200 matches or after checking 5,120
+             *     tools, so more tools may match than it lists.
+             */
             truncated: boolean;
         };
         McpTagRuleView: {

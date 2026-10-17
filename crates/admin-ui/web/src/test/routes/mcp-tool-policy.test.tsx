@@ -93,11 +93,14 @@ describe('ToolPolicyEditor drafts', () => {
 
     fireEvent.change(screen.getByLabelText('Admin tags'), { target: { value: 'finance' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
-    // No newer edit can be typed for the response to overwrite.
+    // No newer edit can be typed for the response to overwrite, and the
+    // sibling editor cannot start a save that would race this one.
     expect(screen.getByLabelText('Admin tags')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save overrides' })).toBeDisabled()
 
     await act(async () => finish({ data: { tool: { ...tool, admin_tags: ['finance'] } } }))
     expect(onToolUpdated).toHaveBeenCalledOnce()
     expect(screen.getByLabelText('Admin tags')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save overrides' })).toBeEnabled()
   })
 })

@@ -17,6 +17,10 @@ const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.d
 /// policy stay, because tag rules are evaluated from them.
 const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL::text, t.annotations_json::text, NULL::text, t.admin_tags_json::text, t.annotation_overrides_json::text, t.approval_status, t.approved_schema_version, t.pending_schema_version";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
+/// `TOOL_COLUMNS` with only what tag rules read: identity, annotations and
+/// the admin policy. Schemas and text are left out, so scanning a server's
+/// tools for include-rule matches stays small.
+const RULE_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, NULL::text, '{}'::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL::text, t.annotations_json::text, NULL::text, t.admin_tags_json::text, t.annotation_overrides_json::text, t.approval_status, t.approved_schema_version, t.pending_schema_version";
 const TOOL_COLUMN_COUNT: usize = 20;
 const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json::text, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at, s.approve_tool_changes";
 
@@ -527,10 +531,14 @@ impl McpAccessRepository for PostgresStore {
                 .await?;
         }
         let include_servers = rules.include_server_ids(None);
-        for record in server_catalog_tools(&self.pool, &include_servers, server_key).await? {
-            if rules.includes(&record.tool) {
-                tools_by_id.insert(record.tool.mcp_tool_id, record);
-            }
+        let matched =
+            include_rule_matches(&self.pool, &include_servers, server_key, &rules).await?;
+        let missing = matched
+            .into_iter()
+            .filter(|id| !tools_by_id.contains_key(id))
+            .collect::<Vec<_>>();
+        for record in catalog_tools_by_ids(&self.pool, &missing).await? {
+            tools_by_id.insert(record.tool.mcp_tool_id, record);
         }
         tools_by_id.retain(|_, record| !rules.excludes(&record.tool));
 
@@ -728,10 +736,13 @@ impl PostgresStore {
             .await?;
         }
         let include_servers = rules.include_server_ids(mcp_server_id);
-        for tool in server_tools(&self.pool, &include_servers, columns).await? {
-            if rules.includes(&tool) {
-                tools_by_id.insert(tool.mcp_tool_id, tool);
-            }
+        let matched = include_rule_matches(&self.pool, &include_servers, None, rules).await?;
+        let missing = matched
+            .into_iter()
+            .filter(|id| !tools_by_id.contains_key(id))
+            .collect::<Vec<_>>();
+        for tool in tools_by_ids(&self.pool, &missing, columns).await? {
+            tools_by_id.insert(tool.mcp_tool_id, tool);
         }
         tools_by_id.retain(|_, tool| !rules.excludes(tool));
 
@@ -785,41 +796,70 @@ fn subject_arrays(subjects: &[McpGrantSubject]) -> (Vec<String>, Vec<String>) {
 /// Whether any subject in the `$2`/`$3` arrays has an active tag rule.
 const RULES_EXIST_SQL: &str = "EXISTS (SELECT 1 FROM mcp_tool_tag_rules WHERE is_active = 1 AND (subject_kind, subject_id) IN (SELECT * FROM UNNEST($2::text[], $3::text[])))";
 
-/// Served tools of the active servers, the candidates for include rules, in
-/// one query.
-async fn server_tools(
+/// Active tools on the servers that an include rule selects. Only the
+/// columns tag rules read are scanned; callers load full rows for the
+/// matches alone.
+async fn include_rule_matches(
     pool: &PgPool,
     server_ids: &BTreeSet<Uuid>,
-    columns: &str,
-) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+    server_key: Option<&str>,
+    rules: &McpTagRuleSet,
+) -> Result<Vec<Uuid>, StoreError> {
     if server_ids.is_empty() {
         return Ok(Vec::new());
     }
     let sql = format!(
-        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active'"
+        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2)"
     );
     let rows = sqlx::query(&sql)
         .bind(server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .bind(server_key)
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
+    let mut matched = Vec::new();
+    for row in &rows {
+        let tool = decode_tool(row)?;
+        if rules.includes(&tool) {
+            matched.push(tool.mcp_tool_id);
+        }
+    }
+    Ok(matched)
+}
+
+/// Active tools by id, in one query.
+async fn tools_by_ids(
+    pool: &PgPool,
+    tool_ids: &[Uuid],
+    columns: &str,
+) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active'"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
         .fetch_all(pool)
         .await
         .map_err(to_query_error)?;
     rows.iter().map(decode_tool).collect()
 }
 
-async fn server_catalog_tools(
+/// Active catalog tools by id, with their servers, in one query.
+async fn catalog_tools_by_ids(
     pool: &PgPool,
-    server_ids: &BTreeSet<Uuid>,
-    server_key: Option<&str>,
+    tool_ids: &[Uuid],
 ) -> Result<Vec<McpCatalogToolRecord>, StoreError> {
-    if server_ids.is_empty() {
+    if tool_ids.is_empty() {
         return Ok(Vec::new());
     }
     let sql = format!(
-        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2)"
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active'"
     );
     let rows = sqlx::query(&sql)
-        .bind(server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
-        .bind(server_key)
+        .bind(tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
         .fetch_all(pool)
         .await
         .map_err(to_query_error)?;

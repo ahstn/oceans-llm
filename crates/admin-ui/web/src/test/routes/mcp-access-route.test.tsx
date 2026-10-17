@@ -253,4 +253,27 @@ describe('AccessTab', () => {
     choose('Tag rule tag', /read_only/)
     expect(screen.getByTestId('mcp-tag-rule-preview')).toHaveTextContent('read_file')
   })
+
+  it('clears the effective access preview after a tag rule changes', async () => {
+    getMcpEffectiveAccessMock.mockResolvedValue({
+      data: {
+        referenced_server_count: 0,
+        exposed_tool_count: 3,
+        filtered_tool_count: 3,
+        tools: [],
+      },
+    })
+    removeMcpTagRuleMock.mockResolvedValue({ data: tagRule })
+    await renderAccessTab()
+    choose('Preview subject', /Jane Admin/)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview access' }))
+    await screen.findByText('No callable tools for this subject.')
+
+    fireEvent.click(
+      within(screen.getByTestId('mcp-tag-rule-list')).getByRole('button', { name: 'Revoke' }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByText('No callable tools for this subject.')).not.toBeInTheDocument(),
+    )
+  })
 })
