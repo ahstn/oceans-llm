@@ -4,6 +4,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use gateway_core::SCOPE_INFERENCE;
+
 use super::{
     AppError, AppState, AuthenticatedApiKey, anthropic_error_response,
     extract_anthropic_authorization_header, extract_authorization_header,
@@ -30,7 +32,7 @@ impl FromRequestParts<AppState> for InferenceAuth {
         };
         state
             .service
-            .authenticate(authorization.as_deref())
+            .authenticate_for_scope(authorization.as_deref(), SCOPE_INFERENCE)
             .await
             .map(Self)
             .map_err(|error| {

@@ -113,6 +113,7 @@ where
             owner_user_id: record.owner_user_id,
             owner_team_id: record.owner_team_id,
             owner_service_account_id: record.owner_service_account_id,
+            access: record.access,
             oauth: None,
         })
     }

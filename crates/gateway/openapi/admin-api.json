@@ -149,6 +149,52 @@
         ]
       }
     },
+    "/api/v1/admin/api-keys/{api_key_id}/scopes": {
+      "put": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "update_api_key_scopes",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "description": "API key identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyScopesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpdateApiKeyScopesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
       "post": {
         "tags": [
@@ -7380,6 +7426,21 @@
           "reveal_api_key"
         ]
       },
+      "AdminApiKeyMcpServerView": {
+        "type": "object",
+        "required": [
+          "key",
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
       "AdminApiKeyModelView": {
         "type": "object",
         "required": [
@@ -7485,6 +7546,16 @@
               "null"
             ]
           },
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`null`: every MCP server the owner's grants reach."
+          },
           "model_grant_mode": {
             "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
@@ -7545,6 +7616,16 @@
               "null"
             ]
           },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`null`: full access, as for keys created before scopes existed."
+          },
           "status": {
             "type": "string"
           }
@@ -7556,14 +7637,30 @@
           "items",
           "users",
           "service_accounts",
-          "models"
+          "models",
+          "available_scopes",
+          "mcp_servers"
         ],
         "properties": {
+          "available_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scopes a key may carry, in display order."
+          },
           "items": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminApiKeyView"
             }
+          },
+          "mcp_servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyMcpServerView"
+            },
+            "description": "Active MCP servers, the options for a key's server list."
           },
           "models": {
             "type": "array",
@@ -11872,6 +11969,16 @@
           "model_keys"
         ],
         "properties": {
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Omit or `null` to reach every server the owner's grants reach."
+          },
           "model_grant_mode": {
             "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
@@ -11904,6 +12011,16 @@
               "string",
               "null"
             ]
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Omit or `null` for full access."
           }
         }
       },
@@ -12540,14 +12657,30 @@
               "items",
               "users",
               "service_accounts",
-              "models"
+              "models",
+              "available_scopes",
+              "mcp_servers"
             ],
             "properties": {
+              "available_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Scopes a key may carry, in display order."
+              },
               "items": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AdminApiKeyView"
                 }
+              },
+              "mcp_servers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyMcpServerView"
+                },
+                "description": "Active MCP servers, the options for a key's server list."
               },
               "models": {
                 "type": "array",
@@ -15254,6 +15387,29 @@
         }
       },
       "Envelope_UpdateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "api_key"
+            ],
+            "properties": {
+              "api_key": {
+                "$ref": "#/components/schemas/AdminApiKeyView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_UpdateApiKeyScopesResponse": {
         "type": "object",
         "required": [
           "data",
@@ -20067,6 +20223,45 @@
         }
       },
       "UpdateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "properties": {
+          "api_key": {
+            "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "UpdateApiKeyScopesRequest": {
+        "type": "object",
+        "description": "Both fields are required, so leaving one out can't widen a key by\naccident. `null` restores full access or every server.",
+        "required": [
+          "scopes",
+          "mcp_server_keys"
+        ],
+        "properties": {
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateApiKeyScopesResponse": {
         "type": "object",
         "required": [
           "api_key"

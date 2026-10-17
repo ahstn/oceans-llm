@@ -41,16 +41,9 @@ where
             return Err(AuthError::OauthTokenWrongResource.into());
         }
         let scopes = parse_scope_list(&context.token.scope);
-        let required = route.required_scope();
-        if !scopes.iter().any(|scope| scope == required) {
-            return Err(AuthError::OauthInsufficientScope {
-                required: required.to_string(),
-            }
-            .into());
-        }
         let expires_at = context.token.expires_at;
         let grant = context.grant;
-        Ok(AuthenticatedApiKey {
+        let principal = AuthenticatedApiKey {
             id: grant.grant_id,
             public_id: grant.client_id.clone(),
             name: format!("OAuth client {}", grant.client_id),
@@ -60,6 +53,7 @@ where
             owner_user_id: Some(grant.user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             oauth: Some(OauthAccessContext {
                 grant_id: grant.grant_id,
                 client_id: grant.client_id,
@@ -68,6 +62,9 @@ where
                 token_hash,
                 expires_at,
             }),
-        })
+        };
+        // The same check every route applies to API keys.
+        principal.require_scope(route.required_scope())?;
+        Ok(principal)
     }
 }

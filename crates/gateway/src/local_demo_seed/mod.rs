@@ -223,6 +223,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                         owner_user_id: owner.1,
                         owner_team_id: owner.2,
                         owner_service_account_id: owner.3,
+                        access: Default::default(),
                         created_at: now,
                     })
                     .await

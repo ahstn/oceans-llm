@@ -22,7 +22,7 @@ use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpOauthResource,
     McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
-    ProviderError, auth::extract_bearer_token, is_oauth_access_token,
+    ProviderError, SCOPE_MCP_PROXY, auth::extract_bearer_token, is_oauth_access_token,
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
 use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
@@ -53,6 +53,8 @@ const LAST_EVENT_ID: &str = "last-event-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
 const GUARDRAIL_POLICY_DENIED_CODE: i64 = -32001;
+/// The documented JSON-RPC code for a credential missing a scope or server.
+const INSUFFICIENT_SCOPE_CODE: i64 = -32001;
 
 #[tracing::instrument(
     skip(state, request),
@@ -81,7 +83,13 @@ pub async fn mcp_streamable_http_proxy(
 
     let resource = McpOauthResource::from_path(request.uri().path());
 
-    let auth = match authenticate_mcp_request(&state, &headers, resource.as_ref()).await {
+    let auth = match authenticate_mcp_request(&state, &headers, resource.as_ref(), SCOPE_MCP_PROXY)
+        .await
+        .and_then(|auth| {
+            // A key limited to other servers never learns whether this one exists.
+            auth.require_mcp_server(&server_key.to_ascii_lowercase())?;
+            Ok(auth)
+        }) {
         Ok(auth) => auth,
         Err(error) => return mcp_auth_error_response(&state, resource.as_ref(), error),
     };
@@ -672,14 +680,19 @@ fn response_outcome(
 
 /// Authenticates an MCP request with a `gwk_` API key, or with an `oat_`
 /// OAuth access token issued for `resource` when OAuth for MCP clients is on.
+/// Either credential must carry `scope`, the route's scope.
 async fn authenticate_mcp_request(
     state: &AppState,
     headers: &HeaderMap,
     resource: Option<&McpOauthResource>,
+    scope: &str,
 ) -> Result<AuthenticatedApiKey, GatewayError> {
     let token = extract_mcp_bearer_token(headers)?;
     if !is_oauth_access_token(&token) {
-        return state.service.authenticate_bearer_token(&token).await;
+        return state
+            .service
+            .authenticate_bearer_token_for_scope(&token, scope)
+            .await;
     }
     // The MCP authorization spec allows access tokens only in `Authorization`.
     let sent_as_api_key = headers
@@ -750,11 +763,38 @@ fn mcp_auth_error_response(
         .as_deref()
         .zip(resource)
         .and_then(|(settings, resource)| bearer_challenge(settings, resource, &error));
-    let mut response = mcp_error_response(error);
+    let mut response = match &error {
+        GatewayError::Auth(
+            AuthError::InsufficientScope { .. }
+            | AuthError::FullAccessRequired
+            | AuthError::McpServerNotInScope,
+        ) => insufficient_scope_response(&error),
+        _ => mcp_error_response(error),
+    };
     if let Some(challenge) = challenge {
         response.headers_mut().insert(WWW_AUTHENTICATE, challenge);
     }
     response
+}
+
+/// A `403` JSON-RPC error for a credential that lacks a scope or server. It is
+/// sent before the body is read, so the `id` is `null`.
+fn insufficient_scope_response(error: &GatewayError) -> Response<Body> {
+    let mut data = json!({ "error": error.error_code() });
+    if let GatewayError::Auth(AuthError::InsufficientScope { required }) = error {
+        data["required_scope"] = json!(required);
+    }
+    tracing::Span::current().record("status_code", i64::from(StatusCode::FORBIDDEN.as_u16()));
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+            "code": INSUFFICIENT_SCOPE_CODE,
+            "message": error.to_string(),
+            "data": data,
+        }
+    });
+    (StatusCode::FORBIDDEN, Json(body)).into_response()
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

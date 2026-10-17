@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
+use crate::credential_scopes::ApiKeyAccess;
 use crate::protocol::decisions::DecisionsWireFormat;
 use crate::routing::ModelRoutingPolicy;
 
@@ -492,6 +493,7 @@ pub struct ApiKeyRecord {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
@@ -507,6 +509,7 @@ pub struct NewApiKeyRecord {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
 }
 
