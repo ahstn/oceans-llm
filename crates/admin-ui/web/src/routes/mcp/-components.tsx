@@ -3,6 +3,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@hugeicons/core-f
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { discoveryLabel } from '@/components/mcp/server-discovery'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -773,8 +774,10 @@ export function ServerStatusBadge({ status }: { status: string }) {
   )
 }
 
-// `attention` matches the server registry's rule (needsAttention), so a failed or blocked discovery
-// on an active server reads as destructive in the details too, not as a neutral state.
+// Sits beside the registration badge, so it uses the registry's labels ("Discovery failed", not a
+// raw enum) and stays hidden when it would only repeat that badge: after a successful discovery, or
+// once disabling the server has also disabled discovery. `attention` follows needsAttention, so a
+// failed or blocked discovery on an active server reads as destructive.
 export function DiscoveryStatusBadge({
   status,
   attention = false,
@@ -782,12 +785,12 @@ export function DiscoveryStatusBadge({
   status?: string | null
   attention?: boolean
 }) {
-  return <Badge variant={discoveryVariant(status, attention)}>{status ?? 'not run'}</Badge>
+  if (status === 'success' || status === 'disabled') return null
+  return <Badge variant={discoveryVariant(status, attention)}>{discoveryLabel(status)}</Badge>
 }
 
 function discoveryVariant(status: string | null | undefined, attention: boolean) {
   if (attention) return 'destructive'
-  if (status === 'success') return 'success'
   return status ? 'secondary' : 'outline'
 }
 

@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
-import { needsAttention } from '@/components/mcp/server-attention'
+import { needsAttention } from '@/components/mcp/server-discovery'
 import { ServerRegistry } from '@/components/mcp/server-registry'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'

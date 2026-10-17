@@ -450,7 +450,7 @@ describe('ServersTab', () => {
     ).toBeDisabled()
   })
 
-  it('marks failed discovery in the server details only while the server is active', async () => {
+  it('labels discovery in the server details and marks failures while the server is active', async () => {
     const failed: McpServerView = {
       ...server,
       id: 'failed',
@@ -472,20 +472,61 @@ describe('ServersTab', () => {
       server_key: 'legacy',
       status: 'disabled',
     }
-    const servers = [server, failed, authRequired, disabled]
+    const unrun: McpServerView = {
+      ...server,
+      id: 'unrun',
+      display_name: 'Exa',
+      server_key: 'exa',
+      last_discovery_status: null,
+      last_discovery_at: null,
+    }
+    const servers = [server, failed, authRequired, disabled, unrun]
+    const headerBadges = (name: string) => {
+      const header = screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement
+      return [...header.querySelectorAll('[data-slot="badge"]')].map((badge) => [
+        badge.textContent,
+        badge.getAttribute('data-variant'),
+      ])
+    }
 
-    for (const [selected, name, status, variant] of [
-      ['failed', 'Notion', 'failed', 'destructive'],
-      ['auth', 'Figma', 'auth_required', 'destructive'],
-      ['disabled', 'Legacy', 'failed', 'secondary'],
-      ['server_1', 'GitHub', 'success', 'success'],
+    for (const [selected, name, badges] of [
+      [
+        'failed',
+        'Notion',
+        [
+          ['Active', 'success'],
+          ['Discovery failed', 'destructive'],
+        ],
+      ],
+      [
+        'auth',
+        'Figma',
+        [
+          ['Active', 'success'],
+          ['Authentication required', 'destructive'],
+        ],
+      ],
+      [
+        'disabled',
+        'Legacy',
+        [
+          ['Disabled', 'secondary'],
+          ['Discovery failed', 'secondary'],
+        ],
+      ],
+      [
+        'unrun',
+        'Exa',
+        [
+          ['Active', 'success'],
+          ['Not discovered', 'outline'],
+        ],
+      ],
+      // A successful discovery adds nothing beside the registration badge.
+      ['server_1', 'GitHub', [['Active', 'success']]],
     ] as const) {
       await renderServersTab(selected, servers)
-      const header = screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement
-      expect(within(header).getByText(status, { exact: true })).toHaveAttribute(
-        'data-variant',
-        variant,
-      )
+      expect(headerBadges(name)).toEqual(badges)
       cleanup()
     }
   })

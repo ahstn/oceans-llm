@@ -3,7 +3,7 @@ import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@t
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
-import { needsAttention } from '@/components/mcp/server-attention'
+import { discoveryLabel, needsAttention } from '@/components/mcp/server-discovery'
 import {
   DataGrid,
   DataGridContainer,
@@ -29,13 +29,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { McpServerView } from '@/types/api'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
-
-const discoveryLabels: Record<string, string> = {
-  success: 'Discovered',
-  failed: 'Discovery failed',
-  auth_required: 'Authentication required',
-  disabled: 'Discovery disabled',
-}
 
 interface RegistryProps {
   servers: McpServerView[]
@@ -435,9 +428,7 @@ function RegistrationBadge({ server }: { server: McpServerView }) {
 }
 
 function DiscoveryResult({ server }: { server: McpServerView }) {
-  const label = server.last_discovery_status
-    ? (discoveryLabels[server.last_discovery_status] ?? server.last_discovery_status)
-    : 'Not discovered'
+  const label = discoveryLabel(server.last_discovery_status)
   return (
     <div className="flex flex-col items-start gap-1.5">
       <Badge
