@@ -784,10 +784,13 @@ pub async fn refresh_mcp_server_discovery(
                 .audit()
                 .record(&meta.user_context(&actor), scope.annotate(event))
                 .await;
+            // Read before the recheck below, which must be the last read.
+            let owner_team_name =
+                owner_team_name(&state, result.server.ownership.owner_team_id).await?;
             // The server and the caller are read again now, after the audit
-            // write: a transfer, or the caller leaving the team, since the
-            // discovery write must not hand the new owner's settings and tool
-            // schemas to the former team's admin.
+            // write and every other read: a transfer, or the caller leaving the
+            // team, since the discovery write must not hand the new owner's
+            // settings and tool schemas to the former team's admin.
             let current_scope = require_mcp_admin_scope(&state, &headers)
                 .await
                 .ok()
@@ -807,8 +810,6 @@ pub async fn refresh_mcp_server_discovery(
                     )),
                 )));
             }
-            let owner_team_name =
-                owner_team_name(&state, result.server.ownership.owner_team_id).await?;
             Ok(Json(envelope(map_discovery_result(
                 result,
                 owner_team_name,
