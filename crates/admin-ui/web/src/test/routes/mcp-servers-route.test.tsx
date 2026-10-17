@@ -909,4 +909,19 @@ describe('ServersTab', () => {
     const registry = within(screen.getByTestId('mcp-server-list'))
     expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
   })
+
+  it('offers no tool selection without a tool set action', async () => {
+    await renderServersTab(null, [{ ...server, can_manage: false }], {
+      ...teamAdminScope,
+      readOnly: true,
+    })
+    fireEvent.click(
+      within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Open GitHub' }),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('Create issue')).toBeInTheDocument())
+    expect(screen.getByText('The tools this server offers.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Select create_issue' })).not.toBeInTheDocument()
+  })
 })

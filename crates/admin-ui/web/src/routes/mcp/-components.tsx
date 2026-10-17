@@ -244,13 +244,15 @@ export function ServerToolsPanel({
         <div>
           <h3 className="font-medium">Discovered tools</h3>
           <p className="text-subtle-foreground text-sm">
-            Select tools to bundle into a toolset — no UUID copy-paste required.
+            {onAddToToolset
+              ? 'Select tools to bundle into a toolset — no UUID copy-paste required.'
+              : 'The tools this server offers.'}
           </p>
         </div>
         <Badge variant="secondary">{tools.length}</Badge>
       </div>
 
-      {selectedToolIds.length > 0 ? (
+      {onAddToToolset && selectedToolIds.length > 0 ? (
         <div className="bg-muted flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
           <span className="text-sm font-medium">
             {selectedToolIds.length} tool{selectedToolIds.length === 1 ? '' : 's'} selected
@@ -295,16 +297,44 @@ export function ServerToolsPanel({
               selected={selected.has(tool.id)}
               expanded={expandedToolIds.has(tool.id)}
               onToggleExpanded={() => toggleExpanded(tool.id)}
-              onToggleTool={() => {
-                if (tool.is_active) {
-                  onToggleTool(tool.id)
-                }
-              }}
+              // Selecting only feeds a tool set, so it is offered only with that action.
+              onToggleTool={
+                onAddToToolset
+                  ? () => {
+                      if (tool.is_active) {
+                        onToggleTool(tool.id)
+                      }
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+/** A tool's checkbox, or a spacer that keeps the row's columns when selection is off. */
+function ToolSelectBox({
+  tool,
+  selected,
+  onToggle,
+}: {
+  tool: McpToolView
+  selected: boolean
+  onToggle?: () => void
+}) {
+  if (!onToggle) return <span aria-hidden className="size-4" />
+  return (
+    <input
+      type="checkbox"
+      aria-label={`Select ${tool.display_name}`}
+      className="accent-primary size-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+      checked={selected}
+      disabled={!tool.is_active}
+      onChange={onToggle}
+    />
   )
 }
 
@@ -319,7 +349,7 @@ function ToolDisclosureRow({
   selected: boolean
   expanded: boolean
   onToggleExpanded: () => void
-  onToggleTool: () => void
+  onToggleTool?: () => void
 }) {
   const schema = formatToolSchema(tool.input_schema)
   const description = tool.description?.trim()
@@ -333,14 +363,7 @@ function ToolDisclosureRow({
         )}
       >
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3">
-          <input
-            type="checkbox"
-            aria-label={`Select ${tool.display_name}`}
-            className="accent-primary size-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            checked={selected}
-            disabled={!tool.is_active}
-            onChange={onToggleTool}
-          />
+          <ToolSelectBox tool={tool} selected={selected} onToggle={onToggleTool} />
           <div className="min-w-0">
             <div className="truncate font-medium">{tool.display_name}</div>
             {description ? (

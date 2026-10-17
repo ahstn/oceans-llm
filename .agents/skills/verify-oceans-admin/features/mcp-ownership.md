@@ -13,7 +13,7 @@ Team owners and admins reach a scoped MCP area. They register servers for their 
 
 ## How to get to it (user POV)
 
-- Sign in as a team admin, such as `cara@research.local` (password `localdemo123`). `MCP Servers` appears in the sidebar because `gateway.yaml` grants `team_admins` the `mcp` page. Open `/admin/mcp`.
+- Sign in as a team admin, such as `cara@research.local` (password `localdemo123`). `MCP Servers` appears in the sidebar because `gateway.yaml` grants every user the `mcp` page and team admins inherit it. Open `/admin/mcp`.
 - Sign in as `admin@local` / `admin` for the platform view of the same servers, the `Ownership` panel, and the Audit Log at `/admin/observability/audit-log`.
 - A team member, such as `diego@research.local`, gets `MCP Servers` too, read-only: the list holds only servers a grant to them, their team or their own key reaches, with no `Add server`, `Browse catalog` or `Access`. With no grants the list is empty. Write routes and `GET /api/v1/admin/mcp/grants` return `403`.
 
@@ -39,6 +39,6 @@ Steps:
 - The demo seed has a team named `Platform`. Platform-owned servers are labelled `Platform admins`, so pick options by that exact label.
 
 - `cara@research.local` must keep the `admin` (or `owner`) role in Research. A `member` gets a read-only list and `403` on every write; that is the expected boundary, not a regression.
-- Explicit `team_admins.pages` lists in a gateway config replace the default. A config that omits `mcp` keeps team admins out of the MCP area even though the code default grants it. `gateway.prod.yaml` and the deploy configs set `pages: []`.
+- Every group gets `mcp` from `users.pages`, which `team_admins` inherits, so `team_admins.pages: []` does not keep team admins out. To keep a group out of the MCP area, remove `mcp` from `users.pages` (and, for platform admins, from `platform_admins.pages`). An explicit `users.pages` list without `mcp` hides it from users and team admins alike.
 - The tool picker on `Access` lists tools only after discovery. Without a refresh, the team admin's server has no tools, so grant proof is limited to the empty picker; the role and boundary checks are proved by `http::mcp_registry::ownership_tests`.
 - A transfer to another team, or narrowing a published server to `Team only`, returns `409` while the server's tools are in a tool set or granted outside the new owning team. Revoke first.

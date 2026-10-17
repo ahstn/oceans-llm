@@ -280,7 +280,46 @@ pub async fn update_mcp_server(
             .await?;
     }
     let service = McpRegistryService::new(state.store.clone());
-    let update = service
+    // Narrowing to `team` is applied first, on its own and only while the
+    // ownership is still what was authorized above. The stranded-access check
+    // runs after it, as a grant's check runs after the grant, so whichever
+    // lands second sees the other. Undoing it then touches nothing else: the
+    // URL, auth settings, discovery state and OAuth client are saved after.
+    let mut expected_visibility = existing.ownership.visibility;
+    let narrowed = match (existing.ownership.owner_team_id, visibility) {
+        (Some(team_id), Some(gateway_core::McpServerVisibility::Team))
+            if existing.ownership.visibility == gateway_core::McpServerVisibility::Organisation =>
+        {
+            let narrowed = gateway_core::McpServerOwnership {
+                visibility: gateway_core::McpServerVisibility::Team,
+                ..existing.ownership.clone()
+            };
+            service
+                .transfer_ownership_if(
+                    server_id,
+                    narrowed.clone(),
+                    Some(existing.ownership.clone()),
+                )
+                .await?;
+            if let Err(error) = ownership
+                .confirm_no_stranded_access(server_id, team_id)
+                .await
+            {
+                match service
+                    .transfer_ownership_if(server_id, existing.ownership.clone(), Some(narrowed))
+                    .await
+                {
+                    Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
+                    Err(other) => return Err(other.into()),
+                }
+                return Err(error.into());
+            }
+            expected_visibility = gateway_core::McpServerVisibility::Team;
+            true
+        }
+        _ => false,
+    };
+    let saved = service
         .update_server(
             server_id,
             UpdateExternalMcpServerInput {
@@ -295,55 +334,54 @@ pub async fn update_mcp_server(
                 // Ties the save to the owner authorized above, so a transfer in
                 // between cannot let the former team overwrite the server.
                 expected_owner_team_id: existing.ownership.owner_team_id,
-                expected_visibility: existing.ownership.visibility,
+                expected_visibility,
             },
         )
-        .await?;
-    // As for transfers: recheck after narrowing, and restore the previous
-    // visibility if a grant outside the team landed meanwhile.
-    if let (Some(previous), Some(team_id)) =
-        (&update.previous, update.current.ownership.owner_team_id)
-        && previous.ownership.visibility == gateway_core::McpServerVisibility::Organisation
-        && update.current.ownership.visibility == gateway_core::McpServerVisibility::Team
-        && let Err(error) = ownership
-            .confirm_no_stranded_access(server_id, team_id)
-            .await
-    {
-        // Restore the whole previous record, not just its visibility, and only
-        // if nothing has changed it since; a newer change wins.
-        let restore = gateway_core::UpdateExternalMcpServerRecord {
-            mcp_server_id: server_id,
-            display_name: previous.display_name.clone(),
-            description: previous.description.clone(),
-            server_url: previous.server_url.clone(),
-            auth_mode: previous.auth_mode,
-            auth_config: previous.auth_config.clone(),
-            timeout_ms: previous.timeout_ms,
-            owner_contact: previous.ownership.owner_contact.clone(),
-            visibility: previous.ownership.visibility,
-            expected_owner_team_id: update.current.ownership.owner_team_id,
-            expected_visibility: update.current.ownership.visibility,
-            updated_at: OffsetDateTime::now_utc(),
-        };
-        match state.store.update_external_mcp_server(&restore).await {
-            Ok(_) | Err(gateway_core::StoreError::Conflict(_)) => {}
-            Err(other) => return Err(GatewayError::from(other).into()),
+        .await;
+    let update = match saved {
+        Ok(update) => update,
+        Err(error) => {
+            // The save was rejected, so undo the narrowing written before it.
+            if narrowed {
+                let narrowed_ownership = gateway_core::McpServerOwnership {
+                    visibility: gateway_core::McpServerVisibility::Team,
+                    ..existing.ownership.clone()
+                };
+                match service
+                    .transfer_ownership_if(
+                        server_id,
+                        existing.ownership.clone(),
+                        Some(narrowed_ownership),
+                    )
+                    .await
+                {
+                    Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
+                    Err(other) => return Err(other.into()),
+                }
+            }
+            return Err(error.into());
         }
-        return Err(error.into());
-    }
+    };
     let current = update.current.clone();
     let server = map_server(update.current);
     // The store compares the unredacted settings under the write lock and writes
     // nothing when they match, so a resave records nothing while rotating a
     // credential inside the URL still counts even though the summary hides it.
-    if let Some(previous) = update.previous {
+    // A narrowing was written before the settings save, so the save's own
+    // `previous` already has it; the entry's `before` is the server as
+    // authorized, so the visibility change shows.
+    let before = match (narrowed, update.previous) {
+        (true, _) => Some(existing),
+        (false, previous) => previous,
+    };
+    if let Some(before) = before {
         state
             .audit()
             .record(
                 &meta.user_context(&actor),
                 scope.annotate(
                     server_event(actions::MCP_SERVER_UPDATED, &server)
-                        .before(server_audit_summary(&map_server(previous)))
+                        .before(server_audit_summary(&map_server(before)))
                         .after(server_audit_summary(&server)),
                 ),
             )
