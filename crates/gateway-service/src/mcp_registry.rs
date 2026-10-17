@@ -80,6 +80,8 @@ pub struct UpdateExternalMcpServerInput {
     /// The owner the caller was authorized against; the save is rejected if the
     /// server has moved since.
     pub expected_owner_team_id: Option<Uuid>,
+    /// The visibility the caller was authorized against.
+    pub expected_visibility: McpServerVisibility,
 }
 
 #[derive(Debug, Clone)]
@@ -252,6 +254,7 @@ where
                 owner_contact,
                 visibility,
                 expected_owner_team_id: input.expected_owner_team_id,
+                expected_visibility: input.expected_visibility,
                 updated_at: OffsetDateTime::now_utc(),
             })
             .await
@@ -319,16 +322,21 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<McpDiscoveryResult, GatewayError> {
-        self.refresh_discovery_tracked(mcp_server_id, &AuditProgress::default())
+        self.refresh_discovery_tracked(mcp_server_id, &AuditProgress::default(), None)
             .await
     }
 
     /// Like [`Self::refresh_discovery`]; `progress` is marked once the discovery run
     /// is stored, so an audit entry can record a refresh whose reload fails afterwards.
+    ///
+    /// With `expected_owner`, the result is stored only while the server still
+    /// has that owner (`Some(None)` for the platform). Discovery can take a
+    /// while, so a transfer in between makes the refresh a conflict.
     pub async fn refresh_discovery_tracked(
         &self,
         mcp_server_id: Uuid,
         progress: &AuditProgress,
+        expected_owner: Option<Option<Uuid>>,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
@@ -425,6 +433,8 @@ where
                         json!(upserts.len()),
                     )]),
                 };
+                self.ensure_owner(server.mcp_server_id, expected_owner)
+                    .await?;
                 let stored_tools = self
                     .repo
                     .record_external_mcp_discovery_success(&run, &upserts)
@@ -439,6 +449,9 @@ where
                 })
             }
             Err(error) => {
+                // The upstream call can be slow; check the owner before storing.
+                self.ensure_owner(server.mcp_server_id, expected_owner)
+                    .await?;
                 let summary = bounded_error_summary(discovery_error_summary(&error));
                 self.record_discovery_failure(
                     server,
@@ -528,6 +541,28 @@ where
                     "external MCP server `{mcp_server_id}` not found"
                 )))
             })
+    }
+
+    /// Re-reads the owner right before a discovery result is stored, so a refresh
+    /// that started before a transfer does not write to a server another team
+    /// now owns. The re-read is not in the store's write, but it narrows the
+    /// window from the whole upstream call to one query.
+    async fn ensure_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner: Option<Option<Uuid>>,
+    ) -> Result<(), GatewayError> {
+        let Some(expected_owner) = expected_owner else {
+            return Ok(());
+        };
+        let server = self.server_or_not_found(mcp_server_id).await?;
+        if server.ownership.owner_team_id == expected_owner {
+            Ok(())
+        } else {
+            Err(GatewayError::Store(StoreError::Conflict(format!(
+                "external MCP server `{mcp_server_id}` changed owner during discovery; refresh it again"
+            ))))
+        }
     }
 
     async fn record_discovery_failure(

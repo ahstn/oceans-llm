@@ -1740,6 +1740,9 @@ pub struct UpdateExternalMcpServerRecord {
     /// The owning team the caller was authorized against. The save fails with a
     /// conflict when the server has changed owner since.
     pub expected_owner_team_id: Option<Uuid>,
+    /// The visibility the caller's change was authorized against, checked the
+    /// same way, so a save cannot republish a server another request narrowed.
+    pub expected_visibility: McpServerVisibility,
     pub updated_at: OffsetDateTime,
 }
 

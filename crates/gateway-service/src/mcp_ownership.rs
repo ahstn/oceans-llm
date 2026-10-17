@@ -652,7 +652,7 @@ pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
 /// secret reference (`env/...`), because the gateway would resolve that
 /// process-wide secret and send it to a server the team controls; nor add a
 /// non-public URL, such as a token endpoint the gateway calls. Values a
-/// platform admin set are kept as long as they, and the server URL, stay the
+/// platform admin set are exempt only while they, and the server URL, stay the
 /// same.
 pub async fn authorize_team_auth_config(
     scope: &McpAdminScope,
@@ -678,7 +678,10 @@ pub async fn authorize_team_auth_config(
             }
             continue;
         }
-        if !inherited
+        // An inherited URL, such as an internal token endpoint a platform admin
+        // set, is exempt only while the server keeps its URL; once the team
+        // points the server elsewhere, every URL is checked again.
+        if !(inherited && url_unchanged)
             && let Ok(url) = Url::parse(&value)
             && matches!(url.scheme(), "http" | "https")
         {

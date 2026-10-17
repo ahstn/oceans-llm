@@ -1477,23 +1477,27 @@ pub(crate) mod tests {
             .expect("list MCP servers");
         assert_eq!(listed[0].ownership, owned);
 
-        let settings = |owner_contact: Option<&str>, visibility| UpdateExternalMcpServerRecord {
-            mcp_server_id: server.mcp_server_id,
-            display_name: server.display_name.clone(),
-            description: None,
-            server_url: server.server_url.clone(),
-            auth_mode: ExternalMcpAuthMode::None,
-            auth_config: Map::new(),
-            timeout_ms: 30_000,
-            owner_contact: owner_contact.map(str::to_string),
-            visibility,
-            expected_owner_team_id: Some(team.team_id),
-            updated_at: now + Duration::seconds(1),
+        let settings = |owner_contact: Option<&str>, visibility, expected_visibility| {
+            UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: None,
+                server_url: server.server_url.clone(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                owner_contact: owner_contact.map(str::to_string),
+                visibility,
+                expected_owner_team_id: Some(team.team_id),
+                expected_visibility,
+                updated_at: now + Duration::seconds(1),
+            }
         };
         let published = store
             .update_external_mcp_server(&settings(
                 Some("docs@example.com"),
                 McpServerVisibility::Organisation,
+                McpServerVisibility::Team,
             ))
             .await
             .expect("publish server");
@@ -1521,12 +1525,28 @@ pub(crate) mod tests {
             .update_external_mcp_server(&settings(
                 Some("docs@example.com"),
                 McpServerVisibility::Organisation,
+                McpServerVisibility::Organisation,
             ))
             .await
             .expect("resave server");
         assert!(resaved.previous.is_none());
         // A save authorized against another owner is rejected under the write lock.
-        let mut stale = settings(Some("docs@example.com"), McpServerVisibility::Organisation);
+        // A save authorized against an older visibility is rejected too, so it
+        // cannot republish a server another request narrowed.
+        let narrowed_view = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Team,
+        );
+        assert!(matches!(
+            store.update_external_mcp_server(&narrowed_view).await,
+            Err(StoreError::Conflict(_))
+        ));
+        let mut stale = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
         stale.expected_owner_team_id = None;
         stale.display_name = "Renamed".to_string();
         assert!(matches!(
@@ -1748,6 +1768,7 @@ pub(crate) mod tests {
                 owner_contact: None,
                 visibility: Default::default(),
                 expected_owner_team_id: None,
+                expected_visibility: Default::default(),
                 updated_at: now + Duration::seconds(1),
             })
             .await
@@ -1871,6 +1892,7 @@ pub(crate) mod tests {
                 owner_contact: None,
                 visibility: Default::default(),
                 expected_owner_team_id: None,
+                expected_visibility: Default::default(),
                 updated_at: now + Duration::seconds(6),
             })
             .await

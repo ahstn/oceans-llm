@@ -285,6 +285,7 @@ pub async fn update_mcp_server(
                 // Ties the save to the owner authorized above, so a transfer in
                 // between cannot let the former team overwrite the server.
                 expected_owner_team_id: existing.ownership.owner_team_id,
+                expected_visibility: existing.ownership.visibility,
             },
         )
         .await?;
@@ -557,7 +558,7 @@ pub async fn refresh_mcp_server_discovery(
     let started_at = Instant::now();
     let progress = AuditProgress::default();
     let result = service
-        .refresh_discovery_tracked(server_id, &progress)
+        .refresh_discovery_tracked(server_id, &progress, Some(server.ownership.owner_team_id))
         .await;
     let latency_seconds = started_at.elapsed().as_secs_f64();
     match result {

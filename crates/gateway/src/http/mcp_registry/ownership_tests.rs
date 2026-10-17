@@ -1278,9 +1278,11 @@ async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
     // A URL in the auth config is one the gateway calls, so it must be public.
     let mut body = create_body("oauth");
     body["auth_config"] = json!({ "token_endpoint": "https://10.0.0.7/token" });
-    assert_eq!(
-        context.create(&admin, body).await.0,
-        StatusCode::BAD_REQUEST
+    let (status, response) = context.create(&admin, body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response.to_string().contains("public address"),
+        "{response}"
     );
 
     // A platform admin can set one up for the team, and the team keeps it only
@@ -1316,5 +1318,59 @@ async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
     assert_eq!(
         context.update(&admin, id, swapped).await.0,
         StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn inherited_internal_endpoints_are_rechecked_when_the_server_moves() {
+    let context = TestContext::new().await;
+    let admin = context.team_admin(context.team_a).await;
+    // A platform admin set the team's server up with an internal token endpoint.
+    let auth_config = json!({
+        "resource": "https://files.example.test/mcp",
+        "issuer": "https://files.example.test",
+        "authorization_endpoint": "https://files.example.test/authorize",
+        "token_endpoint": "https://10.0.0.7/token",
+        "client_registration": "manual",
+        "client_id": "files",
+    });
+    let server = context
+        .state
+        .store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "files".to_string(),
+            display_name: "Files".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://files.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::OauthObo,
+            auth_config: serde_json::from_value(auth_config.clone()).unwrap(),
+            timeout_ms: 5_000,
+            ownership: context.team_owned(context.team_a, McpServerVisibility::Team),
+            created_at: OffsetDateTime::now_utc(),
+        })
+        .await
+        .unwrap();
+    let kept = json!({
+        "server_url": "https://files.example.test/mcp",
+        "auth_mode": "oauth_obo",
+        "auth_config": auth_config,
+    });
+    // Kept as is, the inherited endpoint passes the address check.
+    let (_, response) = context
+        .update(&admin, server.mcp_server_id, kept.clone())
+        .await;
+    assert!(
+        !response.to_string().contains("public address"),
+        "{response}"
+    );
+    // Pointing the server elsewhere rechecks every URL it would call.
+    let mut moved = kept;
+    moved["server_url"] = json!("https://attacker.example.test/mcp");
+    let (status, response) = context.update(&admin, server.mcp_server_id, moved).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response.to_string().contains("public address"),
+        "{response}"
     );
 }

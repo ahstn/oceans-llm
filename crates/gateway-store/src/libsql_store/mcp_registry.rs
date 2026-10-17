@@ -131,7 +131,7 @@ pub(super) fn decode_tool_metadata(
 /// A settings save authorized against an owner the server no longer has.
 fn owner_changed(mcp_server_id: Uuid) -> StoreError {
     StoreError::Conflict(format!(
-        "external MCP server `{mcp_server_id}` changed owner; reload it and try again"
+        "external MCP server `{mcp_server_id}` changed owner or visibility; reload it and try again"
     ))
 }
 
@@ -301,7 +301,9 @@ impl McpRegistryRepository for LibsqlStore {
         // exactly the one this update replaces.
         let tx = self.begin_transaction().await?;
         let existing = load_server(&tx, input.mcp_server_id).await?;
-        if existing.ownership.owner_team_id != input.expected_owner_team_id {
+        if existing.ownership.owner_team_id != input.expected_owner_team_id
+            || existing.ownership.visibility != input.expected_visibility
+        {
             tx.commit().await.map_err(to_write_error)?;
             return Err(owner_changed(input.mcp_server_id));
         }
