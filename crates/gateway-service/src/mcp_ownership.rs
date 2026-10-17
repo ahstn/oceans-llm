@@ -615,8 +615,9 @@ pub async fn authorize_destination(
     require_public_destination(&url).await
 }
 
-/// Rejects a URL whose host is, or resolves to, a non-public address. A host
-/// that does not resolve is left to fail at connection time.
+/// Rejects a URL whose host is, or resolves to, a non-public address, or does
+/// not resolve at all: an unresolved name could resolve to an internal address
+/// by the time the gateway connects.
 pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
     let blocked = || {
         GatewayError::InvalidRequest(format!(
@@ -633,10 +634,16 @@ pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
             if domain == "localhost" || domain.ends_with(".localhost") {
                 return Err(blocked());
             }
-            match tokio::net::lookup_host((domain.as_str(), port)).await {
-                Ok(resolved) => resolved.map(|address| address.ip()).collect(),
-                Err(_) => Vec::new(),
+            let resolved: Vec<IpAddr> = tokio::net::lookup_host((domain.as_str(), port))
+                .await
+                .map(|resolved| resolved.map(|address| address.ip()).collect())
+                .unwrap_or_default();
+            if resolved.is_empty() {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "`{domain}` does not resolve; a server must reach a public address"
+                )));
             }
+            resolved
         }
         None => return Err(blocked()),
     };

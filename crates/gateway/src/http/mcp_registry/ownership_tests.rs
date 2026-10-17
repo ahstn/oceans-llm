@@ -243,7 +243,8 @@ impl TestContext {
     async fn update(&self, actor: &Actor, server_id: Uuid, extra: Value) -> (StatusCode, Value) {
         let mut body = json!({
             "display_name": "Renamed",
-            "server_url": "https://renamed.example.test/mcp",
+            // A public IP literal: team admins' URLs must resolve publicly.
+            "server_url": "https://8.8.8.8/renamed/mcp",
             "auth_mode": "none",
         });
         body.as_object_mut()
@@ -392,7 +393,8 @@ fn create_body(key: &str) -> Value {
     json!({
         "server_key": key,
         "display_name": key,
-        "server_url": format!("https://{key}.example.test/mcp"),
+        // A public IP literal: team admins' URLs must resolve publicly.
+        "server_url": format!("https://8.8.8.8/{key}/mcp"),
         "auth_mode": "none",
     })
 }
@@ -1206,6 +1208,7 @@ async fn team_admins_cannot_point_the_gateway_at_internal_addresses() {
         "https://169.254.169.254/latest",
         "https://100.100.100.200/mcp",
         "https://[fd00::1]/mcp",
+        "https://does-not-resolve.invalid/mcp",
     ]
     .into_iter()
     .enumerate()
@@ -1302,7 +1305,7 @@ async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
         .parse()
         .unwrap();
     let same = json!({
-        "server_url": "https://shared-bearer.example.test/mcp",
+        "server_url": "https://8.8.8.8/shared-bearer/mcp",
         "auth_mode": "gateway_bearer_token",
         "auth_config": secret_ref,
         "owner_contact": "#team-a",
@@ -1310,7 +1313,7 @@ async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
     let (status, response) = context.update(&admin, id, same.clone()).await;
     assert_eq!(status, StatusCode::OK, "{response}");
     let mut moved = same.clone();
-    moved["server_url"] = json!("https://elsewhere.example.test/mcp");
+    moved["server_url"] = json!("https://1.1.1.1/elsewhere/mcp");
     assert_eq!(
         context.update(&admin, id, moved).await.0,
         StatusCode::FORBIDDEN
@@ -1368,7 +1371,7 @@ async fn inherited_internal_endpoints_are_rechecked_when_the_server_moves() {
     );
     // Pointing the server elsewhere rechecks every URL it would call.
     let mut moved = kept;
-    moved["server_url"] = json!("https://attacker.example.test/mcp");
+    moved["server_url"] = json!("https://1.1.1.1/attacker/mcp");
     let (status, response) = context.update(&admin, server.mcp_server_id, moved).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
