@@ -280,3 +280,29 @@ mcp:
         "{error:#}"
     );
 }
+
+#[test]
+fn mcp_oauth_private_network_hosts_must_be_bare_domains() {
+    let config = load(
+        r#"
+mcp:
+  oauth:
+    private_network_hosts: [mcp.corp.internal, Tailnet.TS.net]
+"#,
+    )
+    .expect("valid config");
+    config.mcp.oauth.runtime().expect("runtime");
+
+    let error = load(
+        r#"
+mcp:
+  oauth:
+    private_network_hosts: ["https://mcp.corp.internal"]
+"#,
+    )
+    .expect_err("a URL is not a host");
+    assert!(
+        format!("{error:#}").contains("mcp.oauth.private_network_hosts"),
+        "{error:#}"
+    );
+}

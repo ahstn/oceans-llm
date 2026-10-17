@@ -23,8 +23,8 @@ use crate::mcp_upstream_auth::{
     McpServerOauthEndpoints, mcp_oauth_server_config, resolve_secret_ref,
 };
 use crate::outbound_fetch::{
-    DEFAULT_OUTBOUND_MAX_BODY_BYTES, DEFAULT_OUTBOUND_TIMEOUT, OutboundFetchError,
-    ScopedOutboundFetchers,
+    DEFAULT_OUTBOUND_MAX_BODY_BYTES, DEFAULT_OUTBOUND_TIMEOUT, InvalidDomainName,
+    OutboundFetchError, ScopedOutboundFetchers, normalize_domains,
 };
 
 const REFRESH_EARLY_SECONDS: i64 = 300;
@@ -173,6 +173,22 @@ impl McpOauthClient {
     }
 }
 
+fn discovery_fetchers(private_network_hosts: &[String]) -> ScopedOutboundFetchers {
+    ScopedOutboundFetchers::new(
+        DEFAULT_OUTBOUND_TIMEOUT,
+        DEFAULT_OUTBOUND_MAX_BODY_BYTES,
+        private_network_hosts,
+    )
+}
+
+fn token_fetchers(private_network_hosts: &[String]) -> ScopedOutboundFetchers {
+    ScopedOutboundFetchers::new(
+        TOKEN_REQUEST_TIMEOUT,
+        DEFAULT_OUTBOUND_MAX_BODY_BYTES,
+        private_network_hosts,
+    )
+}
+
 fn form_urlencode(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
@@ -229,16 +245,23 @@ impl McpOauthRuntime {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("default MCP OAuth HTTP client configuration must be valid"),
-            discovery_fetchers: ScopedOutboundFetchers::new(
-                DEFAULT_OUTBOUND_TIMEOUT,
-                DEFAULT_OUTBOUND_MAX_BODY_BYTES,
-            ),
-            token_fetchers: ScopedOutboundFetchers::new(
-                TOKEN_REQUEST_TIMEOUT,
-                DEFAULT_OUTBOUND_MAX_BODY_BYTES,
-            ),
+            discovery_fetchers: discovery_fetchers(&[]),
+            token_fetchers: token_fetchers(&[]),
             refresh_locks: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Lets servers on these hosts, and their subdomains, have discovery,
+    /// registration, and token requests reach private-network addresses.
+    /// Other hostnames reach public addresses only, whatever they resolve to.
+    pub fn with_private_network_hosts(
+        mut self,
+        hosts: Vec<String>,
+    ) -> Result<Self, InvalidDomainName> {
+        let hosts = normalize_domains(hosts)?;
+        self.discovery_fetchers = discovery_fetchers(&hosts);
+        self.token_fetchers = token_fetchers(&hosts);
+        Ok(self)
     }
 
     #[must_use]
@@ -318,7 +341,7 @@ impl McpOauthRuntime {
 
     /// Runs OAuth metadata discovery against an MCP server URL.
     pub async fn discover(&self, server_url: &str) -> Result<McpOauthDiscovery, GatewayError> {
-        let fetcher = self.discovery_fetchers.for_trusted_url(server_url).await;
+        let fetcher = self.discovery_fetchers.for_trusted_url(server_url);
         discover_mcp_oauth(fetcher, server_url).await
     }
 
@@ -347,7 +370,7 @@ impl McpOauthRuntime {
         let token_url = url::Url::parse(&client.token_url).map_err(|error| {
             GatewayError::InvalidRequest(format!("token_endpoint is invalid: {error}"))
         })?;
-        let fetcher = self.token_fetchers.for_trusted_url(resource).await;
+        let fetcher = self.token_fetchers.for_trusted_url(resource);
         let request = fetcher
             .request(reqwest::Method::POST, &token_url)
             .map_err(oauth_fetch_error)?;
@@ -492,9 +515,7 @@ impl McpOauthRuntime {
                 )
             })?;
         let registered = register_oauth_client(
-            self.discovery_fetchers
-                .for_trusted_url(&config.resource)
-                .await,
+            self.discovery_fetchers.for_trusted_url(&config.resource),
             registration_endpoint,
             redirect_uri,
             endpoints

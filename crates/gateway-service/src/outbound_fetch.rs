@@ -44,34 +44,31 @@ pub enum OutboundAddressScope {
 }
 
 impl OutboundAddressScope {
-    /// The scope matching an admin-entered URL: a server an admin registered
-    /// on a private network or on this host may point at others there, and a
-    /// public one may not.
-    pub async fn of_trusted_url(url: &Url) -> Self {
-        let addresses = match url.host() {
-            Some(Host::Ipv4(address)) => vec![IpAddr::V4(address)],
-            Some(Host::Ipv6(address)) => vec![IpAddr::V6(address)],
+    /// The scope for requests on behalf of the admin-entered `url`.
+    ///
+    /// Only something an admin wrote widens it, never a DNS answer, which the
+    /// server's operator controls: an IP-literal host by its own class,
+    /// `localhost` as loopback, and a host listed in `private_network_hosts`
+    /// (or a subdomain of one) as a private network. Every other host is
+    /// public, whatever it resolves to.
+    #[must_use]
+    pub fn of_trusted_url(url: &Url, private_network_hosts: &[String]) -> Self {
+        let literal = match url.host() {
+            Some(Host::Ipv4(address)) => IpAddr::V4(address),
+            Some(Host::Ipv6(address)) => IpAddr::V6(address),
             Some(Host::Domain(domain)) if domain.eq_ignore_ascii_case("localhost") => {
                 return Self::Loopback;
             }
-            Some(Host::Domain(domain)) => {
-                let port = url.port_or_known_default().unwrap_or(443);
-                match tokio::net::lookup_host((domain, port)).await {
-                    Ok(addresses) => addresses.map(|address| address.ip()).collect(),
-                    Err(_) => Vec::new(),
-                }
+            Some(Host::Domain(domain)) if host_matches_domains(domain, private_network_hosts) => {
+                return Self::PrivateNetwork;
             }
-            None => Vec::new(),
+            Some(Host::Domain(_)) | None => return Self::Public,
         };
-        addresses
-            .into_iter()
-            .filter_map(|address| match classify(address) {
-                AddressClass::Loopback => Some(Self::Loopback),
-                AddressClass::PrivateNetwork => Some(Self::PrivateNetwork),
-                AddressClass::Public | AddressClass::Blocked => None,
-            })
-            .max()
-            .unwrap_or(Self::Public)
+        match classify(literal) {
+            AddressClass::Loopback => Self::Loopback,
+            AddressClass::PrivateNetwork => Self::PrivateNetwork,
+            AddressClass::Public | AddressClass::Blocked => Self::Public,
+        }
     }
 
     fn allows(self, address: IpAddr) -> bool {
@@ -82,6 +79,48 @@ impl OutboundAddressScope {
             AddressClass::Blocked => false,
         }
     }
+}
+
+/// A configured domain entry that is not a bare domain name.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` is not a domain name; use a host such as example.com")]
+pub struct InvalidDomainName(pub String);
+
+/// Normalizes configured domain entries: lowercase, without a trailing dot,
+/// and bare (no scheme, port, path, or wildcard).
+pub fn normalize_domains(raw: Vec<String>) -> Result<Vec<String>, InvalidDomainName> {
+    raw.into_iter()
+        .map(|entry| {
+            let domain = entry.trim().trim_end_matches('.').to_ascii_lowercase();
+            let valid = !domain.is_empty()
+                && domain.split('.').all(|label| {
+                    !label.is_empty()
+                        && !label.starts_with('-')
+                        && !label.ends_with('-')
+                        && label
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                });
+            if valid {
+                Ok(domain)
+            } else {
+                Err(InvalidDomainName(entry))
+            }
+        })
+        .collect()
+}
+
+/// Whether `host` is one of `domains` or a subdomain of one. `domains` must
+/// be normalized.
+#[must_use]
+pub fn host_matches_domains(host: &str, domains: &[String]) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    domains.iter().any(|domain| {
+        host == *domain
+            || host
+                .strip_suffix(domain.as_str())
+                .is_some_and(|prefix| prefix.ends_with('.'))
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,9 +200,11 @@ fn classify_v6(address: Ipv6Addr) -> AddressClass {
         0xfc00..=0xfdff | 0xfec0..=0xfeff => AddressClass::PrivateNetwork,
         // Link-local and multicast.
         0xfe80..=0xfebf | 0xff00..=0xffff => AddressClass::Blocked,
-        // Teredo, which tunnels to an IPv4 address the guard cannot see, and
-        // documentation.
-        0x2001 if segments[1] == 0 || segments[1] == 0x0db8 => AddressClass::Blocked,
+        // IETF protocol assignments (2001::/23), which hold Teredo (tunnels
+        // to an IPv4 address the guard cannot see) and benchmarking, and the
+        // two documentation ranges (2001:db8::/32 and 3fff::/20).
+        0x2001 if segments[1] < 0x0200 || segments[1] == 0x0db8 => AddressClass::Blocked,
+        0x3fff if segments[1] < 0x1000 => AddressClass::Blocked,
         // Global unicast.
         0x2000..=0x3fff => AddressClass::Public,
         // Unspecified, the old IPv4-compatible range, discard-only, and
@@ -398,11 +439,14 @@ impl OutboundFetcher {
 #[derive(Debug, Clone)]
 pub struct ScopedOutboundFetchers {
     fetchers: Arc<[OutboundFetcher; 3]>,
+    private_network_hosts: Arc<[String]>,
 }
 
 impl ScopedOutboundFetchers {
+    /// `private_network_hosts` must be normalized, as [`normalize_domains`]
+    /// returns them.
     #[must_use]
-    pub fn new(timeout: Duration, max_body_bytes: usize) -> Self {
+    pub fn new(timeout: Duration, max_body_bytes: usize, private_network_hosts: &[String]) -> Self {
         let fetcher = |scope| OutboundFetcher::with_limits(scope, timeout, max_body_bytes);
         Self {
             fetchers: Arc::new([
@@ -410,6 +454,7 @@ impl ScopedOutboundFetchers {
                 fetcher(OutboundAddressScope::PrivateNetwork),
                 fetcher(OutboundAddressScope::Loopback),
             ]),
+            private_network_hosts: private_network_hosts.into(),
         }
     }
 
@@ -423,11 +468,13 @@ impl ScopedOutboundFetchers {
         &self.fetchers[index]
     }
 
-    /// The fetcher scoped to the admin-entered `server_url`'s address class.
-    /// An unparseable URL gets the public scope.
-    pub async fn for_trusted_url(&self, server_url: &str) -> &OutboundFetcher {
+    /// The fetcher for the admin-entered `server_url`, as
+    /// [`OutboundAddressScope::of_trusted_url`] scopes it. An unparseable URL
+    /// gets the public scope.
+    #[must_use]
+    pub fn for_trusted_url(&self, server_url: &str) -> &OutboundFetcher {
         let scope = match Url::parse(server_url) {
-            Ok(url) => OutboundAddressScope::of_trusted_url(&url).await,
+            Ok(url) => OutboundAddressScope::of_trusted_url(&url, &self.private_network_hosts),
             Err(_) => OutboundAddressScope::Public,
         };
         self.for_scope(scope)

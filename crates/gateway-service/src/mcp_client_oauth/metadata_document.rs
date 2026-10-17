@@ -20,10 +20,11 @@ use async_trait::async_trait;
 use gateway_core::{
     GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository, StoreError,
 };
-use reqwest::header::CACHE_CONTROL;
+use reqwest::header::{AGE, CACHE_CONTROL};
 use serde::Deserialize;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
+use tokio::sync::OnceCell;
 use url::{Host, Url};
 
 use super::{
@@ -34,7 +35,10 @@ use super::{
         validate_response_types,
     },
 };
-use crate::outbound_fetch::{OutboundAddressScope, OutboundFetchError, OutboundFetcher};
+use crate::outbound_fetch::{
+    InvalidDomainName, OutboundAddressScope, OutboundFetchError, OutboundFetcher,
+    host_matches_domains, normalize_domains,
+};
 
 pub const METADATA_DOCUMENT_REGISTRATION_KIND: &str = "metadata_document";
 /// Used when the response has no `Cache-Control` freshness.
@@ -50,6 +54,8 @@ const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
 pub struct FetchedDocument {
     pub status: u16,
     pub cache_control: Option<String>,
+    /// The response's `Age` in seconds: how long a cache in between held it.
+    pub age_seconds: Option<i64>,
     pub body: Vec<u8>,
 }
 
@@ -69,6 +75,11 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
             .get(CACHE_CONTROL)
             .and_then(|value| value.to_str().ok())
             .map(ToOwned::to_owned);
+        let age_seconds = response
+            .headers()
+            .get(AGE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<i64>().ok());
         let body = if status == 200 {
             response.body().await?
         } else {
@@ -77,6 +88,7 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
         Ok(FetchedDocument {
             status,
             cache_control,
+            age_seconds,
             body,
         })
     }
@@ -93,7 +105,12 @@ pub struct ClientMetadataDocuments {
     allowed_domains: Vec<String>,
     source: Arc<dyn ClientMetadataDocumentSource>,
     cache: Mutex<HashMap<String, CachedClient>>,
+    /// One refresh per client at a time: concurrent requests for a stale
+    /// document wait for the same fetch and share its result.
+    in_flight: Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
 }
+
+type RefreshOutcome = Result<GatewayOauthClientRecord, ResolveFailure>;
 
 impl fmt::Debug for ClientMetadataDocuments {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -104,14 +121,9 @@ impl fmt::Debug for ClientMetadataDocuments {
     }
 }
 
-/// An `allowed_domains` entry that is not a bare domain name.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` is not a domain name; use a host such as example.com")]
-pub struct InvalidAllowedDomain(pub String);
-
 impl ClientMetadataDocuments {
     /// Fetches over the network. An empty `allowed_domains` allows any host.
-    pub fn new(allowed_domains: Vec<String>) -> Result<Self, InvalidAllowedDomain> {
+    pub fn new(allowed_domains: Vec<String>) -> Result<Self, InvalidDomainName> {
         let fetcher = OutboundFetcher::with_limits(
             OutboundAddressScope::Public,
             FETCH_TIMEOUT,
@@ -123,15 +135,12 @@ impl ClientMetadataDocuments {
     pub fn with_source(
         allowed_domains: Vec<String>,
         source: Arc<dyn ClientMetadataDocumentSource>,
-    ) -> Result<Self, InvalidAllowedDomain> {
-        let allowed_domains = allowed_domains
-            .into_iter()
-            .map(|domain| normalize_domain(&domain).ok_or(InvalidAllowedDomain(domain)))
-            .collect::<Result<_, _>>()?;
+    ) -> Result<Self, InvalidDomainName> {
         Ok(Self {
-            allowed_domains,
+            allowed_domains: normalize_domains(allowed_domains)?,
             source,
             cache: Mutex::new(HashMap::new()),
+            in_flight: Mutex::new(HashMap::new()),
         })
     }
 
@@ -160,30 +169,63 @@ impl ClientMetadataDocuments {
         if let Some(client) = self.cached(client_id, now) {
             return Ok(client);
         }
-        let fetched = match self.fetch_and_validate(client_id, now).await {
-            Ok(fetched) => fetched,
-            Err(failure) => {
-                if (failure.transient || stored_fallback)
-                    && let Some(stored) = stored_client(repo, client_id).await?
-                {
-                    tracing::warn!(
-                        client_id,
-                        error = %failure.error.description,
-                        "using the stored copy of an unavailable client metadata document"
-                    );
-                    return Ok(stored);
-                }
-                return Err(failure.error);
+        let flight = self
+            .in_flight
+            .lock()
+            .expect("metadata document flight lock")
+            .entry(client_id.to_string())
+            .or_default()
+            .clone();
+        let outcome = flight
+            .get_or_init(|| self.refresh(repo, client_id, now))
+            .await
+            .clone();
+        {
+            let mut in_flight = self
+                .in_flight
+                .lock()
+                .expect("metadata document flight lock");
+            if in_flight
+                .get(client_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &flight))
+            {
+                in_flight.remove(client_id);
             }
+        }
+        let failure = match outcome {
+            Ok(client) => return Ok(client),
+            Err(failure) => failure,
         };
+        if (failure.transient || stored_fallback)
+            && let Some(stored) = stored_client(repo, client_id).await?
+        {
+            tracing::warn!(
+                client_id,
+                error = %failure.error.description,
+                "using the stored copy of an unavailable client metadata document"
+            );
+            return Ok(stored);
+        }
+        Err(failure.error)
+    }
+
+    /// Fetches, validates, and stores the document, and caches it for as
+    /// long as its headers allow.
+    async fn refresh<R>(&self, repo: &R, client_id: &str, now: OffsetDateTime) -> RefreshOutcome
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        let fetched = self.fetch_and_validate(client_id, now).await?;
         let stored = repo
             .upsert_gateway_oauth_metadata_document_client(&fetched.client)
             .await
-            .map_err(|error| match error {
-                StoreError::Conflict(_) => {
-                    OauthError::invalid_client("client_id is already registered another way")
-                }
-                error => error.into(),
+            .map_err(|error| {
+                ResolveFailure::permanent(match error {
+                    StoreError::Conflict(_) => {
+                        OauthError::invalid_client("client_id is already registered another way")
+                    }
+                    error => error.into(),
+                })
             })?;
         if fetched.ttl > Duration::ZERO {
             self.remember(stored.clone(), now, now + fetched.ttl);
@@ -264,14 +306,15 @@ impl ClientMetadataDocuments {
                     "client metadata document returned HTTP {}",
                     fetched.status
                 )),
-                transient: fetched.status >= 500,
+                // Rate limiting passes like an outage does.
+                transient: fetched.status == 429 || fetched.status >= 500,
             });
         }
         let client =
             validate_document(client_id, &fetched.body, now).map_err(ResolveFailure::permanent)?;
         Ok(ValidatedDocument {
             client,
-            ttl: cache_ttl(fetched.cache_control.as_deref()),
+            ttl: cache_ttl(fetched.cache_control.as_deref(), fetched.age_seconds),
         })
     }
 
@@ -282,13 +325,7 @@ impl ClientMetadataDocuments {
         let Some(Host::Domain(host)) = url.host() else {
             return false;
         };
-        let host = host.to_ascii_lowercase();
-        self.allowed_domains.iter().any(|domain| {
-            host == *domain
-                || host
-                    .strip_suffix(domain.as_str())
-                    .is_some_and(|prefix| prefix.ends_with('.'))
-        })
+        host_matches_domains(host, &self.allowed_domains)
     }
 }
 
@@ -297,6 +334,7 @@ struct ValidatedDocument {
     ttl: Duration,
 }
 
+#[derive(Clone)]
 struct ResolveFailure {
     error: OauthError,
     transient: bool,
@@ -345,9 +383,9 @@ pub fn metadata_document_host(client: &GatewayOauthClientRecord) -> Option<Strin
 }
 
 /// The client ID rules of the metadata document draft: https, a path, and no
-/// fragment, user information, or dot segments. It must also be in canonical
-/// form, so the URL fetched, the `client_id` compared, and the stored key are
-/// the same string.
+/// fragment, user information, or dot segments. The `client_id` string itself
+/// is what the document must repeat and what is stored, so forms the URL
+/// parser would rewrite (such as an explicit `:443`) stay distinct clients.
 fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     let invalid = |reason: &str| {
         OauthError::invalid_client(format!(
@@ -356,6 +394,32 @@ fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     };
     if client_id.len() > MAX_URI_LENGTH {
         return Err(invalid("it is too long"));
+    }
+    let Some(rest) = client_id.strip_prefix("https://") else {
+        return Err(invalid("it must use https"));
+    };
+    if client_id
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control() || character == '\\')
+    {
+        return Err(invalid(
+            "it must not contain whitespace, control characters, or backslashes",
+        ));
+    }
+    // The parser removes dot segments, including percent-encoded ones, so
+    // look for them in the string as sent.
+    let path = rest
+        .split(['?', '#'])
+        .next()
+        .and_then(|authority_and_path| authority_and_path.split_once('/'))
+        .map_or("", |(_, path)| path);
+    if path.split('/').any(|segment| {
+        matches!(
+            segment.to_ascii_lowercase().as_str(),
+            "." | ".." | "%2e" | "%2e%2e" | ".%2e" | "%2e."
+        )
+    }) {
+        return Err(invalid("it must not contain dot segments"));
     }
     let url = Url::parse(client_id).map_err(|_| invalid("it is not an absolute URL"))?;
     if url.scheme() != "https" || url.host().is_none() {
@@ -369,11 +433,6 @@ fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     }
     if url.path() == "/" {
         return Err(invalid("it must include a path"));
-    }
-    if url.as_str() != client_id {
-        return Err(invalid(
-            "it must be in canonical form, without dot segments",
-        ));
     }
     Ok(url)
 }
@@ -457,9 +516,10 @@ fn validate_document(
 }
 
 /// How long a document stays fresh. `no-store`, `no-cache`, and `max-age=0`
-/// mean fetching it each time; otherwise `max-age` applies, capped at
-/// [`MAX_CACHE_TTL`]. `Expires` is not read.
-fn cache_ttl(cache_control: Option<&str>) -> Duration {
+/// mean fetching it each time; otherwise `max-age` applies, less the time a
+/// cache in between already held it (`Age`), capped at [`MAX_CACHE_TTL`].
+/// `Expires` is not read.
+fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration {
     let Some(cache_control) = cache_control else {
         return DEFAULT_CACHE_TTL;
     };
@@ -474,23 +534,9 @@ fn cache_ttl(cache_control: Option<&str>) -> Duration {
         }
     }
     max_age.map_or(DEFAULT_CACHE_TTL, |seconds| {
-        Duration::seconds(seconds.max(0)).min(MAX_CACHE_TTL)
+        let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
+        Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
     })
-}
-
-/// A bare, lowercase domain: no scheme, port, path, or wildcard.
-fn normalize_domain(raw: &str) -> Option<String> {
-    let domain = raw.trim().trim_end_matches('.').to_ascii_lowercase();
-    let valid = !domain.is_empty()
-        && domain.split('.').all(|label| {
-            !label.is_empty()
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        });
-    valid.then_some(domain)
 }
 
 #[cfg(test)]

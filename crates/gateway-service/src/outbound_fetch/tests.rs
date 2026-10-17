@@ -28,6 +28,7 @@ fn addresses_are_classified_by_range() {
         "93.184.215.14",
         "1.1.1.1",
         "2606:4700:4700::1111",
+        "2001:4860:4860::8888",
         "172.32.0.1",
     ] {
         assert_eq!(classify(address(public)), AddressClass::Public, "{public}");
@@ -67,6 +68,11 @@ fn addresses_are_classified_by_range() {
         "fe80::1",
         "ff02::1",
         "2001:db8::1",
+        // IETF protocol assignments: Teredo and benchmarking.
+        "2001::1",
+        "2001:2::1",
+        // The newer documentation range.
+        "3fff::1",
         // Mapped, NAT64, and 6to4 forms of the metadata address.
         "::ffff:169.254.169.254",
         "64:ff9b::a9fe:a9fe",
@@ -232,27 +238,84 @@ async fn slow_servers_time_out() {
     assert!(error.is_transient(), "{error:?}");
 }
 
-#[tokio::test]
-async fn trusted_urls_set_the_scope_by_their_own_address() {
+#[test]
+fn only_what_an_admin_wrote_widens_the_scope() {
+    let private = normalize_domains(vec!["Corp.Internal.".into(), "mcp.tailnet.ts.net".into()])
+        .expect("domains");
+    let scope = |raw: &str| OutboundAddressScope::of_trusted_url(&url(raw), &private);
     assert_eq!(
-        OutboundAddressScope::of_trusted_url(&url("http://127.0.0.1:9000/mcp")).await,
+        scope("http://127.0.0.1:9000/mcp"),
         OutboundAddressScope::Loopback
     );
     assert_eq!(
-        OutboundAddressScope::of_trusted_url(&url("https://localhost/mcp")).await,
+        scope("https://localhost/mcp"),
         OutboundAddressScope::Loopback
     );
     assert_eq!(
-        OutboundAddressScope::of_trusted_url(&url("https://10.2.3.4/mcp")).await,
+        scope("https://10.2.3.4/mcp"),
         OutboundAddressScope::PrivateNetwork
     );
     assert_eq!(
-        OutboundAddressScope::of_trusted_url(&url("https://93.184.215.14/mcp")).await,
+        scope("https://93.184.215.14/mcp"),
         OutboundAddressScope::Public
     );
     // A metadata address grants nothing beyond public.
     assert_eq!(
-        OutboundAddressScope::of_trusted_url(&url("https://169.254.169.254/")).await,
+        scope("https://169.254.169.254/"),
         OutboundAddressScope::Public
     );
+    // Listed hosts and their subdomains are private; nothing else is, and a
+    // listed host is never loopback, whatever it resolves to.
+    assert_eq!(
+        scope("https://corp.internal/mcp"),
+        OutboundAddressScope::PrivateNetwork
+    );
+    assert_eq!(
+        scope("https://mcp.CORP.internal/mcp"),
+        OutboundAddressScope::PrivateNetwork
+    );
+    assert_eq!(
+        scope("https://mcp.tailnet.ts.net/mcp"),
+        OutboundAddressScope::PrivateNetwork
+    );
+    assert_eq!(
+        scope("https://other.tailnet.ts.net/mcp"),
+        OutboundAddressScope::Public
+    );
+    assert_eq!(
+        scope("https://evilcorp.internal/mcp"),
+        OutboundAddressScope::Public
+    );
+    // An unlisted name is public even when it resolves to loopback, so no DNS
+    // answer can widen it.
+    assert_eq!(
+        OutboundAddressScope::of_trusted_url(&url("https://localhost.localdomain/mcp"), &[]),
+        OutboundAddressScope::Public
+    );
+}
+
+#[test]
+fn configured_domains_must_be_bare_names() {
+    assert_eq!(
+        normalize_domains(vec![" Example.COM. ".into()]).unwrap(),
+        ["example.com"]
+    );
+    for invalid in [
+        "https://example.com",
+        "*.example.com",
+        "example.com/x",
+        "",
+        "-a.com",
+        "a..b",
+    ] {
+        assert!(
+            normalize_domains(vec![invalid.into()]).is_err(),
+            "{invalid}"
+        );
+    }
+    let domains = normalize_domains(vec!["example.com".into()]).unwrap();
+    assert!(host_matches_domains("a.b.example.com", &domains));
+    assert!(host_matches_domains("EXAMPLE.com.", &domains));
+    assert!(!host_matches_domains("badexample.com", &domains));
+    assert!(!host_matches_domains("example.com.evil.net", &domains));
 }

@@ -34,6 +34,8 @@ const CLIENT_ID: &str = "https://editor.example.com/oauth/client.json";
 struct Fixture {
     documents: Mutex<HashMap<String, FetchedDocument>>,
     fetches: AtomicUsize,
+    /// Holds each fetch open this long, so concurrent requests overlap.
+    delay_ms: AtomicUsize,
 }
 
 impl Fixture {
@@ -43,7 +45,20 @@ impl Fixture {
             FetchedDocument {
                 status: 200,
                 cache_control: cache_control.map(ToOwned::to_owned),
+                age_seconds: None,
                 body: serde_json::to_vec(document).unwrap(),
+            },
+        );
+    }
+
+    fn respond(&self, url: &str, status: u16) {
+        self.documents.lock().unwrap().insert(
+            url.to_string(),
+            FetchedDocument {
+                status,
+                cache_control: Some("no-store".to_string()),
+                age_seconds: None,
+                body: Vec::new(),
             },
         );
     }
@@ -57,6 +72,10 @@ impl Fixture {
 impl ClientMetadataDocumentSource for Fixture {
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
+        let delay = self.delay_ms.load(Ordering::SeqCst) as u64;
+        if delay > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
         Ok(self
             .documents
             .lock()
@@ -66,6 +85,7 @@ impl ClientMetadataDocumentSource for Fixture {
             .unwrap_or(FetchedDocument {
                 status: 404,
                 cache_control: None,
+                age_seconds: None,
                 body: Vec::new(),
             }))
     }
@@ -278,6 +298,39 @@ async fn documents_are_cached_as_their_headers_allow() {
     let request_id = harness.start(&harness.authorize_query(uncached, &[])).await;
     let (_, view) = harness.consent(&request_id).await;
     assert_eq!(view["client_name"], "Renamed Editor");
+}
+
+#[tokio::test]
+async fn concurrent_requests_share_one_fetch() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    // Uncacheable, so only coalescing keeps this to one fetch.
+    fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
+    fixture.delay_ms.store(200, Ordering::SeqCst);
+    let query = harness.authorize_query(CLIENT_ID, &[]);
+    let starts = (0..5).map(|_| harness.authorize(&query));
+    for (status, _) in futures_util::future::join_all(starts).await {
+        assert_eq!(status, StatusCode::SEE_OTHER);
+    }
+    assert_eq!(fixture.fetches(), 1);
+}
+
+#[tokio::test]
+async fn rate_limited_documents_fall_back_to_the_stored_client() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
+    harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    // The host now rate limits; the stored copy carries on.
+    fixture.respond(CLIENT_ID, 429);
+    harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    // A missing document is not passing, so it refuses the client.
+    fixture.respond(CLIENT_ID, 404);
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(page.contains("HTTP 404"), "{page}");
 }
 
 #[tokio::test]

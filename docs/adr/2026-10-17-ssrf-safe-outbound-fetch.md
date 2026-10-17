@@ -36,7 +36,7 @@ No scope reaches:
 
 - link-local addresses (`169.254.0.0/16`, `fe80::/10`), where AWS, GCP, Azure, and Oracle serve instance metadata
 - the metadata addresses outside that range: `100.100.100.200` (Alibaba), `168.63.129.16` (Azure WireServer), and `fd00:ec2::254` (AWS over IPv6)
-- unspecified, broadcast, multicast, documentation, benchmarking, and reserved ranges, and Teredo
+- unspecified, broadcast, multicast, documentation, benchmarking, and reserved ranges, including the IPv6 IETF protocol assignments `2001::/23` (Teredo, benchmarking) and the IPv6 documentation ranges `2001:db8::/32` and `3fff::/20`
 
 IPv6 forms that embed an IPv4 address (mapped `::ffff:0:0/96`, NAT64 `64:ff9b::/96`, and 6to4 `2002::/16`) are judged by the embedded address. Mapped `::ffff:169.254.169.254` is therefore blocked, as is 6to4 `2002:a9fe:a9fe::`.
 
@@ -55,14 +55,20 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 ### 4. How each feature picks a scope
 
 - **Client ID Metadata Documents** always use `Public`, with a 5 second timeout and a 64 KiB limit. The URL comes from an unauthenticated caller.
-- **Upstream discovery, dynamic registration, and token requests** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. That function resolves the server's host and picks `Loopback`, `PrivateNetwork`, or `Public` to match its address. An admin who registers a server on a private network has already chosen to trust that network, and its authorization server often lives there too. A public server cannot point the gateway at private or loopback addresses. Registration, code exchange, and refresh use the scope of the server's saved `resource` URL. Token requests keep their 60 second timeout and read at most 256 KiB.
+- **Upstream discovery, dynamic registration, and token requests** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. Only what an admin wrote can widen it, never a DNS answer, which the server's operator controls:
+  - an IP-literal host takes its own class: `Loopback` for `127.0.0.1`, `PrivateNetwork` for `10.0.0.5`
+  - `localhost` is `Loopback`
+  - a host listed in `mcp.oauth.private_network_hosts`, or a subdomain of one, is `PrivateNetwork`
+  - every other host is `Public`, whatever it resolves to
+
+  An earlier version picked the scope by resolving the server's name. A hostile server could then answer that lookup with a private address, or mix public and private answers, and widen its own scope. An admin who lists a host has chosen to trust that network, and its authorization server often lives there too. A server registered by any other name cannot point the gateway at private or loopback addresses, and discovery against it says to list the host when it is internal. Registration, code exchange, and refresh use the scope of the server's saved `resource` URL. Token requests keep their 60 second timeout and read at most 256 KiB.
 - **Configured providers** under `mcp.oauth.providers` keep the plain HTTP client for their token requests. Their endpoints are gateway configuration, not values an upstream supplied.
 
 ## Trade-offs
 
 - A gateway that reaches the internet only through an HTTP proxy cannot fetch metadata documents or run discovery against public servers. Following a proxy would hand resolution to it and lose the address check.
-- Scoping discovery by the admin-entered server keeps internal deployments working, but an internal server can still point discovery at other internal hosts on the same class of network. Link-local and metadata addresses stay blocked for it.
-- Each lookup happens twice when the scope is derived from the server URL: once to pick the scope, once in the resolver. Discovery, registration, and token requests are occasional, at most one refresh per access-token lifetime, so this costs little.
+- A server on a private network registered by hostname needs its host in `mcp.oauth.private_network_hosts` before discovery works. That is one more setting, in exchange for no DNS answer deciding trust.
+- A listed internal server can still point discovery at other internal hosts on any private network. Link-local and metadata addresses stay blocked for it.
 - A server-level OAuth client whose token endpoint sits on a more private network than its MCP server, such as a public server with an internal identity provider, cannot exchange or refresh tokens. Discovery would already have refused that authorization server. Such a deployment can configure the identity provider under `mcp.oauth.providers` instead.
 - The classification table is maintained by hand. New special-purpose ranges need adding as they are assigned.
 

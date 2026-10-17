@@ -555,8 +555,19 @@ async fn read_body(url: &Url, response: OutboundResponse) -> Result<Vec<u8>, Gat
 
 fn fetch_error(url: &Url, error: &OutboundFetchError) -> GatewayError {
     GatewayError::InvalidRequest(format!(
-        "OAuth metadata at {url} cannot be fetched: {error}"
+        "OAuth metadata at {url} cannot be fetched: {error}{}",
+        private_network_hint(error)
     ))
+}
+
+/// A blocked address is usually an internal server the admin has not listed
+/// as private, so say how to allow it.
+fn private_network_hint(error: &OutboundFetchError) -> &'static str {
+    if matches!(error, OutboundFetchError::BlockedAddress { .. }) {
+        ". If the MCP server runs on a private network, list its host under mcp.oauth.private_network_hosts"
+    } else {
+        ""
+    }
 }
 
 /// A client issued by RFC 7591 dynamic client registration.
@@ -619,7 +630,10 @@ pub async fn register_oauth_client(
         GatewayError::InvalidRequest(format!("registration_endpoint is invalid: {error}"))
     })?;
     let registration_failed = |error: OutboundFetchError| {
-        GatewayError::InvalidRequest(format!("dynamic client registration failed: {error}"))
+        GatewayError::InvalidRequest(format!(
+            "dynamic client registration failed: {error}{}",
+            private_network_hint(&error)
+        ))
     };
     let request = http
         .request(Method::POST, &endpoint)

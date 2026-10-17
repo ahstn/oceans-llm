@@ -112,20 +112,31 @@ fn documents_follow_the_registration_rules() {
 }
 
 #[test]
-fn client_ids_must_be_canonical_https_urls_with_a_path() {
+fn client_ids_follow_the_draft_rules_as_sent() {
     assert!(parse_client_id_url(CLIENT_ID).is_ok());
     assert!(parse_client_id_url("https://editor.example.com/client?v=2").is_ok());
+    // Forms the URL parser rewrites are valid, distinct client IDs.
+    for raw in [
+        "https://editor.example.com:443/client",
+        "https://EDITOR.example.com/client",
+        "https://editor.example.com:8443/client",
+    ] {
+        assert!(parse_client_id_url(raw).is_ok(), "{raw}");
+    }
     for (raw, reason) in [
         ("https://editor.example.com", "path"),
         ("https://editor.example.com/", "path"),
         ("http://editor.example.com/client", "https"),
+        ("https:editor.example.com/client", "https"),
+        ("HTTPS://editor.example.com/client", "https"),
         ("https://user@editor.example.com/client", "user information"),
         ("https://editor.example.com/client#x", "fragment"),
-        ("https://editor.example.com/a/../client", "canonical"),
-        ("https://editor.example.com/./client", "canonical"),
-        ("https://EDITOR.example.com/client", "canonical"),
-        ("https://editor.example.com:443/client", "canonical"),
-        ("https:editor.example.com/client", "canonical"),
+        ("https://editor.example.com/a/../client", "dot segments"),
+        ("https://editor.example.com/./client", "dot segments"),
+        ("https://editor.example.com/a/%2E%2e/client", "dot segments"),
+        ("https://editor.example.com/a/.%2e/client", "dot segments"),
+        ("https://editor.example.com/a\\..\\client", "backslashes"),
+        ("https://editor.example.com/a b", "whitespace"),
     ] {
         let error = parse_client_id_url(raw).unwrap_err();
         assert_eq!(error.error, "invalid_client", "{raw}");
@@ -145,18 +156,34 @@ fn client_ids_must_be_canonical_https_urls_with_a_path() {
 
 #[test]
 fn cache_headers_set_freshness_within_bounds() {
-    assert_eq!(cache_ttl(None), DEFAULT_CACHE_TTL);
-    assert_eq!(cache_ttl(Some("public")), DEFAULT_CACHE_TTL);
+    assert_eq!(cache_ttl(None, None), DEFAULT_CACHE_TTL);
+    assert_eq!(cache_ttl(Some("public"), None), DEFAULT_CACHE_TTL);
     assert_eq!(
-        cache_ttl(Some("public, max-age=120")),
+        cache_ttl(Some("public, max-age=120"), None),
         Duration::seconds(120)
     );
-    assert_eq!(cache_ttl(Some("Max-Age=\"60\"")), Duration::seconds(60));
-    assert_eq!(cache_ttl(Some("max-age=31536000")), MAX_CACHE_TTL);
-    assert_eq!(cache_ttl(Some("max-age=0")), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("max-age=600, no-cache")), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("no-store")), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("max-age=nonsense")), DEFAULT_CACHE_TTL);
+    assert_eq!(
+        cache_ttl(Some("Max-Age=\"60\""), None),
+        Duration::seconds(60)
+    );
+    assert_eq!(cache_ttl(Some("max-age=31536000"), None), MAX_CACHE_TTL);
+    assert_eq!(cache_ttl(Some("max-age=0"), None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=600, no-cache"), None),
+        Duration::ZERO
+    );
+    assert_eq!(cache_ttl(Some("no-store"), None), Duration::ZERO);
+    assert_eq!(cache_ttl(Some("max-age=nonsense"), None), DEFAULT_CACHE_TTL);
+    // A cache in between already used part of the lifetime.
+    assert_eq!(
+        cache_ttl(Some("max-age=86400"), Some(86_390)),
+        Duration::seconds(10)
+    );
+    assert_eq!(cache_ttl(Some("max-age=60"), Some(600)), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=60"), Some(-5)),
+        Duration::seconds(60)
+    );
 }
 
 struct Unreachable;

@@ -629,6 +629,8 @@ mcp:
         client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
 ```
 
+`private_network_hosts` lists the hosts of MCP servers on a private network, such as `mcp.corp.internal` or a tailnet name. Each entry also covers its subdomains. OAuth discovery, registration, and token requests for those servers may reach private-network addresses. Every other hostname reaches public addresses only, whatever it resolves to; a server entered by IP address or as `localhost` uses that address's own kind. Entries are bare domains, without a scheme, port, or wildcard.
+
 `public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks, without a path, query, fragment, or user information. Google is the first supported provider type. Its authorization and token endpoints are fixed to the official Google endpoints. The optional endpoint fields accept only those fixed values. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
 
 `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.

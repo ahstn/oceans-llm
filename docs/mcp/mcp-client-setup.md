@@ -126,9 +126,9 @@ A client that uses a metadata document passes its URL, such as `https://editor.e
 - `client_id` in the document must equal the URL exactly.
 - `client_name` and `redirect_uris` are required. Redirect URIs follow the registration rules: HTTPS, or `http` on `localhost`, `127.0.0.1`, or `[::1]`, with no fragment.
 - `token_endpoint_auth_method` must be `none` or left out, and the document must not contain a client secret.
-- The URL must be HTTPS with a path, in canonical form, with no fragment or user information.
+- The URL must be HTTPS with a path, with no fragment, user information, or dot segments. Oceans compares it as sent, so `https://editor.example.com:443/client.json` and `https://editor.example.com/client.json` are different clients.
 
-Oceans fetches documents only from public addresses. It refuses hosts that are, or resolve to, private, loopback, link-local, or cloud metadata addresses, and it does not follow redirects. A fetch has 5 seconds and 64 KiB. Oceans keeps a document for as long as its `Cache-Control` allows, up to 24 hours, or 10 minutes without one. It checks the document again when the client exchanges a code, refreshes, or revokes, so a removed document stops new sign-ins and refreshes once the cached copy expires.
+Oceans fetches documents only from public addresses. It refuses hosts that are, or resolve to, private, loopback, link-local, or cloud metadata addresses, and it does not follow redirects. A fetch has 5 seconds and 64 KiB. Oceans keeps a document for as long as its `Cache-Control` allows, less any `Age` a cache added, up to 24 hours, or 10 minutes without one. It checks the document again when the client exchanges a code, refreshes, or revokes, so a removed document stops new sign-ins and refreshes once the cached copy expires.
 
 The consent page shows the host that published the document, marked `Unverified`. Oceans checked only that this host serves the document, not who runs the client. A platform admin can limit which hosts may publish documents, or turn them off, under `mcp.client_oauth.client_id_metadata_documents` in the [configuration reference](../configuration/configuration-reference.md).
 

@@ -22,7 +22,7 @@ pub use authorization::{AuthorizationParams, AuthorizationRejection, PendingAuth
 pub use authorized_clients::{AuthorizedClients, MAX_LISTED_AUTHORIZED_CLIENTS};
 pub use error::OauthError;
 pub use metadata_document::{
-    ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument, InvalidAllowedDomain,
+    ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument,
     is_metadata_document_client_id,
 };
 pub use registration::{ClientRegistrationRequest, ClientRegistrationResponse};
