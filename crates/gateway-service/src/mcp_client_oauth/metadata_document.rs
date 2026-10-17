@@ -521,11 +521,12 @@ fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     }
     // The parser removes dot segments, including percent-encoded ones, so
     // look for them in the string as sent.
-    let path = rest
-        .split(['?', '#'])
-        .next()
-        .and_then(|authority_and_path| authority_and_path.split_once('/'))
-        .map_or("", |(_, path)| path);
+    let authority_and_path = rest.split(['?', '#']).next().unwrap_or_default();
+    // A path is required. `/` alone is valid, though the draft advises
+    // against it.
+    let Some((_, path)) = authority_and_path.split_once('/') else {
+        return Err(invalid("it must include a path"));
+    };
     if path.split('/').any(|segment| {
         matches!(
             segment.to_ascii_lowercase().as_str(),
@@ -543,9 +544,6 @@ fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     }
     if url.fragment().is_some() {
         return Err(invalid("it must not include a fragment"));
-    }
-    if url.path() == "/" {
-        return Err(invalid("it must include a path"));
     }
     Ok(url)
 }
@@ -628,49 +626,60 @@ fn validate_document(
     })
 }
 
-/// How long a document stays fresh. `no-store`, `no-cache`, and `max-age=0`
-/// mean fetching it each time; otherwise `max-age` applies, less the time a
-/// cache in between already held it (`Age`), capped at [`MAX_CACHE_TTL`].
-/// A malformed or repeated `max-age` makes the response stale (RFC 9111
-/// §4.2.1). `Expires` is not read.
+/// How long a document stays fresh, read as a shared cache would (RFC 9111),
+/// since one copy serves every user of this process.
+///
+/// `no-store`, `no-cache`, and `private` mean fetching it each time.
+/// Otherwise `s-maxage` applies, or else `max-age`, less the time a cache in
+/// between already held it (`Age`), capped at [`MAX_CACHE_TTL`]. A malformed
+/// or repeated value makes the response stale (RFC 9111 §4.2.1). `Expires` is
+/// not read.
 fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration {
     let Some(cache_control) = cache_control else {
         return DEFAULT_CACHE_TTL;
     };
     let mut max_age = None;
+    let mut s_maxage = None;
     for directive in cache_control.split(',') {
         let directive = directive.trim().to_ascii_lowercase();
-        if directive == "no-store" || directive == "no-cache" {
+        if matches!(directive.as_str(), "no-store" | "no-cache" | "private") {
             return Duration::ZERO;
         }
-        if let Some(raw) = directive.strip_prefix("max-age=") {
-            // One optional pair of quotes around ASCII digits, nothing else.
-            let unquoted = raw
-                .strip_prefix('"')
-                .and_then(|value| value.strip_suffix('"'))
-                .unwrap_or(raw);
-            let Some(seconds) = delta_seconds(unquoted) else {
-                return Duration::ZERO;
-            };
-            if max_age.replace(seconds).is_some() {
-                return Duration::ZERO;
-            }
+        let (slot, raw) = if let Some(raw) = directive.strip_prefix("s-maxage=") {
+            (&mut s_maxage, raw)
+        } else if let Some(raw) = directive.strip_prefix("max-age=") {
+            (&mut max_age, raw)
+        } else {
+            continue;
+        };
+        // One optional pair of quotes around ASCII digits, nothing else.
+        let unquoted = raw
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(raw);
+        let Some(seconds) = delta_seconds(unquoted) else {
+            return Duration::ZERO;
+        };
+        if slot.replace(seconds).is_some() {
+            return Duration::ZERO;
         }
     }
-    max_age.map_or(DEFAULT_CACHE_TTL, |seconds| {
+    s_maxage.or(max_age).map_or(DEFAULT_CACHE_TTL, |seconds| {
         let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
         Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
     })
 }
 
-/// Whether the document forbids reuse once stale without a successful fetch
-/// (`must-revalidate`, or `proxy-revalidate` from a cache in between).
+/// Whether the document forbids reuse once stale without a successful fetch:
+/// `must-revalidate`, `proxy-revalidate`, or `s-maxage`, which implies
+/// `proxy-revalidate` for a shared cache.
 fn must_revalidate(cache_control: Option<&str>) -> bool {
     cache_control.is_some_and(|value| {
         value.split(',').any(|directive| {
-            let directive = directive.trim();
-            directive.eq_ignore_ascii_case("must-revalidate")
-                || directive.eq_ignore_ascii_case("proxy-revalidate")
+            let directive = directive.trim().to_ascii_lowercase();
+            directive == "must-revalidate"
+                || directive == "proxy-revalidate"
+                || directive.starts_with("s-maxage=")
         })
     })
 }

@@ -120,12 +120,14 @@ fn client_ids_follow_the_draft_rules_as_sent() {
         "https://editor.example.com:443/client",
         "https://EDITOR.example.com/client",
         "https://editor.example.com:8443/client",
+        // A root path is valid, though the draft advises against it.
+        "https://editor.example.com/",
     ] {
         assert!(parse_client_id_url(raw).is_ok(), "{raw}");
     }
     for (raw, reason) in [
         ("https://editor.example.com", "path"),
-        ("https://editor.example.com/", "path"),
+        ("https://editor.example.com?x=1", "path"),
         ("http://editor.example.com/client", "https"),
         ("https:editor.example.com/client", "https"),
         ("HTTPS://editor.example.com/client", "https"),
@@ -173,6 +175,23 @@ fn cache_headers_set_freshness_within_bounds() {
         Duration::ZERO
     );
     assert_eq!(cache_ttl(Some("no-store"), None), Duration::ZERO);
+    // One copy serves every user, so it is read as a shared cache would.
+    assert_eq!(
+        cache_ttl(Some("s-maxage=0, max-age=86400"), None),
+        Duration::ZERO
+    );
+    assert_eq!(
+        cache_ttl(Some("max-age=0, s-maxage=120"), None),
+        Duration::seconds(120)
+    );
+    assert_eq!(
+        cache_ttl(Some("private, max-age=600"), None),
+        Duration::ZERO
+    );
+    assert_eq!(
+        cache_ttl(Some("s-maxage=60, s-maxage=600"), None),
+        Duration::ZERO
+    );
     // Invalid or conflicting freshness is treated as stale.
     assert_eq!(cache_ttl(Some("max-age=nonsense"), None), Duration::ZERO);
     assert_eq!(cache_ttl(Some("max-age=+86400"), None), Duration::ZERO);
@@ -246,6 +265,7 @@ fn the_domain_allowlist_matches_hosts_and_their_subdomains() {
 fn must_revalidate_forbids_stale_reuse() {
     assert!(must_revalidate(Some("max-age=60, must-revalidate")));
     assert!(must_revalidate(Some("Proxy-Revalidate")));
+    assert!(must_revalidate(Some("S-MaxAge=60, max-age=600")));
     assert!(!must_revalidate(Some("max-age=60")));
     assert!(!must_revalidate(None));
 }
