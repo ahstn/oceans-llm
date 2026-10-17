@@ -17,11 +17,13 @@ const sharedPages = [
   'service_accounts',
 ]
 
-// Team admins also get Spend Controls by default, scoped to their own team. The stack
-// leaves agent analysis off for team admins, so `agent_sessions` is filtered out.
+// Team admins also get MCP and Spend Controls by default, both scoped to their own
+// team. The stack leaves agent analysis off for team admins, so `agent_sessions`
+// is filtered out.
 const teamAdminPages = [
   'api_keys',
   'models',
+  'mcp',
   'usage_costs',
   'spend_controls',
   'leaderboard',
