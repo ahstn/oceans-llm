@@ -17747,6 +17747,13 @@
           "client_id": {
             "type": "string"
           },
+          "client_metadata_host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the client identifies itself with a Client ID Metadata\nDocument: the host that published it. The gateway checked only that\nthis host serves the document, not who the client is, so the consent\nscreen shows the host and marks the client unverified."
+          },
           "client_name": {
             "type": [
               "string",

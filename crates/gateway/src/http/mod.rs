@@ -131,7 +131,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             request_policy::request_policy,
-        ));
+        ))
+        .layer(mcp_client_oauth::mcp_transport_cors());
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -505,33 +506,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
         .merge(skills::router())
-        .route(
-            "/.well-known/oauth-protected-resource/mcp",
-            get(oauth_protected_resource_metadata_aggregate),
-        )
-        .route(
-            "/.well-known/oauth-protected-resource/mcp/{server_key}",
-            get(oauth_protected_resource_metadata_server),
-        )
-        .route(
-            "/.well-known/oauth-authorization-server",
-            get(oauth_authorization_server_metadata),
-        )
+        .merge(mcp_client_oauth::public_router())
         .route("/oauth/authorize", get(oauth_authorize))
-        .route(
-            "/oauth/token",
-            post(oauth_token).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
-        )
-        .route(
-            "/oauth/revoke",
-            post(oauth_revoke).layer(DefaultBodyLimit::max(mcp_client_oauth::MAX_FORM_BODY_BYTES)),
-        )
-        .route(
-            "/oauth/register",
-            post(oauth_register).layer(DefaultBodyLimit::max(
-                mcp_client_oauth::MAX_REGISTRATION_BODY_BYTES,
-            )),
-        )
         .route(
             "/api/v1/oauth/authorization-requests/{request_id}",
             get(get_oauth_authorization_request),

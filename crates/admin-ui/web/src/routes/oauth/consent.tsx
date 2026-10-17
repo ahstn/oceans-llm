@@ -117,6 +117,18 @@ function ConsentCard({
                 <span className="font-mono break-all">{request.client_id}</span>
               </span>
             </dd>
+            {request.client_metadata_host ? (
+              <>
+                <dt className="text-muted-foreground">Published by</dt>
+                <dd
+                  className="flex min-w-0 flex-wrap items-center gap-2"
+                  data-testid="client-metadata-host"
+                >
+                  <span className="font-mono break-all">{request.client_metadata_host}</span>
+                  <Badge variant="warning">Unverified</Badge>
+                </dd>
+              </>
+            ) : null}
             <dt className="text-muted-foreground">Returns to</dt>
             <dd className="flex min-w-0 flex-wrap items-center gap-2" data-testid="redirect-host">
               <span className="font-mono break-all">{request.redirect_host}</span>
@@ -142,6 +154,17 @@ function ConsentCard({
               </ul>
             </dd>
           </dl>
+
+          {request.client_metadata_host ? (
+            <Alert data-testid="unverified-client-note">
+              <AlertTitle>Oceans has not verified this client</AlertTitle>
+              <AlertDescription>
+                Its name and details come from {request.client_metadata_host}. Oceans checked that
+                this site publishes them, not who runs it. Only continue if you trust{' '}
+                {request.client_metadata_host}.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           {request.redirect_is_loopback ? (
             <Alert data-testid="loopback-warning">

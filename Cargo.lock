@@ -2011,6 +2011,7 @@ dependencies = [
  "gateway-guardrails",
  "gateway-mcp",
  "gateway-skills",
+ "httpdate",
  "itertools 0.14.0",
  "percent-encoding",
  "rand 0.10.3",

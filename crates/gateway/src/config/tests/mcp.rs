@@ -39,6 +39,7 @@ fn mcp_oauth_public_base_url_must_be_an_https_origin() {
     let config = McpOauthConfig {
         public_base_url: Some("https://gateway.example.com:8443/".to_string()),
         providers: Vec::new(),
+        ..Default::default()
     };
     assert_eq!(
         config
@@ -57,6 +58,7 @@ fn mcp_oauth_public_base_url_must_be_an_https_origin() {
         let config = McpOauthConfig {
             public_base_url: Some(invalid.to_string()),
             providers: Vec::new(),
+            ..Default::default()
         };
         assert!(
             config.resolved_public_base_url().is_err(),
@@ -80,6 +82,7 @@ fn google_mcp_oauth_endpoints_are_pinned() {
     let config = McpOauthConfig {
         public_base_url: Some("https://gateway.example.com".to_string()),
         providers: vec![provider.clone()],
+        ..Default::default()
     };
     config.validate().expect("official Google endpoints");
 
@@ -118,6 +121,7 @@ fn google_mcp_oauth_endpoints_are_pinned() {
             let config = McpOauthConfig {
                 public_base_url: Some("https://gateway.example.com".to_string()),
                 providers: vec![provider],
+                ..Default::default()
             };
             let error = config
                 .validate()
@@ -184,6 +188,7 @@ fn generic_oauth2_provider_requires_endpoints_and_consistent_client_auth() {
         McpOauthConfig {
             public_base_url: Some("https://gateway.example.com".to_string()),
             providers: vec![provider],
+            ..Default::default()
         }
         .validate()
     };
