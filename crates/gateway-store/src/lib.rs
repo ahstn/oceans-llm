@@ -1954,14 +1954,14 @@ pub(crate) mod tests {
         assert!(disabled);
         assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
         // Revoked grants are listed too, as the unscoped grant list does: the
-        // two above and the nine the subject-team check revoked.
+        // two above and the twelve the subject-team check revoked.
         assert_eq!(
             store
                 .list_mcp_tool_grants_for_owner_team(team.team_id)
                 .await
                 .expect("team grants")
                 .len(),
-            11
+            14
         );
 
         exercise_mcp_ownership_guards(
@@ -2210,7 +2210,54 @@ pub(crate) mod tests {
             .revoke_api_key(revoked_key.id, now)
             .await
             .expect("revoke key");
+        // A key that cannot call MCP, or this server, holds no access either;
+        // one whose list names this server does.
+        let server_key = store
+            .get_external_mcp_server(tool.mcp_server_id)
+            .await
+            .expect("load server")
+            .expect("server")
+            .server_key;
+        let scoped_key = |public_id: &'static str, access: gateway_core::ApiKeyAccess| {
+            let mut record = key(
+                public_id,
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            );
+            record.access = access;
+            record
+        };
+        let inference_key = store
+            .create_api_key(&scoped_key(
+                "mcpinference",
+                gateway_core::ApiKeyAccess::new(Some(vec!["inference".to_string()]), None).unwrap(),
+            ))
+            .await
+            .expect("inference key");
+        let other_server_key = store
+            .create_api_key(&scoped_key(
+                "mcpother",
+                gateway_core::ApiKeyAccess::new(None, Some(vec!["other-server".to_string()]))
+                    .unwrap(),
+            ))
+            .await
+            .expect("other-server key");
+        let listed_key = store
+            .create_api_key(&scoped_key(
+                "mcplisted",
+                gateway_core::ApiKeyAccess::new(
+                    Some(vec!["mcp:proxy".to_string()]),
+                    Some(vec!["other-server".to_string(), server_key.clone()]),
+                )
+                .unwrap(),
+            ))
+            .await
+            .expect("listed key");
         let subjects = [
+            (Kind::ApiKey, inference_key.id),
+            (Kind::ApiKey, other_server_key.id),
+            (Kind::ApiKey, listed_key.id),
             (Kind::ApiKey, revoked_key.id),
             (Kind::User, member.user_id),
             (Kind::ServiceAccount, service_account.service_account_id),
@@ -2240,7 +2287,10 @@ pub(crate) mod tests {
             .count_mcp_tool_grants_outside_team(tool.mcp_server_id, team_id)
             .await
             .expect("count outside");
-        assert_eq!(outside, 2, "the outsider and their key");
+        assert_eq!(
+            outside, 3,
+            "the outsider, their key, and their key listing this server"
+        );
         for (subject_kind, subject_id) in subjects {
             store
                 .revoke_mcp_tool_grant(
@@ -2363,6 +2413,11 @@ pub(crate) mod tests {
                 .expect("outside another team")
                 .contains(&server.mcp_server_id)
         );
+        // The same, as a point lookup for one server.
+        let hidden = |team| store.is_mcp_server_hidden_from(server.mcp_server_id, team);
+        assert!(!hidden(Some(team_id)).await.expect("own team"));
+        assert!(hidden(None).await.expect("no team"));
+        assert!(hidden(Some(Uuid::new_v4())).await.expect("another team"));
 
         let binding = |expected_server| UpsertMcpUpstreamCredentialBindingRecord {
             credential_binding_id: None,

@@ -1742,3 +1742,39 @@ async fn team_only_access_ends_when_the_member_leaves_the_team() {
         .unwrap();
     assert_eq!(reachable().await, (0, false, false));
 }
+
+#[tokio::test]
+async fn team_admins_cannot_claim_private_network_hosts() {
+    let mut context = TestContext::new().await;
+    // The platform vouches for this domain reaching private networks.
+    context.state.mcp_http_clients =
+        gateway_service::McpUpstreamClients::new(&["corp.internal".to_string()]);
+    let admin = context.team_admin(context.team_a).await;
+
+    let mut body = create_body("internal");
+    body["server_url"] = json!("https://mcp.corp.internal/mcp");
+    let (status, response) = context.create(&admin, body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response.to_string().contains("private_network_hosts"),
+        "{response}"
+    );
+
+    // An endpoint the gateway calls is held to the same rule.
+    let mut body = create_body("internal-token");
+    body["auth_config"] = json!({ "token_endpoint": "https://auth.corp.internal/token" });
+    let (status, response) = context.create(&admin, body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        response.to_string().contains("private_network_hosts"),
+        "{response}"
+    );
+
+    // A platform admin may register one for the team.
+    let platform = context.platform_admin().await;
+    let mut body = create_body("internal-platform");
+    body["server_url"] = json!("https://mcp.corp.internal/mcp");
+    body["owner_team_id"] = json!(context.team_a);
+    let (status, response) = context.create(&platform, body).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+}

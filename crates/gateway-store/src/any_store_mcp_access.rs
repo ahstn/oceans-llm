@@ -192,6 +192,25 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await
+            }
+        }
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

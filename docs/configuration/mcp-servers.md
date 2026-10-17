@@ -125,7 +125,8 @@ A team-owned server's traffic, for discovery and for every call through the
 gateway, reaches public addresses only, checked each time it connects. A URL
 entered by IP address or as `localhost` keeps that address's own kind, and a
 host listed under `mcp.oauth.private_network_hosts` may also reach private
-networks. A link-local or cloud metadata address is never reached. Its OAuth
+networks. Only a platform admin can save a URL on a listed host; a team admin's
+attempt returns `400`. A link-local or cloud metadata address is never reached. Its OAuth
 token and registration requests are scoped by each endpoint's own URL the same
 way. A platform admin who registers a server on an internal network for a
 team by hostname lists that host there. This traffic follows no redirects and

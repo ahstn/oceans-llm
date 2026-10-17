@@ -35,12 +35,26 @@ where
             .repo
             .resolve_mcp_access_for_subjects(&subjects, mcp_server_id, projection)
             .await?;
-        let hidden: HashSet<Uuid> = self
-            .repo
-            .list_team_only_mcp_server_ids_outside(team_id)
-            .await?
-            .into_iter()
-            .collect();
+        // A request naming a server checks only that server.
+        let hidden: HashSet<Uuid> = match mcp_server_id {
+            Some(mcp_server_id) => {
+                if self
+                    .repo
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await?
+                {
+                    HashSet::from([mcp_server_id])
+                } else {
+                    HashSet::new()
+                }
+            }
+            None => self
+                .repo
+                .list_team_only_mcp_server_ids_outside(team_id)
+                .await?
+                .into_iter()
+                .collect(),
+        };
         retain_reachable_tools(&mut resolution, &hidden);
         Ok(resolution)
     }
@@ -56,9 +70,8 @@ where
         let (subjects, team_id) = self.subjects_and_team(auth).await?;
         if self
             .repo
-            .list_team_only_mcp_server_ids_outside(team_id)
+            .is_mcp_server_hidden_from(mcp_server_id, team_id)
             .await?
-            .contains(&mcp_server_id)
         {
             return Ok(false);
         }

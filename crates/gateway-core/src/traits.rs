@@ -1282,6 +1282,19 @@ pub trait McpAccessRepository: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Whether one server is visible to its team only and `team_id` does not
+    /// own it: a point lookup for requests that name the server.
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        Ok(self
+            .list_team_only_mcp_server_ids_outside(team_id)
+            .await?
+            .contains(&mcp_server_id))
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

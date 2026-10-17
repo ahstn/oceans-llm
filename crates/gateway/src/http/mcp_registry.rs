@@ -25,7 +25,7 @@ use gateway_service::{
     McpAdminScope, McpCredentialService, McpOwnership, McpRegistryService,
     RedactedMcpCredentialBinding, RequestedMcpServerOwnership, UpdateExternalMcpServerInput,
     UpsertMcpCredentialBindingInput, admin_audit::actions, authorize_destination,
-    authorize_team_auth_config, parse_mcp_server_visibility,
+    authorize_team_auth_config, parse_mcp_server_visibility, refuse_private_network_host,
 };
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
@@ -172,6 +172,7 @@ pub async fn create_mcp_server(
         None => None,
     };
     if let Some(server_url) = request.server_url.as_deref() {
+        refuse_private_network_host(&scope, &state.mcp_http_clients, server_url)?;
         authorize_destination(&scope, server_url).await?;
     }
     let effective_url = request
@@ -190,6 +191,7 @@ pub async fn create_mcp_server(
             .as_ref()
             .map(|entry| (&entry.auth_config, entry.server_url.as_str())),
         &effective_url,
+        &state.mcp_http_clients,
     )
     .await?;
     let ownership = ownership(&state)
@@ -262,6 +264,7 @@ pub async fn update_mcp_server(
     // A server a platform admin registered on an internal network stays
     // editable; only a new URL is checked.
     if request.server_url.trim() != existing.server_url {
+        refuse_private_network_host(&scope, &state.mcp_http_clients, &request.server_url)?;
         authorize_destination(&scope, &request.server_url).await?;
         ownership
             .authorize_retarget(&scope, &existing, &request.server_url)
@@ -272,6 +275,7 @@ pub async fn update_mcp_server(
         &request.auth_config,
         Some((&existing.auth_config, &existing.server_url)),
         &request.server_url,
+        &state.mcp_http_clients,
     )
     .await?;
     let visibility = request

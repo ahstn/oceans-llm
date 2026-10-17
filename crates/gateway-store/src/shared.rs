@@ -14,7 +14,8 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 /// SQL for `count_mcp_tool_grants_outside_team`, with the backend's
 /// placeholders for the server and team IDs. Each subject's team follows the
 /// same precedence as the service's subject lookup, so both agree on who is
-/// inside the team.
+/// inside the team. An API key that is revoked, has no MCP scope, or whose
+/// server list leaves this server out holds no access, as at runtime.
 pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
     format!(
         r#"
@@ -34,7 +35,14 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     WHEN 'team' THEN st.team_id IS NOT NULL
                     WHEN 'user' THEN su.user_id IS NOT NULL
                     WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL
-                    WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL AND CASE
+                    WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL
+                        -- The key may call MCP and this server: NULL lists allow all.
+                        AND (k.scopes IS NULL
+                            OR (' ' || k.scopes || ' ') LIKE '% mcp:aggregate %'
+                            OR (' ' || k.scopes || ' ') LIKE '% mcp:proxy %')
+                        AND (k.mcp_server_keys IS NULL
+                            OR (' ' || k.mcp_server_keys || ' ') LIKE ('% ' || srv.server_key || ' %'))
+                        AND CASE
                         WHEN k.owner_team_id IS NOT NULL THEN TRUE
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL
                         WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
@@ -44,6 +52,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                 END AS subject_exists
             FROM mcp_tool_grants g
             JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
+            JOIN external_mcp_servers srv ON srv.mcp_server_id = t.mcp_server_id
             LEFT JOIN teams st ON g.subject_kind = 'team' AND st.team_id = g.subject_id
             LEFT JOIN users su ON g.subject_kind = 'user' AND su.user_id = g.subject_id
             LEFT JOIN team_memberships um ON g.subject_kind = 'user' AND um.user_id = g.subject_id

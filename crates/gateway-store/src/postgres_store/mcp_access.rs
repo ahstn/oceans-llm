@@ -505,6 +505,22 @@ impl McpAccessRepository for PostgresStore {
         ids.iter().map(|id| parse_uuid(id)).collect()
     }
 
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        Ok(sqlx::query(
+            "SELECT 1 FROM external_mcp_servers WHERE mcp_server_id = $1 AND visibility = 'team' AND owner_team_id IS DISTINCT FROM $2::text",
+        )
+        .bind(mcp_server_id.to_string())
+        .bind(team_id.map(|team_id| team_id.to_string()))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .is_some())
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

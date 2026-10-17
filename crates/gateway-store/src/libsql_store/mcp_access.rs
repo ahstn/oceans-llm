@@ -564,6 +564,25 @@ impl McpAccessRepository for LibsqlStore {
         Ok(ids)
     }
 
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT 1 FROM external_mcp_servers WHERE mcp_server_id = ?1 AND visibility = 'team' AND owner_team_id IS NOT ?2",
+                libsql::params![
+                    mcp_server_id.to_string(),
+                    team_id.map(|team_id| team_id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

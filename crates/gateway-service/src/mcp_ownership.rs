@@ -695,6 +695,7 @@ pub async fn authorize_team_auth_config(
     auth_config: &Map<String, Value>,
     previous: Option<(&Map<String, Value>, &str)>,
     server_url: &str,
+    clients: &crate::McpUpstreamClients,
 ) -> Result<(), GatewayError> {
     if scope.is_platform_admin() {
         return Ok(());
@@ -729,10 +730,30 @@ pub async fn authorize_team_auth_config(
             && is_http_url(&value)
             && let Ok(url) = Url::parse(&value)
         {
+            refuse_private_network_host(scope, clients, &value)?;
             require_public_destination(&url).await?;
         }
     }
     Ok(())
+}
+
+/// Refuses a team admin's URL on a host listed under
+/// `mcp.oauth.private_network_hosts`. That list lets a name reach private
+/// networks whatever it resolves to, so only a platform admin may point a
+/// server, or an endpoint it calls, at one; a URL a platform admin set stays
+/// usable while it is unchanged.
+pub fn refuse_private_network_host(
+    scope: &McpAdminScope,
+    clients: &crate::McpUpstreamClients,
+    url: &str,
+) -> Result<(), GatewayError> {
+    if scope.is_platform_admin() || !clients.is_private_network_host(url.trim()) {
+        return Ok(());
+    }
+    Err(GatewayError::InvalidRequest(
+        "this host is listed under mcp.oauth.private_network_hosts; a platform admin registers servers on it"
+            .to_string(),
+    ))
 }
 
 fn is_http_url(value: &str) -> bool {
