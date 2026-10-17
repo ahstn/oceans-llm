@@ -1067,3 +1067,136 @@ mod proxy_policy {
         assert_eq!(logged[0].status, McpToolInvocationStatus::GatewayError);
     }
 }
+
+mod stream_reach {
+    use std::time::Duration;
+
+    use axum::body::to_bytes;
+    use gateway_core::{
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode, ExternalMcpAuthMode,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpTransport,
+        GlobalRole, McpAccessRepository, McpRegistryRepository, McpServerOwnership,
+        McpToolGrantSubjectKind, McpToolGrantTargetKind, MembershipRole,
+        NewExternalMcpServerRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        UserStatus,
+    };
+    use gateway_store::GatewayStore;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn team_only_streams_end_when_the_member_leaves_the_team() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let store = &state.store;
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team("stream-team", "Stream Team")
+            .await
+            .unwrap();
+        let user = store
+            .create_identity_user(
+                "Streamer",
+                "streamer@example.test",
+                "streamer@example.test",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .unwrap();
+        store
+            .assign_team_membership(user.user_id, team.team_id, MembershipRole::Member)
+            .await
+            .unwrap();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: McpServerOwnership::team(team.team_id, None),
+                server_key: "team-stream".to_string(),
+                display_name: "Team stream".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://8.8.8.8/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 2_000,
+                created_at: now,
+            })
+            .await
+            .unwrap();
+        let tools = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: server.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .unwrap();
+        store
+            .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+                subject_kind: McpToolGrantSubjectKind::User,
+                subject_id: user.user_id,
+                target_kind: McpToolGrantTargetKind::Tool,
+                target_id: tools[0].mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .unwrap();
+        let auth = AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "streamer".to_string(),
+            name: "Streamer".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::All,
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(user.user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
+        };
+        // An upstream event stream that never ends on its own.
+        let upstream = Response::new(Body::from_stream(futures_util::stream::pending::<
+            Result<Bytes, std::io::Error>,
+        >()));
+        let response = super::methods::end_when_reach_ends(
+            state.clone(),
+            auth,
+            server.mcp_server_id,
+            upstream,
+            Duration::from_millis(50),
+        );
+        let reading = tokio::spawn(to_bytes(response.into_body(), usize::MAX));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!reading.is_finished(), "a member's stream stays open");
+
+        store
+            .remove_team_membership(team.team_id, user.user_id)
+            .await
+            .unwrap();
+        let ended = tokio::time::timeout(Duration::from_secs(5), reading).await;
+        assert!(
+            ended.is_ok(),
+            "the stream ends once its team no longer reaches it"
+        );
+    }
+}

@@ -27,8 +27,8 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     WHEN 'user' THEN um.team_id
                     WHEN 'service_account' THEN ssa.team_id
                     WHEN 'api_key' THEN CASE
-                        WHEN k.owner_team_id IS NOT NULL THEN k.owner_team_id
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.team_id
+                        WHEN k.owner_team_id IS NOT NULL THEN k.owner_team_id
                         ELSE km.team_id
                     END
                 END AS subject_team,
@@ -45,8 +45,10 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                             OR (' ' || k.mcp_server_keys || ' ')
                                 LIKE ('% ' || replace(replace(srv.server_key, '%', '\%'), '_', '\_') || ' %') ESCAPE '\')
                         AND CASE
-                        WHEN k.owner_team_id IS NOT NULL THEN TRUE
+                        -- A service account's key also names its team, so the
+                        -- account is checked first.
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL AND ksa.status = 'active'
+                        WHEN k.owner_team_id IS NOT NULL THEN TRUE
                         WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
                         ELSE TRUE
                     END

@@ -199,6 +199,21 @@ where
         ),
         GatewayError,
     > {
+        let (binding, replaced) = self.upsert_binding_record(input).await?;
+        Ok((redact_binding(binding), replaced.map(redact_binding)))
+    }
+
+    /// Like [`Self::upsert_binding`], returning the stored rows as written.
+    async fn upsert_binding_record(
+        &self,
+        input: UpsertMcpCredentialBindingInput,
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        GatewayError,
+    > {
         validate_credential_input(&input)?;
         let now = OffsetDateTime::now_utc();
         let owner_scope_key = credential_owner_scope_key(
@@ -256,13 +271,15 @@ where
             expected_server: input.expected_server,
             expected_replaced: input.expected_replaced,
         };
-        let (binding, replaced) = self
+        Ok(self
             .repo
             .upsert_mcp_upstream_credential_binding(&record)
-            .await?;
-        Ok((redact_binding(binding), replaced.map(redact_binding)))
+            .await?)
     }
 
+    /// Stores a user's OAuth tokens. Also returns the ciphertext written, so
+    /// a caller can undo exactly this write with
+    /// [`Self::revoke_oauth_binding_if_unchanged`].
     pub async fn upsert_oauth_user_binding(
         &self,
         mcp_server_id: Uuid,
@@ -273,6 +290,7 @@ where
         (
             RedactedMcpCredentialBinding,
             Option<RedactedMcpCredentialBinding>,
+            String,
         ),
         GatewayError,
     > {
@@ -289,23 +307,47 @@ where
         let secret = serde_json::to_string(&grant.bundle)
             .map_err(|error| GatewayError::Internal(error.to_string()))?;
         let metadata = oauth_bundle_metadata(&grant.bundle);
-        self.upsert_binding(UpsertMcpCredentialBindingInput {
-            credential_binding_id: existing.map(|binding| binding.credential_binding_id),
-            mcp_server_id,
-            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
-            owner_user_id: Some(user_id),
-            owner_team_id: None,
-            owner_service_account_id: None,
-            material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
-            header_name: None,
-            secret: Some(secret),
-            secret_ref: None,
-            expires_at: grant.expires_at,
-            metadata,
-            expected_server,
-            expected_replaced: None,
-        })
-        .await
+        let (binding, replaced) = self
+            .upsert_binding_record(UpsertMcpCredentialBindingInput {
+                credential_binding_id: existing.map(|binding| binding.credential_binding_id),
+                mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                secret: Some(secret),
+                secret_ref: None,
+                expires_at: grant.expires_at,
+                metadata,
+                expected_server,
+                expected_replaced: None,
+            })
+            .await?;
+        let written = binding.secret_ciphertext.clone().unwrap_or_default();
+        Ok((
+            redact_binding(binding),
+            replaced.map(redact_binding),
+            written,
+        ))
+    }
+
+    /// Revokes a user's OAuth binding only while it still holds `written`,
+    /// so undoing one callback never removes tokens a later one stored.
+    pub async fn revoke_oauth_binding_if_unchanged(
+        &self,
+        credential_binding_id: Uuid,
+        written: &str,
+    ) -> Result<bool, GatewayError> {
+        Ok(self
+            .repo
+            .revoke_mcp_oauth_credential_if_unchanged(
+                credential_binding_id,
+                written,
+                OffsetDateTime::now_utc(),
+            )
+            .await?)
     }
 
     /// One binding by ID, revoked or not, without its secret.

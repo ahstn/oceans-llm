@@ -1343,7 +1343,9 @@ pub async fn upsert_mcp_credential_binding(
                 existing.owner_scope_kind,
                 existing.owner_team_id,
                 existing.owner_service_account_id,
-                false,
+                // Authorized under its actual storage: a team admin may revoke a
+                // `secret_ref` binding but not replace it.
+                existing.secret_ref.is_some(),
             )
             .await?;
         // The store compares this with the row it locks, so a concurrent change

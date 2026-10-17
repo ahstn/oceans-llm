@@ -373,28 +373,32 @@ async fn complete_oauth_callback(
     // A reconnect replaces the user's binding, so it also records what it replaced.
     let connected = state
         .audit()
-        .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
-            let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
-                .target(binding.credential_binding_id)
-                .label(binding.owner_scope_key.clone())
-                .meta(
-                    "operation",
-                    if replaced.is_some() {
-                        "oauth_reconnect"
-                    } else {
-                        "oauth_connect"
-                    },
-                )
-                .meta("mcp_server_id", binding.mcp_server_id)
-                .after(oauth_binding_summary(binding));
-            match replaced {
-                Some(replaced) => event.before(oauth_binding_summary(replaced)),
-                None => event,
-            }
-        })
+        .audited(
+            &meta.user_context(&user),
+            connect,
+            |(binding, replaced, _)| {
+                let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+                    .target(binding.credential_binding_id)
+                    .label(binding.owner_scope_key.clone())
+                    .meta(
+                        "operation",
+                        if replaced.is_some() {
+                            "oauth_reconnect"
+                        } else {
+                            "oauth_connect"
+                        },
+                    )
+                    .meta("mcp_server_id", binding.mcp_server_id)
+                    .after(oauth_binding_summary(binding));
+                match replaced {
+                    Some(replaced) => event.before(oauth_binding_summary(replaced)),
+                    None => event,
+                }
+            },
+        )
         .await;
     match connected {
-        Ok((binding, _)) => {
+        Ok((binding, _, written)) => {
             // Membership is not part of the write's guard, so check it again
             // now the binding is stored: a user who left the team meanwhile
             // keeps no connection to its team-only server.
@@ -405,10 +409,11 @@ async fn complete_oauth_callback(
                     .owner_team_id
                     .is_some_and(|owner| Some(owner) == team_id);
             if !reachable {
-                // Recorded like a disconnect, so the trail matches the
-                // `mcp_credential_binding.set` written just before.
-                if let Some(revoked) = credentials
-                    .revoke_binding(binding.credential_binding_id)
+                // Only this callback's own tokens are revoked: a later callback
+                // that stored new ones is left alone. Recorded like a
+                // disconnect, so the trail matches the set written just before.
+                if credentials
+                    .revoke_oauth_binding_if_unchanged(binding.credential_binding_id, &written)
                     .await?
                 {
                     state
@@ -416,11 +421,11 @@ async fn complete_oauth_callback(
                         .record(
                             &meta.user_context(&user),
                             AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
-                                .target(revoked.credential_binding_id)
-                                .label(revoked.owner_scope_key.clone())
+                                .target(binding.credential_binding_id)
+                                .label(binding.owner_scope_key.clone())
                                 .meta("operation", "oauth_access_lost")
-                                .meta("mcp_server_id", revoked.mcp_server_id)
-                                .before(oauth_binding_summary(&revoked)),
+                                .meta("mcp_server_id", binding.mcp_server_id)
+                                .before(oauth_binding_summary(&binding)),
                         )
                         .await;
                 }

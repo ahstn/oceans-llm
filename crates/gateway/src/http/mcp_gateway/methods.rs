@@ -192,7 +192,59 @@ pub(super) async fn handle_event_stream(
         Ok(false) => return server_not_granted_response(None),
         Err(error) => return mcp_error_response(error),
     }
-    proxy_lifecycle(state, auth, http_method, headers, body, server, false).await
+    let team_only = server.ownership.visibility == gateway_core::McpServerVisibility::Team;
+    let mcp_server_id = server.mcp_server_id;
+    let response = proxy_lifecycle(state, auth, http_method, headers, body, server, false).await;
+    if team_only {
+        end_when_reach_ends(
+            state.clone(),
+            auth.clone(),
+            mcp_server_id,
+            response,
+            STREAM_REACH_RECHECK_INTERVAL,
+        )
+    } else {
+        response
+    }
+}
+
+/// How often an open event stream from a team-only server rechecks that the
+/// caller can still reach it.
+pub(crate) const STREAM_REACH_RECHECK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
+/// Ends a long-lived stream from a team-only server once the caller can no
+/// longer reach it: their team no longer owns it, or their grants are gone.
+/// The check above runs once, when the stream opens, and the stream could
+/// otherwise outlive it by hours. A failed recheck keeps the stream open
+/// until the next one.
+pub(crate) fn end_when_reach_ends(
+    state: AppState,
+    auth: AuthenticatedApiKey,
+    mcp_server_id: Uuid,
+    response: Response<Body>,
+    every: std::time::Duration,
+) -> Response<Body> {
+    use futures_util::StreamExt;
+    let ended = async move {
+        let access = McpAccess::new(state.store.clone());
+        let mut ticker = tokio::time::interval(every);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            match access.has_server_grant(&auth, mcp_server_id).await {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(error) => {
+                    tracing::warn!(error = %error, "MCP stream reach recheck failed");
+                }
+            }
+        }
+    };
+    let (parts, body) = response.into_parts();
+    let body = body.into_data_stream().take_until(Box::pin(ended));
+    Response::from_parts(parts, Body::from_stream(body))
 }
 
 /// Forwards session plumbing that carries no server data. `initialize` is
