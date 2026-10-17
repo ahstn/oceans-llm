@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use gateway_core::McpToolProjection;
 
@@ -458,57 +458,9 @@ impl McpAccessRepository for PostgresStore {
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
-        let exposed_tool_count = active_tool_count(&self.pool, mcp_server_id).await?;
         let rules = load_tag_rule_set(&self.pool, subjects).await?;
-        let columns = tool_columns(projection);
-        let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
-
-        for subject in subjects {
-            collect_direct_tools(
-                &self.pool,
-                subject,
-                mcp_server_id,
-                columns,
-                &mut tools_by_id,
-            )
-            .await?;
-            collect_toolset_tools(
-                &self.pool,
-                subject,
-                mcp_server_id,
-                columns,
-                &mut tools_by_id,
-            )
-            .await?;
-        }
-        for server_id in rules.include_server_ids(mcp_server_id) {
-            for tool in server_tools(&self.pool, server_id, columns).await? {
-                if rules.includes(&tool) {
-                    tools_by_id.insert(tool.mcp_tool_id, tool);
-                }
-            }
-        }
-        tools_by_id.retain(|_, tool| !rules.excludes(tool));
-
-        let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
-        allowed_tools.sort_by(|a, b| {
-            a.mcp_server_id
-                .cmp(&b.mcp_server_id)
-                .then_with(|| a.upstream_name.cmp(&b.upstream_name))
-        });
-        let referenced_server_count = allowed_tools
-            .iter()
-            .map(|tool| tool.mcp_server_id)
-            .collect::<std::collections::HashSet<_>>()
-            .len() as i64;
-        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
-
-        Ok(McpAccessResolution {
-            allowed_tools,
-            referenced_server_count,
-            exposed_tool_count,
-            filtered_tool_count,
-        })
+        self.resolve_access_with_rules(subjects, mcp_server_id, projection, &rules)
+            .await
     }
 
     async fn has_mcp_server_grant(
@@ -518,12 +470,14 @@ impl McpAccessRepository for PostgresStore {
     ) -> Result<bool, StoreError> {
         // Rules can add or remove tools, so a caller with any rule gets the
         // full resolution; everyone else keeps the single `EXISTS` query.
-        if !load_tag_rule_set(&self.pool, subjects).await?.is_empty() {
+        let rules = load_tag_rule_set(&self.pool, subjects).await?;
+        if !rules.is_empty() {
             let resolution = self
-                .resolve_mcp_access_for_subjects(
+                .resolve_access_with_rules(
                     subjects,
                     Some(mcp_server_id),
                     McpToolProjection::Access,
+                    &rules,
                 )
                 .await?;
             return Ok(!resolution.allowed_tools.is_empty());
@@ -550,11 +504,10 @@ impl McpAccessRepository for PostgresStore {
             collect_catalog_toolset_tools(&self.pool, subject, server_key, &mut tools_by_id)
                 .await?;
         }
-        for server_id in rules.include_server_ids(None) {
-            for record in server_catalog_tools(&self.pool, server_id, server_key).await? {
-                if rules.includes(&record.tool) {
-                    tools_by_id.insert(record.tool.mcp_tool_id, record);
-                }
+        let include_servers = rules.include_server_ids(None);
+        for record in server_catalog_tools(&self.pool, &include_servers, server_key).await? {
+            if rules.includes(&record.tool) {
+                tools_by_id.insert(record.tool.mcp_tool_id, record);
             }
         }
         tools_by_id.retain(|_, record| !rules.excludes(&record.tool));
@@ -700,40 +653,113 @@ fn decode_tag_rule(row: &PgRow) -> Result<McpToolTagRuleRecord, StoreError> {
     .decode()
 }
 
-/// The active tag rules of every subject.
+impl PostgresStore {
+    /// Access resolution with the subjects' tag rules already loaded.
+    async fn resolve_access_with_rules(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
+        rules: &McpTagRuleSet,
+    ) -> Result<McpAccessResolution, StoreError> {
+        let exposed_tool_count = active_tool_count(&self.pool, mcp_server_id).await?;
+        let columns = tool_columns(projection);
+        let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
+
+        for subject in subjects {
+            collect_direct_tools(
+                &self.pool,
+                subject,
+                mcp_server_id,
+                columns,
+                &mut tools_by_id,
+            )
+            .await?;
+            collect_toolset_tools(
+                &self.pool,
+                subject,
+                mcp_server_id,
+                columns,
+                &mut tools_by_id,
+            )
+            .await?;
+        }
+        let include_servers = rules.include_server_ids(mcp_server_id);
+        for tool in server_tools(&self.pool, &include_servers, columns).await? {
+            if rules.includes(&tool) {
+                tools_by_id.insert(tool.mcp_tool_id, tool);
+            }
+        }
+        tools_by_id.retain(|_, tool| !rules.excludes(tool));
+
+        let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
+        allowed_tools.sort_by(|a, b| {
+            a.mcp_server_id
+                .cmp(&b.mcp_server_id)
+                .then_with(|| a.upstream_name.cmp(&b.upstream_name))
+        });
+        let referenced_server_count = allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64;
+        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+
+        Ok(McpAccessResolution {
+            allowed_tools,
+            referenced_server_count,
+            exposed_tool_count,
+            filtered_tool_count,
+        })
+    }
+}
+
+/// The active tag rules of every subject, in one query.
 async fn load_tag_rule_set(
     pool: &PgPool,
     subjects: &[McpGrantSubject],
 ) -> Result<McpTagRuleSet, StoreError> {
-    let sql = format!(
-        "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE is_active = 1 AND subject_kind = $1 AND subject_id = $2"
-    );
-    let mut rules = Vec::new();
-    for subject in subjects {
-        let rows = sqlx::query(&sql)
-            .bind(subject.subject_kind.as_str())
-            .bind(subject.subject_id.to_string())
-            .fetch_all(pool)
-            .await
-            .map_err(to_query_error)?;
-        for row in &rows {
-            rules.push(decode_tag_rule(row)?);
-        }
+    if subjects.is_empty() {
+        return Ok(McpTagRuleSet::default());
     }
+    let kinds = subjects
+        .iter()
+        .map(|subject| subject.subject_kind.as_str().to_string())
+        .collect::<Vec<_>>();
+    let ids = subjects
+        .iter()
+        .map(|subject| subject.subject_id.to_string())
+        .collect::<Vec<_>>();
+    let rows = sqlx::query(&format!(
+        "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE is_active = 1 AND (subject_kind, subject_id) IN (SELECT * FROM UNNEST($1::text[], $2::text[]))"
+    ))
+    .bind(kinds)
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+    .map_err(to_query_error)?;
+    let rules = rows
+        .iter()
+        .map(decode_tag_rule)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(McpTagRuleSet::new(rules))
 }
 
-/// Served tools of one active server, the candidates for its include rules.
+/// Served tools of the active servers, the candidates for include rules, in
+/// one query.
 async fn server_tools(
     pool: &PgPool,
-    mcp_server_id: Uuid,
+    server_ids: &BTreeSet<Uuid>,
     columns: &str,
 ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+    if server_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let sql = format!(
-        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = $1 AND t.is_active = 1 AND s.status = 'active'"
+        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND s.status = 'active'"
     );
     let rows = sqlx::query(&sql)
-        .bind(mcp_server_id.to_string())
+        .bind(server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
         .fetch_all(pool)
         .await
         .map_err(to_query_error)?;
@@ -742,14 +768,17 @@ async fn server_tools(
 
 async fn server_catalog_tools(
     pool: &PgPool,
-    mcp_server_id: Uuid,
+    server_ids: &BTreeSet<Uuid>,
     server_key: Option<&str>,
 ) -> Result<Vec<McpCatalogToolRecord>, StoreError> {
+    if server_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let sql = format!(
-        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = $1 AND t.is_active = 1 AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2)"
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2)"
     );
     let rows = sqlx::query(&sql)
-        .bind(mcp_server_id.to_string())
+        .bind(server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
         .bind(server_key)
         .fetch_all(pool)
         .await

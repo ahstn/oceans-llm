@@ -144,6 +144,9 @@ An override:
 - **Rules:** open `/admin/mcp?tab=access` and use **Tag rules**. **Preview
   matches** lists the active tools the rule would select before you save it. Use
   **Preview access** to see a subject's resolved tools with every rule applied.
+  The preview expands the subject as a real request would: an API key brings
+  its owner and team, and a user or service account brings its team, so their
+  grants and exclude rules show too.
 
 The admin API is:
 

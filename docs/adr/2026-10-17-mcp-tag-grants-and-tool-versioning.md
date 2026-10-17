@@ -7,7 +7,6 @@
 ## Current state
 
 - [MCP Tool Access: Tag rules](../mcp/mcp-tool-access.md#tag-rules)
-- [MCP Tool Access: Tool versions and approval](../mcp/mcp-tool-access.md#tool-versions-and-approval)
 
 ## Context
 

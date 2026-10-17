@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
-    AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError, IdentityRepository,
-    McpAccessRepository, McpAccessResolution, McpGrantSubject, McpToolGrantSubjectKind,
-    McpToolProjection,
+    AdminApiKeyRepository, AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError,
+    IdentityRepository, McpAccessRepository, McpAccessResolution, McpGrantSubject,
+    McpToolGrantSubjectKind, McpToolProjection,
 };
 use uuid::Uuid;
 
@@ -84,6 +84,86 @@ where
                 McpToolGrantSubjectKind::Team,
                 membership.team_id,
             );
+        }
+        Ok(subjects)
+    }
+}
+
+impl<R> McpAccess<R>
+where
+    R: IdentityRepository + AdminApiKeyRepository,
+{
+    /// Expands previewed subjects the way runtime resolution would for a
+    /// caller: a key brings its owner and team, a user its current team, and a
+    /// service account its team. Rules and grants on those subjects then show in
+    /// the preview, as they apply to real requests.
+    pub async fn preview_subjects(
+        &self,
+        selected: &[McpGrantSubject],
+    ) -> Result<Vec<McpGrantSubject>, GatewayError> {
+        let mut subjects = Vec::new();
+        let mut seen = HashSet::new();
+        for subject in selected {
+            push_subject(
+                &mut subjects,
+                &mut seen,
+                subject.subject_kind,
+                subject.subject_id,
+            );
+            match subject.subject_kind {
+                McpToolGrantSubjectKind::ApiKey => {
+                    if let Some(key) = self.repo.get_api_key_by_id(subject.subject_id).await? {
+                        let auth = AuthenticatedApiKey {
+                            id: key.id,
+                            public_id: key.public_id,
+                            name: key.name,
+                            model_grant_mode: key.model_grant_mode,
+                            owner_kind: key.owner_kind,
+                            owner_user_id: key.owner_user_id,
+                            owner_team_id: key.owner_team_id,
+                            owner_service_account_id: key.owner_service_account_id,
+                            oauth: None,
+                        };
+                        for owned in self.grant_subjects(&auth).await? {
+                            push_subject(
+                                &mut subjects,
+                                &mut seen,
+                                owned.subject_kind,
+                                owned.subject_id,
+                            );
+                        }
+                    }
+                }
+                McpToolGrantSubjectKind::User => {
+                    if let Some(membership) = self
+                        .repo
+                        .get_team_membership_for_user(subject.subject_id)
+                        .await?
+                    {
+                        push_subject(
+                            &mut subjects,
+                            &mut seen,
+                            McpToolGrantSubjectKind::Team,
+                            membership.team_id,
+                        );
+                    }
+                }
+                McpToolGrantSubjectKind::ServiceAccount => {
+                    if let Some(account) = self
+                        .repo
+                        .get_service_account_by_id(subject.subject_id)
+                        .await?
+                    {
+                        push_subject(
+                            &mut subjects,
+                            &mut seen,
+                            McpToolGrantSubjectKind::Team,
+                            account.team_id,
+                        );
+                    }
+                }
+                McpToolGrantSubjectKind::Team => {}
+            }
         }
         Ok(subjects)
     }
