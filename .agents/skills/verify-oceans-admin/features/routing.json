@@ -62,7 +62,8 @@
         ".claude/skills/**",
         ".claude/skills/*",
         ".gitignore",
-        ".gitattributes"
+        ".gitattributes",
+        "scripts/strip-ai-coauthors.sh"
       ]
     },
     {

@@ -71,7 +71,7 @@ impl PricingCatalogRepository for InMemoryRepo {
     ) -> Result<bool, StoreError> {
         if self
             .cache_write_rejections_remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()
@@ -138,7 +138,7 @@ impl PricingCatalogRepository for InMemoryRepo {
             .fetch_add(1, Ordering::Relaxed);
         if self
             .pricing_sync_conflicts_remaining
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()
