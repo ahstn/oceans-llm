@@ -14398,7 +14398,7 @@
               },
               "truncated": {
                 "type": "boolean",
-                "description": "More tools match than the preview returns."
+                "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
               }
             }
           },
@@ -16928,7 +16928,7 @@
           },
           "truncated": {
             "type": "boolean",
-            "description": "More tools match than the preview returns."
+            "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
           }
         }
       },

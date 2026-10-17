@@ -69,6 +69,10 @@ Because all three steps run inside the two resolution methods, every surface tha
 
 The access projection now also loads `annotations_json` and the two admin columns, because tag evaluation needs them. It still leaves out the title and output schema.
 
+Whether the caller's subjects have any rule is a column on queries the resolution already runs (the tool count, and the server grant check), so callers without rules make no extra round trip. Rules are loaded only when that column is true. An include rule scans its servers' tools with only the columns tag evaluation reads (no schemas or text), then loads full rows for the matching tools alone. Effective tags depend on overrides and protocol defaults, so they are evaluated in Rust rather than indexed; the scan stays linear in a server's tool count but carries no schemas.
+
+The rule preview reads candidates a page at a time and stops after 200 matches or after checking 5,120 tools. It reports `truncated` when it stopped early, so a preview for a rare tag on a large registry is bounded and says it may be incomplete.
+
 ### 3. Overrides are served to clients (#443)
 
 Admin-set annotations take precedence over the upstream's. `describe_tool` and `search_tools` return the effective annotations. Direct `tools/list` merges the override hints into each granted tool's `annotations` object and keeps every other member as the upstream sent it. Clients that ask for confirmation before destructive tools then see the admin's answer.

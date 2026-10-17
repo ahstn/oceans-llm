@@ -23,12 +23,18 @@ pub struct McpToolPolicyService<R> {
 pub const MAX_TAG_RULE_PREVIEW_MATCHES: usize = 200;
 /// Candidate tools read per query while building a preview.
 const TAG_RULE_PREVIEW_PAGE_SIZE: u32 = 256;
+/// Most candidate tools a preview checks, so a rare tag cannot make one
+/// request read the whole registry. Past this the preview is incomplete.
+pub const MAX_TAG_RULE_PREVIEW_SCAN: usize = 20 * TAG_RULE_PREVIEW_PAGE_SIZE as usize;
 
 /// The tools a tag rule would select.
 #[derive(Debug, Clone, Default)]
 pub struct McpTagRulePreview {
     pub matches: Vec<McpTagRuleMatch>,
-    /// More tools match than `MAX_TAG_RULE_PREVIEW_MATCHES`.
+    /// The preview stopped early: more tools match than
+    /// `MAX_TAG_RULE_PREVIEW_MATCHES`, or it checked
+    /// `MAX_TAG_RULE_PREVIEW_SCAN` tools before reaching the end. More tools
+    /// may match than it lists.
     pub truncated: bool,
 }
 
@@ -156,6 +162,7 @@ where
         // A disabled server yields nothing.
         let mut preview = McpTagRulePreview::default();
         let mut after: Option<(Uuid, String)> = None;
+        let mut scanned = 0;
         loop {
             let page = self
                 .repo
@@ -168,6 +175,7 @@ where
                 )
                 .await?;
             let last_page = page.len() < TAG_RULE_PREVIEW_PAGE_SIZE as usize;
+            scanned += page.len();
             after = page
                 .last()
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
@@ -186,6 +194,10 @@ where
                 });
             }
             if last_page {
+                return Ok(preview);
+            }
+            if scanned >= MAX_TAG_RULE_PREVIEW_SCAN {
+                preview.truncated = true;
                 return Ok(preview);
             }
         }

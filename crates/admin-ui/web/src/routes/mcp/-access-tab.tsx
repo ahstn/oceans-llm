@@ -167,6 +167,7 @@ export function AccessTab({
         await saveMcpGrant({ data: grantForm })
         toast.success('MCP grant saved')
         setGrantForm((current) => ({ ...current, subject_id: '', target_id: '' }))
+        setPreview(null)
         await router.invalidate()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to save MCP grant')
@@ -186,6 +187,7 @@ export function AccessTab({
           },
         })
         toast.success('MCP grant revoked')
+        setPreview(null)
         await router.invalidate()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to revoke MCP grant')
@@ -398,6 +400,9 @@ export function AccessTab({
         tools={catalog.tools}
         subjectKinds={subjectKinds}
         subjectOptions={subjectOptions}
+        // A rule change can change any subject's access, so the shown
+        // preview is stale until it is run again.
+        onRulesChanged={() => setPreview(null)}
       />
     </div>
   )

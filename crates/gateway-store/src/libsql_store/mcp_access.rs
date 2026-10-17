@@ -16,6 +16,10 @@ const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.d
 /// keeps the same shape, so `decode_tool` reads it. Annotations and the admin
 /// policy stay, because tag rules are evaluated from them.
 const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, t.annotations_json, NULL, t.admin_tags_json, t.annotation_overrides_json";
+/// `TOOL_COLUMNS` with only what tag rules read: identity, annotations and
+/// the admin policy. Schemas and text are left out, so scanning a server's
+/// tools for include-rule matches stays small.
+const RULE_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, NULL, '{}', t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, t.annotations_json, NULL, t.admin_tags_json, t.annotation_overrides_json";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
 const TOOL_COLUMN_COUNT: usize = 17;
 const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
@@ -571,10 +575,14 @@ impl McpAccessRepository for LibsqlStore {
                 .await?;
         }
         let include_servers = rules.include_server_ids(None);
-        for record in server_catalog_tools(&self.connection, &include_servers, server_key).await? {
-            if rules.includes(&record.tool) {
-                tools_by_id.insert(record.tool.mcp_tool_id, record);
-            }
+        let matched =
+            include_rule_matches(&self.connection, &include_servers, server_key, &rules).await?;
+        let missing = matched
+            .into_iter()
+            .filter(|id| !tools_by_id.contains_key(id))
+            .collect::<Vec<_>>();
+        for record in catalog_tools_by_ids(&self.connection, &missing).await? {
+            tools_by_id.insert(record.tool.mcp_tool_id, record);
         }
         tools_by_id.retain(|_, record| !rules.excludes(&record.tool));
 
@@ -811,10 +819,13 @@ impl LibsqlStore {
             .await?;
         }
         let include_servers = rules.include_server_ids(mcp_server_id);
-        for tool in server_tools(&self.connection, &include_servers, columns).await? {
-            if rules.includes(&tool) {
-                tools_by_id.insert(tool.mcp_tool_id, tool);
-            }
+        let matched = include_rule_matches(&self.connection, &include_servers, None, rules).await?;
+        let missing = matched
+            .into_iter()
+            .filter(|id| !tools_by_id.contains_key(id))
+            .collect::<Vec<_>>();
+        for tool in tools_by_ids(&self.connection, &missing, columns).await? {
+            tools_by_id.insert(tool.mcp_tool_id, tool);
         }
         tools_by_id.retain(|_, tool| !rules.excludes(tool));
 
@@ -885,54 +896,30 @@ fn rules_exist_sql(count: usize, first: usize) -> String {
     format!("EXISTS (SELECT 1 FROM mcp_tool_tag_rules WHERE is_active = 1 AND ({matches}))")
 }
 
-/// `?1, ?2, ...` placeholders for a list of server IDs.
-fn server_id_placeholders(count: usize) -> String {
+/// `?1, ?2, ...` placeholders for `count` values.
+fn id_placeholders(count: usize) -> String {
     (1..=count)
         .map(|index| format!("?{index}"))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-/// Served tools of the active servers, the candidates for include rules, in
-/// one query.
-async fn server_tools(
-    connection: &libsql::Connection,
-    server_ids: &BTreeSet<Uuid>,
-    columns: &str,
-) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
-    if server_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders = server_id_placeholders(server_ids.len());
-    let sql = format!(
-        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND s.status = 'active'"
-    );
-    let mut rows = connection
-        .query(
-            &sql,
-            libsql::params_from_iter(server_ids.iter().map(Uuid::to_string)),
-        )
-        .await
-        .map_err(to_query_error)?;
-    let mut tools = Vec::new();
-    while let Some(row) = rows.next().await.map_err(to_query_error)? {
-        tools.push(decode_tool(&row)?);
-    }
-    Ok(tools)
-}
-
-async fn server_catalog_tools(
+/// Active tools on the servers that an include rule selects. Only the
+/// columns tag rules read are scanned; callers load full rows for the
+/// matches alone.
+async fn include_rule_matches(
     connection: &libsql::Connection,
     server_ids: &BTreeSet<Uuid>,
     server_key: Option<&str>,
-) -> Result<Vec<McpCatalogToolRecord>, StoreError> {
+    rules: &McpTagRuleSet,
+) -> Result<Vec<Uuid>, StoreError> {
     if server_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholders = server_id_placeholders(server_ids.len());
+    let placeholders = id_placeholders(server_ids.len());
     let key_param = server_ids.len() + 1;
     let sql = format!(
-        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param})"
+        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param})"
     );
     let mut params = server_ids
         .iter()
@@ -943,6 +930,62 @@ async fn server_catalog_tools(
     }));
     let mut rows = connection
         .query(&sql, libsql::params_from_iter(params))
+        .await
+        .map_err(to_query_error)?;
+    let mut matched = Vec::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        let tool = decode_tool(&row)?;
+        if rules.includes(&tool) {
+            matched.push(tool.mcp_tool_id);
+        }
+    }
+    Ok(matched)
+}
+
+/// Active tools by id, in one query.
+async fn tools_by_ids(
+    connection: &libsql::Connection,
+    tool_ids: &[Uuid],
+    columns: &str,
+) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = id_placeholders(tool_ids.len());
+    let sql = format!(
+        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id IN ({placeholders}) AND t.is_active = 1 AND s.status = 'active'"
+    );
+    let mut rows = connection
+        .query(
+            &sql,
+            libsql::params_from_iter(tool_ids.iter().map(Uuid::to_string)),
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut tools = Vec::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        tools.push(decode_tool(&row)?);
+    }
+    Ok(tools)
+}
+
+/// Active catalog tools by id, with their servers, in one query.
+async fn catalog_tools_by_ids(
+    connection: &libsql::Connection,
+    tool_ids: &[Uuid],
+) -> Result<Vec<McpCatalogToolRecord>, StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = id_placeholders(tool_ids.len());
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id IN ({placeholders}) AND t.is_active = 1 AND s.status = 'active'"
+    );
+    let mut rows = connection
+        .query(
+            &sql,
+            libsql::params_from_iter(tool_ids.iter().map(Uuid::to_string)),
+        )
         .await
         .map_err(to_query_error)?;
     let mut records = Vec::new();

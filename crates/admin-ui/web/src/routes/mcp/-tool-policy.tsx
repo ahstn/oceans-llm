@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useState, useTransition, type TransitionStartFunction } from 'react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +53,7 @@ export function ToolPolicyEditor({
   tool: McpToolView
   onToolUpdated: (tool: McpToolView) => void
 }) {
+  const [isPending, startTransition] = useTransition()
   return (
     <div className="mt-4 flex max-w-full min-w-0 flex-col gap-4" data-testid="mcp-tool-policy">
       <div className="min-w-0">
@@ -60,21 +61,34 @@ export function ToolPolicyEditor({
         <EffectiveTagBadges tags={tool.effective_tags} />
       </div>
       {/* Each draft restarts only when its own stored value changes, so saving
-          one keeps unsaved edits in the other. */}
-      <OverridesEditor key={overridesKey(tool)} tool={tool} onToolUpdated={onToolUpdated} />
-      <TagsEditor key={tagsKey(tool)} tool={tool} onToolUpdated={onToolUpdated} />
+          one keeps unsaved edits in the other. Both share one pending save,
+          so an older response cannot overwrite a newer one. */}
+      <OverridesEditor
+        key={overridesKey(tool)}
+        tool={tool}
+        onToolUpdated={onToolUpdated}
+        isPending={isPending}
+        startTransition={startTransition}
+      />
+      <TagsEditor
+        key={tagsKey(tool)}
+        tool={tool}
+        onToolUpdated={onToolUpdated}
+        isPending={isPending}
+        startTransition={startTransition}
+      />
     </div>
   )
 }
 
-function OverridesEditor({
-  tool,
-  onToolUpdated,
-}: {
+type EditorProps = {
   tool: McpToolView
   onToolUpdated: (tool: McpToolView) => void
-}) {
-  const [isPending, startTransition] = useTransition()
+  isPending: boolean
+  startTransition: TransitionStartFunction
+}
+
+function OverridesEditor({ tool, onToolUpdated, isPending, startTransition }: EditorProps) {
   const [overrides, setOverrides] = useState<Record<HintKey, string>>(() => ({
     read_only_hint: hintValue(tool.annotation_overrides.read_only_hint),
     destructive_hint: hintValue(tool.annotation_overrides.destructive_hint),
@@ -117,7 +131,7 @@ function OverridesEditor({
             </span>
             <Select
               value={overrides[hint.key]}
-              // Locked while saving so the response cannot replace a newer edit.
+              // Locked while either editor saves, so a response cannot replace a newer edit.
               disabled={isPending}
               onValueChange={(value) =>
                 setOverrides((current) => ({ ...current, [hint.key]: value }))
@@ -146,14 +160,7 @@ function OverridesEditor({
   )
 }
 
-function TagsEditor({
-  tool,
-  onToolUpdated,
-}: {
-  tool: McpToolView
-  onToolUpdated: (tool: McpToolView) => void
-}) {
-  const [isPending, startTransition] = useTransition()
+function TagsEditor({ tool, onToolUpdated, isPending, startTransition }: EditorProps) {
   const [tagInput, setTagInput] = useState(() => tool.admin_tags.join(', '))
 
   function handleSaveTags() {
@@ -183,7 +190,7 @@ function TagsEditor({
           id={`mcp-tool-tags-${tool.id}`}
           value={tagInput}
           placeholder="finance, pii:low"
-          // Locked while saving so the response cannot replace a newer edit.
+          // Locked while either editor saves, so a response cannot replace a newer edit.
           disabled={isPending}
           onChange={(event) => setTagInput(event.target.value)}
         />

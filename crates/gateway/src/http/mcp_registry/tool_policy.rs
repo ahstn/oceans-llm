@@ -110,7 +110,8 @@ pub struct McpTagRulePreviewPayload {
     /// Active tools the rule would select, at most 200. Only this rule is
     /// applied.
     tools: Vec<McpToolView>,
-    /// More tools match than the preview returns.
+    /// The preview stopped early, after 200 matches or after checking 5,120
+    /// tools, so more tools may match than it lists.
     truncated: bool,
 }
 
