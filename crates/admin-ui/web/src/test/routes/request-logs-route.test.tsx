@@ -128,8 +128,12 @@ function navigatedSearch(callIndex: number, previous: Record<string, unknown> = 
   return search(previous)
 }
 
-/** Filter navigations run in a list transition; wait for the toolbar to leave its pending state. */
+/**
+ * Filter navigations run in a list transition. Wait for the toolbar to show it pending and then
+ * finished, so the transition settles inside the test.
+ */
 async function waitForListTransition() {
+  expect(await screen.findByText('Loading…')).toBeInTheDocument()
   expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument()
 }
 
@@ -519,12 +523,10 @@ describe('RequestLogsPage filter chips', () => {
     fireEvent.change(tagKeyInput, { target: { value: ' feature ' } })
     fireEvent.keyDown(tagKeyInput, { key: 'Enter' })
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ to: '/observability/request-logs' }),
-      )
-    })
     await waitForListTransition()
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/observability/request-logs' }),
+    )
     expect(navigatedSearch(0)).toEqual(
       expect.objectContaining({ tag_key: 'feature', tag_value: 'guest_checkout' }),
     )
@@ -543,10 +545,8 @@ describe('RequestLogsPage filter chips', () => {
 
     fireEvent.click(scope.getByRole('button', { name: 'Remove Request ID filter' }))
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalled()
-    })
     await waitForListTransition()
+    expect(navigateMock).toHaveBeenCalled()
     const next = navigatedSearch(0, { request_id: 'req_1', q: 'alice' })
     expect(next.q).toBe('alice')
     expect(next.request_id).toBeUndefined()
@@ -590,12 +590,10 @@ describe('RequestLogsPage search', () => {
     fireEvent.change(search, { target: { value: 'gpt' } })
     expect(navigateMock).not.toHaveBeenCalled()
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ to: '/observability/request-logs', replace: true }),
-      )
-    })
     await waitForListTransition()
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/observability/request-logs', replace: true }),
+    )
     expect(navigatedSearch(0).q).toBe('gpt')
   })
 
@@ -607,10 +605,8 @@ describe('RequestLogsPage search', () => {
       target: { value: 'gpt' },
     })
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalled()
-    })
     await waitForListTransition()
+    expect(navigateMock).toHaveBeenCalled()
     // The URL gained a provider chip before the timer fired; the search must not drop it.
     expect(navigatedSearch(0, { provider_key: 'openai' })).toEqual(
       expect.objectContaining({ provider_key: 'openai', q: 'gpt' }),
