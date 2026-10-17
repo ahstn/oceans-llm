@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
@@ -181,6 +181,13 @@ async function renderServersTab(
 }
 
 describe('ServersTab', () => {
+  // The first import compiles the tab and every MCP module it uses, which can
+  // take longer than one test's timeout on a busy runner. Load it once here so
+  // no test pays for it.
+  beforeAll(async () => {
+    await import('@/routes/mcp/-servers-tab')
+  }, 30_000)
+
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
