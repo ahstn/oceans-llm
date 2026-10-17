@@ -421,7 +421,11 @@ impl OutboundFetcher {
         let (_, request) = request.build_split();
         let request = request.map_err(request_error)?;
         self.check_url(request.url())?;
-        let response = self.client.execute(request).await.map_err(request_error)?;
+        // Rebuilt on this fetcher's client, whatever client built it.
+        let response = reqwest::RequestBuilder::from_parts(self.client.clone(), request)
+            .send()
+            .await
+            .map_err(request_error)?;
         Ok(OutboundResponse {
             response,
             max_body_bytes: self.max_body_bytes,
