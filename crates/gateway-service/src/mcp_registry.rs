@@ -127,7 +127,14 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
         let timeout = Duration::from_millis(server.timeout_ms.max(1) as u64);
         let query_credential = gateway_mcp_upstream_query(server)
             .map_err(|error| McpClientError::InvalidHeader(error.to_string()))?;
-        let client = self.clients.for_server(server).clone();
+        let client = self
+            .clients
+            .for_server(server)
+            .map_err(|error| McpClientError::InvalidUrl {
+                url: server.server_url.clone(),
+                message: error.to_string(),
+            })?
+            .clone();
         StreamableHttpClient::with_http_client(&server.server_url, client, timeout)?
             .with_query_credential(query_credential)
             .list_tools(headers)
@@ -275,19 +282,9 @@ where
             .map_err(Into::into)
     }
 
-    /// Moves the server to another owner. Callers resolve the ownership with
-    /// [`crate::McpOwnership::transfer_ownership`] first.
-    pub async fn transfer_ownership(
-        &self,
-        mcp_server_id: Uuid,
-        ownership: McpServerOwnership,
-    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
-        self.transfer_ownership_if(mcp_server_id, ownership, None)
-            .await
-    }
-
-    /// Like [`Self::transfer_ownership`], but only while the server still has
-    /// `expected` (when given); a newer change makes it a conflict.
+    /// Moves the server to `ownership`, which callers resolve with
+    /// [`crate::McpOwnership::transfer_ownership`] first. With `expected`, only
+    /// while the server still has it; a newer change makes it a conflict.
     pub async fn transfer_ownership_if(
         &self,
         mcp_server_id: Uuid,

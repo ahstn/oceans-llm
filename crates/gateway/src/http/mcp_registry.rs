@@ -485,7 +485,11 @@ pub async fn transfer_mcp_server_ownership(
         )
         .await?;
     let service = McpRegistryService::new(state.store.clone());
-    let update = service.transfer_ownership(server_id, resolved).await?;
+    // Written only while the server still has the ownership read above, so two
+    // concurrent transfers cannot overwrite each other or audit a stale `before`.
+    let update = service
+        .transfer_ownership_if(server_id, resolved, Some(existing.ownership.clone()))
+        .await?;
     // A grant that raced the narrowing check checks after its own write; this
     // side checks after the transfer, so whichever lands second sees the
     // other. Undo the transfer if access is now stranded.
@@ -1474,18 +1478,31 @@ async fn member_access(
         .iter()
         .map(|server| (server.mcp_server_id, server.server_key.as_str()))
         .collect();
+    // Keys with the same server list resolve together, which is exact: their
+    // grants are filtered by the one list they share. The groups resolve
+    // concurrently, so a user's many restricted keys cost one round trip.
+    let mut groups: std::collections::BTreeMap<Vec<String>, Vec<McpGrantSubject>> =
+        std::collections::BTreeMap::new();
+    for key in restricted {
+        let allow_list = key.access.mcp_server_keys.clone().unwrap_or_default();
+        groups
+            .entry(allow_list)
+            .or_default()
+            .push(key_subject(key.id));
+    }
+    let resolutions = futures_util::future::try_join_all(groups.values().map(|subjects| {
+        state
+            .store
+            .resolve_mcp_access_for_subjects(subjects, None, McpToolProjection::Full)
+    }))
+    .await?;
     let mut seen: std::collections::HashSet<Uuid> =
         tools.iter().map(|tool| tool.mcp_tool_id).collect();
-    for key in restricted {
-        for tool in state
-            .store
-            .resolve_mcp_access_for_subjects(&[key_subject(key.id)], None, McpToolProjection::Full)
-            .await?
-            .allowed_tools
-        {
+    for (allow_list, resolution) in groups.keys().zip(resolutions) {
+        for tool in resolution.allowed_tools {
             let allowed = server_keys
                 .get(&tool.mcp_server_id)
-                .is_some_and(|server_key| key.access.allows_mcp_server(server_key));
+                .is_some_and(|server_key| allow_list.iter().any(|allowed| allowed == server_key));
             if allowed && seen.insert(tool.mcp_tool_id) {
                 tools.push(tool);
             }
@@ -1593,22 +1610,30 @@ async fn present_servers(
     scope: &McpAdminScope,
     servers: Vec<ExternalMcpServerRecord>,
 ) -> Result<Vec<McpServerView>, AppError> {
-    let mut names = std::collections::HashMap::new();
-    let mut views = Vec::with_capacity(servers.len());
-    for server in servers {
-        let owner = server.ownership.owner_team_id;
-        let name = match names.get(&owner) {
-            Some(name) => Clone::clone(name),
-            None => {
-                let name = owner_team_name(state, owner).await?;
-                names.insert(owner, name.clone());
-                name
-            }
-        };
-        let can_manage = scope.can_manage(&server);
-        views.push(map_server(server).for_viewer(name, can_manage));
-    }
-    Ok(views)
+    // Every owning team's name in one read, only when a team owns a server.
+    let names: std::collections::HashMap<Uuid, String> = if servers
+        .iter()
+        .any(|server| server.ownership.owner_team_id.is_some())
+    {
+        gateway_core::AdminIdentityRepository::list_teams(&*state.store)
+            .await?
+            .into_iter()
+            .map(|team| (team.team_id, team.team_name))
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+    Ok(servers
+        .into_iter()
+        .map(|server| {
+            let name = server
+                .ownership
+                .owner_team_id
+                .and_then(|team_id| names.get(&team_id).cloned());
+            let can_manage = scope.can_manage(&server);
+            map_server(server).for_viewer(name, can_manage)
+        })
+        .collect())
 }
 
 /// The servers a team admin manages; `None` for a platform admin, who manages all.

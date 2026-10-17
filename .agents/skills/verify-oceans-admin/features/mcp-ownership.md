@@ -44,3 +44,4 @@ Steps:
 - A transfer to another team, or narrowing a published server to `Team only`, returns `409` while the server's tools are in a tool set or granted outside the new owning team. Revoke first.
 - Saving a tool set that holds a tool of a `Team only` server returns `409`, not `400`, even when the set is unchanged. A grant or credential saved while its server moves owner or visibility is also `409` and writes nothing.
 - A team-owned server's discovery refresh and proxied calls reach only public addresses, checked at connect time, unless its URL is an IP address, `localhost`, or a host under `mcp.oauth.private_network_hosts`. A platform-registered internal server moved to a team by hostname fails discovery with a blocked-address error until its host is listed there; that is expected.
+- Saving a server's auth settings (URL, auth mode or auth config) revokes every user's OAuth tokens for it, so users must connect again; that is expected, not a lost credential.

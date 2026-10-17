@@ -1575,6 +1575,69 @@ pub(crate) mod tests {
             })
             .await
             .expect("store OAuth client");
+        // Users' OAuth tokens are revoked with it; other credentials stand.
+        let oauth_user = store
+            .create_identity_user(
+                "OAuth user",
+                "mcp-oauth-user@example.com",
+                "mcp-oauth-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("OAuth user");
+        let binding = |owner_scope_kind,
+                       owner_user_id: Option<Uuid>,
+                       owner_team_id: Option<Uuid>,
+                       material_kind| {
+            UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind,
+                owner_scope_key: format!(
+                    "mcp_credential:v1:{}:{}",
+                    if owner_user_id.is_some() {
+                        "user"
+                    } else {
+                        "team"
+                    },
+                    owner_user_id.or(owner_team_id).unwrap_or_default()
+                ),
+                owner_user_id,
+                owner_team_id,
+                owner_service_account_id: None,
+                material_kind,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+            }
+        };
+        store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                McpUpstreamCredentialOwnerScopeKind::User,
+                Some(oauth_user.user_id),
+                None,
+                McpUpstreamCredentialMaterialKind::OauthTokens,
+            ))
+            .await
+            .expect("user OAuth tokens");
+        let (team_binding, _) = store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                McpUpstreamCredentialOwnerScopeKind::Team,
+                None,
+                Some(team.team_id),
+                McpUpstreamCredentialMaterialKind::BearerToken,
+            ))
+            .await
+            .expect("team bearer token");
         let mut retargeted = settings(
             Some("docs@example.com"),
             McpServerVisibility::Organisation,
@@ -1595,6 +1658,22 @@ pub(crate) mod tests {
                 .expect("load OAuth client")
                 .is_none()
         );
+        let active = store
+            .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, false)
+            .await
+            .expect("active bindings");
+        assert_eq!(
+            active
+                .iter()
+                .map(|binding| binding.material_kind)
+                .collect::<Vec<_>>(),
+            vec![McpUpstreamCredentialMaterialKind::BearerToken],
+            "only the OAuth tokens are revoked"
+        );
+        store
+            .revoke_mcp_upstream_credential_binding(team_binding.credential_binding_id, now)
+            .await
+            .expect("revoke team bearer token");
         // Restore the settings the rest of this test expects.
         store
             .update_external_mcp_server(&settings(

@@ -109,7 +109,7 @@ Every other signed-in user also gets the `mcp` page by default, through the `use
 | Action | Team owner or admin |
 |---|---|
 | See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, only the URL's origin (`scheme://host[:port]`) is shown, and the auth config and discovery errors are hidden |
-| Register a server | Yes, at an address that resolves and is public. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
+| Register a server | Yes, at an address that resolves and is public. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config, and one a platform admin set stays only while the server URL and every URL in the auth config are unchanged. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
 | Edit, disable, refresh discovery | Their team's servers |
 | Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
 | Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
@@ -125,7 +125,9 @@ A team-owned server's traffic, for discovery and for every call through the
 gateway, reaches public addresses only, checked each time it connects. A URL
 entered by IP address or as `localhost` keeps that address's own kind, and a
 host listed under `mcp.oauth.private_network_hosts` may also reach private
-networks. A platform admin who registers a server on an internal network for a
+networks. A link-local or cloud metadata address is never reached. Its OAuth
+token and registration requests are scoped by each endpoint's own URL the same
+way. A platform admin who registers a server on an internal network for a
 team by hostname lists that host there. This traffic follows no redirects and
 does not use an HTTP proxy. Platform-owned servers are not limited.
 
@@ -332,7 +334,7 @@ A discovered server's auth config looks like this:
 
 Discovery recommends a registration method in this order:
 
-- **`dynamic`**, when the authorization server has a `registration_endpoint`. The first user to connect causes Oceans to register itself (RFC 7591) with the shared callback URI. Oceans stores the issued client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the secret expires. A refresh never registers a new client.
+- **`dynamic`**, when the authorization server has a `registration_endpoint`. The first user to connect causes Oceans to register itself (RFC 7591) with the shared callback URI. Oceans stores the issued client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the secret expires. A refresh never registers a new client. Changing the server's URL, auth mode or auth config drops the registered client and revokes every user's OAuth tokens for the server, so each user connects again.
 - **`metadata_document`**, when the authorization server sets `client_id_metadata_document_supported`. Oceans uses the URL of a Client ID Metadata Document that the gateway hosts as its client ID. It connects as a public client protected by PKCE:
 
   ```text

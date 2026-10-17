@@ -184,6 +184,7 @@ impl CatalogInvocation<'_> {
             self.state
                 .mcp_http_clients
                 .for_server(&upstream.server)
+                .map_err(CatalogCallError::Gateway)?
                 .clone(),
             Duration::from_millis(upstream.server.timeout_ms.max(1) as u64),
         )

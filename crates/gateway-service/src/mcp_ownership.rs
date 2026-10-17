@@ -574,9 +574,14 @@ where
             .get_external_mcp_tool(mcp_tool_id)
             .await?
             .ok_or_else(|| tool_not_found(mcp_tool_id))?;
+        // A server the caller cannot see hides its tools too. Any other
+        // failure, such as a store outage, is reported as it is.
         self.visible_server(scope, tool.mcp_server_id)
             .await
-            .map_err(|_| tool_not_found(mcp_tool_id))
+            .map_err(|error| match error {
+                GatewayError::Store(StoreError::NotFound(_)) => tool_not_found(mcp_tool_id),
+                other => other,
+            })
     }
 
     async fn existing_team(&self, team_id: Uuid) -> Result<Uuid, GatewayError> {
@@ -680,7 +685,9 @@ pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
 /// process-wide secret and send it to a server the team controls; nor add a
 /// non-public URL, such as a token endpoint the gateway calls. Values a
 /// platform admin set are exempt only while they, and the server URL, stay the
-/// same.
+/// same. An inherited secret reference also needs every URL in the config to
+/// stay the same, since the gateway sends that secret to a token endpoint the
+/// config names.
 pub async fn authorize_team_auth_config(
     scope: &McpAdminScope,
     auth_config: &Map<String, Value>,
@@ -697,10 +704,18 @@ pub async fn authorize_team_auth_config(
         collect_strings("", &Value::Object(previous.clone()), &mut previous_values);
     }
     let url_unchanged = previous.is_some_and(|(_, url)| url == server_url.trim());
+    let config_urls = |values: &[(String, String)]| {
+        values
+            .iter()
+            .filter(|(_, value)| is_http_url(value))
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let config_urls_unchanged = config_urls(&values) == config_urls(&previous_values);
     for (path, value) in values {
         let inherited = previous_values.contains(&(path.clone(), value.clone()));
         if value.starts_with("env/") {
-            if !(inherited && url_unchanged) {
+            if !(inherited && url_unchanged && config_urls_unchanged) {
                 return Err(GatewayError::Auth(AuthError::InsufficientPrivileges));
             }
             continue;
@@ -709,13 +724,17 @@ pub async fn authorize_team_auth_config(
         // set, is exempt only while the server keeps its URL; once the team
         // points the server elsewhere, every URL is checked again.
         if !(inherited && url_unchanged)
+            && is_http_url(&value)
             && let Ok(url) = Url::parse(&value)
-            && matches!(url.scheme(), "http" | "https")
         {
             require_public_destination(&url).await?;
         }
     }
     Ok(())
+}
+
+fn is_http_url(value: &str) -> bool {
+    Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 fn collect_strings(path: &str, value: &Value, out: &mut Vec<(String, String)>) {

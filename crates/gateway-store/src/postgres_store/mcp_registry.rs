@@ -431,6 +431,17 @@ impl McpRegistryRepository for PostgresStore {
                 .execute(&mut *tx)
                 .await
                 .map_err(to_write_error)?;
+            // Users' OAuth tokens were issued by the old endpoints. Revoke them,
+            // so a refresh token is never posted to a token endpoint that did
+            // not issue it; each user connects again.
+            sqlx::query(
+                "UPDATE mcp_upstream_credential_bindings SET revoked_at = $2, updated_at = $2 WHERE mcp_server_id = $1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL",
+            )
+            .bind(input.mcp_server_id.to_string())
+            .bind(input.updated_at.unix_timestamp())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
         }
         // Read inside the transaction, so `current` is the row this update wrote.
         let current = sqlx::query(SERVER_SELECT_BY_ID)

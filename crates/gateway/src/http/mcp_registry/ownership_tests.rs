@@ -1391,6 +1391,64 @@ async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
 }
 
 #[tokio::test]
+async fn an_inherited_client_secret_stays_bound_to_its_token_endpoint() {
+    let context = TestContext::new().await;
+    let admin = context.team_admin(context.team_a).await;
+    // A platform admin gave the team's server a manual OAuth client whose
+    // secret is a gateway environment reference.
+    let auth_config = json!({
+        "resource": "https://8.8.8.8/files/mcp",
+        "issuer": "https://8.8.8.8",
+        "authorization_endpoint": "https://8.8.8.8/authorize",
+        "token_endpoint": "https://8.8.8.8/token",
+        "client_registration": "manual",
+        "client_id": "files",
+        "client_secret_ref": "env/OCEANS_MCP_DISCOVERY_PLATFORM_SECRET",
+    });
+    let server = context
+        .state
+        .store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "files".to_string(),
+            display_name: "Files".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://8.8.8.8/files/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::OauthObo,
+            auth_config: serde_json::from_value(auth_config.clone()).unwrap(),
+            timeout_ms: 5_000,
+            ownership: context.team_owned(context.team_a, McpServerVisibility::Team),
+            created_at: OffsetDateTime::now_utc(),
+        })
+        .await
+        .unwrap();
+    let kept = json!({
+        "server_url": "https://8.8.8.8/files/mcp",
+        "auth_mode": "oauth_obo",
+        "auth_config": auth_config,
+    });
+    let (status, _) = context
+        .update(&admin, server.mcp_server_id, kept.clone())
+        .await;
+    assert_ne!(
+        status,
+        StatusCode::FORBIDDEN,
+        "kept as is, the secret may stay"
+    );
+    // Same server URL, same reference, a new public token endpoint: the gateway
+    // would send the platform's secret there, so the reference may not stay.
+    let mut retargeted = kept;
+    retargeted["auth_config"]["token_endpoint"] = json!("https://1.1.1.1/token");
+    assert_eq!(
+        context
+            .update(&admin, server.mcp_server_id, retargeted)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
 async fn inherited_internal_endpoints_are_rechecked_when_the_server_moves() {
     let context = TestContext::new().await;
     let admin = context.team_admin(context.team_a).await;

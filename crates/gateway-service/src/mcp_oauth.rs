@@ -95,9 +95,11 @@ pub struct McpOauthClient {
     default_scopes: Vec<String>,
     google: bool,
     token_endpoint_source: TokenEndpointSource,
-    /// The admin-entered MCP server URL, which scopes this client's
-    /// registration and token requests. Never a URL an upstream supplied.
-    server_url: String,
+    /// The URL that scopes this client's token requests, never one an
+    /// upstream supplied: the admin-entered MCP server URL, or for a
+    /// team-owned server the token endpoint itself, so a team cannot widen an
+    /// endpoint it edited to the private networks its server's URL reaches.
+    scope_url: String,
 }
 
 impl std::fmt::Debug for McpOauthClient {
@@ -200,6 +202,19 @@ fn secure_token_url(raw: &str) -> Result<url::Url, GatewayError> {
         Err(GatewayError::InvalidRequest(
             "token endpoint must use https".to_string(),
         ))
+    }
+}
+
+/// The URL whose host scopes requests to `endpoint`. A platform admin wrote a
+/// platform-owned server's URL and stands behind every endpoint it uses. A team
+/// admin may have edited a team-owned server's endpoints, which were checked
+/// only when saved, so each is scoped by its own URL: a hostname reaches public
+/// addresses unless listed in `mcp.oauth.private_network_hosts`.
+fn endpoint_scope_url<'a>(server: &'a ExternalMcpServerRecord, endpoint: &'a str) -> &'a str {
+    if server.ownership.owner_team_id.is_some() {
+        endpoint
+    } else {
+        &server.server_url
     }
 }
 
@@ -379,7 +394,8 @@ impl McpOauthRuntime {
     ///
     /// A server-level client's token endpoint came from upstream metadata or
     /// the server's auth config, so it goes through the SSRF guard, scoped to
-    /// the admin-entered MCP server URL. A configured provider's endpoint is the
+    /// the admin-entered MCP server URL, or for a team-owned server to the
+    /// endpoint's own URL. A configured provider's endpoint is the
     /// gateway's own configuration and uses the plain client.
     ///
     /// A failure to reach the endpoint is a [`ProviderError::Transport`]; an
@@ -401,7 +417,7 @@ impl McpOauthRuntime {
             let body = response.bytes().await.map_err(oauth_transport_error)?;
             return Ok((status, body.to_vec()));
         }
-        let fetcher = self.token_fetchers.for_trusted_url(&client.server_url);
+        let fetcher = self.token_fetchers.for_trusted_url(&client.scope_url);
         let request = fetcher
             .request(reqwest::Method::POST, &token_url)
             .map_err(oauth_fetch_error)?;
@@ -462,7 +478,7 @@ impl McpOauthRuntime {
                 default_scopes: provider.scopes.clone(),
                 google: provider.provider_type == McpOauthProviderType::Google,
                 token_endpoint_source: TokenEndpointSource::GatewayConfig,
-                server_url: server.server_url.clone(),
+                scope_url: server.server_url.clone(),
             });
         };
         let (client_id, client_secret, method) = match &endpoints.registration {
@@ -511,7 +527,7 @@ impl McpOauthRuntime {
             default_scopes: Vec::new(),
             google: false,
             token_endpoint_source: TokenEndpointSource::Upstream,
-            server_url: server.server_url.clone(),
+            scope_url: endpoint_scope_url(server, &endpoints.token_endpoint).to_string(),
         })
     }
 
@@ -558,7 +574,8 @@ impl McpOauthRuntime {
                 )
             })?;
         let registered = register_oauth_client(
-            self.discovery_fetchers.for_trusted_url(&server.server_url),
+            self.discovery_fetchers
+                .for_trusted_url(endpoint_scope_url(server, registration_endpoint)),
             registration_endpoint,
             redirect_uri,
             endpoints

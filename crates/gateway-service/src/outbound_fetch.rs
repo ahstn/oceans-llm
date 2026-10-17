@@ -71,7 +71,7 @@ impl OutboundAddressScope {
         }
     }
 
-    fn allows(self, address: IpAddr) -> bool {
+    pub(crate) fn allows(self, address: IpAddr) -> bool {
         match classify(address) {
             AddressClass::Public => true,
             AddressClass::PrivateNetwork => self >= Self::PrivateNetwork,

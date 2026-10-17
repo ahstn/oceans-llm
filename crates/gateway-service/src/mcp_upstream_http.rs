@@ -10,14 +10,18 @@
 //! when it connects. The scope comes from the URL as written
 //! ([`OutboundAddressScope::of_trusted_url`]), never from a DNS answer: a
 //! hostname reaches public addresses unless it is listed under
-//! `mcp.oauth.private_network_hosts`, and an IP-literal host, which was checked
-//! when it was saved, keeps its own kind of address. See
+//! `mcp.oauth.private_network_hosts`, and an IP-literal host keeps its own kind
+//! of address. A literal never reaches the resolver, so one that no scope
+//! allows, such as a link-local or cloud metadata address, is refused before
+//! any client is returned. See
 //! `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
 
 use std::sync::Arc;
 
-use gateway_core::ExternalMcpServerRecord;
-use url::Url;
+use std::net::IpAddr;
+
+use gateway_core::{ExternalMcpServerRecord, GatewayError};
+use url::{Host, Url};
 
 use crate::outbound_fetch::{OutboundAddressScope, guarded_client_builder};
 
@@ -66,15 +70,45 @@ impl McpUpstreamClients {
         })
     }
 
-    /// The client for requests to `server`.
+    /// Replaces the plain client used for platform-owned servers, such as one
+    /// that ignores proxy settings in tests.
     #[must_use]
-    pub fn for_server(&self, server: &ExternalMcpServerRecord) -> &reqwest::Client {
-        match self.scope_for(server) {
-            None => &self.platform,
-            Some(OutboundAddressScope::Public) => &self.team[0],
-            Some(OutboundAddressScope::PrivateNetwork) => &self.team[1],
-            Some(OutboundAddressScope::Loopback) => &self.team[2],
+    pub fn with_platform_client(mut self, client: reqwest::Client) -> Self {
+        self.platform = client;
+        self
+    }
+
+    /// The client for requests to `server`. A team-owned server whose URL is an
+    /// IP address its scope does not allow is refused here, since the guarded
+    /// resolver never sees a literal.
+    pub fn for_server(
+        &self,
+        server: &ExternalMcpServerRecord,
+    ) -> Result<&reqwest::Client, GatewayError> {
+        let Some(scope) = self.scope_for(server) else {
+            return Ok(&self.platform);
+        };
+        if let Some(address) = literal_address(&server.server_url)
+            && !scope.allows(address)
+        {
+            return Err(GatewayError::InvalidRequest(format!(
+                "MCP server `{}` points at {address}, an address the gateway does not reach",
+                server.server_key
+            )));
         }
+        Ok(match scope {
+            OutboundAddressScope::Public => &self.team[0],
+            OutboundAddressScope::PrivateNetwork => &self.team[1],
+            OutboundAddressScope::Loopback => &self.team[2],
+        })
+    }
+}
+
+fn literal_address(server_url: &str) -> Option<IpAddr> {
+    match Url::parse(server_url).ok()?.host()? {
+        Host::Ipv4(address) => Some(IpAddr::V4(address)),
+        Host::Ipv6(address) => Some(IpAddr::V6(address)),
+        Host::Domain(_) => None,
     }
 }
 
@@ -155,6 +189,28 @@ mod tests {
         assert_eq!(scope("not a url", team), Some(OutboundAddressScope::Public));
     }
 
+    #[test]
+    fn team_servers_never_get_a_client_for_blocked_literals() {
+        let clients = McpUpstreamClients::default();
+        let team = Some(Uuid::new_v4());
+        for url in [
+            "http://169.254.169.254/latest/meta-data",
+            "http://[fe80::1]/mcp",
+            "http://0.0.0.0/mcp",
+        ] {
+            assert!(clients.for_server(&server(url, team)).is_err(), "{url}");
+            // A platform admin's own server is not limited.
+            assert!(clients.for_server(&server(url, None)).is_ok(), "{url}");
+        }
+        for url in [
+            "https://8.8.8.8/mcp",
+            "http://10.0.0.5/mcp",
+            "http://127.0.0.1:9000/mcp",
+        ] {
+            assert!(clients.for_server(&server(url, team)).is_ok(), "{url}");
+        }
+    }
+
     #[tokio::test]
     async fn public_scope_refuses_names_that_resolve_internally() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -192,6 +248,7 @@ mod tests {
         for owner in [Some(Uuid::new_v4()), None] {
             let response = clients
                 .for_server(&server(&url, owner))
+                .expect("client")
                 .post(&url)
                 .send()
                 .await
