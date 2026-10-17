@@ -7,7 +7,7 @@ This page explains how to run Oceans LLM on one Linux host, update it by hand, a
 ## Runtime Shape
 
 ```text
-tailnet client --HTTPS--> tailscaled (serve :443)
+tailnet client --HTTPS--> svc:oceans-llm :443 (Tailscale Service, served by tailscaled on hogwarts)
                               |
                               v
                      gateway   127.0.0.1:8080  --/admin*--> admin-ui 127.0.0.1:3001
@@ -19,7 +19,7 @@ tailnet client --HTTPS--> tailscaled (serve :443)
 - `mise.selfhost.toml` declares the `gateway` and `admin-ui` daemons. It also redeclares `db` for a fixed port and boot start. The file loads only in the `selfhost` config environment, so laptops and CI never see it.
 - The `db` daemon is also declared in the root `mise.toml`. Developers use it for local Postgres (`mise run //crates/gateway-store:postgres:start`). It replaced the old `pitchfork.toml` and `scripts/postgres-pitchfork.sh`.
 - Pitchfork supervises the daemons. Mise generates the Pitchfork config.
-- Every listener binds to `127.0.0.1`. `tailscale serve` is the only way in.
+- Every listener binds to `127.0.0.1`. The Tailscale Service `svc:oceans-llm` is the only way in. Its name, `oceans-llm.<tailnet>.ts.net`, does not depend on the host.
 - The gateway and UI run from source built on the host. Nothing is pulled from a registry.
 
 ## Optional Skills Storage with RustFS
@@ -98,6 +98,7 @@ Restore metadata and objects from the same backup set. Start the service, downlo
 
   Without `bison`, `flex`, `libreadline-dev`, or `uuid-dev`, `mise install` fails with `Failed to configure PostgreSQL`.
 - Tailscale running and logged in. In the Tailscale admin console, enable MagicDNS and HTTPS certificates.
+- Tailnet policy for the Service. The host must carry a tag (Service hosts cannot be user-owned), the Service `svc:oceans-llm` must exist with port `tcp:443`, the tag must auto-approve that Service, and a grant must allow clients to reach `svc:oceans-llm` on port 443. The `hogwarts` setup manages all four as code in `ahstn/dotfiles` (`tailnet/`, `mise run tailnet apply`). Tagging a host takes it out of `autogroup:self`, so add a Tailscale SSH rule for the tag before you tag it.
 - A normal user, not root. The Postgres preset refuses to run as root.
 
 ### 2. Clone and select the environment
@@ -123,7 +124,7 @@ cat > mise.selfhost.local.toml <<EOF
 OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "$(openssl rand -base64 32)"
 GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = "$(openssl rand -base64 18)"
 GATEWAY_API_KEY = "gwk_hogwarts.$(openssl rand -hex 24)"
-GATEWAY_PUBLIC_BASE_URL = "https://hogwarts.<tailnet>.ts.net"
+GATEWAY_PUBLIC_BASE_URL = "https://oceans-llm.<tailnet>.ts.net"
 OPENROUTER_API_KEY = "<key>"
 EOF
 ```
@@ -169,13 +170,15 @@ This builds the UI and the release gateway, starts Postgres, and starts the gate
 mise run selfhost-expose
 ```
 
-`selfhost-expose` runs `tailscale serve --bg --https=443 http://127.0.0.1:8080` and is safe to repeat. `deploy` runs it as its last step. Serve config lives inside `tailscaled` and persists across reboots, so no daemon supervises it. The first run may print a `login.tailscale.com` link: open it to enable Serve and HTTPS certificates for the node, then run the task again.
+`selfhost-expose` runs `tailscale serve --service=svc:oceans-llm --https=443 http://127.0.0.1:8080` and is safe to repeat. The command configures the host's endpoint and advertises it for the Service. With the auto-approver in place, the host serves traffic as soon as it advertises. Without it, approve the host on the Services page of the admin console. `deploy` runs the task as its last step. Serve config lives inside `tailscaled` and persists across reboots, so no daemon supervises it.
+
+Hosts that ran the earlier node-level setup also have `https://<host>.<tailnet>.ts.net` → `http://127.0.0.1:8080`. `selfhost-expose` removes that handler when it still points at the gateway, and leaves any other handler on the host's port 443 alone. Update `GATEWAY_PUBLIC_BASE_URL` to the Service name and restart the gateway, or OAuth callbacks keep pointing at the old host name.
 
 Serve is not strictly required. Binding the gateway to the Tailscale IP would also work, but the session cookie then loses its `Secure` flag (the gateway sets it only when it sees `x-forwarded-proto: https`), and the port is exposed on that interface. Serve avoids both.
 
-Do not run `tailscale funnel`. Funnel makes the service public. Limit who can reach `hogwarts:443` with Tailscale ACLs.
+Do not run `tailscale funnel`. Funnel makes the service public. Limit who can reach `svc:oceans-llm` with the grant in the tailnet policy.
 
-Sign in at `https://hogwarts.<tailnet>.ts.net/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The gateway forces a password change.
+Sign in at `https://oceans-llm.<tailnet>.ts.net/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The gateway forces a password change.
 
 ### 8. Start at boot
 
