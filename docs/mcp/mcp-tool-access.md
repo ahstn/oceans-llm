@@ -91,6 +91,10 @@ same Access tab, limited to their team:
 - The access preview needs one of their team's servers and a subject inside their
   team.
 
+For every admin, previewing an API key applies that key's scopes and server list
+as the gateway does at runtime: a key without an MCP scope, or limited to other
+servers, previews no tools.
+
 A server's visibility bounds every actor, platform admins included. A `team`
 server's tools can be granted only to subjects of its owning team; granting one to
 anyone else returns `400`. Publish the server to the organisation first. See

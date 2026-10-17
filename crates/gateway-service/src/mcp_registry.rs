@@ -187,6 +187,18 @@ where
             .map_err(Into::into)
     }
 
+    /// One owner's servers: a team's, or the platform's for `None`.
+    pub async fn list_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, GatewayError> {
+        self.repo
+            .list_external_mcp_servers_owned_by(owner_team_id, include_disabled)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn create_server(
         &self,
         input: CreateExternalMcpServerInput,

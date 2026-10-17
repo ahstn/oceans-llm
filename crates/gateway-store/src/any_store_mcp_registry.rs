@@ -22,6 +22,25 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_external_mcp_servers_owned_by(owner_team_id, include_disabled)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_external_mcp_servers_owned_by(owner_team_id, include_disabled)
+                    .await
+            }
+        }
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
@@ -119,13 +138,21 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
-    async fn list_mcp_toolset_keys_for_server(
+    async fn first_active_mcp_toolset_key_for_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<String>, StoreError> {
+    ) -> Result<Option<String>, StoreError> {
         match self {
-            Self::Libsql(store) => store.list_mcp_toolset_keys_for_server(mcp_server_id).await,
-            Self::Postgres(store) => store.list_mcp_toolset_keys_for_server(mcp_server_id).await,
+            Self::Libsql(store) => {
+                store
+                    .first_active_mcp_toolset_key_for_server(mcp_server_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .first_active_mcp_toolset_key_for_server(mcp_server_id)
+                    .await
+            }
         }
     }
 

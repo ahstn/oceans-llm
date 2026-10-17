@@ -1474,6 +1474,32 @@ pub(crate) mod tests {
             })
             .await
             .expect("create team-owned MCP server");
+        // The owner filter runs in the query: the team's servers, or the
+        // platform's for `None`.
+        let owned_by =
+            |owner_team_id| store.list_external_mcp_servers_owned_by(owner_team_id, true);
+        assert_eq!(
+            owned_by(Some(team.team_id))
+                .await
+                .expect("team's servers")
+                .iter()
+                .map(|server| server.mcp_server_id)
+                .collect::<Vec<_>>(),
+            vec![server.mcp_server_id]
+        );
+        assert!(
+            owned_by(None)
+                .await
+                .expect("platform's servers")
+                .iter()
+                .all(|listed| listed.mcp_server_id != server.mcp_server_id)
+        );
+        assert!(
+            owned_by(Some(Uuid::new_v4()))
+                .await
+                .expect("unknown team")
+                .is_empty()
+        );
         assert_eq!(server.ownership, owned);
         // Both backends refuse a platform-owned server that is team-only.
         assert!(
@@ -1810,12 +1836,31 @@ pub(crate) mod tests {
             .replace_mcp_toolset_tools(toolset.toolset_id, &[tool.mcp_tool_id], now)
             .await
             .expect("add tool to set");
+        // A disabled tool set exposes nothing, so only active sets count.
+        let disabled = store
+            .create_mcp_toolset(&gateway_core::NewMcpToolsetRecord {
+                toolset_key: "aaa-disabled-set".to_string(),
+                display_name: "Disabled".to_string(),
+                description: None,
+                created_at: now,
+            })
+            .await
+            .expect("create disabled tool set");
+        store
+            .replace_mcp_toolset_tools(disabled.toolset_id, &[tool.mcp_tool_id], now)
+            .await
+            .expect("add tool to disabled set");
+        store
+            .disable_mcp_toolset(disabled.toolset_id, now)
+            .await
+            .expect("disable tool set");
         assert_eq!(
             store
-                .list_mcp_toolset_keys_for_server(server.mcp_server_id)
+                .first_active_mcp_toolset_key_for_server(server.mcp_server_id)
                 .await
-                .expect("tool sets for server"),
-            vec!["team-docs-set".to_string()]
+                .expect("tool sets for server")
+                .as_deref(),
+            Some("team-docs-set")
         );
         let grant = |subject_id| gateway_core::UpsertMcpToolGrantRecord {
             subject_kind: gateway_core::McpToolGrantSubjectKind::Team,

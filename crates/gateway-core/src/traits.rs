@@ -1028,6 +1028,21 @@ pub trait McpRegistryRepository: Send + Sync {
         include_disabled: bool,
     ) -> Result<Vec<ExternalMcpServerRecord>, StoreError>;
 
+    /// Like [`Self::list_external_mcp_servers`], for one owner: a team, or the
+    /// platform when `owner_team_id` is `None`. Stores filter in the query.
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        Ok(self
+            .list_external_mcp_servers(include_disabled)
+            .await?
+            .into_iter()
+            .filter(|server| server.ownership.owner_team_id == owner_team_id)
+            .collect())
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
@@ -1090,12 +1105,13 @@ pub trait McpRegistryRepository: Send + Sync {
         include_inactive: bool,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
 
-    /// Keys of the tool sets, including disabled ones, that hold any of the
-    /// server's tools.
-    async fn list_mcp_toolset_keys_for_server(
+    /// The first key, alphabetically, of an active tool set that holds any of
+    /// the server's tools. A disabled tool set exposes nothing, so it is
+    /// ignored.
+    async fn first_active_mcp_toolset_key_for_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<String>, StoreError> {
+    ) -> Result<Option<String>, StoreError> {
         let _ = mcp_server_id;
         Err(StoreError::Unexpected(
             "MCP tool set lookup by server is not implemented for this repository".to_string(),

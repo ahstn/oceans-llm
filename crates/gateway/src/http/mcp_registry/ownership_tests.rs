@@ -1580,6 +1580,28 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
         created_at: OffsetDateTime::now_utc(),
     };
     let admin = context.team_admin(context.team_a).await;
+    // The access preview applies the key's scopes and server list too.
+    let preview = |api_key_id: Uuid| {
+        let headers = admin.headers.clone();
+        let state = context.state.clone();
+        async move {
+            read(
+                preview_mcp_effective_access(
+                    State(state),
+                    headers,
+                    Query(
+                        serde_json::from_value(json!({
+                            "api_key_id": api_key_id,
+                            "server_id": server.id,
+                        }))
+                        .unwrap(),
+                    ),
+                )
+                .await,
+            )
+            .await
+        }
+    };
     // A grant on an inference-only key, and on an MCP key limited to another
     // server, reaches nothing the member can call.
     for access in [
@@ -1606,6 +1628,9 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
                 .0,
             StatusCode::OK
         );
+        let (status, body) = preview(id).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["data"]["tools"], json!([]), "{body}");
     }
     let (_, body) = context.list(&member, None).await;
     assert_eq!(body["data"]["items"], json!([]));
@@ -1630,4 +1655,10 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
     );
     let (_, body) = context.list(&member, None).await;
     assert_eq!(body["data"]["items"][0]["id"], server.id.to_string());
+    let (_, body) = preview(id).await;
+    assert_eq!(
+        body["data"]["tools"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
 }

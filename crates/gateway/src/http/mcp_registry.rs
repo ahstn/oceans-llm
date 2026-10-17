@@ -129,13 +129,18 @@ pub async fn list_mcp_servers(
     };
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
-    let servers = service
-        .list_servers(query.include_disabled)
-        .await?
-        .into_iter()
-        .filter(|server| scope.can_view(server))
-        .filter(|server| owner.is_none_or(|owner| owner.matches(server)))
-        .collect();
+    // The owner filter runs in the store query; visibility is still the caller's.
+    let servers = match owner {
+        Some(owner) => {
+            service
+                .list_servers_owned_by(owner.team_id(), query.include_disabled)
+                .await?
+        }
+        None => service.list_servers(query.include_disabled).await?,
+    }
+    .into_iter()
+    .filter(|server| scope.can_view(server))
+    .collect();
     let items = present_servers(&state, &scope, servers).await?;
     Ok(Json(envelope(McpServersPayload {
         items,
@@ -690,8 +695,15 @@ pub async fn refresh_mcp_server_discovery(
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
     let server = ownership(&state).managed_server(&scope, server_id).await?;
-    // Re-checked on each refresh, since the host may now resolve elsewhere.
-    authorize_destination(&scope, &server.server_url).await?;
+    // Re-checked on each refresh, since the host may now resolve elsewhere. A
+    // host listed in `mcp.oauth.private_network_hosts` may resolve privately;
+    // the guarded client still holds it to private networks when it connects.
+    if !state
+        .mcp_http_clients
+        .is_private_network_host(&server.server_url)
+    {
+        authorize_destination(&scope, &server.server_url).await?;
+    }
     let service = McpRegistryService::with_client(
         state.store.clone(),
         Arc::new(HttpMcpDiscoveryClient::new(state.mcp_http_clients.clone())),
@@ -1369,16 +1381,60 @@ pub async fn preview_mcp_effective_access(
             }
         }
     }
-    let resolution = state
+    let mut resolution = state
         .store
         .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)
         .await?;
+    if let Some(api_key_id) = query.api_key_id {
+        limit_to_api_key_access(&state, api_key_id, &mut resolution).await?;
+    }
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: resolution.referenced_server_count,
         exposed_tool_count: resolution.exposed_tool_count,
         filtered_tool_count: resolution.filtered_tool_count,
         tools: resolution.allowed_tools.into_iter().map(map_tool).collect(),
     })))
+}
+
+/// Narrows a preview to what the API key can call at runtime: nothing without
+/// an MCP scope, and with a server list only those servers' tools. Grants alone
+/// would report tools the gateway refuses that key.
+async fn limit_to_api_key_access(
+    state: &AppState,
+    api_key_id: Uuid,
+    resolution: &mut gateway_core::McpAccessResolution,
+) -> Result<(), AppError> {
+    use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
+    let Some(key) = AdminApiKeyRepository::get_api_key_by_id(&*state.store, api_key_id).await?
+    else {
+        return Ok(());
+    };
+    if !(key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)) {
+        resolution.allowed_tools.clear();
+    } else if key.access.mcp_server_keys.is_some() {
+        let server_keys: std::collections::HashMap<Uuid, String> = state
+            .store
+            .list_external_mcp_servers(true)
+            .await?
+            .into_iter()
+            .map(|server| (server.mcp_server_id, server.server_key))
+            .collect();
+        resolution.allowed_tools.retain(|tool| {
+            server_keys
+                .get(&tool.mcp_server_id)
+                .is_some_and(|server_key| key.access.allows_mcp_server(server_key))
+        });
+    }
+    let servers: std::collections::HashSet<Uuid> = resolution
+        .allowed_tools
+        .iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect();
+    resolution.referenced_server_count = servers.len() as i64;
+    resolution.filtered_tool_count = resolution
+        .exposed_tool_count
+        .saturating_sub(resolution.allowed_tools.len() as i64);
+    Ok(())
 }
 
 fn preview_subjects(query: &McpEffectiveAccessQuery) -> Vec<McpGrantSubject> {
@@ -1569,9 +1625,14 @@ enum OwnerFilter {
 
 impl OwnerFilter {
     fn matches(self, server: &ExternalMcpServerRecord) -> bool {
+        server.ownership.owner_team_id == self.team_id()
+    }
+
+    /// The owning team the filter names; `None` for the platform.
+    fn team_id(self) -> Option<Uuid> {
         match self {
-            Self::Platform => server.ownership.owner_team_id.is_none(),
-            Self::Team(team_id) => server.ownership.owned_by(team_id),
+            Self::Platform => None,
+            Self::Team(team_id) => Some(team_id),
         }
     }
 }

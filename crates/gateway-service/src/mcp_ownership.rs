@@ -525,9 +525,8 @@ where
         // Both reads are scoped to this server's tools, not the whole organisation.
         if let Some(toolset_key) = self
             .repo
-            .list_mcp_toolset_keys_for_server(mcp_server_id)
+            .first_active_mcp_toolset_key_for_server(mcp_server_id)
             .await?
-            .first()
         {
             return Err(conflict(format!(
                 "tool set `{toolset_key}` contains this server's tools; remove them before limiting the server to one team"

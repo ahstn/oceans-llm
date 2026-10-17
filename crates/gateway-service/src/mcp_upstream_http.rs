@@ -23,7 +23,7 @@ use std::net::IpAddr;
 use gateway_core::{ExternalMcpServerRecord, GatewayError};
 use url::{Host, Url};
 
-use crate::outbound_fetch::{OutboundAddressScope, guarded_client_builder};
+use crate::outbound_fetch::{OutboundAddressScope, guarded_client_builder, host_matches_domains};
 
 #[derive(Debug, Clone)]
 pub struct McpUpstreamClients {
@@ -67,6 +67,17 @@ impl McpUpstreamClients {
         Some(match Url::parse(&server.server_url) {
             Ok(url) => OutboundAddressScope::of_trusted_url(&url, &self.private_network_hosts),
             Err(_) => OutboundAddressScope::Public,
+        })
+    }
+
+    /// Whether `server_url`'s host is a name listed under
+    /// `mcp.oauth.private_network_hosts`, or a subdomain of one. Requests to it
+    /// may reach private networks, so a check that would require a public
+    /// address defers to the private-network scope enforced at connect time.
+    #[must_use]
+    pub fn is_private_network_host(&self, server_url: &str) -> bool {
+        Url::parse(server_url).is_ok_and(|url| {
+            matches!(url.host(), Some(Host::Domain(domain)) if host_matches_domains(domain, &self.private_network_hosts))
         })
     }
 
@@ -187,6 +198,9 @@ mod tests {
             Some(OutboundAddressScope::Loopback)
         );
         assert_eq!(scope("not a url", team), Some(OutboundAddressScope::Public));
+        assert!(clients.is_private_network_host("https://mcp.corp.internal/mcp"));
+        assert!(!clients.is_private_network_host("https://mcp.example.com/mcp"));
+        assert!(!clients.is_private_network_host("http://10.0.0.5/mcp"));
     }
 
     #[test]

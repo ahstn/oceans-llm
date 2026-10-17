@@ -281,6 +281,32 @@ impl McpRegistryRepository for LibsqlStore {
         Ok(servers)
     }
 
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND owner_team_id IS ?2 ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    if include_disabled { 1_i64 } else { 0_i64 },
+                    owner_team_id.map(|team_id| team_id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
@@ -573,30 +599,31 @@ impl McpRegistryRepository for LibsqlStore {
         })
     }
 
-    async fn list_mcp_toolset_keys_for_server(
+    async fn first_active_mcp_toolset_key_for_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<String>, StoreError> {
+    ) -> Result<Option<String>, StoreError> {
         let mut rows = self
             .connection
             .query(
                 r#"
-                SELECT DISTINCT ts.toolset_key
+                SELECT ts.toolset_key
                 FROM mcp_toolset_tools tst
                 JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
                 JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
-                WHERE t.mcp_server_id = ?1
+                WHERE t.mcp_server_id = ?1 AND ts.status = 'active'
                 ORDER BY ts.toolset_key
+                LIMIT 1
                 "#,
                 [mcp_server_id.to_string()],
             )
             .await
             .map_err(to_query_error)?;
-        let mut keys = Vec::new();
-        while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            keys.push(row.get(0).map_err(to_query_error)?);
-        }
-        Ok(keys)
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| row.get(0).map_err(to_query_error))
+            .transpose()
     }
 
     async fn count_mcp_tool_grants_outside_team(
