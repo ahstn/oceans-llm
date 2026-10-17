@@ -347,11 +347,13 @@ async fn rate_limited_documents_fall_back_to_the_stored_client() {
     harness
         .start(&harness.authorize_query(CLIENT_ID, &[]))
         .await;
-    // The host now rate limits; the stored copy carries on.
-    fixture.respond(CLIENT_ID, 429);
-    harness
-        .start(&harness.authorize_query(CLIENT_ID, &[]))
-        .await;
+    // The host now rate limits or times out; the stored copy carries on.
+    for status in [429, 408] {
+        fixture.respond(CLIENT_ID, status);
+        harness
+            .start(&harness.authorize_query(CLIENT_ID, &[]))
+            .await;
+    }
     // A missing document is not passing, so it refuses the client.
     fixture.respond(CLIENT_ID, 404);
     let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;

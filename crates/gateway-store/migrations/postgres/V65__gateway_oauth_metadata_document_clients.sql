@@ -15,3 +15,8 @@ ALTER TABLE gateway_oauth_clients
 ALTER TABLE gateway_oauth_clients
   ADD CONSTRAINT gateway_oauth_clients_metadata_document_public_check
   CHECK (registration_kind <> 'metadata_document' OR token_endpoint_auth_method = 'none');
+
+-- Cleanup ages metadata document clients by their last fetch, not by when
+-- they were first seen, so it needs this index to find them.
+CREATE INDEX IF NOT EXISTS gateway_oauth_clients_metadata_updated_idx
+  ON gateway_oauth_clients (registration_kind, updated_at);

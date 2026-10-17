@@ -46,3 +46,8 @@ ALTER TABLE gateway_oauth_clients_v65 RENAME TO gateway_oauth_clients;
 
 CREATE INDEX IF NOT EXISTS gateway_oauth_clients_registration_idx
   ON gateway_oauth_clients (registration_kind, created_at);
+
+-- Cleanup ages metadata document clients by their last fetch, not by when
+-- they were first seen, so it needs this index to find them.
+CREATE INDEX IF NOT EXISTS gateway_oauth_clients_metadata_updated_idx
+  ON gateway_oauth_clients (registration_kind, updated_at);

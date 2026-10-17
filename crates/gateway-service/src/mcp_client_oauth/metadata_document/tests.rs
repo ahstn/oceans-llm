@@ -173,7 +173,12 @@ fn cache_headers_set_freshness_within_bounds() {
         Duration::ZERO
     );
     assert_eq!(cache_ttl(Some("no-store"), None), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("max-age=nonsense"), None), DEFAULT_CACHE_TTL);
+    // Invalid or conflicting freshness is treated as stale.
+    assert_eq!(cache_ttl(Some("max-age=nonsense"), None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=0, max-age=86400"), None),
+        Duration::ZERO
+    );
     // A cache in between already used part of the lifetime.
     assert_eq!(
         cache_ttl(Some("max-age=86400"), Some(86_390)),
@@ -235,9 +240,16 @@ fn in_flight_entries_leave_with_their_last_caller() {
         Arc::ptr_eq(&first.cell, &second.cell),
         "callers share a refresh"
     );
-    // A cancelled request drops its share without finishing the refresh.
+    // A cancelled waiter leaves the shared refresh in place for the other.
     drop(first);
+    let third = InFlight::join(&map, CLIENT_ID);
+    assert!(
+        Arc::ptr_eq(&second.cell, &third.cell),
+        "no second refresh starts"
+    );
+    // The last caller out removes the entry.
     drop(second);
+    drop(third);
     assert!(map.lock().unwrap().is_empty());
 }
 

@@ -113,7 +113,7 @@ pub struct ClientMetadataDocuments {
     cache: Mutex<HashMap<String, CachedClient>>,
     /// One refresh per client at a time: concurrent requests for a stale
     /// document wait for the same fetch and share its result.
-    in_flight: Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
+    in_flight: Flights,
     fetch_permits: Semaphore,
 }
 
@@ -307,8 +307,8 @@ impl ClientMetadataDocuments {
                     "client metadata document returned HTTP {}",
                     fetched.status
                 )),
-                // Rate limiting passes like an outage does.
-                transient: fetched.status == 429 || fetched.status >= 500,
+                // A timeout or rate limit passes like an outage does.
+                transient: matches!(fetched.status, 408 | 429) || fetched.status >= 500,
             });
         }
         let client =
@@ -330,44 +330,52 @@ impl ClientMetadataDocuments {
     }
 }
 
-/// A caller's share of a refresh in flight. Dropping it, whether the refresh
-/// finished or the request was cancelled, removes the map entry, so entries
-/// never outlive the requests that made them.
+type Flights = Mutex<HashMap<String, Flight>>;
+
+/// A refresh in flight and how many requests are waiting on it.
+#[derive(Default)]
+struct Flight {
+    cell: Arc<OnceCell<RefreshOutcome>>,
+    callers: usize,
+}
+
+/// A caller's share of a refresh in flight. The entry stays while any caller
+/// holds a share, so a cancelled waiter cannot let a second, overlapping
+/// refresh start. Dropping the last share, whether the refresh finished or
+/// the request was cancelled, removes the entry.
 struct InFlight<'a> {
-    map: &'a Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
+    map: &'a Flights,
     client_id: &'a str,
     cell: Arc<OnceCell<RefreshOutcome>>,
 }
 
 impl<'a> InFlight<'a> {
-    fn join(
-        map: &'a Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
-        client_id: &'a str,
-    ) -> Self {
-        let cell = map
-            .lock()
-            .expect("metadata document flight lock")
-            .entry(client_id.to_string())
-            .or_default()
-            .clone();
+    fn join(map: &'a Flights, client_id: &'a str) -> Self {
+        let mut flights = map.lock().expect("metadata document flight lock");
+        let flight = flights.entry(client_id.to_string()).or_default();
+        flight.callers += 1;
         Self {
             map,
             client_id,
-            cell,
+            cell: flight.cell.clone(),
         }
     }
 }
 
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
-        let Ok(mut map) = self.map.lock() else {
+        let Ok(mut flights) = self.map.lock() else {
             return;
         };
-        if map
-            .get(self.client_id)
-            .is_some_and(|current| Arc::ptr_eq(current, &self.cell))
-        {
-            map.remove(self.client_id);
+        let Some(flight) = flights.get_mut(self.client_id) else {
+            return;
+        };
+        if !Arc::ptr_eq(&flight.cell, &self.cell) {
+            return;
+        }
+        flight.callers -= 1;
+        if flight.callers == 0 {
+            flights.remove(self.client_id);
         }
     }
 }
@@ -561,7 +569,8 @@ fn validate_document(
 /// How long a document stays fresh. `no-store`, `no-cache`, and `max-age=0`
 /// mean fetching it each time; otherwise `max-age` applies, less the time a
 /// cache in between already held it (`Age`), capped at [`MAX_CACHE_TTL`].
-/// `Expires` is not read.
+/// A malformed or repeated `max-age` makes the response stale (RFC 9111
+/// §4.2.1). `Expires` is not read.
 fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration {
     let Some(cache_control) = cache_control else {
         return DEFAULT_CACHE_TTL;
@@ -573,7 +582,12 @@ fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration 
             return Duration::ZERO;
         }
         if let Some(seconds) = directive.strip_prefix("max-age=") {
-            max_age = seconds.trim_matches('"').parse::<i64>().ok();
+            let Ok(seconds) = seconds.trim_matches('"').parse::<i64>() else {
+                return Duration::ZERO;
+            };
+            if max_age.replace(seconds).is_some() {
+                return Duration::ZERO;
+            }
         }
     }
     max_age.map_or(DEFAULT_CACHE_TTL, |seconds| {
