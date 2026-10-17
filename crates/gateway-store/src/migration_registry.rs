@@ -394,11 +394,11 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         postgres_sql: include_str!("../migrations/postgres/V66__mcp_tool_tag_rules.sql"),
     },
     MigrationManifest {
-        version: 66,
+        version: 67,
         name: "mcp_tool_versions",
-        checksum: "V66__mcp_tool_versions.sql",
-        libsql_sql: include_str!("../migrations/V66__mcp_tool_versions.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V66__mcp_tool_versions.sql"),
+        checksum: "V67__mcp_tool_versions.sql",
+        libsql_sql: include_str!("../migrations/V67__mcp_tool_versions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__mcp_tool_versions.sql"),
     },
 ];
 

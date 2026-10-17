@@ -110,11 +110,11 @@ Turning the setting off does not approve anything on its own. The next discovery
 
 **Served** means `approval_status` is `approved` or `pending_change`. Every resolution query filters on it next to `is_active`, so pending and rejected tools are excluded from explicit grants, toolset grants and tag-rule matches alike (question 2). They cannot be matched by an include rule before review.
 
-For servers with approval on, direct `tools/list` replaces each granted tool's object with the stored approved definition (with effective annotations). Discovery runs only when an admin refreshes, so the live upstream list could otherwise show a changed description before anyone reviewed it. Servers without approval keep the upstream objects, as before.
+For servers with approval on, direct `tools/list` replaces each granted tool's object with the stored approved definition (with effective annotations). Discovery runs only when an admin refreshes, so the live upstream list could otherwise show a changed description before anyone reviewed it. Servers without approval keep the upstream objects, as before, except for a tool whose change still waits or was withheld: after approval is turned off, that tool keeps its stored definition until the next discovery approves what the upstream serves.
 
 ### 7. Invocation log (#444)
 
-`mcp_tool_invocations` gains `tool_schema_version`, the served version at the time of the call. It is set for `tools/call` on both endpoints and empty for other methods. The admin invocation detail shows it.
+`mcp_tool_invocations` gains `tool_schema_version`, the served version at the time of the call. It is set for `tools/call` whenever the client saw the stored definition: always on the aggregate endpoint, whose `describe_tool` serves it, and on the direct endpoint when the stored definition replaced the upstream object. A direct call on a server without approval passes the live upstream definition through, which may have changed since the last discovery, so it records no version. Other methods record none. The admin invocation detail shows it.
 
 ### 8. Audit and permissions
 

@@ -12,7 +12,6 @@ use gateway_core::{
 /// One stored version, as discovery needs it.
 #[derive(Debug, Clone)]
 pub(crate) struct StoredVersion {
-    pub schema_version: i64,
     pub schema_hash: String,
     pub description: Option<String>,
     pub status: McpToolVersionStatus,
@@ -32,7 +31,10 @@ impl StoredVersion {
 pub(crate) struct StoredTool {
     pub tool: ExternalMcpToolRecord,
     pub metadata_captured: bool,
+    /// Only the versions review still depends on: pending and rejected ones.
     pub versions: Vec<StoredVersion>,
+    /// The highest version number the tool has, of any status.
+    pub latest_version: i64,
 }
 
 /// What discovery writes for one discovered tool.
@@ -118,13 +120,7 @@ pub(crate) fn plan_tool_write(
         .filter(|version| version.status == McpToolVersionStatus::Rejected)
         .map(StoredVersion::key)
         .collect::<Vec<_>>();
-    let latest_version = stored
-        .versions
-        .iter()
-        .map(|version| version.schema_version)
-        .max()
-        .unwrap_or(stored.tool.schema_version)
-        .max(stored.tool.schema_version);
+    let latest_version = stored.latest_version.max(stored.tool.schema_version);
     let review = StoredToolForReview {
         current: &current,
         schema_version: stored.tool.schema_version,
@@ -142,11 +138,9 @@ pub(crate) fn plan_tool_write(
             reuse_version,
         } => ToolWrite::Serve {
             version,
-            insert_version: !reuse_version
-                || !stored
-                    .versions
-                    .iter()
-                    .any(|stored_version| stored_version.schema_version == version),
+            // A reused version is the row's own or the pending one; both have
+            // a version row already.
+            insert_version: !reuse_version,
         },
         DiscoveryDecision::Hold { version, status } => ToolWrite::Hold {
             version,

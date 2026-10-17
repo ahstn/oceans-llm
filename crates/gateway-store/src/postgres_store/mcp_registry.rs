@@ -783,11 +783,12 @@ async fn load_stored_tools(
                 tool,
                 metadata_captured: metadata_captured == 1,
                 versions: Vec::new(),
+                latest_version: 0,
             },
         );
     }
     let rows = sqlx::query(
-        "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1",
+        "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1 AND v.status IN ('pending', 'rejected')",
     )
     .bind(mcp_server_id.to_string())
     .fetch_all(&mut *conn)
@@ -798,13 +799,25 @@ async fn load_stored_tools(
         let status: String = row.try_get(3).map_err(to_query_error)?;
         if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
             stored.versions.push(StoredVersion {
-                schema_version: row.try_get(1).map_err(to_query_error)?,
                 schema_hash: row.try_get(2).map_err(to_query_error)?,
                 description: row.try_get(4).map_err(to_query_error)?,
                 status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
             });
+        }
+    }
+    let rows = sqlx::query(
+        "SELECT v.mcp_tool_id, MAX(v.schema_version) FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1 GROUP BY v.mcp_tool_id",
+    )
+    .bind(mcp_server_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    for row in &rows {
+        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+        if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
+            stored.latest_version = row.try_get(1).map_err(to_query_error)?;
         }
     }
     Ok(by_id

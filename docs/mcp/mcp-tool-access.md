@@ -190,11 +190,14 @@ Waiting and rejected tools are excluded from every grant: explicit tool and
 toolset grants as well as [tag rules](#tag-rules). On approval servers, direct
 `tools/list` returns the approved definition stored by the gateway, with
 effective annotations, instead of the live upstream object. Members the gateway
-does not store, such as `_meta`, are not returned.
+does not store, such as `_meta`, are not returned. A tool whose change still
+waits keeps its stored definition after approval is turned off, until the next
+discovery approves what the upstream serves.
 
 Review changes from the server dialog's **Reviews** section. Each waiting tool
-shows a line diff of every section that changed, from the served version to the
-waiting one, with **Approve** and **Reject**:
+is a collapsed row. Expanding it loads its versions and shows a line diff of
+every section that changed, from the served version to the waiting one, with
+**Approve** and **Reject**:
 
 - **Approve** serves the waiting version.
 - **Reject** keeps a description-only change on the previous version, and keeps
@@ -204,7 +207,7 @@ A version can be reviewed once. A second review, or a review of a version a newe
 discovery has replaced, returns HTTP 409. Turning the setting off approves the
 current definitions at the next discovery.
 
-Each `tools/call` [invocation](mcp-invocations.md) records the version it used.
+Each `tools/call` [invocation](mcp-invocations.md) whose client saw the stored definition records the version it used.
 Approvals and rejections are written to the [admin audit
 log](../access/admin-audit-log.md) as `mcp_tool.version_approved` and
 `mcp_tool.version_rejected`.

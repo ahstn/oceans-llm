@@ -728,7 +728,15 @@ function ServerSectionBody({
         />
       )
     case 'reviews':
-      return <ToolReviewsPanel server={server} tools={tools} onToolUpdated={onToolUpdated} />
+      return (
+        <ToolReviewsPanel
+          server={server}
+          tools={tools}
+          toolsPending={toolsPending}
+          toolsError={toolsError}
+          onToolUpdated={onToolUpdated}
+        />
+      )
     case 'credentials':
       return (
         <CredentialBindingsPanel

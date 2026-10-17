@@ -114,9 +114,20 @@ describe('ToolReviewsPanel', () => {
     const approved = { ...tool, approval_status: 'approved', pending_schema_version: null }
     saveMcpToolReviewMock.mockResolvedValueOnce({ data: { tool: approved } })
     const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
-    render(<ToolReviewsPanel server={server} tools={[tool]} onToolUpdated={onToolUpdated} />)
+    render(
+      <ToolReviewsPanel
+        server={server}
+        tools={[tool]}
+        toolsPending={false}
+        toolsError={null}
+        onToolUpdated={onToolUpdated}
+      />,
+    )
 
     const review = screen.getByTestId('mcp-tool-review')
+    // Collapsed rows load nothing until a reviewer opens them.
+    expect(getMcpToolVersionsMock).not.toHaveBeenCalled()
+    fireEvent.click(within(review).getByRole('button', { name: 'Review read_file change' }))
     expect(within(review).getByText('Version 1 → 2')).toBeInTheDocument()
     expect(within(review).getByText('Served as approved version')).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByTestId('mcp-tool-diff')).toHaveLength(1))
@@ -142,10 +153,37 @@ describe('ToolReviewsPanel', () => {
       <ToolReviewsPanel
         server={server}
         tools={[{ ...tool, approval_status: 'approved', pending_schema_version: null }]}
+        toolsPending={false}
+        toolsError={null}
         onToolUpdated={vi.fn()}
       />,
     )
     expect(screen.getByText('No pending changes')).toBeInTheDocument()
     expect(getMcpToolVersionsMock).not.toHaveBeenCalled()
+  })
+
+  it('lists no stale tools while loading or from another server', async () => {
+    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
+    const { rerender } = render(
+      <ToolReviewsPanel
+        server={server}
+        tools={[tool]}
+        toolsPending
+        toolsError={null}
+        onToolUpdated={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('mcp-tool-review')).not.toBeInTheDocument()
+    rerender(
+      <ToolReviewsPanel
+        server={{ ...server, id: 'server_2' }}
+        tools={[tool]}
+        toolsPending={false}
+        toolsError={null}
+        onToolUpdated={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('mcp-tool-review')).not.toBeInTheDocument()
+    expect(screen.getByText('No pending changes')).toBeInTheDocument()
   })
 })

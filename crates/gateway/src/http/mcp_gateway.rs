@@ -187,21 +187,37 @@ async fn dispatch_mcp_request(
                 Ok(resolution) => resolution,
                 Err(error) => return mcp_error_response(error),
             };
-            let granted_tools = access_resolution
-                .allowed_tools
-                .iter()
-                .map(|tool| {
-                    (
-                        tool.upstream_name.as_str(),
-                        upstream::GrantedToolView {
-                            annotation_overrides: tool.policy.annotation_overrides.to_object(),
-                            definition: server
-                                .approve_tool_changes
-                                .then(|| approved_tool_object(tool)),
-                        },
-                    )
-                })
-                .collect::<upstream::GrantedTools<'_>>();
+            let mut granted_tools = upstream::GrantedTools::new();
+            for tool in &access_resolution.allowed_tools {
+                let definition = if serves_stored_definition(&server, tool) {
+                    // The access projection leaves out the title and output
+                    // schema; reload the rare waiting tool on a server that no
+                    // longer requires approval.
+                    let full = if server.approve_tool_changes {
+                        None
+                    } else {
+                        match gateway_core::McpRegistryRepository::get_external_mcp_tool(
+                            state.store.as_ref(),
+                            tool.mcp_tool_id,
+                        )
+                        .await
+                        {
+                            Ok(full) => full,
+                            Err(error) => return mcp_error_response(error.into()),
+                        }
+                    };
+                    Some(approved_tool_object(full.as_ref().unwrap_or(tool)))
+                } else {
+                    None
+                };
+                granted_tools.insert(
+                    tool.upstream_name.as_str(),
+                    upstream::GrantedToolView {
+                        annotation_overrides: tool.policy.annotation_overrides.to_object(),
+                        definition,
+                    },
+                );
+            }
             let upstream = match gateway
                 .prepare_upstream_for_auth(auth, server.clone())
                 .await
@@ -615,6 +631,19 @@ fn tools_list_metadata(
     ])
 }
 
+/// Whether direct `tools/list` serves the stored approved definition instead
+/// of the live upstream object: on servers that require approval, and for a
+/// tool whose change still waits, even after approval was turned off, until
+/// discovery approves what the upstream serves.
+fn serves_stored_definition(
+    server: &gateway_core::ExternalMcpServerRecord,
+    tool: &gateway_core::ExternalMcpToolRecord,
+) -> bool {
+    server.approve_tool_changes
+        || tool.review.pending_schema_version.is_some()
+        || tool.review.approval_status != gateway_core::McpToolApprovalStatus::Approved
+}
+
 /// The approved definition of a tool as an MCP `tools/list` entry, with the
 /// effective annotations.
 fn approved_tool_object(tool: &gateway_core::ExternalMcpToolRecord) -> Map<String, Value> {
@@ -666,7 +695,10 @@ fn tool_call_log_input(
         result_json,
         started_at,
     );
-    input.tool_schema_version = Some(tool.schema_version);
+    // Only a stored definition the gateway served has a known version; a
+    // passed-through upstream definition may have changed since discovery.
+    input.tool_schema_version =
+        serves_stored_definition(server, tool).then_some(tool.schema_version);
     input
 }
 
