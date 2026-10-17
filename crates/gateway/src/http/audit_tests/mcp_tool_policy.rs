@@ -328,6 +328,24 @@ async fn tool_version_reviews_are_audited_and_apply_once() {
     assert_eq!(status, StatusCode::OK, "{versions}");
     assert_eq!(versions["data"]["items"][0]["status"], "pending");
     assert_eq!(versions["data"]["items"][0]["description"], "Read a file");
+    assert_eq!(versions["data"]["next_before"], Value::Null);
+
+    // Reads are bounded: named versions, or a page of at most 100.
+    let (status, named) = harness
+        .admin(
+            Method::GET,
+            &format!("{tool_path}/versions?schema_versions=1,7"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{named}");
+    assert_eq!(named["data"]["items"].as_array().map(Vec::len), Some(1));
+    for query in ["limit=0", "limit=101", "schema_versions=1,x"] {
+        let (status, body) = harness
+            .admin(Method::GET, &format!("{tool_path}/versions?{query}"), None)
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
+    }
 
     let (status, approved) = harness
         .admin(

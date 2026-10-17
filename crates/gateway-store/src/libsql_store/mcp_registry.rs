@@ -10,7 +10,8 @@ use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_da
 use gateway_core::mcp_tool_review::status_after_rejection;
 use gateway_core::{
     McpAnnotationOverrides, McpToolApprovalStatus, McpToolDefinition, McpToolPolicy,
-    McpToolReviewDecision, McpToolReviewState, McpToolVersionRecord, McpToolVersionStatus, Updated,
+    McpToolReviewDecision, McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord,
+    McpToolVersionStatus, Updated,
 };
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
@@ -590,14 +591,35 @@ impl McpRegistryRepository for LibsqlStore {
     async fn list_mcp_tool_versions(
         &self,
         mcp_tool_id: Uuid,
+        query: &McpToolVersionQuery,
     ) -> Result<Vec<McpToolVersionRecord>, StoreError> {
+        let mut params = vec![libsql::Value::Text(mcp_tool_id.to_string())];
+        let filter = match query {
+            McpToolVersionQuery::Versions(versions) if versions.is_empty() => {
+                return Ok(Vec::new());
+            }
+            McpToolVersionQuery::Versions(versions) => {
+                params.extend(versions.iter().copied().map(libsql::Value::Integer));
+                let placeholders = (2..=versions.len() + 1)
+                    .map(|index| format!("?{index}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("AND schema_version IN ({placeholders}) ORDER BY schema_version DESC")
+            }
+            McpToolVersionQuery::Page { before, limit } => {
+                params.push(before.map_or(libsql::Value::Null, libsql::Value::Integer));
+                params.push(libsql::Value::Integer(i64::from(*limit)));
+                "AND (?2 IS NULL OR schema_version < ?2) ORDER BY schema_version DESC LIMIT ?3"
+                    .to_string()
+            }
+        };
         let mut rows = self
             .connection
             .query(
                 &format!(
-                    "SELECT {VERSION_COLUMNS} FROM mcp_tool_versions WHERE mcp_tool_id = ?1 ORDER BY schema_version DESC"
+                    "SELECT {VERSION_COLUMNS} FROM mcp_tool_versions WHERE mcp_tool_id = ?1 {filter}"
                 ),
-                [mcp_tool_id.to_string()],
+                libsql::params_from_iter(params),
             )
             .await
             .map_err(to_query_error)?;
@@ -825,7 +847,7 @@ async fn load_stored_tools(
     drop(rows);
     let mut rows = connection
         .query(
-            "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = ?1 AND v.status IN ('pending', 'rejected')",
+            "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description, v.title FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = ?1 AND v.status IN ('pending', 'rejected')",
             [mcp_server_id.to_string()],
         )
         .await
@@ -835,8 +857,10 @@ async fn load_stored_tools(
         let status: String = row.get(3).map_err(to_query_error)?;
         if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
             stored.versions.push(StoredVersion {
+                schema_version: row.get(1).map_err(to_query_error)?,
                 schema_hash: row.get(2).map_err(to_query_error)?,
                 description: row.get(4).map_err(to_query_error)?,
+                title: row.get(5).map_err(to_query_error)?,
                 status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
@@ -991,8 +1015,8 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// The newest version of a tool with this definition (schema hash and
-/// description), and its status.
+/// The newest version of a tool with this definition (schema hash,
+/// description and title), and its status.
 async fn find_version_by_definition(
     connection: &libsql::Connection,
     mcp_tool_id: Uuid,
@@ -1000,11 +1024,12 @@ async fn find_version_by_definition(
 ) -> Result<Option<(i64, McpToolVersionStatus)>, StoreError> {
     let mut rows = connection
         .query(
-            "SELECT schema_version, status FROM mcp_tool_versions WHERE mcp_tool_id = ?1 AND schema_hash = ?2 AND description IS ?3 ORDER BY schema_version DESC LIMIT 1",
+            "SELECT schema_version, status FROM mcp_tool_versions WHERE mcp_tool_id = ?1 AND schema_hash = ?2 AND description IS ?3 AND title IS ?4 ORDER BY schema_version DESC LIMIT 1",
             libsql::params![
                 mcp_tool_id.to_string(),
                 tool.schema_hash.as_str(),
                 tool.description.as_deref(),
+                tool.metadata.title.as_deref(),
             ],
         )
         .await
@@ -1203,8 +1228,14 @@ async fn apply_tool_write(
                 .await
                 .map_err(to_write_error)?;
         }
-        ToolWrite::Settle { status } => {
+        ToolWrite::Settle {
+            status,
+            restore_version,
+        } => {
             supersede_pending(connection, id, -1).await?;
+            if let Some(version) = restore_version {
+                write_tool_definition(connection, id, &definition, *version).await?;
+            }
             connection
                 .execute(
                     "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",

@@ -42,7 +42,7 @@ export const getMcpTagRulePreview = createServerFn({ method: 'GET' })
   .handler(({ data }) => previewMcpTagRule(data))
 
 export const getMcpToolVersions = createServerFn({ method: 'GET' })
-  .validator((data: { serverId: string; toolId: string }) => data)
+  .validator((data: { serverId: string; toolId: string; schemaVersions: number[] }) => data)
   .handler(({ data }) => listMcpToolVersions(data))
 
 export const saveMcpToolReview = createServerFn({ method: 'POST' })

@@ -12,8 +12,10 @@ use gateway_core::{
 /// One stored version, as discovery needs it.
 #[derive(Debug, Clone)]
 pub(crate) struct StoredVersion {
+    pub schema_version: i64,
     pub schema_hash: String,
     pub description: Option<String>,
+    pub title: Option<String>,
     pub status: McpToolVersionStatus,
 }
 
@@ -22,6 +24,7 @@ impl StoredVersion {
         McpToolDefinitionKey {
             schema_hash: self.schema_hash.clone(),
             description: self.description.clone(),
+            title: self.title.clone(),
         }
     }
 }
@@ -62,8 +65,14 @@ pub(crate) enum ToolWrite {
     /// Serve the approved definition again; pending versions are superseded.
     Revert,
     /// Supersede pending versions and set the tool's status, for an upstream
-    /// back on a definition an admin rejected.
-    Settle { status: McpToolApprovalStatus },
+    /// back on a definition an admin rejected. A tool never approved holds
+    /// its newest definition in the row, so `restore_version` puts the
+    /// rejected one back there; otherwise a superseded definition would pass
+    /// for the current one.
+    Settle {
+        status: McpToolApprovalStatus,
+        restore_version: Option<i64>,
+    },
 }
 
 pub(crate) fn definition_of(tool: &ExternalMcpToolRecord) -> McpToolDefinition {
@@ -151,7 +160,21 @@ pub(crate) fn plan_tool_write(
             insert_version: true,
         },
         DiscoveryDecision::Revert => ToolWrite::Revert,
-        DiscoveryDecision::Settle { status } => ToolWrite::Settle { status },
+        DiscoveryDecision::Settle { status } => ToolWrite::Settle {
+            status,
+            restore_version: if stored.tool.review.approved_schema_version.is_none() {
+                let key = discovered_def.key();
+                stored
+                    .versions
+                    .iter()
+                    .find(|version| {
+                        version.status == McpToolVersionStatus::Rejected && version.key() == key
+                    })
+                    .map(|version| version.schema_version)
+            } else {
+                None
+            },
+        },
     }
 }
 

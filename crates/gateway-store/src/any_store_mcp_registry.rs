@@ -171,10 +171,11 @@ impl McpRegistryRepository for AnyStore {
     async fn list_mcp_tool_versions(
         &self,
         mcp_tool_id: Uuid,
+        query: &gateway_core::McpToolVersionQuery,
     ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.list_mcp_tool_versions(mcp_tool_id).await,
-            Self::Postgres(store) => store.list_mcp_tool_versions(mcp_tool_id).await,
+            Self::Libsql(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+            Self::Postgres(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
         }
     }
 

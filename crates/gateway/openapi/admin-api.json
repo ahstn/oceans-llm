@@ -2336,6 +2336,45 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "schema_versions",
+            "in": "query",
+            "description": "Comma-separated version numbers to read, at most 10. A review diff asks\nfor the approved and pending versions. Paging is ignored when set.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Read versions older than this one.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100. Defaults to 20.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -2345,6 +2384,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_McpToolVersionsPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
                 }
               }
             }
@@ -14772,6 +14821,14 @@
                   "$ref": "#/components/schemas/McpToolVersionView"
                 },
                 "description": "Newest first."
+              },
+              "next_before": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
               }
             }
           },
@@ -17565,6 +17622,14 @@
               "$ref": "#/components/schemas/McpToolVersionView"
             },
             "description": "Newest first."
+          },
+          "next_before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
           }
         }
       },

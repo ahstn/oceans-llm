@@ -105,11 +105,13 @@ pub struct McpToolDefinition {
 
 /// What tells two definitions apart for versioning. The schema hash leaves
 /// out the description, which is exactly what an injection would change, so
-/// the description is compared as well.
+/// the description is compared as well. The title is compared directly too,
+/// so a title change is versioned whatever the hash covers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpToolDefinitionKey {
     pub schema_hash: String,
     pub description: Option<String>,
+    pub title: Option<String>,
 }
 
 impl McpToolDefinition {
@@ -118,13 +120,17 @@ impl McpToolDefinition {
         McpToolDefinitionKey {
             schema_hash: self.schema_hash.clone(),
             description: self.description.clone(),
+            title: self.title.clone(),
         }
     }
 
-    /// Whether `other` is the same definition: same schema hash and description.
+    /// Whether `other` is the same definition: same schema hash, description
+    /// and title.
     #[must_use]
     pub fn same_definition(&self, other: &Self) -> bool {
-        self.schema_hash == other.schema_hash && self.description == other.description
+        self.schema_hash == other.schema_hash
+            && self.description == other.description
+            && self.title == other.title
     }
 
     /// Whether `other` changes only text a client reads (description and
@@ -134,8 +140,37 @@ impl McpToolDefinition {
     pub fn same_contract(&self, other: &Self) -> bool {
         self.input_schema == other.input_schema
             && self.output_schema == other.output_schema
-            && self.annotations == other.annotations
+            && same_contract_annotations(self.annotations.as_ref(), other.annotations.as_ref())
     }
+}
+
+/// Annotations compared without the legacy `title` member. Older servers put
+/// the display title there; it is lifted into `title`, so it is display text
+/// rather than part of the call contract.
+fn same_contract_annotations(
+    left: Option<&Map<String, Value>>,
+    right: Option<&Map<String, Value>>,
+) -> bool {
+    fn contract(
+        annotations: Option<&Map<String, Value>>,
+    ) -> std::collections::BTreeMap<&String, &Value> {
+        annotations
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| key.as_str() != "title")
+            .collect()
+    }
+    contract(left) == contract(right)
+}
+
+/// Which versions of a tool to read. History grows with every change an
+/// upstream makes, so a read names its versions or takes one page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpToolVersionQuery {
+    /// These versions only, newest first, as a review diff needs.
+    Versions(Vec<i64>),
+    /// Up to `limit` versions older than `before`, newest first.
+    Page { before: Option<i64>, limit: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -463,6 +498,56 @@ mod tests {
                 reuse_version: false
             }
         );
+    }
+
+    #[test]
+    fn title_changes_are_versioned_whatever_the_hash_covers() {
+        let served = definition("h1", "Read a file", json!({}));
+        let state = stored(&served, McpToolApprovalStatus::Approved, Some(1), None, &[]);
+        let retitled = McpToolDefinition {
+            title: Some("Read any file".to_string()),
+            ..served.clone()
+        };
+        assert_eq!(
+            decide_discovery(Some(&state), &retitled, true),
+            DiscoveryDecision::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingChange
+            }
+        );
+    }
+
+    #[test]
+    fn a_legacy_annotation_title_change_keeps_the_contract() {
+        let with_title = |title: &str| McpToolDefinition {
+            title: Some(title.to_string()),
+            annotations: json!({"title": title, "readOnlyHint": true})
+                .as_object()
+                .cloned(),
+            ..definition("h1", "Read a file", json!({}))
+        };
+        let served = with_title("Read file");
+        let state = stored(&served, McpToolApprovalStatus::Approved, Some(1), None, &[]);
+        let retitled = McpToolDefinition {
+            schema_hash: "h2".to_string(),
+            ..with_title("Read any file")
+        };
+        assert!(served.same_contract(&retitled));
+        assert_eq!(
+            decide_discovery(Some(&state), &retitled, true),
+            DiscoveryDecision::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingChange
+            }
+        );
+
+        let hint_changed = McpToolDefinition {
+            annotations: json!({"title": "Read file", "readOnlyHint": false})
+                .as_object()
+                .cloned(),
+            ..served.clone()
+        };
+        assert!(!served.same_contract(&hint_changed));
     }
 
     #[test]

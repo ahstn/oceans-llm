@@ -146,7 +146,7 @@ pub use mcp_tool_policy::{
 };
 pub use mcp_tool_review::{
     McpToolApprovalStatus, McpToolDefinition, McpToolDefinitionKey, McpToolReviewDecision,
-    McpToolReviewState, McpToolVersionRecord, McpToolVersionStatus,
+    McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord, McpToolVersionStatus,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

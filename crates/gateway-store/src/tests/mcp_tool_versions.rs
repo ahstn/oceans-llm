@@ -3,9 +3,9 @@ use gateway_core::{
     ExternalMcpServerRecord, ExternalMcpToolRecord, ExternalMcpTransport, McpAccessRepository,
     McpGrantSubject, McpRegistryRepository, McpTagRuleEffect, McpToolApprovalStatus,
     McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolMetadata, McpToolProjection,
-    McpToolReviewDecision, McpToolTagRuleKey, McpToolVersionStatus, NewExternalMcpServerRecord,
-    StoreError, UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
-    UpsertMcpToolGrantRecord,
+    McpToolReviewDecision, McpToolTagRuleKey, McpToolVersionQuery, McpToolVersionStatus,
+    NewExternalMcpServerRecord, StoreError, UpdateExternalMcpServerRecord,
+    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
 };
 use serde_json::{Map, Value, json};
 use serial_test::serial;
@@ -18,6 +18,12 @@ use crate::{
     LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
 };
 
+/// Every version a test tool has.
+const ALL_VERSIONS: McpToolVersionQuery = McpToolVersionQuery::Page {
+    before: None,
+    limit: 1_000,
+};
+
 /// A discovered tool: name, description and input schema. Like the production
 /// hash, the schema hash leaves out the description.
 struct Def(&'static str, &'static str, Value);
@@ -26,6 +32,19 @@ async fn discover<S>(
     store: &S,
     server: &ExternalMcpServerRecord,
     tools: &[Def],
+) -> Vec<ExternalMcpToolRecord>
+where
+    S: McpRegistryRepository + Sync,
+{
+    discover_titled(store, server, tools, None).await
+}
+
+/// `discover` with a title on every tool. The test hash leaves the title out.
+async fn discover_titled<S>(
+    store: &S,
+    server: &ExternalMcpServerRecord,
+    tools: &[Def],
+    title: Option<&str>,
 ) -> Vec<ExternalMcpToolRecord>
 where
     S: McpRegistryRepository + Sync,
@@ -41,7 +60,7 @@ where
                 description: Some((*description).to_string()),
                 input_schema: input.clone(),
                 metadata: McpToolMetadata {
-                    title: None,
+                    title: title.map(str::to_string),
                     annotations: json!({"readOnlyHint": true}).as_object().cloned(),
                     output_schema: None,
                 },
@@ -184,7 +203,7 @@ where
     .await;
     assert_eq!(find(&tools, "read").schema_version, 2);
     let versions = store
-        .list_mcp_tool_versions(read.mcp_tool_id)
+        .list_mcp_tool_versions(read.mcp_tool_id, &ALL_VERSIONS)
         .await
         .expect("versions");
     assert_eq!(
@@ -380,7 +399,7 @@ where
     assert_eq!(approved.current.input_schema, wider);
     assert_eq!(approved.current.schema_version, pending);
     let versions = store
-        .list_mcp_tool_versions(write.mcp_tool_id)
+        .list_mcp_tool_versions(write.mcp_tool_id, &ALL_VERSIONS)
         .await
         .expect("versions");
     assert_eq!(versions[0].reviewed_by_user_id, Some(reviewer));
@@ -408,7 +427,7 @@ where
     assert_eq!(read.review.approval_status, McpToolApprovalStatus::Approved);
     assert_eq!(read.review.pending_schema_version, None);
     let statuses = store
-        .list_mcp_tool_versions(read.mcp_tool_id)
+        .list_mcp_tool_versions(read.mcp_tool_id, &ALL_VERSIONS)
         .await
         .expect("versions")
         .into_iter()
@@ -560,12 +579,113 @@ where
     )
     .await;
     let versions = store
-        .list_mcp_tool_versions(purge.mcp_tool_id)
+        .list_mcp_tool_versions(purge.mcp_tool_id, &ALL_VERSIONS)
         .await
         .expect("versions");
     assert_eq!(versions[0].status, McpToolVersionStatus::Approved);
     assert_eq!(versions[0].reviewed_by_user_id, None);
     assert_eq!(versions[0].reviewed_at, None);
+
+    exercise_title_and_settle(store).await;
+}
+
+/// A title-only change waits for review, and a never-approved tool back on a
+/// rejected definition keeps that definition in its row, so the waiting one
+/// it replaced can be offered again.
+async fn exercise_title_and_settle<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    let now = OffsetDateTime::now_utc();
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "wiki".to_string(),
+            display_name: "Wiki".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://wiki.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: now,
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("server");
+    let object = json!({"type": "object"});
+    let reviewer = Uuid::new_v4();
+
+    let tools = discover_titled(
+        store,
+        &server,
+        &[Def("page", "Read a page", object.clone())],
+        Some("Page"),
+    )
+    .await;
+    let page = find(&tools, "page").clone();
+    store
+        .review_mcp_tool_version(
+            page.mcp_tool_id,
+            1,
+            McpToolReviewDecision::Approve,
+            Some(reviewer),
+            now,
+        )
+        .await
+        .expect("approve");
+    let retitled = discover_titled(
+        store,
+        &server,
+        &[Def("page", "Read a page", object.clone())],
+        Some("Any page"),
+    )
+    .await;
+    let page_now = find(&retitled, "page");
+    assert_eq!(
+        page_now.review.approval_status,
+        McpToolApprovalStatus::PendingChange
+    );
+    assert_eq!(page_now.review.pending_schema_version, Some(2));
+    assert_eq!(page_now.metadata.title.as_deref(), Some("Page"));
+
+    // A never-approved tool: A rejected, B waiting, the upstream back on A,
+    // then on B again.
+    let a = Def("export", "Export A", object.clone());
+    let b = || Def("export", "Export B", object.clone());
+    let tools = discover(store, &server, &[a]).await;
+    let export = find(&tools, "export").clone();
+    store
+        .review_mcp_tool_version(
+            export.mcp_tool_id,
+            1,
+            McpToolReviewDecision::Reject,
+            Some(reviewer),
+            now,
+        )
+        .await
+        .expect("reject A");
+    let waiting = discover(store, &server, &[b()]).await;
+    assert_eq!(
+        find(&waiting, "export").review.pending_schema_version,
+        Some(2)
+    );
+    let settled = discover(store, &server, &[Def("export", "Export A", object.clone())]).await;
+    let export_now = find(&settled, "export");
+    assert_eq!(
+        export_now.review.approval_status,
+        McpToolApprovalStatus::Rejected
+    );
+    assert_eq!(export_now.review.pending_schema_version, None);
+    assert_eq!(export_now.description.as_deref(), Some("Export A"));
+    assert_eq!(export_now.schema_version, 1);
+
+    let reopened = discover(store, &server, &[b()]).await;
+    let export_now = find(&reopened, "export");
+    assert_eq!(
+        export_now.review.approval_status,
+        McpToolApprovalStatus::PendingReview
+    );
+    assert_eq!(export_now.review.pending_schema_version, Some(2));
 }
 
 /// An upstream back on an older definition reuses that version: one an admin
@@ -618,7 +738,7 @@ where
     );
     assert_eq!(
         store
-            .list_mcp_tool_versions(id)
+            .list_mcp_tool_versions(id, &ALL_VERSIONS)
             .await
             .expect("versions")
             .len(),
@@ -632,7 +752,10 @@ where
     let tools = discover(store, &server, &[Def("fetch", "C", object)]).await;
     let fetch = find(&tools, "fetch");
     assert_eq!(fetch.review.pending_schema_version, Some(3));
-    let versions = store.list_mcp_tool_versions(id).await.expect("versions");
+    let versions = store
+        .list_mcp_tool_versions(id, &ALL_VERSIONS)
+        .await
+        .expect("versions");
     assert_eq!(versions.len(), 4);
     let status_of = |version: i64| {
         versions
@@ -642,6 +765,30 @@ where
     };
     assert_eq!(status_of(3), Some(McpToolVersionStatus::Pending));
     assert_eq!(status_of(4), Some(McpToolVersionStatus::Superseded));
+
+    // Named versions and pages read only what they ask for.
+    let named = store
+        .list_mcp_tool_versions(id, &McpToolVersionQuery::Versions(vec![1, 3]))
+        .await
+        .expect("named versions");
+    assert_eq!(
+        named.iter().map(|v| v.schema_version).collect::<Vec<_>>(),
+        vec![3, 1]
+    );
+    let page = store
+        .list_mcp_tool_versions(
+            id,
+            &McpToolVersionQuery::Page {
+                before: Some(4),
+                limit: 2,
+            },
+        )
+        .await
+        .expect("page");
+    assert_eq!(
+        page.iter().map(|v| v.schema_version).collect::<Vec<_>>(),
+        vec![3, 2]
+    );
 }
 
 #[tokio::test]

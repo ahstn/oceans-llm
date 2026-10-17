@@ -143,6 +143,10 @@ describe('ToolReviewsPanel', () => {
     // Collapsed rows load nothing until a reviewer opens them.
     expect(getMcpToolVersionsMock).not.toHaveBeenCalled()
     fireEvent.click(within(review).getByRole('button', { name: 'Review read_file change' }))
+    // Only the served and waiting versions are fetched, not the whole history.
+    expect(getMcpToolVersionsMock).toHaveBeenCalledWith({
+      data: { serverId: 'server_1', toolId: 'tool_1', schemaVersions: [1, 2] },
+    })
     expect(within(review).getByText('Version 1 → 2')).toBeInTheDocument()
     expect(within(review).getByText('Served as approved version')).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByTestId('mcp-tool-diff')).toHaveLength(1))

@@ -780,6 +780,7 @@ mod tests {
         async fn list_mcp_tool_versions(
             &self,
             _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
         ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
             unimplemented!()
         }

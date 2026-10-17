@@ -59,11 +59,21 @@ export async function previewMcpTagRule(query: McpTagRulePreviewQuery) {
   )
 }
 
-export async function listMcpToolVersions(input: { serverId: string; toolId: string }) {
+/** The named versions of a tool, such as the two a review diff compares. */
+export async function listMcpToolVersions(input: {
+  serverId: string
+  toolId: string
+  schemaVersions: number[]
+}) {
   return unwrapGatewayResponse(
     await createGatewayApiClient().GET(
       '/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions',
-      { params: { path: { server_id: input.serverId, tool_id: input.toolId } } },
+      {
+        params: {
+          path: { server_id: input.serverId, tool_id: input.toolId },
+          query: { schema_versions: input.schemaVersions.join(',') },
+        },
+      },
     ),
   )
 }

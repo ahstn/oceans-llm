@@ -8,7 +8,8 @@ use std::sync::Arc;
 use gateway_core::{
     ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError, McpAccessRepository,
     McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect, McpToolReviewDecision,
-    McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionRecord, StoreError, Updated,
+    McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionQuery, McpToolVersionRecord, StoreError,
+    Updated,
     mcp_tool_policy::{effective_tags, normalize_admin_tags, normalize_rule_tag},
 };
 use time::OffsetDateTime;
@@ -88,14 +89,16 @@ where
             .await?)
     }
 
-    /// Every version of a tool on the server, newest first.
+    /// Versions of a tool on the server, newest first: named ones or one
+    /// page of history.
     pub async fn list_versions(
         &self,
         mcp_server_id: Uuid,
         mcp_tool_id: Uuid,
+        query: &McpToolVersionQuery,
     ) -> Result<Vec<McpToolVersionRecord>, GatewayError> {
         self.tool_on_server(mcp_server_id, mcp_tool_id).await?;
-        Ok(self.repo.list_mcp_tool_versions(mcp_tool_id).await?)
+        Ok(self.repo.list_mcp_tool_versions(mcp_tool_id, query).await?)
     }
 
     /// Approves or rejects the tool's pending version. A version that is no

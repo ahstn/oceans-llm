@@ -132,7 +132,13 @@ function ToolReview({
     setOpen(next)
     if (next && versions == null) {
       setError(null)
-      void getMcpToolVersions({ data: { serverId: tool.server_id, toolId: tool.id } })
+      // Only the two versions the diff compares; history can be long.
+      const schemaVersions = [tool.approved_schema_version, tool.pending_schema_version].filter(
+        (version): version is number => version != null,
+      )
+      void getMcpToolVersions({
+        data: { serverId: tool.server_id, toolId: tool.id, schemaVersions },
+      })
         .then((response) => {
           setError(null)
           setVersions(response.data.items)

@@ -3,14 +3,17 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
 };
-use gateway_core::{ExternalMcpToolRecord, McpToolReviewDecision, McpToolVersionRecord};
+use gateway_core::{
+    ExternalMcpToolRecord, GatewayError, McpToolReviewDecision, McpToolVersionQuery,
+    McpToolVersionRecord,
+};
 use gateway_service::{AuditAction, McpToolPolicyService, admin_audit::actions};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use super::tool_policy::{McpToolPayload, require_mcp_policy_admin, tool_event};
@@ -48,6 +51,59 @@ pub struct McpToolVersionView {
 pub struct McpToolVersionsPayload {
     /// Newest first.
     items: Vec<McpToolVersionView>,
+    /// Pass as `before` for the next page of history. Empty on the last page
+    /// and when `schema_versions` is given.
+    next_before: Option<i64>,
+}
+
+const DEFAULT_VERSION_PAGE_SIZE: u32 = 20;
+const MAX_VERSION_PAGE_SIZE: u32 = 100;
+const MAX_NAMED_VERSIONS: usize = 10;
+
+/// Version history grows with every upstream change, so a request names the
+/// versions it needs or reads one page.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct McpToolVersionsQuery {
+    /// Comma-separated version numbers to read, at most 10. A review diff asks
+    /// for the approved and pending versions. Paging is ignored when set.
+    schema_versions: Option<String>,
+    /// Read versions older than this one.
+    before: Option<i64>,
+    /// Page size, 1 to 100. Defaults to 20.
+    limit: Option<u32>,
+}
+
+impl McpToolVersionsQuery {
+    fn to_query(&self) -> Result<McpToolVersionQuery, GatewayError> {
+        if let Some(raw) = &self.schema_versions {
+            let versions = raw
+                .split(',')
+                .map(|part| {
+                    part.trim().parse::<i64>().map_err(|_| {
+                        GatewayError::InvalidRequest(
+                            "schema_versions must be comma-separated integers".to_string(),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if versions.len() > MAX_NAMED_VERSIONS {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "schema_versions accepts at most {MAX_NAMED_VERSIONS} versions"
+                )));
+            }
+            return Ok(McpToolVersionQuery::Versions(versions));
+        }
+        let limit = self.limit.unwrap_or(DEFAULT_VERSION_PAGE_SIZE);
+        if !(1..=MAX_VERSION_PAGE_SIZE).contains(&limit) {
+            return Err(GatewayError::InvalidRequest(format!(
+                "limit must be between 1 and {MAX_VERSION_PAGE_SIZE}"
+            )));
+        }
+        Ok(McpToolVersionQuery::Page {
+            before: self.before,
+            limit,
+        })
+    }
 }
 
 fn map_version(version: McpToolVersionRecord) -> McpToolVersionView {
@@ -80,10 +136,12 @@ fn review_summary(tool: &ExternalMcpToolRecord) -> Value {
     path = "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions",
     params(
         ("server_id" = Uuid, Path, description = "External MCP server identifier"),
-        ("tool_id" = Uuid, Path, description = "MCP tool identifier")
+        ("tool_id" = Uuid, Path, description = "MCP tool identifier"),
+        McpToolVersionsQuery
     ),
     responses(
         (status = 200, body = Envelope<McpToolVersionsPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
@@ -92,15 +150,34 @@ pub async fn list_mcp_tool_versions(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((server_id, tool_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<McpToolVersionsQuery>,
 ) -> Result<Json<Envelope<McpToolVersionsPayload>>, AppError> {
     require_mcp_policy_admin(&state, &headers, Some(server_id)).await?;
-    let items = McpToolPolicyService::new(state.store.clone())
-        .list_versions(server_id, tool_id)
-        .await?
-        .into_iter()
-        .map(map_version)
-        .collect();
-    Ok(Json(envelope(McpToolVersionsPayload { items })))
+    let mut query = query.to_query()?;
+    // One extra row tells whether another page follows.
+    let page_size = match &mut query {
+        McpToolVersionQuery::Page { limit, .. } => {
+            let page_size = *limit as usize;
+            *limit += 1;
+            Some(page_size)
+        }
+        McpToolVersionQuery::Versions(_) => None,
+    };
+    let mut versions = McpToolPolicyService::new(state.store.clone())
+        .list_versions(server_id, tool_id, &query)
+        .await?;
+    let next_before = match page_size {
+        Some(page_size) if versions.len() > page_size => {
+            versions.truncate(page_size);
+            versions.last().map(|version| version.schema_version)
+        }
+        _ => None,
+    };
+    let items = versions.into_iter().map(map_version).collect();
+    Ok(Json(envelope(McpToolVersionsPayload {
+        items,
+        next_before,
+    })))
 }
 
 async fn review(

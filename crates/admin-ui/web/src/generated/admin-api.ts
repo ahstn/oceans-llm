@@ -3868,6 +3868,12 @@ export interface components {
             data: {
                 /** @description Newest first. */
                 items: components["schemas"]["McpToolVersionView"][];
+                /**
+                 * Format: int64
+                 * @description Pass as `before` for the next page of history. Empty on the last page
+                 *     and when `schema_versions` is given.
+                 */
+                next_before?: number | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4561,6 +4567,12 @@ export interface components {
         McpToolVersionsPayload: {
             /** @description Newest first. */
             items: components["schemas"]["McpToolVersionView"][];
+            /**
+             * Format: int64
+             * @description Pass as `before` for the next page of history. Empty on the last page
+             *     and when `schema_versions` is given.
+             */
+            next_before?: number | null;
         };
         McpToolView: {
             /** @description Tags an admin attached to the tool. */
@@ -6844,7 +6856,17 @@ export interface operations {
     };
     list_mcp_tool_versions: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Comma-separated version numbers to read, at most 10. A review diff asks
+                 *     for the approved and pending versions. Paging is ignored when set.
+                 */
+                schema_versions?: string | null;
+                /** @description Read versions older than this one. */
+                before?: number | null;
+                /** @description Page size, 1 to 100. Defaults to 20. */
+                limit?: number | null;
+            };
             header?: never;
             path: {
                 /** @description External MCP server identifier */
@@ -6862,6 +6884,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpToolVersionsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
             404: {

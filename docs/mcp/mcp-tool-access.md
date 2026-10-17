@@ -171,8 +171,10 @@ Versioning](../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
 Every definition an upstream serves for a tool is kept as a version: its
 description, input schema, title, annotations, output schema, schema hash, and
 when it was discovered. Discovery stores a new version whenever a tool's schema
-hash or description changes. The schema hash does not cover the description, so
-the description is compared on its own. Admin
+hash, description or title changes. The schema hash does not cover the
+description, so the description is compared on its own. A title kept in the
+older `annotations.title` member counts as a title change, not an annotation
+change. Admin
 [annotation overrides](#annotation-overrides) are not part of either and never
 create a version.
 
@@ -221,6 +223,11 @@ log](../access/admin-audit-log.md) as `mcp_tool.version_approved` and
 | `GET` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions` |
 | `POST` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve` |
 | `POST` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject` |
+
+The versions endpoint returns the versions named in `schema_versions` (a
+comma-separated list of at most 10), or one page of history newest first:
+`limit` (1 to 100, default 20) and `before`, with `next_before` in the response
+for the next page.
 
 The server setting is `approve_tool_changes` on `POST` and `PATCH
 /api/v1/admin/mcp/servers`.

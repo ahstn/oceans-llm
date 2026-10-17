@@ -1094,10 +1094,11 @@ pub trait McpRegistryRepository: Send + Sync {
         overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
     ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 
-    /// Every version of the tool, newest first.
+    /// Versions of the tool, newest first: named ones or one page.
     async fn list_mcp_tool_versions(
         &self,
         mcp_tool_id: Uuid,
+        query: &crate::mcp_tool_review::McpToolVersionQuery,
     ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
 
     /// Approves or rejects the tool's pending version. Fails with `Conflict`
