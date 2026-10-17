@@ -686,6 +686,49 @@ where
         McpToolApprovalStatus::PendingReview
     );
     assert_eq!(export_now.review.pending_schema_version, Some(2));
+
+    exercise_auto_approved_reuse(store).await;
+}
+
+/// A definition discovery approved itself while approval was off is not
+/// trusted once approval is on: replaying it waits for review under its old
+/// number instead of being served.
+async fn exercise_auto_approved_reuse<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "drive".to_string(),
+            display_name: "Drive".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://drive.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
+        })
+        .await
+        .expect("server");
+    let open = json!({"type": "object"});
+    let strict = json!({"type": "object", "required": ["path"]});
+    discover(store, &server, &[Def("upload", "Upload", open.clone())]).await;
+    discover(store, &server, &[Def("upload", "Upload", strict)]).await;
+    set_approval(store, &server, true).await;
+
+    let tools = discover(store, &server, &[Def("upload", "Upload", open)]).await;
+    let upload = find(&tools, "upload");
+    assert_eq!(
+        upload.review.approval_status,
+        McpToolApprovalStatus::PendingReview
+    );
+    assert_eq!(upload.review.pending_schema_version, Some(1));
+    assert_eq!(
+        upload.schema_version, 2,
+        "the approved version keeps the row"
+    );
 }
 
 /// An upstream back on an older definition reuses that version: one an admin

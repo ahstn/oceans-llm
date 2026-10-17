@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
-    StoredTool, StoredVersion, ToolWrite, discovered_definition, historical_lookups,
-    plan_tool_writes, reuse_historical_versions,
+    HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite,
+    discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
+    reuse_historical_versions,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::mcp_tool_review::status_after_rejection;
@@ -472,7 +473,7 @@ impl McpRegistryRepository for LibsqlStore {
         .map_err(to_query_error)?;
 
         let mut planned = plan_tool_writes(&stored, tools, approve_tool_changes);
-        let historical = find_versions_by_hash(&tx, &historical_lookups(&planned)).await?;
+        let historical = find_versions_by_definition(&tx, &historical_lookups(&planned)).await?;
         reuse_historical_versions(&mut planned, &historical);
         for plan in &planned {
             apply_tool_write(&tx, run.finished_at, plan.tool, plan.existing, &plan.write).await?;
@@ -1009,38 +1010,51 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// Lookups per historical version query: 500 pairs bind 1,000 variables,
+/// Lookups per historical version query: 500 lookups bind 2,000 variables,
 /// below SQLite's limit of 32,766.
 const HISTORICAL_LOOKUP_BATCH: usize = 500;
 
-/// Stored versions of the given tools with the given schema hashes, in a few
-/// batched queries, for discovery to reuse instead of creating duplicates.
-async fn find_versions_by_hash(
+/// The newest stored version with each looked-up definition (schema hash,
+/// description and title), by tool, in a few batched queries, for discovery
+/// to reuse instead of creating duplicates.
+async fn find_versions_by_definition(
     connection: &libsql::Connection,
-    lookups: &[(Uuid, &str)],
-) -> Result<HashMap<Uuid, Vec<StoredVersion>>, StoreError> {
-    let mut by_tool: HashMap<Uuid, Vec<StoredVersion>> = HashMap::new();
-    // Two variables per lookup; batches stay well under SQLite's variable
-    // limit however many tools one discovery changes.
+    lookups: &[HistoricalLookup],
+) -> Result<HashMap<Uuid, HistoricalVersion>, StoreError> {
+    let mut by_tool: HashMap<Uuid, HistoricalVersion> = HashMap::new();
     for batch in lookups.chunks(HISTORICAL_LOOKUP_BATCH) {
         let matches = (0..batch.len())
             .map(|index| {
+                let at = index * 4 + 1;
                 format!(
-                    "(mcp_tool_id = ?{} AND schema_hash = ?{})",
-                    index * 2 + 1,
-                    index * 2 + 2
+                    "(mcp_tool_id = ?{at} AND schema_hash = ?{} AND description IS ?{} AND title IS ?{})",
+                    at + 1,
+                    at + 2,
+                    at + 3
                 )
             })
             .collect::<Vec<_>>()
             .join(" OR ");
+        let text = |value: Option<&String>| {
+            value.map_or(libsql::Value::Null, |value| {
+                libsql::Value::Text(value.clone())
+            })
+        };
         let params = batch
             .iter()
-            .flat_map(|(tool_id, hash)| [tool_id.to_string(), (*hash).to_string()])
+            .flat_map(|lookup| {
+                [
+                    libsql::Value::Text(lookup.mcp_tool_id.to_string()),
+                    libsql::Value::Text(lookup.key.schema_hash.clone()),
+                    text(lookup.key.description.as_ref()),
+                    text(lookup.key.title.as_ref()),
+                ]
+            })
             .collect::<Vec<_>>();
         let mut rows = connection
             .query(
                 &format!(
-                    "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE {matches}"
+                    "SELECT mcp_tool_id, schema_version, status, reviewed_by_user_id IS NOT NULL FROM mcp_tool_versions WHERE {matches}"
                 ),
                 libsql::params_from_iter(params),
             )
@@ -1048,21 +1062,21 @@ async fn find_versions_by_hash(
             .map_err(to_query_error)?;
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
-            let status: String = row.get(3).map_err(to_query_error)?;
-            by_tool
-                .entry(parse_uuid(&mcp_tool_id)?)
-                .or_default()
-                .push(StoredVersion {
+            let status: String = row.get(2).map_err(to_query_error)?;
+            let reviewed: i64 = row.get(3).map_err(to_query_error)?;
+            keep_newest(
+                &mut by_tool,
+                parse_uuid(&mcp_tool_id)?,
+                HistoricalVersion {
                     schema_version: row.get(1).map_err(to_query_error)?,
-                    schema_hash: row.get(2).map_err(to_query_error)?,
-                    description: row.get(4).map_err(to_query_error)?,
-                    title: row.get(5).map_err(to_query_error)?,
                     status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                         StoreError::Serialization(format!(
                             "invalid MCP tool version status `{status}`"
                         ))
                     })?,
-                });
+                    reviewed: reviewed != 0,
+                },
+            );
         }
     }
     Ok(by_tool)

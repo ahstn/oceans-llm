@@ -170,46 +170,39 @@ async fn dispatch_mcp_request(
 
     match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
-            let access_resolution = match access
-                .effective_tools_for_api_key(
-                    auth,
-                    Some(server.mcp_server_id),
-                    // Approval servers serve the stored definition, which needs
-                    // the title and output schema.
-                    if server.approve_tool_changes {
-                        McpToolProjection::Full
-                    } else {
-                        McpToolProjection::Access
-                    },
-                )
-                .await
-            {
-                Ok(resolution) => resolution,
-                Err(error) => return mcp_error_response(error),
+            // Approval servers serve the stored definition, which needs the
+            // title and output schema. Other servers read the access
+            // projection, unless approval was turned off while a change still
+            // waits: those tools keep their stored definition, so the set is
+            // resolved once more with the full projection.
+            let mut projection = if server.approve_tool_changes {
+                McpToolProjection::Full
+            } else {
+                McpToolProjection::Access
+            };
+            let access_resolution = loop {
+                let resolution = match access
+                    .effective_tools_for_api_key(auth, Some(server.mcp_server_id), projection)
+                    .await
+                {
+                    Ok(resolution) => resolution,
+                    Err(error) => return mcp_error_response(error),
+                };
+                if matches!(projection, McpToolProjection::Access)
+                    && resolution
+                        .allowed_tools
+                        .iter()
+                        .any(|tool| serves_stored_definition(&server, tool))
+                {
+                    projection = McpToolProjection::Full;
+                    continue;
+                }
+                break resolution;
             };
             let mut granted_tools = upstream::GrantedTools::new();
             for tool in &access_resolution.allowed_tools {
-                let definition = if serves_stored_definition(&server, tool) {
-                    // The access projection leaves out the title and output
-                    // schema; reload the rare waiting tool on a server that no
-                    // longer requires approval.
-                    let full = if server.approve_tool_changes {
-                        None
-                    } else {
-                        match gateway_core::McpRegistryRepository::get_external_mcp_tool(
-                            state.store.as_ref(),
-                            tool.mcp_tool_id,
-                        )
-                        .await
-                        {
-                            Ok(full) => full,
-                            Err(error) => return mcp_error_response(error.into()),
-                        }
-                    };
-                    Some(approved_tool_object(full.as_ref().unwrap_or(tool)))
-                } else {
-                    None
-                };
+                let definition =
+                    serves_stored_definition(&server, tool).then(|| approved_tool_object(tool));
                 granted_tools.insert(
                     tool.upstream_name.as_str(),
                     upstream::GrantedToolView {

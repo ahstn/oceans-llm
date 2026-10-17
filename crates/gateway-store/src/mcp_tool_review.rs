@@ -208,14 +208,20 @@ impl ToolWrite {
 
 /// Reuses an older version with the same definition instead of allocating a
 /// new one. A definition an admin approved before is served again; one that
-/// was superseded waits for review under its old number. Discovery reads only
+/// was superseded, or that discovery approved itself while approval was off,
+/// waits for review under its old number. Discovery reads only
 /// pending and rejected versions up front, so older approved and superseded
 /// ones are looked up here, only when a new version would be created.
 pub(crate) fn reuse_historical_version(
     write: ToolWrite,
-    historical: Option<(i64, McpToolVersionStatus)>,
+    historical: Option<HistoricalVersion>,
 ) -> ToolWrite {
-    let Some((version, historical_status)) = historical else {
+    let Some(HistoricalVersion {
+        schema_version: version,
+        status: historical_status,
+        reviewed,
+    }) = historical
+    else {
         return write;
     };
     match write {
@@ -226,7 +232,9 @@ pub(crate) fn reuse_historical_version(
             version,
             insert_version: false,
         },
-        ToolWrite::Hold { .. } if historical_status == McpToolVersionStatus::Approved => {
+        ToolWrite::Hold { .. }
+            if historical_status == McpToolVersionStatus::Approved && reviewed =>
+        {
             ToolWrite::Serve {
                 version,
                 insert_version: false,
@@ -244,6 +252,39 @@ pub(crate) fn reuse_historical_version(
         },
         other => other,
     }
+}
+
+/// One tool's discovered definition, to look up among its stored versions.
+#[derive(Debug, Clone)]
+pub(crate) struct HistoricalLookup {
+    pub mcp_tool_id: uuid::Uuid,
+    pub key: McpToolDefinitionKey,
+}
+
+/// The newest stored version with a looked-up definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HistoricalVersion {
+    pub schema_version: i64,
+    pub status: McpToolVersionStatus,
+    /// An admin approved it. Discovery approves versions itself while
+    /// approval is off, and those must not skip review once it is on.
+    pub reviewed: bool,
+}
+
+/// Records `found` for the tool unless a newer match is already recorded.
+pub(crate) fn keep_newest(
+    by_tool: &mut HashMap<uuid::Uuid, HistoricalVersion>,
+    mcp_tool_id: uuid::Uuid,
+    found: HistoricalVersion,
+) {
+    by_tool
+        .entry(mcp_tool_id)
+        .and_modify(|current| {
+            if found.schema_version > current.schema_version {
+                *current = found;
+            }
+        })
+        .or_insert(found);
 }
 
 /// One discovered tool with its stored row and planned write.
@@ -272,25 +313,27 @@ pub(crate) fn plan_tool_writes<'a>(
         .collect()
 }
 
-/// `(mcp_tool_id, schema_hash)` for every planned write that would create a
-/// version, so one query can find older versions to reuse.
-pub(crate) fn historical_lookups<'a>(planned: &[PlannedWrite<'a>]) -> Vec<(uuid::Uuid, &'a str)> {
+/// The tool and definition of every planned write that would create a
+/// version, so a batched query can find older versions to reuse.
+pub(crate) fn historical_lookups(planned: &[PlannedWrite<'_>]) -> Vec<HistoricalLookup> {
     planned
         .iter()
         .filter(|plan| plan.write.allocates_version())
         .filter_map(|plan| {
-            plan.existing
-                .map(|existing| (existing.tool.mcp_tool_id, plan.tool.schema_hash.as_str()))
+            plan.existing.map(|existing| HistoricalLookup {
+                mcp_tool_id: existing.tool.mcp_tool_id,
+                key: discovered_definition(plan.tool).key(),
+            })
         })
         .collect()
 }
 
 /// Rewrites planned writes to reuse older versions with the same
-/// definition. `historical` holds the versions `historical_lookups` asked
-/// for, by tool.
+/// definition. `historical` holds the newest version with each looked-up
+/// definition, by tool.
 pub(crate) fn reuse_historical_versions(
     planned: &mut [PlannedWrite<'_>],
-    historical: &HashMap<uuid::Uuid, Vec<StoredVersion>>,
+    historical: &HashMap<uuid::Uuid, HistoricalVersion>,
 ) {
     for plan in planned {
         let Some(existing) = plan.existing else {
@@ -299,15 +342,8 @@ pub(crate) fn reuse_historical_versions(
         if !plan.write.allocates_version() {
             continue;
         }
-        let key = discovered_definition(plan.tool).key();
-        let newest = historical
-            .get(&existing.tool.mcp_tool_id)
-            .into_iter()
-            .flatten()
-            .filter(|version| version.key() == key)
-            .max_by_key(|version| version.schema_version)
-            .map(|version| (version.schema_version, version.status));
-        plan.write = reuse_historical_version(plan.write.clone(), newest);
+        let found = historical.get(&existing.tool.mcp_tool_id).copied();
+        plan.write = reuse_historical_version(plan.write.clone(), found);
     }
 }
 
@@ -317,6 +353,13 @@ mod tests {
 
     #[test]
     fn historical_versions_are_reused_instead_of_duplicated() {
+        let found = |schema_version, status, reviewed| {
+            Some(HistoricalVersion {
+                schema_version,
+                status,
+                reviewed,
+            })
+        };
         let hold = ToolWrite::Hold {
             version: 5,
             status: McpToolApprovalStatus::PendingReview,
@@ -324,7 +367,7 @@ mod tests {
             insert_version: true,
         };
         assert_eq!(
-            reuse_historical_version(hold.clone(), Some((2, McpToolVersionStatus::Approved))),
+            reuse_historical_version(hold.clone(), found(2, McpToolVersionStatus::Approved, true)),
             ToolWrite::Serve {
                 version: 2,
                 insert_version: false
@@ -332,7 +375,23 @@ mod tests {
             "a definition an admin approved before is served again"
         );
         assert_eq!(
-            reuse_historical_version(hold.clone(), Some((3, McpToolVersionStatus::Superseded))),
+            reuse_historical_version(
+                hold.clone(),
+                found(2, McpToolVersionStatus::Approved, false)
+            ),
+            ToolWrite::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingReview,
+                write_definition: false,
+                insert_version: false,
+            },
+            "one discovery approved while approval was off waits for review"
+        );
+        assert_eq!(
+            reuse_historical_version(
+                hold.clone(),
+                found(3, McpToolVersionStatus::Superseded, false)
+            ),
             ToolWrite::Hold {
                 version: 3,
                 status: McpToolApprovalStatus::PendingReview,
@@ -347,7 +406,7 @@ mod tests {
                     version: 5,
                     insert_version: true
                 },
-                Some((2, McpToolVersionStatus::Superseded))
+                found(2, McpToolVersionStatus::Superseded, false)
             ),
             ToolWrite::Serve {
                 version: 2,

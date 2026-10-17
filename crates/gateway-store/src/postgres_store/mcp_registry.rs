@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
-    StoredTool, StoredVersion, ToolWrite, discovered_definition, historical_lookups,
-    plan_tool_writes, reuse_historical_versions,
+    HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite,
+    discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
+    reuse_historical_versions,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::mcp_tool_review::status_after_rejection;
@@ -445,7 +446,8 @@ impl McpRegistryRepository for PostgresStore {
         .map_err(to_query_error)?;
 
         let mut planned = plan_tool_writes(&stored, tools, approve_tool_changes);
-        let historical = find_versions_by_hash(&mut tx, &historical_lookups(&planned)).await?;
+        let historical =
+            find_versions_by_definition(&mut tx, &historical_lookups(&planned)).await?;
         reuse_historical_versions(&mut planned, &historical);
         for plan in &planned {
             apply_tool_write(
@@ -974,43 +976,57 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// Stored versions of the given tools with the given schema hashes, in one
-/// query, for discovery to reuse instead of creating duplicates.
-async fn find_versions_by_hash(
+/// The newest stored version with each looked-up definition (schema hash,
+/// description and title), by tool, in one query, for discovery to reuse
+/// instead of creating duplicates.
+async fn find_versions_by_definition(
     conn: &mut sqlx::PgConnection,
-    lookups: &[(Uuid, &str)],
-) -> Result<HashMap<Uuid, Vec<StoredVersion>>, StoreError> {
-    let mut by_tool: HashMap<Uuid, Vec<StoredVersion>> = HashMap::new();
+    lookups: &[HistoricalLookup],
+) -> Result<HashMap<Uuid, HistoricalVersion>, StoreError> {
+    let mut by_tool: HashMap<Uuid, HistoricalVersion> = HashMap::new();
     if lookups.is_empty() {
         return Ok(by_tool);
     }
-    let (tool_ids, hashes): (Vec<String>, Vec<String>) = lookups
+    let tool_ids = lookups
         .iter()
-        .map(|(tool_id, hash)| (tool_id.to_string(), (*hash).to_string()))
-        .unzip();
+        .map(|lookup| lookup.mcp_tool_id.to_string())
+        .collect::<Vec<_>>();
+    let hashes = lookups
+        .iter()
+        .map(|lookup| lookup.key.schema_hash.clone())
+        .collect::<Vec<_>>();
+    let descriptions = lookups
+        .iter()
+        .map(|lookup| lookup.key.description.clone())
+        .collect::<Vec<_>>();
+    let titles = lookups
+        .iter()
+        .map(|lookup| lookup.key.title.clone())
+        .collect::<Vec<_>>();
     let rows = sqlx::query(
-        "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE (mcp_tool_id, schema_hash) IN (SELECT * FROM UNNEST($1::text[], $2::text[]))",
+        "SELECT v.mcp_tool_id, v.schema_version, v.status, v.reviewed_by_user_id IS NOT NULL FROM mcp_tool_versions v JOIN UNNEST($1::text[], $2::text[], $3::text[], $4::text[]) AS l(tool_id, schema_hash, description, title) ON v.mcp_tool_id = l.tool_id AND v.schema_hash = l.schema_hash AND v.description IS NOT DISTINCT FROM l.description AND v.title IS NOT DISTINCT FROM l.title",
     )
     .bind(tool_ids)
     .bind(hashes)
+    .bind(descriptions)
+    .bind(titles)
     .fetch_all(&mut *conn)
     .await
     .map_err(to_query_error)?;
     for row in &rows {
         let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
-        let status: String = row.try_get(3).map_err(to_query_error)?;
-        by_tool
-            .entry(parse_uuid(&mcp_tool_id)?)
-            .or_default()
-            .push(StoredVersion {
+        let status: String = row.try_get(2).map_err(to_query_error)?;
+        keep_newest(
+            &mut by_tool,
+            parse_uuid(&mcp_tool_id)?,
+            HistoricalVersion {
                 schema_version: row.try_get(1).map_err(to_query_error)?,
-                schema_hash: row.try_get(2).map_err(to_query_error)?,
-                description: row.try_get(4).map_err(to_query_error)?,
-                title: row.try_get(5).map_err(to_query_error)?,
                 status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
-            });
+                reviewed: row.try_get(3).map_err(to_query_error)?,
+            },
+        );
     }
     Ok(by_tool)
 }
