@@ -1048,6 +1048,20 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_server_id: Uuid,
     ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
 
+    /// The servers with these IDs, disabled ones included, in one read.
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let mut servers = Vec::with_capacity(mcp_server_ids.len());
+        for mcp_server_id in mcp_server_ids {
+            if let Some(server) = self.get_external_mcp_server(*mcp_server_id).await? {
+                servers.push(server);
+            }
+        }
+        Ok(servers)
+    }
+
     async fn get_external_mcp_server_by_key(
         &self,
         server_key: &str,

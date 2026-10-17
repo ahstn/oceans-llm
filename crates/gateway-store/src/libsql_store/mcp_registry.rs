@@ -319,6 +319,34 @@ impl McpRegistryRepository for LibsqlStore {
         Ok(servers)
     }
 
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serialize_json(
+            &mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )?;
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE mcp_server_id IN (SELECT value FROM json_each(?1)) ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [ids])
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,

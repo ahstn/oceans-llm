@@ -118,9 +118,7 @@ pub async fn list_mcp_oauth_connections(
         });
         // A team-only server the user cannot reach stays hidden, as in the
         // member registry, unless they hold a binding they may still revoke.
-        if oauth_binding.is_none()
-            && !user_can_reach(&state, user.user_id, team_id, &server).await?
-        {
+        if oauth_binding.is_none() && !user_can_reach(team_id, &server) {
             continue;
         }
         let config = if server.status == ExternalMcpServerStatus::Active
@@ -231,7 +229,7 @@ pub async fn start_mcp_oauth_connection(
     let user = require_session_user(&state, &headers).await?;
     let server = load_oauth_server(&state, server_id).await?;
     let team_id = user_team(&state, user.user_id).await?;
-    if !user_can_reach(&state, user.user_id, team_id, &server).await? {
+    if !user_can_reach(team_id, &server) {
         return Err(
             GatewayError::Store(gateway_core::StoreError::NotFound(format!(
                 "external MCP server `{server_id}` not found"
@@ -418,6 +416,17 @@ async fn exchange_callback_code(
     let server = load_oauth_server(state, transaction.mcp_server_id)
         .await
         .map_err(|error| error.0)?;
+    // The user may have left the team, or the server moved, since the flow
+    // started. The token write below is pinned to this server's ownership, so
+    // a transfer after this check is refused there.
+    let team_id = user_team(state, transaction.user_id)
+        .await
+        .map_err(|error| error.0)?;
+    if !user_can_reach(team_id, &server) {
+        return Err(GatewayError::InvalidRequest(
+            "the MCP server is no longer available to this user".to_string(),
+        ));
+    }
     let config = mcp_oauth_server_config(&server.auth_config)?;
     if config.provider_key != transaction.provider_key || config.resource != transaction.resource {
         return Err(GatewayError::InvalidRequest(
@@ -553,36 +562,15 @@ async fn user_team(state: &AppState, user_id: Uuid) -> Result<Option<Uuid>, AppE
 }
 
 /// Whether a user may see and connect to `server`: one published to the
-/// organisation, one their team owns, or a team-only server a grant to them or
-/// their team still reaches. Other team-only servers do not exist for them.
-async fn user_can_reach(
-    state: &AppState,
-    user_id: Uuid,
-    team_id: Option<Uuid>,
-    server: &gateway_core::ExternalMcpServerRecord,
-) -> Result<bool, AppError> {
-    if server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
+/// organisation, or a team-only server their current team owns. A grant does
+/// not widen this, matching runtime access, which ignores a team-only server's
+/// grants once their holder has left the team.
+fn user_can_reach(team_id: Option<Uuid>, server: &gateway_core::ExternalMcpServerRecord) -> bool {
+    server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
         || server
             .ownership
             .owner_team_id
             .is_some_and(|owner| Some(owner) == team_id)
-    {
-        return Ok(true);
-    }
-    let mut subjects = vec![gateway_core::McpGrantSubject {
-        subject_kind: gateway_core::McpToolGrantSubjectKind::User,
-        subject_id: user_id,
-    }];
-    subjects.extend(team_id.map(|team_id| gateway_core::McpGrantSubject {
-        subject_kind: gateway_core::McpToolGrantSubjectKind::Team,
-        subject_id: team_id,
-    }));
-    Ok(gateway_core::McpAccessRepository::has_mcp_server_grant(
-        &*state.store,
-        &subjects,
-        server.mcp_server_id,
-    )
-    .await?)
 }
 
 async fn load_oauth_server(

@@ -465,3 +465,19 @@ async fn team_only_servers_are_hidden_from_users_outside_the_team() {
     };
     assert_eq!(error.0.http_status_code(), 404);
 }
+
+#[tokio::test]
+async fn only_the_owning_team_reaches_a_team_only_server() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let mut server = oauth_server(&state).await;
+    let owner = Uuid::new_v4();
+    assert!(
+        user_can_reach(None, &server),
+        "published servers reach everyone"
+    );
+    server.ownership = gateway_core::McpServerOwnership::team(owner, None);
+    assert!(user_can_reach(Some(owner), &server));
+    // A grant left over from an earlier membership does not count.
+    assert!(!user_can_reach(Some(Uuid::new_v4()), &server));
+    assert!(!user_can_reach(None, &server));
+}

@@ -400,9 +400,9 @@ Connections behave the same way for every provider. Oceans:
 - stores the token, and a dynamically registered client, only while the server
   still has the URL and auth settings the flow ran against; a settings change
   in between fails the connection, and the user connects again
-- lists, and lets a user connect to, a team-only server only when their team
-  owns it or a grant to them or their team reaches it; a connection they
-  already hold stays listed so they can disconnect it
+- lists, and lets a user connect to, a team-only server only while their current
+  team owns it, checked again when the provider redirects back; a connection
+  they already hold stays listed so they can disconnect it
 
 Some providers return no refresh token. The connection then lasts until the access token expires, and then the user must reconnect. A token with no refresh token and no `expires_in` does not expire.
 

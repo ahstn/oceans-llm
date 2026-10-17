@@ -1494,6 +1494,23 @@ pub(crate) mod tests {
                 .iter()
                 .all(|listed| listed.mcp_server_id != server.mcp_server_id)
         );
+        assert_eq!(
+            store
+                .list_external_mcp_servers_by_ids(&[server.mcp_server_id, Uuid::new_v4()])
+                .await
+                .expect("servers by ID")
+                .iter()
+                .map(|listed| listed.mcp_server_id)
+                .collect::<Vec<_>>(),
+            vec![server.mcp_server_id]
+        );
+        assert!(
+            store
+                .list_external_mcp_servers_by_ids(&[])
+                .await
+                .expect("no IDs")
+                .is_empty()
+        );
         assert!(
             owned_by(Some(Uuid::new_v4()))
                 .await

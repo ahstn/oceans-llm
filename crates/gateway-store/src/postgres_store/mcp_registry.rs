@@ -308,6 +308,29 @@ impl McpRegistryRepository for PostgresStore {
         rows.iter().map(decode_server).collect()
     }
 
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE mcp_server_id = ANY($1) ORDER BY server_key"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(
+                mcp_server_ids
+                    .iter()
+                    .map(Uuid::to_string)
+                    .collect::<Vec<_>>(),
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_server).collect()
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
