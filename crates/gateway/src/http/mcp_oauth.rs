@@ -400,9 +400,25 @@ async fn complete_oauth_callback(
                     .owner_team_id
                     .is_some_and(|owner| Some(owner) == team_id);
             if !reachable {
-                credentials
+                // Recorded like a disconnect, so the trail matches the
+                // `mcp_credential_binding.set` written just before.
+                if let Some(revoked) = credentials
                     .revoke_binding(binding.credential_binding_id)
-                    .await?;
+                    .await?
+                {
+                    state
+                        .audit()
+                        .record(
+                            &meta.user_context(&user),
+                            AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                                .target(revoked.credential_binding_id)
+                                .label(revoked.owner_scope_key.clone())
+                                .meta("operation", "oauth_access_lost")
+                                .meta("mcp_server_id", revoked.mcp_server_id)
+                                .before(oauth_binding_summary(&revoked)),
+                        )
+                        .await;
+                }
                 return Ok(connection_error_redirect("provider_failure"));
             }
             Ok(connection_success_redirect(&transaction.redirect_to))

@@ -2059,6 +2059,28 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     /// When set, the write is conditional on the binding's server, as
     /// [`McpServerOwnershipGuard`] describes.
     pub expected_server: Option<McpServerOwnershipGuard>,
+    /// For a replacement, the binding the caller was authorized to replace.
+    /// The store compares it with the row it locks, so a concurrent change to
+    /// that binding makes the replacement a conflict.
+    pub expected_replaced: Option<McpCredentialBindingPin>,
+}
+
+/// What a replacement's authorization relied on in the binding it replaces.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpCredentialBindingPin {
+    pub mcp_server_id: Uuid,
+    /// Encodes the owner scope kind and its IDs.
+    pub owner_scope_key: String,
+    pub uses_secret_ref: bool,
+}
+
+impl McpCredentialBindingPin {
+    #[must_use]
+    pub fn matches(&self, binding: &McpUpstreamCredentialBindingRecord) -> bool {
+        self.mcp_server_id == binding.mcp_server_id
+            && self.owner_scope_key == binding.owner_scope_key
+            && self.uses_secret_ref == binding.secret_ref.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

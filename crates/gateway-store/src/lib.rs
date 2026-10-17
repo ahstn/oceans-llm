@@ -1683,6 +1683,7 @@ pub(crate) mod tests {
                 metadata: Map::new(),
                 updated_at: now,
                 expected_server: None,
+                expected_replaced: None,
             }
         };
         store
@@ -2126,6 +2127,7 @@ pub(crate) mod tests {
                 metadata: Map::new(),
                 updated_at: now,
                 expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("user binding");
@@ -2663,6 +2665,7 @@ pub(crate) mod tests {
             metadata: Map::new(),
             updated_at: now,
             expected_server: Some(expected_server),
+            expected_replaced: None,
         };
         let bindings_for_server = || async {
             store
@@ -2778,6 +2781,29 @@ pub(crate) mod tests {
             Err(StoreError::Conflict(_))
         ));
         assert_eq!(bindings_for_server().await, before + 1);
+        // A replacement is pinned to the binding it was authorized against: if
+        // that binding changed in between, it is refused and nothing is written.
+        let mut replace = binding(current.clone().with_server_url(&server.server_url));
+        replace.credential_binding_id = Some(kept.credential_binding_id);
+        replace.expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+            mcp_server_id: server.mcp_server_id,
+            owner_scope_key: "mcp_credential:v1:user:someone-else".to_string(),
+            uses_secret_ref: true,
+        });
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&replace).await,
+            Err(StoreError::Conflict(_))
+        ));
+        replace.expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+            mcp_server_id: kept.mcp_server_id,
+            owner_scope_key: kept.owner_scope_key.clone(),
+            uses_secret_ref: kept.secret_ref.is_some(),
+        });
+        let (_, replaced) = store
+            .upsert_mcp_upstream_credential_binding(&replace)
+            .await
+            .expect("replacement on the pinned binding");
+        assert!(replaced.is_some());
         // A binding stays on its server: replacing it by ID onto another one
         // is refused, whatever guard the write carries.
         let mut moved = binding(current.clone());
@@ -3322,6 +3348,7 @@ pub(crate) mod tests {
                 metadata: Map::from_iter([("source".to_string(), json!("test"))]),
                 updated_at: now,
                 expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create credential binding");
@@ -3354,6 +3381,7 @@ pub(crate) mod tests {
                 metadata: Map::new(),
                 updated_at: now + Duration::seconds(1),
                 expected_server: None,
+                expected_replaced: None,
             })
             .await;
         assert!(
@@ -3515,6 +3543,7 @@ pub(crate) mod tests {
                 metadata: Map::new(),
                 updated_at: now + Duration::minutes(11),
                 expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create replacement credential")
@@ -3556,6 +3585,7 @@ pub(crate) mod tests {
                 metadata: Map::from_iter([("grant".to_string(), json!("v1"))]),
                 updated_at: now + Duration::minutes(20),
                 expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create OAuth credential")
@@ -3612,6 +3642,7 @@ pub(crate) mod tests {
                 metadata: Map::from_iter([("grant".to_string(), json!("v3"))]),
                 updated_at: now + Duration::minutes(22),
                 expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("reconnect OAuth credential");

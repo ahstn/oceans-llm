@@ -1344,6 +1344,7 @@ pub async fn upsert_mcp_credential_binding(
         .await?;
     let service = McpCredentialService::new(state.store.clone());
     // Replacing a binding by id must not reach one the caller could not set.
+    let mut expected_replaced = None;
     if let Some(binding_id) = request.credential_binding_id
         && let Some(existing) = find_credential_binding(&service, binding_id).await?
     {
@@ -1367,6 +1368,13 @@ pub async fn upsert_mcp_credential_binding(
                 false,
             )
             .await?;
+        // The store compares this with the row it locks, so a concurrent change
+        // to the binding cannot be overwritten on this authorization.
+        expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+            mcp_server_id: existing.mcp_server_id,
+            owner_scope_key: existing.owner_scope_key.clone(),
+            uses_secret_ref: existing.secret_ref.is_some(),
+        });
     }
     // The store reports whether its write replaced a binding: a caller-chosen ID
     // that does not exist yet is inserted, so it is a create.
@@ -1391,6 +1399,7 @@ pub async fn upsert_mcp_credential_binding(
             expected_server: Some(
                 McpServerOwnershipGuard::of(&server).with_server_url(&server.server_url),
             ),
+            expected_replaced,
         })
         .await?;
     // The service returns bindings without their secrets; only those views are

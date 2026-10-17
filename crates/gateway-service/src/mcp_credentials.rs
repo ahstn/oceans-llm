@@ -72,6 +72,10 @@ pub struct UpsertMcpCredentialBindingInput {
     /// [`McpServerOwnershipGuard`]. Callers set it, never a request body.
     #[serde(skip)]
     pub expected_server: Option<McpServerOwnershipGuard>,
+    /// The binding a replacement was authorized against; see
+    /// [`gateway_core::McpCredentialBindingPin`].
+    #[serde(skip)]
+    pub expected_replaced: Option<gateway_core::McpCredentialBindingPin>,
 }
 
 #[derive(Clone)]
@@ -250,6 +254,7 @@ where
             metadata: input.metadata,
             updated_at: now,
             expected_server: input.expected_server,
+            expected_replaced: input.expected_replaced,
         };
         let (binding, replaced) = self
             .repo
@@ -298,6 +303,7 @@ where
             expires_at: grant.expires_at,
             metadata,
             expected_server,
+            expected_replaced: None,
         })
         .await
     }

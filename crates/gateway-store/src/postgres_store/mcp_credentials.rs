@@ -137,6 +137,15 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         } else {
             None
         };
+        if let Some(pin) = &input.expected_replaced
+            && !previous
+                .as_ref()
+                .is_some_and(|previous| pin.matches(previous))
+        {
+            return Err(StoreError::Conflict(format!(
+                "credential binding `{id}` changed since it was checked; reload and try again"
+            )));
+        }
         if let Some(previous) = previous {
             // A binding stays on its server: moving one would take a credential
             // off a server the caller was never checked against, under no lock.
