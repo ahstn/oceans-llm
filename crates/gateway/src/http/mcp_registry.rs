@@ -531,7 +531,8 @@ pub async fn list_mcp_server_tools(
         // A member sees only the tools their grants let them call, on a server
         // they can connect to; anything else does not exist for them.
         McpViewer::Member { user_id, team_id } => {
-            let allowed: Vec<_> = member_access(&state, user_id, team_id)
+            let servers = state.store.list_external_mcp_servers(false).await?;
+            let allowed: Vec<_> = member_access(&state, user_id, team_id, &servers)
                 .await?
                 .into_iter()
                 .filter(|tool| tool.mcp_server_id == server_id)
@@ -1424,23 +1425,9 @@ async fn member_access(
     state: &AppState,
     user_id: Uuid,
     team_id: Option<Uuid>,
+    servers: &[gateway_core::ExternalMcpServerRecord],
 ) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
     use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
-    let mut subjects = vec![McpGrantSubject {
-        subject_kind: McpToolGrantSubjectKind::User,
-        subject_id: user_id,
-    }];
-    if let Some(team_id) = team_id {
-        subjects.push(McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::Team,
-            subject_id: team_id,
-        });
-    }
-    let mut tools = state
-        .store
-        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Full)
-        .await?
-        .allowed_tools;
     let keys: Vec<_> = state
         .store
         .list_api_keys_for_user_scope(user_id, None)
@@ -1451,26 +1438,44 @@ async fn member_access(
             key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)
         })
         .collect();
-    if keys.is_empty() {
+    let key_subject = |id| McpGrantSubject {
+        subject_kind: McpToolGrantSubjectKind::ApiKey,
+        subject_id: id,
+    };
+    // The user, their team and every key without a server list resolve in one
+    // query; only a key limited to some servers needs its own, to filter it.
+    let mut subjects = vec![McpGrantSubject {
+        subject_kind: McpToolGrantSubjectKind::User,
+        subject_id: user_id,
+    }];
+    if let Some(team_id) = team_id {
+        subjects.push(McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: team_id,
+        });
+    }
+    let (unrestricted, restricted): (Vec<_>, Vec<_>) = keys
+        .into_iter()
+        .partition(|key| key.access.mcp_server_keys.is_none());
+    subjects.extend(unrestricted.iter().map(|key| key_subject(key.id)));
+    let mut tools = state
+        .store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Full)
+        .await?
+        .allowed_tools;
+    if restricted.is_empty() {
         return Ok(tools);
     }
-    let server_keys: std::collections::HashMap<Uuid, String> = state
-        .store
-        .list_external_mcp_servers(false)
-        .await?
-        .into_iter()
-        .map(|server| (server.mcp_server_id, server.server_key))
+    let server_keys: std::collections::HashMap<Uuid, &str> = servers
+        .iter()
+        .map(|server| (server.mcp_server_id, server.server_key.as_str()))
         .collect();
     let mut seen: std::collections::HashSet<Uuid> =
         tools.iter().map(|tool| tool.mcp_tool_id).collect();
-    for key in keys {
-        let subject = McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::ApiKey,
-            subject_id: key.id,
-        };
+    for key in restricted {
         for tool in state
             .store
-            .resolve_mcp_access_for_subjects(&[subject], None, McpToolProjection::Full)
+            .resolve_mcp_access_for_subjects(&[key_subject(key.id)], None, McpToolProjection::Full)
             .await?
             .allowed_tools
         {
@@ -1492,18 +1497,20 @@ async fn list_member_servers(
     team_id: Option<Uuid>,
     query: &McpServersQuery,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
-    let accessible: std::collections::HashSet<Uuid> = member_access(state, user_id, team_id)
-        .await?
-        .into_iter()
-        .map(|tool| tool.mcp_server_id)
-        .collect();
+    // One registry read serves both the key scope check and the response.
+    let servers = McpRegistryService::new(state.store.clone())
+        .list_servers(query.include_disabled)
+        .await?;
+    let accessible: std::collections::HashSet<Uuid> =
+        member_access(state, user_id, team_id, &servers)
+            .await?
+            .into_iter()
+            .map(|tool| tool.mcp_server_id)
+            .collect();
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let mut items = Vec::new();
     let mut names = std::collections::HashMap::new();
-    for server in McpRegistryService::new(state.store.clone())
-        .list_servers(query.include_disabled)
-        .await?
-    {
+    for server in servers {
         if !accessible.contains(&server.mcp_server_id)
             || !owner.is_none_or(|owner| owner.matches(&server))
         {
