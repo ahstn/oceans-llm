@@ -1,6 +1,7 @@
 use super::*;
 use crate::shared::{
-    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json,
+    team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
@@ -581,19 +582,18 @@ impl McpRegistryRepository for PostgresStore {
             .collect()
     }
 
-    async fn list_active_mcp_tool_grants_for_server(
+    async fn count_mcp_tool_grants_outside_team(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
-        let sql = format!(
-            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = $1"
-        );
-        let rows = sqlx::query(&sql)
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
+        let count: i64 = sqlx::query_scalar(&grants_outside_team_sql("$1", "$2"))
             .bind(mcp_server_id.to_string())
-            .fetch_all(&self.pool)
+            .bind(team_id.to_string())
+            .fetch_one(&self.pool)
             .await
             .map_err(to_query_error)?;
-        rows.iter().map(super::mcp_access::decode_grant).collect()
+        Ok(count.max(0) as u64)
     }
 
     async fn list_mcp_tool_grants_for_owner_team(

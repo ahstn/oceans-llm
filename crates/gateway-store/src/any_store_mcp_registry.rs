@@ -129,19 +129,20 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
-    async fn list_active_mcp_tool_grants_for_server(
+    async fn count_mcp_tool_grants_outside_team(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .list_active_mcp_tool_grants_for_server(mcp_server_id)
+                    .count_mcp_tool_grants_outside_team(mcp_server_id, team_id)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .list_active_mcp_tool_grants_for_server(mcp_server_id)
+                    .count_mcp_tool_grants_outside_team(mcp_server_id, team_id)
                     .await
             }
         }

@@ -533,24 +533,12 @@ where
                 "tool set `{toolset_key}` contains this server's tools; remove them before limiting the server to one team"
             )));
         }
-        let mut outside = 0_usize;
-        for grant in self
+        // One query resolves every grant subject's team; a subject that no
+        // longer exists holds no access and is not counted.
+        let outside = self
             .repo
-            .list_active_mcp_tool_grants_for_server(mcp_server_id)
-            .await?
-        {
-            let subject = McpGrantSubject {
-                subject_kind: grant.subject_kind,
-                subject_id: grant.subject_id,
-            };
-            // A subject that no longer exists holds no access. Any other lookup
-            // failure stops the write, so it never proceeds on a partial check.
-            if let Some(subject_team) = self.resolve_subject_team(subject).await?
-                && subject_team != Some(team_id)
-            {
-                outside += 1;
-            }
-        }
+            .count_mcp_tool_grants_outside_team(mcp_server_id, team_id)
+            .await?;
         if outside > 0 {
             return Err(conflict(format!(
                 "{outside} active grant(s) on this server's tools are held outside the owning team; revoke them before limiting the server to one team"
@@ -632,8 +620,9 @@ where
 ///
 /// This runs when a team admin saves a URL or refreshes discovery. It does not
 /// pin the address for the later connection, so on its own it is not a defence
-/// against DNS rebinding; OAuth discovery, token exchange and registration go
-/// through the outbound fetcher, which is. Refresh and the proxy do not yet.
+/// against DNS rebinding. A team-owned server's OAuth requests, discovery
+/// refresh and proxy traffic go through the outbound fetcher's guarded
+/// resolver, which is (see [`crate::McpUpstreamClients`]).
 pub async fn authorize_destination(
     scope: &McpAdminScope,
     server_url: &str,

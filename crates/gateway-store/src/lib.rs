@@ -1765,12 +1765,17 @@ pub(crate) mod tests {
             )
             .await
             .expect("revoke grant");
-        let active = store
-            .list_active_mcp_tool_grants_for_server(server.mcp_server_id)
-            .await
-            .expect("active grants for server");
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].subject_id, team.team_id);
+        // Only the team's own grant is active; the revoked one is not counted.
+        let outside =
+            |team_id| store.count_mcp_tool_grants_outside_team(server.mcp_server_id, team_id);
+        assert_eq!(outside(team.team_id).await.expect("count inside"), 0);
+        assert_eq!(
+            outside(Uuid::new_v4())
+                .await
+                .expect("count for another team"),
+            1
+        );
+        exercise_mcp_grant_subject_teams(store, &tool, team.team_id).await;
         // The server is platform-owned after the takeover above, so the team owns
         // nothing until it is moved back.
         assert!(
@@ -1802,14 +1807,15 @@ pub(crate) mod tests {
             .expect("disable as the owner");
         assert!(disabled);
         assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
-        // Revoked grants are listed too, as the unscoped grant list does.
+        // Revoked grants are listed too, as the unscoped grant list does: the
+        // two above and the eight the subject-team check revoked.
         assert_eq!(
             store
                 .list_mcp_tool_grants_for_owner_team(team.team_id)
                 .await
                 .expect("team grants")
                 .len(),
-            2
+            10
         );
 
         exercise_mcp_ownership_guards(
@@ -1820,6 +1826,129 @@ pub(crate) mod tests {
             toolset.toolset_id,
         )
         .await;
+    }
+
+    /// Resolves each kind of grant subject to its team in one query, as the
+    /// narrowing check counts them, then revokes the grants it made.
+    async fn exercise_mcp_grant_subject_teams<S>(
+        store: &S,
+        tool: &gateway_core::ExternalMcpToolRecord,
+        team_id: Uuid,
+    ) where
+        S: GatewayStore + McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
+    {
+        use gateway_core::{McpToolGrantSubjectKind as Kind, NewApiKeyRecord};
+
+        let now = OffsetDateTime::now_utc();
+        let user = |email: &'static str| {
+            store.create_identity_user(
+                email,
+                email,
+                email,
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+        };
+        let member = user("mcp-member@example.com").await.expect("member");
+        store
+            .assign_team_membership(member.user_id, team_id, MembershipRole::Member)
+            .await
+            .expect("join team");
+        let outsider = user("mcp-outsider@example.com").await.expect("outsider");
+        let service_account = store
+            .create_service_account(team_id, "mcp-bot", "MCP bot", now)
+            .await
+            .expect("service account");
+        let key =
+            |public_id: &str, owner_kind, owner_user_id, owner_service_account_id: Option<Uuid>| {
+                NewApiKeyRecord {
+                    name: public_id.to_string(),
+                    public_id: public_id.to_string(),
+                    secret_hash: format!("hash-{public_id}"),
+                    // Service-account keys must name their models.
+                    model_grant_mode: if owner_service_account_id.is_some() {
+                        gateway_core::ApiKeyModelGrantMode::Explicit
+                    } else {
+                        gateway_core::ApiKeyModelGrantMode::All
+                    },
+                    owner_kind,
+                    owner_user_id,
+                    owner_team_id: owner_service_account_id.map(|_| team_id),
+                    owner_service_account_id,
+                    access: Default::default(),
+                    created_at: now,
+                }
+            };
+        let member_key = store
+            .create_api_key(&key(
+                "mcpmember",
+                ApiKeyOwnerKind::User,
+                Some(member.user_id),
+                None,
+            ))
+            .await
+            .expect("member key");
+        let service_account_key = store
+            .create_api_key(&key(
+                "mcpbot",
+                ApiKeyOwnerKind::ServiceAccount,
+                None,
+                Some(service_account.service_account_id),
+            ))
+            .await
+            .expect("service account key");
+        let outsider_key = store
+            .create_api_key(&key(
+                "mcpoutsider",
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            ))
+            .await
+            .expect("outsider key");
+        let subjects = [
+            (Kind::User, member.user_id),
+            (Kind::ServiceAccount, service_account.service_account_id),
+            (Kind::ApiKey, member_key.id),
+            (Kind::ApiKey, service_account_key.id),
+            // Outside: a user with no team, and that user's key.
+            (Kind::User, outsider.user_id),
+            (Kind::ApiKey, outsider_key.id),
+            // Gone: a subject that no longer exists holds no access.
+            (Kind::User, Uuid::new_v4()),
+            (Kind::ApiKey, Uuid::new_v4()),
+        ];
+        for (subject_kind, subject_id) in subjects {
+            store
+                .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                    subject_kind,
+                    subject_id,
+                    target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                    target_id: tool.mcp_tool_id,
+                    updated_at: now,
+                    expected_server: None,
+                })
+                .await
+                .expect("grant subject");
+        }
+        let outside = store
+            .count_mcp_tool_grants_outside_team(tool.mcp_server_id, team_id)
+            .await
+            .expect("count outside");
+        assert_eq!(outside, 2, "the outsider and their key");
+        for (subject_kind, subject_id) in subjects {
+            store
+                .revoke_mcp_tool_grant(
+                    subject_kind,
+                    subject_id,
+                    gateway_core::McpToolGrantTargetKind::Tool,
+                    tool.mcp_tool_id,
+                    now,
+                )
+                .await
+                .expect("revoke subject grant");
+        }
     }
 
     /// Grant, credential and tool set writes checked against the server's

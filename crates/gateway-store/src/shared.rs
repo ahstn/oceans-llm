@@ -11,6 +11,54 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
     Uuid::parse_str(raw).map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+/// SQL for `count_mcp_tool_grants_outside_team`, with the backend's
+/// placeholders for the server and team IDs. Each subject's team follows the
+/// same precedence as the service's subject lookup, so both agree on who is
+/// inside the team.
+pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
+    format!(
+        r#"
+        SELECT COUNT(*) FROM (
+            SELECT
+                CASE g.subject_kind
+                    WHEN 'team' THEN st.team_id
+                    WHEN 'user' THEN um.team_id
+                    WHEN 'service_account' THEN ssa.team_id
+                    WHEN 'api_key' THEN CASE
+                        WHEN k.owner_team_id IS NOT NULL THEN k.owner_team_id
+                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.team_id
+                        ELSE km.team_id
+                    END
+                END AS subject_team,
+                CASE g.subject_kind
+                    WHEN 'team' THEN st.team_id IS NOT NULL
+                    WHEN 'user' THEN su.user_id IS NOT NULL
+                    WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL
+                    WHEN 'api_key' THEN k.id IS NOT NULL AND CASE
+                        WHEN k.owner_team_id IS NOT NULL THEN TRUE
+                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL
+                        WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
+                        ELSE TRUE
+                    END
+                    ELSE FALSE
+                END AS subject_exists
+            FROM mcp_tool_grants g
+            JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
+            LEFT JOIN teams st ON g.subject_kind = 'team' AND st.team_id = g.subject_id
+            LEFT JOIN users su ON g.subject_kind = 'user' AND su.user_id = g.subject_id
+            LEFT JOIN team_memberships um ON g.subject_kind = 'user' AND um.user_id = g.subject_id
+            LEFT JOIN service_accounts ssa ON g.subject_kind = 'service_account' AND ssa.service_account_id = g.subject_id
+            LEFT JOIN api_keys k ON g.subject_kind = 'api_key' AND k.id = g.subject_id
+            LEFT JOIN service_accounts ksa ON ksa.service_account_id = k.owner_service_account_id
+            LEFT JOIN users ku ON ku.user_id = k.owner_user_id
+            LEFT JOIN team_memberships km ON km.user_id = k.owner_user_id
+            WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = {server}
+        ) resolved
+        WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
+        "#
+    )
+}
+
 /// A tool set write that names a tool of a team-only server. Tool sets are
 /// granted organisation-wide, so the store refuses it under the same write.
 pub(crate) fn team_only_toolset_tool(tool: &str, server_key: &str) -> StoreError {

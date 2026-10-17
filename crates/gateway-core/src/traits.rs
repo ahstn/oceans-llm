@@ -1102,12 +1102,17 @@ pub trait McpRegistryRepository: Send + Sync {
         ))
     }
 
-    /// Active grants whose target is one of the server's tools.
-    async fn list_active_mcp_tool_grants_for_server(
+    /// Counts active grants on the server's tools held by a subject outside
+    /// `team_id`, resolving each subject's team in the same query: the team
+    /// itself, a user's team, a service account's team, or the team behind an
+    /// API key's owner. A subject that no longer exists holds no access and is
+    /// not counted; one with no team is.
+    async fn count_mcp_tool_grants_outside_team(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
-        let _ = mcp_server_id;
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
+        let _ = (mcp_server_id, team_id);
         Err(StoreError::Unexpected(
             "MCP grant lookup by server is not implemented for this repository".to_string(),
         ))
