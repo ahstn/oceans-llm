@@ -48,6 +48,9 @@ pub const MAX_CACHE_TTL: Duration = Duration::hours(24);
 /// How long past its freshness a cached document may stand in while its
 /// host is temporarily unreachable (stale-if-error).
 pub const MAX_STALE_IF_ERROR: Duration = Duration::hours(24);
+/// After a cached copy stands in for an unreachable host, how long it is
+/// served before the host is tried again.
+const STAND_IN_RETRY_AFTER: Duration = Duration::seconds(60);
 const MAX_CACHED_DOCUMENTS: usize = 1024;
 /// Documents fetched at once. A request beyond this fails as temporarily
 /// unavailable instead of queueing, so callers cannot pile up fetches.
@@ -116,16 +119,13 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
 struct CachedClient {
     client: GatewayOauthClientRecord,
     fresh_until: OffsetDateTime,
-    /// False when the document said `must-revalidate` or `proxy-revalidate`:
-    /// once stale, it may only be used again after a successful fetch.
+    /// Until when the copy may stand in for an unreachable host. Set from the
+    /// last successful fetch, so standing in never extends it.
+    usable_until: OffsetDateTime,
+    /// False when the document said `must-revalidate`, `proxy-revalidate`,
+    /// or `s-maxage`: once stale, it may only be used again after a
+    /// successful fetch.
     reusable_when_stale: bool,
-}
-
-impl CachedClient {
-    /// Until when the copy may stand in for an unreachable host.
-    fn usable_until(&self) -> OffsetDateTime {
-        self.fresh_until + MAX_STALE_IF_ERROR
-    }
 }
 
 /// Resolves metadata document clients and caches what it fetched.
@@ -213,31 +213,70 @@ impl ClientMetadataDocuments {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
         };
-        if failure.transient
-            && let Some(mut stale) = self.stale(client_id, now)
-        {
-            tracing::warn!(
-                client_id,
-                error = %failure.error.description,
-                "using the cached copy of an unavailable client metadata document"
-            );
-            // Write the copy back first: cleanup ages these rows by their last
-            // write, and requests and grants need the row to exist.
-            stale.updated_at = now;
-            return repo
-                .upsert_gateway_oauth_metadata_document_client(&stale)
-                .await
-                .map_err(OauthError::from);
-        }
         if stored_fallback && let Some(stored) = stored_client(repo, client_id).await? {
             return Ok(stored);
         }
         Err(failure.error)
     }
 
-    /// Fetches, validates, and stores the document, and caches it for as
-    /// long as its headers allow.
+    /// Fetches, validates, stores, and caches the document. When the host is
+    /// temporarily unreachable, a cached copy stands in instead. This runs
+    /// once per refresh shared by concurrent callers, so a burst during an
+    /// outage costs one fetch and one write.
     async fn refresh<R>(&self, repo: &R, client_id: &str, now: OffsetDateTime) -> RefreshOutcome
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        match self.fetch_and_store(repo, client_id, now).await {
+            Err(failure) if failure.transient => self
+                .stand_in(repo, client_id, now, &failure)
+                .await
+                .unwrap_or(Err(failure)),
+            outcome => outcome,
+        }
+    }
+
+    /// Serves the cached copy for an unreachable host, if one may stand in.
+    /// It is written back first, since cleanup ages these rows by their last
+    /// write and requests and grants need the row, then served for
+    /// [`STAND_IN_RETRY_AFTER`] before the host is tried again.
+    async fn stand_in<R>(
+        &self,
+        repo: &R,
+        client_id: &str,
+        now: OffsetDateTime,
+        failure: &ResolveFailure,
+    ) -> Option<RefreshOutcome>
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        let (mut client, usable_until) = self.stale(client_id, now)?;
+        tracing::warn!(
+            client_id,
+            error = %failure.error.description,
+            "using the cached copy of an unavailable client metadata document"
+        );
+        client.updated_at = now;
+        let stored = match repo
+            .upsert_gateway_oauth_metadata_document_client(&client)
+            .await
+        {
+            Ok(stored) => stored,
+            Err(error) => return Some(Err(ResolveFailure::permanent(error.into()))),
+        };
+        self.serve_stand_in(
+            stored.clone(),
+            (now + STAND_IN_RETRY_AFTER).min(usable_until),
+        );
+        Some(Ok(stored))
+    }
+
+    async fn fetch_and_store<R>(
+        &self,
+        repo: &R,
+        client_id: &str,
+        now: OffsetDateTime,
+    ) -> RefreshOutcome
     where
         R: GatewayOauthRepository + ?Sized,
     {
@@ -285,12 +324,26 @@ impl ClientMetadataDocuments {
 
     /// A cached copy past its freshness that may still stand in for an
     /// unreachable host.
-    fn stale(&self, client_id: &str, now: OffsetDateTime) -> Option<GatewayOauthClientRecord> {
+    fn stale(
+        &self,
+        client_id: &str,
+        now: OffsetDateTime,
+    ) -> Option<(GatewayOauthClientRecord, OffsetDateTime)> {
         let cache = self.cache.lock().expect("metadata document cache lock");
         cache
             .get(client_id)
-            .filter(|entry| entry.reusable_when_stale && entry.usable_until() > now)
-            .map(|entry| entry.client.clone())
+            .filter(|entry| entry.reusable_when_stale && entry.usable_until > now)
+            .map(|entry| (entry.client.clone(), entry.usable_until))
+    }
+
+    /// Serves a stand-in as fresh until `fresh_until`, keeping the entry's
+    /// stale-if-error limit from its last successful fetch.
+    fn serve_stand_in(&self, client: GatewayOauthClientRecord, fresh_until: OffsetDateTime) {
+        let mut cache = self.cache.lock().expect("metadata document cache lock");
+        if let Some(entry) = cache.get_mut(&client.client_id) {
+            entry.client = client;
+            entry.fresh_until = fresh_until;
+        }
     }
 
     fn remember(
@@ -302,7 +355,7 @@ impl ClientMetadataDocuments {
     ) {
         let mut cache = self.cache.lock().expect("metadata document cache lock");
         if cache.len() >= MAX_CACHED_DOCUMENTS && !cache.contains_key(&client.client_id) {
-            cache.retain(|_, entry| entry.usable_until() > now);
+            cache.retain(|_, entry| entry.usable_until > now);
             if cache.len() >= MAX_CACHED_DOCUMENTS
                 && let Some(oldest) = cache
                     .iter()
@@ -317,6 +370,7 @@ impl ClientMetadataDocuments {
             CachedClient {
                 client,
                 fresh_until,
+                usable_until: fresh_until + MAX_STALE_IF_ERROR,
                 reusable_when_stale,
             },
         );

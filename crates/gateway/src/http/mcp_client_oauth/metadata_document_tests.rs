@@ -351,19 +351,23 @@ async fn passing_failures_reuse_only_a_cacheable_copy() {
         .start(&harness.authorize_query(CLIENT_ID, &[]))
         .await;
     tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
-    // Past its freshness, the host rate limits or times out; the cached copy
-    // carries on.
-    for status in [429, 408] {
-        fixture.respond(CLIENT_ID, status);
-        harness
-            .start(&harness.authorize_query(CLIENT_ID, &[]))
-            .await;
+    // Past its freshness, the host rate limits; a burst shares one fetch and
+    // the cached copy stands in.
+    fixture.respond(CLIENT_ID, 429);
+    fixture.delay_ms.store(200, Ordering::SeqCst);
+    let fetches_before = fixture.fetches();
+    let query = harness.authorize_query(CLIENT_ID, &[]);
+    for (status, _) in
+        futures_util::future::join_all((0..5).map(|_| harness.authorize(&query))).await
+    {
+        assert_eq!(status, StatusCode::SEE_OTHER);
     }
-    // A missing document is not passing, so it refuses the client.
-    fixture.respond(CLIENT_ID, 404);
-    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(page.contains("HTTP 404"), "{page}");
+    assert_eq!(fixture.fetches(), fetches_before + 1);
+    fixture.delay_ms.store(0, Ordering::SeqCst);
+    // The stand-in is then served for a while without trying the host.
+    fixture.respond(CLIENT_ID, 408);
+    harness.start(&query).await;
+    assert_eq!(fixture.fetches(), fetches_before + 1);
 
     // The stand-in is written back, so cleanup sees it in use.
     let stored = harness
