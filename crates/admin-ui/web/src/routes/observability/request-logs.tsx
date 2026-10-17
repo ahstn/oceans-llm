@@ -68,7 +68,7 @@ const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
 const requestLogGridColumns =
-  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_96px_92px_96px_136px_104px]'
+  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_96px_92px_96px_160px_104px]'
 // The Inspect column stays pinned to the right edge so it is never scrolled out of view.
 const requestLogActionCell = 'bg-card shadow-sticky-edge-end sticky right-0 z-10 px-3'
 
@@ -282,7 +282,7 @@ function RequestLogDesktopTable({
         <div
           className={cn(
             requestLogGridColumns,
-            'bg-surface-muted text-muted-foreground sticky top-0 z-20 text-sm',
+            'bg-surface-muted text-muted-foreground sticky top-0 z-20 text-sm whitespace-nowrap',
           )}
         >
           <span className="px-3 py-2 font-semibold">Time</span>
@@ -593,13 +593,15 @@ function MobileField({ label, children }: { label: string; children: ReactNode }
   )
 }
 
-/** Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt tokens. */
+/**
+ * Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt
+ * tokens. The indicator leads so the digits keep the column's right edge.
+ */
 function TokensWithCache({ item }: { item: RequestLogView }) {
   const cachedTokens = item.cache_read_tokens ?? 0
 
   return (
     <span className="inline-flex items-center justify-end gap-1.5 tabular-nums">
-      <CompactCount value={item.total_tokens} unit="tokens" />
       {cachedTokens > 0 ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -615,6 +617,7 @@ function TokensWithCache({ item }: { item: RequestLogView }) {
           <TooltipContent>{cacheHitLabel(cachedTokens, item.prompt_tokens)}</TooltipContent>
         </Tooltip>
       ) : null}
+      <CompactCount value={item.total_tokens} unit="tokens" />
     </span>
   )
 }
