@@ -73,13 +73,15 @@ where
                 .map(Some);
         }
         // A row left from when documents were accepted must not stand in for
-        // one once they are turned off.
+        // one once they are turned off, except to revoke, which is always safe.
         Ok(self
             .repo
             .get_gateway_oauth_client(client_id)
             .await?
             .filter(|client| {
-                client.registration_kind != metadata_document::METADATA_DOCUMENT_REGISTRATION_KIND
+                stored_fallback
+                    || client.registration_kind
+                        != metadata_document::METADATA_DOCUMENT_REGISTRATION_KIND
             }))
     }
 }

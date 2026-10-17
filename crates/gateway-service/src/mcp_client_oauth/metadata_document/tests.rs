@@ -175,6 +175,17 @@ fn cache_headers_set_freshness_within_bounds() {
     assert_eq!(cache_ttl(Some("no-store"), None), Duration::ZERO);
     // Invalid or conflicting freshness is treated as stale.
     assert_eq!(cache_ttl(Some("max-age=nonsense"), None), Duration::ZERO);
+    assert_eq!(cache_ttl(Some("max-age=+86400"), None), Duration::ZERO);
+    assert_eq!(cache_ttl(Some("max-age=-1"), None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=\"\"86400\"\""), None),
+        Duration::ZERO
+    );
+    assert_eq!(cache_ttl(Some("max-age="), None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=99999999999999999999"), None),
+        MAX_CACHE_TTL
+    );
     assert_eq!(
         cache_ttl(Some("max-age=0, max-age=86400"), None),
         Duration::ZERO
@@ -269,6 +280,10 @@ async fn every_cache_control_line_counts() {
             headers.append(header::CACHE_CONTROL, "max-age=86400".parse().unwrap());
             headers.append(header::CACHE_CONTROL, "no-store".parse().unwrap());
             headers.append(header::AGE, "5".parse().unwrap());
+            headers.append(
+                header::DATE,
+                "Sun, 06 Nov 1994 08:49:37 GMT".parse().unwrap(),
+            );
             (headers, "{}")
         }),
     );
@@ -283,6 +298,10 @@ async fn every_cache_control_line_counts() {
         Some("max-age=86400, no-store")
     );
     assert_eq!(fetched.age_seconds, Some(5));
+    assert_eq!(
+        fetched.date,
+        Some(OffsetDateTime::from_unix_timestamp(784_111_777).unwrap())
+    );
     assert_eq!(
         cache_ttl(fetched.cache_control.as_deref(), fetched.age_seconds),
         Duration::ZERO

@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use gateway_core::{
     GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository, StoreError,
 };
-use reqwest::header::{AGE, CACHE_CONTROL};
+use reqwest::header::{AGE, CACHE_CONTROL, DATE};
 use serde::Deserialize;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
@@ -45,6 +45,9 @@ pub const METADATA_DOCUMENT_REGISTRATION_KIND: &str = "metadata_document";
 pub const DEFAULT_CACHE_TTL: Duration = Duration::minutes(10);
 /// The longest the gateway trusts a document without fetching it again.
 pub const MAX_CACHE_TTL: Duration = Duration::hours(24);
+/// How long past its freshness a cached document may stand in while its
+/// host is temporarily unreachable (stale-if-error).
+pub const MAX_STALE_IF_ERROR: Duration = Duration::hours(24);
 const MAX_CACHED_DOCUMENTS: usize = 1024;
 /// Documents fetched at once. A request beyond this fails as temporarily
 /// unavailable instead of queueing, so callers cannot pile up fetches.
@@ -59,6 +62,8 @@ pub struct FetchedDocument {
     pub cache_control: Option<String>,
     /// The response's `Age` in seconds: how long a cache in between held it.
     pub age_seconds: Option<i64>,
+    /// The response's `Date`, when the origin generated it.
+    pub date: Option<OffsetDateTime>,
     pub body: Vec<u8>,
 }
 
@@ -85,7 +90,13 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
             .headers()
             .get(AGE)
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.trim().parse::<i64>().ok());
+            .and_then(|value| delta_seconds(value.trim()));
+        let date = response
+            .headers()
+            .get(DATE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| httpdate::parse_http_date(value).ok())
+            .map(OffsetDateTime::from);
         let body = if status == 200 {
             response.body().await?
         } else {
@@ -95,6 +106,7 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
             status,
             cache_control,
             age_seconds,
+            date,
             body,
         })
     }
@@ -104,6 +116,13 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
 struct CachedClient {
     client: GatewayOauthClientRecord,
     fresh_until: OffsetDateTime,
+}
+
+impl CachedClient {
+    /// Until when the copy may stand in for an unreachable host.
+    fn usable_until(&self) -> OffsetDateTime {
+        self.fresh_until + MAX_STALE_IF_ERROR
+    }
 }
 
 /// Resolves metadata document clients and caches what it fetched.
@@ -160,10 +179,13 @@ impl ClientMetadataDocuments {
     /// Returns the client for `client_id`, fetching its document when the
     /// cached copy is stale.
     ///
-    /// With `stored_fallback`, a stored copy stands in when the document
+    /// A transient fetch failure falls back to this process's last cached
+    /// copy, for up to [`MAX_STALE_IF_ERROR`] past its freshness. A document
+    /// served `no-store` or `no-cache` is never cached, so it never stands in.
+    ///
+    /// With `stored_fallback`, the stored row stands in when the document
     /// cannot be fetched or no longer validates. Revocation uses it, since
-    /// ending a grant is safe whatever the document now says. Otherwise only
-    /// a transient fetch failure falls back to the stored copy.
+    /// ending a grant is safe whatever the document now says.
     pub(crate) async fn resolve<R>(
         &self,
         repo: &R,
@@ -188,14 +210,17 @@ impl ClientMetadataDocuments {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
         };
-        if (failure.transient || stored_fallback)
-            && let Some(stored) = stored_client(repo, client_id).await?
+        if failure.transient
+            && let Some(stale) = self.stale(client_id, now)
         {
             tracing::warn!(
                 client_id,
                 error = %failure.error.description,
-                "using the stored copy of an unavailable client metadata document"
+                "using the cached copy of an unavailable client metadata document"
             );
+            return Ok(stale);
+        }
+        if stored_fallback && let Some(stored) = stored_client(repo, client_id).await? {
             return Ok(stored);
         }
         Err(failure.error)
@@ -244,6 +269,16 @@ impl ClientMetadataDocuments {
             .map(|entry| entry.client.clone())
     }
 
+    /// A cached copy past its freshness that may still stand in for an
+    /// unreachable host.
+    fn stale(&self, client_id: &str, now: OffsetDateTime) -> Option<GatewayOauthClientRecord> {
+        let cache = self.cache.lock().expect("metadata document cache lock");
+        cache
+            .get(client_id)
+            .filter(|entry| entry.usable_until() > now)
+            .map(|entry| entry.client.clone())
+    }
+
     fn remember(
         &self,
         client: GatewayOauthClientRecord,
@@ -252,7 +287,7 @@ impl ClientMetadataDocuments {
     ) {
         let mut cache = self.cache.lock().expect("metadata document cache lock");
         if cache.len() >= MAX_CACHED_DOCUMENTS && !cache.contains_key(&client.client_id) {
-            cache.retain(|_, entry| entry.fresh_until > now);
+            cache.retain(|_, entry| entry.usable_until() > now);
             if cache.len() >= MAX_CACHED_DOCUMENTS
                 && let Some(oldest) = cache
                     .iter()
@@ -302,20 +337,29 @@ impl ClientMetadataDocuments {
             }
         })?;
         if fetched.status != 200 {
+            let description = format!("client metadata document returned HTTP {}", fetched.status);
+            // A timeout or rate limit passes like an outage does.
+            let transient = matches!(fetched.status, 408 | 429) || fetched.status >= 500;
             return Err(ResolveFailure {
-                error: OauthError::invalid_client(format!(
-                    "client metadata document returned HTTP {}",
-                    fetched.status
-                )),
-                // A timeout or rate limit passes like an outage does.
-                transient: matches!(fetched.status, 408 | 429) || fetched.status >= 500,
+                error: if transient {
+                    OauthError::temporarily_unavailable(description)
+                } else {
+                    OauthError::invalid_client(description)
+                },
+                transient,
             });
         }
         let client =
             validate_document(client_id, &fetched.body, now).map_err(ResolveFailure::permanent)?;
+        // RFC 9111 §4.2.3: the response is at least as old as its `Age`, and
+        // as the time since its `Date`.
+        let apparent_age = fetched
+            .date
+            .map_or(0, |date| (now - date).whole_seconds().max(0));
+        let age = fetched.age_seconds.unwrap_or(0).max(apparent_age);
         Ok(ValidatedDocument {
             client,
-            ttl: cache_ttl(fetched.cache_control.as_deref(), fetched.age_seconds),
+            ttl: cache_ttl(fetched.cache_control.as_deref(), Some(age)),
         })
     }
 
@@ -581,8 +625,13 @@ fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration 
         if directive == "no-store" || directive == "no-cache" {
             return Duration::ZERO;
         }
-        if let Some(seconds) = directive.strip_prefix("max-age=") {
-            let Ok(seconds) = seconds.trim_matches('"').parse::<i64>() else {
+        if let Some(raw) = directive.strip_prefix("max-age=") {
+            // One optional pair of quotes around ASCII digits, nothing else.
+            let unquoted = raw
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .unwrap_or(raw);
+            let Some(seconds) = delta_seconds(unquoted) else {
                 return Duration::ZERO;
             };
             if max_age.replace(seconds).is_some() {
@@ -594,6 +643,15 @@ fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration 
         let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
         Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
     })
+}
+
+/// An HTTP delta-seconds value: ASCII digits only, so `+5`, `-5`, and `5s`
+/// are malformed. Values too large for `i64` saturate.
+fn delta_seconds(raw: &str) -> Option<i64> {
+    if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(raw.parse::<i64>().unwrap_or(i64::MAX))
 }
 
 #[cfg(test)]

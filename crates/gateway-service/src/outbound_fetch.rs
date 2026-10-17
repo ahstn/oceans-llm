@@ -410,11 +410,18 @@ impl OutboundFetcher {
     }
 
     /// Sends a request built by [`Self::request`].
+    ///
+    /// The request always goes out through this fetcher's own client, and its
+    /// final URL is checked again, so a builder from another client cannot
+    /// bypass the guard.
     pub async fn send(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<OutboundResponse, OutboundFetchError> {
-        let response = request.send().await.map_err(request_error)?;
+        let (_, request) = request.build_split();
+        let request = request.map_err(request_error)?;
+        self.check_url(request.url())?;
+        let response = self.client.execute(request).await.map_err(request_error)?;
         Ok(OutboundResponse {
             response,
             max_body_bytes: self.max_body_bytes,

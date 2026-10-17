@@ -74,6 +74,7 @@ opentelemetry_sdk = { version = "0.32", features = [
   "rt-tokio",
   "trace",
 ] }
+httpdate = "1"
 percent-encoding = "2"
 rand = "0.10"
 regex = "1"

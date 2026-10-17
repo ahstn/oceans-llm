@@ -14,6 +14,7 @@ gateway-guardrails.workspace = true
 gateway-client-config.workspace = true
 gateway-mcp.workspace = true
 gateway-skills.workspace = true
+httpdate.workspace = true
 itertools.workspace = true
 percent-encoding.workspace = true
 rand.workspace = true

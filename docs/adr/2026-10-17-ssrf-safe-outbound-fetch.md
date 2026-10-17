@@ -49,6 +49,7 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 ### 3. Nothing moves the connection after the check
 
 - Redirects are off. A `302` is returned to the caller as a response, never followed.
+- `send` executes every request through the fetcher's own guarded client and checks the final URL again, so a request built with another client cannot bypass the guard.
 - Proxies are off, including proxy environment variables, because a proxy resolves the name itself.
 - Every request has a connect timeout and a total timeout, 10 seconds by default. The body is read only on request, and reading stops at a size limit, 256 KiB by default. A `Content-Length` over the limit is refused before reading.
 

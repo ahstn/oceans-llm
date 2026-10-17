@@ -46,6 +46,7 @@ impl Fixture {
                 status: 200,
                 cache_control: cache_control.map(ToOwned::to_owned),
                 age_seconds: None,
+                date: None,
                 body: serde_json::to_vec(document).unwrap(),
             },
         );
@@ -58,6 +59,7 @@ impl Fixture {
                 status,
                 cache_control: Some("no-store".to_string()),
                 age_seconds: None,
+                date: None,
                 body: Vec::new(),
             },
         );
@@ -86,6 +88,7 @@ impl ClientMetadataDocumentSource for Fixture {
                 status: 404,
                 cache_control: None,
                 age_seconds: None,
+                date: None,
                 body: Vec::new(),
             }))
     }
@@ -341,13 +344,15 @@ async fn document_fetches_are_capped() {
 }
 
 #[tokio::test]
-async fn rate_limited_documents_fall_back_to_the_stored_client() {
+async fn passing_failures_reuse_only_a_cacheable_copy() {
     let (harness, fixture) = harness_with_fixture(&[]).await;
-    fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
     harness
         .start(&harness.authorize_query(CLIENT_ID, &[]))
         .await;
-    // The host now rate limits or times out; the stored copy carries on.
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    // Past its freshness, the host rate limits or times out; the cached copy
+    // carries on.
     for status in [429, 408] {
         fixture.respond(CLIENT_ID, status);
         harness
@@ -359,6 +364,18 @@ async fn rate_limited_documents_fall_back_to_the_stored_client() {
     let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(page.contains("HTTP 404"), "{page}");
+
+    // A no-store document is never reused, so a passing failure is a
+    // retryable error rather than a stand-in.
+    let uncached = "https://editor.example.com/oauth/no-store.json";
+    let mut document = editor_document();
+    document["client_id"] = json!(uncached);
+    fixture.publish(uncached, &document, Some("no-store"));
+    harness.start(&harness.authorize_query(uncached, &[])).await;
+    fixture.respond(uncached, 429);
+    let (status, page) = body_text(&harness, &harness.authorize_query(uncached, &[])).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{page}");
+    assert!(page.contains("temporarily_unavailable"), "{page}");
 }
 
 #[tokio::test]
@@ -422,6 +439,64 @@ async fn revocation_still_works_once_the_document_is_gone() {
         .unwrap()
         .expect("token");
     assert!(grant.grant.revoked_at.is_some());
+}
+
+#[tokio::test]
+async fn revocation_still_works_once_documents_are_turned_off() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    fixture.publish(CLIENT_ID, &editor_document(), None);
+    let request_id = harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    let code = harness.approve(&request_id).await;
+    let (_, token) = harness.exchange_code(CLIENT_ID, &code).await;
+    let refresh_token = token["refresh_token"].as_str().unwrap().to_string();
+
+    // The same store, with documents turned off.
+    let mut state = harness.state.clone();
+    state.mcp_client_oauth = Some(std::sync::Arc::new(oauth_settings()));
+    let router = super::tests::router(&state);
+    let refreshed = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "refresh_token")
+        .append_pair("client_id", CLIENT_ID)
+        .append_pair("refresh_token", &refresh_token)
+        .finish();
+    let (status, _, _) = send_with_headers(
+        &router,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/token")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(refreshed))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "refresh is refused");
+    let revoke = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("client_id", CLIENT_ID)
+        .append_pair("token", &refresh_token)
+        .finish();
+    let (status, _, _) = send_with_headers(
+        &router,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/revoke")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(revoke))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "revocation still works");
+    let context = harness
+        .state
+        .store
+        .get_gateway_oauth_token_context(&gateway_service::mcp_client_oauth::oauth_token_hash(
+            &refresh_token,
+        ))
+        .await
+        .unwrap()
+        .expect("token");
+    assert!(context.grant.revoked_at.is_some());
 }
 
 #[tokio::test]
