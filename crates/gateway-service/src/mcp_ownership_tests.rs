@@ -113,7 +113,14 @@ fn owner_contacts_are_trimmed_and_bounded() {
 #[test]
 fn only_public_addresses_pass_the_destination_check() {
     use std::net::IpAddr;
-    for public in ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"] {
+    for public in [
+        "8.8.8.8",
+        "1.1.1.1",
+        "2606:4700:4700::1111",
+        "::8.8.8.8",
+        "64:ff9b::808:808",
+        "2002:0808:0808::",
+    ] {
         assert!(
             is_public_address(public.parse::<IpAddr>().unwrap()),
             "{public}"
@@ -133,6 +140,11 @@ fn only_public_addresses_pass_the_destination_check() {
         "fd00::1",
         "fe80::1",
         "::ffff:10.0.0.1",
+        "::127.0.0.1",
+        "::10.0.0.1",
+        "64:ff9b::169.254.169.254",
+        "2002:7f00:0001::",
+        "2002:c0a8:0101::1",
         "2001:db8::1",
     ] {
         assert!(

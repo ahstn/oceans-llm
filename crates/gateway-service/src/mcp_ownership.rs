@@ -708,17 +708,39 @@ fn collect_strings(path: &str, value: &Value, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// Whether an address is reachable on the public internet. Mapped and
-/// compatible IPv6 forms are judged by their IPv4 address.
+/// Whether an address is reachable on the public internet. IPv6 forms that
+/// carry an IPv4 address (mapped, compatible, NAT64 and 6to4) are judged by
+/// that IPv4 address, since a network stack may translate them to it.
 #[must_use]
 pub fn is_public_address(address: IpAddr) -> bool {
     match address {
         IpAddr::V4(address) => is_public_ipv4(address),
-        IpAddr::V6(address) => match address.to_ipv4_mapped() {
-            Some(mapped) => is_public_ipv4(mapped),
+        IpAddr::V6(address) => match embedded_ipv4(address) {
+            Some(embedded) => is_public_ipv4(embedded),
             None => is_public_ipv6(address),
         },
     }
+}
+
+/// The IPv4 address inside an IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible
+/// (`::a.b.c.d`), NAT64 (`64:ff9b::a.b.c.d`) or 6to4 (`2002:aabb:ccdd::`)
+/// address. `::` and `::1` are left to the IPv6 rules.
+fn embedded_ipv4(address: Ipv6Addr) -> Option<Ipv4Addr> {
+    let segments = address.segments();
+    let low = |a: u16, b: u16| Ipv4Addr::new((a >> 8) as u8, a as u8, (b >> 8) as u8, b as u8);
+    if let Some(mapped) = address.to_ipv4_mapped() {
+        return Some(mapped);
+    }
+    if address.is_unspecified() || address.is_loopback() {
+        return None;
+    }
+    if segments[..6] == [0; 6] || segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+        return Some(low(segments[6], segments[7]));
+    }
+    if segments[0] == 0x2002 {
+        return Some(low(segments[1], segments[2]));
+    }
+    None
 }
 
 fn is_public_ipv4(address: Ipv4Addr) -> bool {
