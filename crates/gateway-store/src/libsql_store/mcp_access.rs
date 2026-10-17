@@ -5,8 +5,7 @@ use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
 use crate::shared::{
-    api_key_tool_access_sql, json_object_from_str, parse_uuid, subject_team_changed,
-    unix_to_datetime,
+    json_object_from_str, key_tool_grants_sql, parse_uuid, subject_team_changed, unix_to_datetime,
 };
 use gateway_core::Updated;
 
@@ -633,7 +632,7 @@ impl McpAccessRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                &api_key_tool_access_sql("IN (SELECT value FROM json_each(?1))", "?2"),
+                &key_tool_grants_sql("IN (SELECT value FROM json_each(?1))", "?2"),
                 libsql::params![ids, mcp_server_id.map(|id| id.to_string())],
             )
             .await

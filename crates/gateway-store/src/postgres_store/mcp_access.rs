@@ -5,8 +5,7 @@ use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
 use crate::shared::{
-    api_key_tool_access_sql, json_object_from_str, parse_uuid, subject_team_changed,
-    unix_to_datetime,
+    json_object_from_str, key_tool_grants_sql, parse_uuid, subject_team_changed, unix_to_datetime,
 };
 use gateway_core::Updated;
 
@@ -585,14 +584,14 @@ impl McpAccessRepository for PostgresStore {
 
     async fn list_mcp_tool_access_for_api_keys(
         &self,
-        api_key_ids: &[Uuid],
+        key_ids: &[Uuid],
         mcp_server_id: Option<Uuid>,
     ) -> Result<Vec<gateway_core::McpApiKeyToolAccess>, StoreError> {
-        if api_key_ids.is_empty() {
+        if key_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let rows = sqlx::query(&api_key_tool_access_sql("= ANY($1)", "$2::text"))
-            .bind(api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        let rows = sqlx::query(&key_tool_grants_sql("= ANY($1)", "$2::text"))
+            .bind(key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
             .bind(mcp_server_id.map(|id| id.to_string()))
             .fetch_all(&self.pool)
             .await

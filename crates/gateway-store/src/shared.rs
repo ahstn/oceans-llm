@@ -90,7 +90,7 @@ pub(crate) fn foreign_credentials_conflict(count: i64) -> StoreError {
 /// SQL for `list_mcp_tool_access_for_api_keys`: `keys` is the backend's
 /// predicate on `g.subject_id`, `server` its placeholder for the optional
 /// server filter.
-pub(crate) fn api_key_tool_access_sql(keys: &str, server: &str) -> String {
+pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
     format!(
         r#"
         SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key
