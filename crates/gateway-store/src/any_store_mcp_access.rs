@@ -221,10 +221,20 @@ impl McpAccessRepository for AnyStore {
     async fn list_active_mcp_tools(
         &self,
         mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.list_active_mcp_tools(mcp_server_id).await,
-            Self::Postgres(store) => store.list_active_mcp_tools(mcp_server_id).await,
+            Self::Libsql(store) => {
+                store
+                    .list_active_mcp_tools(mcp_server_id, after, limit)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_active_mcp_tools(mcp_server_id, after, limit)
+                    .await
+            }
         }
     }
 

@@ -22,8 +22,14 @@ pub(super) fn oauth_settings() -> McpClientOauthSettings {
 }
 
 pub(super) async fn oauth_state() -> (tempfile::TempDir, AppState) {
+    oauth_state_with(oauth_settings()).await
+}
+
+pub(super) async fn oauth_state_with(
+    settings: McpClientOauthSettings,
+) -> (tempfile::TempDir, AppState) {
     let (directory, mut state) = crate::http::test_support::app_state().await;
-    state.mcp_client_oauth = Some(Arc::new(oauth_settings()));
+    state.mcp_client_oauth = Some(Arc::new(settings));
     (directory, state)
 }
 

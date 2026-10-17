@@ -117,6 +117,8 @@ function OverridesEditor({
             </span>
             <Select
               value={overrides[hint.key]}
+              // Locked while saving so the response cannot replace a newer edit.
+              disabled={isPending}
               onValueChange={(value) =>
                 setOverrides((current) => ({ ...current, [hint.key]: value }))
               }
@@ -181,6 +183,8 @@ function TagsEditor({
           id={`mcp-tool-tags-${tool.id}`}
           value={tagInput}
           placeholder="finance, pii:low"
+          // Locked while saving so the response cannot replace a newer edit.
+          disabled={isPending}
           onChange={(event) => setTagInput(event.target.value)}
         />
         <Button type="button" size="sm" disabled={isPending} onClick={handleSaveTags}>

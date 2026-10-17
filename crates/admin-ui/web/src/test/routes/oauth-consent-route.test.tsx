@@ -28,6 +28,7 @@ function request(
     request_id: 'request-1',
     client_id: 'client-1',
     client_name: 'Editor',
+    client_metadata_host: null,
     client_uri: null,
     redirect_uri: 'https://editor.example.com/callback',
     redirect_host: 'editor.example.com',
@@ -70,6 +71,26 @@ describe('OauthConsentPage', () => {
     expect(screen.getByText('All MCP servers you have access to')).toBeInTheDocument()
     expect(screen.getByText('mcp:aggregate')).toBeInTheDocument()
     expect(screen.queryByTestId('loopback-warning')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('unverified-client-note')).not.toBeInTheDocument()
+  })
+
+  it('names the host that published a client metadata document', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      status: 'ready',
+      request: request({
+        client_id: 'https://editor.example.com/oauth/client.json',
+        client_metadata_host: 'editor.example.com',
+      }),
+    })
+    const { OauthConsentPage } = await import('@/routes/oauth/consent')
+
+    render(<OauthConsentPage />)
+
+    expect(screen.getByTestId('client-metadata-host')).toHaveTextContent('editor.example.com')
+    expect(screen.getByText('Unverified')).toBeInTheDocument()
+    expect(screen.getByTestId('unverified-client-note')).toHaveTextContent(
+      'Oceans has not verified this client',
+    )
   })
 
   it('warns when the client only redirects to this device', async () => {

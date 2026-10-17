@@ -380,6 +380,7 @@
         "crates/gateway-mcp/**",
         "crates/gateway-service/src/mcp_*.rs",
         "crates/gateway-service/src/mcp_*/**",
+        "crates/gateway-core/src/mcp_*.rs",
         "crates/gateway-store/src/libsql_store/mcp_*.rs",
         "crates/gateway-store/src/any_store_mcp_*.rs",
         "crates/gateway-store/src/mcp_*.rs",
@@ -577,7 +578,9 @@
         "crates/gateway/src/http/mcp_gateway/credentials/**",
         "crates/gateway-service/src/mcp_oauth.rs",
         "crates/gateway-service/src/mcp_oauth_discovery.rs",
-        "crates/gateway-service/src/mcp_oauth_discovery/**"
+        "crates/gateway-service/src/mcp_oauth_discovery/**",
+        "crates/gateway-service/src/outbound_fetch.rs",
+        "crates/gateway-service/src/outbound_fetch/**"
       ]
     },
     {
@@ -594,7 +597,11 @@
         "crates/gateway-service/src/mcp_client_oauth.rs",
         "crates/gateway-service/src/mcp_client_oauth/**",
         "crates/gateway-store/src/any_store_gateway_oauth.rs",
-        "crates/gateway-store/src/libsql_store/gateway_oauth.rs"
+        "crates/gateway-store/src/libsql_store/gateway_oauth.rs",
+        "crates/gateway-store/src/postgres_store/gateway_oauth.rs",
+        "crates/gateway-store/migrations/**/V66__gateway_oauth_metadata_document_clients.sql",
+        "crates/gateway-service/src/outbound_fetch.rs",
+        "crates/gateway-service/src/outbound_fetch/**"
       ]
     },
     {

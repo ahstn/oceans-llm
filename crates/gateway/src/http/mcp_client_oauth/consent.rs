@@ -42,6 +42,11 @@ pub struct OauthAuthorizationRequestView {
     pub client_id: String,
     /// Self-asserted by the client at registration.
     pub client_name: Option<String>,
+    /// Set when the client identifies itself with a Client ID Metadata
+    /// Document: the host that published it. The gateway checked only that
+    /// this host serves the document, not who the client is, so the consent
+    /// screen shows the host and marks the client unverified.
+    pub client_metadata_host: Option<String>,
     pub client_uri: Option<String>,
     pub redirect_uri: String,
     /// The host the browser returns to; the consent screen must show it.
@@ -152,6 +157,7 @@ pub async fn decide_oauth_authorization_request(
 fn consent_summary(pending: &PendingAuthorization) -> serde_json::Value {
     serde_json::json!({
         "client_id": pending.client.client_id,
+        "client_metadata_host": pending.client_metadata_host,
         "redirect_host": redirect_host(&pending.request.redirect_uri),
         "redirect_is_loopback": pending.redirect_is_loopback,
         "resource": pending.request.resource,
@@ -184,6 +190,7 @@ fn authorization_request_view(pending: PendingAuthorization) -> OauthAuthorizati
         request_id: pending.request.request_id.to_string(),
         client_id: pending.client.client_id,
         client_name: pending.client.client_name,
+        client_metadata_host: pending.client_metadata_host,
         client_uri: pending.client.client_uri,
         redirect_host: redirect_host(&pending.request.redirect_uri),
         redirect_uri: pending.request.redirect_uri,

@@ -35,6 +35,13 @@ impl GatewayOauthRepository for AnyStore {
         dispatch!(self, get_gateway_oauth_client(client_id))
     }
 
+    async fn upsert_gateway_oauth_metadata_document_client(
+        &self,
+        client: &GatewayOauthClientRecord,
+    ) -> Result<GatewayOauthClientRecord, StoreError> {
+        dispatch!(self, upsert_gateway_oauth_metadata_document_client(client))
+    }
+
     async fn create_gateway_oauth_authorization_request(
         &self,
         request: &GatewayOauthAuthorizationRequestRecord,

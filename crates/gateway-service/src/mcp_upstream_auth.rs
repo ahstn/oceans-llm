@@ -438,7 +438,7 @@ pub fn validate_mcp_server_auth_destination(
     Ok(())
 }
 
-fn is_loopback_http_url(url: &Url) -> bool {
+pub(crate) fn is_loopback_http_url(url: &Url) -> bool {
     if url.scheme() != "http" {
         return false;
     }

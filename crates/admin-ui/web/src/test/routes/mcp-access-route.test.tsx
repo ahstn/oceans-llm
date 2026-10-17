@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -198,5 +198,59 @@ describe('AccessTab', () => {
     await renderAccessTab()
     fireEvent.click(screen.getByRole('button', { name: 'Preview matches' }))
     expect(getMcpTagRulePreviewMock).not.toHaveBeenCalled()
+  })
+
+  function choose(control: string, option: string | RegExp) {
+    fireEvent.click(screen.getByRole('button', { name: control }))
+    fireEvent.click(screen.getByRole('option', { name: option }))
+  }
+
+  function chooseSelect(control: string, option: string) {
+    fireEvent.click(screen.getByRole('combobox', { name: control }))
+    fireEvent.click(screen.getByRole('option', { name: option }))
+  }
+
+  it('saves an exclude rule for all servers', async () => {
+    saveMcpTagRuleMock.mockResolvedValue({ data: tagRule })
+    await renderAccessTab()
+    chooseSelect('Tag rule subject type', 'User')
+    choose('Tag rule subject', /Jane Admin/)
+    chooseSelect('Tag rule effect', 'Exclude (deny matching tools)')
+    choose('Tag rule server', 'All servers')
+    fireEvent.click(screen.getByRole('button', { name: 'Save rule' }))
+
+    await waitFor(() => {
+      expect(saveMcpTagRuleMock).toHaveBeenCalledWith({
+        data: {
+          subject_kind: 'user',
+          subject_id: 'user_1',
+          server_id: undefined,
+          tag: 'read_only',
+          effect: 'exclude',
+        },
+      })
+    })
+  })
+
+  it('drops a preview that returns after the form changed', async () => {
+    let finish: (value: unknown) => void = () => {}
+    getMcpTagRulePreviewMock.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    await renderAccessTab()
+    choose('Tag rule server', /GitHub/)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview matches' }))
+    choose('Tag rule tag', /destructive/)
+
+    const match = {
+      id: 'tool_1',
+      server_id: 'server_1',
+      upstream_name: 'read_file',
+      display_name: 'read_file',
+    }
+    await act(async () => finish({ data: { tools: [match], truncated: false } }))
+    expect(screen.queryByTestId('mcp-tag-rule-preview')).not.toBeInTheDocument()
+
+    // Going back to the requested tag shows the matches again.
+    choose('Tag rule tag', /read_only/)
+    expect(screen.getByTestId('mcp-tag-rule-preview')).toHaveTextContent('read_file')
   })
 })

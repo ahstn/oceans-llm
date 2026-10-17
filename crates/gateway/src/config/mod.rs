@@ -55,7 +55,7 @@ pub use identity::{
     ServiceAccountConfig, ServiceAccountKeyConfig, TeamConfig, UserConfig, UserMembershipConfig,
 };
 pub use mcp::{McpConfig, McpOauthConfig, McpOauthProviderConfig};
-pub use mcp_client_oauth::McpClientOauthConfig;
+pub use mcp_client_oauth::{ClientIdMetadataDocumentsConfig, McpClientOauthConfig};
 pub use models::{ModelAllowlistConfig, ModelConfig};
 pub use rate_limits::{RateLimitFailureModeConfig, RateLimitPolicyConfig, RateLimitsConfig};
 pub use request_logging::{

@@ -1,8 +1,10 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, sync::Arc};
 
 use gateway_core::McpOauthResource;
 use time::Duration;
 use url::Url;
+
+use super::metadata_document::ClientMetadataDocuments;
 
 pub const DEFAULT_ACCESS_TOKEN_TTL_SECONDS: i64 = 60 * 60;
 pub const MAX_ACCESS_TOKEN_TTL_SECONDS: i64 = 24 * 60 * 60;
@@ -23,6 +25,8 @@ pub struct McpClientOauthSettings {
     refresh_token_ttl: Duration,
     dynamic_client_registration: bool,
     unused_client_retention: Duration,
+    /// Set when clients may use an https URL as their `client_id`.
+    client_id_metadata_documents: Option<Arc<ClientMetadataDocuments>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,7 +75,20 @@ impl McpClientOauthSettings {
             refresh_token_ttl: Duration::seconds(refresh_token_ttl_seconds),
             dynamic_client_registration,
             unused_client_retention: Duration::days(DEFAULT_UNUSED_CLIENT_RETENTION_DAYS),
+            client_id_metadata_documents: None,
         })
+    }
+
+    /// Accepts Client ID Metadata Documents, resolved by `documents`.
+    #[must_use]
+    pub fn with_client_id_metadata_documents(mut self, documents: ClientMetadataDocuments) -> Self {
+        self.client_id_metadata_documents = Some(Arc::new(documents));
+        self
+    }
+
+    #[must_use]
+    pub fn client_id_metadata_documents(&self) -> Option<&ClientMetadataDocuments> {
+        self.client_id_metadata_documents.as_deref()
     }
 
     /// How long a dynamically registered client may go without a grant
