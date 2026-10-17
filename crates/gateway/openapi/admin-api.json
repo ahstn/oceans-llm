@@ -19562,6 +19562,10 @@
       "UpdateApiKeyScopesRequest": {
         "type": "object",
         "description": "Both fields are required, so leaving one out can't widen a key by\naccident. `null` restores full access or every server.",
+        "required": [
+          "scopes",
+          "mcp_server_keys"
+        ],
         "properties": {
           "mcp_server_keys": {
             "type": [

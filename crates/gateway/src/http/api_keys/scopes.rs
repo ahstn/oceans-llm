@@ -30,8 +30,10 @@ use crate::{
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateApiKeyScopesRequest {
     #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required = true)]
     scopes: Option<Vec<String>>,
     #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required = true)]
     mcp_server_keys: Option<Vec<String>>,
 }
 

@@ -180,7 +180,7 @@ An API key can be limited to the capabilities it was created for. A key without 
 
 | Scope | Routes |
 | --- | --- |
-| `inference` | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, their unversioned aliases, `/v1/models`, `/v1/model-metadata`, `/api/v1/batches`, and `/api/v1/guardrails/evaluate` |
+| `inference` | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, their unversioned aliases, `/v1/models`, `/models`, `/v1/model-metadata`, `/api/v1/batches*`, and `/api/v1/guardrails/evaluate` |
 | `mcp:aggregate` | `/mcp` |
 | `mcp:proxy` | `/mcp/{server_key}` |
 

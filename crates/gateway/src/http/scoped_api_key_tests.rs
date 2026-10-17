@@ -520,6 +520,37 @@ async fn server_lists_limit_the_proxy_without_revealing_other_servers() {
 }
 
 #[tokio::test]
+async fn multi_server_lists_drop_tools_on_unlisted_servers() {
+    let harness = Harness::new().await;
+    // The owner is also granted a tool on a third server the key does not list.
+    seed_granted_server(
+        &harness.state,
+        "extra",
+        "http://127.0.0.1:9/mcp",
+        harness.user_id,
+    )
+    .await;
+    let (_, two_servers) = harness
+        .create_key(json!(["mcp:aggregate"]), json!(["notes", "wiki"]))
+        .await;
+
+    let (_, session) = harness.open_aggregate(&two_servers).await;
+    let found = harness
+        .aggregate_tool(
+            &two_servers,
+            &session.unwrap(),
+            "search_tools",
+            json!({"query": ""}),
+        )
+        .await;
+    assert_eq!(
+        search_addresses(&found),
+        ["mcp://notes/tools/search", "mcp://wiki/tools/search"]
+    );
+    assert_eq!(found.body["result"]["structuredContent"]["total"], 2);
+}
+
+#[tokio::test]
 async fn server_lists_limit_aggregate_search_describe_and_call() {
     let harness = Harness::new().await;
     let (_, notes_only) = harness

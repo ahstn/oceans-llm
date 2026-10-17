@@ -209,8 +209,9 @@ where
 
     /// The tools `auth` may see. An API key's MCP server list applies here,
     /// on the credential, so grant resolution itself never changes: a filter
-    /// on an unlisted server resolves nothing, and tools on unlisted servers
-    /// are dropped from an unfiltered catalogue.
+    /// on an unlisted server resolves nothing, a list of one server becomes
+    /// the filter, and tools on unlisted servers are dropped from an
+    /// unfiltered catalogue.
     async fn authorized_catalog(
         &self,
         auth: &AuthenticatedApiKey,
@@ -219,16 +220,31 @@ where
         if server_key.is_some_and(|server_key| !auth.allows_mcp_server(server_key)) {
             return Ok(gateway_core::McpCatalogAccessResolution::default());
         }
+        let listed = auth.access.mcp_server_keys.as_deref();
+        let server_key = match (server_key, listed) {
+            (None, Some([only])) => Some(only.as_str()),
+            (server_key, _) => server_key,
+        };
         let access = McpAccess::new(self.repo.clone());
         let subjects = access.grant_subjects(auth).await?;
         let mut resolution = self
             .repo
             .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
             .await?;
-        if server_key.is_none() && auth.access.mcp_server_keys.is_some() {
+        if server_key.is_none() && listed.is_some() {
             resolution
                 .allowed_tools
                 .retain(|record| auth.allows_mcp_server(&record.server.server_key));
+            // Keep the counts describing the tools this key can see.
+            let servers = resolution
+                .allowed_tools
+                .iter()
+                .map(|record| record.server.mcp_server_id)
+                .collect::<std::collections::HashSet<_>>();
+            resolution.referenced_server_count = servers.len() as i64;
+            resolution.filtered_tool_count = resolution
+                .exposed_tool_count
+                .saturating_sub(resolution.allowed_tools.len() as i64);
         }
         Ok(resolution)
     }

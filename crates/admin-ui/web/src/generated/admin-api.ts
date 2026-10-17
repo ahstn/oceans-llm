@@ -5132,8 +5132,8 @@ export interface components {
          *     accident. `null` restores full access or every server.
          */
         UpdateApiKeyScopesRequest: {
-            mcp_server_keys?: string[] | null;
-            scopes?: string[] | null;
+            mcp_server_keys: string[] | null;
+            scopes: string[] | null;
         };
         UpdateApiKeyScopesResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
