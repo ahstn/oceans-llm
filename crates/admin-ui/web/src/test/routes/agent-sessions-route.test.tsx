@@ -558,7 +558,7 @@ describe('AgentSessionsPage', () => {
     expect(within(sessionSummary).getByText('Session score')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Normalised cost')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Total time')).toBeInTheDocument()
-    expect(within(sessionSummary).getByText('1.0 min')).toBeInTheDocument()
+    expect(within(sessionSummary).getByText('1 min')).toBeInTheDocument()
     expect(within(sessionSummary).queryByText('Outcome')).not.toBeInTheDocument()
     expect(within(sessionSummary).queryByText('Active time')).not.toBeInTheDocument()
     const eventStreamTrigger = screen.getByRole('button', { name: /Event stream/ })

@@ -29,7 +29,7 @@ import {
   actionVariant,
   countBy,
   formatLatency,
-  formatTimestamp,
+  formatDecisionTime,
   percentile,
   phaseLabel,
   ruleLabel,
@@ -177,8 +177,8 @@ function DecisionGrid({
         header: 'Time',
         size: 200,
         cell: ({ row }) => (
-          <span className="text-muted-foreground tabular-nums">
-            {formatTimestamp(row.original.occurred_at)}
+          <span className="text-muted-foreground whitespace-nowrap tabular-nums">
+            {formatDecisionTime(row.original.occurred_at)}
           </span>
         ),
       },

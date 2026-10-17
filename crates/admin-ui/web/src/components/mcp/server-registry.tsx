@@ -27,6 +27,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { McpServerView } from '@/types/api'
+import { EMPTY_VALUE, formatTimestamp } from '@/lib/format'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
 
@@ -439,7 +440,7 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
       </Badge>
       {server.last_discovery_at ? (
         <time
-          className="text-muted-foreground text-xs"
+          className="text-muted-foreground text-xs whitespace-nowrap"
           dateTime={server.last_discovery_at}
           title={server.last_discovery_at}
         >
@@ -472,24 +473,6 @@ function authLabel(mode: string) {
 }
 
 function formatDiscoveryTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown discovery time'
-  // Fixed UTC parts keep server and browser output identical during hydration.
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
-  const hours = String(date.getUTCHours()).padStart(2, '0')
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0')
-  return `${date.getUTCDate()} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${hours}:${minutes} UTC`
+  const formatted = formatTimestamp(value)
+  return formatted === EMPTY_VALUE ? 'Unknown discovery time' : formatted
 }

@@ -87,6 +87,7 @@ import type {
   ReviewAgentWorkflowPayload,
   ServiceAccountView,
 } from '@/types/api'
+import { formatDuration, formatTimestamp } from '@/lib/format'
 
 export const Route = createFileRoute('/review-agent')({
   validateSearch: (search: Record<string, unknown>) => normalizeReviewAgentSearch(search),
@@ -1414,33 +1415,11 @@ function runTimestamp(run: ReviewAgentRunView) {
   return run.finished_at ?? run.started_at ?? run.created_at
 }
 
-function formatTimestamp(value: string | null | undefined) {
-  if (!value) {
-    return '—'
-  }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
-}
-
 function formatLineDelta(run: ReviewAgentRunView) {
   if (run.additions == null && run.deletions == null) {
     return '—'
   }
   return `+${run.additions ?? 0} / −${run.deletions ?? 0}`
-}
-
-function formatDuration(durationMs: number | null | undefined) {
-  if (durationMs == null) {
-    return '—'
-  }
-  if (durationMs < 1_000) {
-    return `${durationMs}ms`
-  }
-  const seconds = Math.round(durationMs / 1_000)
-  if (seconds < 60) {
-    return `${seconds}s`
-  }
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
 }
 
 function getErrorMessage(error: unknown) {

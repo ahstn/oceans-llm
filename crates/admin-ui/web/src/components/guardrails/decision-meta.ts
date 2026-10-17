@@ -1,4 +1,5 @@
 import type { GuardrailDecisionView, GuardrailPoliciesView } from '@/types/api'
+import { formatTimestamp } from '@/lib/format'
 
 export type GuardrailPolicy = GuardrailPoliciesView['default']
 export type DecisionAction = 'allow' | 'audit' | 'deny' | 'transformed'
@@ -36,12 +37,6 @@ export const ACTION_FILL: Record<string, string> = {
   deny: 'bg-destructive',
 }
 
-const timeFormatter = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-  timeZone: 'UTC',
-})
-
 export function actionVariant(action: string): ActionBadgeVariant {
   return ACTION_VARIANT[action] ?? 'outline'
 }
@@ -54,8 +49,9 @@ export function actionLabel(action: string) {
   return ACTIONS.find((item) => item.id === action)?.label ?? action
 }
 
-export function formatTimestamp(value: string) {
-  return `${timeFormatter.format(new Date(value))} UTC`
+/** Decisions often land within the same minute, so their timestamps carry seconds. */
+export function formatDecisionTime(value: string) {
+  return formatTimestamp(value, { seconds: true })
 }
 
 export function formatLatency(micros: number) {

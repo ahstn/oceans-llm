@@ -154,8 +154,8 @@ describe('ApiKeysPage', () => {
     expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
     expect(screen.queryByText('jane@example.com')).not.toBeInTheDocument()
-    expect(screen.getAllByText('2026-03-14').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('2026-03-18 09:15').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('14 Mar 2026, 12:00 UTC').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('18 Mar 2026, 09:15 UTC').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Copy prefix' })).not.toBeInTheDocument()
   })
 
@@ -422,8 +422,8 @@ describe('ApiKeysPage', () => {
     expect(within(dialog).getByText('gwk_prod_liv****')).toBeInTheDocument()
     expect(within(dialog).getByText('Jane Admin')).toBeInTheDocument()
     expect(within(dialog).queryByText('jane@example.com')).not.toBeInTheDocument()
-    expect(within(dialog).getByText('2026-03-14')).toBeInTheDocument()
-    expect(within(dialog).getByText('2026-03-18 09:15')).toBeInTheDocument()
+    expect(within(dialog).getByText('14 Mar 2026, 12:00 UTC')).toBeInTheDocument()
+    expect(within(dialog).getByText('18 Mar 2026, 09:15 UTC')).toBeInTheDocument()
 
     const summary = within(dialog).getByTestId('manage-api-key-summary')
     expect(summary).toHaveClass('border-y')
@@ -433,9 +433,11 @@ describe('ApiKeysPage', () => {
     const metadata = within(dialog).getByTestId('manage-api-key-metadata')
     expect(metadata).toHaveClass('divide-y')
     expect(within(metadata).getByText('Owner').closest('div')).toHaveTextContent('Jane Admin')
-    expect(within(metadata).getByText('Created').closest('div')).toHaveTextContent('2026-03-14')
+    expect(within(metadata).getByText('Created').closest('div')).toHaveTextContent(
+      '14 Mar 2026, 12:00 UTC',
+    )
     expect(within(metadata).getByText('Last used').closest('div')).toHaveTextContent(
-      '2026-03-18 09:15',
+      '18 Mar 2026, 09:15 UTC',
     )
 
     const saveButton = within(dialog).getByRole('button', { name: 'Save access' })

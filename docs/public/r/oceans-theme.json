@@ -71,6 +71,7 @@
       "text-display--line-height": "0.94",
       "text-display-sm": "clamp(1.9rem, 2vw, 2.6rem)",
       "shadow-sticky-edge": "8px 0 12px -12px rgb(0 0 0 / 0.8)",
+      "shadow-sticky-edge-end": "-8px 0 12px -12px rgb(0 0 0 / 0.8)",
       "shadow-panel": "0 8px 24px -12px rgb(0 0 0 / 0.6)",
       "shadow-popover": "0 12px 28px -8px rgb(0 0 0 / 0.55)",
       "shadow-dialog": "0 24px 64px -16px rgb(0 0 0 / 0.7)",

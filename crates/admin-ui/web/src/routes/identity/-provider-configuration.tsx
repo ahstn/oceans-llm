@@ -4,13 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import type { IdentityUsersPayload } from '@/types/api'
+import { formatTimestamp } from '@/lib/format'
 
 type CopilotUserProviders = IdentityUsersPayload['copilot_user_providers']
-
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
 
 interface ProviderConfigurationProps {
   userId: string
@@ -88,7 +84,7 @@ export function ProviderConfiguration({
                   </h4>
                   <p className="text-subtle-foreground mt-1 text-xs">
                     {status?.updated_at
-                      ? `Updated ${formatDateTime(status.updated_at)}`
+                      ? `Updated ${formatTimestamp(status.updated_at)}`
                       : 'No token has been stored.'}
                   </p>
                 </div>
@@ -139,8 +135,4 @@ export function ProviderConfiguration({
       )}
     </div>
   )
-}
-
-function formatDateTime(value: string) {
-  return dateTimeFormatter.format(new Date(value))
 }

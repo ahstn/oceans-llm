@@ -1,3 +1,4 @@
+import { CompactCount } from '@/components/data/compact-count'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { AgentSessionSummaryView } from '@/types/api'
+import { EMPTY_VALUE, formatDuration, formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface SessionTableProps {
   items: AgentSessionSummaryView[]
@@ -57,7 +60,14 @@ export function SessionTable({
                 'MCP calls',
                 'Data quality',
               ].map((label) => (
-                <th key={label} scope="col" className="h-9 px-3 font-semibold">
+                <th
+                  key={label}
+                  scope="col"
+                  className={cn(
+                    'h-9 px-3 font-semibold',
+                    numericColumns.has(label) && 'text-right',
+                  )}
+                >
                   {label}
                 </th>
               ))}
@@ -74,7 +84,7 @@ export function SessionTable({
                   if (event.key === 'Enter' || event.key === ' ') onOpen(session)
                 }}
               >
-                <td className="px-3 py-2 whitespace-nowrap">
+                <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                   {formatTimestamp(session.started_at)}
                 </td>
                 <td className="px-3 py-2">
@@ -93,21 +103,29 @@ export function SessionTable({
                 <td className="px-3 py-2">
                   <StateBadge value={session.lifecycle} />
                 </td>
-                <td className="px-3 py-2 tabular-nums">
+                <td className="px-3 py-2 text-right tabular-nums">
                   <p className="font-medium">
-                    {showScore ? (session.efficiency_score ?? '—') : 'Score not shown'}
+                    {showScore ? (session.efficiency_score ?? EMPTY_VALUE) : 'Score not shown'}
                   </p>
                   <p className="text-muted-foreground text-xs">
                     {humanize(session.score_confidence)} confidence
                   </p>
                 </td>
-                <td className="px-3 py-2 tabular-nums">
+                <td className="px-3 py-2 text-right tabular-nums">
                   {formatCost(session.normalized_cost_usd)}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{formatDuration(session.active_time_ms)}</td>
-                <td className="px-3 py-2 tabular-nums">{session.request_count.toLocaleString()}</td>
-                <td className="px-3 py-2 tabular-nums">{formatCount(session.tool_call_count)}</td>
-                <td className="px-3 py-2 tabular-nums">{formatCount(session.mcp_call_count)}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                  {formatDuration(session.active_time_ms)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <CompactCount value={session.request_count} unit="requests" />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <CompactCount value={session.tool_call_count} unit="tool calls" />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <CompactCount value={session.mcp_call_count} unit="MCP calls" />
+                </td>
                 <td className="px-3 py-2">
                   {session.limitations.length === 0 ? (
                     <span className="text-muted-foreground">Complete</span>
@@ -193,38 +211,24 @@ function StateBadge({ value }: { value: string }) {
   )
 }
 
-const timestampFormatter = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
+const numericColumns = new Set([
+  'Score',
+  'Cost',
+  'Active time',
+  'Requests',
+  'Tool calls',
+  'MCP calls',
+])
 const standardCurrency = new Intl.NumberFormat('en-GB', {
   style: 'currency',
   currency: 'USD',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
-const preciseCurrency = new Intl.NumberFormat('en-GB', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
-})
 
-function formatTimestamp(value: string) {
-  return timestampFormatter.format(new Date(value))
-}
 function formatCost(value?: number | null) {
-  return value == null ? '—' : (value < 0.01 ? preciseCurrency : standardCurrency).format(value)
-}
-function formatDuration(value?: number | null) {
-  if (value == null) return '—'
-  if (value < 1_000) return `${value} ms`
-  if (value < 60_000) return `${(value / 1_000).toFixed(1)} s`
-  return `${(value / 60_000).toFixed(1)} min`
-}
-function formatCount(value?: number | null) {
-  return value == null ? '—' : value.toLocaleString()
+  // Session cost is a total, so the column keeps two decimals.
+  return value == null ? EMPTY_VALUE : standardCurrency.format(value)
 }
 function humanize(value?: string | null) {
   return value
