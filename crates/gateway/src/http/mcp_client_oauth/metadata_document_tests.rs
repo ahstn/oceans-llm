@@ -647,3 +647,58 @@ async fn public_endpoints_allow_cross_origin_calls_without_credentials() {
         );
     }
 }
+
+#[tokio::test]
+async fn mcp_routes_let_browser_clients_read_the_challenge() {
+    let harness = Harness::new().await;
+    let origin = "https://app.example.net";
+    for uri in ["/mcp", "/mcp/repository"] {
+        let (status, headers, _) = send_with_headers(
+            &harness.router,
+            Request::builder()
+                .method("OPTIONS")
+                .uri(uri)
+                .header(header::ORIGIN, origin)
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "authorization, content-type, mcp-session-id, mcp-protocol-version",
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*", "{uri}");
+        assert!(
+            !headers.contains_key(header::ACCESS_CONTROL_ALLOW_CREDENTIALS),
+            "{uri}"
+        );
+    }
+
+    // The unauthenticated call that starts discovery: the page can read the
+    // status and the challenge.
+    let (status, headers, _) = send_with_headers(
+        &harness.router,
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::ORIGIN, origin)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    let exposed = headers[header::ACCESS_CONTROL_EXPOSE_HEADERS]
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(exposed.contains("www-authenticate"), "{exposed}");
+    assert!(exposed.contains("mcp-session-id"), "{exposed}");
+    assert!(headers.contains_key(header::WWW_AUTHENTICATE));
+}

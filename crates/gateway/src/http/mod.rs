@@ -131,7 +131,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             request_policy::request_policy,
-        ));
+        ))
+        .layer(mcp_client_oauth::mcp_transport_cors());
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))

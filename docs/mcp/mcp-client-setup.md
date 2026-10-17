@@ -164,7 +164,7 @@ The consent page shows the host that published the document, marked `Unverified`
 
 ### Browser-based clients
 
-The metadata, token, registration, and revocation endpoints answer CORS requests from any origin, so a client that runs in a web page can complete sign-in. They send no credentials-allowing CORS headers and read no cookies. `/oauth/authorize` opens as a normal page, not a cross-origin call.
+The MCP URLs and the metadata, token, registration, and revocation endpoints answer CORS requests from any origin, so a client that runs in a web page can read the `401` challenge, complete sign-in, and then call MCP with its token. They send no credentials-allowing CORS headers and read no cookies. `/oauth/authorize` opens as a normal page, not a cross-origin call.
 
 API keys keep working on the same URLs. Clients that support custom headers can use either method.
 

@@ -388,6 +388,19 @@ fn freshness_reads_date_expires_and_vary() {
         now,
     );
     assert_eq!(ttl, Duration::seconds(10));
+    // A repeated Age uses its first value, in one field line or several.
+    for ages in [
+        &[("age", "86390, 86390")][..],
+        &[("age", "86390"), ("age", "5")][..],
+    ] {
+        let mut fields = vec![("cache-control", "max-age=86400")];
+        fields.extend_from_slice(ages);
+        assert_eq!(
+            freshness(&headers(&fields), now).0,
+            Duration::seconds(10),
+            "{ages:?}"
+        );
+    }
     // Expires applies when there is no max-age, measured from Date.
     let (ttl, _) = freshness(
         &headers(&[("date", &http(0)), ("expires", &http(120))]),

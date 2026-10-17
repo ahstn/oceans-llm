@@ -8,7 +8,7 @@ MCP clients without a `gwk_` key can sign in through the gateway. An unauthentic
 - `oauth-discovery` serves `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-protected-resource/mcp/{server_key}`, and `/.well-known/oauth-authorization-server`.
 - `oauth-registration` accepts RFC 7591 registration at `/oauth/register` and returns a `client_id`.
 - `oauth-metadata-document` accepts an https `client_id` that names a Client ID Metadata Document, advertises `client_id_metadata_document_supported: true`, refuses documents on private, loopback, link-local, or metadata addresses, and shows `Published by <host>` with an `Unverified` badge on the consent page.
-- `oauth-cors` answers CORS preflights from any origin, without credentials, on the metadata, token, registration, and revocation endpoints, and not on `/oauth/authorize` or the consent API.
+- `oauth-cors` answers CORS preflights from any origin, without credentials, on the metadata, token, registration, and revocation endpoints and on `/mcp` and `/mcp/{server_key}` (exposing `WWW-Authenticate` and `Mcp-Session-Id`), and not on `/oauth/authorize` or the consent API.
 - `oauth-consent` shows `/admin/oauth/consent?request_id=<id>` after sign-in, with the client name, the `Returns to` host, the `Access`, and `Allow` and `Deny`.
 - `oauth-token` exchanges the code with PKCE at `/oauth/token` and returns `oat_` and `ort_` tokens.
 - `oauth-mcp-call` accepts the `oat_` token on `/mcp` and records the invocation with auth method `oauth`.

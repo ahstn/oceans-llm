@@ -766,7 +766,12 @@ fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
     // RFC 9111 §4.2.3: the response is at least as old as its `Age`, and as
     // the time since its `Date`.
     let apparent_age = date.map_or(0, |date| (now - date).whole_seconds().max(0));
-    let age = field(AGE)
+    // `Age` is a singleton: a repeated one uses its first member (RFC 9111
+    // §5.1), so it is not joined like the list-valued fields.
+    let age = headers
+        .get(AGE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
         .and_then(|value| delta_seconds(value.trim()))
         .unwrap_or(0)
         .max(apparent_age);

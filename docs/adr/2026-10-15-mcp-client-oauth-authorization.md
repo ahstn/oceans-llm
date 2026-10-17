@@ -252,7 +252,9 @@ Browser-based MCP clients call the metadata, token, registration, and revocation
 - `/.well-known/oauth-authorization-server`
 - `/oauth/token`, `/oauth/register`, and `/oauth/revoke`
 
-The policy grants no credentials, and these endpoints read no cookies. Clients authenticate with the request body or `Authorization`, so a page cannot use them to act as a signed-in user. `/oauth/authorize` is a top-level navigation, not a cross-origin call, and the consent APIs are cookie-authenticated. Neither sends CORS headers.
+The MCP routes `/mcp` and `/mcp/{server_key}` answer CORS too, for `GET`, `POST`, and `DELETE` with `Authorization`, `Content-Type`, `Accept`, `MCP-Protocol-Version`, `Mcp-Session-Id`, and `Last-Event-ID`. They expose `WWW-Authenticate`, so a page can read the `401` challenge that starts discovery, and `Mcp-Session-Id` and `MCP-Protocol-Version` for the session that follows.
+
+The policy grants no credentials, and none of these endpoints read cookies: the MCP routes take their credential only from request headers. Clients authenticate with the request body or `Authorization`, so a page cannot use them to act as a signed-in user. `/oauth/authorize` is a top-level navigation, not a cross-origin call, and the consent APIs are cookie-authenticated. Neither sends CORS headers.
 
 ## Trade-offs
 

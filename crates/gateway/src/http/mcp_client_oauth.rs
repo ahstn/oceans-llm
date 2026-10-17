@@ -16,7 +16,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{
         HeaderMap, HeaderName, HeaderValue, Method,
-        header::{AUTHORIZATION, CONTENT_TYPE},
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
     },
     routing::{get, post},
 };
@@ -57,6 +57,29 @@ pub use revocation::oauth_revoke;
 pub(crate) use stream_lifetime::bound_to_oauth_access;
 pub use stream_lifetime::{OAUTH_STREAM_RECHECK_INTERVAL, OauthStreamWatcher};
 pub use token::oauth_token;
+
+/// CORS for the MCP transport routes, `/mcp` and `/mcp/{server_key}`, so a
+/// browser-based client can read the `401` challenge that starts discovery
+/// and then send its token. Those routes take their credential only from
+/// request headers, never cookies, so allowing any origin without credentials
+/// gives a page nothing it does not already hold.
+pub(crate) fn mcp_transport_cors() -> CorsLayer {
+    let mcp_session_id = HeaderName::from_static("mcp-session-id");
+    let mcp_protocol_version = HeaderName::from_static("mcp-protocol-version");
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            ACCEPT,
+            mcp_protocol_version.clone(),
+            mcp_session_id.clone(),
+            HeaderName::from_static("last-event-id"),
+        ])
+        .expose_headers([WWW_AUTHENTICATE, mcp_session_id, mcp_protocol_version])
+        .max_age(Duration::from_secs(24 * 60 * 60))
+}
 
 /// The endpoints an MCP client calls itself: metadata, token, revocation, and
 /// registration. A browser-based client calls them from its own origin, so
