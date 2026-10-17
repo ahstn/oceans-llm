@@ -1205,6 +1205,7 @@ async fn team_admins_cannot_point_the_gateway_at_internal_addresses() {
         "https://[::ffff:192.168.1.1]/mcp",
         "https://[::127.0.0.1]/mcp",
         "https://[64:ff9b::a00:5]/mcp",
+        "https://[64:ff9b:1::a00:5]/mcp",
         "https://169.254.169.254/latest",
         "https://100.100.100.200/mcp",
         "https://[fd00::1]/mcp",

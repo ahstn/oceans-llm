@@ -141,6 +141,14 @@ const METADATA_ADDRESSES: [IpAddr; 3] = [
     IpAddr::V6(Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)),
 ];
 
+/// Whether `address` is reachable on the public internet, by the same rules
+/// the public scope uses at connect time. Shared with the team destination
+/// check in [`crate::mcp_ownership`].
+#[must_use]
+pub fn is_public_address(address: IpAddr) -> bool {
+    classify(address) == AddressClass::Public
+}
+
 fn classify(address: IpAddr) -> AddressClass {
     match address {
         IpAddr::V4(address) => classify_v4(address),

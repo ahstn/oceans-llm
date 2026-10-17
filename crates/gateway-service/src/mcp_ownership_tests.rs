@@ -117,7 +117,6 @@ fn only_public_addresses_pass_the_destination_check() {
         "8.8.8.8",
         "1.1.1.1",
         "2606:4700:4700::1111",
-        "::8.8.8.8",
         "64:ff9b::808:808",
         "2002:0808:0808::",
     ] {
@@ -145,6 +144,9 @@ fn only_public_addresses_pass_the_destination_check() {
         "64:ff9b::169.254.169.254",
         "2002:7f00:0001::",
         "2002:c0a8:0101::1",
+        // Local-use NAT64 and IPv4-compatible forms are not global unicast.
+        "64:ff9b:1::a00:1",
+        "::8.8.8.8",
         "2001:db8::1",
     ] {
         assert!(

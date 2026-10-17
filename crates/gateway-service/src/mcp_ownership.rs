@@ -4,10 +4,7 @@
 //! so tool grants, tag-based grants and tool approvals agree on the boundary.
 //! See `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
 
-use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::Arc,
-};
+use std::{net::IpAddr, sync::Arc};
 
 use gateway_core::{
     AdminApiKeyRepository, AuthError, ExternalMcpServerRecord, GatewayError, IdentityRepository,
@@ -715,69 +712,12 @@ fn collect_strings(path: &str, value: &Value, out: &mut Vec<(String, String)>) {
     }
 }
 
-/// Whether an address is reachable on the public internet. IPv6 forms that
-/// carry an IPv4 address (mapped, compatible, NAT64 and 6to4) are judged by
-/// that IPv4 address, since a network stack may translate them to it.
+/// Whether an address is reachable on the public internet. This is the
+/// outbound fetcher's own rule, so a URL a team admin saves is judged the same
+/// way the fetcher judges it at connect time.
 #[must_use]
 pub fn is_public_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(address) => is_public_ipv4(address),
-        IpAddr::V6(address) => match embedded_ipv4(address) {
-            Some(embedded) => is_public_ipv4(embedded),
-            None => is_public_ipv6(address),
-        },
-    }
-}
-
-/// The IPv4 address inside an IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible
-/// (`::a.b.c.d`), NAT64 (`64:ff9b::a.b.c.d`) or 6to4 (`2002:aabb:ccdd::`)
-/// address. `::` and `::1` are left to the IPv6 rules.
-fn embedded_ipv4(address: Ipv6Addr) -> Option<Ipv4Addr> {
-    let segments = address.segments();
-    let low = |a: u16, b: u16| Ipv4Addr::new((a >> 8) as u8, a as u8, (b >> 8) as u8, b as u8);
-    if let Some(mapped) = address.to_ipv4_mapped() {
-        return Some(mapped);
-    }
-    if address.is_unspecified() || address.is_loopback() {
-        return None;
-    }
-    if segments[..6] == [0; 6] || segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-        return Some(low(segments[6], segments[7]));
-    }
-    if segments[0] == 0x2002 {
-        return Some(low(segments[1], segments[2]));
-    }
-    None
-}
-
-fn is_public_ipv4(address: Ipv4Addr) -> bool {
-    let [a, b, ..] = address.octets();
-    !(address.is_unspecified()
-        || address.is_loopback()
-        || address.is_private()
-        || address.is_link_local()
-        || address.is_broadcast()
-        || address.is_multicast()
-        || address.is_documentation()
-        || a == 0
-        // Shared address space (100.64.0.0/10), used by carrier NAT and some
-        // cloud metadata services.
-        || (a == 100 && (64..128).contains(&b))
-        // Benchmarking (198.18.0.0/15) and reserved (240.0.0.0/4).
-        || (a == 198 && (b == 18 || b == 19))
-        || a >= 240)
-}
-
-fn is_public_ipv6(address: Ipv6Addr) -> bool {
-    let first = address.segments()[0];
-    !(address.is_unspecified()
-        || address.is_loopback()
-        || address.is_multicast()
-        // Unique local (fc00::/7) and link-local (fe80::/10).
-        || (first & 0xfe00) == 0xfc00
-        || (first & 0xffc0) == 0xfe80
-        // Documentation (2001:db8::/32).
-        || (first == 0x2001 && address.segments()[1] == 0x0db8))
+    crate::outbound_fetch::is_public_address(address)
 }
 
 /// Trims an owner contact; blank means none.
