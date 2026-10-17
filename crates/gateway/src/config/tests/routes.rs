@@ -139,6 +139,57 @@ providers:
 }
 
 #[test]
+fn infers_pricing_provider_id_from_well_known_hosts() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  openrouter:
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+  opencode-zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  explicit:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let pricing_ids = config
+        .seed_providers()
+        .expect("seed providers")
+        .into_iter()
+        .map(|provider| {
+            (
+                provider.provider_key,
+                provider.config["pricing_provider_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pricing_ids,
+        [
+            ("openai-prod".to_string(), "openai".to_string()),
+            ("openrouter".to_string(), "openrouter".to_string()),
+            ("opencode-zen".to_string(), "opencode".to_string()),
+            ("explicit".to_string(), "openrouter".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn rejects_openai_compat_without_pricing_provider_id() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
@@ -147,9 +198,9 @@ fn rejects_openai_compat_without_pricing_provider_id() {
         &config_path,
         r#"
 providers:
-  - id: openai-prod
+  - id: self-hosted
     type: openai_compat
-    base_url: https://api.openai.com/v1
+    base_url: https://llm.example.com/v1
 "#,
     );
 
@@ -482,29 +533,34 @@ models:
 }
 
 #[test]
-fn rejects_openai_decisions_api_without_decisions_capability() {
+fn openai_decisions_api_derives_decisions_only_capabilities() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
+    let yaml = r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+models:
+  luna:
+    route:
+      provider: openai-prod
+      upstream_model: gpt-6-luna
+      compatibility:
+        openai_compat:
+          decisions_api: openai
+"#;
+
+    write_config(&config_path, yaml);
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
+    assert!(capabilities.decisions);
+    assert!(!capabilities.chat_completions && !capabilities.responses && !capabilities.stream);
 
     write_config(
         &config_path,
-        r#"
-providers:
-  - id: openai-prod
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
-models:
-  - id: luna
-    routes:
-      - provider: openai-prod
-        upstream_model: gpt-6-luna
-        compatibility:
-          openai_compat:
-            decisions_api: openai
-"#,
+        &format!("{yaml}      capabilities:\n        decisions: false\n"),
     );
-
     let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
     let error_text = format!("{error:#}");
     assert!(
@@ -546,4 +602,45 @@ models:
         error_text.contains("decisions_api but requires an openai_compat provider"),
         "unexpected error: {error_text}"
     );
+}
+
+#[test]
+fn route_capability_defaults_start_from_the_provider_baseline() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  vertex:
+    type: gcp_vertex
+    project_id: project
+    auth: { mode: adc }
+models:
+  zen-model:
+    route: { provider: zen, upstream_model: claude-sonnet }
+  vertex-claude:
+    route: { provider: vertex, upstream_model: anthropic/claude-sonnet-4-6 }
+  vertex-embedding:
+    route: { provider: vertex, upstream_model: google/gemini-embedding-001 }
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let seeds = config.seed_models().expect("seed models");
+    let capabilities = |index: usize| seeds[index].routes[0].capabilities;
+    assert_eq!(
+        capabilities(0),
+        gateway_core::ProviderCapabilities::anthropic_compat_baseline()
+    );
+    assert_eq!(
+        capabilities(1),
+        gateway_core::vertex_route_capabilities_for_upstream_model(Some(
+            "anthropic/claude-sonnet-4-6"
+        ))
+    );
+    assert!(capabilities(2).embeddings && !capabilities(2).chat_completions);
 }

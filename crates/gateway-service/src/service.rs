@@ -61,6 +61,50 @@ pub struct BatchUsageInput<'a> {
     pub occurred_at: OffsetDateTime,
 }
 
+fn pricing_override_matches_catalog(
+    configured: &gateway_core::RoutePricingOverride,
+    catalog: &crate::EffectiveRoutePricing,
+) -> bool {
+    catalog.input_cost_per_million_tokens == Some(configured.input_cost_per_million_tokens)
+        && catalog.output_cost_per_million_tokens == Some(configured.output_cost_per_million_tokens)
+        // The override replaces catalog pricing wholesale, so an omitted cache rate leaves cache
+        // tokens unpriced while the catalog would charge them. Only identical rates are redundant.
+        && catalog.cache_read_cost_per_million_tokens
+            == configured.cache_read_cost_per_million_tokens
+        && catalog.cache_write_cost_per_million_tokens
+            == configured.cache_write_cost_per_million_tokens
+}
+
+/// Enabled routes that carry a pricing or context override, paired with their model key.
+#[derive(Debug, Default)]
+pub struct OverriddenRoutes {
+    routes: Vec<(String, ModelRoute)>,
+    /// Catalog values already resolved for these routes, so later checks reuse them.
+    catalog: CatalogValues,
+}
+
+/// Catalog pricing and context per `(provider, upstream model, extra_body)` lookup target.
+type CatalogValues = std::collections::HashMap<
+    (String, String, String),
+    (Option<crate::EffectiveRoutePricing>, Option<i64>),
+>;
+
+#[derive(Debug, Default)]
+struct RouteOverrideScan {
+    context_conflicts: Vec<RouteContextOverrideConflict>,
+    redundant: Vec<RedundantRouteOverride>,
+}
+
+/// A route override that repeats the catalog value it replaces.
+#[derive(Debug)]
+struct RedundantRouteOverride {
+    model_key: String,
+    provider_key: String,
+    upstream_model: String,
+    pricing: bool,
+    context_window_tokens: Option<i64>,
+}
+
 #[derive(Debug)]
 struct RouteContextOverrideConflict {
     route_id: Uuid,
@@ -820,14 +864,17 @@ where
         self.warn_on_route_context_override_conflicts().await
     }
 
-    pub async fn validate_route_context_overrides(&self) -> Result<(), GatewayError> {
-        let Some(conflict) = self
-            .route_context_override_conflicts()
-            .await?
-            .into_iter()
-            .next()
-        else {
-            return Ok(());
+    /// Startup check that fails on a context window above the catalog limit. It reads models
+    /// and routes once and resolves catalog values only for context overrides, so pricing
+    /// overrides add no catalog lookups before readiness. The returned routes feed
+    /// [`Self::warn_on_redundant_route_overrides`] without reading the route table again.
+    pub async fn validate_route_overrides(&self) -> Result<OverriddenRoutes, GatewayError> {
+        let mut routes = self.collect_overridden_routes().await?;
+        let scan = self
+            .scan_route_overrides(&routes.routes, false, &mut routes.catalog)
+            .await?;
+        let Some(conflict) = scan.context_conflicts.into_iter().next() else {
+            return Ok(routes);
         };
 
         Err(GatewayError::InvalidRequest(format!(
@@ -840,8 +887,46 @@ where
         )))
     }
 
+    /// Logs route overrides that only repeat the catalog, so admins can delete them and follow
+    /// catalog updates. It only warns, so the gateway runs it in the background after startup,
+    /// over the routes [`Self::validate_route_overrides`] already collected, reusing the catalog
+    /// values it resolved for context overrides.
+    pub async fn warn_on_redundant_route_overrides(
+        &self,
+        mut routes: OverriddenRoutes,
+    ) -> Result<(), GatewayError> {
+        let scan = self
+            .scan_route_overrides(&routes.routes, true, &mut routes.catalog)
+            .await?;
+        for redundant in scan.redundant {
+            if redundant.pricing {
+                warn!(
+                    model_key = %redundant.model_key,
+                    provider_key = %redundant.provider_key,
+                    upstream_model = %redundant.upstream_model,
+                    "route pricing_override equals the catalog price; remove it to follow catalog updates"
+                );
+            }
+            if let Some(context_window_tokens) = redundant.context_window_tokens {
+                warn!(
+                    model_key = %redundant.model_key,
+                    provider_key = %redundant.provider_key,
+                    upstream_model = %redundant.upstream_model,
+                    context_window_tokens,
+                    "route context_window_tokens equals the catalog context; remove it to follow catalog updates"
+                );
+            }
+        }
+        Ok(())
+    }
+
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
-        for conflict in self.route_context_override_conflicts().await? {
+        let mut routes = self.collect_overridden_routes().await?;
+        for conflict in self
+            .scan_route_overrides(&routes.routes, false, &mut routes.catalog)
+            .await?
+            .context_conflicts
+        {
             warn!(
                 route_id = %conflict.route_id,
                 provider_key = %conflict.provider_key,
@@ -854,36 +939,125 @@ where
         Ok(())
     }
 
-    async fn route_context_override_conflicts(
-        &self,
-    ) -> Result<Vec<RouteContextOverrideConflict>, GatewayError> {
-        let mut conflicts = Vec::new();
+    /// Enabled routes with a pricing or context override, with their model keys, in one pass
+    /// over models and routes.
+    async fn collect_overridden_routes(&self) -> Result<OverriddenRoutes, GatewayError> {
+        let mut routes = Vec::new();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
+                // Disabled rows include batch-referenced routes that config no longer declares.
                 if !route.enabled || route.weight <= 0.0 {
                     continue;
                 }
-                let Some(configured) = route.context_window_tokens else {
+                if route.context_window_tokens.is_some() || route.pricing_override.is_some() {
+                    routes.push((model.model_key.clone(), route));
+                }
+            }
+        }
+        Ok(OverriddenRoutes {
+            routes,
+            catalog: CatalogValues::new(),
+        })
+    }
+
+    /// Resolves catalog values once per catalog target, looking up each provider once.
+    /// `include_redundant` also covers pricing-only overrides and reports overrides that equal
+    /// the catalog; otherwise only context overrides are checked, for conflicts.
+    async fn scan_route_overrides(
+        &self,
+        routes: &[(String, ModelRoute)],
+        include_redundant: bool,
+        catalog: &mut CatalogValues,
+    ) -> Result<RouteOverrideScan, GatewayError> {
+        let now = OffsetDateTime::now_utc();
+        let mut providers =
+            std::collections::HashMap::<String, Option<gateway_core::ProviderConnection>>::new();
+        // The checks read only catalog values, which depend on the provider, upstream model,
+        // and extra_body billing modifiers, so routes sharing those reuse one lookup, including
+        // lookups an earlier check over the same routes already made.
+        let mut scan = RouteOverrideScan::default();
+        for (model_key, route) in routes {
+            {
+                let has_pricing_override = include_redundant && route.pricing_override.is_some();
+                if route.context_window_tokens.is_none() && !has_pricing_override {
                     continue;
-                };
-                let metadata = self
-                    .resolve_route_metadata(&route, OffsetDateTime::now_utc())
-                    .await?;
-                let Some(catalog) = metadata.catalog_limits.context else {
-                    continue;
-                };
-                if configured > catalog {
-                    conflicts.push(RouteContextOverrideConflict {
+                }
+                if !providers.contains_key(&route.provider_key) {
+                    let provider = self.store.get_provider_by_key(&route.provider_key).await?;
+                    providers.insert(route.provider_key.clone(), provider);
+                }
+                let catalog_key = (
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                    Value::Object(route.extra_body.clone()).to_string(),
+                );
+                if !catalog.contains_key(&catalog_key) {
+                    let provider = providers.get(&route.provider_key).and_then(Option::as_ref);
+                    match resolve_effective_route_metadata(
+                        self.store.as_ref(),
+                        provider,
+                        route,
+                        now,
+                    )
+                    .await
+                    {
+                        Ok(metadata) => {
+                            catalog.insert(
+                                catalog_key.clone(),
+                                (metadata.catalog_pricing, metadata.catalog_limits.context),
+                            );
+                        }
+                        // A context override must be checked, so its lookup failure stays fatal.
+                        Err(error) if route.context_window_tokens.is_some() => return Err(error),
+                        Err(error) => {
+                            warn!(
+                                error = %error,
+                                model_key = %model_key,
+                                provider_key = %route.provider_key,
+                                upstream_model = %route.upstream_model,
+                                "skipping redundant route override check; route metadata lookup failed"
+                            );
+                            continue;
+                        }
+                    }
+                }
+                let (catalog_pricing, catalog_context) = &catalog[&catalog_key];
+                let catalog_context = *catalog_context;
+                if let (Some(configured), Some(catalog)) =
+                    (route.context_window_tokens, catalog_context)
+                    && configured > catalog
+                {
+                    scan.context_conflicts.push(RouteContextOverrideConflict {
                         route_id: route.id,
-                        provider_key: route.provider_key,
-                        upstream_model: route.upstream_model,
+                        provider_key: route.provider_key.clone(),
+                        upstream_model: route.upstream_model.clone(),
                         configured_context: configured,
                         catalog_context: catalog,
                     });
                 }
+                if !include_redundant {
+                    continue;
+                }
+                let pricing = matches!(
+                    (route.pricing_override.as_ref(), catalog_pricing.as_ref()),
+                    (Some(configured), Some(catalog))
+                        if pricing_override_matches_catalog(configured, catalog)
+                );
+                let context_window_tokens = route
+                    .context_window_tokens
+                    .filter(|_| route.context_window_tokens == catalog_context);
+                if pricing || context_window_tokens.is_some() {
+                    scan.redundant.push(RedundantRouteOverride {
+                        model_key: model_key.clone(),
+                        provider_key: route.provider_key.clone(),
+                        upstream_model: route.upstream_model.clone(),
+                        pricing,
+                        context_window_tokens,
+                    });
+                }
             }
         }
-        Ok(conflicts)
+        Ok(scan)
     }
 
     pub async fn dispatch_pending_budget_alert_deliveries(
@@ -2184,6 +2358,7 @@ mod tests {
         provider: Option<ProviderConnection>,
         pricing: Option<ModelPricingRecord>,
         pricing_lookup_fails: bool,
+        pricing_lookups: Arc<std::sync::atomic::AtomicUsize>,
     }
 
     struct PassThroughPlanner;
@@ -2519,6 +2694,8 @@ mod tests {
             _pricing_model_id: &str,
             _occurred_at: OffsetDateTime,
         ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            self.pricing_lookups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if self.pricing_lookup_fails {
                 return Err(StoreError::Unavailable(
                     "pricing catalog unavailable".to_string(),
@@ -2731,7 +2908,7 @@ mod tests {
         let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
 
         let error = service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect_err("startup validation must reject conflicting cap");
 
@@ -2740,6 +2917,99 @@ mod tests {
                 .to_string()
                 .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_override_check_tolerates_lookup_failures_only_for_pricing_overrides() {
+        let model_id = Uuid::new_v4();
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let service_with = |route: ModelRoute| {
+            GatewayService::new(
+                Arc::new(UsageAccountingRepo {
+                    models: vec![model(model_id)],
+                    provider: Some(openai_provider(&route.provider_key)),
+                    routes: vec![route],
+                    pricing_lookup_fails: true,
+                    ..Default::default()
+                }),
+                Arc::new(PassThroughPlanner),
+            )
+        };
+
+        let service = service_with(route.clone());
+        let routes = service
+            .validate_route_overrides()
+            .await
+            .expect("a pricing-only override does not reach the catalog during startup");
+        service
+            .warn_on_redundant_route_overrides(routes)
+            .await
+            .expect("a pricing-only override lookup failure is only logged");
+
+        route.context_window_tokens = Some(128_000);
+        service_with(route)
+            .validate_route_overrides()
+            .await
+            .expect_err("a context override must still be checked against the catalog");
+    }
+
+    #[tokio::test]
+    async fn startup_override_check_looks_up_each_catalog_target_once() {
+        let model_id = Uuid::new_v4();
+        let mut first = vertex_embedding_route(model_id);
+        first.upstream_model = "gpt-5".to_string();
+        first.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let mut second = first.clone();
+        second.id = Uuid::new_v4();
+        // A context override below the catalog limit makes startup validation resolve this
+        // target; the warning pass must reuse that result.
+        second.context_window_tokens = Some(32_000);
+        let mut other_target = first.clone();
+        other_target.id = Uuid::new_v4();
+        other_target.upstream_model = "gpt-5-mini".to_string();
+        let lookups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model(model_id)],
+                provider: Some(openai_provider(&first.provider_key)),
+                routes: vec![first, second, other_target],
+                pricing: Some(pricing_record(Some(64_000))),
+                pricing_lookups: lookups.clone(),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        let routes = service
+            .validate_route_overrides()
+            .await
+            .expect("overrides within the catalog limit cannot block startup");
+        assert_eq!(
+            lookups.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "startup validation resolves only the context-override target"
+        );
+        service
+            .warn_on_redundant_route_overrides(routes)
+            .await
+            .expect("redundant override scan");
+        assert_eq!(
+            lookups.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the warning pass resolves only the target validation did not"
         );
     }
 
@@ -2768,7 +3038,7 @@ mod tests {
         );
 
         service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect("disabled and zero-weight routes cannot block startup");
     }
@@ -2799,7 +3069,7 @@ mod tests {
         );
 
         service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect("configured cap below catalog context should be valid");
         assert!(matches!(
@@ -2821,7 +3091,7 @@ mod tests {
             Arc::new(PassThroughPlanner),
         );
         let error = conflicting_service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect_err("configured pricing must not bypass an oversized context cap");
         assert!(
@@ -2853,7 +3123,7 @@ mod tests {
         let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
 
         let error = service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect_err("billing modifiers must not hide catalog context");
         assert!(
@@ -2906,7 +3176,7 @@ mod tests {
         let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
 
         let error = service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect_err("regional pricing limits must not hide catalog context");
         assert!(
@@ -2954,7 +3224,7 @@ mod tests {
         let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
 
         service
-            .validate_route_context_overrides()
+            .validate_route_overrides()
             .await
             .expect("unknown catalog context should accept configured cap");
     }
@@ -3457,5 +3727,49 @@ mod tests {
             .expect("combined unpriced reason");
         assert!(reason.starts_with("invalid_cache_token_usage:"));
         assert!(reason.contains(";pricing_unavailable:"));
+    }
+}
+
+#[cfg(test)]
+mod redundant_override_tests {
+    use gateway_core::{Money4, RoutePricingOverride};
+
+    use super::pricing_override_matches_catalog;
+    use crate::EffectiveRoutePricing;
+
+    fn money(value: &str) -> Money4 {
+        Money4::from_decimal_str(value).expect("money")
+    }
+
+    #[test]
+    fn pricing_override_matches_only_identical_catalog_rates() {
+        let configured = RoutePricingOverride {
+            input_cost_per_million_tokens: money("0.15"),
+            output_cost_per_million_tokens: money("0.60"),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        };
+        let mut catalog = EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(money("0.1500")),
+            output_cost_per_million_tokens: Some(money("0.6000")),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        };
+        assert!(pricing_override_matches_catalog(&configured, &catalog));
+
+        // Removing an override that omits a catalog cache rate would start charging cache tokens.
+        catalog.cache_read_cost_per_million_tokens = Some(money("0.01"));
+        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+        catalog.cache_read_cost_per_million_tokens = None;
+
+        catalog.output_cost_per_million_tokens = Some(money("0.64"));
+        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+
+        let with_cache = RoutePricingOverride {
+            cache_read_cost_per_million_tokens: Some(money("0.02")),
+            ..configured
+        };
+        catalog.output_cost_per_million_tokens = Some(money("0.60"));
+        assert!(!pricing_override_matches_catalog(&with_cache, &catalog));
     }
 }

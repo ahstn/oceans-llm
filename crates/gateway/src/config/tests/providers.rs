@@ -637,7 +637,10 @@ providers:
             ),
         );
         let error = GatewayConfig::from_path(&path).expect_err("duplicate provider");
-        assert!(format!("{error:#}").contains("duplicate provider id `upstream`"));
+        assert!(
+            format!("{error:#}").contains("provider `upstream` is defined twice in"),
+            "unexpected error: {error:#}"
+        );
     }
 }
 
@@ -874,6 +877,32 @@ models:
 }
 
 #[test]
+fn typesafe_routes_default_to_decisions_only() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openrouter
+models:
+  - id: jev-native
+    route:
+      provider: typesafe
+      upstream_model: jev-latest
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
+    assert!(capabilities.decisions);
+    assert!(!capabilities.chat_completions && !capabilities.stream && !capabilities.tools);
+}
+
+#[test]
 fn rejects_typesafe_route_without_decisions_capability() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
@@ -890,6 +919,8 @@ models:
     routes:
       - provider: typesafe
         upstream_model: jev-latest
+        capabilities:
+          decisions: false
 "#,
     );
 
@@ -898,4 +929,30 @@ models:
         format!("{error:#}").contains("must enable capabilities.decisions"),
         "unexpected error: {error:#}"
     );
+}
+
+#[test]
+fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    for (provider_yaml, expected) in [
+        (
+            "    base_url: https://api.openai.com/v1\n    pricing_provder_id: openai\n",
+            "unknown field `pricing_provder_id`",
+        ),
+        (
+            "    base_url: https://api.openai.com/v1\n    auth: { kind: basic, token: literal.test }\n",
+            "openai_compat provider `openai` auth.kind must be `bearer`",
+        ),
+    ] {
+        write_config(
+            &path,
+            &format!("providers:\n  openai:\n    type: openai_compat\n{provider_yaml}"),
+        );
+        let error = GatewayConfig::from_path(&path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "expected `{expected}`, got: {error:#}"
+        );
+    }
 }

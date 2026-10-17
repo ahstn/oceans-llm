@@ -158,9 +158,9 @@ Effective capability is the intersection of configured route metadata and provid
 
 - Route `capabilities` declares what the route should be allowed to attempt.
 - Provider implementations still enforce what they can actually execute.
-- Capability defaults are permissive, so routes for partial providers should set unsupported API families to `false`.
+- Omitted capability flags default to what the provider type and compatibility profile can serve. See [Route Config](../configuration/configuration-reference.md#route-config) for the derived defaults.
 
-For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false`. A separate Vertex text-embedding route can set `embeddings: true` only when its `upstream_model` is one of the supported Google embedding models. Otherwise the route may look viable from config alone and still fail when provider capability checks reject the unsupported API family or model.
+For example, a Vertex route derives its capabilities from `upstream_model`: Google chat models get chat but not Responses or embeddings, and supported Google embedding models get embeddings only, with no flags set. Generic OpenAI-compatible providers still default to every API family, so routes for partial deployments should set unsupported families to `false`.
 
 For Cloud Run OpenAI-compatible routes, set capabilities to the endpoints exposed by the deployed service. The gateway adapter can construct Chat Completions, Responses, embeddings, and streams through the OpenAI-compatible path, but a vLLM deployment might only enable some of those endpoints.
 

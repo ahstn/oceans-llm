@@ -98,39 +98,33 @@ agent_analysis:
   cache_profiles: []
 
 providers:
-  - id: openai-prod
+  openai-prod:
     type: openai_compat
     base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY
 
-  - id: openai-secondary
+  openai-secondary:
     type: openai_compat
     base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY_SECONDARY
 
-  - id: vertex-adc
+  vertex-adc:
     type: gcp_vertex
     project_id: your-gcp-project
-    location: global
     auth:
       mode: adc
 
-  - id: vertex-claude
+  vertex-claude:
     type: gcp_vertex
     project_id: your-gcp-project
-    location: global
     auth:
       mode: service_account
       credentials_path: /path/to/service-account.json
 
 models:
-  - id: openai-fast-v2
+  openai-fast-v2:
     description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
     routes:
       - provider: openai-prod
@@ -140,18 +134,18 @@ models:
         upstream_model: gpt-6-astra
         weight: 1.0
 
-  - id: openai-fast
+  openai-fast:
     description: Alias kept for backward compatibility
     alias_of: openai-fast-v2
 
-  - id: gemini-fast
+  gemini-fast:
     description: Gemini on Vertex
-    routes:
-      - provider: vertex-adc
-        upstream_model: google/gemini-2.0-flash
+    route:
+      provider: vertex-adc
+      upstream_model: google/gemini-2.0-flash
 
-  - id: claude-sonnet
+  claude-sonnet:
     description: Claude on Vertex
-    routes:
-      - provider: vertex-claude
-        upstream_model: anthropic/claude-sonnet-4-6
+    route:
+      provider: vertex-claude
+      upstream_model: anthropic/claude-sonnet-4-6

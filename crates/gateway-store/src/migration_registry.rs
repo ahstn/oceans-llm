@@ -407,6 +407,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
         ),
     },
+    MigrationManifest {
+        version: 67,
+        name: "batch_jobs_route_index",
+        checksum: "V67__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V67__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__batch_jobs_route_index.sql"),
+    },
 ];
 
 #[cfg(test)]

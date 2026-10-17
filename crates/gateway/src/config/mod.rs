@@ -1,10 +1,5 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fs,
-    path::Path,
-};
+use std::collections::{BTreeMap, HashMap};
 
-use anyhow::Context;
 use gateway_guardrails::{GuardrailConfig, redact_json_secrets};
 use gateway_service::{PayloadSecretRedactor, RequestLogPayloadPolicy};
 use gateway_store::StoreConnectionOptions;
@@ -14,9 +9,11 @@ mod agent_analysis;
 mod auth;
 mod budget_alerts;
 mod budgets;
+mod collections;
 mod database;
 mod guardrails;
 mod identity;
+mod loader;
 mod mcp;
 mod mcp_client_oauth;
 mod models;
@@ -54,6 +51,7 @@ pub use database::DatabaseConfig;
 pub use identity::{
     ServiceAccountConfig, ServiceAccountKeyConfig, TeamConfig, UserConfig, UserMembershipConfig,
 };
+pub use loader::{ConfigEntitySource, ConfigSources, LoadedConfig, render_config};
 pub use mcp::{McpConfig, McpOauthConfig, McpOauthProviderConfig};
 pub use mcp_client_oauth::{ClientIdMetadataDocumentsConfig, McpClientOauthConfig};
 pub use models::{ModelAllowlistConfig, ModelConfig};
@@ -116,9 +114,9 @@ pub struct GatewayConfig {
     pub guardrails: GuardrailConfig,
     #[serde(default)]
     pub permissions: PermissionsConfig,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "collections::deserialize_providers")]
     pub providers: Vec<ProviderConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "collections::deserialize_models")]
     pub models: Vec<ModelConfig>,
     #[serde(default)]
     pub teams: Vec<TeamConfig>,
@@ -129,21 +127,10 @@ pub struct GatewayConfig {
 }
 
 impl GatewayConfig {
-    pub fn from_path(path: &Path) -> anyhow::Result<Self> {
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("failed reading config file `{}`", path.display()))?;
-        let parsed: Self = serde_yaml::from_str(&raw)
-            .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;
-
-        parsed
-            .validate()
-            .with_context(|| format!("invalid gateway configuration `{}`", path.display()))?;
-
-        Ok(parsed)
+    /// Fills fields that other config already determines: route ids and pricing catalog ids.
+    fn apply_inferred_defaults(&mut self) {
+        providers::infer_pricing_provider_ids(&mut self.providers);
+        models::infer_route_ids(&mut self.models);
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -153,11 +140,6 @@ impl GatewayConfig {
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.agent_analysis.validate()?;
-        let model_route_keys = self.guardrail_model_route_keys();
-        // MCP server references are checked against the seeded registry during startup.
-        let configured_mcp_server_keys = self.guardrails.mcp_servers.keys().cloned().collect();
-        self.guardrails
-            .validate(&model_route_keys, &configured_mcp_server_keys)?;
         self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
@@ -178,6 +160,13 @@ impl GatewayConfig {
         providers::validate_providers(&self.providers)?;
 
         models::validate_models(&self.models, &model_by_id, &provider_by_id)?;
+
+        // Guardrail route keys come from models, so validate them once models are known valid.
+        let model_route_keys = self.guardrail_model_route_keys();
+        // MCP server references are checked against the seeded registry during startup.
+        let configured_mcp_server_keys = self.guardrails.mcp_servers.keys().cloned().collect();
+        self.guardrails
+            .validate(&model_route_keys, &configured_mcp_server_keys)?;
 
         budgets::validate_user_defaults(&self.budgets, &model_by_id)?;
         self.rate_limits.validate(&model_by_id)?;

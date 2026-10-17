@@ -298,11 +298,11 @@ Capabilities remove incompatible routes before provider execution:
 | `json_schema` | Structured output using JSON Schema |
 | `developer_role` | A developer-role message |
 
-Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
+Effective support is the intersection of the route's capabilities and what the provider type can serve. Omitted route flags take the values the provider and compatibility profile imply: Bedrock `api_style`, GitHub Copilot `upstream_supports`, and the Decisions transports all set their own defaults. See [Route Config](configuration-reference.md#route-config) for the table. Generic OpenAI-compatible routes still default to every capability except `decisions`, so a route that serves only part of a provider's API should disable the rest explicitly.
 
-`decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`.
+Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`. Those routes derive `decisions` as the only capability.
 
-For example, an embedding-only route should normally disable unrelated capabilities:
+For example, an embedding-only route on a generic provider should disable unrelated capabilities:
 
 ```yaml
 capabilities:

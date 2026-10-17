@@ -153,17 +153,7 @@ impl ProviderClient for AnthropicCompatProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            chat_completions: true,
-            responses: false,
-            stream: true,
-            embeddings: false,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: false,
-            developer_role: false,
-        }
+        ProviderCapabilities::anthropic_compat_baseline()
     }
 
     async fn chat_completions(

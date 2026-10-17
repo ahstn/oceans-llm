@@ -711,17 +711,7 @@ impl ProviderClient for BedrockProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: false,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }
+        ProviderCapabilities::aws_bedrock_baseline()
     }
 
     async fn chat_completions(

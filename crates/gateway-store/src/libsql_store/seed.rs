@@ -251,6 +251,48 @@ impl LibsqlStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
+        // Only routes a batch job references survive the per-model delete below. Load those of
+        // the configured models once, so a renamed route reuses its surviving row instead of
+        // inserting a second row that the (model, provider, upstream, priority) unique key rejects.
+        let configured_model_ids = model_ids
+            .values()
+            .map(|model_id| libsql::Value::Text(model_id.to_string()))
+            .collect::<Vec<_>>();
+        let mut survivors_by_model = std::collections::HashMap::<
+            String,
+            std::collections::HashMap<(String, String, i64), String>,
+        >::new();
+        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
+        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
+        const SURVIVOR_QUERY_CHUNK: usize = 500;
+        for chunk in configured_model_ids.chunks(SURVIVOR_QUERY_CHUNK) {
+            let placeholders = (1..=chunk.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut survivor_rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders}) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)"
+                    ),
+                    libsql::params::Params::Positional(chunk.to_vec()),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                let model_id: String = row.get(1).map_err(to_query_error)?;
+                let provider_key: String = row.get(2).map_err(to_query_error)?;
+                let upstream_model: String = row.get(3).map_err(to_query_error)?;
+                let priority: i64 = row.get(4).map_err(to_query_error)?;
+                survivors_by_model
+                    .entry(model_id)
+                    .or_default()
+                    .insert((provider_key, upstream_model, priority), id);
+            }
+        }
+
         // Insert model rows first with a null alias target so config order does not
         // matter for self-referential alias foreign keys.
         for model in models {
@@ -349,15 +391,29 @@ impl LibsqlStore {
                 }
             }
 
+            // Each survivor is used at most once, so two configured routes sharing the unique key
+            // still fail instead of overwriting each other.
+            let mut survivors = survivors_by_model
+                .remove(&model_id.to_string())
+                .unwrap_or_default();
+
             for (route_index, route) in model.routes.iter().enumerate() {
-                let route_id = route_uuid(
-                    &model.model_key,
-                    route.route_key.as_deref(),
-                    &route.provider_key,
-                    &route.upstream_model,
-                    route.priority,
-                    route_index,
-                );
+                let survivor = survivors.remove(&(
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                    i64::from(route.priority),
+                ));
+                let route_id = match survivor {
+                    Some(raw) => parse_uuid(&raw)?,
+                    None => route_uuid(
+                        &model.model_key,
+                        route.route_key.as_deref(),
+                        &route.provider_key,
+                        &route.upstream_model,
+                        route.priority,
+                        route_index,
+                    ),
+                };
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;

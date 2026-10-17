@@ -49,7 +49,7 @@ impl GatewayConfig {
 
                     let secrets = provider.auth.as_ref().map(|auth| {
                         json!({
-                            "kind": auth.kind,
+                            "kind": auth.kind.as_deref().unwrap_or("bearer"),
                             "token": auth.token,
                         })
                     });
@@ -107,7 +107,7 @@ impl GatewayConfig {
 
                     let secrets = provider.auth.as_ref().map(|auth| {
                         json!({
-                            "kind": auth.kind,
+                            "kind": auth.kind.as_deref().unwrap_or("bearer"),
                             "token": auth.token,
                         })
                     });
@@ -328,6 +328,11 @@ impl GatewayConfig {
     }
 
     pub fn seed_models(&self) -> anyhow::Result<Vec<SeedModel>> {
+        let provider_by_id = self
+            .providers
+            .iter()
+            .map(|provider| (provider.id(), provider))
+            .collect::<std::collections::BTreeMap<_, _>>();
         let models = self
             .models
             .iter()
@@ -368,7 +373,9 @@ impl GatewayConfig {
                                     .map(|(key, value)| (key.clone(), Value::String(value.clone())))
                                     .collect::<Map<String, Value>>(),
                                 extra_body: route.extra_body.clone(),
-                                capabilities: route.capabilities.clone().into_capabilities(),
+                                capabilities: route.effective_capabilities(
+                                    provider_by_id.get(route.provider.as_str()).copied(),
+                                ),
                                 compatibility: route.compatibility.clone().into_compatibility(),
                             })
                         })
