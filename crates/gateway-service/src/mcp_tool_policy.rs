@@ -5,9 +5,9 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, GatewayError,
-    McpAccessRepository, McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect,
-    McpToolTagRuleKey, McpToolTagRuleRecord, StoreError, Updated,
+    ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError, McpAccessRepository,
+    McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect, McpToolTagRuleKey,
+    McpToolTagRuleRecord, StoreError, Updated,
     mcp_tool_policy::{effective_tags, normalize_admin_tags, normalize_rule_tag},
 };
 use time::OffsetDateTime;
@@ -146,42 +146,25 @@ where
                 "an include rule must name a server".to_string(),
             ));
         }
-        let server_ids = match mcp_server_id {
-            // A disabled server serves no tools, so its rule matches nothing.
-            Some(server_id) => {
-                let server = self.rule_server(server_id).await?;
-                if server.status == ExternalMcpServerStatus::Active {
-                    vec![server_id]
-                } else {
-                    Vec::new()
-                }
-            }
-            // Match runtime resolution, which reads only active servers.
-            None => self
-                .repo
-                .list_external_mcp_servers(false)
-                .await?
-                .into_iter()
-                .filter(|server| server.status == ExternalMcpServerStatus::Active)
-                .map(|server| server.mcp_server_id)
-                .collect(),
-        };
+        if let Some(server_id) = mcp_server_id {
+            self.rule_server(server_id).await?;
+        }
+        // One query for active tools on active servers, the same candidates
+        // runtime resolution reads; a disabled server yields nothing.
         let mut preview = McpTagRulePreview::default();
-        for server_id in server_ids {
-            for tool in self.repo.list_external_mcp_tools(server_id, false).await? {
-                let tags = effective_tags(&tool);
-                if !tags.contains(&tag) {
-                    continue;
-                }
-                if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
-                    preview.truncated = true;
-                    return Ok(preview);
-                }
-                preview.matches.push(McpTagRuleMatch {
-                    tool,
-                    effective_tags: tags.into_iter().collect(),
-                });
+        for tool in self.repo.list_active_mcp_tools(mcp_server_id).await? {
+            let tags = effective_tags(&tool);
+            if !tags.contains(&tag) {
+                continue;
             }
+            if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
+                preview.truncated = true;
+                break;
+            }
+            preview.matches.push(McpTagRuleMatch {
+                tool,
+                effective_tags: tags.into_iter().collect(),
+            });
         }
         Ok(preview)
     }
