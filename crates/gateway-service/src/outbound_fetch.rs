@@ -47,7 +47,7 @@ impl OutboundAddressScope {
     /// The scope for requests on behalf of the admin-entered `url`.
     ///
     /// Only something an admin wrote widens it, never a DNS answer, which the
-    /// server's operator controls: an IP-literal host by its own class,
+    /// upstream server controls: an IP-literal host by its own class,
     /// `localhost` as loopback, and a host listed in `private_network_hosts`
     /// (or a subdomain of one) as a private network. Every other host is
     /// public, whatever it resolves to.

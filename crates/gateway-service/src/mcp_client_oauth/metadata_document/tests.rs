@@ -243,6 +243,14 @@ fn the_domain_allowlist_matches_hosts_and_their_subdomains() {
 }
 
 #[test]
+fn must_revalidate_forbids_stale_reuse() {
+    assert!(must_revalidate(Some("max-age=60, must-revalidate")));
+    assert!(must_revalidate(Some("Proxy-Revalidate")));
+    assert!(!must_revalidate(Some("max-age=60")));
+    assert!(!must_revalidate(None));
+}
+
+#[test]
 fn in_flight_entries_leave_with_their_last_caller() {
     let map = Mutex::new(HashMap::new());
     let first = InFlight::join(&map, CLIENT_ID);

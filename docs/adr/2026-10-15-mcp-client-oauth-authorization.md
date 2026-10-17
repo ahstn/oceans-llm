@@ -184,7 +184,7 @@ A client may use an https URL as its `client_id` instead of registering. The URL
 
 **When it is used.** The gateway resolves the document at the authorization endpoint, at the token endpoint for both the code and refresh grants, and at revocation. A changed document therefore takes effect when the cache entry expires. When the code is redeemed, its redirect URI must still be in the document. Two failure cases fall back instead of failing:
 
-- A transient fetch failure (timeout, DNS failure, `408`, `429`, or a `5xx`) uses the copy this process last cached, for up to 24 hours past its freshness, so a short outage at the client's host does not break refreshes. A document served `no-store` or `no-cache` is never cached, so it never stands in; without a cached copy the request fails with a retryable `temporarily_unavailable`.
+- A transient fetch failure (timeout, DNS failure, `408`, `429`, or a `5xx`) uses the copy this process last cached, for up to 24 hours past its freshness, so a short outage at the client's host does not break refreshes. The copy is written back to the database first, so cleanup, which ages rows by their last write, keeps it. A document served `no-store` or `no-cache` is never cached, and one served `must-revalidate` or `proxy-revalidate` is never reused once stale, so neither stands in; without a cached copy the request fails with a retryable `temporarily_unavailable`.
 - Revocation uses the stored row whatever went wrong, because ending a grant is always safe. A client whose document was removed can still revoke its tokens.
 
 Any other failure, such as a `404` or a document that no longer validates, refuses the request. Removing the document therefore stops new sign-ins and refreshes for that client.

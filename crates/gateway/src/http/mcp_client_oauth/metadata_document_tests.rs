@@ -365,6 +365,27 @@ async fn passing_failures_reuse_only_a_cacheable_copy() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(page.contains("HTTP 404"), "{page}");
 
+    // The stand-in is written back, so cleanup sees it in use.
+    let stored = harness
+        .state
+        .store
+        .get_gateway_oauth_client(CLIENT_ID)
+        .await
+        .unwrap()
+        .expect("stored client");
+    assert!(stored.updated_at > stored.created_at, "{stored:?}");
+
+    // A must-revalidate document is not reused once stale either.
+    let strict = "https://editor.example.com/oauth/strict.json";
+    let mut strict_document = editor_document();
+    strict_document["client_id"] = json!(strict);
+    fixture.publish(strict, &strict_document, Some("max-age=1, must-revalidate"));
+    harness.start(&harness.authorize_query(strict, &[])).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    fixture.respond(strict, 503);
+    let (status, page) = body_text(&harness, &harness.authorize_query(strict, &[])).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{page}");
+
     // A no-store document is never reused, so a passing failure is a
     // retryable error rather than a stand-in.
     let uncached = "https://editor.example.com/oauth/no-store.json";

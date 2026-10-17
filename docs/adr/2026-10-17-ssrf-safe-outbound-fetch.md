@@ -56,7 +56,7 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 ### 4. How each feature picks a scope
 
 - **Client ID Metadata Documents** always use `Public`, with a 5 second timeout and a 64 KiB limit. The URL comes from an unauthenticated caller.
-- **Upstream discovery, dynamic registration, and token requests** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. Only what an admin wrote can widen it, never a DNS answer, which the server's operator controls:
+- **Upstream discovery, dynamic registration, and token requests** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. Only what an admin wrote can widen it, never a DNS answer, because the upstream server controls its own DNS:
   - an IP-literal host takes its own class: `Loopback` for `127.0.0.1`, `PrivateNetwork` for `10.0.0.5`
   - `localhost` is `Loopback`
   - a host listed in `mcp.oauth.private_network_hosts`, or a subdomain of one, is `PrivateNetwork`
@@ -72,7 +72,7 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 - A listed internal server can still point discovery at other internal hosts on any private network. Link-local and metadata addresses stay blocked for it.
 - A server-level OAuth client whose token endpoint sits on a more private network than its MCP server, such as a public server with an internal identity provider, cannot exchange or refresh tokens. Discovery would already have refused that authorization server. Such a deployment can configure the identity provider under `mcp.oauth.providers` instead.
 - The classification table is maintained by hand. New special-purpose ranges need adding as they are assigned.
-- Only the well-known NAT64 prefix `64:ff9b::/96` is decoded. RFC 6052 also allows network-specific NAT64 prefixes, which only the operator of a network knows. On a gateway host that routes one, an address under it is judged as ordinary IPv6, so the IPv4 address it embeds is not checked. Such a deployment should filter the translated IPv4 traffic at the NAT64 gateway, or not route the prefix from the gateway host.
+- Only the well-known NAT64 prefix `64:ff9b::/96` is decoded. RFC 6052 also allows network-specific NAT64 prefixes, which differ from network to network and cannot be known in advance. On a gateway host that routes one, an address under it is judged as ordinary IPv6, so the IPv4 address it embeds is not checked. Such a deployment should filter the translated IPv4 traffic at the NAT64 gateway, or not route the prefix from the gateway host.
 
 ## Follow-ups
 

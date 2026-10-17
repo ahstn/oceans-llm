@@ -116,6 +116,9 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
 struct CachedClient {
     client: GatewayOauthClientRecord,
     fresh_until: OffsetDateTime,
+    /// False when the document said `must-revalidate` or `proxy-revalidate`:
+    /// once stale, it may only be used again after a successful fetch.
+    reusable_when_stale: bool,
 }
 
 impl CachedClient {
@@ -211,14 +214,20 @@ impl ClientMetadataDocuments {
             Err(failure) => failure,
         };
         if failure.transient
-            && let Some(stale) = self.stale(client_id, now)
+            && let Some(mut stale) = self.stale(client_id, now)
         {
             tracing::warn!(
                 client_id,
                 error = %failure.error.description,
                 "using the cached copy of an unavailable client metadata document"
             );
-            return Ok(stale);
+            // Write the copy back first: cleanup ages these rows by their last
+            // write, and requests and grants need the row to exist.
+            stale.updated_at = now;
+            return repo
+                .upsert_gateway_oauth_metadata_document_client(&stale)
+                .await
+                .map_err(OauthError::from);
         }
         if stored_fallback && let Some(stored) = stored_client(repo, client_id).await? {
             return Ok(stored);
@@ -254,7 +263,12 @@ impl ClientMetadataDocuments {
                 })
             })?;
         if fetched.ttl > Duration::ZERO {
-            self.remember(stored.clone(), now, now + fetched.ttl);
+            self.remember(
+                stored.clone(),
+                now,
+                now + fetched.ttl,
+                fetched.reusable_when_stale,
+            );
         } else {
             self.forget(client_id);
         }
@@ -275,7 +289,7 @@ impl ClientMetadataDocuments {
         let cache = self.cache.lock().expect("metadata document cache lock");
         cache
             .get(client_id)
-            .filter(|entry| entry.usable_until() > now)
+            .filter(|entry| entry.reusable_when_stale && entry.usable_until() > now)
             .map(|entry| entry.client.clone())
     }
 
@@ -284,6 +298,7 @@ impl ClientMetadataDocuments {
         client: GatewayOauthClientRecord,
         now: OffsetDateTime,
         fresh_until: OffsetDateTime,
+        reusable_when_stale: bool,
     ) {
         let mut cache = self.cache.lock().expect("metadata document cache lock");
         if cache.len() >= MAX_CACHED_DOCUMENTS && !cache.contains_key(&client.client_id) {
@@ -302,6 +317,7 @@ impl ClientMetadataDocuments {
             CachedClient {
                 client,
                 fresh_until,
+                reusable_when_stale,
             },
         );
     }
@@ -360,6 +376,7 @@ impl ClientMetadataDocuments {
         Ok(ValidatedDocument {
             client,
             ttl: cache_ttl(fetched.cache_control.as_deref(), Some(age)),
+            reusable_when_stale: !must_revalidate(fetched.cache_control.as_deref()),
         })
     }
 
@@ -427,6 +444,7 @@ impl Drop for InFlight<'_> {
 struct ValidatedDocument {
     client: GatewayOauthClientRecord,
     ttl: Duration,
+    reusable_when_stale: bool,
 }
 
 #[derive(Clone)]
@@ -642,6 +660,18 @@ fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration 
     max_age.map_or(DEFAULT_CACHE_TTL, |seconds| {
         let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
         Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
+    })
+}
+
+/// Whether the document forbids reuse once stale without a successful fetch
+/// (`must-revalidate`, or `proxy-revalidate` from a cache in between).
+fn must_revalidate(cache_control: Option<&str>) -> bool {
+    cache_control.is_some_and(|value| {
+        value.split(',').any(|directive| {
+            let directive = directive.trim();
+            directive.eq_ignore_ascii_case("must-revalidate")
+                || directive.eq_ignore_ascii_case("proxy-revalidate")
+        })
     })
 }
 
