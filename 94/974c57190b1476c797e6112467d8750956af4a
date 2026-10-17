@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_e88dc7cf2999d1::t_8328129960b11e 385
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_e88dc7cf2999d1::t_59c77360610916 13-15
+crates/gateway-store/src/libsql_store/mcp_access/resolution.rs
+  s_e88dc7cf2999d1::t_e602ea5bd56ac0 1-438
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_3ec777b9f0997c 17-19
+crates/gateway-store/src/libsql_store/mcp_registry/tool_versions.rs
+  s_7a5811202bdfd5::t_28a9df28015f3d 1-522
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_e88dc7cf2999d1::t_5f6aa09be8fb33 13-15
+crates/gateway-store/src/postgres_store/mcp_access/resolution.rs
+  s_e88dc7cf2999d1::t_f14e3e40a3ba74 1-360
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_e036f487f8ce88 17-19,145-160
+crates/gateway-store/src/postgres_store/mcp_registry/tool_versions.rs
+  s_e88dc7cf2999d1::t_7df80a35b58a90 1-463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94974c57190b1476c797e6112467d8750956af4a",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
