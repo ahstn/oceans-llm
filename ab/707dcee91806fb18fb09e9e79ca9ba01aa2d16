@@ -1,0 +1,41 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_7a5811202bdfd5::t_2755f3a0f51099 406-409
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_7a5811202bdfd5::t_8c58b48b5f60ad 60-61,992-1032,1046-1048,1051-1053,1058,1076
+crates/admin-ui/web/src/routes/mcp/-server-forms.ts
+  s_7a5811202bdfd5::t_8cdb24f51c0e9a 22-23,53,80,102,122-123
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_7a5811202bdfd5::t_cec97e0d9619df 452-456
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_e88dc7cf2999d1::t_d07678e6408856 870-895
+crates/gateway-service/src/mcp_ownership.rs
+  s_7a5811202bdfd5::t_0f8ed6bb0de6e7 275-277,284,288,295-296,301-318,619-620,622-625
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_fce6c0ff6160ae 902-903,915-933,1117-1125,1310-1315
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_b9d1d391af6cc1 33,80,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab707dcee91806fb18fb09e9e79ca9ba01aa2d16",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
