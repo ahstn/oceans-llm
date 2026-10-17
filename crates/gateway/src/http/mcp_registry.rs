@@ -917,13 +917,18 @@ pub async fn preview_mcp_effective_access(
     Query(query): Query<McpEffectiveAccessQuery>,
 ) -> Result<Json<Envelope<McpEffectiveAccessPayload>>, AppError> {
     require_platform_admin(&state, &headers).await?;
-    let subjects = preview_subjects(&query);
-    if subjects.is_empty() {
+    let selected = preview_subjects(&query);
+    if selected.is_empty() {
         return Err(GatewayError::InvalidRequest(
             "at least one access preview subject is required".to_string(),
         )
         .into());
     }
+    // Preview what a real caller gets: a key with its owner and team, a user
+    // or service account with its team.
+    let subjects = gateway_service::McpAccess::new(state.store.clone())
+        .preview_subjects(&selected)
+        .await?;
     let resolution = state
         .store
         .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)

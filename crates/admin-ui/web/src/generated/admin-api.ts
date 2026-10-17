@@ -3787,8 +3787,13 @@ export interface components {
         };
         Envelope_McpTagRulePreviewPayload: {
             data: {
-                /** @description Active tools the rule would select. Only this rule is applied. */
+                /**
+                 * @description Active tools the rule would select, at most 200. Only this rule is
+                 *     applied.
+                 */
                 tools: components["schemas"]["McpToolView"][];
+                /** @description More tools match than the preview returns. */
+                truncated: boolean;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4397,8 +4402,13 @@ export interface components {
             rule: components["schemas"]["McpTagRuleView"];
         };
         McpTagRulePreviewPayload: {
-            /** @description Active tools the rule would select. Only this rule is applied. */
+            /**
+             * @description Active tools the rule would select, at most 200. Only this rule is
+             *     applied.
+             */
             tools: components["schemas"]["McpToolView"][];
+            /** @description More tools match than the preview returns. */
+            truncated: boolean;
         };
         McpTagRuleView: {
             created_at: string;

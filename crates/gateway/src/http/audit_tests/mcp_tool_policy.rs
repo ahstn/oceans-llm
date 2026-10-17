@@ -374,3 +374,112 @@ async fn tool_version_reviews_are_audited_and_apply_once() {
         true
     );
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn previews_match_runtime_resolution() {
+    let harness = Harness::new().await;
+    let (server_id, tool_id) = seed_tool(&harness).await;
+
+    // A rule preview rejects an unknown server, as saving the rule does.
+    let (status, _) = harness
+        .admin(
+            Method::GET,
+            &format!(
+                "/api/v1/admin/mcp/tag-rules/preview?server_id={}&tag=destructive&effect=exclude",
+                Uuid::new_v4()
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A team member's effective access includes the team's grants and rules.
+    let (status, team) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/identity/teams",
+            Some(json!({ "name": "Readers", "admin_user_ids": [] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{team}");
+    let team_id = team["data"]["id"].as_str().expect("team id").to_string();
+    let (status, user) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/identity/users",
+            Some(json!({
+                "name": "Reader",
+                "email": "reader@example.test",
+                "auth_mode": "password",
+                "global_role": "user",
+                "team_id": team_id,
+                "team_role": "member",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{user}");
+    let user_id = user["data"]["user"]["id"]
+        .as_str()
+        .expect("user id")
+        .to_string();
+    let (status, body) = harness
+        .admin(
+            Method::PUT,
+            "/api/v1/admin/mcp/grants",
+            Some(json!({
+                "subject_kind": "user",
+                "subject_id": user_id,
+                "target_kind": "tool",
+                "target_id": tool_id,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview =
+        format!("/api/v1/admin/mcp/effective-access?user_id={user_id}&server_id={server_id}");
+    let (_, access) = harness.admin(Method::GET, &preview, None).await;
+    assert_eq!(access["data"]["tools"][0]["id"], tool_id);
+
+    // `read_file` declares readOnlyHint false, so it is destructive.
+    let (status, body) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/mcp/tag-rules",
+            Some(json!({
+                "subject_kind": "team",
+                "subject_id": team_id,
+                "tag": "destructive",
+                "effect": "exclude",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, access) = harness.admin(Method::GET, &preview, None).await;
+    assert_eq!(
+        access["data"]["tools"],
+        json!([]),
+        "the team's exclude rule applies"
+    );
+
+    // A disabled server serves nothing, so a rule on it previews no tools.
+    let (status, _) = harness
+        .admin(
+            Method::POST,
+            &format!("/api/v1/admin/mcp/servers/{server_id}/disable"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, matched) = harness
+        .admin(
+            Method::GET,
+            &format!(
+                "/api/v1/admin/mcp/tag-rules/preview?server_id={server_id}&tag=destructive&effect=include"
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{matched}");
+    assert_eq!(matched["data"]["tools"], json!([]));
+}

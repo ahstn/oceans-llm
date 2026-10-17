@@ -107,8 +107,11 @@ pub struct McpTagRulePreviewQuery {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct McpTagRulePreviewPayload {
-    /// Active tools the rule would select. Only this rule is applied.
+    /// Active tools the rule would select, at most 200. Only this rule is
+    /// applied.
     tools: Vec<McpToolView>,
+    /// More tools match than the preview returns.
+    truncated: bool,
 }
 
 fn parse_effect(value: &str) -> Result<McpTagRuleEffect, AppError> {
@@ -383,13 +386,15 @@ pub async fn preview_mcp_tag_rule(
 ) -> Result<Json<Envelope<McpTagRulePreviewPayload>>, AppError> {
     require_platform_admin(&state, &headers).await?;
     let effect = parse_effect(&query.effect)?;
-    let matches = McpToolPolicyService::new(state.store.clone())
+    let preview = McpToolPolicyService::new(state.store.clone())
         .preview_rule(query.server_id, &query.tag, effect)
         .await?;
     Ok(Json(envelope(McpTagRulePreviewPayload {
-        tools: matches
+        tools: preview
+            .matches
             .into_iter()
             .map(|item| map_tool(item.tool))
             .collect(),
+        truncated: preview.truncated,
     })))
 }

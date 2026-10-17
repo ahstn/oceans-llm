@@ -118,7 +118,9 @@ pub use mcp_registry::{
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
-pub use mcp_tool_policy::{McpTagRuleMatch, McpToolPolicyService};
+pub use mcp_tool_policy::{
+    MAX_TAG_RULE_PREVIEW_MATCHES, McpTagRuleMatch, McpTagRulePreview, McpToolPolicyService,
+};
 pub use mcp_upstream_auth::{
     API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,

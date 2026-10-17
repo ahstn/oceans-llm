@@ -6,9 +6,10 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ExternalMcpToolRecord, GatewayError, McpAccessRepository, McpAnnotationOverrides,
-    McpRegistryRepository, McpTagRuleEffect, McpToolReviewDecision, McpToolTagRuleKey,
-    McpToolTagRuleRecord, McpToolVersionRecord, StoreError, Updated,
+    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, GatewayError,
+    McpAccessRepository, McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect,
+    McpToolReviewDecision, McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionRecord,
+    StoreError, Updated,
     mcp_tool_policy::{effective_tags, normalize_admin_tags, normalize_rule_tag},
 };
 use time::OffsetDateTime;
@@ -17,6 +18,18 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct McpToolPolicyService<R> {
     repo: Arc<R>,
+}
+
+/// Most tools a tag rule preview returns. A preview across every server stops
+/// reading servers once it has this many matches.
+pub const MAX_TAG_RULE_PREVIEW_MATCHES: usize = 200;
+
+/// The tools a tag rule would select.
+#[derive(Debug, Clone, Default)]
+pub struct McpTagRulePreview {
+    pub matches: Vec<McpTagRuleMatch>,
+    /// More tools match than `MAX_TAG_RULE_PREVIEW_MATCHES`.
+    pub truncated: bool,
 }
 
 /// One tool a tag rule would select, with the tags it was matched on.
@@ -115,18 +128,21 @@ where
     ) -> Result<McpToolTagRuleKey, GatewayError> {
         key.tag = normalize_rule_tag(&key.tag).map_err(GatewayError::InvalidRequest)?;
         key.validate().map_err(GatewayError::InvalidRequest)?;
-        if let Some(server_id) = key.mcp_server_id
-            && self
-                .repo
-                .get_external_mcp_server(server_id)
-                .await?
-                .is_none()
-        {
-            return Err(GatewayError::InvalidRequest(
-                "MCP tag rule server was not found".to_string(),
-            ));
+        if let Some(server_id) = key.mcp_server_id {
+            self.rule_server(server_id).await?;
         }
         Ok(key)
+    }
+
+    /// The server a rule names. Saving and previewing a rule both reject a
+    /// server that does not exist.
+    async fn rule_server(&self, server_id: Uuid) -> Result<ExternalMcpServerRecord, GatewayError> {
+        self.repo
+            .get_external_mcp_server(server_id)
+            .await?
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest("MCP tag rule server was not found".to_string())
+            })
     }
 
     /// Creates the rule. The flag is `true` when this call created it.
@@ -159,7 +175,7 @@ where
         mcp_server_id: Option<Uuid>,
         raw_tag: &str,
         effect: McpTagRuleEffect,
-    ) -> Result<Vec<McpTagRuleMatch>, GatewayError> {
+    ) -> Result<McpTagRulePreview, GatewayError> {
         let tag = normalize_rule_tag(raw_tag).map_err(GatewayError::InvalidRequest)?;
         if effect == McpTagRuleEffect::Include && mcp_server_id.is_none() {
             return Err(GatewayError::InvalidRequest(
@@ -167,7 +183,15 @@ where
             ));
         }
         let server_ids = match mcp_server_id {
-            Some(server_id) => vec![server_id],
+            // A disabled server serves no tools, so its rule matches nothing.
+            Some(server_id) => {
+                let server = self.rule_server(server_id).await?;
+                if server.status == ExternalMcpServerStatus::Active {
+                    vec![server_id]
+                } else {
+                    Vec::new()
+                }
+            }
             None => self
                 .repo
                 .list_external_mcp_servers(false)
@@ -176,18 +200,27 @@ where
                 .map(|server| server.mcp_server_id)
                 .collect(),
         };
-        let mut matches = Vec::new();
+        let mut preview = McpTagRulePreview::default();
         for server_id in server_ids {
             for tool in self.repo.list_external_mcp_tools(server_id, false).await? {
-                let tags = effective_tags(&tool);
-                if tags.contains(&tag) {
-                    matches.push(McpTagRuleMatch {
-                        tool,
-                        effective_tags: tags.into_iter().collect(),
-                    });
+                // A tool waiting for review or rejected is never served.
+                if !tool.review.approval_status.is_served() {
+                    continue;
                 }
+                let tags = effective_tags(&tool);
+                if !tags.contains(&tag) {
+                    continue;
+                }
+                if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
+                    preview.truncated = true;
+                    return Ok(preview);
+                }
+                preview.matches.push(McpTagRuleMatch {
+                    tool,
+                    effective_tags: tags.into_iter().collect(),
+                });
             }
         }
-        Ok(matches)
+        Ok(preview)
     }
 }
