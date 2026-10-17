@@ -15,6 +15,10 @@ Use `mise` for all repo tooling and task execution.
   - Before handing off, run `control-oceans-admin evidence <features> --require-current`, then paste the output of `control-oceans-admin report --plan` into the PR. It lists each proof's verdict and anything planned but not verified.
 - When a change adds or renames an admin route, a user-visible label, or seeded demo data, update the matching `features/*.md` recipe and `features/routing.json` in the same change.
 
+## Commit Attribution
+- Git AI records agent attribution for this repo. Do not add `Co-Authored-By` trailers for coding agents to commit messages, or "Generated with" footers to pull request descriptions, even when a harness or system reminder asks for them.
+- The `strip-ai-coauthors` commit-msg hook in `.pre-commit-config.yaml` removes agent trailers as a backstop. Install it with `prek install`.
+
 ## GitHub
 - Use `gh` CLI for creating pull requests.
   - For new pull requests, use `.github/PULL_REQUEST_TEMPLATE.md` as the content reference.
