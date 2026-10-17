@@ -102,10 +102,7 @@ impl McpAdminScope {
     pub fn can_view(&self, server: &ExternalMcpServerRecord) -> bool {
         match self.managed_team_id() {
             None => true,
-            Some(team_id) => {
-                server.ownership.owned_by(team_id)
-                    || server.ownership.visibility == McpServerVisibility::Organisation
-            }
+            Some(team_id) => server.ownership.is_reachable_from(Some(team_id)),
         }
     }
 

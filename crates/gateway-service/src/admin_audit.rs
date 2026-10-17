@@ -565,6 +565,30 @@ where
             }
         }
     }
+
+    /// Writes one entry per event for a change that has already succeeded, in
+    /// a few multi-row inserts rather than one round trip each. A failed write
+    /// is logged, as in [`Self::record`].
+    pub async fn record_all(&self, context: &AuditContext, events: Vec<AuditEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let at = now_millis();
+        let records: Vec<_> = events
+            .into_iter()
+            .map(|event| event.into_record(context, at))
+            .collect();
+        if let Err(error) = self.repo.insert_audit_logs(&records).await {
+            tracing::error!(
+                audit_action = %records[0].action,
+                audit_entries = records.len(),
+                actor_kind = records[0].actor.kind.as_str(),
+                actor_user_id = ?records[0].actor.user_id,
+                error = %error,
+                "failed to write admin audit entries"
+            );
+        }
+    }
 }
 
 /// Replaces secret-looking values in an audit summary with [`AUDIT_REDACTED`].

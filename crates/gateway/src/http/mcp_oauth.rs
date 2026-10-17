@@ -403,11 +403,7 @@ async fn complete_oauth_callback(
             // now the binding is stored: a user who left the team meanwhile
             // keeps no connection to its team-only server.
             let team_id = user_team(state, transaction.user_id).await?;
-            let reachable = exchanged_with.visibility
-                == gateway_core::McpServerVisibility::Organisation
-                || exchanged_with
-                    .owner_team_id
-                    .is_some_and(|owner| Some(owner) == team_id);
+            let reachable = exchanged_with.is_reachable_from(team_id);
             if !reachable {
                 // Only this callback's own tokens are revoked: a later callback
                 // that stored new ones is left alone. Recorded like a
@@ -621,11 +617,7 @@ async fn user_team(state: &AppState, user_id: Uuid) -> Result<Option<Uuid>, AppE
 /// not widen this, matching runtime access, which ignores a team-only server's
 /// grants once their holder has left the team.
 fn user_can_reach(team_id: Option<Uuid>, server: &gateway_core::ExternalMcpServerRecord) -> bool {
-    server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
-        || server
-            .ownership
-            .owner_team_id
-            .is_some_and(|owner| Some(owner) == team_id)
+    server.ownership.is_reachable_from(team_id)
 }
 
 async fn load_oauth_server(

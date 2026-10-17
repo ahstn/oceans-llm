@@ -1685,6 +1685,16 @@ impl McpServerOwnership {
     pub fn owned_by(&self, team_id: Uuid) -> bool {
         self.owner_team_id == Some(team_id)
     }
+
+    /// Whether a caller whose current team is `team_id` can reach the server:
+    /// it is published to the organisation, or that team owns it. This is the
+    /// one visibility rule every access path applies; the store's
+    /// `list_team_only_mcp_server_ids_outside` and `is_mcp_server_hidden_from`
+    /// are its SQL form, and a store test holds them to it.
+    #[must_use]
+    pub fn is_reachable_from(&self, team_id: Option<Uuid>) -> bool {
+        mcp_server_reachable_from(self.visibility, self.owner_team_id, team_id)
+    }
 }
 
 /// The server columns a store reads under the write lock to check a
@@ -1732,7 +1742,25 @@ pub struct McpServerOwnershipGuard {
     pub auth_settings: Option<(ExternalMcpAuthMode, Map<String, Value>)>,
 }
 
+/// The rule behind [`McpServerOwnership::is_reachable_from`], for callers that
+/// hold only a server's visibility and owning team.
+#[must_use]
+pub fn mcp_server_reachable_from(
+    visibility: McpServerVisibility,
+    owner_team_id: Option<Uuid>,
+    team_id: Option<Uuid>,
+) -> bool {
+    visibility == McpServerVisibility::Organisation
+        || owner_team_id.is_some_and(|owner| Some(owner) == team_id)
+}
+
 impl McpServerOwnershipGuard {
+    /// [`McpServerOwnership::is_reachable_from`] for the server this guard pins.
+    #[must_use]
+    pub fn is_reachable_from(&self, team_id: Option<Uuid>) -> bool {
+        mcp_server_reachable_from(self.visibility, self.owner_team_id, team_id)
+    }
+
     #[must_use]
     pub fn of(server: &ExternalMcpServerRecord) -> Self {
         Self {

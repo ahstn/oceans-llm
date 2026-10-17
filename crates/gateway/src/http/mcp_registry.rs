@@ -344,31 +344,33 @@ pub async fn update_mcp_server(
             .await;
     }
     // Users' OAuth connections end with the endpoints that issued them. Each
-    // revoke is recorded, so every connection's set has a matching revoke.
-    for binding in revoked_oauth_bindings {
-        let binding = map_credential_binding(binding);
-        let mut before = credential_binding_audit_summary(&binding);
-        let revoked_at = before.get("revoked_at").cloned().unwrap_or_default();
-        if let Some(fields) = before.as_object_mut() {
-            fields.insert("revoked_at".to_string(), serde_json::Value::Null);
-            fields.remove("updated_at");
-        }
-        state
-            .audit()
-            .record(
-                &meta.user_context(&actor),
-                scope.annotate(
-                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
-                        .target(binding.id())
-                        .label(binding.owner_scope_key().to_string())
-                        .meta("operation", "server_settings_changed")
-                        .meta("mcp_server_id", server_id)
-                        .before(before)
-                        .after(serde_json::json!({ "revoked_at": revoked_at })),
-                ),
+    // revoke is recorded, so every connection's set has a matching revoke, in
+    // a few multi-row writes however many users had connected.
+    let revokes = revoked_oauth_bindings
+        .into_iter()
+        .map(|binding| {
+            let binding = map_credential_binding(binding);
+            let mut before = credential_binding_audit_summary(&binding);
+            let revoked_at = before.get("revoked_at").cloned().unwrap_or_default();
+            if let Some(fields) = before.as_object_mut() {
+                fields.insert("revoked_at".to_string(), serde_json::Value::Null);
+                fields.remove("updated_at");
+            }
+            scope.annotate(
+                AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                    .target(binding.id())
+                    .label(binding.owner_scope_key().to_string())
+                    .meta("operation", "server_settings_changed")
+                    .meta("mcp_server_id", server_id)
+                    .before(before)
+                    .after(serde_json::json!({ "revoked_at": revoked_at })),
             )
-            .await;
-    }
+        })
+        .collect();
+    state
+        .audit()
+        .record_all(&meta.user_context(&actor), revokes)
+        .await;
     let server = present_server(&state, &scope, current).await?;
     Ok(Json(envelope(McpServerPayload { server })))
 }
@@ -588,12 +590,7 @@ pub async fn list_mcp_server_tools(
                 .await?
                 .is_some_and(|server| {
                     server.status != gateway_core::ExternalMcpServerStatus::Disabled
-                        && (server.ownership.visibility
-                            == gateway_core::McpServerVisibility::Organisation
-                            || server
-                                .ownership
-                                .owner_team_id
-                                .is_some_and(|owner| Some(owner) == team_id))
+                        && server.ownership.is_reachable_from(team_id)
                 });
             if !still_reachable {
                 return Err(AppError(GatewayError::Store(
@@ -1752,13 +1749,7 @@ async fn member_access(
         .store
         .list_external_mcp_servers_by_ids(&referenced)
         .await?;
-    servers.retain(|server| {
-        server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
-            || server
-                .ownership
-                .owner_team_id
-                .is_some_and(|owner| Some(owner) == team_id)
-    });
+    servers.retain(|server| server.ownership.is_reachable_from(team_id));
     let reachable: std::collections::HashSet<Uuid> =
         servers.iter().map(|server| server.mcp_server_id).collect();
     let tool_ids = tool_servers

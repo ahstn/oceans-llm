@@ -1935,33 +1935,38 @@ async fn settings_changes_audit_each_oauth_connection_they_end() {
             context.team_owned(context.team_a, McpServerVisibility::Organisation),
         )
         .await;
-    let user_id = context.member(context.team_a).await;
-    let (binding, _) = context
-        .state
-        .store
-        .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
-            credential_binding_id: None,
-            mcp_server_id: server.id,
-            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
-            owner_scope_key: format!("mcp_credential:v1:user:{user_id}"),
-            owner_user_id: Some(user_id),
-            owner_team_id: None,
-            owner_service_account_id: None,
-            material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
-            header_name: None,
-            storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
-            secret_ciphertext: Some("ciphertext".to_string()),
-            secret_nonce: Some("nonce".to_string()),
-            secret_key_id: Some("key".to_string()),
-            secret_ref: None,
-            expires_at: None,
-            metadata: Map::new(),
-            updated_at: OffsetDateTime::now_utc(),
-            expected_server: None,
-            expected_replaced: None,
-        })
-        .await
-        .unwrap();
+    // More connections than one multi-row audit insert holds.
+    let mut connected = std::collections::BTreeSet::new();
+    for _ in 0..205 {
+        let user_id = context.member(context.team_a).await;
+        let (binding, _) = context
+            .state
+            .store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: format!("mcp_credential:v1:user:{user_id}"),
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: OffsetDateTime::now_utc(),
+                expected_server: None,
+                expected_replaced: None,
+            })
+            .await
+            .unwrap();
+        connected.insert(binding.credential_binding_id.to_string());
+    }
     let admin = context.platform_admin().await;
 
     // A grant outside the team strands a narrowing, so the save is refused and
@@ -1988,14 +1993,32 @@ async fn settings_changes_audit_each_oauth_connection_they_end() {
     );
     assert_eq!(unchanged.display_name, "connected");
 
-    // The URL changes, so the user's tokens are revoked, and that is audited.
+    // The URL changes, so every user's tokens are revoked, and each revoke is
+    // audited.
     let (status, body) = context.update(&admin, server.id, json!({})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let mut audited = std::collections::BTreeSet::new();
+    let mut cursor = None;
+    loop {
+        let page = context
+            .state
+            .store
+            .list_audit_logs(&AuditLogQuery {
+                action: Some("mcp_credential_binding.revoked".to_string()),
+                cursor,
+                limit: 100,
+                ..AuditLogQuery::default()
+            })
+            .await
+            .unwrap();
+        audited.extend(page.items.into_iter().filter_map(|entry| entry.target_id));
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(audited, connected);
     let entry = context.last_audit("mcp_credential_binding.revoked").await;
-    assert_eq!(
-        entry.target_id,
-        Some(binding.credential_binding_id.to_string())
-    );
     assert_eq!(entry.metadata["operation"], "server_settings_changed");
     assert!(entry.before.unwrap()["revoked_at"].is_null());
     assert!(!entry.after.unwrap()["revoked_at"].is_null());

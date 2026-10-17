@@ -2107,6 +2107,71 @@ pub(crate) mod tests {
         )
         .await;
         exercise_mcp_settings_under_lock(store, server.mcp_server_id).await;
+        exercise_mcp_visibility_rule(store, team.team_id).await;
+    }
+
+    /// The store's hidden-server queries are the SQL form of
+    /// `McpServerOwnership::is_reachable_from`, and must agree with it for
+    /// every visibility, owner and caller team.
+    async fn exercise_mcp_visibility_rule<S>(store: &S, team_id: Uuid)
+    where
+        S: McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
+    {
+        use gateway_core::{McpServerOwnership, McpServerVisibility};
+
+        let now = OffsetDateTime::now_utc();
+        let other_team = Uuid::new_v4();
+        let ownerships = [
+            McpServerOwnership::default(),
+            McpServerOwnership {
+                visibility: McpServerVisibility::Organisation,
+                ..McpServerOwnership::team(team_id, None)
+            },
+            McpServerOwnership::team(team_id, None),
+        ];
+        let mut servers = Vec::new();
+        for (index, ownership) in ownerships.into_iter().enumerate() {
+            let server = store
+                .create_external_mcp_server(&NewExternalMcpServerRecord {
+                    server_key: format!("visibility-rule-{index}"),
+                    display_name: format!("Visibility rule {index}"),
+                    description: None,
+                    transport: ExternalMcpTransport::StreamableHttp,
+                    server_url: format!("https://rule-{index}.example.com/mcp"),
+                    auth_mode: ExternalMcpAuthMode::None,
+                    auth_config: Map::new(),
+                    timeout_ms: 30_000,
+                    ownership,
+                    created_at: now,
+                })
+                .await
+                .expect("server");
+            servers.push(server);
+        }
+        for caller_team in [None, Some(team_id), Some(other_team)] {
+            let outside = store
+                .list_team_only_mcp_server_ids_outside(caller_team)
+                .await
+                .expect("hidden servers");
+            for server in &servers {
+                let reachable = server.ownership.is_reachable_from(caller_team);
+                let hidden = store
+                    .is_mcp_server_hidden_from(server.mcp_server_id, caller_team)
+                    .await
+                    .expect("hidden lookup");
+                assert_eq!(
+                    hidden, !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+                assert_eq!(
+                    outside.contains(&server.mcp_server_id),
+                    !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+            }
+        }
     }
 
     /// Settings saves resolve what they depend on under the write lock: an

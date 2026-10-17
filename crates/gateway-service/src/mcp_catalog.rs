@@ -440,24 +440,16 @@ fn retain_reachable_catalog_tools(
     resolution: &mut gateway_core::McpCatalogAccessResolution,
     team_id: Option<Uuid>,
 ) {
-    let before = resolution.allowed_tools.len();
-    resolution.allowed_tools.retain(|record| {
-        record.server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
-            || (record.server.ownership.owner_team_id.is_some()
-                && record.server.ownership.owner_team_id == team_id)
-    });
-    if resolution.allowed_tools.len() == before {
-        return;
-    }
-    resolution.referenced_server_count = resolution
-        .allowed_tools
-        .iter()
-        .map(|record| record.server.mcp_server_id)
-        .collect::<std::collections::HashSet<_>>()
-        .len() as i64;
-    resolution.filtered_tool_count = resolution
-        .exposed_tool_count
-        .saturating_sub(resolution.allowed_tools.len() as i64);
+    crate::mcp_access::retain_tools_and_recount(
+        &mut resolution.allowed_tools,
+        crate::mcp_access::ResolutionCounts {
+            referenced_server_count: &mut resolution.referenced_server_count,
+            filtered_tool_count: &mut resolution.filtered_tool_count,
+            exposed_tool_count: resolution.exposed_tool_count,
+        },
+        |record| record.server.mcp_server_id,
+        |record| record.server.ownership.is_reachable_from(team_id),
+    );
 }
 
 #[cfg(test)]

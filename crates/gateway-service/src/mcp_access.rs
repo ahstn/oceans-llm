@@ -178,18 +178,42 @@ pub fn retain_reachable_tools(resolution: &mut McpAccessResolution, hidden: &Has
     if hidden.is_empty() {
         return;
     }
-    resolution
-        .allowed_tools
-        .retain(|tool| !hidden.contains(&tool.mcp_server_id));
-    resolution.referenced_server_count = resolution
-        .allowed_tools
-        .iter()
-        .map(|tool| tool.mcp_server_id)
-        .collect::<HashSet<_>>()
-        .len() as i64;
-    resolution.filtered_tool_count = resolution
-        .exposed_tool_count
-        .saturating_sub(resolution.allowed_tools.len() as i64);
+    retain_tools_and_recount(
+        &mut resolution.allowed_tools,
+        ResolutionCounts {
+            referenced_server_count: &mut resolution.referenced_server_count,
+            filtered_tool_count: &mut resolution.filtered_tool_count,
+            exposed_tool_count: resolution.exposed_tool_count,
+        },
+        |tool| tool.mcp_server_id,
+        |tool| !hidden.contains(&tool.mcp_server_id),
+    );
+}
+
+/// The counts a grant resolution reports beside its tools.
+pub(crate) struct ResolutionCounts<'a> {
+    pub(crate) referenced_server_count: &'a mut i64,
+    pub(crate) filtered_tool_count: &'a mut i64,
+    pub(crate) exposed_tool_count: i64,
+}
+
+/// Keeps the tools `keep` accepts and recounts the servers they reference and
+/// the tools filtered out, so effective access and the catalog report the
+/// same numbers after the same filter.
+pub(crate) fn retain_tools_and_recount<T>(
+    tools: &mut Vec<T>,
+    counts: ResolutionCounts<'_>,
+    server_of: impl Fn(&T) -> Uuid,
+    keep: impl FnMut(&T) -> bool,
+) {
+    let before = tools.len();
+    tools.retain(keep);
+    if tools.len() == before {
+        return;
+    }
+    *counts.referenced_server_count =
+        tools.iter().map(server_of).collect::<HashSet<_>>().len() as i64;
+    *counts.filtered_tool_count = counts.exposed_tool_count.saturating_sub(tools.len() as i64);
 }
 
 fn subjects_seen(subjects: &[McpGrantSubject]) -> HashSet<(McpToolGrantSubjectKind, Uuid)> {
