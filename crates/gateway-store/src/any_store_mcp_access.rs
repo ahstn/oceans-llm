@@ -149,6 +149,26 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn resolve_mcp_tool_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .resolve_mcp_tool_for_subjects(subjects, mcp_server_id, upstream_name)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .resolve_mcp_tool_for_subjects(subjects, mcp_server_id, upstream_name)
+                    .await
+            }
+        }
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

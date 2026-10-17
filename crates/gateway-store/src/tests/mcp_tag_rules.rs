@@ -91,9 +91,11 @@ fn tool<'a>(tools: &'a [ExternalMcpToolRecord], name: &str) -> &'a ExternalMcpTo
         .expect("tool")
 }
 
+/// The tools the subjects may use on the server. It also checks that the
+/// single-tool lookup `tools/call` uses agrees for every tool on the server.
 async fn allowed_names<S>(store: &S, subjects: &[McpGrantSubject], server_id: Uuid) -> Vec<String>
 where
-    S: McpAccessRepository + Sync,
+    S: McpAccessRepository + McpRegistryRepository + Sync,
 {
     let mut names = store
         .resolve_mcp_access_for_subjects(subjects, Some(server_id), McpToolProjection::Access)
@@ -104,6 +106,22 @@ where
         .map(|tool| tool.upstream_name)
         .collect::<Vec<_>>();
     names.sort();
+    for tool in store
+        .list_external_mcp_tools(server_id, true)
+        .await
+        .expect("server tools")
+    {
+        let single = store
+            .resolve_mcp_tool_for_subjects(subjects, server_id, &tool.upstream_name)
+            .await
+            .expect("single tool");
+        assert_eq!(
+            single.is_some(),
+            names.contains(&tool.upstream_name),
+            "single-tool lookup disagrees for {}",
+            tool.upstream_name
+        );
+    }
     names
 }
 

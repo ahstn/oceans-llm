@@ -1187,6 +1187,16 @@ pub trait McpAccessRepository: Send + Sync {
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError>;
 
+    /// The tool with this upstream name on the server, when the subjects may
+    /// call it with tag rules applied. It reads only that tool, so a
+    /// `tools/call` does not resolve the caller's whole access set.
+    async fn resolve_mcp_tool_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
     /// Whether any subject holds an active grant on at least one active tool of
     /// the server, directly or through an active toolset.
     async fn has_mcp_server_grant(

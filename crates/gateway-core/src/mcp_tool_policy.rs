@@ -164,22 +164,40 @@ impl EffectiveHints {
     /// treated as destructive and open-world.
     #[must_use]
     pub fn derived_tags(&self) -> Vec<&'static str> {
-        let read_only = self.read_only.unwrap_or(false);
-        let mut tags = Vec::new();
-        if read_only {
-            tags.push(TAG_READ_ONLY);
-        }
-        if !read_only && self.destructive.unwrap_or(true) {
-            tags.push(TAG_DESTRUCTIVE);
-        }
-        if self.idempotent.unwrap_or(false) {
-            tags.push(TAG_IDEMPOTENT);
-        }
-        if self.open_world.unwrap_or(true) {
-            tags.push(TAG_OPEN_WORLD);
-        }
-        tags
+        self.derived()
+            .into_iter()
+            .filter_map(|(tag, derived)| derived.then_some(tag))
+            .collect()
     }
+
+    /// Whether the hints derive `tag`, without building the tag list.
+    #[must_use]
+    pub fn derives(&self, tag: &str) -> bool {
+        self.derived()
+            .into_iter()
+            .any(|(name, derived)| derived && name == tag)
+    }
+
+    fn derived(&self) -> [(&'static str, bool); 4] {
+        let read_only = self.read_only.unwrap_or(false);
+        [
+            (TAG_READ_ONLY, read_only),
+            (
+                TAG_DESTRUCTIVE,
+                !read_only && self.destructive.unwrap_or(true),
+            ),
+            (TAG_IDEMPOTENT, self.idempotent.unwrap_or(false)),
+            (TAG_OPEN_WORLD, self.open_world.unwrap_or(true)),
+        ]
+    }
+}
+
+/// Whether `tag` is one of the tool's effective tags. Rule evaluation uses
+/// this on every resolved tool, so it builds no tag set.
+#[must_use]
+pub fn has_effective_tag(tool: &ExternalMcpToolRecord, tag: &str) -> bool {
+    tool.policy.tags.iter().any(|admin_tag| admin_tag == tag)
+        || EffectiveHints::of(tool).derives(tag)
 }
 
 /// Derived tags plus admin tags, sorted.
@@ -303,10 +321,10 @@ pub struct McpToolTagRuleRecord {
 
 impl McpToolTagRuleRecord {
     #[must_use]
-    pub fn matches(&self, tool: &ExternalMcpToolRecord, tags: &BTreeSet<String>) -> bool {
+    pub fn matches(&self, tool: &ExternalMcpToolRecord) -> bool {
         self.mcp_server_id
             .is_none_or(|server_id| server_id == tool.mcp_server_id)
-            && tags.contains(&self.tag)
+            && has_effective_tag(tool, &self.tag)
     }
 }
 
@@ -393,22 +411,14 @@ impl McpTagRuleSet {
 
     #[must_use]
     pub fn includes(&self, tool: &ExternalMcpToolRecord) -> bool {
-        if self.includes.is_empty() {
-            return false;
-        }
-        let tags = effective_tags(tool);
-        self.includes.iter().any(|rule| rule.matches(tool, &tags))
+        self.includes.iter().any(|rule| rule.matches(tool))
     }
 
     /// Whether any exclude rule removes the tool. Exclude wins over every
     /// grant, whichever of the caller's subjects it came from.
     #[must_use]
     pub fn excludes(&self, tool: &ExternalMcpToolRecord) -> bool {
-        if self.excludes.is_empty() {
-            return false;
-        }
-        let tags = effective_tags(tool);
-        self.excludes.iter().any(|rule| rule.matches(tool, &tags))
+        self.excludes.iter().any(|rule| rule.matches(tool))
     }
 }
 
@@ -499,6 +509,30 @@ mod tests {
         assert_eq!(annotations["readOnlyHint"], json!(false));
         // The discovered value is kept on the record for display.
         assert_eq!(tool.metadata.hint(READ_ONLY_HINT), Some(true));
+    }
+
+    #[test]
+    fn tag_checks_agree_with_the_effective_tag_set() {
+        let server = Uuid::new_v4();
+        let mut overridden = McpToolPolicy {
+            tags: vec!["finance".to_string()],
+            ..McpToolPolicy::default()
+        };
+        overridden.annotation_overrides.read_only = Some(true);
+        for tool in [
+            tool(server, json!({}), McpToolPolicy::default()),
+            tool(
+                server,
+                json!({"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}),
+                McpToolPolicy::default(),
+            ),
+            tool(server, json!({"destructiveHint": false}), overridden),
+        ] {
+            let tags = effective_tags(&tool);
+            for tag in DERIVED_TAGS.iter().copied().chain(["finance", "other"]) {
+                assert_eq!(has_effective_tag(&tool, tag), tags.contains(tag), "{tag}");
+            }
+        }
     }
 
     #[test]

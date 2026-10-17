@@ -505,6 +505,26 @@ impl McpAccessRepository for LibsqlStore {
         Ok(grants)
     }
 
+    async fn resolve_mcp_tool_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        let rules = load_tag_rule_set(&self.connection, subjects).await?;
+        Ok(self
+            .allowed_tools_with_rules(
+                subjects,
+                Some(mcp_server_id),
+                McpToolProjection::Access,
+                &rules,
+                Some(upstream_name),
+            )
+            .await?
+            .into_iter()
+            .next())
+    }
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],
@@ -519,7 +539,7 @@ impl McpAccessRepository for LibsqlStore {
             McpTagRuleSet::default()
         };
         let allowed_tools = self
-            .allowed_tools_with_rules(subjects, mcp_server_id, projection, &rules)
+            .allowed_tools_with_rules(subjects, mcp_server_id, projection, &rules, None)
             .await?;
         let referenced_server_count = allowed_tools
             .iter()
@@ -554,6 +574,7 @@ impl McpAccessRepository for LibsqlStore {
                 Some(mcp_server_id),
                 McpToolProjection::Access,
                 &rules,
+                None,
             )
             .await?;
         Ok(!allowed_tools.is_empty())
@@ -581,7 +602,8 @@ impl McpAccessRepository for LibsqlStore {
         }
         let include_servers = rules.include_server_ids(None);
         let matched =
-            include_rule_matches(&self.connection, &include_servers, server_key, &rules).await?;
+            include_rule_matches(&self.connection, &include_servers, server_key, None, &rules)
+                .await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))
@@ -801,6 +823,7 @@ impl LibsqlStore {
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
         rules: &McpTagRuleSet,
+        upstream_name: Option<&str>,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let columns = tool_columns(projection);
         let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
@@ -811,6 +834,7 @@ impl LibsqlStore {
                 subject,
                 mcp_server_id,
                 columns,
+                upstream_name,
                 &mut tools_by_id,
             )
             .await?;
@@ -819,12 +843,20 @@ impl LibsqlStore {
                 subject,
                 mcp_server_id,
                 columns,
+                upstream_name,
                 &mut tools_by_id,
             )
             .await?;
         }
         let include_servers = rules.include_server_ids(mcp_server_id);
-        let matched = include_rule_matches(&self.connection, &include_servers, None, rules).await?;
+        let matched = include_rule_matches(
+            &self.connection,
+            &include_servers,
+            None,
+            upstream_name,
+            rules,
+        )
+        .await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))
@@ -916,6 +948,7 @@ async fn include_rule_matches(
     connection: &libsql::Connection,
     server_ids: &BTreeSet<Uuid>,
     server_key: Option<&str>,
+    upstream_name: Option<&str>,
     rules: &McpTagRuleSet,
 ) -> Result<Vec<Uuid>, StoreError> {
     if server_ids.is_empty() {
@@ -923,8 +956,9 @@ async fn include_rule_matches(
     }
     let placeholders = id_placeholders(server_ids.len());
     let key_param = server_ids.len() + 1;
+    let name_param = server_ids.len() + 2;
     let sql = format!(
-        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param})"
+        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param}) AND (?{name_param} IS NULL OR t.upstream_name = ?{name_param})"
     );
     let mut params = server_ids
         .iter()
@@ -932,6 +966,9 @@ async fn include_rule_matches(
         .collect::<Vec<_>>();
     params.push(server_key.map_or(libsql::Value::Null, |key| {
         libsql::Value::Text(key.to_string())
+    }));
+    params.push(upstream_name.map_or(libsql::Value::Null, |name| {
+        libsql::Value::Text(name.to_string())
     }));
     let mut rows = connection
         .query(&sql, libsql::params_from_iter(params))
@@ -1088,10 +1125,11 @@ async fn collect_direct_tools(
     subject: &McpGrantSubject,
     mcp_server_id: Option<Uuid>,
     columns: &str,
+    upstream_name: Option<&str>,
     out: &mut HashMap<Uuid, ExternalMcpToolRecord>,
 ) -> Result<(), StoreError> {
     let sql = format!(
-        "SELECT {columns} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
+        "SELECT {columns} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3) AND (?4 IS NULL OR t.upstream_name = ?4)"
     );
     let mut rows = connection
         .query(
@@ -1100,6 +1138,7 @@ async fn collect_direct_tools(
                 subject.subject_kind.as_str(),
                 subject.subject_id.to_string(),
                 mcp_server_id.map(|value| value.to_string()),
+                upstream_name,
             ],
         )
         .await
@@ -1116,10 +1155,11 @@ async fn collect_toolset_tools(
     subject: &McpGrantSubject,
     mcp_server_id: Option<Uuid>,
     columns: &str,
+    upstream_name: Option<&str>,
     out: &mut HashMap<Uuid, ExternalMcpToolRecord>,
 ) -> Result<(), StoreError> {
     let sql = format!(
-        "SELECT {columns} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3)"
+        "SELECT {columns} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?3 IS NULL OR t.mcp_server_id = ?3) AND (?4 IS NULL OR t.upstream_name = ?4)"
     );
     let mut rows = connection
         .query(
@@ -1128,6 +1168,7 @@ async fn collect_toolset_tools(
                 subject.subject_kind.as_str(),
                 subject.subject_id.to_string(),
                 mcp_server_id.map(|value| value.to_string()),
+                upstream_name,
             ],
         )
         .await

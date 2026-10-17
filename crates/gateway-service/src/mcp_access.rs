@@ -54,13 +54,11 @@ where
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, GatewayError> {
-        let resolution = self
-            .effective_tools_for_api_key(auth, Some(mcp_server_id), McpToolProjection::Access)
-            .await?;
-        Ok(resolution
-            .allowed_tools
-            .into_iter()
-            .find(|tool| tool.upstream_name == upstream_name))
+        let subjects = self.grant_subjects(auth).await?;
+        Ok(self
+            .repo
+            .resolve_mcp_tool_for_subjects(&subjects, mcp_server_id, upstream_name)
+            .await?)
     }
 }
 
