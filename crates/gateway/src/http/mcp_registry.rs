@@ -330,9 +330,12 @@ pub async fn disable_mcp_server(
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
     let existing = ownership(&state).managed_server(&scope, server_id).await?;
+    let expected_owner = existing.ownership.owner_team_id;
     let before = server_audit_summary(&map_server(existing));
     let service = McpRegistryService::new(state.store.clone());
-    let (record, disabled) = service.disable_server(server_id).await?;
+    let (record, disabled) = service
+        .disable_server_for_owner(server_id, expected_owner)
+        .await?;
     let server = map_server(record.clone());
     // Disabling a disabled server is not a transition. The store decides this in
     // its update, so concurrent requests record one entry.

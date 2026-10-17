@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpWorkspaceScope } from '@/routes/mcp/-scope'
@@ -186,6 +186,12 @@ async function renderServersTab(
 }
 
 describe('ServersTab', () => {
+  // Load the tab once up front, so the first test does not spend its timeout on
+  // the cold module import on a slow runner.
+  beforeAll(async () => {
+    await import('@/routes/mcp/-servers-tab')
+  }, 30_000)
+
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()

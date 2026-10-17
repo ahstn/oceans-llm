@@ -844,7 +844,8 @@ function PlatformOwnershipControl({
   if (!scope.platformAdmin) return null
   return (
     <ServerOwnershipTransfer
-      key={server.id}
+      // Remount when the owner changes, so the selector resets after a transfer.
+      key={`${server.id}:${server.owner_team_id ?? 'platform'}`}
       server={server}
       teams={scope.teams}
       pending={pending}

@@ -1681,6 +1681,19 @@ pub(crate) mod tests {
             })
             .await
             .expect("move back to the team");
+        // A disable checked against a former owner is a conflict, and changes nothing.
+        assert!(matches!(
+            store
+                .disable_external_mcp_server_for_owner(server.mcp_server_id, None, now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let (current, disabled) = store
+            .disable_external_mcp_server_for_owner(server.mcp_server_id, Some(team.team_id), now)
+            .await
+            .expect("disable as the owner");
+        assert!(disabled);
+        assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
         // Revoked grants are listed too, as the unscoped grant list does.
         assert_eq!(
             store

@@ -81,6 +81,34 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .disable_external_mcp_server_for_owner(
+                        mcp_server_id,
+                        expected_owner_team_id,
+                        disabled_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .disable_external_mcp_server_for_owner(
+                        mcp_server_id,
+                        expected_owner_team_id,
+                        disabled_at,
+                    )
+                    .await
+            }
+        }
+    }
+
     async fn transfer_external_mcp_server_ownership(
         &self,
         input: &TransferExternalMcpServerOwnershipRecord,

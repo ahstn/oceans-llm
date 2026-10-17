@@ -1057,6 +1057,21 @@ pub trait McpRegistryRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// Like `disable_external_mcp_server`, but only while the server is still
+    /// owned by `expected_owner_team_id` (`None` for the platform). A server that
+    /// has changed owner is a conflict, decided under the same write.
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        let _ = (mcp_server_id, expected_owner_team_id, disabled_at);
+        Err(StoreError::Unexpected(
+            "owner-checked MCP server disable is not implemented for this repository".to_string(),
+        ))
+    }
+
     /// Changes the owning team, contact and visibility together. Nothing is
     /// written when they already match.
     async fn transfer_external_mcp_server_ownership(

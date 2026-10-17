@@ -286,6 +286,23 @@ where
             .map_err(Into::into)
     }
 
+    /// Disables the server only while `expected_owner_team_id` still owns it, so
+    /// a transfer in between cannot let the former team disable it.
+    pub async fn disable_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        self.repo
+            .disable_external_mcp_server_for_owner(
+                mcp_server_id,
+                expected_owner_team_id,
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn list_tools(
         &self,
         mcp_server_id: Uuid,

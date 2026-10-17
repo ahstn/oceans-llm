@@ -399,6 +399,45 @@ impl McpRegistryRepository for LibsqlStore {
         Ok((load_server(&self.connection, mcp_server_id).await?, false))
     }
 
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // `IS` matches a NULL (platform) owner too, so the owner check and the
+        // disable are one statement.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "UPDATE external_mcp_servers
+                     SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
+                         last_discovery_status = 'disabled', last_discovery_at = ?1
+                     WHERE mcp_server_id = ?2
+                       AND status <> 'disabled'
+                       AND owner_team_id IS ?3
+                     RETURNING {SERVER_COLUMNS}"
+                ),
+                libsql::params![
+                    disabled_at.unix_timestamp(),
+                    mcp_server_id.to_string(),
+                    expected_owner_team_id.map(|id| id.to_string()),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_server(&row)?, true));
+        }
+        drop(rows);
+        let server = load_server(&self.connection, mcp_server_id).await?;
+        if server.ownership.owner_team_id != expected_owner_team_id {
+            return Err(owner_changed(mcp_server_id));
+        }
+        Ok((server, false))
+    }
+
     async fn transfer_external_mcp_server_ownership(
         &self,
         input: &TransferExternalMcpServerOwnershipRecord,
