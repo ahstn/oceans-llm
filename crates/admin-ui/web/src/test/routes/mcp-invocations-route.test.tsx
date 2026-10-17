@@ -139,12 +139,13 @@ describe('McpInvocationsPage', () => {
     render(<McpInvocationsPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
 
+    // The detail card opens before the detail request resolves, so wait for the loaded body.
     await waitFor(() => {
-      expect(screen.getByTestId('mcp-invocation-detail')).toBeInTheDocument()
+      expect(screen.getByText('Payload State')).toBeInTheDocument()
     })
 
+    expect(screen.getByTestId('mcp-invocation-detail')).toBeInTheDocument()
     expect(screen.getByText('MCP Invocation Detail')).toBeInTheDocument()
-    expect(screen.getByText('Payload State')).toBeInTheDocument()
     expect(screen.getByText(/"repo": "oceans-llm"/)).toBeInTheDocument()
     expect(screen.getByText(/"number": 115/)).toBeInTheDocument()
   })
@@ -168,8 +169,9 @@ describe('McpInvocationsPage', () => {
     render(<McpInvocationsPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
 
+    // The detail card opens before the detail request resolves, so wait for the loaded body.
     await waitFor(() => {
-      expect(screen.getByTestId('mcp-invocation-detail')).toBeInTheDocument()
+      expect(screen.getByText('Payload State')).toBeInTheDocument()
     })
 
     expect(screen.getByText('false')).toBeInTheDocument()
