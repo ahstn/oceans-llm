@@ -99,13 +99,10 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
 struct CachedClient {
     client: GatewayOauthClientRecord,
     fresh_until: OffsetDateTime,
-    /// Until when the copy may stand in for an unreachable host. Set from the
-    /// last successful fetch, so standing in never extends it.
+    /// Until when the copy may stand in for an unreachable host: its
+    /// freshness plus its [`stale_window`]. Set from the last successful
+    /// fetch, so standing in never extends it.
     usable_until: OffsetDateTime,
-    /// False when the document said `must-revalidate`, `proxy-revalidate`,
-    /// or `s-maxage`: once stale, it may only be used again after a
-    /// successful fetch.
-    reusable_when_stale: bool,
 }
 
 /// What a client is being loaded for, which decides what may stand in for
@@ -315,12 +312,7 @@ impl ClientMetadataDocuments {
                 error => ResolveFailure::store(error),
             })?;
         if fetched.ttl > Duration::ZERO {
-            self.remember(
-                stored.clone(),
-                now,
-                now + fetched.ttl,
-                fetched.reusable_when_stale,
-            );
+            self.remember(stored.clone(), now, now + fetched.ttl, fetched.stale_window);
         } else {
             self.forget(client_id);
         }
@@ -345,7 +337,7 @@ impl ClientMetadataDocuments {
         let cache = self.cache.lock().expect("metadata document cache lock");
         cache
             .get(client_id)
-            .filter(|entry| entry.reusable_when_stale && entry.usable_until > now)
+            .filter(|entry| entry.usable_until > now)
             .map(|entry| (entry.client.clone(), entry.usable_until))
     }
 
@@ -364,7 +356,7 @@ impl ClientMetadataDocuments {
         client: GatewayOauthClientRecord,
         now: OffsetDateTime,
         fresh_until: OffsetDateTime,
-        reusable_when_stale: bool,
+        stale_window: Duration,
     ) {
         let mut cache = self.cache.lock().expect("metadata document cache lock");
         if cache.len() >= MAX_CACHED_DOCUMENTS && !cache.contains_key(&client.client_id) {
@@ -383,8 +375,7 @@ impl ClientMetadataDocuments {
             CachedClient {
                 client,
                 fresh_until,
-                usable_until: fresh_until + MAX_STALE_IF_ERROR,
-                reusable_when_stale,
+                usable_until: fresh_until + stale_window,
             },
         );
     }
@@ -461,11 +452,11 @@ impl ClientMetadataDocuments {
         }
         let client =
             validate_document(client_id, &fetched.body, now).map_err(ResolveFailure::permanent)?;
-        let (ttl, reusable_when_stale) = freshness(&fetched.headers, now);
+        let (ttl, stale_window) = freshness(&fetched.headers, now);
         Ok(ValidatedDocument {
             client,
             ttl,
-            reusable_when_stale,
+            stale_window,
         })
     }
 
@@ -533,7 +524,7 @@ impl Drop for InFlight<'_> {
 struct ValidatedDocument {
     client: GatewayOauthClientRecord,
     ttl: Duration,
-    reusable_when_stale: bool,
+    stale_window: Duration,
 }
 
 #[derive(Clone)]
@@ -740,9 +731,9 @@ fn validate_document(
     })
 }
 
-/// How long a fetched document may be cached, and whether it may stand in
-/// once stale, from its response headers.
-fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
+/// How long a fetched document may be cached, and how long past that it may
+/// stand in for an unreachable host, from its response headers.
+fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, Duration) {
     let field = |name: HeaderName| {
         // Several field lines form one comma-separated list (RFC 9110 §5.2).
         let lines = headers
@@ -759,7 +750,7 @@ fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
     };
     // `Vary: *` never matches a later request (RFC 9111 §4.1).
     if field(VARY).is_some_and(|vary| vary.split(',').any(|item| item.trim() == "*")) {
-        return (Duration::ZERO, false);
+        return (Duration::ZERO, Duration::ZERO);
     }
     let cache_control = field(CACHE_CONTROL);
     let date = field(DATE).and_then(|value| http_date(&value));
@@ -781,8 +772,31 @@ fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
     });
     (
         cache_ttl(cache_control.as_deref(), Some(age), expires_lifetime),
-        !must_revalidate(cache_control.as_deref()),
+        stale_window(cache_control.as_deref()),
     )
+}
+
+/// The `Cache-Control` directives, as lowercase names with their raw values.
+fn directives(cache_control: &str) -> impl Iterator<Item = (String, Option<&str>)> {
+    cache_control
+        .split(',')
+        .map(str::trim)
+        .filter(|directive| !directive.is_empty())
+        .map(|directive| match directive.split_once('=') {
+            Some((name, value)) => (name.trim().to_ascii_lowercase(), Some(value.trim())),
+            None => (directive.to_ascii_lowercase(), None),
+        })
+}
+
+/// A directive's delta-seconds value: one optional pair of quotes around
+/// ASCII digits, nothing else. A missing or malformed value is `None`.
+fn directive_seconds(value: Option<&str>) -> Option<i64> {
+    let raw = value?;
+    let unquoted = raw
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(raw);
+    delta_seconds(unquoted)
 }
 
 /// How long a document stays fresh, read as a shared cache would (RFC 9111),
@@ -791,35 +805,24 @@ fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
 /// `no-store`, `no-cache`, and `private` mean fetching it each time.
 /// Otherwise `s-maxage` applies, else `max-age`, else the `Expires`
 /// lifetime, less the time a cache in between already held it (`Age`),
-/// capped at [`MAX_CACHE_TTL`]. A malformed or repeated value makes the
-/// response stale (RFC 9111 §4.2.1). Without any of them, it is
-/// [`DEFAULT_CACHE_TTL`].
+/// capped at [`MAX_CACHE_TTL`]. A malformed, valueless, or repeated
+/// `max-age` or `s-maxage` makes the response stale (RFC 9111 §4.2.1).
+/// Without any of them, it is [`DEFAULT_CACHE_TTL`].
 fn cache_ttl(
     cache_control: Option<&str>,
     age_seconds: Option<i64>,
     expires_lifetime: Option<i64>,
 ) -> Duration {
-    let cache_control = cache_control.unwrap_or_default();
     let mut max_age = None;
     let mut s_maxage = None;
-    for directive in cache_control.split(',') {
-        let directive = directive.trim().to_ascii_lowercase();
-        if matches!(directive.as_str(), "no-store" | "no-cache" | "private") {
-            return Duration::ZERO;
-        }
-        let (slot, raw) = if let Some(raw) = directive.strip_prefix("s-maxage=") {
-            (&mut s_maxage, raw)
-        } else if let Some(raw) = directive.strip_prefix("max-age=") {
-            (&mut max_age, raw)
-        } else {
-            continue;
+    for (name, value) in directives(cache_control.unwrap_or_default()) {
+        let slot = match name.as_str() {
+            "no-store" | "no-cache" | "private" => return Duration::ZERO,
+            "s-maxage" => &mut s_maxage,
+            "max-age" => &mut max_age,
+            _ => continue,
         };
-        // One optional pair of quotes around ASCII digits, nothing else.
-        let unquoted = raw
-            .strip_prefix('"')
-            .and_then(|value| value.strip_suffix('"'))
-            .unwrap_or(raw);
-        let Some(seconds) = delta_seconds(unquoted) else {
+        let Some(seconds) = directive_seconds(value) else {
             return Duration::ZERO;
         };
         if slot.replace(seconds).is_some() {
@@ -835,17 +838,30 @@ fn cache_ttl(
         })
 }
 
-/// Whether the document forbids reuse once stale without a successful fetch:
-/// `must-revalidate`, `proxy-revalidate`, or `s-maxage`, which implies
-/// `proxy-revalidate` for a shared cache.
-fn must_revalidate(cache_control: Option<&str>) -> bool {
-    cache_control.is_some_and(|value| {
-        value.split(',').any(|directive| {
-            let directive = directive.trim().to_ascii_lowercase();
-            directive == "must-revalidate"
-                || directive == "proxy-revalidate"
-                || directive.starts_with("s-maxage=")
-        })
+/// How long past its freshness a document may stand in for an unreachable
+/// host. None after `must-revalidate`, `proxy-revalidate`, or `s-maxage`
+/// (which implies `proxy-revalidate` for a shared cache). Otherwise the
+/// document's `stale-if-error` (RFC 5861), or [`MAX_STALE_IF_ERROR`] without
+/// one, capped at [`MAX_STALE_IF_ERROR`]; a malformed or repeated
+/// `stale-if-error` allows none.
+fn stale_window(cache_control: Option<&str>) -> Duration {
+    let mut stale_if_error = None;
+    for (name, value) in directives(cache_control.unwrap_or_default()) {
+        match name.as_str() {
+            "must-revalidate" | "proxy-revalidate" | "s-maxage" => return Duration::ZERO,
+            "stale-if-error" => {
+                let Some(seconds) = directive_seconds(value) else {
+                    return Duration::ZERO;
+                };
+                if stale_if_error.replace(seconds).is_some() {
+                    return Duration::ZERO;
+                }
+            }
+            _ => {}
+        }
+    }
+    stale_if_error.map_or(MAX_STALE_IF_ERROR, |seconds| {
+        Duration::seconds(seconds).min(MAX_STALE_IF_ERROR)
     })
 }
 

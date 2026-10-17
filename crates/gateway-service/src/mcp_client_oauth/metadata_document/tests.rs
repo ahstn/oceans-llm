@@ -214,6 +214,14 @@ fn cache_headers_set_freshness_within_bounds() {
         cache_ttl(Some("s-maxage=60, s-maxage=600"), None, None),
         Duration::ZERO
     );
+    // A freshness directive without its value is stale too.
+    for valueless in ["max-age", "s-maxage", "public, max-age ="] {
+        assert_eq!(
+            cache_ttl(Some(valueless), None, None),
+            Duration::ZERO,
+            "{valueless}"
+        );
+    }
     // Invalid or conflicting freshness is treated as stale.
     assert_eq!(
         cache_ttl(Some("max-age=nonsense"), None, None),
@@ -293,12 +301,37 @@ fn the_domain_allowlist_matches_hosts_and_their_subdomains() {
 }
 
 #[test]
-fn must_revalidate_forbids_stale_reuse() {
-    assert!(must_revalidate(Some("max-age=60, must-revalidate")));
-    assert!(must_revalidate(Some("Proxy-Revalidate")));
-    assert!(must_revalidate(Some("S-MaxAge=60, max-age=600")));
-    assert!(!must_revalidate(Some("max-age=60")));
-    assert!(!must_revalidate(None));
+fn stale_reuse_follows_revalidation_and_stale_if_error() {
+    for strict in [
+        "max-age=60, must-revalidate",
+        "Proxy-Revalidate",
+        "S-MaxAge=60, max-age=600",
+        "s-maxage",
+    ] {
+        assert_eq!(stale_window(Some(strict)), Duration::ZERO, "{strict}");
+    }
+    assert_eq!(stale_window(Some("max-age=60")), MAX_STALE_IF_ERROR);
+    assert_eq!(stale_window(None), MAX_STALE_IF_ERROR);
+    // The publisher's stale-if-error bounds it, capped at the gateway's limit.
+    assert_eq!(
+        stale_window(Some("max-age=60, stale-if-error=0")),
+        Duration::ZERO
+    );
+    assert_eq!(
+        stale_window(Some("max-age=60, stale-if-error=300")),
+        Duration::seconds(300)
+    );
+    assert_eq!(
+        stale_window(Some("stale-if-error=31536000")),
+        MAX_STALE_IF_ERROR
+    );
+    for malformed in [
+        "stale-if-error",
+        "stale-if-error=soon",
+        "stale-if-error=60, stale-if-error=600",
+    ] {
+        assert_eq!(stale_window(Some(malformed)), Duration::ZERO, "{malformed}");
+    }
 }
 
 #[test]
@@ -425,9 +458,9 @@ fn freshness_reads_date_expires_and_vary() {
         &headers(&[("cache-control", "max-age=600"), ("vary", "Accept, *")]),
         now,
     );
-    assert_eq!((ttl, reusable), (Duration::ZERO, false));
+    assert_eq!((ttl, reusable), (Duration::ZERO, Duration::ZERO));
     let (ttl, reusable) = freshness(&headers(&[("vary", "Accept")]), now);
-    assert_eq!((ttl, reusable), (DEFAULT_CACHE_TTL, true));
+    assert_eq!((ttl, reusable), (DEFAULT_CACHE_TTL, MAX_STALE_IF_ERROR));
 }
 
 #[test]
