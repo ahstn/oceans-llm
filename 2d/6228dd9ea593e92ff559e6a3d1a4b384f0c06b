@@ -1,0 +1,25 @@
+crates/gateway-service/src/mcp_ownership.rs
+  s_7a5811202bdfd5::t_a814a38337f5cf 618-620,637-644,646
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_21e491f5827c60 246-247,396-397,1211,1308,1316,1374
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_3f11982493824a 111
+docs/configuration/mcp-servers.md
+  s_7a5811202bdfd5::t_c7b832ed2f804f 107-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d6228dd9ea593e92ff559e6a3d1a4b384f0c06b",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
