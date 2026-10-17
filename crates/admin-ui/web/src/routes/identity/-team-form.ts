@@ -1,4 +1,5 @@
 import { sanitizeEntityTags } from '@/routes/identity/-entity-tag-utils'
+import { sanitizeCreateUserForm, withAuthMode } from '@/routes/identity/-user-form'
 import type { UserOption } from '@/routes/identity/-user-multi-select-field'
 import type {
   CreateTeamInput,
@@ -99,30 +100,20 @@ export function sanitizeTeamForm(form: CreateTeamInput): CreateTeamInput {
 }
 
 /**
- * The invite always creates a `user` who joins the form's team as a member. An SSO mode without a
- * chosen provider uses the only configured one.
+ * The users page's create-user request with the invite's rules on top: it always creates a `user`
+ * who joins the form's team as a member, and an SSO mode without a chosen provider uses the only
+ * configured one, as switching to that mode would.
  */
 export function sanitizeInviteForm(
   form: CreateUserInput,
   oidcProviders: OidcProviders,
   oauthProviders: OauthProviders,
 ): CreateUserInput {
+  const withProvider = withAuthMode(form, form.auth_mode, oidcProviders, oauthProviders)
   return {
-    name: form.name.trim(),
-    email: form.email.trim(),
-    auth_mode: form.auth_mode,
+    ...sanitizeCreateUserForm(withProvider),
     global_role: 'user',
-    team_id: form.team_id,
     team_role: 'member',
-    oidc_provider_key:
-      form.auth_mode === 'oidc'
-        ? (form.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
-        : null,
-    oauth_provider_key:
-      form.auth_mode === 'oauth'
-        ? (form.oauth_provider_key ?? (oauthProviders.length === 1 ? oauthProviders[0].key : null))
-        : null,
-    tags: sanitizeEntityTags(form.tags),
   }
 }
 
