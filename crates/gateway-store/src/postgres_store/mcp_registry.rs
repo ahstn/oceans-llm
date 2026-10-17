@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
-    StoredTool, StoredVersion, ToolWrite, discovered_definition, plan_tool_write,
-    reuse_historical_version,
+    StoredTool, StoredVersion, ToolWrite, discovered_definition, historical_lookups,
+    plan_tool_writes, reuse_historical_versions,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::mcp_tool_review::status_after_rejection;
@@ -444,17 +444,18 @@ impl McpRegistryRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
 
-        for tool in tools {
-            let existing = stored.get(&tool.upstream_name);
-            let mut write = plan_tool_write(existing, tool, approve_tool_changes);
-            if let Some(existing) = existing
-                && write.allocates_version()
-            {
-                let historical =
-                    find_version_by_definition(&mut tx, existing.tool.mcp_tool_id, tool).await?;
-                write = reuse_historical_version(write, historical);
-            }
-            apply_tool_write(&mut tx, run.finished_at, tool, existing, &write).await?;
+        let mut planned = plan_tool_writes(&stored, tools, approve_tool_changes);
+        let historical = find_versions_by_hash(&mut tx, &historical_lookups(&planned)).await?;
+        reuse_historical_versions(&mut planned, &historical);
+        for plan in &planned {
+            apply_tool_write(
+                &mut tx,
+                run.finished_at,
+                plan.tool,
+                plan.existing,
+                &plan.write,
+            )
+            .await?;
         }
 
         sqlx::query(
@@ -973,31 +974,45 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// The newest version of a tool with this definition (schema hash,
-/// description and title), and its status.
-async fn find_version_by_definition(
+/// Stored versions of the given tools with the given schema hashes, in one
+/// query, for discovery to reuse instead of creating duplicates.
+async fn find_versions_by_hash(
     conn: &mut sqlx::PgConnection,
-    mcp_tool_id: Uuid,
-    tool: &UpsertExternalMcpToolRecord,
-) -> Result<Option<(i64, McpToolVersionStatus)>, StoreError> {
-    let Some(row) = sqlx::query(
-        "SELECT schema_version, status FROM mcp_tool_versions WHERE mcp_tool_id = $1 AND schema_hash = $2 AND description IS NOT DISTINCT FROM $3 AND title IS NOT DISTINCT FROM $4 ORDER BY schema_version DESC LIMIT 1",
+    lookups: &[(Uuid, &str)],
+) -> Result<HashMap<Uuid, Vec<StoredVersion>>, StoreError> {
+    let mut by_tool: HashMap<Uuid, Vec<StoredVersion>> = HashMap::new();
+    if lookups.is_empty() {
+        return Ok(by_tool);
+    }
+    let (tool_ids, hashes): (Vec<String>, Vec<String>) = lookups
+        .iter()
+        .map(|(tool_id, hash)| (tool_id.to_string(), (*hash).to_string()))
+        .unzip();
+    let rows = sqlx::query(
+        "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE (mcp_tool_id, schema_hash) IN (SELECT * FROM UNNEST($1::text[], $2::text[]))",
     )
-    .bind(mcp_tool_id.to_string())
-    .bind(tool.schema_hash.as_str())
-    .bind(tool.description.as_deref())
-    .bind(tool.metadata.title.as_deref())
-    .fetch_optional(&mut *conn)
+    .bind(tool_ids)
+    .bind(hashes)
+    .fetch_all(&mut *conn)
     .await
-    .map_err(to_query_error)?
-    else {
-        return Ok(None);
-    };
-    let status: String = row.try_get(1).map_err(to_query_error)?;
-    let status = McpToolVersionStatus::from_db(&status).ok_or_else(|| {
-        StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
-    })?;
-    Ok(Some((row.try_get(0).map_err(to_query_error)?, status)))
+    .map_err(to_query_error)?;
+    for row in &rows {
+        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+        let status: String = row.try_get(3).map_err(to_query_error)?;
+        by_tool
+            .entry(parse_uuid(&mcp_tool_id)?)
+            .or_default()
+            .push(StoredVersion {
+                schema_version: row.try_get(1).map_err(to_query_error)?,
+                schema_hash: row.try_get(2).map_err(to_query_error)?,
+                description: row.try_get(4).map_err(to_query_error)?,
+                title: row.try_get(5).map_err(to_query_error)?,
+                status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+                })?,
+            });
+    }
+    Ok(by_tool)
 }
 
 /// Marks every pending version other than `keep` as superseded.

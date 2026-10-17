@@ -196,6 +196,9 @@ pub struct StoredToolForReview<'a> {
     pub approved_schema_version: Option<i64>,
     /// The version waiting for review, and the versions an admin rejected.
     pub pending: Option<&'a McpToolDefinitionKey>,
+    /// The number of the waiting version. A superseded version reopened for
+    /// review keeps its old number, which can be below `latest_version`.
+    pub pending_version: Option<i64>,
     pub rejected: &'a [McpToolDefinitionKey],
     /// The highest version number the tool has.
     pub latest_version: i64,
@@ -257,7 +260,7 @@ pub fn decide_discovery(
             let version = if matches_row {
                 stored.schema_version
             } else {
-                stored.latest_version
+                stored.pending_version.unwrap_or(stored.latest_version)
             };
             return DiscoveryDecision::AutoApprove {
                 version,
@@ -367,6 +370,7 @@ mod tests {
             approval_status: status,
             approved_schema_version: approved,
             pending,
+            pending_version: pending.map(|_| 2),
             rejected,
             latest_version: if pending.is_some() { 2 } else { 1 },
         }
@@ -474,6 +478,31 @@ mod tests {
             ),
             DiscoveryDecision::AutoApprove {
                 version: 2,
+                reuse_version: true
+            }
+        );
+    }
+
+    #[test]
+    fn turning_approval_off_approves_a_reopened_pending_version_by_its_number() {
+        let served = definition("h1", "old", json!({}));
+        let pending = definition("h3", "reopened", json!({}));
+        let pending_key = pending.key();
+        let state = StoredToolForReview {
+            pending_version: Some(3),
+            latest_version: 4,
+            ..stored(
+                &served,
+                McpToolApprovalStatus::PendingChange,
+                Some(1),
+                Some(&pending_key),
+                &[],
+            )
+        };
+        assert_eq!(
+            decide_discovery(Some(&state), &pending, false),
+            DiscoveryDecision::AutoApprove {
+                version: 3,
                 reuse_version: true
             }
         );

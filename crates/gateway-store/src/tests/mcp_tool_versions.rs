@@ -789,6 +789,37 @@ where
         page.iter().map(|v| v.schema_version).collect::<Vec<_>>(),
         vec![3, 2]
     );
+
+    // With approval off, the reopened C is approved as its own version 3,
+    // not as the newest number, which belongs to D.
+    set_approval(store, &server, false).await;
+    let tools = discover(
+        store,
+        &server,
+        &[Def("fetch", "C", json!({"type": "object"}))],
+    )
+    .await;
+    let fetch = find(&tools, "fetch");
+    assert_eq!(fetch.schema_version, 3);
+    assert_eq!(fetch.description.as_deref(), Some("C"));
+    let versions = store
+        .list_mcp_tool_versions(id, &ALL_VERSIONS)
+        .await
+        .expect("versions");
+    let status_of = |version: i64| {
+        versions
+            .iter()
+            .find(|candidate| candidate.schema_version == version)
+            .map(|candidate| (candidate.status, candidate.definition.description.clone()))
+    };
+    assert_eq!(
+        status_of(3),
+        Some((McpToolVersionStatus::Approved, Some("C".to_string())))
+    );
+    assert_eq!(
+        status_of(4),
+        Some((McpToolVersionStatus::Superseded, Some("D".to_string())))
+    );
 }
 
 #[tokio::test]

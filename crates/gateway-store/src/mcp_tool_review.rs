@@ -3,6 +3,8 @@
 //! Each backend loads the server's tools and versions, asks `plan_tool_write`
 //! what one discovered definition means, and runs the matching statements.
 
+use std::collections::HashMap;
+
 use gateway_core::{
     ExternalMcpToolRecord, McpToolApprovalStatus, McpToolDefinition, McpToolDefinitionKey,
     McpToolVersionStatus, UpsertExternalMcpToolRecord,
@@ -138,10 +140,11 @@ pub(crate) fn plan_tool_write(
         approval_status: stored.tool.review.approval_status,
         approved_schema_version: stored.tool.review.approved_schema_version,
         pending: pending.as_ref(),
+        pending_version: stored.tool.review.pending_schema_version,
         rejected: &rejected,
         latest_version,
     };
-    match decide_discovery(Some(&review), &discovered_def, approve_tool_changes) {
+    let write = match decide_discovery(Some(&review), &discovered_def, approve_tool_changes) {
         DiscoveryDecision::Insert { status } => ToolWrite::Insert { status },
         DiscoveryDecision::Unchanged => ToolWrite::Touch,
         DiscoveryDecision::AutoApprove {
@@ -175,7 +178,18 @@ pub(crate) fn plan_tool_write(
                 None
             },
         },
+    };
+    // A row from before V58 seen unchanged is marked captured, so that later
+    // metadata from the upstream counts as a change rather than a capture.
+    if write == ToolWrite::Touch
+        && !stored.metadata_captured
+        && discovered_def.same_definition(&current)
+    {
+        return ToolWrite::CaptureMetadata {
+            version: stored.tool.schema_version,
+        };
     }
+    write
 }
 
 impl ToolWrite {
@@ -229,6 +243,71 @@ pub(crate) fn reuse_historical_version(
             insert_version: false,
         },
         other => other,
+    }
+}
+
+/// One discovered tool with its stored row and planned write.
+pub(crate) struct PlannedWrite<'a> {
+    pub tool: &'a UpsertExternalMcpToolRecord,
+    pub existing: Option<&'a StoredTool>,
+    pub write: ToolWrite,
+}
+
+/// Plans every discovered tool's write against the stored snapshot.
+pub(crate) fn plan_tool_writes<'a>(
+    stored: &'a HashMap<String, StoredTool>,
+    tools: &'a [UpsertExternalMcpToolRecord],
+    approve_tool_changes: bool,
+) -> Vec<PlannedWrite<'a>> {
+    tools
+        .iter()
+        .map(|tool| {
+            let existing = stored.get(&tool.upstream_name);
+            PlannedWrite {
+                tool,
+                existing,
+                write: plan_tool_write(existing, tool, approve_tool_changes),
+            }
+        })
+        .collect()
+}
+
+/// `(mcp_tool_id, schema_hash)` for every planned write that would create a
+/// version, so one query can find older versions to reuse.
+pub(crate) fn historical_lookups<'a>(planned: &[PlannedWrite<'a>]) -> Vec<(uuid::Uuid, &'a str)> {
+    planned
+        .iter()
+        .filter(|plan| plan.write.allocates_version())
+        .filter_map(|plan| {
+            plan.existing
+                .map(|existing| (existing.tool.mcp_tool_id, plan.tool.schema_hash.as_str()))
+        })
+        .collect()
+}
+
+/// Rewrites planned writes to reuse older versions with the same
+/// definition. `historical` holds the versions `historical_lookups` asked
+/// for, by tool.
+pub(crate) fn reuse_historical_versions(
+    planned: &mut [PlannedWrite<'_>],
+    historical: &HashMap<uuid::Uuid, Vec<StoredVersion>>,
+) {
+    for plan in planned {
+        let Some(existing) = plan.existing else {
+            continue;
+        };
+        if !plan.write.allocates_version() {
+            continue;
+        }
+        let key = discovered_definition(plan.tool).key();
+        let newest = historical
+            .get(&existing.tool.mcp_tool_id)
+            .into_iter()
+            .flatten()
+            .filter(|version| version.key() == key)
+            .max_by_key(|version| version.schema_version)
+            .map(|version| (version.schema_version, version.status));
+        plan.write = reuse_historical_version(plan.write.clone(), newest);
     }
 }
 

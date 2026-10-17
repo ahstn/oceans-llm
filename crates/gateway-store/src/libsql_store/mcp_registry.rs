@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
-    StoredTool, StoredVersion, ToolWrite, discovered_definition, plan_tool_write,
-    reuse_historical_version,
+    StoredTool, StoredVersion, ToolWrite, discovered_definition, historical_lookups,
+    plan_tool_writes, reuse_historical_versions,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::mcp_tool_review::status_after_rejection;
@@ -471,17 +471,11 @@ impl McpRegistryRepository for LibsqlStore {
         .await
         .map_err(to_query_error)?;
 
-        for tool in tools {
-            let existing = stored.get(&tool.upstream_name);
-            let mut write = plan_tool_write(existing, tool, approve_tool_changes);
-            if let Some(existing) = existing
-                && write.allocates_version()
-            {
-                let historical =
-                    find_version_by_definition(&tx, existing.tool.mcp_tool_id, tool).await?;
-                write = reuse_historical_version(write, historical);
-            }
-            apply_tool_write(&tx, run.finished_at, tool, existing, &write).await?;
+        let mut planned = plan_tool_writes(&stored, tools, approve_tool_changes);
+        let historical = find_versions_by_hash(&tx, &historical_lookups(&planned)).await?;
+        reuse_historical_versions(&mut planned, &historical);
+        for plan in &planned {
+            apply_tool_write(&tx, run.finished_at, plan.tool, plan.existing, &plan.write).await?;
         }
 
         tx.execute(
@@ -1015,33 +1009,56 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// The newest version of a tool with this definition (schema hash,
-/// description and title), and its status.
-async fn find_version_by_definition(
+/// Stored versions of the given tools with the given schema hashes, in one
+/// query, for discovery to reuse instead of creating duplicates.
+async fn find_versions_by_hash(
     connection: &libsql::Connection,
-    mcp_tool_id: Uuid,
-    tool: &UpsertExternalMcpToolRecord,
-) -> Result<Option<(i64, McpToolVersionStatus)>, StoreError> {
+    lookups: &[(Uuid, &str)],
+) -> Result<HashMap<Uuid, Vec<StoredVersion>>, StoreError> {
+    let mut by_tool: HashMap<Uuid, Vec<StoredVersion>> = HashMap::new();
+    if lookups.is_empty() {
+        return Ok(by_tool);
+    }
+    let matches = (0..lookups.len())
+        .map(|index| {
+            format!(
+                "(mcp_tool_id = ?{} AND schema_hash = ?{})",
+                index * 2 + 1,
+                index * 2 + 2
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let params = lookups
+        .iter()
+        .flat_map(|(tool_id, hash)| [tool_id.to_string(), (*hash).to_string()])
+        .collect::<Vec<_>>();
     let mut rows = connection
         .query(
-            "SELECT schema_version, status FROM mcp_tool_versions WHERE mcp_tool_id = ?1 AND schema_hash = ?2 AND description IS ?3 AND title IS ?4 ORDER BY schema_version DESC LIMIT 1",
-            libsql::params![
-                mcp_tool_id.to_string(),
-                tool.schema_hash.as_str(),
-                tool.description.as_deref(),
-                tool.metadata.title.as_deref(),
-            ],
+            &format!(
+                "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE {matches}"
+            ),
+            libsql::params_from_iter(params),
         )
         .await
         .map_err(to_query_error)?;
-    let Some(row) = rows.next().await.map_err(to_query_error)? else {
-        return Ok(None);
-    };
-    let status: String = row.get(1).map_err(to_query_error)?;
-    let status = McpToolVersionStatus::from_db(&status).ok_or_else(|| {
-        StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
-    })?;
-    Ok(Some((row.get(0).map_err(to_query_error)?, status)))
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
+        let status: String = row.get(3).map_err(to_query_error)?;
+        by_tool
+            .entry(parse_uuid(&mcp_tool_id)?)
+            .or_default()
+            .push(StoredVersion {
+                schema_version: row.get(1).map_err(to_query_error)?,
+                schema_hash: row.get(2).map_err(to_query_error)?,
+                description: row.get(4).map_err(to_query_error)?,
+                title: row.get(5).map_err(to_query_error)?,
+                status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+                })?,
+            });
+    }
+    Ok(by_tool)
 }
 
 /// Marks every pending version other than `keep` as superseded.
