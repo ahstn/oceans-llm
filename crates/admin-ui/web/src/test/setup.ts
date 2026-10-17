@@ -1,13 +1,17 @@
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterAll, afterEach, vi } from 'vitest'
 
 // Vitest runs without globals, so Testing Library cannot register its own `afterEach(cleanup)`.
-// Unmount after every test, then give React one macrotask to run the Scheduler work that commits
-// outside `act` (resolved promises, timers) leave queued. Work still queued when a file finishes
-// can run after jsdom teardown and fail the run with "ReferenceError: window is not defined".
-afterEach(async () => {
+afterEach(() => {
   cleanup()
+})
+
+// Commits outside `act` (resolved promises, timers) leave React Scheduler work queued. Run it
+// before Vitest tears down jsdom, where it fails with "ReferenceError: window is not defined".
+// Do this once per file: awaiting it after every test makes each test start in a later
+// event-loop phase, which reorders `waitFor` timers against React renders.
+afterAll(async () => {
   await act(async () => {})
 })
 
