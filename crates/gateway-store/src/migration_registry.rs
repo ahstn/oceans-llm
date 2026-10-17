@@ -7,13 +7,17 @@ pub(crate) struct MigrationManifest {
     pub postgres_sql: &'static str,
 }
 
-/// libsql migrations that rebuild a table other tables reference. They run
-/// with foreign keys off, as SQLite's table-rebuild procedure requires.
-const LIBSQL_FOREIGN_KEYS_OFF: &[u32] = &[65];
+/// libsql migrations that rebuild a table other tables reference, with that
+/// table. They run with foreign keys off, as SQLite's table-rebuild
+/// procedure requires, and then check the rebuilt table's children.
+const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(65, "gateway_oauth_clients")];
 
 impl MigrationManifest {
-    pub(crate) fn libsql_foreign_keys_off(&self) -> bool {
-        LIBSQL_FOREIGN_KEYS_OFF.contains(&self.version)
+    pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
+        LIBSQL_REBUILT_PARENTS
+            .iter()
+            .find(|(version, _)| *version == self.version)
+            .map(|(_, table)| *table)
     }
 
     pub(crate) fn sql_for(&self, backend: MigrationBackend) -> &'static str {

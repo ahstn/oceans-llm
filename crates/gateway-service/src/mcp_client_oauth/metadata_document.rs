@@ -128,6 +128,18 @@ struct CachedClient {
     reusable_when_stale: bool,
 }
 
+/// What a client is being loaded for, which decides what may stand in for
+/// a metadata document that cannot be used right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClientLookup {
+    /// Authorization, code exchange, and refresh: only a cacheable copy
+    /// stands in, and only while the document's host is unreachable.
+    Use,
+    /// Revocation, which is always safe: the stored row also stands in when
+    /// the document is gone, no longer validates, or documents are off.
+    Revoke,
+}
+
 /// Resolves metadata document clients and caches what it fetched.
 pub struct ClientMetadataDocuments {
     allowed_domains: Vec<String>,
@@ -186,15 +198,15 @@ impl ClientMetadataDocuments {
     /// copy, for up to [`MAX_STALE_IF_ERROR`] past its freshness. A document
     /// served `no-store` or `no-cache` is never cached, so it never stands in.
     ///
-    /// With `stored_fallback`, the stored row stands in when the document
-    /// cannot be fetched or no longer validates. Revocation uses it, since
-    /// ending a grant is safe whatever the document now says.
+    /// For [`ClientLookup::Revoke`], the stored row stands in when the
+    /// document cannot be fetched or no longer validates, since ending a
+    /// grant is safe whatever the document now says.
     pub(crate) async fn resolve<R>(
         &self,
         repo: &R,
         client_id: &str,
         now: OffsetDateTime,
-        stored_fallback: bool,
+        lookup: ClientLookup,
     ) -> Result<GatewayOauthClientRecord, OauthError>
     where
         R: GatewayOauthRepository + ?Sized,
@@ -213,7 +225,9 @@ impl ClientMetadataDocuments {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
         };
-        if stored_fallback && let Some(stored) = stored_client(repo, client_id).await? {
+        if lookup == ClientLookup::Revoke
+            && let Some(stored) = stored_client(repo, client_id).await?
+        {
             return Ok(stored);
         }
         Err(failure.error)
@@ -543,10 +557,14 @@ pub fn metadata_document_host(client: &GatewayOauthClientRecord) -> Option<Strin
     if client.registration_kind != METADATA_DOCUMENT_REGISTRATION_KIND {
         return None;
     }
-    Url::parse(&client.client_id)
-        .ok()?
-        .host_str()
-        .map(ToOwned::to_owned)
+    let url = Url::parse(&client.client_id).ok()?;
+    let host = url.host_str()?;
+    // A non-default port can belong to someone other than the site's owner,
+    // so the consent screen names it.
+    Some(
+        url.port()
+            .map_or_else(|| host.to_owned(), |port| format!("{host}:{port}")),
+    )
 }
 
 /// The client ID rules of the metadata document draft: https, a path, and no

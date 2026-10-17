@@ -9,7 +9,7 @@ use url::Url;
 use uuid::Uuid;
 
 use super::{
-    McpClientOauthService,
+    ClientLookup, McpClientOauthService,
     error::OauthError,
     metadata_document::metadata_document_host,
     redirect::{is_loopback_redirect, redirect_uri_is_registered},
@@ -78,7 +78,7 @@ where
             AuthorizationRejection::Display(OauthError::invalid_request("client_id is required"))
         })?;
         let client = self
-            .load_client(client_id, now, false)
+            .load_client(client_id, now, ClientLookup::Use)
             .await
             .map_err(AuthorizationRejection::Display)?
             .ok_or_else(|| {

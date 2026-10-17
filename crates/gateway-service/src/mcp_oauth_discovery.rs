@@ -228,13 +228,13 @@ pub async fn discover_mcp_oauth(
 ) -> Result<McpOauthDiscovery, GatewayError> {
     let server = Url::parse(server_url)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    ensure_fetchable(&server, &server, "server_url")?;
+    ensure_fetchable(http, &server, "server_url")?;
     let mut warnings = Vec::new();
     let challenge = probe_challenge(http, &server).await;
 
     let mut resource_metadata = None;
     for candidate in protected_resource_metadata_urls(&server, challenge.as_ref())? {
-        ensure_fetchable(&candidate, &server, "resource_metadata")?;
+        ensure_fetchable(http, &candidate, "resource_metadata")?;
         if let Some(metadata) = fetch_json::<ProtectedResourceMetadata>(http, &candidate).await? {
             resource_metadata = Some((candidate, metadata));
             break;
@@ -296,7 +296,7 @@ pub async fn discover_mcp_oauth(
             "authorization server `{issuer}` is invalid: {error}"
         ))
     })?;
-    ensure_fetchable(&issuer_url, &server, "authorization server")?;
+    ensure_fetchable(http, &issuer_url, "authorization server")?;
     let mut server_metadata = None;
     for candidate in authorization_server_metadata_urls(&issuer_url) {
         if let Some(metadata) = fetch_json::<AuthorizationServerMetadata>(http, &candidate).await? {
@@ -326,7 +326,7 @@ pub async fn discover_mcp_oauth(
         let parsed = Url::parse(&value).map_err(|error| {
             GatewayError::InvalidRequest(format!("{field} is invalid: {error}"))
         })?;
-        ensure_fetchable(&parsed, &server, field)?;
+        ensure_fetchable(http, &parsed, field)?;
         Ok(value)
     };
     let authorization_endpoint =
@@ -499,30 +499,18 @@ fn well_known_url(base: &Url, name: &str, path: &str) -> Url {
     url
 }
 
-/// Metadata URLs come from the upstream, so they must use https. Plain http
-/// is allowed only for loopback hosts when the MCP server is on loopback too,
-/// which keeps a remote server from pointing the gateway at local services.
-fn ensure_fetchable(url: &Url, server: &Url, field: &str) -> Result<(), GatewayError> {
-    let allowed = match url.scheme() {
-        "https" => url.host().is_some(),
-        "http" => is_loopback(url) && is_loopback(server),
-        _ => false,
-    };
-    if !allowed || !url.username().is_empty() || url.password().is_some() {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{field} must be an https URL"
-        )));
-    }
-    Ok(())
-}
-
-fn is_loopback(url: &Url) -> bool {
-    match url.host() {
-        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        None => false,
-    }
+/// Metadata URLs come from the upstream, so each one must pass the
+/// fetcher's own rules: https, or plain http to loopback when the MCP server
+/// is on loopback too, and an address within the server's scope. Naming the
+/// field tells the admin which URL was refused. The authorization endpoint
+/// is never fetched, but follows the same rule.
+fn ensure_fetchable(http: &OutboundFetcher, url: &Url, field: &str) -> Result<(), GatewayError> {
+    http.check_url(url).map_err(|error| {
+        GatewayError::InvalidRequest(format!(
+            "{field} is not allowed: {error}{}",
+            private_network_hint(&error)
+        ))
+    })
 }
 
 /// Fetches a metadata document. `Ok(None)` means it is not published there,

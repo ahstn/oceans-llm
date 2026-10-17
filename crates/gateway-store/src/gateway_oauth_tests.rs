@@ -1164,6 +1164,18 @@ async fn libsql_metadata_document_migration_keeps_client_children() {
     )
     .await
     .expect("request");
+    // An old orphan in a table unrelated to the rebuild must not block it.
+    conn.execute("PRAGMA foreign_keys = OFF", ())
+        .await
+        .expect("foreign keys off");
+    conn.execute(
+        "INSERT INTO gateway_oauth_tokens (token_hash, grant_id, token_kind, scope,
+            expires_at, created_at)
+         VALUES ('orphan', 'missing-grant', 'access', 'mcp:aggregate', 99, 1)",
+        (),
+    )
+    .await
+    .expect("orphan token");
     drop(conn);
     drop(db);
 

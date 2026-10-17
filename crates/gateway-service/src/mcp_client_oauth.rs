@@ -6,6 +6,7 @@ mod authorization;
 mod authorized_clients;
 mod error;
 pub mod metadata_document;
+pub(crate) use metadata_document::ClientLookup;
 mod redirect;
 mod registration;
 mod secrets;
@@ -56,19 +57,19 @@ where
     R: GatewayOauthRepository,
 {
     /// Loads a client: one whose `client_id` is a metadata document URL from
-    /// that document, any other from its registration. `stored_fallback` is
-    /// for revocation; see [`ClientMetadataDocuments`].
+    /// that document, any other from its registration. See [`ClientLookup`]
+    /// for what may stand in for a document that cannot be used.
     pub(crate) async fn load_client(
         &self,
         client_id: &str,
         now: OffsetDateTime,
-        stored_fallback: bool,
+        lookup: ClientLookup,
     ) -> Result<Option<GatewayOauthClientRecord>, OauthError> {
         if is_metadata_document_client_id(client_id)
             && let Some(documents) = self.settings.client_id_metadata_documents()
         {
             return documents
-                .resolve(self.repo.as_ref(), client_id, now, stored_fallback)
+                .resolve(self.repo.as_ref(), client_id, now, lookup)
                 .await
                 .map(Some);
         }
@@ -79,7 +80,7 @@ where
             .get_gateway_oauth_client(client_id)
             .await?
             .filter(|client| {
-                stored_fallback
+                lookup == ClientLookup::Revoke
                     || client.registration_kind
                         != metadata_document::METADATA_DOCUMENT_REGISTRATION_KIND
             }))

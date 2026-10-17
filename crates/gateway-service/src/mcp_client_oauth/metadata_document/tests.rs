@@ -53,6 +53,18 @@ fn a_valid_document_becomes_a_public_client() {
         metadata_document_host(&client).as_deref(),
         Some("editor.example.com")
     );
+    // A non-default port is part of who published it.
+    let mut on_port = client.clone();
+    on_port.client_id = "https://editor.example.com:8443/oauth/client.json".to_string();
+    assert_eq!(
+        metadata_document_host(&on_port).as_deref(),
+        Some("editor.example.com:8443")
+    );
+    on_port.client_id = "https://editor.example.com:443/oauth/client.json".to_string();
+    assert_eq!(
+        metadata_document_host(&on_port).as_deref(),
+        Some("editor.example.com")
+    );
 
     // An omitted method means none for these clients, not RFC 7591's
     // client_secret_basic default.

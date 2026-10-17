@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{
-    McpClientOauthService,
+    ClientLookup, McpClientOauthService,
     error::OauthError,
     redirect::redirect_uri_is_registered,
     secrets::{generate_token, oauth_token_hash, pkce_s256_matches, run_argon2},
@@ -80,7 +80,9 @@ where
             .grant_type
             .clone()
             .ok_or_else(|| OauthError::invalid_request("grant_type is required"))?;
-        let client = self.authenticate_client(credentials, now, false).await?;
+        let client = self
+            .authenticate_client(credentials, now, ClientLookup::Use)
+            .await?;
         if !client.allows_grant_type(&grant_type) {
             return Err(match grant_type.as_str() {
                 "authorization_code" | "refresh_token" => OauthError::unauthorized_client(format!(
@@ -104,10 +106,10 @@ where
         &self,
         credentials: &ClientCredentials,
         now: OffsetDateTime,
-        stored_fallback: bool,
+        lookup: ClientLookup,
     ) -> Result<GatewayOauthClientRecord, OauthError> {
         let client = self
-            .load_client(credentials.client_id(), now, stored_fallback)
+            .load_client(credentials.client_id(), now, lookup)
             .await?
             .ok_or_else(|| OauthError::invalid_client("client authentication failed"))?;
         let secret = match (client.token_endpoint_auth_method, credentials) {
@@ -390,7 +392,9 @@ where
     ) -> Result<(), OauthError> {
         // Ending a grant is always safe, so a document that no longer
         // validates does not stop its client from revoking.
-        let client = self.authenticate_client(credentials, now, true).await?;
+        let client = self
+            .authenticate_client(credentials, now, ClientLookup::Revoke)
+            .await?;
         let token = token.ok_or_else(|| OauthError::invalid_request("token is required"))?;
         if let Some(context) = self
             .repo

@@ -253,19 +253,34 @@ async fn rejects_metadata_for_another_issuer_or_without_s256() {
 
 #[test]
 fn remote_servers_cannot_point_discovery_at_loopback() {
-    let remote = Url::parse("https://mcp.example.com/mcp").expect("url");
-    let local = Url::parse("http://127.0.0.1:9000/meta").expect("url");
-    assert!(ensure_fetchable(&local, &remote, "resource_metadata").is_err());
-    assert!(
-        ensure_fetchable(
-            &Url::parse("http://mcp.example.com/x").unwrap(),
-            &remote,
-            "x"
-        )
-        .is_err()
-    );
-    let loopback_server = Url::parse("http://localhost:8080/mcp").expect("url");
-    ensure_fetchable(&local, &loopback_server, "resource_metadata").expect("local development");
+    use crate::outbound_fetch::OutboundAddressScope;
+
+    let url = |raw: &str| Url::parse(raw).expect("url");
+    // A public server's fetcher refuses loopback and plain http.
+    let remote = OutboundFetcher::new(OutboundAddressScope::Public);
+    for (raw, reason) in [
+        ("http://127.0.0.1:9000/meta", "https"),
+        ("https://127.0.0.1:9000/meta", "not allowed"),
+        ("https://[::ffff:127.0.0.1]/meta", "not allowed"),
+        ("http://mcp.example.com/x", "https"),
+    ] {
+        let error = ensure_fetchable(&remote, &url(raw), "resource_metadata")
+            .expect_err("refused")
+            .to_string();
+        assert!(
+            error.contains("resource_metadata is not allowed"),
+            "{raw}: {error}"
+        );
+        assert!(error.contains(reason), "{raw}: {error}");
+    }
+    // A loopback server, for local development, may use loopback over http.
+    let local = OutboundFetcher::new(OutboundAddressScope::Loopback);
+    ensure_fetchable(
+        &local,
+        &url("http://127.0.0.1:9000/meta"),
+        "resource_metadata",
+    )
+    .expect("local development");
 }
 
 #[tokio::test]
