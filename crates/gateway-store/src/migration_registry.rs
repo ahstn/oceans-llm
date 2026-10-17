@@ -7,7 +7,19 @@ pub(crate) struct MigrationManifest {
     pub postgres_sql: &'static str,
 }
 
+/// libsql migrations that rebuild a table other tables reference, with that
+/// table. They run with foreign keys off, as SQLite's table-rebuild
+/// procedure requires, and then check the rebuilt table's children.
+const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(66, "gateway_oauth_clients")];
+
 impl MigrationManifest {
+    pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
+        LIBSQL_REBUILT_PARENTS
+            .iter()
+            .find(|(version, _)| *version == self.version)
+            .map(|(_, table)| *table)
+    }
+
     pub(crate) fn sql_for(&self, backend: MigrationBackend) -> &'static str {
         match backend {
             MigrationBackend::Libsql => self.libsql_sql,
@@ -388,10 +400,19 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 66,
+        name: "gateway_oauth_metadata_document_clients",
+        checksum: "V66__gateway_oauth_metadata_document_clients.sql",
+        libsql_sql: include_str!("../migrations/V66__gateway_oauth_metadata_document_clients.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 67,
         name: "batch_jobs_route_index",
-        checksum: "V66__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V66__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V66__batch_jobs_route_index.sql"),
+        checksum: "V67__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V67__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__batch_jobs_route_index.sql"),
     },
 ];
 

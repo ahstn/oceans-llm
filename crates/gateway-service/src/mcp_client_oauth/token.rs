@@ -9,8 +9,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{
-    McpClientOauthService,
+    ClientLookup, McpClientOauthService,
     error::OauthError,
+    redirect::redirect_uri_is_registered,
     secrets::{generate_token, oauth_token_hash, pkce_s256_matches, run_argon2},
 };
 use crate::authenticator::verify_gateway_key_secret;
@@ -79,7 +80,9 @@ where
             .grant_type
             .clone()
             .ok_or_else(|| OauthError::invalid_request("grant_type is required"))?;
-        let client = self.authenticate_client(credentials).await?;
+        let client = self
+            .authenticate_client(credentials, now, ClientLookup::Use)
+            .await?;
         if !client.allows_grant_type(&grant_type) {
             return Err(match grant_type.as_str() {
                 "authorization_code" | "refresh_token" => OauthError::unauthorized_client(format!(
@@ -97,14 +100,16 @@ where
         }
     }
 
-    /// Authenticates the client with the method it registered.
+    /// Authenticates the client with the method it registered. A metadata
+    /// document client is checked against its document again.
     pub(crate) async fn authenticate_client(
         &self,
         credentials: &ClientCredentials,
+        now: OffsetDateTime,
+        lookup: ClientLookup,
     ) -> Result<GatewayOauthClientRecord, OauthError> {
         let client = self
-            .repo
-            .get_gateway_oauth_client(credentials.client_id())
+            .load_client(credentials.client_id(), now, lookup)
             .await?
             .ok_or_else(|| OauthError::invalid_client("client authentication failed"))?;
         let secret = match (client.token_endpoint_auth_method, credentials) {
@@ -195,6 +200,12 @@ where
         if !redirect_matches {
             return Err(OauthError::invalid_grant(
                 "redirect_uri does not match the authorization request",
+            ));
+        }
+        // A metadata document can drop a redirect URI after the request.
+        if !redirect_uri_is_registered(&client.redirect_uris, &authorization.redirect_uri) {
+            return Err(OauthError::invalid_grant(
+                "redirect_uri is no longer registered for this client",
             ));
         }
         if let Some(resource) = request.resource.as_deref() {
@@ -379,7 +390,11 @@ where
         token: Option<&str>,
         now: OffsetDateTime,
     ) -> Result<(), OauthError> {
-        let client = self.authenticate_client(credentials).await?;
+        // Ending a grant is always safe, so a document that no longer
+        // validates does not stop its client from revoking.
+        let client = self
+            .authenticate_client(credentials, now, ClientLookup::Revoke)
+            .await?;
         let token = token.ok_or_else(|| OauthError::invalid_request("token is required"))?;
         if let Some(context) = self
             .repo

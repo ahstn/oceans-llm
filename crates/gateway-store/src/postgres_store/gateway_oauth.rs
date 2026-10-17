@@ -216,6 +216,43 @@ impl GatewayOauthRepository for PostgresStore {
         row.as_ref().map(decode_client).transpose()
     }
 
+    async fn upsert_gateway_oauth_metadata_document_client(
+        &self,
+        client: &GatewayOauthClientRecord,
+    ) -> Result<GatewayOauthClientRecord, StoreError> {
+        let sql = format!(
+            "INSERT INTO gateway_oauth_clients ({CLIENT_COLUMNS})
+             VALUES ($1, 'metadata_document', $2, $3, $4, $5, $6, 'none', NULL, $7, $8, $9, $9)
+             ON CONFLICT (client_id) DO UPDATE SET
+               client_name = excluded.client_name,
+               client_uri = excluded.client_uri,
+               logo_uri = excluded.logo_uri,
+               redirect_uris_json = excluded.redirect_uris_json,
+               grant_types_json = excluded.grant_types_json,
+               software_id = excluded.software_id,
+               software_version = excluded.software_version,
+               updated_at = excluded.updated_at
+             WHERE gateway_oauth_clients.registration_kind = 'metadata_document'
+             RETURNING {CLIENT_COLUMNS}"
+        );
+        let row = sqlx::query(&sql)
+            .bind(&client.client_id)
+            .bind(&client.client_name)
+            .bind(&client.client_uri)
+            .bind(&client.logo_uri)
+            .bind(encode_json_list(&client.redirect_uris)?)
+            .bind(encode_json_list(&client.grant_types)?)
+            .bind(&client.software_id)
+            .bind(&client.software_version)
+            .bind(client.updated_at.unix_timestamp())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        row.as_ref().map(decode_client).transpose()?.ok_or_else(|| {
+            StoreError::Conflict("client_id belongs to a dynamically registered client".into())
+        })
+    }
+
     async fn create_gateway_oauth_authorization_request(
         &self,
         request: &GatewayOauthAuthorizationRequestRecord,
@@ -712,7 +749,10 @@ const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
 const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
      WHERE client_id IN (
          SELECT c.client_id FROM gateway_oauth_clients c
-         WHERE c.registration_kind = 'dynamic' AND c.created_at < $1
+         -- A metadata document row is refreshed on every fetch, so its age is
+         -- its last fetch: a row a process may still cache is never purged.
+         WHERE ((c.registration_kind = 'dynamic' AND c.created_at < $1)
+                OR (c.registration_kind = 'metadata_document' AND c.updated_at < $1))
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = c.client_id)
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
                            WHERE r.client_id = c.client_id)

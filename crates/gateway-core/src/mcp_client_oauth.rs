@@ -167,7 +167,8 @@ impl GatewayOauthClientAuthMethod {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayOauthClientRecord {
     pub client_id: String,
-    /// Only `dynamic` (RFC 7591) today.
+    /// `dynamic` (RFC 7591), or `metadata_document` for a client whose
+    /// `client_id` is the URL of its Client ID Metadata Document.
     pub registration_kind: String,
     pub client_name: Option<String>,
     pub client_uri: Option<String>,
@@ -397,6 +398,15 @@ pub trait GatewayOauthRepository: Send + Sync {
         client_id: &str,
     ) -> Result<Option<GatewayOauthClientRecord>, StoreError>;
 
+    /// Stores what a client's metadata document says, inserting the row the
+    /// first time and refreshing its metadata after. `created_at` is kept on
+    /// refresh. Returns the stored row, or `Conflict` when `client_id`
+    /// belongs to a client registered another way.
+    async fn upsert_gateway_oauth_metadata_document_client(
+        &self,
+        client: &GatewayOauthClientRecord,
+    ) -> Result<GatewayOauthClientRecord, StoreError>;
+
     async fn create_gateway_oauth_authorization_request(
         &self,
         request: &GatewayOauthAuthorizationRequestRecord,
@@ -514,7 +524,7 @@ pub trait GatewayOauthRepository: Send + Sync {
     /// expired before `retire_before`, so dead grants leave the live-grant
     /// index; revoking a session already revokes its grants. Then deletes authorization requests and
     /// tokens that expired before `expired_before`, and dynamically
-    /// registered clients created before `unused_clients_before` that never
+    /// registered or metadata document clients created before `unused_clients_before` that never
     /// received a grant and have no remaining authorization request. Grants
     /// are kept as an audit trail. Each step works in bounded batches, so a
     /// backlog never becomes one long transaction, and a run does a bounded

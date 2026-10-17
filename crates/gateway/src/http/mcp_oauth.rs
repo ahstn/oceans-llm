@@ -226,7 +226,7 @@ pub async fn start_mcp_oauth_connection(
     // A dynamic-registration server registers its client here, on first use.
     let client = state
         .mcp_oauth_runtime
-        .resolve_client(state.store.as_ref(), server_id, &config, true)
+        .resolve_client(state.store.as_ref(), &server, &config, true)
         .await?;
     let redirect_to = normalize_connection_redirect(request.redirect_to.as_deref());
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -391,7 +391,7 @@ async fn exchange_callback_code(
     }
     let client = state
         .mcp_oauth_runtime
-        .resolve_client(state.store.as_ref(), server.mcp_server_id, &config, false)
+        .resolve_client(state.store.as_ref(), &server, &config, false)
         .await?;
     state
         .mcp_oauth_runtime

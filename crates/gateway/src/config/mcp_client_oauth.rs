@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use gateway_service::{McpClientOauthSettings, mcp_client_oauth};
+use gateway_service::{ClientMetadataDocuments, McpClientOauthSettings, mcp_client_oauth};
 use serde::Deserialize;
 
 use super::GatewayConfig;
@@ -25,6 +25,30 @@ pub struct McpClientOauthConfig {
     /// the hourly cleanup deletes it.
     #[serde(default = "default_unused_client_retention_days")]
     pub unused_client_retention_days: i64,
+    #[serde(default)]
+    pub client_id_metadata_documents: ClientIdMetadataDocumentsConfig,
+}
+
+/// `mcp.client_oauth.client_id_metadata_documents`: clients that use an https
+/// URL as their `client_id`, which the gateway fetches.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientIdMetadataDocumentsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Hosts that may publish documents; each also allows its subdomains.
+    /// Empty allows any public host.
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+}
+
+impl Default for ClientIdMetadataDocumentsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allowed_domains: Vec::new(),
+        }
+    }
 }
 
 impl Default for McpClientOauthConfig {
@@ -36,6 +60,7 @@ impl Default for McpClientOauthConfig {
             refresh_token_ttl_seconds: default_refresh_token_ttl_seconds(),
             dynamic_client_registration: true,
             unused_client_retention_days: default_unused_client_retention_days(),
+            client_id_metadata_documents: ClientIdMetadataDocumentsConfig::default(),
         }
     }
 }
@@ -84,7 +109,7 @@ impl GatewayConfig {
                  and no other public base URL is configured"
             );
         };
-        McpClientOauthSettings::new(
+        let settings = McpClientOauthSettings::new(
             &issuer,
             config.access_token_ttl_seconds,
             config.refresh_token_ttl_seconds,
@@ -92,7 +117,13 @@ impl GatewayConfig {
         )
         .with_context(|| format!("{field} cannot be used as the MCP OAuth issuer"))?
         .with_unused_client_retention_days(config.unused_client_retention_days)
-        .context("mcp.client_oauth.unused_client_retention_days")
-        .map(Some)
+        .context("mcp.client_oauth.unused_client_retention_days")?;
+        let documents = &config.client_id_metadata_documents;
+        if !documents.enabled {
+            return Ok(Some(settings));
+        }
+        let documents = ClientMetadataDocuments::new(documents.allowed_domains.clone())
+            .context("mcp.client_oauth.client_id_metadata_documents.allowed_domains")?;
+        Ok(Some(settings.with_client_id_metadata_documents(documents)))
     }
 }
