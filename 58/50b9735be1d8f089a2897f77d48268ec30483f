@@ -1,0 +1,45 @@
+.agents/skills/verify-oceans-admin/features/mcp-ownership.md
+  s_7a5811202bdfd5::t_1b6f3eb398d637 44
+crates/gateway-core/src/traits.rs
+  s_7a5811202bdfd5::t_b83db820b1861c 1031-1045,1108-1111,1114
+crates/gateway-service/src/mcp_ownership.rs
+  s_7a5811202bdfd5::t_4ea50aafa53fcd 528
+crates/gateway-service/src/mcp_registry.rs
+  s_7a5811202bdfd5::t_db46809ce9943a 190-201
+crates/gateway-service/src/mcp_upstream_http.rs
+  s_7a5811202bdfd5::t_8e925ea8770076 26,73-83,201-203
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_7a5811202bdfd5::t_e1f98de27fbe95 25-43,141,144,146-155
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_f085f34cb587d7 1477-1502,1839-1856,1859,1861-1863
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_131f10d5839e63 284-309,602,605,610,614,616,622-626
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_aaeb6794e0e361 282-298,590,593-594,596,600,602,606,608
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_87de1c4cbbf366 132-143,698-706,1384,1388-1390,1399-1439,1628-1632,1634-1635
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_1639c67e521c35 1583-1604,1631-1633,1658-1663
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_899d6208e3b8e2 44,77,111
+docs/configuration/mcp-servers.md
+  s_7a5811202bdfd5::t_41b440f8545b53 97
+docs/mcp/mcp-tool-access.md
+  s_7a5811202bdfd5::t_0aea1c9328a969 94-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5850b9735be1d8f089a2897f77d48268ec30483f",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
