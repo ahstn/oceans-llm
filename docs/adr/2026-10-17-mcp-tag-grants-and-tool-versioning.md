@@ -86,7 +86,9 @@ The schema hash and versions describe what the upstream declared. They are how t
 
 ### 5. Tool versions (#444)
 
-A new table `mcp_tool_versions` keeps every definition the upstream served for a tool, keyed by `(mcp_tool_id, schema_version)`: the hash, description, input schema, title, annotations, output schema, discovery time, `status`, and who reviewed it and when. Discovery writes a version row whenever a tool's hash differs from every version that tool already has. The migration backfills one `approved` version for each existing tool.
+A new table `mcp_tool_versions` keeps every definition the upstream served for a tool, keyed by `(mcp_tool_id, schema_version)`: the hash, description, input schema, title, annotations, output schema, discovery time, `status`, and who reviewed it and when. Discovery writes a version row whenever a tool's definition differs from every version that tool already has. Two definitions are the same when their schema hash and their description both match. The schema hash leaves the description out, and a changed description is exactly the injection this protects against, so the description is compared on its own. The migration backfills one `approved` version for each existing tool.
+
+Discovery plans each tool's writes from a snapshot of its versions, so it is serialized with reviews and with other discoveries of the same server. On libSQL, discovery runs in an immediate transaction that holds the write lock. On Postgres, it locks the server row and then the server's tool rows before taking the snapshot, and a review locks the tool row it changes.
 
 Statuses are `approved`, `pending`, `rejected` and `superseded` (a pending version replaced by a newer discovery, or by the upstream going back to the approved definition).
 
@@ -101,7 +103,7 @@ When it is on:
 - A **changed tool whose description or title changed and nothing else** is `pending_change`. The previous approved version keeps being served and callable, because the call contract is unchanged. A changed description is the injection vector, and the client never sees it until it is approved.
 - A **changed tool whose input schema, output schema or annotations changed** is `pending_review` and is withheld. The old definition no longer describes what the upstream accepts or claims, so serving it is not safe.
 - **Approve** copies the version into the tool row, makes it the served definition, and marks older pending versions `superseded`.
-- **Reject** marks the version `rejected`. A text-only change goes back to `approved` and keeps serving the previous version. A new tool, or a rejected contract change, becomes `rejected` and stays withheld until a later discovery brings a definition an admin approves. Discovery does not reopen a rejected hash.
+- **Reject** marks the version `rejected`. A text-only change goes back to `approved` and keeps serving the previous version. A new tool, or a rejected contract change, becomes `rejected` and stays withheld until a later discovery brings a definition an admin approves. Discovery does not reopen a rejected definition. If the upstream serves a rejected definition again, any newer pending version is superseded, because the upstream no longer offers it, and the tool settles to `approved` when the rejected change kept the contract of the served version, or `rejected` otherwise.
 - If the upstream goes back to the approved definition, the pending version is `superseded` and the tool is `approved` again.
 
 Turning the setting off does not approve anything on its own. The next discovery approves the current definitions. Turning it on leaves existing tools approved.

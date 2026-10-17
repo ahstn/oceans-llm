@@ -816,7 +816,7 @@ async fn load_stored_tools(
     drop(rows);
     let mut rows = connection
         .query(
-            "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = ?1",
+            "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = ?1",
             [mcp_server_id.to_string()],
         )
         .await
@@ -828,6 +828,7 @@ async fn load_stored_tools(
             stored.versions.push(StoredVersion {
                 schema_version: row.get(1).map_err(to_query_error)?,
                 schema_hash: row.get(2).map_err(to_query_error)?,
+                description: row.get(4).map_err(to_query_error)?,
                 status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
@@ -936,7 +937,7 @@ async fn set_version_status(
 ) -> Result<(), StoreError> {
     connection
         .execute(
-            "UPDATE mcp_tool_versions SET status = ?1, reviewed_at = COALESCE(?2, reviewed_at), reviewed_by_user_id = COALESCE(?3, reviewed_by_user_id) WHERE mcp_tool_id = ?4 AND schema_version = ?5",
+            "UPDATE mcp_tool_versions SET status = ?1, reviewed_at = ?2, reviewed_by_user_id = ?3 WHERE mcp_tool_id = ?4 AND schema_version = ?5",
             libsql::params![
                 status.as_str(),
                 reviewed_at,
@@ -944,6 +945,24 @@ async fn set_version_status(
                 mcp_tool_id.to_string(),
                 schema_version,
             ],
+        )
+        .await
+        .map_err(to_write_error)?;
+    Ok(())
+}
+
+/// Approves a version automatically, because the server does not require
+/// review. A version an admin already approved keeps its reviewer; one an
+/// admin rejected loses the rejection's attribution.
+async fn auto_approve_version(
+    connection: &libsql::Connection,
+    mcp_tool_id: Uuid,
+    schema_version: i64,
+) -> Result<(), StoreError> {
+    connection
+        .execute(
+            "UPDATE mcp_tool_versions SET status = 'approved', reviewed_at = NULL, reviewed_by_user_id = NULL WHERE mcp_tool_id = ?1 AND schema_version = ?2 AND status <> 'approved'",
+            libsql::params![mcp_tool_id.to_string(), schema_version],
         )
         .await
         .map_err(to_write_error)?;
@@ -1092,15 +1111,7 @@ async fn apply_tool_write(
                 )
                 .await?;
             } else {
-                set_version_status(
-                    connection,
-                    id,
-                    *version,
-                    McpToolVersionStatus::Approved,
-                    None,
-                    None,
-                )
-                .await?;
+                auto_approve_version(connection, id, *version).await?;
             }
         }
         ToolWrite::Hold {
@@ -1125,6 +1136,16 @@ async fn apply_tool_write(
                 .execute(
                     "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = ?2 WHERE mcp_tool_id = ?3",
                     libsql::params![status.as_str(), *version, id.to_string()],
+                )
+                .await
+                .map_err(to_write_error)?;
+        }
+        ToolWrite::Settle { status } => {
+            supersede_pending(connection, id, -1).await?;
+            connection
+                .execute(
+                    "UPDATE external_mcp_tools SET approval_status = ?1, pending_schema_version = NULL WHERE mcp_tool_id = ?2",
+                    libsql::params![status.as_str(), id.to_string()],
                 )
                 .await
                 .map_err(to_write_error)?;

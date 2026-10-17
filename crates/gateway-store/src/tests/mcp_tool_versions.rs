@@ -18,8 +18,8 @@ use crate::{
     LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
 };
 
-/// A discovered tool: name, description and input schema. The hash follows
-/// both, as discovery's does.
+/// A discovered tool: name, description and input schema. Like the production
+/// hash, the schema hash leaves out the description.
 struct Def(&'static str, &'static str, Value);
 
 async fn discover<S>(
@@ -45,7 +45,7 @@ where
                     annotations: json!({"readOnlyHint": true}).as_object().cloned(),
                     output_schema: None,
                 },
-                schema_hash: format!("{name}|{description}|{input}"),
+                schema_hash: format!("{name}|{input}"),
             },
         )
         .collect::<Vec<_>>();
@@ -445,6 +445,160 @@ where
     );
     assert_eq!(delete.review.approved_schema_version, Some(1));
     assert_eq!(served(store, &subject, server.mcp_server_id).await.len(), 3);
+}
+
+/// Review edge cases: a rejected definition coming back while another waits,
+/// and automatic approval of a definition an admin rejected.
+async fn exercise_review_edge_cases<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    let now = OffsetDateTime::now_utc();
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "notes".to_string(),
+            display_name: "Notes".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://notes.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: now,
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("server");
+    let object = json!({"type": "object"});
+    let reviewer = Uuid::new_v4();
+
+    let tools = discover(
+        store,
+        &server,
+        &[Def("search", "Search notes", object.clone())],
+    )
+    .await;
+    let search = find(&tools, "search").clone();
+    store
+        .review_mcp_tool_version(
+            search.mcp_tool_id,
+            1,
+            McpToolReviewDecision::Approve,
+            Some(reviewer),
+            now,
+        )
+        .await
+        .expect("approve");
+    discover(store, &server, &[Def("search", "Text B", object.clone())]).await;
+    store
+        .review_mcp_tool_version(
+            search.mcp_tool_id,
+            2,
+            McpToolReviewDecision::Reject,
+            Some(reviewer),
+            now,
+        )
+        .await
+        .expect("reject B");
+    let waiting = discover(store, &server, &[Def("search", "Text C", object.clone())]).await;
+    assert_eq!(
+        find(&waiting, "search").review.pending_schema_version,
+        Some(3)
+    );
+
+    // The upstream goes back to rejected B: C is no longer offered, so it can
+    // no longer be approved.
+    let settled = discover(store, &server, &[Def("search", "Text B", object.clone())]).await;
+    let search_now = find(&settled, "search");
+    assert_eq!(
+        search_now.review.approval_status,
+        McpToolApprovalStatus::Approved
+    );
+    assert_eq!(search_now.review.pending_schema_version, None);
+    assert_eq!(search_now.description.as_deref(), Some("Search notes"));
+    let stale = store
+        .review_mcp_tool_version(
+            search.mcp_tool_id,
+            3,
+            McpToolReviewDecision::Approve,
+            Some(reviewer),
+            now,
+        )
+        .await;
+    assert!(matches!(stale, Err(StoreError::Conflict(_))), "{stale:?}");
+
+    // A new tool an admin rejected, then approved by discovery once approval
+    // is off, does not keep the rejection's reviewer.
+    let tools = discover(
+        store,
+        &server,
+        &[
+            Def("search", "Text B", object.clone()),
+            Def("purge", "Delete notes", object.clone()),
+        ],
+    )
+    .await;
+    let purge = find(&tools, "purge").clone();
+    store
+        .review_mcp_tool_version(
+            purge.mcp_tool_id,
+            1,
+            McpToolReviewDecision::Reject,
+            Some(reviewer),
+            now,
+        )
+        .await
+        .expect("reject purge");
+    set_approval(store, &server, false).await;
+    discover(
+        store,
+        &server,
+        &[
+            Def("search", "Text B", object.clone()),
+            Def("purge", "Delete notes", object),
+        ],
+    )
+    .await;
+    let versions = store
+        .list_mcp_tool_versions(purge.mcp_tool_id)
+        .await
+        .expect("versions");
+    assert_eq!(versions[0].status, McpToolVersionStatus::Approved);
+    assert_eq!(versions[0].reviewed_by_user_id, None);
+    assert_eq!(versions[0].reviewed_at, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn libsql_mcp_tool_review_edge_cases() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_review_edge_cases(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_mcp_tool_review_edge_cases() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres MCP tool review test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_review_edge_cases(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
 }
 
 #[tokio::test]

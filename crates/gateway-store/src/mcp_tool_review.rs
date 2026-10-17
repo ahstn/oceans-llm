@@ -4,8 +4,8 @@
 //! what one discovered definition means, and runs the matching statements.
 
 use gateway_core::{
-    ExternalMcpToolRecord, McpToolApprovalStatus, McpToolDefinition, McpToolVersionStatus,
-    UpsertExternalMcpToolRecord,
+    ExternalMcpToolRecord, McpToolApprovalStatus, McpToolDefinition, McpToolDefinitionKey,
+    McpToolVersionStatus, UpsertExternalMcpToolRecord,
     mcp_tool_review::{DiscoveryDecision, StoredToolForReview, decide_discovery},
 };
 
@@ -14,7 +14,17 @@ use gateway_core::{
 pub(crate) struct StoredVersion {
     pub schema_version: i64,
     pub schema_hash: String,
+    pub description: Option<String>,
     pub status: McpToolVersionStatus,
+}
+
+impl StoredVersion {
+    fn key(&self) -> McpToolDefinitionKey {
+        McpToolDefinitionKey {
+            schema_hash: self.schema_hash.clone(),
+            description: self.description.clone(),
+        }
+    }
 }
 
 /// A stored tool row with the columns discovery reads.
@@ -47,6 +57,9 @@ pub(crate) enum ToolWrite {
     },
     /// Serve the approved definition again; pending versions are superseded.
     Revert,
+    /// Supersede pending versions and set the tool's status, for an upstream
+    /// back on a definition an admin rejected.
+    Settle { status: McpToolApprovalStatus },
 }
 
 pub(crate) fn definition_of(tool: &ExternalMcpToolRecord) -> McpToolDefinition {
@@ -86,6 +99,7 @@ pub(crate) fn plan_tool_write(
     // Rows from before V58 kept no metadata. Capturing it is not a change.
     if !stored.metadata_captured
         && stored.tool.input_schema == discovered.input_schema
+        && stored.tool.description == discovered.description
         && stored.tool.schema_hash != discovered.schema_hash
     {
         return ToolWrite::CaptureMetadata {
@@ -93,16 +107,16 @@ pub(crate) fn plan_tool_write(
         };
     }
     let current = definition_of(&stored.tool);
-    let pending_hash = stored
+    let pending = stored
         .versions
         .iter()
         .find(|version| version.status == McpToolVersionStatus::Pending)
-        .map(|version| version.schema_hash.as_str());
-    let rejected_hashes = stored
+        .map(StoredVersion::key);
+    let rejected = stored
         .versions
         .iter()
         .filter(|version| version.status == McpToolVersionStatus::Rejected)
-        .map(|version| version.schema_hash.clone())
+        .map(StoredVersion::key)
         .collect::<Vec<_>>();
     let latest_version = stored
         .versions
@@ -116,8 +130,8 @@ pub(crate) fn plan_tool_write(
         schema_version: stored.tool.schema_version,
         approval_status: stored.tool.review.approval_status,
         approved_schema_version: stored.tool.review.approved_schema_version,
-        pending_hash,
-        rejected_hashes: &rejected_hashes,
+        pending: pending.as_ref(),
+        rejected: &rejected,
         latest_version,
     };
     match decide_discovery(Some(&review), &discovered_def, approve_tool_changes) {
@@ -140,5 +154,6 @@ pub(crate) fn plan_tool_write(
             write_definition: stored.tool.review.approved_schema_version.is_none(),
         },
         DiscoveryDecision::Revert => ToolWrite::Revert,
+        DiscoveryDecision::Settle { status } => ToolWrite::Settle { status },
     }
 }

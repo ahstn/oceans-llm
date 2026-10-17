@@ -26,12 +26,49 @@ function sortKeys(value: unknown): unknown {
 }
 
 /**
- * Line diff by longest common subsequence. Tool definitions are small, so the
- * quadratic table is fine and keeps the output easy to read.
+ * Most cells the longest-common-subsequence table may have. Above this, the
+ * changed middle is shown as removed then added, so a huge schema cannot
+ * freeze the page.
+ */
+export const MAX_DIFF_CELLS = 250_000
+
+/**
+ * Line diff. Lines shared at the start and end are matched directly; the
+ * changed middle uses a longest-common-subsequence table when it is small
+ * enough, and is shown as removed then added otherwise.
  */
 export function lineDiff(before: string, after: string): DiffLine[] {
   const left = before ? before.split('\n') : []
   const right = after ? after.split('\n') : []
+  let prefix = 0
+  while (prefix < left.length && prefix < right.length && left[prefix] === right[prefix]) {
+    prefix += 1
+  }
+  let suffix = 0
+  while (
+    suffix < left.length - prefix &&
+    suffix < right.length - prefix &&
+    left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
+  ) {
+    suffix += 1
+  }
+  const leftMiddle = left.slice(prefix, left.length - suffix)
+  const rightMiddle = right.slice(prefix, right.length - suffix)
+  const middle =
+    (leftMiddle.length + 1) * (rightMiddle.length + 1) > MAX_DIFF_CELLS
+      ? [
+          ...leftMiddle.map((text): DiffLine => ({ kind: 'removed', text })),
+          ...rightMiddle.map((text): DiffLine => ({ kind: 'added', text })),
+        ]
+      : lcsDiff(leftMiddle, rightMiddle)
+  return [
+    ...left.slice(0, prefix).map((text): DiffLine => ({ kind: 'same', text })),
+    ...middle,
+    ...left.slice(left.length - suffix).map((text): DiffLine => ({ kind: 'same', text })),
+  ]
+}
+
+function lcsDiff(left: string[], right: string[]): DiffLine[] {
   const lengths = Array.from({ length: left.length + 1 }, () =>
     Array.from({ length: right.length + 1 }, () => 0),
   )

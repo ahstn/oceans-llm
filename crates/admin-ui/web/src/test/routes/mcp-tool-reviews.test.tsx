@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { lineDiff } from '@/routes/mcp/-tool-diff'
+import { MAX_DIFF_CELLS, lineDiff } from '@/routes/mcp/-tool-diff'
 import type { McpServerView, McpToolVersionView, McpToolView } from '@/types/api'
 
 const getMcpToolVersionsMock = vi.fn()
@@ -78,6 +78,18 @@ describe('lineDiff', () => {
       { kind: 'same', text: 'c' },
     ])
     expect(lineDiff('', 'new')).toEqual([{ kind: 'added', text: 'new' }])
+  })
+
+  it('keeps shared ends and falls back to removed then added for a huge middle', () => {
+    const size = Math.ceil(Math.sqrt(MAX_DIFF_CELLS)) + 1
+    const before = ['{', ...Array.from({ length: size }, (_, i) => `a${i}`), '}'].join('\n')
+    const after = ['{', ...Array.from({ length: size }, (_, i) => `b${i}`), '}'].join('\n')
+    const lines = lineDiff(before, after)
+    expect(lines[0]).toEqual({ kind: 'same', text: '{' })
+    expect(lines.at(-1)).toEqual({ kind: 'same', text: '}' })
+    expect(lines.filter((line) => line.kind === 'removed')).toHaveLength(size)
+    expect(lines.filter((line) => line.kind === 'added')).toHaveLength(size)
+    expect(lines[1]).toEqual({ kind: 'removed', text: 'a0' })
   })
 })
 

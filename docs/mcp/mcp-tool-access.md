@@ -169,8 +169,10 @@ Versioning](../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
 Every definition an upstream serves for a tool is kept as a version: its
 description, input schema, title, annotations, output schema, schema hash, and
 when it was discovered. Discovery stores a new version whenever a tool's schema
-hash changes. Admin [annotation overrides](#annotation-overrides) are not part of
-the hash and never create a version.
+hash or description changes. The schema hash does not cover the description, so
+the description is compared on its own. Admin
+[annotation overrides](#annotation-overrides) are not part of either and never
+create a version.
 
 Each server has a **Require approval for tool changes** setting, off by default.
 When it is off, discovery approves every new version, so changes are served at
@@ -182,7 +184,7 @@ once as before. When it is on:
 | A change to the description or title only | **Change pending**. The previous approved version keeps being served and callable. Clients never see the new text until it is approved. |
 | A change to the input schema, output schema, or annotations | **Pending review**. The tool is withheld, because the approved definition no longer describes what the upstream accepts or claims. |
 | The approved definition again | The waiting version is superseded and the tool is served as approved. |
-| A definition an admin already rejected | No change. Rejected definitions do not reopen review. |
+| A definition an admin already rejected | Rejected definitions do not reopen review. Any newer waiting version is dropped, and the tool is served as approved only when the rejected change was to the description or title. |
 
 Waiting and rejected tools are excluded from every grant: explicit tool and
 toolset grants as well as [tag rules](#tag-rules). On approval servers, direct

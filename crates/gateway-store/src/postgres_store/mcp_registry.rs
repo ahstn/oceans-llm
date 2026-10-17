@@ -420,7 +420,10 @@ impl McpRegistryRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
 
-        let approve_tool_changes = sqlx::query(SERVER_SELECT_BY_ID)
+        // Lock the server, then its tools, so concurrent discoveries of one
+        // server run one at a time and a review cannot change a tool between
+        // the snapshot below and the writes planned from it.
+        let approve_tool_changes = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
             .bind(run.mcp_server_id.to_string())
             .fetch_optional(&mut *tx)
             .await
@@ -764,7 +767,7 @@ async fn load_stored_tools(
     mcp_server_id: Uuid,
 ) -> Result<HashMap<String, StoredTool>, StoreError> {
     let rows = sqlx::query(&format!(
-        "SELECT {TOOL_COLUMNS}, metadata_captured FROM external_mcp_tools WHERE mcp_server_id = $1"
+        "SELECT {TOOL_COLUMNS}, metadata_captured FROM external_mcp_tools WHERE mcp_server_id = $1 FOR UPDATE"
     ))
     .bind(mcp_server_id.to_string())
     .fetch_all(&mut *conn)
@@ -784,7 +787,7 @@ async fn load_stored_tools(
         );
     }
     let rows = sqlx::query(
-        "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1",
+        "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1",
     )
     .bind(mcp_server_id.to_string())
     .fetch_all(&mut *conn)
@@ -797,6 +800,7 @@ async fn load_stored_tools(
             stored.versions.push(StoredVersion {
                 schema_version: row.try_get(1).map_err(to_query_error)?,
                 schema_hash: row.try_get(2).map_err(to_query_error)?,
+                description: row.try_get(4).map_err(to_query_error)?,
                 status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
@@ -900,11 +904,30 @@ async fn set_version_status(
     reviewed_by_user_id: Option<&str>,
 ) -> Result<(), StoreError> {
     sqlx::query(
-        "UPDATE mcp_tool_versions SET status = $1, reviewed_at = COALESCE($2, reviewed_at), reviewed_by_user_id = COALESCE($3, reviewed_by_user_id) WHERE mcp_tool_id = $4 AND schema_version = $5",
+        "UPDATE mcp_tool_versions SET status = $1, reviewed_at = $2, reviewed_by_user_id = $3 WHERE mcp_tool_id = $4 AND schema_version = $5",
     )
     .bind(status.as_str())
     .bind(reviewed_at)
     .bind(reviewed_by_user_id)
+    .bind(mcp_tool_id.to_string())
+    .bind(schema_version)
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+/// Approves a version automatically, because the server does not require
+/// review. A version an admin already approved keeps its reviewer; one an
+/// admin rejected loses the rejection's attribution.
+async fn auto_approve_version(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    schema_version: i64,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE mcp_tool_versions SET status = 'approved', reviewed_at = NULL, reviewed_by_user_id = NULL WHERE mcp_tool_id = $1 AND schema_version = $2 AND status <> 'approved'",
+    )
     .bind(mcp_tool_id.to_string())
     .bind(schema_version)
     .execute(&mut *conn)
@@ -1048,15 +1071,7 @@ async fn apply_tool_write(
                 )
                 .await?;
             } else {
-                set_version_status(
-                    conn,
-                    id,
-                    *version,
-                    McpToolVersionStatus::Approved,
-                    None,
-                    None,
-                )
-                .await?;
+                auto_approve_version(conn, id, *version).await?;
             }
         }
         ToolWrite::Hold {
@@ -1080,6 +1095,15 @@ async fn apply_tool_write(
             sqlx::query("UPDATE external_mcp_tools SET approval_status = $1, pending_schema_version = $2 WHERE mcp_tool_id = $3")
                 .bind(status.as_str())
                 .bind(*version)
+                .bind(id.to_string())
+                .execute(&mut *conn)
+                .await
+                .map_err(to_write_error)?;
+        }
+        ToolWrite::Settle { status } => {
+            supersede_pending(conn, id, -1).await?;
+            sqlx::query("UPDATE external_mcp_tools SET approval_status = $1, pending_schema_version = NULL WHERE mcp_tool_id = $2")
+                .bind(status.as_str())
                 .bind(id.to_string())
                 .execute(&mut *conn)
                 .await
