@@ -25,6 +25,7 @@ pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
+pub mod outbound_fetch;
 mod payload_bounding;
 pub mod pricing_catalog;
 pub mod provider_credentials;

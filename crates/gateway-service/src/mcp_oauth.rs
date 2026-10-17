@@ -22,6 +22,7 @@ use crate::mcp_upstream_auth::{
     McpOauthClientRegistration, McpOauthServerConfig, McpOauthTokenEndpointAuthMethod,
     McpServerOauthEndpoints, mcp_oauth_server_config, resolve_secret_ref,
 };
+use crate::outbound_fetch::{OutboundAddressScope, OutboundFetcher};
 
 const REFRESH_EARLY_SECONDS: i64 = 300;
 const REFRESH_LEASE_SECONDS: i64 = 90;
@@ -201,6 +202,8 @@ pub struct McpOauthRuntime {
     public_base_url: Option<String>,
     providers: BTreeMap<String, McpOauthProvider>,
     client: reqwest::Client,
+    /// Discovery and registration fetchers, one per address scope.
+    fetchers: Arc<[OutboundFetcher; 3]>,
     refresh_locks: Arc<Mutex<HashMap<Uuid, Weak<AsyncMutex<()>>>>>,
 }
 
@@ -218,6 +221,11 @@ impl McpOauthRuntime {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("default MCP OAuth HTTP client configuration must be valid"),
+            fetchers: Arc::new([
+                OutboundFetcher::new(OutboundAddressScope::Public),
+                OutboundFetcher::new(OutboundAddressScope::PrivateNetwork),
+                OutboundFetcher::new(OutboundAddressScope::Loopback),
+            ]),
             refresh_locks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -299,7 +307,23 @@ impl McpOauthRuntime {
 
     /// Runs OAuth metadata discovery against an MCP server URL.
     pub async fn discover(&self, server_url: &str) -> Result<McpOauthDiscovery, GatewayError> {
-        discover_mcp_oauth(&self.client, server_url).await
+        let fetcher = self.fetcher_for(server_url).await;
+        discover_mcp_oauth(fetcher, server_url).await
+    }
+
+    /// The fetcher for requests on behalf of the admin-registered MCP server
+    /// at `server_url`, scoped to that server's own address class.
+    async fn fetcher_for(&self, server_url: &str) -> &OutboundFetcher {
+        let scope = match url::Url::parse(server_url) {
+            Ok(url) => OutboundAddressScope::of_trusted_url(&url).await,
+            Err(_) => OutboundAddressScope::Public,
+        };
+        let index = match scope {
+            OutboundAddressScope::Public => 0,
+            OutboundAddressScope::PrivateNetwork => 1,
+            OutboundAddressScope::Loopback => 2,
+        };
+        &self.fetchers[index]
     }
 
     fn require_public_base_url(&self) -> Result<&str, GatewayError> {
@@ -434,7 +458,7 @@ impl McpOauthRuntime {
                 )
             })?;
         let registered = register_oauth_client(
-            &self.client,
+            self.fetcher_for(&config.resource).await,
             registration_endpoint,
             redirect_uri,
             endpoints

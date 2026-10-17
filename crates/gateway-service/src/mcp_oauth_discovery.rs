@@ -6,22 +6,26 @@
 //! protected-resource metadata (RFC 9728). That metadata names the
 //! authorization server, whose metadata comes from RFC 8414 with OpenID
 //! Connect discovery as a fallback.
-
-use std::time::Duration;
+//!
+//! Every URL after the admin-entered server URL comes from the upstream, so
+//! requests go through an [`OutboundFetcher`] scoped to the server's own
+//! address class: a public server cannot point the gateway at private or
+//! loopback addresses.
 
 use gateway_core::GatewayError;
 use reqwest::{
-    StatusCode,
+    Method, StatusCode,
     header::{ACCEPT, CONTENT_TYPE, WWW_AUTHENTICATE},
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use url::Url;
 
-use crate::mcp_upstream_auth::McpOauthTokenEndpointAuthMethod;
+use crate::{
+    mcp_upstream_auth::McpOauthTokenEndpointAuthMethod,
+    outbound_fetch::{OutboundFetchError, OutboundFetcher, OutboundResponse},
+};
 
-const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_METADATA_BYTES: usize = 256 * 1024;
 const CLIENT_NAME: &str = "Oceans LLM Gateway";
 
 /// What OAuth metadata discovery found for an MCP server URL.
@@ -215,8 +219,11 @@ struct AuthorizationServerMetadata {
 }
 
 /// Discovers how to authorize against the MCP server at `server_url`.
+///
+/// `http` must be scoped for `server_url`, as
+/// [`crate::outbound_fetch::OutboundAddressScope::of_trusted_url`] picks it.
 pub async fn discover_mcp_oauth(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     server_url: &str,
 ) -> Result<McpOauthDiscovery, GatewayError> {
     let server = Url::parse(server_url)
@@ -418,10 +425,10 @@ pub fn choose_token_endpoint_auth_method(supported: &[String]) -> McpOauthTokenE
     .unwrap_or(McpOauthTokenEndpointAuthMethod::ClientSecretBasic)
 }
 
-async fn probe_challenge(http: &reqwest::Client, server: &Url) -> Option<BearerChallenge> {
-    let response = http
-        .post(server.clone())
-        .timeout(METADATA_TIMEOUT)
+async fn probe_challenge(http: &OutboundFetcher, server: &Url) -> Option<BearerChallenge> {
+    let request = http
+        .request(Method::POST, server)
+        .ok()?
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json, text/event-stream")
         .json(&json!({
@@ -433,10 +440,8 @@ async fn probe_challenge(http: &reqwest::Client, server: &Url) -> Option<BearerC
                 "capabilities": {},
                 "clientInfo": {"name": "oceans-llm", "version": env!("CARGO_PKG_VERSION")}
             }
-        }))
-        .send()
-        .await
-        .ok()?;
+        }));
+    let response = http.send(request).await.ok()?;
     if !matches!(
         response.status(),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
@@ -520,48 +525,38 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
-/// Fetches a metadata document. `Ok(None)` means it is not published there.
+/// Fetches a metadata document. `Ok(None)` means it is not published there,
+/// or the host could not be reached. A URL the fetcher refuses is an error,
+/// so the admin learns why discovery stopped.
 async fn fetch_json<T: serde::de::DeserializeOwned>(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     url: &Url,
 ) -> Result<Option<T>, GatewayError> {
-    let Ok(response) = http
-        .get(url.clone())
-        .timeout(METADATA_TIMEOUT)
-        .header(ACCEPT, "application/json")
-        .send()
-        .await
-    else {
-        return Ok(None);
+    let response = match http.get(url, "application/json").await {
+        Ok(response) => response,
+        Err(error) if error.is_transient() => return Ok(None),
+        Err(error) => return Err(fetch_error(url, &error)),
     };
     if response.status() != StatusCode::OK {
         return Ok(None);
     }
-    let body = read_limited(response).await?;
+    let body = read_body(url, response).await?;
     serde_json::from_slice(&body).map(Some).map_err(|_| {
         GatewayError::InvalidRequest(format!("OAuth metadata at {url} is not valid JSON"))
     })
 }
 
-async fn read_limited(mut response: reqwest::Response) -> Result<Vec<u8>, GatewayError> {
-    let mut body = Vec::new();
-    loop {
-        let chunk = response.chunk().await.map_err(|error| {
-            GatewayError::InvalidRequest(format!(
-                "OAuth metadata request failed: {}",
-                error.without_url()
-            ))
-        })?;
-        let Some(chunk) = chunk else {
-            return Ok(body);
-        };
-        if body.len() + chunk.len() > MAX_METADATA_BYTES {
-            return Err(GatewayError::InvalidRequest(
-                "OAuth metadata response is too large".to_string(),
-            ));
-        }
-        body.extend_from_slice(&chunk);
-    }
+async fn read_body(url: &Url, response: OutboundResponse) -> Result<Vec<u8>, GatewayError> {
+    response
+        .body()
+        .await
+        .map_err(|error| fetch_error(url, &error))
+}
+
+fn fetch_error(url: &Url, error: &OutboundFetchError) -> GatewayError {
+    GatewayError::InvalidRequest(format!(
+        "OAuth metadata at {url} cannot be fetched: {error}"
+    ))
 }
 
 /// A client issued by RFC 7591 dynamic client registration.
@@ -601,8 +596,10 @@ struct RegistrationResponse {
 }
 
 /// Registers Oceans as an OAuth client (RFC 7591).
+///
+/// `http` must be scoped for the MCP server the registration is for.
 pub async fn register_oauth_client(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     registration_endpoint: &str,
     redirect_uri: &str,
     requested_method: McpOauthTokenEndpointAuthMethod,
@@ -618,21 +615,20 @@ pub async fn register_oauth_client(
     if !scopes.is_empty() {
         request["scope"] = json!(scopes.join(" "));
     }
-    let response = http
-        .post(registration_endpoint)
-        .timeout(METADATA_TIMEOUT)
+    let endpoint = Url::parse(registration_endpoint).map_err(|error| {
+        GatewayError::InvalidRequest(format!("registration_endpoint is invalid: {error}"))
+    })?;
+    let registration_failed = |error: OutboundFetchError| {
+        GatewayError::InvalidRequest(format!("dynamic client registration failed: {error}"))
+    };
+    let request = http
+        .request(Method::POST, &endpoint)
+        .map_err(registration_failed)?
         .header(ACCEPT, "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!(
-                "dynamic client registration failed: {}",
-                error.without_url()
-            ))
-        })?;
+        .json(&request);
+    let response = http.send(request).await.map_err(registration_failed)?;
     let status = response.status();
-    let body = read_limited(response).await?;
+    let body = response.body().await.map_err(registration_failed)?;
     let parsed: Option<RegistrationResponse> = serde_json::from_slice(&body).ok();
     if !status.is_success() {
         // Only the RFC 7591 error code is surfaced; descriptions can echo
