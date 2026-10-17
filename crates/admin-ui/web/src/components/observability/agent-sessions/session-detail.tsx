@@ -36,14 +36,15 @@ type AgentRequestAttempt = NonNullable<
   AgentSessionDetailView['report']
 >['diagnostics']['reliability']['attempts'][number]
 
+// en-US so dollars read `$0.24`, not `US$0.24`.
 const currencyFormatters = {
-  standard: new Intl.NumberFormat('en-GB', {
+  standard: new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }),
-  precise: new Intl.NumberFormat('en-GB', {
+  precise: new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 4,

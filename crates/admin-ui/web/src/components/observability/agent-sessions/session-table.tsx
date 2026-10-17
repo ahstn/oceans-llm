@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { AgentSessionSummaryView } from '@/types/api'
-import { EMPTY_VALUE, formatDuration, formatTimestamp } from '@/lib/format'
+import { CURRENCY_FORMATTER, EMPTY_VALUE, formatDuration, formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface SessionTableProps {
@@ -219,16 +219,10 @@ const numericColumns = new Set([
   'Tool calls',
   'MCP calls',
 ])
-const standardCurrency = new Intl.NumberFormat('en-GB', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
 
 function formatCost(value?: number | null) {
   // Session cost is a total, so the column keeps two decimals.
-  return value == null ? EMPTY_VALUE : standardCurrency.format(value)
+  return value == null ? EMPTY_VALUE : CURRENCY_FORMATTER.format(value)
 }
 function humanize(value?: string | null) {
   return value
