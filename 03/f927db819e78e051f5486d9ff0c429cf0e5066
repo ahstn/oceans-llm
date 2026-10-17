@@ -1,0 +1,41 @@
+crates/gateway-service/src/mcp_access.rs
+  s_7a4bb25ea2fe49::t_569f54ef7caeda 4-6,92-171
+crates/gateway-service/src/mcp_token_overhead.rs
+  s_7a4bb25ea2fe49::t_84a7eaa1489abe 6,163-168,181,192,255-269
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_7a4bb25ea2fe49::t_22be796598f223 8-10,83-84,89-99,138-146
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_7a4bb25ea2fe49::t_0a7a28b160ac1a 1,506-507,517-518,520,524,552-555,732-793,798-810,812,814-826,828-829,834-843,846,849-852,854,857-860,872,875-879,881,883-889,891
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_7a4bb25ea2fe49::t_d4c23f16dcdcf6 1,462-463,473-474,476,480,507-510,656-717,722-723,725-744,748-749,752,755-757,759,762,771,774-776,778,781
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_7a4bb25ea2fe49::t_9f11712371cb40 252-360
+crates/gateway/src/http/mcp_registry.rs
+  s_e88dc7cf2999d1::t_c9a1c273fa1699 916-917,923-927
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_02d3d0b039aa25 147-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03f927db819e78e051f5486d9ff0c429cf0e5066",
+  "prompts": {},
+  "sessions": {
+    "s_7a4bb25ea2fe49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab2457af-0345-474d-8ba0-be4b2bb49200",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
