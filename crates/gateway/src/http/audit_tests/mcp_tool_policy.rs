@@ -487,7 +487,7 @@ async fn previews_match_runtime_resolution() {
             Some(json!({ "team_id": team_id, "name": "previewer" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "{account}");
+    assert_eq!(status, StatusCode::OK, "service account creation failed");
     let account_id = account["data"]["id"]
         .as_str()
         .expect("service account id")
@@ -524,7 +524,8 @@ async fn previews_match_runtime_resolution() {
             })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "{created}");
+    // The response holds the raw key, so it is not printed on failure.
+    assert_eq!(status, StatusCode::OK, "API key creation failed");
     let api_key_id = created["data"]["api_key"]["id"]
         .as_str()
         .expect("api key id")
