@@ -272,26 +272,48 @@ where
     /// Checks a tool grant before it is written. This is the one place grant
     /// writes are bounded by ownership; tag-based grants call
     /// [`Self::authorize_server_grant`] for each server a tag reaches.
+    ///
+    /// Returns the server a tool grant was authorized against, so the caller can
+    /// confirm with [`Self::ownership_unchanged`] after the write.
     pub async fn authorize_grant(
         &self,
         scope: &McpAdminScope,
         subject: McpGrantSubject,
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Option<ExternalMcpServerRecord>, GatewayError> {
         match target_kind {
             McpToolGrantTargetKind::Toolset => {
                 if scope.is_platform_admin() {
-                    Ok(())
+                    Ok(None)
                 } else {
                     Err(forbidden())
                 }
             }
             McpToolGrantTargetKind::Tool => {
                 let server = self.tool_server(scope, target_id).await?;
-                self.authorize_server_grant(scope, &server, subject).await
+                self.authorize_server_grant(scope, &server, subject).await?;
+                Ok(Some(server))
             }
         }
+    }
+
+    /// Whether `server` still has the owner and visibility it was authorized
+    /// with. Grant and credential writes are not conditional in the store, so
+    /// handlers call this right after the write and undo a new row when a
+    /// transfer landed in between.
+    pub async fn ownership_unchanged(
+        &self,
+        server: &ExternalMcpServerRecord,
+    ) -> Result<bool, GatewayError> {
+        Ok(self
+            .repo
+            .get_external_mcp_server(server.mcp_server_id)
+            .await?
+            .is_some_and(|current| {
+                current.ownership.owner_team_id == server.ownership.owner_team_id
+                    && current.ownership.visibility == server.ownership.visibility
+            }))
     }
 
     /// Checks that `subject` may be granted tools of `server` by the caller.
@@ -594,12 +616,13 @@ where
 
 /// Rejects a server URL a team admin may not point the gateway at: one whose
 /// host is, or resolves to, a loopback, private, link-local, shared or other
-/// non-public address. Platform admins register internal servers, including for
-/// a team. A host that does not resolve is left to fail at connection time.
+/// non-public address, or that does not resolve at all. Platform admins
+/// register internal servers, including for a team.
 ///
-/// This runs when a team admin saves a URL, runs OAuth discovery or refreshes
-/// discovery. It does not pin the address for the later connection, so it is
-/// not a defence against DNS rebinding; the outbound fetcher in #523 is.
+/// This runs when a team admin saves a URL or refreshes discovery. It does not
+/// pin the address for the later connection, so on its own it is not a defence
+/// against DNS rebinding; OAuth discovery, token exchange and registration go
+/// through the outbound fetcher, which is. Refresh and the proxy do not yet.
 pub async fn authorize_destination(
     scope: &McpAdminScope,
     server_url: &str,

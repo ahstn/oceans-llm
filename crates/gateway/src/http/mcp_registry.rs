@@ -899,7 +899,8 @@ pub async fn upsert_mcp_grant(
         target_id: request.target_id,
         updated_at: OffsetDateTime::now_utc(),
     };
-    ownership(&state)
+    let ownership = ownership(&state);
+    let authorized_server = ownership
         .authorize_grant(
             &scope,
             McpGrantSubject {
@@ -911,6 +912,25 @@ pub async fn upsert_mcp_grant(
         )
         .await?;
     let (grant, created) = state.store.upsert_mcp_tool_grant(&record).await?;
+    // A transfer between the check and the write would leave a grant the new
+    // owner never allowed; undo a grant this call created and report a conflict.
+    if let Some(server) = &authorized_server
+        && !ownership.ownership_unchanged(server).await?
+    {
+        if created {
+            state
+                .store
+                .revoke_mcp_tool_grant(
+                    record.subject_kind,
+                    record.subject_id,
+                    record.target_kind,
+                    record.target_id,
+                    OffsetDateTime::now_utc(),
+                )
+                .await?;
+        }
+        return Err(ownership_changed(server.mcp_server_id));
+    }
     let grant_id = grant.grant_id;
     let grant = map_grant(grant);
     // Repeating an active grant changes no access, so only a new grant is recorded.
@@ -1094,6 +1114,15 @@ pub async fn upsert_mcp_credential_binding(
             metadata: request.metadata,
         })
         .await?;
+    // As for grants: undo a binding this call created if the server moved to
+    // another owner between the check and the write. A replacement updates a
+    // binding the server already had, so it stands.
+    if replaced.is_none() && !ownership.ownership_unchanged(&server).await? {
+        service
+            .revoke_binding(binding.credential_binding_id)
+            .await?;
+        return Err(ownership_changed(server.mcp_server_id));
+    }
     // The service returns bindings without their secrets; only those views are
     // recorded. A replacement also records the binding it overwrote, read in the
     // same transaction, so the entry shows what access changed.
@@ -1276,6 +1305,12 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
     AuditEvent::new(action)
         .target(toolset.id())
         .label(toolset.toolset_key().to_string())
+}
+
+fn ownership_changed(mcp_server_id: Uuid) -> AppError {
+    AppError(GatewayError::Store(gateway_core::StoreError::Conflict(
+        format!("external MCP server `{mcp_server_id}` changed owner; reload it and try again"),
+    )))
 }
 
 fn ownership(state: &AppState) -> McpOwnership<AnyStore> {

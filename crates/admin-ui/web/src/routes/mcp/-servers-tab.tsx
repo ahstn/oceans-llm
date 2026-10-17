@@ -449,7 +449,11 @@ export function ServersTab({
         open={createDialogOpen}
         pending={isPending}
         form={formState}
-        ownership={{ canPublish: scope.canPublish, platformOwned: scope.platformAdmin }}
+        ownership={{
+          canPublish: scope.canPublish,
+          platformOwned: scope.platformAdmin,
+          teams: scope.platformAdmin ? scope.teams : undefined,
+        }}
         onOpenChange={setCreateDialogOpen}
         onFormChange={setFormState}
         onSubmit={handleCreateServer}

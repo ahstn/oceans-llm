@@ -57,6 +57,8 @@ export type ServerOwnershipOptions = {
   canPublish: boolean
   /** Platform-owned servers are always published to the organisation. */
   platformOwned: boolean
+  /** Teams a platform admin can register a new server for. */
+  teams?: AdminTeamOption[]
 }
 
 const AUTH_MODES = [
@@ -987,6 +989,47 @@ function ServerAuthFields({
   )
 }
 
+function OwningTeamField({
+  form,
+  teams,
+  onFormChange,
+}: {
+  form: ServerFormState
+  teams: AdminTeamOption[]
+  onFormChange: (form: ServerFormState) => void
+}) {
+  return (
+    <Field>
+      <FieldLabel>Owning team</FieldLabel>
+      <Select
+        value={form.owner_team_id || 'platform'}
+        onValueChange={(value) =>
+          onFormChange({
+            ...form,
+            owner_team_id: value === 'platform' ? '' : value,
+            // A team-owned server starts team-only; the platform's is published.
+            visibility: value === 'platform' ? 'organisation' : 'team',
+          })
+        }
+      >
+        <SelectTrigger aria-label="Owning team">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="platform">{PLATFORM_OWNER_LABEL}</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={team.id}>
+                {team.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
+  )
+}
+
 function ServerOwnershipFields({
   mode,
   form,
@@ -1000,13 +1043,19 @@ function ServerOwnershipFields({
 }) {
   // Publishing needs a platform admin unless the platform lets teams publish.
   const organisationDisabled = !ownership.canPublish && form.visibility !== 'organisation'
+  const chooseOwner = mode === 'create' && ownership.teams !== undefined
+  // When a platform admin picks the owner, the platform rule follows that choice.
+  const platformOwned = chooseOwner ? form.owner_team_id === '' : ownership.platformOwned
   return (
     <>
+      {chooseOwner ? (
+        <OwningTeamField form={form} teams={ownership.teams ?? []} onFormChange={onFormChange} />
+      ) : null}
       <Field>
         <FieldLabel>Visibility</FieldLabel>
         <Select
           value={form.visibility}
-          disabled={ownership.platformOwned}
+          disabled={platformOwned}
           onValueChange={(value) =>
             onFormChange({ ...form, visibility: value as ServerVisibility })
           }
@@ -1024,7 +1073,7 @@ function ServerOwnershipFields({
           </SelectContent>
         </Select>
         <FieldDescription>
-          {ownership.platformOwned
+          {platformOwned
             ? 'Platform-owned servers are published to the organisation.'
             : organisationDisabled
               ? 'Only a platform admin can publish this server to the organisation.'

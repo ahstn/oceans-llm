@@ -403,7 +403,10 @@
         "crates/gateway-store/src/libsql_store/mcp_registry.rs",
         "crates/gateway-store/migrations/V67__mcp_server_ownership.sql",
         "crates/gateway/src/config/permissions.rs",
-        "crates/gateway/src/config/mcp.rs"
+        "crates/gateway/src/config/mcp.rs",
+        "crates/gateway-store/src/postgres_store/mcp_registry.rs",
+        "crates/gateway-store/migrations/postgres/V67__mcp_server_ownership.sql",
+        "crates/gateway-service/src/outbound_fetch.rs"
       ]
     },
     {

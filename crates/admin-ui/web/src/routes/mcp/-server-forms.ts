@@ -19,6 +19,8 @@ export type ServerFormState = {
   visibility: ServerVisibility
   /** Blank on create defaults to the caller's email; blank on edit clears it. */
   owner_contact: string
+  /** A platform admin's choice of owning team on create; blank is the platform. */
+  owner_team_id: string
 }
 
 export type ServerVisibility = 'team' | 'organisation'
@@ -48,6 +50,7 @@ export function emptyServerForm(visibility: ServerVisibility = 'organisation'): 
     timeout_ms: '30000',
     visibility,
     owner_contact: '',
+    owner_team_id: '',
   }
 }
 
@@ -74,6 +77,7 @@ export function formFromRecommended(
   return {
     visibility,
     owner_contact: '',
+    owner_team_id: '',
     server_key: server.catalog_key,
     display_name: server.display_name,
     description: server.description ?? '',
@@ -95,6 +99,7 @@ export function formFromServer(server: McpServerView): ServerFormState {
     timeout_ms: String(server.timeout_ms),
     visibility: server.visibility === 'team' ? 'team' : 'organisation',
     owner_contact: server.owner_contact ?? '',
+    owner_team_id: server.owner_team_id ?? '',
   }
 }
 
@@ -114,6 +119,8 @@ export function formToCreateInput(form: ServerFormState): CreateMcpServerInput |
     timeout_ms: optionalNumber(form.timeout_ms),
     visibility: form.visibility,
     owner_contact: optionalString(form.owner_contact),
+    // A team admin leaves it blank; the gateway registers for their team.
+    owner_team_id: optionalString(form.owner_team_id),
   }
 }
 
