@@ -193,6 +193,19 @@ where
             .map_err(Into::into)
     }
 
+    /// The servers a team admin of `team_id` sees: the team's own and every
+    /// published one.
+    pub async fn list_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, GatewayError> {
+        self.repo
+            .list_external_mcp_servers_visible_to_team(team_id, include_disabled)
+            .await
+            .map_err(Into::into)
+    }
+
     /// One owner's servers: a team's, or the platform's for `None`.
     pub async fn list_servers_owned_by(
         &self,

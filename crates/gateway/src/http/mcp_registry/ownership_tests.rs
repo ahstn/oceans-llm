@@ -1841,8 +1841,67 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
             .await
         }
     };
+    // Runtime refuses a service account's keys until it has an active budget.
     let (status, body) = preview().await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+    gateway_core::BudgetRepository::upsert_active_budget(
+        &*context.state.store,
+        &gateway_core::BudgetScope::ServiceAccount {
+            service_account_id: account.service_account_id,
+        },
+        &gateway_core::BudgetSettings {
+            cadence: gateway_core::BudgetCadence::Monthly,
+            amount_usd: gateway_core::Money4::from_scaled(10_000),
+            hard_limit: true,
+            timezone: "UTC".into(),
+        },
+        now,
+    )
+    .await
+    .unwrap();
+    let (_, body) = preview().await;
+    assert_eq!(
+        body["data"]["tools"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
+    // A direct grant to the account previews the same way.
+    assert_eq!(
+        context
+            .grant(
+                &admin,
+                "service_account",
+                account.service_account_id,
+                "tool",
+                server.tool_id
+            )
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let account_preview = || {
+        let headers = admin.headers.clone();
+        let state = context.state.clone();
+        async move {
+            read(
+                preview_mcp_effective_access(
+                    State(state),
+                    headers,
+                    Query(
+                        serde_json::from_value(json!({
+                            "service_account_id": account.service_account_id,
+                            "server_id": server.id,
+                        }))
+                        .unwrap(),
+                    ),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    let (_, body) = account_preview().await;
     assert_eq!(
         body["data"]["tools"].as_array().map(Vec::len),
         Some(1),
@@ -1857,5 +1916,7 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
         .await
         .unwrap();
     let (_, body) = preview().await;
+    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+    let (_, body) = account_preview().await;
     assert_eq!(body["data"]["tools"], json!([]), "{body}");
 }

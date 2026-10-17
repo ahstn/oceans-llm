@@ -138,9 +138,8 @@ pub async fn list_mcp_servers(
         }
         // A team admin's registry is filtered to what they see in the query.
         (None, Some(team_id)) => {
-            state
-                .store
-                .list_external_mcp_servers_visible_to_team(team_id, query.include_disabled)
+            service
+                .list_servers_visible_to_team(team_id, query.include_disabled)
                 .await?
         }
         (None, None) => service.list_servers(query.include_disabled).await?,
@@ -634,7 +633,12 @@ pub async fn list_mcp_server_tools(
                 server.mcp_server_id == server_id
                     && server.status != gateway_core::ExternalMcpServerStatus::Disabled
             });
-            let allowed: Vec<_> = if active { access.tool_ids } else { Vec::new() };
+            // A set, so filtering the listed tools stays linear.
+            let allowed: std::collections::HashSet<Uuid> = if active {
+                access.tool_ids.into_iter().collect()
+            } else {
+                std::collections::HashSet::new()
+            };
             if allowed.is_empty() {
                 return Err(AppError(GatewayError::Store(
                     gateway_core::StoreError::NotFound(format!(
@@ -1565,6 +1569,14 @@ pub async fn preview_mcp_effective_access(
         .collect();
     if let Some(api_key_id) = query.api_key_id {
         limit_to_api_key_access(&state, api_key_id, &servers, &mut resolution).await?;
+    } else if let Some(service_account_id) = query.service_account_id
+        && !service_account_can_authenticate(&state, service_account_id, None).await?
+    {
+        // A service account acts only through its keys, which runtime refuses
+        // while it is disabled or has no active budget.
+        resolution.allowed_tools.clear();
+        resolution.referenced_server_count = 0;
+        resolution.filtered_tool_count = resolution.exposed_tool_count;
     }
     // As at runtime, a team-only server's tools count only for its own team.
     let caller_team = preview_caller_team(&state, &query).await?;
@@ -1600,12 +1612,10 @@ async fn limit_to_api_key_access(
     else {
         return Ok(());
     };
-    // Runtime authentication refuses a key whose service account is disabled.
+    // Runtime authentication refuses a key whose service account cannot act.
     let owner_active = match key.owner_service_account_id {
         Some(service_account_id) => {
-            IdentityRepository::get_service_account_by_id(&*state.store, service_account_id)
-                .await?
-                .is_some_and(|account| account.status == gateway_core::ServiceAccountStatus::Active)
+            service_account_can_authenticate(state, service_account_id, key.owner_team_id).await?
         }
         None => true,
     };
@@ -1631,6 +1641,32 @@ async fn limit_to_api_key_access(
         .exposed_tool_count
         .saturating_sub(resolution.allowed_tools.len() as i64);
     Ok(())
+}
+
+/// Whether keys of a service account can authenticate, as `Authenticator`
+/// requires: the account is active, belongs to the key's team (when one is
+/// named), and has an active budget.
+async fn service_account_can_authenticate(
+    state: &AppState,
+    service_account_id: Uuid,
+    key_team_id: Option<Uuid>,
+) -> Result<bool, AppError> {
+    let Some(account) =
+        IdentityRepository::get_service_account_by_id(&*state.store, service_account_id).await?
+    else {
+        return Ok(false);
+    };
+    if account.status != gateway_core::ServiceAccountStatus::Active
+        || key_team_id.is_some_and(|team_id| team_id != account.team_id)
+    {
+        return Ok(false);
+    }
+    Ok(gateway_core::BudgetRepository::get_active_budget_by_scope(
+        &*state.store,
+        &gateway_core::BudgetScope::ServiceAccount { service_account_id },
+    )
+    .await?
+    .is_some())
 }
 
 /// The team the previewed caller acts for: an API key's (its own, or its
