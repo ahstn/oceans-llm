@@ -309,15 +309,26 @@ pub async fn update_mcp_server(
             .confirm_no_stranded_access(server_id, team_id)
             .await
     {
-        service
-            .transfer_ownership(
-                server_id,
-                gateway_core::McpServerOwnership {
-                    visibility: gateway_core::McpServerVisibility::Organisation,
-                    ..update.current.ownership.clone()
-                },
-            )
-            .await?;
+        // Restore the whole previous record, not just its visibility, and only
+        // if nothing has changed it since; a newer change wins.
+        let restore = gateway_core::UpdateExternalMcpServerRecord {
+            mcp_server_id: server_id,
+            display_name: previous.display_name.clone(),
+            description: previous.description.clone(),
+            server_url: previous.server_url.clone(),
+            auth_mode: previous.auth_mode,
+            auth_config: previous.auth_config.clone(),
+            timeout_ms: previous.timeout_ms,
+            owner_contact: previous.ownership.owner_contact.clone(),
+            visibility: previous.ownership.visibility,
+            expected_owner_team_id: update.current.ownership.owner_team_id,
+            expected_visibility: update.current.ownership.visibility,
+            updated_at: OffsetDateTime::now_utc(),
+        };
+        match state.store.update_external_mcp_server(&restore).await {
+            Ok(_) | Err(gateway_core::StoreError::Conflict(_)) => {}
+            Err(other) => return Err(GatewayError::from(other).into()),
+        }
         return Err(error.into());
     }
     let current = update.current.clone();
@@ -448,9 +459,19 @@ pub async fn transfer_mcp_server_ownership(
         .confirm_no_stranded_access(server_id, team_id)
         .await
     {
-        service
-            .transfer_ownership(server_id, previous.ownership.clone())
-            .await?;
+        // Undo only our own transfer: a newer one, which already ran its own
+        // check, wins and is left in place.
+        match service
+            .transfer_ownership_if(
+                server_id,
+                previous.ownership.clone(),
+                Some(update.current.ownership.clone()),
+            )
+            .await
+        {
+            Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
+            Err(other) => return Err(other.into()),
+        }
         return Err(error.into());
     }
     // The store writes nothing when the ownership already matches.

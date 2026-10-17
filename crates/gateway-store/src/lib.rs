@@ -1557,6 +1557,7 @@ pub(crate) mod tests {
         let transfer = TransferExternalMcpServerOwnershipRecord {
             mcp_server_id: server.mcp_server_id,
             ownership: McpServerOwnership::default(),
+            expected_ownership: None,
             updated_at: now + Duration::seconds(2),
         };
         let taken_over = store
@@ -1589,6 +1590,18 @@ pub(crate) mod tests {
                 .ownership,
             McpServerOwnership::default()
         );
+        // A conditional transfer against a stale ownership is a conflict.
+        assert!(matches!(
+            store
+                .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: owned.clone(),
+                    expected_ownership: Some(owned.clone()),
+                    updated_at: now + Duration::seconds(2),
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
 
         let run = ExternalMcpDiscoveryRunRecord {
             discovery_run_id: Uuid::new_v4(),
@@ -1697,6 +1710,7 @@ pub(crate) mod tests {
             .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
                 mcp_server_id: server.mcp_server_id,
                 ownership: owned.clone(),
+                expected_ownership: None,
                 updated_at: now + Duration::seconds(3),
             })
             .await

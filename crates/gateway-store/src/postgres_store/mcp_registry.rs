@@ -442,6 +442,14 @@ impl McpRegistryRepository for PostgresStore {
                 ))
             })
             .and_then(|row| decode_server(&row))?;
+        if input
+            .expected_ownership
+            .as_ref()
+            .is_some_and(|expected| *expected != existing.ownership)
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(owner_changed(input.mcp_server_id));
+        }
         if existing.ownership == input.ownership {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));

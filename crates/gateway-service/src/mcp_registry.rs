@@ -268,10 +268,23 @@ where
         mcp_server_id: Uuid,
         ownership: McpServerOwnership,
     ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
+        self.transfer_ownership_if(mcp_server_id, ownership, None)
+            .await
+    }
+
+    /// Like [`Self::transfer_ownership`], but only while the server still has
+    /// `expected` (when given); a newer change makes it a conflict.
+    pub async fn transfer_ownership_if(
+        &self,
+        mcp_server_id: Uuid,
+        ownership: McpServerOwnership,
+        expected: Option<McpServerOwnership>,
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
         self.repo
             .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
                 mcp_server_id,
                 ownership,
+                expected_ownership: expected,
                 updated_at: OffsetDateTime::now_utc(),
             })
             .await

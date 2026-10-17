@@ -1750,6 +1750,10 @@ pub struct UpdateExternalMcpServerRecord {
 pub struct TransferExternalMcpServerOwnershipRecord {
     pub mcp_server_id: Uuid,
     pub ownership: McpServerOwnership,
+    /// When set, the write happens only if the server still has exactly this
+    /// ownership, checked under the write lock; otherwise it is a conflict.
+    /// Rollbacks use it so they never overwrite a newer transfer.
+    pub expected_ownership: Option<McpServerOwnership>,
     pub updated_at: OffsetDateTime,
 }
 
