@@ -1,0 +1,41 @@
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_a54d91cfb15fa9::t_bfc3219b7e449d 84,108
+crates/gateway-service/src/mcp_ownership.rs
+  s_dd118f467446e0::t_bd892d645e22b6 13-14,136-140,218-259
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_681a65b5384e39 254-256,295-315,431-448
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_dd118f467446e0::t_65abecb16c2eb1 1383-1432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c3fae7417430ffbc37cf4b3459df38b28d302b2",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a54d91cfb15fa9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14a11-4d13-7870-85ed-2cb7d2fbf625",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
