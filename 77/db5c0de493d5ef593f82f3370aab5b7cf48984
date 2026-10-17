@@ -1,0 +1,23 @@
+.pre-commit-config.yaml
+  s_8378144fcf7abb::t_c53915419cb83a 3-4,18-22
+AGENTS.md
+  s_8378144fcf7abb::t_8cc2a78702adff 18-21
+scripts/strip-ai-coauthors.sh
+  s_8378144fcf7abb::t_424ae25cf6382e 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77db5c0de493d5ef593f82f3370aab5b7cf48984",
+  "prompts": {},
+  "sessions": {
+    "s_8378144fcf7abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bc33843-0f12-492f-9887-85f13a43d9f1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
