@@ -1513,16 +1513,34 @@ pub async fn preview_mcp_effective_access(
         .store
         .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)
         .await?;
+    // The servers the resolved tools are on, read once by ID for both checks
+    // below, rather than the whole registry.
+    let referenced: Vec<Uuid> = resolution
+        .allowed_tools
+        .iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let servers: std::collections::HashMap<Uuid, gateway_core::ExternalMcpServerRecord> = state
+        .store
+        .list_external_mcp_servers_by_ids(&referenced)
+        .await?
+        .into_iter()
+        .map(|server| (server.mcp_server_id, server))
+        .collect();
     if let Some(api_key_id) = query.api_key_id {
-        limit_to_api_key_access(&state, api_key_id, &mut resolution).await?;
+        limit_to_api_key_access(&state, api_key_id, &servers, &mut resolution).await?;
     }
     // As at runtime, a team-only server's tools count only for its own team.
     let caller_team = preview_caller_team(&state, &query).await?;
-    let hidden = state
-        .store
-        .list_team_only_mcp_server_ids_outside(caller_team)
-        .await?
-        .into_iter()
+    let hidden = servers
+        .values()
+        .filter(|server| {
+            server.ownership.visibility == gateway_core::McpServerVisibility::Team
+                && server.ownership.owner_team_id != caller_team
+        })
+        .map(|server| server.mcp_server_id)
         .collect();
     gateway_service::mcp_access::retain_reachable_tools(&mut resolution, &hidden);
     Ok(Json(envelope(McpEffectiveAccessPayload {
@@ -1540,6 +1558,7 @@ pub async fn preview_mcp_effective_access(
 async fn limit_to_api_key_access(
     state: &AppState,
     api_key_id: Uuid,
+    servers: &std::collections::HashMap<Uuid, gateway_core::ExternalMcpServerRecord>,
     resolution: &mut gateway_core::McpAccessResolution,
 ) -> Result<(), AppError> {
     use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
@@ -1547,22 +1566,25 @@ async fn limit_to_api_key_access(
     else {
         return Ok(());
     };
+    // Runtime authentication refuses a key whose service account is disabled.
+    let owner_active = match key.owner_service_account_id {
+        Some(service_account_id) => {
+            IdentityRepository::get_service_account_by_id(&*state.store, service_account_id)
+                .await?
+                .is_some_and(|account| account.status == gateway_core::ServiceAccountStatus::Active)
+        }
+        None => true,
+    };
     let callable = key.revoked_at.is_none()
+        && owner_active
         && (key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY));
     if !callable {
         resolution.allowed_tools.clear();
     } else if key.access.mcp_server_keys.is_some() {
-        let server_keys: std::collections::HashMap<Uuid, String> = state
-            .store
-            .list_external_mcp_servers(true)
-            .await?
-            .into_iter()
-            .map(|server| (server.mcp_server_id, server.server_key))
-            .collect();
         resolution.allowed_tools.retain(|tool| {
-            server_keys
+            servers
                 .get(&tool.mcp_server_id)
-                .is_some_and(|server_key| key.access.allows_mcp_server(server_key))
+                .is_some_and(|server| key.access.allows_mcp_server(&server.server_key))
         });
     }
     let servers: std::collections::HashSet<Uuid> = resolution

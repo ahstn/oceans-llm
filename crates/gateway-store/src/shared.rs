@@ -64,6 +64,8 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
             LEFT JOIN users ku ON ku.user_id = k.owner_user_id
             LEFT JOIN team_memberships km ON km.user_id = k.owner_user_id
             WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = {server}
+              -- A disabled server exposes nothing, and cannot be enabled again.
+              AND srv.status = 'active'
         ) resolved
         WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
         "#

@@ -1778,3 +1778,84 @@ async fn team_admins_cannot_claim_private_network_hosts() {
     let (status, response) = context.create(&platform, body).await;
     assert_eq!(status, StatusCode::OK, "{response}");
 }
+
+#[tokio::test]
+async fn previews_ignore_keys_of_disabled_service_accounts() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "bot-notes",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let now = OffsetDateTime::now_utc();
+    let account = context
+        .state
+        .store
+        .create_service_account(context.team_a, "notes-bot", "Notes bot", now)
+        .await
+        .unwrap();
+    let key = context
+        .state
+        .store
+        .create_api_key(&NewApiKeyRecord {
+            name: "Bot".into(),
+            public_id: Uuid::new_v4().simple().to_string(),
+            secret_hash: gateway_core::hash_gateway_key_secret("test-secret").unwrap(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
+            owner_user_id: None,
+            owner_team_id: Some(context.team_a),
+            owner_service_account_id: Some(account.service_account_id),
+            access: Default::default(),
+            created_at: now,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        context
+            .grant(&admin, "api_key", key.id, "tool", server.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let preview = || {
+        let headers = admin.headers.clone();
+        let state = context.state.clone();
+        async move {
+            read(
+                preview_mcp_effective_access(
+                    State(state),
+                    headers,
+                    Query(
+                        serde_json::from_value(json!({
+                            "api_key_id": key.id,
+                            "server_id": server.id,
+                        }))
+                        .unwrap(),
+                    ),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    let (status, body) = preview().await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["data"]["tools"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
+
+    // Runtime refuses keys of a disabled service account, so the preview does.
+    context
+        .state
+        .store
+        .disable_service_account(account.service_account_id, now)
+        .await
+        .unwrap();
+    let (_, body) = preview().await;
+    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+}

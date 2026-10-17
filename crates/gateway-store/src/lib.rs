@@ -2492,6 +2492,19 @@ pub(crate) mod tests {
             1,
             "only the exact key still counts"
         );
+        // A disabled server exposes nothing and cannot be enabled again, so its
+        // grants strand nothing.
+        store
+            .disable_external_mcp_server(underscored.mcp_server_id, now)
+            .await
+            .expect("disable server");
+        assert_eq!(
+            store
+                .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                .await
+                .expect("count"),
+            0
+        );
     }
 
     /// Grant, credential and tool set writes checked against the server's
