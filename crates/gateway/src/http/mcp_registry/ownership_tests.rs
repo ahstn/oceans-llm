@@ -204,6 +204,7 @@ impl TestContext {
                 owner_user_id: Some(user_id),
                 owner_team_id: None,
                 owner_service_account_id: None,
+                access: Default::default(),
                 created_at: OffsetDateTime::now_utc(),
             })
             .await

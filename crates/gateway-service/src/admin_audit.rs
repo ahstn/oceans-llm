@@ -105,6 +105,8 @@ pub mod actions {
 
     pub const API_KEY_CREATED: AuditAction = AuditAction("api_key.created");
     pub const API_KEY_UPDATED: AuditAction = AuditAction("api_key.updated");
+    /// A key's capability scopes or MCP server list changed.
+    pub const API_KEY_SCOPES_UPDATED: AuditAction = AuditAction("api_key.scopes_updated");
     pub const API_KEY_REVOKED: AuditAction = AuditAction("api_key.revoked");
     pub const API_KEY_SECRET_REVEALED: AuditAction = AuditAction("api_key.secret_revealed");
 
@@ -188,6 +190,7 @@ pub mod actions {
     pub const ALL: &[AuditAction] = &[
         API_KEY_CREATED,
         API_KEY_UPDATED,
+        API_KEY_SCOPES_UPDATED,
         API_KEY_REVOKED,
         API_KEY_SECRET_REVEALED,
         USER_CREATED,

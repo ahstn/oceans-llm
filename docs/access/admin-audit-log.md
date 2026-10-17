@@ -23,7 +23,7 @@ Each entry shows:
 
 | Area | Actions |
 |---|---|
-| API keys | `api_key.created`, `api_key.updated`, `api_key.revoked`, `api_key.secret_revealed` |
+| API keys | `api_key.created`, `api_key.updated`, `api_key.scopes_updated`, `api_key.revoked`, `api_key.secret_revealed` |
 | Users | `user.created`, `user.updated`, `user.deactivated`, `user.reactivated`, `user.onboarding_reset`, `user.invite_issued`, `user.invite_redeemed`, `user.password_changed`, `user.provisioned`, `user.team_transferred` |
 | Teams | `team.created`, `team.updated`, `team.members_added`, `team.member_removed` |
 | Service accounts | `service_account.created`, `service_account.updated`, `service_account.disabled` |

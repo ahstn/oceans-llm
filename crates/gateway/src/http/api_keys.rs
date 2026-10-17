@@ -4,18 +4,26 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, GatewayError,
-    GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
+    API_KEY_SCOPES, AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError,
+    GatewayError, GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
 use gateway_service::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditAction,
-    AuditEvent, AuditProgress, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, admin_audit::actions,
+    AdminApiKeyMcpServerOption, AdminApiKeyModelOption, AdminApiKeyService,
+    AdminApiKeyServiceAccountOwner, AdminApiKeySummary, AdminApiKeyUserOwner,
+    AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditAction, AuditEvent, AuditProgress,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
+    UpdateAdminApiKeyInput, admin_audit::actions,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+mod scopes;
+
+pub use scopes::{
+    __path_update_api_key_scopes, UpdateApiKeyScopesRequest, UpdateApiKeyScopesResponse,
+    update_api_key_scopes,
+};
 
 use crate::{
     config::{AdminAction, AdminPermissionGroup},
@@ -34,6 +42,10 @@ pub struct AdminApiKeysPayload {
     users: Vec<AdminApiKeyUserOwnerView>,
     service_accounts: Vec<AdminApiKeyServiceAccountOwnerView>,
     models: Vec<AdminApiKeyModelView>,
+    /// Scopes a key may carry, in display order.
+    available_scopes: Vec<String>,
+    /// Active MCP servers, the options for a key's server list.
+    mcp_servers: Vec<AdminApiKeyMcpServerView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -52,6 +64,10 @@ pub struct AdminApiKeyView {
     owner_service_account_team_key: Option<String>,
     model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
+    /// `null`: full access, as for keys created before scopes existed.
+    scopes: Option<Vec<String>>,
+    /// `null`: every MCP server the owner's grants reach.
+    mcp_server_keys: Option<Vec<String>>,
     created_at: String,
     last_used_at: Option<String>,
     revoked_at: Option<String>,
@@ -75,6 +91,12 @@ pub struct AdminApiKeyServiceAccountOwnerView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminApiKeyMcpServerView {
+    key: String,
+    display_name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyModelView {
     id: String,
     key: String,
@@ -91,6 +113,12 @@ pub struct CreateApiKeyRequest {
     owner_service_account_id: Option<String>,
     model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
+    /// Omit or `null` for full access.
+    #[serde(default)]
+    scopes: Option<Vec<String>>,
+    /// Omit or `null` to reach every server the owner's grants reach.
+    #[serde(default)]
+    mcp_server_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -195,6 +223,8 @@ pub async fn create_api_key(
         "owner_kind": request.owner_kind,
         "model_grant_mode": request.model_grant_mode.as_str(),
         "model_keys": request.model_keys,
+        "scopes": request.scopes,
+        "mcp_server_keys": request.mcp_server_keys,
     });
     let progress = AuditProgress::default();
     let create = service.create_api_key(
@@ -206,6 +236,8 @@ pub async fn create_api_key(
             owner_service_account_id: request.owner_service_account_id,
             model_grant_mode: request.model_grant_mode.as_str().to_string(),
             model_keys: request.model_keys,
+            scopes: request.scopes,
+            mcp_server_keys: request.mcp_server_keys,
         },
         &progress,
     );
@@ -631,6 +663,22 @@ fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {
             .map(map_service_account_owner)
             .collect(),
         models: payload.models.into_iter().map(map_model_option).collect(),
+        available_scopes: API_KEY_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_string())
+            .collect(),
+        mcp_servers: payload
+            .mcp_servers
+            .into_iter()
+            .map(map_mcp_server_option)
+            .collect(),
+    }
+}
+
+fn map_mcp_server_option(server: AdminApiKeyMcpServerOption) -> AdminApiKeyMcpServerView {
+    AdminApiKeyMcpServerView {
+        key: server.key,
+        display_name: server.display_name,
     }
 }
 
@@ -665,6 +713,8 @@ pub(crate) fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyVie
         owner_service_account_team_key: api_key.owner_service_account_team_key,
         model_grant_mode: api_key.model_grant_mode.into(),
         model_keys: api_key.model_keys,
+        scopes: api_key.access.scopes,
+        mcp_server_keys: api_key.access.mcp_server_keys,
         created_at: format_timestamp(api_key.created_at),
         last_used_at: api_key.last_used_at.map(format_timestamp),
         revoked_at: api_key.revoked_at.map(format_timestamp),

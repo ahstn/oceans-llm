@@ -20,7 +20,7 @@ Teams already have Owner, Admin and Member roles, and Spend Controls already let
 
 ### 1. Ownership
 
-`external_mcp_servers` gains three columns (migration `V65__mcp_server_ownership.sql`, both backends):
+`external_mcp_servers` gains three columns (migration `V66__mcp_server_ownership.sql`, both backends):
 
 | Column | Meaning |
 |---|---|

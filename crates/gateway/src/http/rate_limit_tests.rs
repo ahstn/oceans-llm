@@ -143,6 +143,7 @@ fn policy(
 
 struct Harness {
     _directory: tempfile::TempDir,
+    store: Arc<gateway_store::AnyStore>,
     router: Router,
     metrics: Arc<crate::observability::GatewayMetrics>,
     clock: TestClock,
@@ -157,6 +158,7 @@ async fn harness(policies: Vec<ConfiguredRateLimitPolicy>) -> Harness {
     let clock = install_rate_limits(&mut state, policies);
     Harness {
         _directory: directory,
+        store: state.store.clone(),
         metrics: state.metrics.clone(),
         router: crate::http::build_router(state, admin_ui::AdminUiConfig::default()),
         clock,
@@ -211,6 +213,53 @@ impl Harness {
         )
         .await
     }
+}
+
+#[tokio::test]
+async fn scoped_keys_keep_their_key_limits_and_scope_refusals_count_nothing() {
+    use gateway_core::{AdminApiKeyRepository, ApiKeyAccess, ApiKeyRepository};
+
+    let harness = harness(vec![policy(
+        "per key",
+        RateLimitOperation::Inference,
+        RateLimitScopeKind::ApiKey,
+        RateLimitMetric::Requests,
+        RateLimitPeriod::Minute,
+        1,
+    )])
+    .await;
+    let key_id = harness
+        .store
+        .get_api_key_by_public_id("streamtest")
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    let set_scopes = |scope: &str| ApiKeyAccess::new(Some(vec![scope.to_string()]), None).unwrap();
+
+    // Refused for scope before rate limiting, so it uses none of the limit.
+    harness
+        .store
+        .replace_api_key_access(key_id, &set_scopes("mcp:proxy"))
+        .await
+        .unwrap();
+    let refused = harness.chat().await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+    assert_eq!(refused.body["error"]["code"], "insufficient_scope");
+    assert_eq!(harness.provider.calls.load(Ordering::SeqCst), 0);
+
+    // Narrowed to `inference`, the key is still the policy's subject.
+    harness
+        .store
+        .replace_api_key_access(key_id, &set_scopes("inference"))
+        .await
+        .unwrap();
+    let first = harness.chat().await;
+    assert_eq!(first.status, StatusCode::OK, "{}", first.body);
+    assert_eq!(first.header("x-ratelimit-remaining"), Some("0"));
+    let limited = harness.chat().await;
+    assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(harness.provider.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

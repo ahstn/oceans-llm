@@ -1,19 +1,22 @@
 use super::*;
 use crate::shared::{ensure_active_for_update, parse_uuid, same_model_access};
-use gateway_core::ApiKeyModelAccess;
+use gateway_core::{ApiKeyAccess, ApiKeyModelAccess};
+
+/// Column order read by `decode_api_key`.
+const API_KEY_COLUMNS: &str = "id, public_id, secret_hash, name, status, model_grant_mode, \
+     owner_kind, owner_user_id, owner_team_id, owner_service_account_id, \
+     created_at, last_used_at, revoked_at, scopes, mcp_server_keys";
 
 #[async_trait]
 impl AdminApiKeyRepository for PostgresStore {
     async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
-        let rows = sqlx::query(
+        let rows = sqlx::query(&format!(
             r#"
-            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                   created_at, last_used_at, revoked_at
+            SELECT {API_KEY_COLUMNS}
             FROM api_keys
             ORDER BY created_at DESC, public_id ASC
-            "#,
-        )
+            "#
+        ))
         .fetch_all(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -26,17 +29,15 @@ impl AdminApiKeyRepository for PostgresStore {
         user_id: Uuid,
         team_id: Option<Uuid>,
     ) -> Result<Vec<ApiKeyRecord>, StoreError> {
-        let rows = sqlx::query(
+        let rows = sqlx::query(&format!(
             r#"
-            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                   created_at, last_used_at, revoked_at
+            SELECT {API_KEY_COLUMNS}
             FROM api_keys
             WHERE (owner_kind = 'user' AND owner_user_id = $1)
                OR ($2 IS NOT NULL AND owner_kind = 'service_account' AND owner_team_id = $2)
             ORDER BY created_at DESC, public_id ASC
-            "#,
-        )
+            "#
+        ))
         .bind(user_id.to_string())
         .bind(team_id.map(|value| value.to_string()))
         .fetch_all(&self.pool)
@@ -50,16 +51,14 @@ impl AdminApiKeyRepository for PostgresStore {
         &self,
         api_key_id: Uuid,
     ) -> Result<Option<ApiKeyRecord>, StoreError> {
-        let row = sqlx::query(
+        let row = sqlx::query(&format!(
             r#"
-            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                   created_at, last_used_at, revoked_at
+            SELECT {API_KEY_COLUMNS}
             FROM api_keys
             WHERE id = $1
             LIMIT 1
-            "#,
-        )
+            "#
+        ))
         .bind(api_key_id.to_string())
         .fetch_optional(&self.pool)
         .await
@@ -73,18 +72,16 @@ impl AdminApiKeyRepository for PostgresStore {
 
         let api_key_id = api_key_uuid(&api_key.public_id);
         // `RETURNING` gives the row this insert wrote, before any later change.
-        let row = sqlx::query(
+        let row = sqlx::query(&format!(
             r#"
             INSERT INTO api_keys (
                 id, public_id, secret_hash, name, status, model_grant_mode,
                 owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                created_at, last_used_at, revoked_at
-            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, NULL, NULL)
-            RETURNING id, public_id, secret_hash, name, status, model_grant_mode,
-                      owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                      created_at, last_used_at, revoked_at
-            "#,
-        )
+                created_at, last_used_at, revoked_at, scopes, mcp_server_keys
+            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, NULL, NULL, $11, $12)
+            RETURNING {API_KEY_COLUMNS}
+            "#
+        ))
         .bind(api_key_id.to_string())
         .bind(api_key.public_id.as_str())
         .bind(api_key.secret_hash.as_str())
@@ -99,6 +96,8 @@ impl AdminApiKeyRepository for PostgresStore {
                 .map(|value| value.to_string()),
         )
         .bind(api_key.created_at.unix_timestamp())
+        .bind(api_key.access.scopes_column())
+        .bind(api_key.access.mcp_server_keys_column())
         .fetch_one(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -262,6 +261,42 @@ impl AdminApiKeyRepository for PostgresStore {
         Ok(Some(previous))
     }
 
+    async fn replace_api_key_access(
+        &self,
+        api_key_id: Uuid,
+        access: &ApiKeyAccess,
+    ) -> Result<Option<ApiKeyAccess>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the key row serializes replacements, so the access read here is
+        // the access this replacement overwrites.
+        let row = sqlx::query(
+            "SELECT status, scopes, mcp_server_keys FROM api_keys WHERE id = $1 FOR UPDATE",
+        )
+        .bind(api_key_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+        let status: String = row.try_get(0).map_err(to_query_error)?;
+        let scopes: Option<String> = row.try_get(1).map_err(to_query_error)?;
+        let mcp_server_keys: Option<String> = row.try_get(2).map_err(to_query_error)?;
+        ensure_active_for_update(&status)?;
+        let previous = ApiKeyAccess::from_columns(scopes.as_deref(), mcp_server_keys.as_deref());
+        if previous == *access {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        }
+        sqlx::query("UPDATE api_keys SET scopes = $1, mcp_server_keys = $2 WHERE id = $3")
+            .bind(access.scopes_column())
+            .bind(access.mcp_server_keys_column())
+            .bind(api_key_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(previous))
+    }
+
     async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
@@ -292,16 +327,14 @@ impl ApiKeyRepository for PostgresStore {
         &self,
         public_id: &str,
     ) -> Result<Option<ApiKeyRecord>, StoreError> {
-        let row = sqlx::query(
+        let row = sqlx::query(&format!(
             r#"
-            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                   created_at, last_used_at, revoked_at
+            SELECT {API_KEY_COLUMNS}
             FROM api_keys
             WHERE public_id = $1
             LIMIT 1
-            "#,
-        )
+            "#
+        ))
         .bind(public_id)
         .fetch_optional(&self.pool)
         .await
