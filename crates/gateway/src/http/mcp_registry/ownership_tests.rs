@@ -940,8 +940,39 @@ async fn only_platform_admins_transfer_ownership() {
     );
 }
 
+const CREDENTIAL_KEY_ENV: &str = "OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
+
+/// Sets a test credential encryption key and restores the previous value.
+struct CredentialKeyGuard(Option<std::ffi::OsString>);
+
+impl CredentialKeyGuard {
+    fn new() -> Self {
+        let previous = std::env::var_os(CREDENTIAL_KEY_ENV);
+        unsafe {
+            std::env::set_var(
+                CREDENTIAL_KEY_ENV,
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+        Self(previous)
+    }
+}
+
+impl Drop for CredentialKeyGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match self.0.take() {
+                Some(value) => std::env::set_var(CREDENTIAL_KEY_ENV, value),
+                None => std::env::remove_var(CREDENTIAL_KEY_ENV),
+            }
+        }
+    }
+}
+
 #[tokio::test]
+#[serial_test::serial]
 async fn team_admin_sets_shared_credentials_for_their_own_servers_only() {
+    let _key = CredentialKeyGuard::new();
     let context = TestContext::new().await;
     let own = context
         .server(
@@ -962,7 +993,7 @@ async fn team_admin_sets_shared_credentials_for_their_own_servers_only() {
         let mut body = json!({
             "server_id": server_id,
             "material_kind": "bearer_token",
-            "secret_ref": "env/OCEANS_MCP_CREDENTIAL_TEST_TOKEN",
+            "secret": "team-shared-token",
         });
         body.as_object_mut()
             .unwrap()
@@ -984,6 +1015,21 @@ async fn team_admin_sets_shared_credentials_for_their_own_servers_only() {
     );
     let entry = context.last_audit("mcp_credential_binding.set").await;
     assert_eq!(entry.metadata["actor_access"], "team_admin");
+    // A process secret reference could name another team's credential.
+    let mut by_reference = binding(
+        own.id,
+        json!({ "owner_scope_kind": "team", "owner_team_id": context.team_a }),
+    );
+    let fields = by_reference.as_object_mut().unwrap();
+    fields.remove("secret");
+    fields.insert(
+        "secret_ref".to_string(),
+        json!("env/OCEANS_MCP_CREDENTIAL_PLATFORM_TOKEN"),
+    );
+    assert_eq!(
+        context.bind_credential(&admin, by_reference).await,
+        StatusCode::BAD_REQUEST
+    );
     assert_eq!(
         context
             .bind_credential(
@@ -1215,4 +1261,60 @@ async fn team_admins_cannot_point_the_gateway_at_internal_addresses() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn team_admins_cannot_send_gateway_secrets_or_call_internal_endpoints() {
+    let context = TestContext::new().await;
+    let admin = context.team_admin(context.team_a).await;
+    let secret_ref = json!({ "secret_ref": "env/OCEANS_MCP_DISCOVERY_PLATFORM_TOKEN" });
+
+    // Naming a gateway secret on a team server would send it to that server.
+    let mut body = create_body("bearer");
+    body["auth_mode"] = json!("gateway_bearer_token");
+    body["auth_config"] = secret_ref.clone();
+    assert_eq!(context.create(&admin, body).await.0, StatusCode::FORBIDDEN);
+
+    // A URL in the auth config is one the gateway calls, so it must be public.
+    let mut body = create_body("oauth");
+    body["auth_config"] = json!({ "token_endpoint": "https://10.0.0.7/token" });
+    assert_eq!(
+        context.create(&admin, body).await.0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // A platform admin can set one up for the team, and the team keeps it only
+    // while the secret and the destination stay as they are.
+    let platform = context.platform_admin().await;
+    let mut body = create_body("shared-bearer");
+    body["auth_mode"] = json!("gateway_bearer_token");
+    body["auth_config"] = secret_ref.clone();
+    body["owner_team_id"] = json!(context.team_a);
+    let (status, created) = context.create(&platform, body).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id: Uuid = created["data"]["server"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let same = json!({
+        "server_url": "https://shared-bearer.example.test/mcp",
+        "auth_mode": "gateway_bearer_token",
+        "auth_config": secret_ref,
+        "owner_contact": "#team-a",
+    });
+    let (status, response) = context.update(&admin, id, same.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let mut moved = same.clone();
+    moved["server_url"] = json!("https://elsewhere.example.test/mcp");
+    assert_eq!(
+        context.update(&admin, id, moved).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let mut swapped = same;
+    swapped["auth_config"] = json!({ "secret_ref": "env/OCEANS_MCP_DISCOVERY_OTHER_TOKEN" });
+    assert_eq!(
+        context.update(&admin, id, swapped).await.0,
+        StatusCode::FORBIDDEN
+    );
 }

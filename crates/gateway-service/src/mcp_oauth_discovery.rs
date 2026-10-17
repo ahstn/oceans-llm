@@ -219,15 +219,35 @@ pub async fn discover_mcp_oauth(
     http: &reqwest::Client,
     server_url: &str,
 ) -> Result<McpOauthDiscovery, GatewayError> {
+    discover_mcp_oauth_with(http, server_url, false).await
+}
+
+/// Like [`discover_mcp_oauth`]. With `public_only`, every URL the gateway
+/// fetches or will call, including ones the upstream supplies, must reach a
+/// public address; team admins run discovery this way.
+pub async fn discover_mcp_oauth_with(
+    http: &reqwest::Client,
+    server_url: &str,
+    public_only: bool,
+) -> Result<McpOauthDiscovery, GatewayError> {
     let server = Url::parse(server_url)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
     ensure_fetchable(&server, &server, "server_url")?;
+    let check = |url: Url| async move {
+        if public_only {
+            crate::mcp_ownership::require_public_destination(&url).await
+        } else {
+            Ok(())
+        }
+    };
+    check(server.clone()).await?;
     let mut warnings = Vec::new();
     let challenge = probe_challenge(http, &server).await;
 
     let mut resource_metadata = None;
     for candidate in protected_resource_metadata_urls(&server, challenge.as_ref())? {
         ensure_fetchable(&candidate, &server, "resource_metadata")?;
+        check(candidate.clone()).await?;
         if let Some(metadata) = fetch_json::<ProtectedResourceMetadata>(http, &candidate).await? {
             resource_metadata = Some((candidate, metadata));
             break;
@@ -290,6 +310,8 @@ pub async fn discover_mcp_oauth(
         ))
     })?;
     ensure_fetchable(&issuer_url, &server, "authorization server")?;
+    // Every metadata candidate is on the issuer's host.
+    check(issuer_url.clone()).await?;
     let mut server_metadata = None;
     for candidate in authorization_server_metadata_urls(&issuer_url) {
         if let Some(metadata) = fetch_json::<AuthorizationServerMetadata>(http, &candidate).await? {
@@ -329,6 +351,12 @@ pub async fn discover_mcp_oauth(
         .registration_endpoint
         .map(|value| endpoint(Some(value), "registration_endpoint"))
         .transpose()?;
+    // The gateway calls these when users connect, so they are held to the same rule.
+    for called in std::iter::once(&token_endpoint).chain(registration_endpoint.as_ref()) {
+        if let Ok(url) = Url::parse(called) {
+            check(url).await?;
+        }
+    }
     if !metadata.response_types_supported.is_empty()
         && !metadata
             .response_types_supported

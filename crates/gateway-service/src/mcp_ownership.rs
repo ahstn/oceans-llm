@@ -16,6 +16,7 @@ use gateway_core::{
     McpUpstreamCredentialOwnerScopeKind, MembershipRole, StoreError, TeamMembershipRecord,
 };
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use url::Url;
 use uuid::Uuid;
 
@@ -401,6 +402,7 @@ where
         owner_scope_kind: McpUpstreamCredentialOwnerScopeKind,
         owner_team_id: Option<Uuid>,
         owner_service_account_id: Option<Uuid>,
+        uses_secret_ref: bool,
     ) -> Result<(), GatewayError> {
         if !scope.can_manage(server) {
             return Err(forbidden());
@@ -408,6 +410,15 @@ where
         let Some(team_id) = scope.managed_team_id() else {
             return Ok(());
         };
+        // A secret reference names a process-wide environment variable, which
+        // could hold another team's or the platform's credential. Team admins
+        // store their own secret, encrypted, instead.
+        if uses_secret_ref {
+            return Err(GatewayError::InvalidRequest(
+                "team admins store a credential's secret directly; secret_ref is for platform admins"
+                    .to_string(),
+            ));
+        }
         let allowed = match owner_scope_kind {
             McpUpstreamCredentialOwnerScopeKind::Team => owner_team_id == Some(team_id),
             McpUpstreamCredentialOwnerScopeKind::ServiceAccount => match owner_service_account_id {
@@ -601,10 +612,17 @@ pub async fn authorize_destination(
     }
     let url = Url::parse(server_url.trim())
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    require_public_destination(&url).await
+}
+
+/// Rejects a URL whose host is, or resolves to, a non-public address. A host
+/// that does not resolve is left to fail at connection time.
+pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
     let blocked = || {
-        GatewayError::InvalidRequest(
-            "server_url must reach a public address; ask a platform admin to register servers on internal networks".to_string(),
-        )
+        GatewayError::InvalidRequest(format!(
+            "`{}` must reach a public address; ask a platform admin to register servers on internal networks",
+            url.host_str().unwrap_or_default()
+        ))
     };
     let port = url.port_or_known_default().unwrap_or(443);
     let addresses: Vec<IpAddr> = match url.host() {
@@ -626,6 +644,64 @@ pub async fn authorize_destination(
         Ok(())
     } else {
         Err(blocked())
+    }
+}
+
+/// Checks a team admin's server auth config against the config it replaces
+/// (`None` for a new server). A team admin may not add or retarget a gateway
+/// secret reference (`env/...`), because the gateway would resolve that
+/// process-wide secret and send it to a server the team controls; nor add a
+/// non-public URL, such as a token endpoint the gateway calls. Values a
+/// platform admin set are kept as long as they, and the server URL, stay the
+/// same.
+pub async fn authorize_team_auth_config(
+    scope: &McpAdminScope,
+    auth_config: &Map<String, Value>,
+    previous: Option<(&Map<String, Value>, &str)>,
+    server_url: &str,
+) -> Result<(), GatewayError> {
+    if scope.is_platform_admin() {
+        return Ok(());
+    }
+    let mut values = Vec::new();
+    collect_strings("", &Value::Object(auth_config.clone()), &mut values);
+    let mut previous_values = Vec::new();
+    if let Some((previous, _)) = previous {
+        collect_strings("", &Value::Object(previous.clone()), &mut previous_values);
+    }
+    let url_unchanged = previous.is_some_and(|(_, url)| url == server_url.trim());
+    for (path, value) in values {
+        let inherited = previous_values.contains(&(path.clone(), value.clone()));
+        if value.starts_with("env/") {
+            if !(inherited && url_unchanged) {
+                return Err(GatewayError::Auth(AuthError::InsufficientPrivileges));
+            }
+            continue;
+        }
+        if !inherited
+            && let Ok(url) = Url::parse(&value)
+            && matches!(url.scheme(), "http" | "https")
+        {
+            require_public_destination(&url).await?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_strings(path: &str, value: &Value, out: &mut Vec<(String, String)>) {
+    match value {
+        Value::String(text) => out.push((path.to_string(), text.trim().to_string())),
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_strings(&format!("{path}/{index}"), item, out);
+            }
+        }
+        Value::Object(fields) => {
+            for (key, item) in fields {
+                collect_strings(&format!("{path}/{key}"), item, out);
+            }
+        }
+        _ => {}
     }
 }
 

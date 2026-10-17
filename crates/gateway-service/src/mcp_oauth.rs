@@ -302,6 +302,15 @@ impl McpOauthRuntime {
         discover_mcp_oauth(&self.client, server_url).await
     }
 
+    /// Like [`Self::discover`], but every URL the gateway fetches or will call
+    /// must reach a public address. Team admins discover this way.
+    pub async fn discover_public(
+        &self,
+        server_url: &str,
+    ) -> Result<McpOauthDiscovery, GatewayError> {
+        crate::mcp_oauth_discovery::discover_mcp_oauth_with(&self.client, server_url, true).await
+    }
+
     fn require_public_base_url(&self) -> Result<&str, GatewayError> {
         self.public_base_url.as_deref().ok_or_else(|| {
             GatewayError::InvalidRequest("mcp.oauth.public_base_url is not configured".to_string())

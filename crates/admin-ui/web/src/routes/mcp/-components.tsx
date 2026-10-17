@@ -633,7 +633,8 @@ export function CredentialBindingsPanel({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="secret">Encrypted secret</SelectItem>
-                  <SelectItem value="secret_ref">Secret reference</SelectItem>
+                  {/* A reference names a gateway-wide variable, so it is platform-only. */}
+                  {teamScoped ? null : <SelectItem value="secret_ref">Secret reference</SelectItem>}
                 </SelectGroup>
               </SelectContent>
             </Select>

@@ -24,7 +24,8 @@ use gateway_service::{
     AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpAdminScope,
     McpCredentialService, McpOwnership, McpRegistryService, RedactedMcpCredentialBinding,
     RequestedMcpServerOwnership, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
-    admin_audit::actions, authorize_destination, parse_mcp_server_visibility,
+    admin_audit::actions, authorize_destination, authorize_team_auth_config,
+    parse_mcp_server_visibility,
 };
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
@@ -149,10 +150,36 @@ pub async fn create_mcp_server(
     Json(request): Json<CreateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
-    // A catalog entry supplies its own public URL, so only a typed one is checked.
+    // A catalog entry supplies its own public URL, so only a typed one is
+    // checked. Catalog values count as inherited, like a platform admin's.
+    let catalog = match request.recommended_catalog_key.as_deref() {
+        Some(key) => McpRegistryService::new(state.store.clone())
+            .recommended_servers()?
+            .into_iter()
+            .find(|entry| entry.catalog_key == key),
+        None => None,
+    };
     if let Some(server_url) = request.server_url.as_deref() {
         authorize_destination(&scope, server_url).await?;
     }
+    let effective_url = request
+        .server_url
+        .clone()
+        .or_else(|| catalog.as_ref().map(|entry| entry.server_url.clone()))
+        .unwrap_or_default();
+    let effective_auth_config = match (&catalog, request.auth_config.is_empty()) {
+        (Some(entry), true) if request.auth_mode.is_none() => entry.auth_config.clone(),
+        _ => request.auth_config.clone(),
+    };
+    authorize_team_auth_config(
+        &scope,
+        &effective_auth_config,
+        catalog
+            .as_ref()
+            .map(|entry| (&entry.auth_config, entry.server_url.as_str())),
+        &effective_url,
+    )
+    .await?;
     let ownership = ownership(&state)
         .new_server_ownership(
             &scope,
@@ -225,6 +252,13 @@ pub async fn update_mcp_server(
     if request.server_url.trim() != existing.server_url {
         authorize_destination(&scope, &request.server_url).await?;
     }
+    authorize_team_auth_config(
+        &scope,
+        &request.auth_config,
+        Some((&existing.auth_config, &existing.server_url)),
+        &request.server_url,
+    )
+    .await?;
     let visibility = request
         .visibility
         .as_deref()
@@ -448,11 +482,19 @@ pub async fn discover_mcp_server_oauth(
     Json(request): Json<McpOauthDiscoveryRequest>,
 ) -> Result<Json<Envelope<McpOauthDiscoveryPayload>>, AppError> {
     let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
-    authorize_destination(&scope, &request.server_url).await?;
-    let discovery = state
-        .mcp_oauth_runtime
-        .discover(request.server_url.trim())
-        .await?;
+    // A team admin's discovery checks every hop, including URLs the upstream
+    // supplies, not just the one they typed.
+    let discovery = if scope.is_platform_admin() {
+        state
+            .mcp_oauth_runtime
+            .discover(request.server_url.trim())
+            .await?
+    } else {
+        state
+            .mcp_oauth_runtime
+            .discover_public(request.server_url.trim())
+            .await?
+    };
     let mut warnings = discovery.warnings.clone();
     if state.mcp_oauth_runtime.public_base_url().is_none() {
         warnings.push(
@@ -1008,6 +1050,7 @@ pub async fn upsert_mcp_credential_binding(
             owner_scope_kind,
             request.owner_team_id,
             request.owner_service_account_id,
+            request.secret_ref.is_some(),
         )
         .await?;
     let service = McpCredentialService::new(state.store.clone());
@@ -1025,6 +1068,7 @@ pub async fn upsert_mcp_credential_binding(
                 existing.owner_scope_kind,
                 existing.owner_team_id,
                 existing.owner_service_account_id,
+                false,
             )
             .await?;
     }

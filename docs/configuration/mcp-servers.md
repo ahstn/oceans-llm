@@ -105,13 +105,13 @@ includes the `mcp` page, which it does by default. Team members do not.
 | Action | Team owner or admin |
 |---|---|
 | See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, the URL loses its credentials, query and token-like path segments, and the auth config and discovery errors are hidden |
-| Register a server | Yes, at a public address. It is owned by their team and starts as `team`. A platform admin registers servers on internal networks, including for a team |
+| Register a server | Yes, at a public address. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
 | Edit, disable, refresh discovery | Their team's servers |
 | Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
 | Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
 | Revoke grants | Any grant on their team's servers' tools |
 | Tool sets | No. Tool sets are platform-managed |
-| Credential bindings | On their team's servers: set team and service-account credentials, and revoke any binding |
+| Credential bindings | On their team's servers: set team and service-account credentials as encrypted secrets (not `secret_ref`), and revoke any binding |
 | Change the owning team | No |
 
 A server they cannot see returns `404`. An action they cannot take on a server
