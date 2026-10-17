@@ -381,10 +381,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 65,
+        name: "api_key_scopes",
+        checksum: "V65__api_key_scopes.sql",
+        libsql_sql: include_str!("../migrations/V65__api_key_scopes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V65__api_key_scopes.sql"),
+    },
+    MigrationManifest {
+        version: 66,
         name: "batch_jobs_route_index",
-        checksum: "V65__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V65__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V65__batch_jobs_route_index.sql"),
+        checksum: "V66__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V66__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V66__batch_jobs_route_index.sql"),
     },
 ];
 

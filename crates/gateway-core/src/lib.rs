@@ -3,6 +3,7 @@ pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
+pub mod credential_scopes;
 pub mod domain;
 pub mod error;
 pub mod gateway_keys;
@@ -55,6 +56,9 @@ pub use budgets::{
     BudgetContact, BudgetExceededStatus, BudgetIncreaseBasis, BudgetIncreaseRecord,
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetScopeWindow,
     BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
+};
+pub use credential_scopes::{
+    API_KEY_SCOPES, ApiKeyAccess, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
 };
 pub use domain::{
     ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
@@ -132,8 +136,7 @@ pub use mcp_client_oauth::{
     GatewayOauthGrantRecord, GatewayOauthGrantSummary, GatewayOauthPurgeCounts,
     GatewayOauthRepository, GatewayOauthSessionState, GatewayOauthTokenContext,
     GatewayOauthTokenKind, GatewayOauthTokenRecord, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX,
-    OAUTH_REFRESH_TOKEN_PREFIX, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, SUPPORTED_SCOPES,
-    parse_scope_list,
+    OAUTH_REFRESH_TOKEN_PREFIX, SUPPORTED_SCOPES, parse_scope_list,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

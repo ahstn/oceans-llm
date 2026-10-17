@@ -82,6 +82,36 @@ If both headers are present, they must contain the same raw Oceans key after Bea
 
 Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers with gateway-managed credentials or principal-bound upstream credential bindings.
 
+### Scoped API keys
+
+Give an MCP client its own key, limited to MCP. Then a leaked key can't call models or spend budget. Under **API keys**, set **Capabilities** to **Limited** and choose:
+
+| Scope | Allows |
+| --- | --- |
+| `mcp:aggregate` | `/mcp` and its `search_tools`, `describe_tool`, and `call_tool` |
+| `mcp:proxy` | `/mcp/{server_key}` |
+| `inference` | Model routes, batches, and guardrail checks. Leave it off for an MCP-only key |
+
+To limit the key further, set **MCP servers** to **Selected servers** and pick the servers it may reach. The key then never sees a server outside its list, even when its owner holds grants there. A listed server still needs a grant before any tool shows up.
+
+A refused request gets `403` with a JSON-RPC error. Its `id` is `null`, because the gateway refuses before it reads the request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": null,
+  "error": {
+    "code": -32001,
+    "message": "credential lacks the `mcp:aggregate` scope",
+    "data": {"error": "insufficient_scope", "required_scope": "mcp:aggregate"}
+  }
+}
+```
+
+A per-server request for a server outside the key's list gets the same error without `required_scope`. Unknown servers get the same answer, so the error doesn't reveal which servers exist. On `/mcp`, a tool on an unlisted server reads as `MCP tool address is not granted`, the same as a tool with no grant.
+
+Keys created before scopes existed keep full access until an admin edits them. Scope edits apply to the key's next request, without reissuing it. See [API key scopes](../access/identity-and-access.md#api-key-scopes) for the full route list.
+
 ## OAuth sign-in
 
 Clients that follow the MCP authorization specification can connect without an API key. A platform admin enables `mcp.client_oauth` (see the [configuration reference](../configuration/configuration-reference.md)). Users then add only the MCP URL to their client:
@@ -103,7 +133,7 @@ The client handles the rest:
 What the token can do:
 
 - It acts as the user who approved it. User and team grants apply exactly as they do for that user's API keys. Grants made to one specific API key do not apply.
-- A token for `https://gateway.example.com/mcp` with `mcp:aggregate` reaches the aggregate endpoint. Add `mcp:proxy` to also reach every per-server route. A token for `https://gateway.example.com/mcp/{server_key}` reaches only that server.
+- Its scopes are the [scoped API key](#scoped-api-keys) names, checked the same way. A token for `https://gateway.example.com/mcp` with `mcp:aggregate` reaches the aggregate endpoint. Add `mcp:proxy` to also reach every per-server route. A token for `https://gateway.example.com/mcp/{server_key}` reaches only that server.
 - It works only on `/mcp` routes, only in the `Authorization` header. Model, admin, batch, and Skills routes reject it with `oauth_token_not_accepted`.
 - MCP invocation records show the user, with `auth_method`, `oauth_client_id`, and `oauth_grant_id` in their metadata.
 

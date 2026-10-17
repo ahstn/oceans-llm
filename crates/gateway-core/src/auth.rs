@@ -1,6 +1,7 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::credential_scopes::ApiKeyAccess;
 use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
 use crate::error::AuthError;
 use crate::mcp_client_oauth::{GatewayAuthMethod, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX};
@@ -41,6 +42,9 @@ pub struct AuthenticatedApiKey {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    /// The API key's scopes and MCP server list. Unused for OAuth tokens,
+    /// whose scopes and resource are in `oauth`.
+    pub access: ApiKeyAccess,
     pub oauth: Option<OauthAccessContext>,
 }
 
@@ -63,6 +67,53 @@ impl AuthenticatedApiKey {
     #[must_use]
     pub fn oauth_grant_id(&self) -> Option<Uuid> {
         self.oauth.as_ref().map(|oauth| oauth.grant_id)
+    }
+
+    /// Whether this credential carries `scope`. An API key without a scope
+    /// list carries every scope; an OAuth token carries the scopes it was issued.
+    #[must_use]
+    pub fn has_scope(&self, scope: &str) -> bool {
+        match &self.oauth {
+            Some(oauth) => oauth.scopes.iter().any(|granted| granted == scope),
+            None => self.access.has_scope(scope),
+        }
+    }
+
+    /// The one scope check for every credential type and route.
+    pub fn require_scope(&self, scope: &str) -> Result<(), AuthError> {
+        if self.has_scope(scope) {
+            Ok(())
+        } else {
+            Err(AuthError::InsufficientScope {
+                required: scope.to_string(),
+            })
+        }
+    }
+
+    /// For key-accepting routes outside the scope catalogue, which only an
+    /// API key without a scope list may call.
+    pub fn require_full_access(&self) -> Result<(), AuthError> {
+        if self.oauth.is_none() && self.access.is_full_access() {
+            Ok(())
+        } else {
+            Err(AuthError::FullAccessRequired)
+        }
+    }
+
+    /// Whether the credential may reach the MCP server `server_key`. An OAuth
+    /// token's resource is checked when it is validated, so only API keys
+    /// carry a server list.
+    #[must_use]
+    pub fn allows_mcp_server(&self, server_key: &str) -> bool {
+        self.oauth.is_some() || self.access.allows_mcp_server(server_key)
+    }
+
+    pub fn require_mcp_server(&self, server_key: &str) -> Result<(), AuthError> {
+        if self.allows_mcp_server(server_key) {
+            Ok(())
+        } else {
+            Err(AuthError::McpServerNotInScope)
+        }
     }
 
     #[must_use]

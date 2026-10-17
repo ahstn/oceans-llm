@@ -4,11 +4,11 @@ use std::{
 };
 
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
-    ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus,
-    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityRepository,
-    IdentityUserRecord, ModelRepository, NewApiKeyRecord, ServiceAccountRecord, StoreError,
-    TeamRecord, UserStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyAccess, ApiKeyModelGrantMode,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind,
+    ApiKeyStatus, BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityRepository,
+    IdentityUserRecord, McpRegistryRepository, ModelRepository, NewApiKeyRecord,
+    ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -16,6 +16,12 @@ use uuid::Uuid;
 use crate::{
     admin_audit::AuditProgress, decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret,
     hash_gateway_key_secret,
+};
+
+mod scopes;
+
+pub use scopes::{
+    AdminApiKeyMcpServerOption, UpdateAdminApiKeyScopesInput, UpdateAdminApiKeyScopesResult,
 };
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
@@ -31,6 +37,8 @@ pub struct AdminApiKeysPayload {
     pub users: Vec<AdminApiKeyUserOwner>,
     pub service_accounts: Vec<AdminApiKeyServiceAccountOwner>,
     pub models: Vec<AdminApiKeyModelOption>,
+    /// Active MCP servers, the options for a key's server list.
+    pub mcp_servers: Vec<AdminApiKeyMcpServerOption>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +57,7 @@ pub struct AdminApiKeySummary {
     pub owner_service_account_team_key: Option<String>,
     pub model_grant_mode: ApiKeyModelGrantMode,
     pub model_keys: Vec<String>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
@@ -88,6 +97,10 @@ pub struct CreateAdminApiKeyInput {
     pub owner_service_account_id: Option<String>,
     pub model_grant_mode: String,
     pub model_keys: Vec<String>,
+    /// `None` creates a key with full access.
+    pub scopes: Option<Vec<String>>,
+    /// `None` lets the key reach every server its owner's grants reach.
+    pub mcp_server_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +146,7 @@ where
         + IdentityRepository
         + ModelRepository
         + BudgetRepository
+        + McpRegistryRepository
         + Send
         + Sync
         + 'static,
@@ -187,6 +201,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
+            mcp_servers: self.mcp_server_options().await?,
         })
     }
 
@@ -320,6 +335,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
+            mcp_servers: self.mcp_server_options().await?,
         })
     }
 
@@ -378,6 +394,9 @@ where
             ));
         }
         let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
+        let access = self
+            .validated_access(request.scopes, request.mcp_server_keys)
+            .await?;
 
         let public_id = Uuid::new_v4().simple().to_string();
         let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
@@ -402,6 +421,7 @@ where
                 owner_user_id,
                 owner_team_id,
                 owner_service_account_id,
+                access,
                 created_at: now,
             })
             .await?;
@@ -712,6 +732,7 @@ fn build_api_key_summary(
             .filter(|_| api_key.model_grant_mode == ApiKeyModelGrantMode::Explicit)
             .map(|model| model.model_key.clone())
             .collect(),
+        access: api_key.access.clone(),
         created_at: api_key.created_at,
         last_used_at: api_key.last_used_at,
         revoked_at: api_key.revoked_at,
@@ -962,6 +983,7 @@ mod tests {
             owner_user_id: Some(owner_user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             created_at: now,
             last_used_at: None,
             revoked_at: None,

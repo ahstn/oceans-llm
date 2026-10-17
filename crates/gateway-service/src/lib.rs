@@ -39,10 +39,11 @@ pub mod service;
 pub mod skills;
 
 pub use admin_api_keys::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    PersonalApiKey, RevealAdminApiKeySecretResult, RevokeAdminApiKeyResult, UpdateAdminApiKeyInput,
-    UpdateAdminApiKeyResult, api_key_display_prefix,
+    AdminApiKeyMcpServerOption, AdminApiKeyModelOption, AdminApiKeyService,
+    AdminApiKeyServiceAccountOwner, AdminApiKeySummary, AdminApiKeyUserOwner, AdminApiKeysPayload,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, PersonalApiKey, RevealAdminApiKeySecretResult,
+    RevokeAdminApiKeyResult, UpdateAdminApiKeyInput, UpdateAdminApiKeyResult,
+    UpdateAdminApiKeyScopesInput, UpdateAdminApiKeyScopesResult, api_key_display_prefix,
 };
 pub use admin_audit::{
     AdminAudit, AuditAction, AuditContext, AuditEvent, AuditProgress, is_secret_path_segment,

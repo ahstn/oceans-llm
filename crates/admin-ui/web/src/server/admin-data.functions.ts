@@ -86,6 +86,7 @@ import {
   transferTeamMember,
   upsertBudget,
   updateApiKey,
+  updateApiKeyScopes,
   updateMcpServer,
   updateMcpToolset,
   updateTeam,
@@ -334,6 +335,38 @@ export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
     return updateApiKey(data.apiKeyId, data.input)
   },
 )
+
+/** `null` restores full access or every server; otherwise a list of names. */
+function nullableStringList(value: unknown, label: string): string[] | null {
+  if (value === null) return null
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`${label} must be null or a list of strings`)
+  }
+  return value
+}
+
+function validateApiKeyScopesInput(data: unknown): {
+  apiKeyId: string
+  input: { scopes: string[] | null; mcp_server_keys: string[] | null }
+} {
+  const input = requireObject(data, 'API key scopes input')
+  const apiKeyId = optionalString(input.apiKeyId, 'apiKeyId')
+  if (!apiKeyId?.trim()) throw new Error('apiKeyId is required')
+  const scopes = requireObject(input.input, 'API key scopes')
+  return {
+    apiKeyId,
+    input: {
+      scopes: nullableStringList(scopes.scopes, 'scopes'),
+      mcp_server_keys: nullableStringList(scopes.mcp_server_keys, 'mcp_server_keys'),
+    },
+  }
+}
+
+export const updateGatewayApiKeyScopes = createServerFn({ method: 'POST' })
+  .validator(validateApiKeyScopesInput)
+  .handler(async ({ data }) => {
+    return updateApiKeyScopes(data.apiKeyId, data.input)
+  })
 
 export const getModels = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {

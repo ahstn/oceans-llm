@@ -847,6 +847,7 @@ fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
             owner_user_id: Some(Uuid::nil()),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             oauth: None,
         },
         request_id: "request",

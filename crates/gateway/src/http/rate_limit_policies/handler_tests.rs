@@ -150,6 +150,7 @@ async fn platform_admins_create_update_list_and_delete_policies() {
         owner_user_id: Some(target.user_id),
         owner_team_id: None,
         owner_service_account_id: None,
+        access: Default::default(),
         oauth: None,
     };
     let subject = RateLimitSubject::new(RateLimitOperation::Inference, &auth);

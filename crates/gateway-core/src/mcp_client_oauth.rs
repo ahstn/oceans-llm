@@ -7,15 +7,17 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{domain::UserStatus, error::StoreError};
+use crate::{
+    credential_scopes::{SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY},
+    domain::UserStatus,
+    error::StoreError,
+};
 
 pub const OAUTH_ACCESS_TOKEN_PREFIX: &str = "oat_";
 pub const OAUTH_REFRESH_TOKEN_PREFIX: &str = "ort_";
 
-/// Allows the aggregate endpoint `/mcp`.
-pub const SCOPE_MCP_AGGREGATE: &str = "mcp:aggregate";
-/// Allows per-server routes `/mcp/{server_key}` within the token's resource.
-pub const SCOPE_MCP_PROXY: &str = "mcp:proxy";
+/// Scopes an OAuth token may carry. `mcp:proxy` reaches per-server routes
+/// within the token's resource.
 pub const SUPPORTED_SCOPES: [&str; 2] = [SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY];
 
 const MCP_PATH: &str = "/mcp";
@@ -87,7 +89,7 @@ impl McpOauthResource {
 }
 
 /// Server keys are lowercase letters, digits, hyphen, and underscore.
-fn is_server_key_segment(value: &str) -> bool {
+pub(crate) fn is_server_key_segment(value: &str) -> bool {
     !value.is_empty()
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')

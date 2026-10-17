@@ -142,6 +142,15 @@ pub trait AdminApiKeyRepository: Send + Sync {
         model_ids: &[Uuid],
     ) -> Result<Option<crate::domain::ApiKeyModelAccess>, StoreError>;
 
+    /// Replaces the key's scopes and MCP server list. Returns the access it
+    /// replaced, read under the same lock, or `None` when the key already had
+    /// this access and nothing was written. Revoked keys are refused.
+    async fn replace_api_key_access(
+        &self,
+        api_key_id: Uuid,
+        access: &crate::credential_scopes::ApiKeyAccess,
+    ) -> Result<Option<crate::credential_scopes::ApiKeyAccess>, StoreError>;
+
     async fn revoke_api_key(
         &self,
         api_key_id: Uuid,

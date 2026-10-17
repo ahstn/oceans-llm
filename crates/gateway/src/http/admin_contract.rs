@@ -1984,6 +1984,7 @@ pub struct AgentSessionDetailView {
         crate::http::api_keys::list_api_keys,
         crate::http::api_keys::create_api_key,
         crate::http::api_keys::update_api_key,
+        crate::http::api_keys::update_api_key_scopes,
         crate::http::api_keys::revoke_api_key,
         crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,

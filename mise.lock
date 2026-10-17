@@ -68,6 +68,40 @@ url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.8.7/cargo-
 url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/418861557"
 provenance = "github-attestations"
 
+[[tools."aqua:taiki-e/cargo-llvm-cov"]]
+version = "0.9.1"
+backend = "aqua:taiki-e/cargo-llvm-cov"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64"]
+checksum = "sha256:b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403171"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-baseline"]
+checksum = "sha256:b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403171"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl"]
+checksum = "sha256:3fca950394a3c49457657c158b1619cec8dfd2647ae5b48746734c0ab969a522"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403186"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:3fca950394a3c49457657c158b1619cec8dfd2647ae5b48746734c0ab969a522"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403186"
+provenance = "github-attestations"
+
+[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.macos-arm64"]
+checksum = "sha256:7e821a6c90c0884f79f759f5d9be50799ade67bb82515186d922f26032ef43b8"
+url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403359"
+provenance = "github-attestations"
+
 [[tools.bun]]
 version = "1.4.2"
 backend = "core:bun"
@@ -91,6 +125,30 @@ url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64
 [tools.bun."platforms.macos-arm64"]
 checksum = "sha256:90987a3a16d7db556d886ac3d551e7b6d3edf0a1cf43acaed622e8676be1d12f"
 url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-darwin-aarch64.zip"
+
+[[tools.bun]]
+version = "1.4.3"
+backend = "core:bun"
+
+[tools.bun."platforms.linux-x64"]
+checksum = "sha256:3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip"
+
+[tools.bun."platforms.linux-x64-baseline"]
+checksum = "sha256:1fc2edac843102909e3a1be1d8d9802cc6071cf074e67e88231f4ffe0f8b397b"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64-baseline.zip"
+
+[tools.bun."platforms.linux-x64-musl"]
+checksum = "sha256:6e9ea98554ea0d05efda5840ae292618aaa3adefd66b0853520c5c86a37eac9c"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64-musl.zip"
+
+[tools.bun."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:4b5b0b5503f6ebf15161e8c56eb5a263134c05cd98a86dc11ee43ac5bda9862e"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64-musl-baseline.zip"
+
+[tools.bun."platforms.macos-arm64"]
+checksum = "sha256:80afd4c069b46a6fa8f3ec520bebc750a7843e4a8d5b9583d29ad436c00a3403"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-darwin-aarch64.zip"
 
 [[tools.cargo-dist]]
 version = "0.33.0"
@@ -300,6 +358,30 @@ url = "https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.2
 checksum = "sha256:40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
 url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-darwin-arm64.tar.gz"
 
+[[tools.node]]
+version = "24.22.0"
+backend = "core:node"
+
+[tools.node."platforms.linux-x64"]
+checksum = "sha256:28ea0a438de9a13bd7891fd758eee6c7819ee8af5442dfd8d45bd65e56d4228c"
+url = "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz"
+
+[tools.node."platforms.linux-x64-baseline"]
+checksum = "sha256:28ea0a438de9a13bd7891fd758eee6c7819ee8af5442dfd8d45bd65e56d4228c"
+url = "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz"
+
+[tools.node."platforms.linux-x64-musl"]
+checksum = "sha256:72cd253fbe0c2539d52208ed098d47b78ff2c32ba76295d8e6b5b0ce067dcba5"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.22.0/node-v24.22.0-linux-x64-musl.tar.gz"
+
+[tools.node."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:72cd253fbe0c2539d52208ed098d47b78ff2c32ba76295d8e6b5b0ce067dcba5"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.22.0/node-v24.22.0-linux-x64-musl.tar.gz"
+
+[tools.node."platforms.macos-arm64"]
+checksum = "sha256:6a9724d9b50a5f22b4816cded441b5a8d9ddae546191a5e5b7efa5a5e2ee26d5"
+url = "https://nodejs.org/dist/v24.22.0/node-v24.22.0-darwin-arm64.tar.gz"
+
 [[tools."npm:wrangler"]]
 version = "4.149.0"
 backend = "npm:wrangler"
@@ -359,6 +441,13 @@ provenance = "github-attestations"
 
 [[tools.rust]]
 version = "1.98.1"
+backend = "core:rust"
+
+[tools.rust.options]
+components = "clippy,llvm-tools-preview,rustfmt"
+
+[[tools.rust]]
+version = "1.99.0"
 backend = "core:rust"
 
 [tools.rust.options]

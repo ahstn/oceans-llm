@@ -552,9 +552,10 @@ describe('AgentSessionsPage', () => {
 
     await waitFor(() => {
       expect(getAgentSessionDetailMock).toHaveBeenCalledWith({ data: { sessionId: 'session_1' } })
-      expect(screen.getByText('Score not shown')).toBeInTheDocument()
     })
-    const sessionSummary = screen.getByRole('region', { name: 'Session summary' })
+    // The session table also says "Score not shown", so wait for the loaded detail's summary.
+    const sessionSummary = await screen.findByRole('region', { name: 'Session summary' })
+    expect(within(sessionSummary).getByText('Score not shown')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Session score')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Normalised cost')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Total time')).toBeInTheDocument()
@@ -719,7 +720,8 @@ describe('AgentSessionsPage', () => {
     render(<AgentSessionsPage />)
     expect(await screen.findByText('Agent session details')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Token and cache use' }))
+    // The sheet opens before the detail request resolves, so wait for the loaded body.
+    fireEvent.click(await screen.findByRole('button', { name: 'Token and cache use' }))
     expect(
       screen.getByText('Unknown — the required telemetry was not measured for this session.'),
     ).toBeInTheDocument()

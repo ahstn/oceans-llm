@@ -282,22 +282,56 @@ where
         &self.store
     }
 
+    /// Authenticates a key for a route outside the scope catalogue, which only
+    /// a key with full access may call. Routes that belong to a scope use
+    /// [`Self::authenticate_for_scope`].
     pub async fn authenticate(
         &self,
         authorization_header: Option<&str>,
     ) -> Result<AuthenticatedApiKey, GatewayError> {
-        self.authenticator
+        let key = self
+            .authenticator
             .authenticate_authorization_header(authorization_header)
-            .await
+            .await?;
+        require_access(key, None)
     }
 
+    /// Authenticates a key that must carry `scope`.
+    pub async fn authenticate_for_scope(
+        &self,
+        authorization_header: Option<&str>,
+        scope: &str,
+    ) -> Result<AuthenticatedApiKey, GatewayError> {
+        let key = self
+            .authenticator
+            .authenticate_authorization_header(authorization_header)
+            .await?;
+        require_access(key, Some(scope))
+    }
+
+    /// Like [`Self::authenticate`], for a raw token: requires full access.
     pub async fn authenticate_bearer_token(
         &self,
         bearer_token: &str,
     ) -> Result<AuthenticatedApiKey, GatewayError> {
-        self.authenticator
+        let key = self
+            .authenticator
             .authenticate_bearer_token(bearer_token)
-            .await
+            .await?;
+        require_access(key, None)
+    }
+
+    /// Like [`Self::authenticate_for_scope`], for a raw token.
+    pub async fn authenticate_bearer_token_for_scope(
+        &self,
+        bearer_token: &str,
+        scope: &str,
+    ) -> Result<AuthenticatedApiKey, GatewayError> {
+        let key = self
+            .authenticator
+            .authenticate_bearer_token(bearer_token)
+            .await?;
+        require_access(key, Some(scope))
     }
 
     pub async fn model_metadata_for_api_key(
@@ -1352,6 +1386,19 @@ where
         }
         Ok(())
     }
+}
+
+/// The access check shared by the `authenticate*` methods: `scope` for a
+/// route in the scope catalogue, or full access when it is `None`.
+fn require_access(
+    key: AuthenticatedApiKey,
+    scope: Option<&str>,
+) -> Result<AuthenticatedApiKey, GatewayError> {
+    match scope {
+        Some(scope) => key.require_scope(scope)?,
+        None => key.require_full_access()?,
+    }
+    Ok(key)
 }
 
 fn warn_budget_overruns(overruns: &[BudgetOverrun], request_id: &str, ownership_scope_key: &str) {
@@ -2745,6 +2792,7 @@ mod tests {
             owner_user_id: Some(Uuid::new_v4()),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             oauth: None,
         }
     }

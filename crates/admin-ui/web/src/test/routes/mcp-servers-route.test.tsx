@@ -436,7 +436,8 @@ describe('ServersTab', () => {
       })
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit GitHub' }))
+    // The add dialog stays open, hiding the list, until its transition finishes.
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit GitHub' }))
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'GitHub MCP' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -495,8 +496,9 @@ describe('ServersTab', () => {
         data: { serverUrl: 'https://mcp.linear.example/mcp' },
       }),
     )
-    const panel = await screen.findByTestId('mcp-oauth-discovery')
-    expect(within(panel).getByText('Dynamic client registration')).toBeTruthy()
+    // The panel holds the Discover OAuth button, so it renders before discovery resolves.
+    const panel = screen.getByTestId('mcp-oauth-discovery')
+    expect(await within(panel).findByText('Dynamic client registration')).toBeTruthy()
     expect(within(panel).getByText('https://auth.linear.example/token')).toBeTruthy()
     expect(within(panel).getByText(/lists 2 authorization servers/)).toBeTruthy()
 
