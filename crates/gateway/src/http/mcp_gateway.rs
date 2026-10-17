@@ -196,7 +196,7 @@ async fn dispatch_mcp_request(
                 }
             };
             let outcome = proxy_tools_list(
-                &state.mcp_http_client,
+                &state.mcp_http_clients,
                 method,
                 headers,
                 body,
@@ -503,7 +503,7 @@ async fn handle_tools_call(
         }
     };
     let outcome =
-        match proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await {
+        match proxy_upstream(&state.mcp_http_clients, method, headers, body, &upstream).await {
             Ok(response) => {
                 enforce_direct_mcp_result(
                     state,

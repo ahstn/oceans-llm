@@ -237,24 +237,36 @@ impl std::fmt::Debug for McpQueryCredential {
 pub struct StreamableHttpClient {
     client: Client,
     endpoint: Url,
+    timeout: Duration,
     protocol_version: String,
     query_credential: Option<McpQueryCredential>,
 }
 
 impl StreamableHttpClient {
     pub fn new(endpoint: &str, timeout: Duration) -> Result<Self, McpClientError> {
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(classify_reqwest_error)?;
+        Self::with_http_client(endpoint, client, timeout)
+    }
+
+    /// Sends through `client`, such as one that limits which addresses it
+    /// connects to. Each request gets `timeout`; `client` should not follow
+    /// redirects.
+    pub fn with_http_client(
+        endpoint: &str,
+        client: Client,
+        timeout: Duration,
+    ) -> Result<Self, McpClientError> {
         let endpoint = Url::parse(endpoint).map_err(|error| McpClientError::InvalidUrl {
             url: endpoint.to_string(),
             message: error.to_string(),
         })?;
-        let client = Client::builder()
-            .timeout(timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(classify_reqwest_error)?;
         Ok(Self {
             client,
             endpoint,
+            timeout,
             protocol_version: CLIENT_PROTOCOL_VERSION.to_string(),
             query_credential: None,
         })
@@ -404,6 +416,7 @@ impl StreamableHttpClient {
         };
         self.client
             .post(endpoint)
+            .timeout(self.timeout)
             .headers(request_headers)
             .json(request)
             .build()

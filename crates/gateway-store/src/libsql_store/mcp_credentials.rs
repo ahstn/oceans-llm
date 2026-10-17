@@ -1,3 +1,4 @@
+use super::mcp_registry::check_ownership_guard;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 
@@ -135,6 +136,12 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         // An immediate transaction holds the write lock, so the replaced row read
         // here is exactly the one the update below overwrites.
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &input.expected_server {
+            if guard.mcp_server_id != input.mcp_server_id {
+                return Err(guard.conflict());
+            }
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         let previous = if input.credential_binding_id.is_some() {
             let mut rows = tx
                 .query(
@@ -156,7 +163,23 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         } else {
             None
         };
+        if let Some(pin) = &input.expected_replaced
+            && !previous
+                .as_ref()
+                .is_some_and(|previous| pin.matches(previous))
+        {
+            return Err(StoreError::Conflict(format!(
+                "credential binding `{id}` changed since it was checked; reload and try again"
+            )));
+        }
         if let Some(previous) = previous {
+            // A binding stays on its server: moving one would take a credential
+            // off a server the caller was never checked against, under no lock.
+            if previous.mcp_server_id != input.mcp_server_id {
+                return Err(StoreError::Conflict(format!(
+                    "credential binding `{id}` belongs to another MCP server; revoke it and create a new one"
+                )));
+            }
             let mut rows = tx
                 .query(
                     &format!(
@@ -246,6 +269,27 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         finish_rows(&mut rows).await?;
         tx.commit().await.map_err(to_write_error)?;
         Ok((inserted, None))
+    }
+
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = ?1"
+                ),
+                [credential_binding_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_credential(&row))
+            .transpose()
     }
 
     async fn get_active_mcp_upstream_credential_binding(
@@ -373,6 +417,44 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         Ok(bindings)
     }
 
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let sql = format!(
+            r#"
+            SELECT {CREDENTIAL_COLUMNS}
+            FROM mcp_upstream_credential_bindings
+            WHERE mcp_server_id IN (SELECT mcp_server_id FROM external_mcp_servers WHERE owner_team_id = ?1)
+              AND (?2 IS NULL OR owner_scope_kind = ?2)
+              AND (?3 IS NULL OR owner_user_id = ?3 OR owner_team_id = ?3 OR owner_service_account_id = ?3)
+              AND (?4 = 1 OR revoked_at IS NULL)
+            ORDER BY mcp_server_id, owner_scope_key, created_at DESC
+            "#
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    owner_team_id.to_string(),
+                    owner_scope_kind.map(|value| value.as_str().to_string()),
+                    owner_scope_id.map(|value| value.to_string()),
+                    if include_revoked { 1_i64 } else { 0_i64 },
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut bindings = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            bindings.push(decode_credential(&row)?);
+        }
+        Ok(bindings)
+    }
+
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
@@ -401,6 +483,44 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .map_err(to_write_error)?
             .map(|row| decode_credential(&row))
             .transpose()
+    }
+
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        check_ownership_guard(&tx, expected_server, None).await?;
+        let mut rows = tx
+            .query(
+                &format!(
+                    r#"
+                    UPDATE mcp_upstream_credential_bindings
+                    SET revoked_at = ?1, updated_at = ?1
+                    WHERE credential_binding_id = ?2 AND mcp_server_id = ?3 AND revoked_at IS NULL
+                    RETURNING {CREDENTIAL_COLUMNS}
+                    "#
+                ),
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    credential_binding_id.to_string(),
+                    expected_server.mcp_server_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let revoked = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_credential(&row))
+            .transpose()?;
+        finish_rows(&mut rows).await?;
+        drop(rows);
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(revoked)
     }
 
     async fn touch_mcp_upstream_credential_binding_last_used(
@@ -495,10 +615,16 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
-        self.connection
-            .execute(
-                r#"
+        // An immediate transaction holds the write lock a settings change also
+        // takes, so the guard is checked against the settings this insert sees.
+        let tx = self.begin_transaction().await?;
+        if let Some(guard) = expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
+        tx.execute(
+            r#"
                 INSERT INTO mcp_oauth_clients (
                     mcp_server_id, issuer, redirect_uri, client_id, token_endpoint_auth_method,
                     secret_ciphertext, secret_nonce, secret_key_id, client_secret_expires_at,
@@ -506,24 +632,25 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 ON CONFLICT(mcp_server_id) DO NOTHING
                 "#,
-                libsql::params![
-                    record.mcp_server_id.to_string(),
-                    record.issuer.clone(),
-                    record.redirect_uri.clone(),
-                    record.client_id.clone(),
-                    record.token_endpoint_auth_method.clone(),
-                    record.secret_ciphertext.clone(),
-                    record.secret_nonce.clone(),
-                    record.secret_key_id.clone(),
-                    record
-                        .client_secret_expires_at
-                        .map(OffsetDateTime::unix_timestamp),
-                    record.created_at.unix_timestamp(),
-                    record.updated_at.unix_timestamp(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
+            libsql::params![
+                record.mcp_server_id.to_string(),
+                record.issuer.clone(),
+                record.redirect_uri.clone(),
+                record.client_id.clone(),
+                record.token_endpoint_auth_method.clone(),
+                record.secret_ciphertext.clone(),
+                record.secret_nonce.clone(),
+                record.secret_key_id.clone(),
+                record
+                    .client_secret_expires_at
+                    .map(OffsetDateTime::unix_timestamp),
+                record.created_at.unix_timestamp(),
+                record.updated_at.unix_timestamp(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
         self.get_mcp_oauth_client(record.mcp_server_id)
             .await?
             .ok_or_else(|| {

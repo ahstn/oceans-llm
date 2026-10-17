@@ -95,9 +95,11 @@ pub struct McpOauthClient {
     default_scopes: Vec<String>,
     google: bool,
     token_endpoint_source: TokenEndpointSource,
-    /// The admin-entered MCP server URL, which scopes this client's
-    /// registration and token requests. Never a URL an upstream supplied.
-    server_url: String,
+    /// The URL that scopes this client's token requests, never one an
+    /// upstream supplied: the admin-entered MCP server URL, or for a
+    /// team-owned server the token endpoint itself, so a team cannot widen an
+    /// endpoint it edited to the private networks its server's URL reaches.
+    scope_url: String,
 }
 
 impl std::fmt::Debug for McpOauthClient {
@@ -200,6 +202,19 @@ fn secure_token_url(raw: &str) -> Result<url::Url, GatewayError> {
         Err(GatewayError::InvalidRequest(
             "token endpoint must use https".to_string(),
         ))
+    }
+}
+
+/// The URL whose host scopes requests to `endpoint`. A platform admin wrote a
+/// platform-owned server's URL and stands behind every endpoint it uses. A team
+/// admin may have edited a team-owned server's endpoints, which were checked
+/// only when saved, so each is scoped by its own URL: a hostname reaches public
+/// addresses unless listed in `mcp.oauth.private_network_hosts`.
+fn endpoint_scope_url<'a>(server: &'a ExternalMcpServerRecord, endpoint: &'a str) -> &'a str {
+    if server.ownership.owner_team_id.is_some() {
+        endpoint
+    } else {
+        &server.server_url
     }
 }
 
@@ -379,7 +394,8 @@ impl McpOauthRuntime {
     ///
     /// A server-level client's token endpoint came from upstream metadata or
     /// the server's auth config, so it goes through the SSRF guard, scoped to
-    /// the admin-entered MCP server URL. A configured provider's endpoint is the
+    /// the admin-entered MCP server URL, or for a team-owned server to the
+    /// endpoint's own URL. A configured provider's endpoint is the
     /// gateway's own configuration and uses the plain client.
     ///
     /// A failure to reach the endpoint is a [`ProviderError::Transport`]; an
@@ -401,7 +417,7 @@ impl McpOauthRuntime {
             let body = response.bytes().await.map_err(oauth_transport_error)?;
             return Ok((status, body.to_vec()));
         }
-        let fetcher = self.token_fetchers.for_trusted_url(&client.server_url);
+        let fetcher = self.token_fetchers.for_trusted_url(&client.scope_url);
         let request = fetcher
             .request(reqwest::Method::POST, &token_url)
             .map_err(oauth_fetch_error)?;
@@ -412,6 +428,20 @@ impl McpOauthRuntime {
         let status = response.status();
         let body = response.body().await.map_err(oauth_fetch_error)?;
         Ok((status, body))
+    }
+
+    /// Like [`Self::discover`], but every URL the gateway fetches or will call
+    /// must reach a public address. Team admins discover this way.
+    pub async fn discover_public(
+        &self,
+        server_url: &str,
+    ) -> Result<McpOauthDiscovery, GatewayError> {
+        // The public scope checks and pins every address at connect time, for
+        // the server and every hop the upstream names, whatever DNS returns.
+        let fetcher = self
+            .discovery_fetchers
+            .for_scope(crate::outbound_fetch::OutboundAddressScope::Public);
+        discover_mcp_oauth(fetcher, server_url).await
     }
 
     fn require_public_base_url(&self) -> Result<&str, GatewayError> {
@@ -448,7 +478,7 @@ impl McpOauthRuntime {
                 default_scopes: provider.scopes.clone(),
                 google: provider.provider_type == McpOauthProviderType::Google,
                 token_endpoint_source: TokenEndpointSource::GatewayConfig,
-                server_url: server.server_url.clone(),
+                scope_url: server.server_url.clone(),
             });
         };
         let (client_id, client_secret, method) = match &endpoints.registration {
@@ -497,7 +527,7 @@ impl McpOauthRuntime {
             default_scopes: Vec::new(),
             google: false,
             token_endpoint_source: TokenEndpointSource::Upstream,
-            server_url: server.server_url.clone(),
+            scope_url: endpoint_scope_url(server, &endpoints.token_endpoint).to_string(),
         })
     }
 
@@ -544,7 +574,8 @@ impl McpOauthRuntime {
                 )
             })?;
         let registered = register_oauth_client(
-            self.discovery_fetchers.for_trusted_url(&server.server_url),
+            self.discovery_fetchers
+                .for_trusted_url(endpoint_scope_url(server, registration_endpoint)),
             registration_endpoint,
             redirect_uri,
             endpoints
@@ -565,25 +596,33 @@ impl McpOauthRuntime {
         } else {
             None
         };
+        // Stored only while the server keeps the settings it registered
+        // against: a settings change in between drops clients under the same
+        // lock, and this insert must not bring one back.
+        let registered_against =
+            gateway_core::McpServerOwnershipGuard::of(server).with_auth_settings(server);
         let stored = repo
-            .insert_mcp_oauth_client_if_absent(&McpOauthClientRecord {
-                mcp_server_id,
-                issuer: endpoints.issuer.clone(),
-                redirect_uri: redirect_uri.to_string(),
-                client_id: registered.client_id,
-                token_endpoint_auth_method: registered
-                    .token_endpoint_auth_method
-                    .as_str()
-                    .to_string(),
-                secret_ciphertext: encrypted.as_ref().map(|value| value.ciphertext.clone()),
-                secret_nonce: encrypted.as_ref().map(|value| value.nonce.clone()),
-                secret_key_id: encrypted.as_ref().map(|value| value.key_id.to_string()),
-                client_secret_expires_at: registered
-                    .client_secret_expires_at
-                    .and_then(|value| OffsetDateTime::from_unix_timestamp(value).ok()),
-                created_at: now,
-                updated_at: now,
-            })
+            .insert_mcp_oauth_client_if_absent(
+                &McpOauthClientRecord {
+                    mcp_server_id,
+                    issuer: endpoints.issuer.clone(),
+                    redirect_uri: redirect_uri.to_string(),
+                    client_id: registered.client_id,
+                    token_endpoint_auth_method: registered
+                        .token_endpoint_auth_method
+                        .as_str()
+                        .to_string(),
+                    secret_ciphertext: encrypted.as_ref().map(|value| value.ciphertext.clone()),
+                    secret_nonce: encrypted.as_ref().map(|value| value.nonce.clone()),
+                    secret_key_id: encrypted.as_ref().map(|value| value.key_id.to_string()),
+                    client_secret_expires_at: registered
+                        .client_secret_expires_at
+                        .and_then(|value| OffsetDateTime::from_unix_timestamp(value).ok()),
+                    created_at: now,
+                    updated_at: now,
+                },
+                Some(&registered_against),
+            )
             .await?;
         // A concurrent registration may have won; use whichever row is stored.
         StoredClient::decrypt(stored)

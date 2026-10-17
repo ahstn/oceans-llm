@@ -11,6 +11,124 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
     Uuid::parse_str(raw).map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+/// SQL for `count_mcp_tool_grants_outside_team`, with the backend's
+/// placeholders for the server and team IDs. Each subject's team follows the
+/// same precedence as the service's subject lookup, so both agree on who is
+/// inside the team. An API key that is revoked, has no MCP scope, or whose
+/// server list leaves this server out holds no access, as at runtime, and nor
+/// does a disabled service account or a key it owns.
+pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
+    format!(
+        r#"
+        SELECT COUNT(*) FROM (
+            SELECT
+                CASE g.subject_kind
+                    WHEN 'team' THEN st.team_id
+                    WHEN 'user' THEN um.team_id
+                    WHEN 'service_account' THEN ssa.team_id
+                    WHEN 'api_key' THEN CASE
+                        WHEN k.owner_team_id IS NOT NULL THEN k.owner_team_id
+                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.team_id
+                        ELSE km.team_id
+                    END
+                END AS subject_team,
+                CASE g.subject_kind
+                    WHEN 'team' THEN st.team_id IS NOT NULL
+                    WHEN 'user' THEN su.user_id IS NOT NULL
+                    WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL AND ssa.status = 'active'
+                    WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL
+                        -- The key may call MCP and this server: NULL lists allow all.
+                        AND (k.scopes IS NULL
+                            OR (' ' || k.scopes || ' ') LIKE '% mcp:aggregate %'
+                            OR (' ' || k.scopes || ' ') LIKE '% mcp:proxy %')
+                        AND (k.mcp_server_keys IS NULL
+                            OR (' ' || k.mcp_server_keys || ' ')
+                                LIKE ('% ' || replace(replace(srv.server_key, '%', '\%'), '_', '\_') || ' %') ESCAPE '\')
+                        AND CASE
+                        WHEN k.owner_team_id IS NOT NULL THEN TRUE
+                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL AND ksa.status = 'active'
+                        WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
+                        ELSE TRUE
+                    END
+                    ELSE FALSE
+                END AS subject_exists
+            FROM mcp_tool_grants g
+            JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
+            JOIN external_mcp_servers srv ON srv.mcp_server_id = t.mcp_server_id
+            LEFT JOIN teams st ON g.subject_kind = 'team' AND st.team_id = g.subject_id
+            LEFT JOIN users su ON g.subject_kind = 'user' AND su.user_id = g.subject_id
+            LEFT JOIN team_memberships um ON g.subject_kind = 'user' AND um.user_id = g.subject_id
+            LEFT JOIN service_accounts ssa ON g.subject_kind = 'service_account' AND ssa.service_account_id = g.subject_id
+            LEFT JOIN api_keys k ON g.subject_kind = 'api_key' AND k.id = g.subject_id
+            LEFT JOIN service_accounts ksa ON ksa.service_account_id = k.owner_service_account_id
+            LEFT JOIN users ku ON ku.user_id = k.owner_user_id
+            LEFT JOIN team_memberships km ON km.user_id = k.owner_user_id
+            WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = {server}
+              -- A disabled server exposes nothing, and cannot be enabled again.
+              AND srv.status = 'active'
+        ) resolved
+        WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
+        "#
+    )
+}
+
+/// SQL counting a server's active credentials that may not follow it to a new
+/// URL: user-scoped, `secret_ref`, or not the owning team's.
+pub(crate) fn foreign_credentials_sql(server: &str, team: &str) -> String {
+    format!(
+        "SELECT COUNT(*) FROM mcp_upstream_credential_bindings WHERE mcp_server_id = {server} AND revoked_at IS NULL AND (owner_scope_kind = 'user' OR secret_ref IS NOT NULL OR owner_team_id IS NULL OR owner_team_id <> {team})"
+    )
+}
+
+/// A team admin's retarget refused because `count` such credentials remain.
+pub(crate) fn foreign_credentials_conflict(count: i64) -> StoreError {
+    StoreError::Conflict(format!(
+        "{count} user or secret-reference credential binding(s) would be sent to the new URL; revoke them before changing server_url"
+    ))
+}
+
+/// SQL for `list_mcp_tool_access_for_api_keys`: `keys` is the backend's
+/// predicate on `g.subject_id`, `server` its placeholder for the optional
+/// server filter.
+pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
+    format!(
+        r#"
+        SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key
+        FROM mcp_tool_grants g
+        JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
+        JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+        WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = 'api_key'
+          AND g.subject_id {keys} AND t.is_active = 1 AND s.status = 'active'
+          AND ({server} IS NULL OR t.mcp_server_id = {server})
+        UNION
+        SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key
+        FROM mcp_tool_grants g
+        JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id
+        JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id
+        JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
+        JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+        WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = 'api_key'
+          AND g.subject_id {keys} AND ts.status = 'active' AND t.is_active = 1
+          AND s.status = 'active' AND ({server} IS NULL OR t.mcp_server_id = {server})
+        "#
+    )
+}
+
+/// A grant write whose subject changed team since it was authorized.
+pub(crate) fn subject_team_changed() -> StoreError {
+    StoreError::Conflict(
+        "the grant subject moved to another team; reload and try again".to_string(),
+    )
+}
+
+/// A tool set write that names a tool of a team-only server. Tool sets are
+/// granted organisation-wide, so the store refuses it under the same write.
+pub(crate) fn team_only_toolset_tool(tool: &str, server_key: &str) -> StoreError {
+    StoreError::Conflict(format!(
+        "tool `{tool}` belongs to MCP server `{server_key}`, which is visible to its team only; publish the server to the organisation before adding its tools to a tool set"
+    ))
+}
+
 pub(crate) fn unix_to_datetime(ts: i64) -> Result<OffsetDateTime, StoreError> {
     OffsetDateTime::from_unix_timestamp(ts)
         .map_err(|error| StoreError::Serialization(error.to_string()))

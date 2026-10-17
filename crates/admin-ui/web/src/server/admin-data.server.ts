@@ -104,6 +104,7 @@ import type {
   TransferTeamMemberInput,
   UpdateTeamInput,
   UpdateMcpServerInput,
+  TransferMcpServerOwnershipInput,
   UpdateMcpToolsetInput,
   UpdateUserInput,
   UpsertBudgetInput,
@@ -508,6 +509,8 @@ export async function listRecommendedMcpServers(): Promise<
 
 export async function listMcpServers(params?: {
   include_disabled?: boolean
+  /** `platform`, or an owning team id. */
+  owner?: string
 }): Promise<ApiEnvelope<McpServersPayload>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
@@ -515,6 +518,7 @@ export async function listMcpServers(params?: {
       params: {
         query: {
           include_disabled: params?.include_disabled,
+          owner: params?.owner,
         },
       },
     }),
@@ -539,6 +543,19 @@ export async function updateMcpServer(
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.PATCH('/api/v1/admin/mcp/servers/{server_id}', {
+      params: { path: { server_id: serverId } },
+      body: input,
+    }),
+  )
+}
+
+export async function transferMcpServerOwnership(
+  serverId: string,
+  input: TransferMcpServerOwnershipInput,
+): Promise<ApiEnvelope<McpServerPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/mcp/servers/{server_id}/owner', {
       params: { path: { server_id: serverId } },
       body: input,
     }),

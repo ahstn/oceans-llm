@@ -2,6 +2,7 @@ use axum::http::HeaderMap;
 use gateway_core::{
     AuthError, GatewayError, GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
+use gateway_service::McpAdminScope;
 
 use crate::config::{AdminPage, AdminPermissionGroup};
 use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
@@ -66,6 +67,93 @@ pub(crate) async fn require_spend_controls_scope(
         return Err(insufficient_privileges());
     }
     Ok((current_user, AdminDataScope::Team(membership.team_id)))
+}
+
+/// MCP administration is open to platform admins and, when the `team_admins`
+/// permission group includes the `mcp` page, to owners/admins of a team. The
+/// scope limits a team admin to their own team's servers; see
+/// `gateway_service::McpOwnership`.
+pub(crate) async fn require_mcp_admin_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, McpAdminScope), AppError> {
+    let current_user = require_active_session(state, headers).await?;
+    let membership = state
+        .store
+        .get_team_membership_for_user(current_user.user_id)
+        .await?;
+    if current_user.global_role == GlobalRole::PlatformAdmin {
+        let scope = McpAdminScope::platform_admin(membership.as_ref());
+        return Ok((current_user, scope));
+    }
+    let page_granted = state
+        .admin_permissions
+        .for_group(AdminPermissionGroup::TeamAdmins)
+        .pages
+        .contains(&AdminPage::Mcp);
+    let scope = membership
+        .as_ref()
+        .and_then(McpAdminScope::team_admin)
+        .filter(|_| page_granted)
+        .ok_or_else(insufficient_privileges)?;
+    Ok((current_user, scope))
+}
+
+/// Who is reading the MCP area. Admins see what [`McpAdminScope`] allows; every
+/// other user with the `mcp` page sees, read-only, the servers their own grants
+/// let them connect to.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum McpViewer {
+    Admin(McpAdminScope),
+    Member {
+        user_id: uuid::Uuid,
+        team_id: Option<uuid::Uuid>,
+    },
+}
+
+/// For the MCP read routes: an admin scope when the caller has one, otherwise a
+/// member view when the `users` group includes the `mcp` page.
+pub(crate) async fn require_mcp_viewer(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<McpViewer, AppError> {
+    match require_mcp_admin_scope(state, headers).await {
+        Ok((_, scope)) => return Ok(McpViewer::Admin(scope)),
+        Err(AppError(GatewayError::Auth(AuthError::InsufficientPrivileges))) => {}
+        Err(error) => return Err(error),
+    }
+    let current_user = require_active_session(state, headers).await?;
+    let page_granted = state
+        .admin_permissions
+        .for_group(AdminPermissionGroup::Users)
+        .pages
+        .contains(&AdminPage::Mcp);
+    if !page_granted {
+        return Err(insufficient_privileges());
+    }
+    let team_id = state
+        .store
+        .get_team_membership_for_user(current_user.user_id)
+        .await?
+        .map(|membership| membership.team_id);
+    Ok(McpViewer::Member {
+        user_id: current_user.user_id,
+        team_id,
+    })
+}
+
+/// Like [`require_mcp_admin_scope`], for MCP routes only platform admins use,
+/// such as tool sets. The scope is kept for the audit entry.
+pub(crate) async fn require_mcp_platform_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, McpAdminScope), AppError> {
+    let (actor, scope) = require_mcp_admin_scope(state, headers).await?;
+    if scope.is_platform_admin() {
+        Ok((actor, scope))
+    } else {
+        Err(insufficient_privileges())
+    }
 }
 
 pub(crate) async fn require_agent_analysis_scope(

@@ -137,6 +137,40 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .revoke_mcp_tool_grant_guarded(
+                        subject_kind,
+                        subject_id,
+                        mcp_tool_id,
+                        expected_server,
+                        revoked_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .revoke_mcp_tool_grant_guarded(
+                        subject_kind,
+                        subject_id,
+                        mcp_tool_id,
+                        expected_server,
+                        revoked_at,
+                    )
+                    .await
+            }
+        }
+    }
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
@@ -145,6 +179,54 @@ impl McpAccessRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.list_mcp_tool_grants(subject_kind, subject_id).await,
             Self::Postgres(store) => store.list_mcp_tool_grants(subject_kind, subject_id).await,
+        }
+    }
+
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_team_only_mcp_server_ids_outside(team_id).await,
+            Self::Postgres(store) => store.list_team_only_mcp_server_ids_outside(team_id).await,
+        }
+    }
+
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await
+            }
+        }
+    }
+
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::McpApiKeyToolAccess>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tool_access_for_api_keys(api_key_ids, mcp_server_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tool_access_for_api_keys(api_key_ids, mcp_server_id)
+                    .await
+            }
         }
     }
 

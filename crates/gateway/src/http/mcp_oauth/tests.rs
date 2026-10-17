@@ -208,6 +208,7 @@ async fn oauth_server(state: &AppState) -> gateway_core::ExternalMcpServerRecord
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "google_drive".to_string(),
             display_name: "Google Drive".to_string(),
             description: None,
@@ -412,3 +413,71 @@ async fn oauth_start_persists_only_hashed_state_and_bound_pkce_transaction() {
 }
 
 mod generic;
+
+#[tokio::test]
+async fn team_only_servers_are_hidden_from_users_outside_the_team() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let (_user, headers) = oauth_session(&state).await;
+    let server = oauth_server(&state).await;
+    let listed = |state: AppState, headers: HeaderMap| async move {
+        let response = list_mcp_oauth_connections(State(state), headers)
+            .await
+            .unwrap_or_else(|error| panic!("connections: {}", error.0));
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice::<Vec<serde_json::Value>>(&body)
+            .expect("connections JSON")
+            .iter()
+            .any(|item| item["server_key"] == "google_drive")
+    };
+    assert!(listed(state.clone(), headers.clone()).await);
+
+    // Once another team owns it and keeps it to itself, it does not exist for
+    // this user: not listed, and no connection can start.
+    let team = state
+        .store
+        .create_team("drive-owners", "Drive Owners")
+        .await
+        .expect("team");
+    state
+        .store
+        .transfer_external_mcp_server_ownership(
+            &gateway_core::TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
+                expected_ownership: None,
+                updated_at: OffsetDateTime::now_utc(),
+            },
+        )
+        .await
+        .expect("transfer");
+    assert!(!listed(state.clone(), headers.clone()).await);
+    let Err(error) = start_mcp_oauth_connection(
+        State(state.clone()),
+        headers.clone(),
+        Path(server.mcp_server_id),
+        Json(McpOauthStartRequest { redirect_to: None }),
+    )
+    .await
+    else {
+        panic!("start is refused");
+    };
+    assert_eq!(error.0.http_status_code(), 404);
+}
+
+#[tokio::test]
+async fn only_the_owning_team_reaches_a_team_only_server() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let mut server = oauth_server(&state).await;
+    let owner = Uuid::new_v4();
+    assert!(
+        user_can_reach(None, &server),
+        "published servers reach everyone"
+    );
+    server.ownership = gateway_core::McpServerOwnership::team(owner, None);
+    assert!(user_can_reach(Some(owner), &server));
+    // A grant left over from an earlier membership does not count.
+    assert!(!user_can_reach(Some(Uuid::new_v4()), &server));
+    assert!(!user_can_reach(None, &server));
+}

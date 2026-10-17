@@ -19,9 +19,11 @@ pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_oauth;
 pub mod mcp_oauth_discovery;
+pub mod mcp_ownership;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
+pub mod mcp_upstream_http;
 pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
@@ -114,6 +116,11 @@ pub use mcp_oauth_discovery::{
     BearerChallenge, McpOauthDiscovery, RegisteredOauthClient, choose_token_endpoint_auth_method,
     parse_bearer_challenge, register_oauth_client,
 };
+pub use mcp_ownership::{
+    McpAdminScope, McpOrganisationPublishing, McpOwnership, RequestedMcpServerOwnership,
+    authorize_destination, authorize_team_auth_config, normalize_owner_contact,
+    parse_mcp_server_visibility, refuse_private_network_host, require_public_destination,
+};
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
@@ -124,6 +131,7 @@ pub use mcp_upstream_auth::{
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,
     gateway_mcp_upstream_query, mcp_oauth_server_config, supports_public_discovery,
 };
+pub use mcp_upstream_http::McpUpstreamClients;
 pub use model_access::ModelAccess;
 pub use model_resolution::{
     ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,

@@ -2,9 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
-    IdentityRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
-    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
-    McpUpstreamSecretStorageKind, StoreError, UpsertMcpUpstreamCredentialBindingRecord,
+    IdentityRepository, McpServerOwnershipGuard, McpUpstreamCredentialBindingRecord,
+    McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+    McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, StoreError,
+    UpsertMcpUpstreamCredentialBindingRecord,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -67,6 +68,14 @@ pub struct UpsertMcpCredentialBindingInput {
     pub expires_at: Option<OffsetDateTime>,
     #[serde(default)]
     pub metadata: Map<String, serde_json::Value>,
+    /// Makes the write conditional on the server's owner and visibility; see
+    /// [`McpServerOwnershipGuard`]. Callers set it, never a request body.
+    #[serde(skip)]
+    pub expected_server: Option<McpServerOwnershipGuard>,
+    /// The binding a replacement was authorized against; see
+    /// [`gateway_core::McpCredentialBindingPin`].
+    #[serde(skip)]
+    pub expected_replaced: Option<gateway_core::McpCredentialBindingPin>,
 }
 
 #[derive(Clone)]
@@ -244,6 +253,8 @@ where
             expires_at: input.expires_at,
             metadata: input.metadata,
             updated_at: now,
+            expected_server: input.expected_server,
+            expected_replaced: input.expected_replaced,
         };
         let (binding, replaced) = self
             .repo
@@ -257,6 +268,7 @@ where
         mcp_server_id: Uuid,
         user_id: Uuid,
         grant: McpOauthTokenGrant,
+        expected_server: Option<McpServerOwnershipGuard>,
     ) -> Result<
         (
             RedactedMcpCredentialBinding,
@@ -290,8 +302,44 @@ where
             secret_ref: None,
             expires_at: grant.expires_at,
             metadata,
+            expected_server,
+            expected_replaced: None,
         })
         .await
+    }
+
+    /// One binding by ID, revoked or not, without its secret.
+    pub async fn binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .get_mcp_upstream_credential_binding(credential_binding_id)
+            .await?
+            .map(redact_binding))
+    }
+
+    /// Bindings, without secrets, on the servers a team owns.
+    pub async fn list_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .list_mcp_upstream_credential_bindings_for_owner_team(
+                owner_team_id,
+                owner_scope_kind,
+                owner_scope_id,
+                include_revoked,
+            )
+            .await?
+            .into_iter()
+            .map(redact_binding)
+            .collect())
     }
 
     pub async fn list_bindings(
@@ -317,6 +365,24 @@ where
 
     /// Revokes the binding and returns it, without secret material, or `None` when
     /// it was missing or already revoked.
+    /// Revokes a binding on `expected_server`'s server only while that server
+    /// still matches it; a transfer in between is a conflict.
+    pub async fn revoke_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .revoke_mcp_upstream_credential_binding_guarded(
+                credential_binding_id,
+                expected_server,
+                OffsetDateTime::now_utc(),
+            )
+            .await?
+            .map(redact_binding))
+    }
+
     pub async fn revoke_binding(
         &self,
         credential_binding_id: Uuid,
@@ -1140,6 +1206,7 @@ mod tests {
         async fn insert_mcp_oauth_client_if_absent(
             &self,
             record: &gateway_core::McpOauthClientRecord,
+            _expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
         ) -> Result<gateway_core::McpOauthClientRecord, StoreError> {
             Ok(record.clone())
         }
@@ -1232,6 +1299,7 @@ mod tests {
     fn server_record() -> ExternalMcpServerRecord {
         let now = OffsetDateTime::now_utc();
         ExternalMcpServerRecord {
+            ownership: Default::default(),
             mcp_server_id: Uuid::new_v4(),
             server_key: "github".to_string(),
             display_name: "GitHub".to_string(),

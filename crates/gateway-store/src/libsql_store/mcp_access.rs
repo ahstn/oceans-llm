@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use gateway_core::McpToolProjection;
+use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
-use super::mcp_registry::decode_tool_metadata;
+use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use crate::shared::{
+    json_object_from_str, key_tool_grants_sql, parse_uuid, subject_team_changed, unix_to_datetime,
+};
 use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
@@ -14,7 +16,7 @@ const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.d
 const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, NULL, NULL";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
 const TOOL_COLUMN_COUNT: usize = 15;
-const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
+const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at, s.owner_team_id, s.owner_contact, s.visibility";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
     let toolset_id: String = row.get(0).map_err(to_query_error)?;
@@ -47,7 +49,7 @@ fn decode_toolset_tool(row: &libsql::Row) -> Result<McpToolsetToolRecord, StoreE
     })
 }
 
-fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
+pub(super) fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
     let grant_id: String = row.get(0).map_err(to_query_error)?;
     let subject_kind: String = row.get(1).map_err(to_query_error)?;
     let subject_id: String = row.get(2).map_err(to_query_error)?;
@@ -157,6 +159,7 @@ fn decode_server_at(
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+        ownership: super::mcp_registry::decode_server_ownership(row, libsql_idx(offset, 18))?,
     })
 }
 
@@ -209,6 +212,34 @@ async fn toolset_tools_on(
         tools.push(decode_toolset_tool(&row)?);
     }
     Ok(tools)
+}
+
+/// The subject's team, read inside a grant write. libSQL transactions hold the
+/// write lock, so a team move cannot land before the grant commits.
+async fn subject_team_in(
+    connection: &libsql::Connection,
+    subject_kind: McpToolGrantSubjectKind,
+    subject_id: Uuid,
+) -> Result<Option<Uuid>, StoreError> {
+    let sql = match subject_kind {
+        McpToolGrantSubjectKind::Team => return Ok(Some(subject_id)),
+        McpToolGrantSubjectKind::User => "SELECT team_id FROM team_memberships WHERE user_id = ?1",
+        McpToolGrantSubjectKind::ServiceAccount => {
+            "SELECT team_id FROM service_accounts WHERE service_account_id = ?1"
+        }
+        McpToolGrantSubjectKind::ApiKey => {
+            "SELECT COALESCE(k.owner_team_id, sa.team_id, m.team_id) FROM api_keys k LEFT JOIN service_accounts sa ON sa.service_account_id = k.owner_service_account_id LEFT JOIN team_memberships m ON m.user_id = k.owner_user_id WHERE k.id = ?1"
+        }
+    };
+    let mut rows = connection
+        .query(sql, [subject_id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    let team: Option<String> = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => row.get(0).map_err(to_query_error)?,
+        None => None,
+    };
+    team.as_deref().map(parse_uuid).transpose()
 }
 
 #[async_trait]
@@ -343,6 +374,9 @@ impl McpAccessRepository for LibsqlStore {
     ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         let tx = self.begin_transaction().await?;
         let existing = toolset_tools_on(&tx, toolset_id).await?;
+        // Checked even for an unchanged set, so a resave never confirms a tool
+        // whose server has since been narrowed to its team.
+        check_no_team_only_tools(&tx, tool_ids).await?;
         if same_tool_ids(&existing, tool_ids) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -392,10 +426,20 @@ impl McpAccessRepository for LibsqlStore {
         grant: &UpsertMcpToolGrantRecord,
     ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
+        let tx = self.begin_transaction().await?;
+        if let Some(guard) = &grant.expected_server {
+            let tool_id =
+                (grant.target_kind == McpToolGrantTargetKind::Tool).then_some(grant.target_id);
+            check_ownership_guard(&tx, guard, tool_id).await?;
+        }
+        if let Some(expected) = grant.expected_subject_team
+            && subject_team_in(&tx, grant.subject_kind, grant.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
+        }
         // `RETURNING` gives the row this statement wrote, so `created` cannot be
         // confused by a concurrent revoke and re-grant.
-        let mut rows = self
-            .connection
+        let mut rows = tx
             .query(
                 r#"
                 INSERT INTO mcp_tool_grants (
@@ -420,6 +464,8 @@ impl McpAccessRepository for LibsqlStore {
             StoreError::Unexpected("MCP grant upsert returned no row".to_string())
         })?;
         let record = decode_grant(&row)?;
+        while rows.next().await.map_err(to_write_error)?.is_some() {}
+        tx.commit().await.map_err(to_write_error)?;
         // The insert keeps this call's id; an already-active grant keeps its own.
         let created = record.grant_id == id;
         Ok((record, created))
@@ -463,6 +509,47 @@ impl McpAccessRepository for LibsqlStore {
             .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        check_ownership_guard(&tx, expected_server, Some(mcp_tool_id)).await?;
+        let mut rows = tx
+            .query(
+                r#"
+                UPDATE mcp_tool_grants
+                SET is_active = 0, revoked_at = ?1, updated_at = ?1
+                WHERE subject_kind = ?2 AND subject_id = ?3 AND target_kind = 'tool' AND target_id = ?4 AND is_active = 1
+                RETURNING grant_id
+                "#,
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    subject_kind.as_str(),
+                    subject_id.to_string(),
+                    mcp_tool_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let grant_id: Option<String> = match rows.next().await.map_err(to_write_error)? {
+            Some(row) => Some(row.get(0).map_err(to_query_error)?),
+            None => None,
+        };
+        drop(rows);
+        tx.commit().await.map_err(to_write_error)?;
+        grant_id
+            .map(|grant_id| {
+                Uuid::parse_str(&grant_id)
+                    .map_err(|error| StoreError::Unexpected(error.to_string()))
+            })
+            .transpose()
+    }
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
@@ -489,6 +576,81 @@ impl McpAccessRepository for LibsqlStore {
             grants.push(decode_grant(&row)?);
         }
         Ok(grants)
+    }
+
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        // `IS NOT NULL` for no team: every team-only server has an owner.
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id FROM external_mcp_servers WHERE visibility = 'team' AND owner_team_id IS NOT ?1",
+                libsql::params![team_id.map(|team_id| team_id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut ids = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            ids.push(parse_uuid(&id)?);
+        }
+        Ok(ids)
+    }
+
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT 1 FROM external_mcp_servers WHERE mcp_server_id = ?1 AND visibility = 'team' AND owner_team_id IS NOT ?2",
+                libsql::params![
+                    mcp_server_id.to_string(),
+                    team_id.map(|team_id| team_id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
+    }
+
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::McpApiKeyToolAccess>, StoreError> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids =
+            serde_json::to_string(&api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                &key_tool_grants_sql("IN (SELECT value FROM json_each(?1))", "?2"),
+                libsql::params![ids, mcp_server_id.map(|id| id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut access = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id = |index: i32| -> Result<Uuid, StoreError> {
+                let raw: String = row.get(index).map_err(to_query_error)?;
+                parse_uuid(&raw)
+            };
+            access.push(gateway_core::McpApiKeyToolAccess {
+                api_key_id: id(0)?,
+                mcp_tool_id: id(1)?,
+                mcp_server_id: id(2)?,
+                server_key: row.get(3).map_err(to_query_error)?,
+            });
+        }
+        Ok(access)
     }
 
     async fn resolve_mcp_access_for_subjects(

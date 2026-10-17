@@ -387,6 +387,29 @@
       ]
     },
     {
+      "id": "mcp-ownership",
+      "file": "mcp-ownership.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/mcp/**",
+        "crates/admin-ui/web/src/components/mcp/**",
+        "crates/gateway/src/http/mcp_registry.rs",
+        "crates/gateway/src/http/mcp_registry/**",
+        "crates/gateway/src/http/admin_auth.rs",
+        "crates/gateway-service/src/mcp_ownership.rs",
+        "crates/gateway-service/src/mcp_registry.rs",
+        "crates/gateway-store/src/libsql_store/mcp_registry.rs",
+        "crates/gateway-store/migrations/V67__mcp_server_ownership.sql",
+        "crates/gateway/src/config/permissions.rs",
+        "crates/gateway/src/config/mcp.rs",
+        "crates/gateway-store/src/postgres_store/mcp_registry.rs",
+        "crates/gateway-store/migrations/postgres/V67__mcp_server_ownership.sql",
+        "crates/gateway-service/src/outbound_fetch.rs"
+      ]
+    },
+    {
       "id": "usage-costs",
       "file": "usage-costs.md",
       "proof": {

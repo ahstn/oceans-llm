@@ -73,7 +73,7 @@ fn server_client(token_url: &str) -> McpOauthClient {
         google: false,
         token_endpoint_source: TokenEndpointSource::Upstream,
         // A public MCP server, named by an IP literal so the tests need no DNS.
-        server_url: "https://93.184.215.14/mcp".to_string(),
+        scope_url: "https://93.184.215.14/mcp".to_string(),
     }
 }
 
@@ -132,6 +132,28 @@ async fn token_requests_are_scoped_by_the_admin_entered_server() {
         .await
         .expect_err("scope comes from the server URL");
     assert!(error.to_string().contains("not allowed"), "{error}");
+}
+
+#[test]
+fn team_server_endpoints_are_scoped_by_their_own_url() {
+    // A platform admin's internal server: its private address scopes every
+    // endpoint it uses.
+    let mut server = oauth_server();
+    server.server_url = "http://10.0.0.5/mcp".to_string();
+    let endpoint = "https://auth.example.com/token";
+    assert_eq!(endpoint_scope_url(&server, endpoint), server.server_url);
+    // Once a team owns it, an endpoint the team may have edited is scoped by
+    // its own host, so it cannot borrow the server's private reach.
+    server.ownership = gateway_core::McpServerOwnership::team(Uuid::new_v4(), None);
+    assert_eq!(endpoint_scope_url(&server, endpoint), endpoint);
+    let runtime = McpOauthRuntime::new(None, Vec::new());
+    assert_eq!(
+        runtime
+            .token_fetchers
+            .for_trusted_url(endpoint_scope_url(&server, endpoint))
+            .scope(),
+        crate::outbound_fetch::OutboundAddressScope::Public
+    );
 }
 
 #[test]
@@ -237,6 +259,7 @@ fn oauth_bundle_must_match_the_current_server_contract() {
 
 fn oauth_server() -> ExternalMcpServerRecord {
     ExternalMcpServerRecord {
+        ownership: Default::default(),
         mcp_server_id: Uuid::new_v4(),
         server_key: "google_drive".to_string(),
         display_name: "Google Drive".to_string(),

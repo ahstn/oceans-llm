@@ -298,10 +298,11 @@ async fn run_serve_with_store(
         guardrail_engine,
         guardrail_config,
         metrics,
-        mcp_http_client: reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("MCP HTTP client configuration must be valid"),
+        mcp_http_clients: config
+            .mcp
+            .oauth
+            .upstream_clients()
+            .context("mcp.oauth.private_network_hosts")?,
         mcp_oauth_runtime: Arc::new(
             config
                 .mcp
@@ -340,6 +341,7 @@ async fn run_serve_with_store(
         budget_defaults: human_budget_defaults,
         agent_analysis: agent_analysis.capabilities,
         admin_permissions,
+        mcp_organisation_publishing: config.mcp.registry.organisation_publishing,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         count_tokens_limiter: Arc::default(),

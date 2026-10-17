@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
-    McpRegistryRepository, NewExternalMcpServerRecord, StoreError, UpdateExternalMcpServerRecord,
+    McpRegistryRepository, McpToolGrantRecord, NewExternalMcpServerRecord, StoreError,
+    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
     UpsertExternalMcpToolRecord,
 };
 use time::OffsetDateTime;
@@ -18,6 +19,54 @@ impl McpRegistryRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.list_external_mcp_servers(include_disabled).await,
             Self::Postgres(store) => store.list_external_mcp_servers(include_disabled).await,
+        }
+    }
+
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_external_mcp_servers_owned_by(owner_team_id, include_disabled)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_external_mcp_servers_owned_by(owner_team_id, include_disabled)
+                    .await
+            }
+        }
+    }
+
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_external_mcp_servers_visible_to_team(team_id, include_disabled)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_external_mcp_servers_visible_to_team(team_id, include_disabled)
+                    .await
+            }
+        }
+    }
+
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_external_mcp_servers_by_ids(mcp_server_ids).await,
+            Self::Postgres(store) => store.list_external_mcp_servers_by_ids(mcp_server_ids).await,
         }
     }
 
@@ -77,6 +126,111 @@ impl McpRegistryRepository for AnyStore {
                     .disable_external_mcp_server(mcp_server_id, disabled_at)
                     .await
             }
+        }
+    }
+
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .disable_external_mcp_server_for_owner(
+                        mcp_server_id,
+                        expected_owner_team_id,
+                        disabled_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .disable_external_mcp_server_for_owner(
+                        mcp_server_id,
+                        expected_owner_team_id,
+                        disabled_at,
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.transfer_external_mcp_server_ownership(input).await,
+            Self::Postgres(store) => store.transfer_external_mcp_server_ownership(input).await,
+        }
+    }
+
+    async fn first_active_mcp_toolset_key_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<String>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .first_active_mcp_toolset_key_for_server(mcp_server_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .first_active_mcp_toolset_key_for_server(mcp_server_id)
+                    .await
+            }
+        }
+    }
+
+    async fn count_mcp_tool_grants_outside_team(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .count_mcp_tool_grants_outside_team(mcp_server_id, team_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .count_mcp_tool_grants_outside_team(mcp_server_id, team_id)
+                    .await
+            }
+        }
+    }
+
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+        subject_kind: Option<gateway_core::McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tool_grants_for_owner_team(team_id, subject_kind, subject_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tool_grants_for_owner_team(team_id, subject_kind, subject_id)
+                    .await
+            }
+        }
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+            Self::Postgres(store) => store.get_external_mcp_tool(mcp_tool_id).await,
         }
     }
 

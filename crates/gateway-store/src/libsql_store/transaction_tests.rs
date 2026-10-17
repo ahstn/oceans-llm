@@ -51,6 +51,7 @@ async fn store_write_waits_for_another_store_transaction() {
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "docs".into(),
             display_name: "Docs".into(),
             description: None,
@@ -83,6 +84,12 @@ async fn store_write_waits_for_another_store_transaction() {
                     auth_mode: ExternalMcpAuthMode::None,
                     auth_config: Map::new(),
                     timeout_ms: 30_000,
+                    owner_contact: None,
+                    visibility: Default::default(),
+                    expected_owner_team_id: None,
+                    expected_visibility: Default::default(),
+                    retarget_owner_credentials_only: false,
+                    expected_server: None,
                     updated_at: now,
                 })
                 .await

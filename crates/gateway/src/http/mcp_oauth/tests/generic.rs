@@ -120,6 +120,7 @@ async fn server(state: &AppState, origin: &str, registration: Value) -> External
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: format!("files_{}", &Uuid::new_v4().simple().to_string()[..8]),
             display_name: "Files".to_string(),
             description: None,
@@ -285,7 +286,7 @@ async fn dynamic_registration_code_flow_and_refresh() {
         expires_at: Some(OffsetDateTime::now_utc() + Duration::seconds(60)),
     };
     McpCredentialService::new(state.store.clone())
-        .upsert_oauth_user_binding(server.mcp_server_id, user.user_id, grant)
+        .upsert_oauth_user_binding(server.mcp_server_id, user.user_id, grant, None)
         .await
         .expect("near-expiry binding");
     let near_expiry = user_binding(&state, &server, user.user_id).await;

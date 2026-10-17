@@ -29,6 +29,7 @@ impl TestUpstream {
         Self {
             upstream: McpGatewayUpstream {
                 server: ExternalMcpServerRecord {
+                    ownership: Default::default(),
                     mcp_server_id: Uuid::new_v4(),
                     server_key: "upstream".into(),
                     display_name: "Upstream".into(),
@@ -98,10 +99,12 @@ async fn proxy_preserves_protocol_headers_without_forwarding_caller_credentials_
         "authorization".into(),
         "Bearer managed-credential".into(),
     )]));
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .expect("HTTP client");
+    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("HTTP client"),
+    );
     let mut headers = HeaderMap::new();
     for (name, value) in [
         ("accept", "application/json"),
@@ -272,10 +275,12 @@ async fn query_credentials_reach_the_upstream_url_but_not_transport_errors() {
         "api_key",
         "query-secret",
     ));
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .expect("HTTP client");
+    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("HTTP client"),
+    );
 
     let response = proxy_buffered(
         &client,
@@ -311,10 +316,12 @@ async fn transport_failures_do_not_disclose_the_upstream_url() {
     server.task.abort();
     server.upstream.server.server_url =
         "http://127.0.0.1:0/private-mcp?api_key=upstream-secret".into();
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .expect("HTTP client");
+    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("HTTP client"),
+    );
     for buffered in [false, true] {
         let error = if buffered {
             proxy_buffered(
@@ -367,10 +374,12 @@ async fn buffered_bodies_enforce_the_limit_with_and_without_content_length() {
                 }
             }));
             let server = TestUpstream::start(router).await;
-            let client = reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .expect("HTTP client");
+            let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+                reqwest::Client::builder()
+                    .no_proxy()
+                    .build()
+                    .expect("HTTP client"),
+            );
             let result = proxy_buffered(
                 &client,
                 &Method::POST,
@@ -403,10 +412,12 @@ async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_stream
         .server
         .server_url
         .push_str("?api_key=upstream-secret");
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .expect("HTTP client");
+    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("HTTP client"),
+    );
 
     for (method, accept, receive_stream) in [
         (Method::POST, "application/json", false),

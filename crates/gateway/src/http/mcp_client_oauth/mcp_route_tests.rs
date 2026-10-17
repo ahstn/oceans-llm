@@ -95,6 +95,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
         .expect("API key");
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "notes".to_string(),
             display_name: "Notes".to_string(),
             description: None,
@@ -120,6 +121,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
                 schema_set_hash: None,
                 error_summary: None,
                 details: Map::new(),
+                expected_server: None,
             },
             &["search", "purge"].map(|name| UpsertExternalMcpToolRecord {
                 mcp_server_id: server.mcp_server_id,
@@ -154,6 +156,8 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
                 target_kind: McpToolGrantTargetKind::Tool,
                 target_id: tool.mcp_tool_id,
                 updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
             })
             .await
             .expect("grant");

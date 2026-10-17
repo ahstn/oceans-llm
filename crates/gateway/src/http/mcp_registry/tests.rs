@@ -131,6 +131,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
         .state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "google_drive".to_string(),
             display_name: "Google Drive".to_string(),
             description: None,
@@ -149,6 +150,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
         headers.clone(),
         Query(McpServersQuery {
             include_disabled: false,
+            owner: None,
         }),
     )
     .await;
@@ -197,16 +199,17 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
 }
 
 #[tokio::test]
-async fn connection_info_requires_a_platform_admin_session() {
+async fn connection_info_requires_a_signed_in_session() {
     let context = TestContext::new().await;
     let (status, body) = context.connection_info(HeaderMap::new()).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(body.get("data").is_none());
 
+    // Every user with the MCP page can read how to connect their client.
     let headers = context.session_headers(GlobalRole::User).await;
     let (status, body) = context.connection_info(headers).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(body.get("data").is_none());
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"]["endpoint"].is_string());
 }
 
 #[tokio::test]
@@ -333,6 +336,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "repository".to_string(),
             display_name: "Repository".to_string(),
             description: None,
@@ -368,6 +372,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
         schema_set_hash: None,
         error_summary: None,
         details: Default::default(),
+        expected_server: None,
     };
     let discovered = store
         .record_external_mcp_discovery_success(&run, &tools)

@@ -818,6 +818,18 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT 1 FROM mcp_oauth_states WHERE state_hash = ?1",
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
+    }
+
     pub async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,

@@ -36,7 +36,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         guardrail_engine: Arc::new(GuardrailEngine::new(Vec::new(), Default::default())),
         guardrail_config: Arc::new(GuardrailConfig::default()),
         metrics: Arc::new(GatewayMetrics::new()),
-        mcp_http_client: reqwest::Client::new(),
+        mcp_http_clients: gateway_service::McpUpstreamClients::default(),
         mcp_oauth_runtime: Arc::new(McpOauthRuntime::new(None, Vec::new())),
         mcp_client_oauth: None,
         oauth_streams: crate::http::mcp_client_oauth::OauthStreamWatcher::new(
@@ -56,6 +56,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             team_admin_analytics_enabled: false,
         },
         admin_permissions: Arc::new(PermissionsConfig::default().resolve().expect("permissions")),
+        mcp_organisation_publishing: gateway_service::McpOrganisationPublishing::default(),
         leaderboard_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         harness_usage_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         count_tokens_limiter: Arc::default(),

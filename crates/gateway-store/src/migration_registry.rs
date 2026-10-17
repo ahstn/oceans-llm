@@ -407,6 +407,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
         ),
     },
+    MigrationManifest {
+        version: 67,
+        name: "mcp_server_ownership",
+        checksum: "V67__mcp_server_ownership.sql",
+        libsql_sql: include_str!("../migrations/V67__mcp_server_ownership.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__mcp_server_ownership.sql"),
+    },
 ];
 
 #[cfg(test)]

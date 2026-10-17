@@ -1,6 +1,12 @@
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::Updated;
+use crate::shared::{
+    foreign_credentials_conflict, foreign_credentials_sql, grants_outside_team_sql,
+    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+};
+use gateway_core::{
+    McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
+    TransferExternalMcpServerOwnershipRecord, Updated,
+};
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
@@ -54,6 +60,23 @@ fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreErro
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+        ownership: decode_server_ownership(row, 18)?,
+    })
+}
+
+/// Decodes `owner_team_id, owner_contact, visibility` starting at `offset`.
+pub(super) fn decode_server_ownership(
+    row: &libsql::Row,
+    offset: i32,
+) -> Result<McpServerOwnership, StoreError> {
+    let owner_team_id: Option<String> = row.get(offset).map_err(to_query_error)?;
+    let visibility: String = row.get(offset + 2).map_err(to_query_error)?;
+    Ok(McpServerOwnership {
+        owner_team_id: owner_team_id.as_deref().map(parse_uuid).transpose()?,
+        owner_contact: row.get(offset + 1).map_err(to_query_error)?,
+        visibility: McpServerVisibility::from_db(&visibility).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid MCP server visibility `{visibility}`"))
+        })?,
     })
 }
 
@@ -109,6 +132,13 @@ pub(super) fn decode_tool_metadata(
     })
 }
 
+/// A settings save authorized against an owner the server no longer has.
+fn owner_changed(mcp_server_id: Uuid) -> StoreError {
+    StoreError::Conflict(format!(
+        "external MCP server `{mcp_server_id}` changed owner or visibility; reload it and try again"
+    ))
+}
+
 fn discovery_config_changed(
     existing: &ExternalMcpServerRecord,
     input: &UpdateExternalMcpServerRecord,
@@ -126,6 +156,11 @@ fn server_settings_match(
     existing.display_name == input.display_name
         && existing.description == input.description
         && existing.timeout_ms == input.timeout_ms
+        && input
+            .owner_contact
+            .as_ref()
+            .is_none_or(|contact| *contact == existing.ownership.owner_contact)
+        && existing.ownership.visibility == input.visibility
         && !discovery_config_changed(existing, input)
 }
 
@@ -146,9 +181,83 @@ async fn load_server(
         .and_then(|row| decode_server(&row))
 }
 
+/// Checks `guard` inside a write transaction, which holds the write lock from
+/// its start, so the server cannot change before the caller commits. With
+/// `tool_id`, the tool must also belong to the guard's server.
+pub(super) async fn check_ownership_guard(
+    connection: &libsql::Connection,
+    guard: &McpServerOwnershipGuard,
+    tool_id: Option<Uuid>,
+) -> Result<(), StoreError> {
+    let (sql, id) = match tool_id {
+        Some(tool_id) => (
+            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility, s.server_url, s.auth_mode, s.auth_config_json FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
+            tool_id,
+        ),
+        None => (
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility, server_url, auth_mode, auth_config_json FROM external_mcp_servers WHERE mcp_server_id = ?1",
+            guard.mcp_server_id,
+        ),
+    };
+    let mut rows = connection
+        .query(sql, [id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    let holds = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => {
+            let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
+            let ownership = decode_server_ownership(&row, 1)?;
+            let server_url: String = row.get(4).map_err(to_query_error)?;
+            let auth_mode: String = row.get(5).map_err(to_query_error)?;
+            let auth_config_json: String = row.get(6).map_err(to_query_error)?;
+            let auth_config = json_object_from_str(&auth_config_json)?;
+            guard.matches(&McpServerGuardRow {
+                mcp_server_id: parse_uuid(&mcp_server_id)?,
+                owner_team_id: ownership.owner_team_id,
+                visibility: ownership.visibility,
+                server_url: &server_url,
+                auth_mode: ExternalMcpAuthMode::from_db(&auth_mode).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP auth mode `{auth_mode}`"))
+                })?,
+                auth_config: &auth_config,
+            })
+        }
+        None => false,
+    };
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    if holds { Ok(()) } else { Err(guard.conflict()) }
+}
+
+/// Rejects tools of team-only servers, read inside the tool set write.
+/// Tool sets are granted organisation-wide, so they hold only tools of servers
+/// published to the organisation.
+pub(super) async fn check_no_team_only_tools(
+    connection: &libsql::Connection,
+    tool_ids: &[Uuid],
+) -> Result<(), StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(());
+    }
+    let ids = serialize_json(&tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())?;
+    let mut rows = connection
+        .query(
+            "SELECT t.upstream_name, s.server_key FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id IN (SELECT value FROM json_each(?1)) AND s.visibility = 'team' ORDER BY s.server_key, t.upstream_name LIMIT 1",
+            [ids],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let Some(row) = rows.next().await.map_err(to_query_error)? else {
+        return Ok(());
+    };
+    let tool: String = row.get(0).map_err(to_query_error)?;
+    let server_key: String = row.get(1).map_err(to_query_error)?;
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    Err(team_only_toolset_tool(&tool, &server_key))
+}
+
 macro_rules! server_columns {
     () => {
-        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at"
+        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at, owner_team_id, owner_contact, visibility"
     };
 }
 
@@ -159,6 +268,8 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = ?1"
 );
+/// Grant columns, aliased `g`, in the order `decode_grant` reads them.
+const GRANT_COLUMNS: &str = "g.grant_id, g.subject_kind, g.subject_id, g.target_kind, g.target_id, g.is_active, g.created_at, g.updated_at, g.revoked_at";
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json";
 
 #[async_trait]
@@ -173,6 +284,86 @@ impl McpRegistryRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(&sql, [if include_disabled { 1_i64 } else { 0_i64 }])
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
+    }
+
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND owner_team_id IS ?2 ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    if include_disabled { 1_i64 } else { 0_i64 },
+                    owner_team_id.map(|team_id| team_id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
+    }
+
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND (owner_team_id = ?2 OR visibility = 'organisation') ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    if include_disabled { 1_i64 } else { 0_i64 },
+                    team_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
+    }
+
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serialize_json(
+            &mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )?;
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE mcp_server_id IN (SELECT value FROM json_each(?1)) ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [ids])
             .await
             .map_err(to_query_error)?;
         let mut servers = Vec::new();
@@ -230,8 +421,9 @@ impl McpRegistryRepository for LibsqlStore {
                     r#"
                 INSERT INTO external_mcp_servers (
                     mcp_server_id, server_key, display_name, description, transport, server_url,
-                    auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10)
+                    auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at,
+                    owner_team_id, owner_contact, visibility
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10, ?11, ?12, ?13)
                 RETURNING {SERVER_COLUMNS}
                 "#
                 ),
@@ -246,6 +438,9 @@ impl McpRegistryRepository for LibsqlStore {
                     auth_config_json,
                     input.timeout_ms,
                     input.created_at.unix_timestamp(),
+                    input.ownership.owner_team_id.map(|id| id.to_string()),
+                    input.ownership.owner_contact.as_deref(),
+                    input.ownership.visibility.as_str(),
                 ],
             )
             .await
@@ -267,6 +462,49 @@ impl McpRegistryRepository for LibsqlStore {
         // exactly the one this update replaces.
         let tx = self.begin_transaction().await?;
         let existing = load_server(&tx, input.mcp_server_id).await?;
+        if existing.ownership.owner_team_id != input.expected_owner_team_id
+            || existing.ownership.visibility != input.expected_visibility
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(owner_changed(input.mcp_server_id));
+        }
+        if let Some(guard) = &input.expected_server
+            && !guard.matches(&McpServerGuardRow::of(&existing))
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(guard.conflict());
+        }
+        // An omitted contact keeps the one read under the write lock, so a
+        // concurrent contact change is never undone by a stale copy.
+        let owner_contact = input
+            .owner_contact
+            .clone()
+            .unwrap_or_else(|| existing.ownership.owner_contact.clone());
+        if input.retarget_owner_credentials_only && existing.server_url != input.server_url {
+            let mut rows = tx
+                .query(
+                    &foreign_credentials_sql("?1", "?2"),
+                    libsql::params![
+                        input.mcp_server_id.to_string(),
+                        existing
+                            .ownership
+                            .owner_team_id
+                            .map(|team_id| team_id.to_string())
+                            .unwrap_or_default()
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let foreign: i64 = match rows.next().await.map_err(to_query_error)? {
+                Some(row) => row.get(0).map_err(to_query_error)?,
+                None => 0,
+            };
+            drop(rows);
+            if foreign > 0 {
+                tx.commit().await.map_err(to_write_error)?;
+                return Err(foreign_credentials_conflict(foreign));
+            }
+        }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -276,7 +514,8 @@ impl McpRegistryRepository for LibsqlStore {
             r#"
             UPDATE external_mcp_servers
             SET display_name = ?1, description = ?2, server_url = ?3, auth_mode = ?4,
-                auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7
+                auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7,
+                owner_contact = ?9, visibility = ?10
             WHERE mcp_server_id = ?8
             "#,
             libsql::params![
@@ -288,6 +527,8 @@ impl McpRegistryRepository for LibsqlStore {
                 input.timeout_ms,
                 input.updated_at.unix_timestamp(),
                 input.mcp_server_id.to_string(),
+                owner_contact.as_deref(),
+                input.visibility.as_str(),
             ],
         )
         .await
@@ -315,6 +556,35 @@ impl McpRegistryRepository for LibsqlStore {
                 WHERE mcp_server_id = ?1
                 "#,
                 libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+            // A dynamically registered OAuth client belongs to the endpoints it
+            // was registered against. Drop it so the next connection registers
+            // again, and its secret and users' codes never go to a new endpoint.
+            tx.execute(
+                "DELETE FROM mcp_oauth_clients WHERE mcp_server_id = ?1",
+                libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+            // A flow started against the old settings must not finish against
+            // the new ones; its callback finds no state and is refused.
+            tx.execute(
+                "DELETE FROM mcp_oauth_states WHERE mcp_server_id = ?1",
+                libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+            // Users' OAuth tokens were issued by the old endpoints. Revoke them,
+            // so a refresh token is never posted to a token endpoint that did
+            // not issue it; each user connects again.
+            tx.execute(
+                "UPDATE mcp_upstream_credential_bindings SET revoked_at = ?2, updated_at = ?2 WHERE mcp_server_id = ?1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL",
+                libsql::params![
+                    input.mcp_server_id.to_string(),
+                    input.updated_at.unix_timestamp()
+                ],
             )
             .await
             .map_err(to_write_error)?;
@@ -358,6 +628,180 @@ impl McpRegistryRepository for LibsqlStore {
         Ok((load_server(&self.connection, mcp_server_id).await?, false))
     }
 
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // `IS` matches a NULL (platform) owner too, so the owner check and the
+        // disable are one statement.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "UPDATE external_mcp_servers
+                     SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
+                         last_discovery_status = 'disabled', last_discovery_at = ?1
+                     WHERE mcp_server_id = ?2
+                       AND status <> 'disabled'
+                       AND owner_team_id IS ?3
+                     RETURNING {SERVER_COLUMNS}"
+                ),
+                libsql::params![
+                    disabled_at.unix_timestamp(),
+                    mcp_server_id.to_string(),
+                    expected_owner_team_id.map(|id| id.to_string()),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_server(&row)?, true));
+        }
+        drop(rows);
+        let server = load_server(&self.connection, mcp_server_id).await?;
+        if server.ownership.owner_team_id != expected_owner_team_id {
+            return Err(owner_changed(mcp_server_id));
+        }
+        Ok((server, false))
+    }
+
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
+        // Read under the write lock, so `previous` is the owner this call replaced.
+        let tx = self.begin_transaction().await?;
+        let existing = load_server(&tx, input.mcp_server_id).await?;
+        if input
+            .expected_ownership
+            .as_ref()
+            .is_some_and(|expected| *expected != existing.ownership)
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(owner_changed(input.mcp_server_id));
+        }
+        if existing.ownership == input.ownership {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        tx.execute(
+            r#"
+            UPDATE external_mcp_servers
+            SET owner_team_id = ?1, owner_contact = ?2, visibility = ?3, updated_at = ?4
+            WHERE mcp_server_id = ?5
+            "#,
+            libsql::params![
+                input.ownership.owner_team_id.map(|id| id.to_string()),
+                input.ownership.owner_contact.as_deref(),
+                input.ownership.visibility.as_str(),
+                input.updated_at.unix_timestamp(),
+                input.mcp_server_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        let current = load_server(&tx, input.mcp_server_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
+    }
+
+    async fn first_active_mcp_toolset_key_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<String>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT ts.toolset_key
+                FROM mcp_toolset_tools tst
+                JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
+                JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
+                WHERE t.mcp_server_id = ?1 AND ts.status = 'active'
+                ORDER BY ts.toolset_key
+                LIMIT 1
+                "#,
+                [mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| row.get(0).map_err(to_query_error))
+            .transpose()
+    }
+
+    async fn count_mcp_tool_grants_outside_team(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                &grants_outside_team_sql("?1", "?2"),
+                [mcp_server_id.to_string(), team_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let count: i64 = match rows.next().await.map_err(to_query_error)? {
+            Some(row) => row.get(0).map_err(to_query_error)?,
+            None => 0,
+        };
+        Ok(count.max(0) as u64)
+    }
+
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = ?1 AND (?2 IS NULL OR g.subject_kind = ?2) AND (?3 IS NULL OR g.subject_id = ?3) ORDER BY g.created_at, g.grant_id"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    team_id.to_string(),
+                    subject_kind.map(|kind| kind.as_str()),
+                    subject_id.map(|id| id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut grants = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            grants.push(super::mcp_access::decode_grant(&row)?);
+        }
+        Ok(grants)
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        let sql = format!("SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = ?1");
+        let mut rows = self
+            .connection
+            .query(&sql, [mcp_tool_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_tool(&row))
+            .transpose()
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,
@@ -391,6 +835,9 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -513,6 +960,9 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

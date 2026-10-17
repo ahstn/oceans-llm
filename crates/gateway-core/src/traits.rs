@@ -48,8 +48,9 @@ use crate::{
         ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
         SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
         SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
-        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
+        UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
@@ -1027,10 +1028,57 @@ pub trait McpRegistryRepository: Send + Sync {
         include_disabled: bool,
     ) -> Result<Vec<ExternalMcpServerRecord>, StoreError>;
 
+    /// Like [`Self::list_external_mcp_servers`], for one owner: a team, or the
+    /// platform when `owner_team_id` is `None`. Stores filter in the query.
+    async fn list_external_mcp_servers_owned_by(
+        &self,
+        owner_team_id: Option<Uuid>,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        Ok(self
+            .list_external_mcp_servers(include_disabled)
+            .await?
+            .into_iter()
+            .filter(|server| server.ownership.owner_team_id == owner_team_id)
+            .collect())
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
     ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
+
+    /// The servers a team admin of `team_id` sees: the team's own, and every
+    /// server published to the organisation. Stores filter in the query.
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        Ok(self
+            .list_external_mcp_servers(include_disabled)
+            .await?
+            .into_iter()
+            .filter(|server| {
+                server.ownership.owned_by(team_id)
+                    || server.ownership.visibility == crate::McpServerVisibility::Organisation
+            })
+            .collect())
+    }
+
+    /// The servers with these IDs, disabled ones included, in one read.
+    async fn list_external_mcp_servers_by_ids(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let mut servers = Vec::with_capacity(mcp_server_ids.len());
+        for mcp_server_id in mcp_server_ids {
+            if let Some(server) = self.get_external_mcp_server(*mcp_server_id).await? {
+                servers.push(server);
+            }
+        }
+        Ok(servers)
+    }
 
     async fn get_external_mcp_server_by_key(
         &self,
@@ -1056,11 +1104,92 @@ pub trait McpRegistryRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// Like `disable_external_mcp_server`, but only while the server is still
+    /// owned by `expected_owner_team_id` (`None` for the platform). A server that
+    /// has changed owner is a conflict, decided under the same write.
+    async fn disable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        disabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        let _ = (mcp_server_id, expected_owner_team_id, disabled_at);
+        Err(StoreError::Unexpected(
+            "owner-checked MCP server disable is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Changes the owning team, contact and visibility together. Nothing is
+    /// written when they already match.
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<crate::audit::Updated<ExternalMcpServerRecord>, StoreError> {
+        let _ = input;
+        Err(StoreError::Unexpected(
+            "MCP server ownership transfer is not implemented for this repository".to_string(),
+        ))
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,
         include_inactive: bool,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    /// The first key, alphabetically, of an active tool set that holds any of
+    /// the server's tools. A disabled tool set exposes nothing, so it is
+    /// ignored.
+    async fn first_active_mcp_toolset_key_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<String>, StoreError> {
+        let _ = mcp_server_id;
+        Err(StoreError::Unexpected(
+            "MCP tool set lookup by server is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Counts active grants on the server's tools held by a subject outside
+    /// `team_id`, resolving each subject's team in the same query: the team
+    /// itself, a user's team, a service account's team, or the team behind an
+    /// API key's owner. A subject that no longer exists holds no access and is
+    /// not counted; one with no team is.
+    async fn count_mcp_tool_grants_outside_team(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Uuid,
+    ) -> Result<u64, StoreError> {
+        let _ = (mcp_server_id, team_id);
+        Err(StoreError::Unexpected(
+            "MCP grant lookup by server is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Grants, active or revoked, on tools of servers the team owns, optionally
+    /// for one subject kind or subject, filtered in the query.
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let _ = (team_id, subject_kind, subject_id);
+        Err(StoreError::Unexpected(
+            "MCP grant lookup by owning team is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Loads one tool, including an inactive one.
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        let _ = mcp_tool_id;
+        Err(StoreError::Unexpected(
+            "MCP tool lookup is not implemented for this repository".to_string(),
+        ))
+    }
 
     async fn record_external_mcp_discovery_success(
         &self,
@@ -1135,11 +1264,48 @@ pub trait McpAccessRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<Option<Uuid>, StoreError>;
 
+    /// Like [`Self::revoke_mcp_tool_grant`] for a tool target, but only while
+    /// the tool's server still matches `expected_server`, checked under the
+    /// write lock; otherwise a conflict, and nothing is revoked.
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &crate::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError>;
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
         subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError>;
+
+    /// Servers visible to their team only that `team_id` does not own (all of
+    /// them for `None`). Grants on their tools are inert for that caller, so a
+    /// grant stops working when its holder leaves the team or the server moves.
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError>;
+
+    /// Whether one server is visible to its team only and `team_id` does not
+    /// own it: a point lookup for requests that name the server.
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError>;
+
+    /// Every active tool these API keys are granted, directly or through an
+    /// active tool set, on active servers, in one query, with the granting key
+    /// on each row so its own MCP server list can be applied.
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<crate::McpApiKeyToolAccess>, StoreError>;
 
     async fn resolve_mcp_access_for_subjects(
         &self,
@@ -1237,6 +1403,38 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
+    /// Bindings on the servers `owner_team_id` owns, filtered in the query.
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let _ = (
+            owner_team_id,
+            owner_scope_kind,
+            owner_scope_id,
+            include_revoked,
+        );
+        Err(StoreError::Unexpected(
+            "MCP credential lookup by owning team is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+
+    /// One binding by ID, revoked or not.
+    async fn get_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        Ok(self
+            .list_mcp_upstream_credential_bindings(None, None, None, true)
+            .await?
+            .into_iter()
+            .find(|binding| binding.credential_binding_id == credential_binding_id))
+    }
+
     async fn list_mcp_upstream_credential_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -1252,6 +1450,23 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
+
+    /// Like [`Self::revoke_mcp_upstream_credential_binding`], but only for a
+    /// binding on `expected_server`'s server while it still matches, checked
+    /// under the write lock; otherwise a conflict, and nothing is revoked.
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &crate::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        // Fails closed: a repository that cannot check the guard under its
+        // write lock must not revoke without it.
+        let _ = (credential_binding_id, expected_server, revoked_at);
+        Err(StoreError::Unexpected(
+            "guarded MCP credential revoke is not implemented for this repository".to_string(),
+        ))
+    }
 
     async fn touch_mcp_upstream_credential_binding_last_used(
         &self,
@@ -1280,10 +1495,14 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
 
     /// Stores a registered client unless the server already has one, and
     /// returns the row that is stored afterwards. Concurrent registrations
-    /// therefore converge on a single client.
+    /// therefore converge on a single client. With `expected_server`, the
+    /// insert happens only while the server still matches it, checked under
+    /// the lock a settings change takes, so a client registered against
+    /// replaced endpoints is never stored.
     async fn insert_mcp_oauth_client_if_absent(
         &self,
         record: &McpOauthClientRecord,
+        expected_server: Option<&crate::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError>;
 
     /// Deletes the registered client only when it is still `client_id`.

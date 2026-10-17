@@ -704,6 +704,17 @@ impl PostgresStore {
         Ok(())
     }
 
+    pub async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        Ok(
+            sqlx::query("SELECT 1 FROM mcp_oauth_states WHERE state_hash = $1")
+                .bind(state_hash)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_query_error)?
+                .is_some(),
+        )
+    }
+
     pub async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
