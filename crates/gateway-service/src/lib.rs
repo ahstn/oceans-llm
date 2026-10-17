@@ -21,6 +21,7 @@ pub mod mcp_oauth;
 pub mod mcp_oauth_discovery;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
+pub mod mcp_tool_policy;
 pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_metadata;
@@ -117,6 +118,7 @@ pub use mcp_registry::{
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
+pub use mcp_tool_policy::{McpTagRuleMatch, McpToolPolicyService};
 pub use mcp_upstream_auth::{
     API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,

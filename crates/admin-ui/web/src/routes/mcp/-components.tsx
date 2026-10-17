@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
+import { ToolPolicyEditor } from './-tool-policy'
 import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
 
 const AUTH_MODES = [
@@ -126,6 +127,7 @@ export function ServerToolsPanel({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onToolUpdated,
 }: {
   tools: McpToolView[]
   toolsPending: boolean
@@ -134,6 +136,7 @@ export function ServerToolsPanel({
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
   onAddToToolset: () => void
+  onToolUpdated: (tool: McpToolView) => void
 }) {
   const selected = new Set(selectedToolIds)
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
@@ -208,6 +211,7 @@ export function ServerToolsPanel({
               selected={selected.has(tool.id)}
               expanded={expandedToolIds.has(tool.id)}
               onToggleExpanded={() => toggleExpanded(tool.id)}
+              onToolUpdated={onToolUpdated}
               onToggleTool={() => {
                 if (tool.is_active) {
                   onToggleTool(tool.id)
@@ -227,12 +231,14 @@ function ToolDisclosureRow({
   expanded,
   onToggleExpanded,
   onToggleTool,
+  onToolUpdated,
 }: {
   tool: McpToolView
   selected: boolean
   expanded: boolean
   onToggleExpanded: () => void
   onToggleTool: () => void
+  onToolUpdated: (tool: McpToolView) => void
 }) {
   const schema = formatToolSchema(tool.input_schema)
   const description = tool.description?.trim()
@@ -305,13 +311,14 @@ function ToolDisclosureRow({
               ) : null}
               {toolAnnotationBadges(tool.annotations).length > 0 ? (
                 <div className="min-w-0 md:col-span-3">
-                  <dt className="text-subtle-foreground text-xs font-medium">Hints</dt>
+                  <dt className="text-subtle-foreground text-xs font-medium">Upstream hints</dt>
                   <dd className="mt-1">
                     <ToolAnnotationBadges tool={tool} />
                   </dd>
                 </div>
               ) : null}
             </dl>
+            <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} />
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (

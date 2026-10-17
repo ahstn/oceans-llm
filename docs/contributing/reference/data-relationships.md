@@ -164,7 +164,10 @@ Model-centric overlays:
   - Notes: rows are user-added registry records. Recommended catalog entries are not seeded into this table. Disabling a server is the archive/delete path; hard delete is not exposed.
 - `external_mcp_tools`
   - Key columns: `mcp_tool_id`, `mcp_server_id`, `upstream_name`, `display_name`, `description`, `input_schema_json`, `schema_hash`, `schema_version`, `is_active`, `first_discovered_at`, `last_discovered_at`, `deactivated_at`
-  - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes.
+  - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes. `admin_tags_json` and `annotation_overrides_json` are admin-owned policy that discovery never writes; overrides do not change `schema_hash`.
+- `mcp_tool_tag_rules`
+  - Key columns: `rule_id`, `subject_kind`, `subject_id`, `server_scope`, `tag`, `effect`, `is_active`, `created_at`, `updated_at`, `revoked_at`
+  - Notes: `effect` is `include` or `exclude`. `server_scope` is a server ID, or `*` for every server, which only exclude rules may use. One active rule exists per subject, scope, tag and effect. Rules are revoked, not deleted. See [ADR: MCP Tag Grants, Annotation Overrides, and Tool Versioning](../../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
 - `external_mcp_discovery_runs`
   - Key columns: `discovery_run_id`, `mcp_server_id`, `status`, `started_at`, `finished_at`, `discovered_tool_count`, `active_tool_count`, `schema_set_hash`, `error_summary`, `details_json`
   - Notes: diagnostics are bounded and must not contain raw tokens or user credentials.

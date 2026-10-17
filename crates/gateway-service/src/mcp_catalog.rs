@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, IdentityRepository, McpAccessRepository,
-    McpCatalogToolRecord,
+    McpCatalogToolRecord, mcp_tool_policy::effective_annotations,
 };
 use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
@@ -180,6 +180,7 @@ where
     ) -> Result<DescribeMcpToolOutput, GatewayError> {
         let parsed = parse_tool_address(&input.address)?;
         let record = self.authorized_tool(auth, &parsed).await?;
+        let annotations = effective_annotations(&record.tool);
         Ok(DescribeMcpToolOutput {
             address: tool_address(&record.server.server_key, &record.tool.upstream_name)?,
             server: server_view(&record),
@@ -191,7 +192,7 @@ where
                 description: record.tool.description,
                 input_schema: record.tool.input_schema,
                 output_schema: record.tool.metadata.output_schema,
-                annotations: record.tool.metadata.annotations,
+                annotations,
                 schema_hash: record.tool.schema_hash,
                 schema_version: record.tool.schema_version,
             },
@@ -306,6 +307,7 @@ fn search_item(
     record: McpCatalogToolRecord,
     score: i64,
 ) -> Result<McpCatalogSearchItem, GatewayError> {
+    let annotations = effective_annotations(&record.tool);
     Ok(McpCatalogSearchItem {
         address: tool_address(&record.server.server_key, &record.tool.upstream_name)?,
         score,
@@ -316,7 +318,7 @@ fn search_item(
             display_name: record.tool.display_name,
             title: record.tool.metadata.title,
             description: record.tool.description,
-            annotations: record.tool.metadata.annotations,
+            annotations,
             schema_hash: record.tool.schema_hash,
             schema_version: record.tool.schema_version,
         },

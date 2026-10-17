@@ -1,6 +1,7 @@
 use super::*;
+use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::Updated;
+use gateway_core::{McpAnnotationOverrides, McpToolPolicy, Updated};
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
@@ -76,6 +77,7 @@ fn decode_tool(row: &libsql::Row) -> Result<ExternalMcpToolRecord, StoreError> {
         input_schema: serde_json::from_str(&input_schema_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         metadata: decode_tool_metadata(row, 12)?,
+        policy: decode_tool_policy(row, 15)?,
         schema_hash: row.get(6).map_err(to_query_error)?,
         schema_version: row.get(7).map_err(to_query_error)?,
         is_active: is_active == 1,
@@ -107,6 +109,16 @@ pub(super) fn decode_tool_metadata(
             })
             .transpose()?,
     })
+}
+
+/// Decodes `admin_tags_json, annotation_overrides_json` starting at `offset`.
+pub(super) fn decode_tool_policy(
+    row: &libsql::Row,
+    offset: i32,
+) -> Result<McpToolPolicy, StoreError> {
+    let tags_json: String = row.get(offset).map_err(to_query_error)?;
+    let overrides_json: String = row.get(offset + 1).map_err(to_query_error)?;
+    tool_policy_from_json(&tags_json, &overrides_json)
 }
 
 fn discovery_config_changed(
@@ -159,7 +171,7 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = ?1"
 );
-const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json";
+const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json, admin_tags_json, annotation_overrides_json";
 
 #[async_trait]
 impl McpRegistryRepository for LibsqlStore {
@@ -553,5 +565,90 @@ impl McpRegistryRepository for LibsqlStore {
         .map_err(to_query_error)?;
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        find_tool(&self.connection, mcp_tool_id).await
+    }
+
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<Updated<ExternalMcpToolRecord>, StoreError> {
+        let tags_json = serialize_json(tags)?;
+        self.update_tool_policy_column(mcp_tool_id, "admin_tags_json", &tags_json, |tool| {
+            tool.policy.tags == tags
+        })
+        .await
+    }
+
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &McpAnnotationOverrides,
+    ) -> Result<Updated<ExternalMcpToolRecord>, StoreError> {
+        let overrides_json = serialize_json(&overrides.to_object())?;
+        self.update_tool_policy_column(
+            mcp_tool_id,
+            "annotation_overrides_json",
+            &overrides_json,
+            |tool| tool.policy.annotation_overrides == *overrides,
+        )
+        .await
+    }
+}
+
+async fn find_tool(
+    connection: &libsql::Connection,
+    mcp_tool_id: Uuid,
+) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+    let sql = format!("SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = ?1");
+    let mut rows = connection
+        .query(&sql, [mcp_tool_id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    rows.next()
+        .await
+        .map_err(to_query_error)?
+        .map(|row| decode_tool(&row))
+        .transpose()
+}
+
+impl LibsqlStore {
+    /// Writes one admin policy column under the write lock, only when `matches`
+    /// says the stored value differs.
+    async fn update_tool_policy_column(
+        &self,
+        mcp_tool_id: Uuid,
+        column: &'static str,
+        value_json: &str,
+        matches: impl FnOnce(&ExternalMcpToolRecord) -> bool,
+    ) -> Result<Updated<ExternalMcpToolRecord>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        let existing = find_tool(&tx, mcp_tool_id).await?.ok_or_else(|| {
+            StoreError::NotFound(format!("MCP tool `{mcp_tool_id}` was not found"))
+        })?;
+        if matches(&existing) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        tx.execute(
+            &format!("UPDATE external_mcp_tools SET {column} = ?1 WHERE mcp_tool_id = ?2"),
+            libsql::params![value_json, mcp_tool_id.to_string()],
+        )
+        .await
+        .map_err(to_write_error)?;
+        let current = find_tool(&tx, mcp_tool_id).await?.ok_or_else(|| {
+            StoreError::Unexpected("MCP tool disappeared during update".to_string())
+        })?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 }

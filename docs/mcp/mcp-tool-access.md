@@ -4,7 +4,7 @@
 
 MCP tool access controls which discovered tools an Oceans API key can find through `/mcp` and see or call through `/mcp/{server_key}`.
 
-No implicit access exists for every discovered MCP tool. A caller can use a tool only when an active grant resolves to that tool for the authenticated API key, owner user, owner service account, or team.
+No implicit access exists for every discovered MCP tool. A caller can use a tool only when an active grant or [tag rule](#tag-rules) resolves to that tool for the authenticated API key, owner user, owner service account, or team, and no exclude rule removes it.
 
 ## Toolsets
 
@@ -48,7 +48,7 @@ Grant targets are:
 - one tool
 - one toolset
 
-Effective access is the union of active grants for the API key and its owner. User-owned keys also receive active team grants through the user's current team membership. Service-account keys receive service-account grants and owning-team grants.
+Effective access is the union of active grants for the API key and its owner, plus the tools their include [tag rules](#tag-rules) match, minus the tools any of their exclude rules match. User-owned keys also receive active team grants and rules through the user's current team membership. Service-account keys receive service-account grants and owning-team grants.
 
 Teams are access metadata, not runtime owners. Spend, request ownership, and service-account budget checks still belong to the user or service account that authenticated.
 
@@ -69,11 +69,103 @@ The Access tab supports:
 Use direct tool grants for exceptions. Prefer toolset grants when teams, service
 accounts, users, or API keys need the same bundle.
 
+## Tag rules
+
+A tag rule grants or denies tools by what they do instead of by name. For
+example, "team X may use every read-only tool on server Y", or "service account Z
+may never use a destructive tool on any server".
+
+Each rule has:
+
+- a subject: API key, user, team, or service account, as for grants
+- an effect: `include` grants every matching tool, and `exclude` removes every
+  matching tool
+- a server: include rules must name one server; exclude rules may apply to all
+  servers
+- a tag
+
+Effective access for a caller is resolved in this order:
+
+1. Explicit tool and toolset grants of every subject (the key, its owner user or
+   service account, and the team).
+2. Include rules add every active tool on their server whose tags contain the
+   rule's tag. Tools that discovery adds later match without a new grant.
+3. Exclude rules from any of the caller's subjects remove every matching tool.
+   Exclude wins over explicit grants, toolset grants, and include rules, whichever
+   subject they came from. An exclude rule on a team also removes a tool granted to
+   a member's own key.
+
+Tag rules apply everywhere grants do: direct `tools/list` and `tools/call`,
+aggregate `search_tools`, `describe_tool`, and `call_tool`, the server-grant check
+for resources, prompts, completions, and the event stream, and the
+effective-access preview. An exclude rule that removes a caller's last tool on a
+server also removes their access to that server's resources and prompts.
+
+### Tags
+
+Every tool has derived tags, computed from its effective annotations:
+
+| Tag | When |
+| --- | --- |
+| `read_only` | `readOnlyHint` is `true`. |
+| `destructive` | the tool is not read-only and `destructiveHint` is not `false`. |
+| `idempotent` | `idempotentHint` is `true`. |
+| `open_world` | `openWorldHint` is not `false`. |
+
+These follow the MCP protocol defaults, which fail safe. An include rule for
+`read_only` matches only tools that claim to be read-only. A tool that declares no
+hints counts as `destructive` and `open_world`, so exclude rules catch it.
+
+Admins can also add their own tags to a tool, such as `finance` or `pii:low`.
+Admin tags are 1 to 64 lowercase letters, digits, `_`, `-`, `.`, and `:`, at most
+32 per tool. The four derived names are reserved, so an admin tag cannot claim
+`read_only` for a tool. Override the annotation instead.
+
+### Annotation overrides
+
+Annotations are claims made by the upstream server. Admins can override
+`readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` per tool.
+An override:
+
+- changes the tool's derived tags, and so which tag rules match it
+- is what clients see: `describe_tool`, `search_tools`, and direct `tools/list`
+  return the overridden value, and other annotation members pass through
+- is stored separately from the discovered value, which the admin UI shows next
+  to it, and discovery never changes it
+- does not change the tool's `schema_hash` or `schema_version`, which describe the
+  upstream definition
+
+### Managing tags and rules
+
+- **Tags and overrides:** open a server from `/admin/mcp`, choose **Tools**, and
+  expand a tool. **Annotation overrides** lists each hint with its upstream value
+  and a **Use upstream**, **Yes**, or **No** choice. **Admin tags** takes a
+  comma-separated list. **Access tags** shows the tags rules match.
+- **Rules:** open `/admin/mcp?tab=access` and use **Tag rules**. **Preview
+  matches** lists the active tools the rule would select before you save it. Use
+  **Preview access** to see a subject's resolved tools with every rule applied.
+
+The admin API is:
+
+| Method | Path |
+| --- | --- |
+| `PUT` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags` |
+| `PUT` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides` |
+| `GET`, `POST` | `/api/v1/admin/mcp/tag-rules` |
+| `DELETE` | `/api/v1/admin/mcp/tag-rules/{rule_id}` |
+| `GET` | `/api/v1/admin/mcp/tag-rules/preview?server_id=&tag=&effect=` |
+
+Tag, override, and rule changes are written to the [admin audit
+log](../access/admin-audit-log.md) as `mcp_tool.tags_updated`,
+`mcp_tool.annotations_overridden`, `mcp_tag_rule.set`, and `mcp_tag_rule.revoked`.
+See [MCP Tag Grants, Annotation Overrides, and Tool
+Versioning](../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
+
 ## Runtime Behavior
 
-For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_tools`, `describe_tool`, and `call_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`, including the upstream `title`, `output_schema`, and `annotations` when the server declares them. `search_tools` results include the `title` and `annotations`. `call_tool` re-checks the grant, resolves the upstream credential, and calls the upstream server.
+For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_tools`, `describe_tool`, and `call_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`, including the upstream `title`, `output_schema`, and `annotations` when the server declares them. Annotations include any [admin overrides](#annotation-overrides). `search_tools` results include the `title` and `annotations`. `call_tool` re-checks the grant, resolves the upstream credential, and calls the upstream server.
 
-For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. Granted tool objects pass through unchanged, including `title`, `annotations`, and `outputSchema`. The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
+For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. Granted tool objects pass through unchanged, including `title`, `annotations`, and `outputSchema`, except that admin [annotation overrides](#annotation-overrides) replace the matching hints. The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
 
 For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error, and the gateway logs them as policy-denied invocations.
 

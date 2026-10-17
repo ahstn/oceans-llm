@@ -458,6 +458,9 @@ export function ServersTab({
         onToggleTool={toggleToolSelection}
         onClearSelection={() => setSelectedToolIds([])}
         onAddToToolset={handleAddToToolset}
+        onToolUpdated={(updated) =>
+          setTools((current) => current.map((tool) => (tool.id === updated.id ? updated : tool)))
+        }
         onCredentialFormChange={setCredentialForm}
         onCredentialSubmit={handleCreateCredentialBinding}
         onCredentialRevoke={handleRevokeCredentialBinding}
@@ -493,6 +496,7 @@ function ServerDetailDialog({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onToolUpdated,
   onCredentialFormChange,
   onCredentialSubmit,
   onCredentialRevoke,
@@ -521,6 +525,7 @@ function ServerDetailDialog({
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
   onAddToToolset: () => void
+  onToolUpdated: (tool: McpToolView) => void
   onCredentialFormChange: (form: CredentialBindingFormState) => void
   onCredentialSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCredentialRevoke: (binding: McpCredentialBindingView) => void
@@ -692,6 +697,7 @@ function ServerDetailDialog({
                     onToggleTool={onToggleTool}
                     onClearSelection={onClearSelection}
                     onAddToToolset={onAddToToolset}
+                    onToolUpdated={onToolUpdated}
                   />
                 ) : null}
                 {section === 'credentials' ? (

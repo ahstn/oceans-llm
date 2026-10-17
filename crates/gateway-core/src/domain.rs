@@ -1683,6 +1683,9 @@ pub struct ExternalMcpToolRecord {
     pub input_schema: Value,
     #[serde(default)]
     pub metadata: McpToolMetadata,
+    /// Admin tags and annotation overrides. Discovery never writes them.
+    #[serde(default)]
+    pub policy: crate::mcp_tool_policy::McpToolPolicy,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,

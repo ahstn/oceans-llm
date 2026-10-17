@@ -1,13 +1,22 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ApiKeyOwnerUserView, McpGrantView, McpServerView, McpToolsetView } from '@/types/api'
+import type {
+  ApiKeyOwnerUserView,
+  McpGrantView,
+  McpServerView,
+  McpTagRuleView,
+  McpToolsetView,
+} from '@/types/api'
 
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
 const saveMcpGrantMock = vi.fn()
 const removeMcpGrantMock = vi.fn()
 const getMcpEffectiveAccessMock = vi.fn()
+const saveMcpTagRuleMock = vi.fn()
+const removeMcpTagRuleMock = vi.fn()
+const getMcpTagRulePreviewMock = vi.fn()
 
 class ResizeObserverMock {
   observe() {}
@@ -27,6 +36,12 @@ vi.mock('@/server/admin-data.functions', () => ({
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
   removeMcpGrant: (...args: unknown[]) => removeMcpGrantMock(...args),
   saveMcpGrant: (...args: unknown[]) => saveMcpGrantMock(...args),
+}))
+
+vi.mock('@/server/mcp-policy-data.functions', () => ({
+  getMcpTagRulePreview: (...args: unknown[]) => getMcpTagRulePreviewMock(...args),
+  removeMcpTagRule: (...args: unknown[]) => removeMcpTagRuleMock(...args),
+  saveMcpTagRule: (...args: unknown[]) => saveMcpTagRuleMock(...args),
 }))
 
 const server: McpServerView = {
@@ -73,6 +88,19 @@ const grant: McpGrantView = {
   updated_at: '2026-05-27T09:00:00Z',
 }
 
+const tagRule: McpTagRuleView = {
+  id: 'rule_1',
+  subject_kind: 'user',
+  subject_id: 'user_1',
+  server_id: null,
+  tag: 'destructive',
+  effect: 'exclude',
+  is_active: true,
+  created_at: '2026-05-27T08:00:00Z',
+  updated_at: '2026-05-27T08:00:00Z',
+  revoked_at: null,
+}
+
 const user: ApiKeyOwnerUserView = {
   id: 'user_1',
   name: 'Jane Admin',
@@ -84,6 +112,7 @@ async function renderAccessTab() {
   render(
     <AccessTab
       grants={[grant]}
+      tagRules={[tagRule]}
       servers={[server]}
       toolsets={[toolset]}
       subjects={{ apiKeys: [], users: [user], serviceAccounts: [], teams: [] }}
@@ -118,21 +147,27 @@ describe('AccessTab', () => {
     saveMcpGrantMock.mockReset()
     removeMcpGrantMock.mockReset()
     getMcpEffectiveAccessMock.mockReset()
+    saveMcpTagRuleMock.mockReset()
+    removeMcpTagRuleMock.mockReset()
+    getMcpTagRulePreviewMock.mockReset()
     getMcpServerToolsMock.mockResolvedValue({ data: { items: [] } })
   })
 
   it('resolves grant subject and target UUIDs to human labels', async () => {
     await renderAccessTab()
 
-    expect(screen.getByText('Jane Admin')).toBeInTheDocument()
-    expect(screen.getByText('GitHub read-only')).toBeInTheDocument()
+    const grants = screen.getByTestId('mcp-grant-list')
+    expect(within(grants).getByText('Jane Admin')).toBeInTheDocument()
+    expect(within(grants).getByText('GitHub read-only')).toBeInTheDocument()
     expect(screen.getByText('New grant')).toBeInTheDocument()
     expect(screen.getByText('Effective access')).toBeInTheDocument()
   })
 
   it('revokes a grant through the server function', async () => {
     await renderAccessTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }))
+    fireEvent.click(
+      within(screen.getByTestId('mcp-grant-list')).getByRole('button', { name: 'Revoke' }),
+    )
 
     await waitFor(() => {
       expect(removeMcpGrantMock).toHaveBeenCalledWith({
@@ -144,5 +179,24 @@ describe('AccessTab', () => {
         },
       })
     })
+  })
+
+  it('lists active tag rules and revokes one', async () => {
+    await renderAccessTab()
+    const rules = screen.getByTestId('mcp-tag-rule-list')
+    expect(within(rules).getByText('Jane Admin')).toBeInTheDocument()
+    expect(within(rules).getByText('exclude')).toBeInTheDocument()
+    expect(within(rules).getByText('on all servers')).toBeInTheDocument()
+
+    fireEvent.click(within(rules).getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => {
+      expect(removeMcpTagRuleMock).toHaveBeenCalledWith({ data: { ruleId: 'rule_1' } })
+    })
+  })
+
+  it('needs a server before previewing an include rule', async () => {
+    await renderAccessTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Preview matches' }))
+    expect(getMcpTagRulePreviewMock).not.toHaveBeenCalled()
   })
 })

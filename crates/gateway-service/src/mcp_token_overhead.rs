@@ -213,6 +213,7 @@ mod tests {
             description: Some("Search the index".to_string()),
             input_schema: json!({"type": "object"}),
             metadata,
+            policy: Default::default(),
             schema_hash: "sha256:test".to_string(),
             schema_version: 1,
             is_active: true,

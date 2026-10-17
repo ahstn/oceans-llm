@@ -1,3 +1,4 @@
+mod tool_policy;
 mod views;
 
 #[cfg(test)]
@@ -34,6 +35,7 @@ use crate::http::{
     state::AppState,
 };
 use crate::observability::McpDiscoveryRefreshMetric;
+pub use tool_policy::*;
 use views::*;
 
 #[utoipa::path(

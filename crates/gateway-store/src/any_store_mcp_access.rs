@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpToolRecord, McpAccessRepository, McpAccessResolution, McpCatalogAccessResolution,
     McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-    McpToolProjection, McpToolsetRecord, McpToolsetToolRecord, NewMcpToolsetRecord, StoreError,
-    UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
+    McpToolProjection, McpToolTagRuleKey, McpToolTagRuleRecord, McpToolsetRecord,
+    McpToolsetToolRecord, NewMcpToolsetRecord, StoreError, UpdateMcpToolsetRecord,
+    UpsertMcpToolGrantRecord,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -214,6 +215,57 @@ impl McpAccessRepository for AnyStore {
                     .get_active_mcp_tool_by_name(mcp_server_id, upstream_name)
                     .await
             }
+        }
+    }
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tool_tag_rules(subject_kind, subject_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tool_tag_rules(subject_kind, subject_id)
+                    .await
+            }
+        }
+    }
+
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        match self {
+            Self::Libsql(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
+            Self::Postgres(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
+        }
+    }
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_tool_tag_rule(rule_id).await,
+            Self::Postgres(store) => store.get_mcp_tool_tag_rule(rule_id).await,
+        }
+    }
+
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.revoke_mcp_tool_tag_rule(rule_id, revoked_at).await,
+            Self::Postgres(store) => store.revoke_mcp_tool_tag_rule(rule_id, revoked_at).await,
         }
     }
 }

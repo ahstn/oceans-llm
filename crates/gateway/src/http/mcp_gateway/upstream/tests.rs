@@ -11,6 +11,48 @@ use uuid::Uuid;
 
 use super::*;
 
+fn granted(names: &[&'static str]) -> GrantedTools<'static> {
+    names
+        .iter()
+        .map(|name| (*name, GrantedToolView::default()))
+        .collect()
+}
+
+#[test]
+fn tools_list_merges_admin_annotation_overrides_and_keeps_other_members() {
+    let body = json!({"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+        {"name": "overridden", "annotations": {"readOnlyHint": true, "x-vendor": 1}, "_meta": {"k": "v"}},
+        {"name": "undeclared"},
+        {"name": "untouched", "annotations": {"readOnlyHint": true}}
+    ]}});
+    let mut granted = granted(&["untouched"]);
+    let overrides = json!({"readOnlyHint": false, "destructiveHint": true});
+    for name in ["overridden", "undeclared"] {
+        granted.insert(
+            name,
+            GrantedToolView {
+                annotation_overrides: overrides.as_object().cloned().unwrap(),
+            },
+        );
+    }
+    let filtered =
+        filter_tools_list_json(&serde_json::to_vec(&body).unwrap(), &granted, None).unwrap();
+    let value: Value = serde_json::from_slice(&filtered).unwrap();
+    let tools = &value["result"]["tools"];
+    assert_eq!(
+        tools[0],
+        json!({"name": "overridden", "annotations": {"readOnlyHint": false, "destructiveHint": true, "x-vendor": 1}, "_meta": {"k": "v"}})
+    );
+    assert_eq!(
+        tools[1],
+        json!({"name": "undeclared", "annotations": {"readOnlyHint": false, "destructiveHint": true}})
+    );
+    assert_eq!(
+        tools[2],
+        json!({"name": "untouched", "annotations": {"readOnlyHint": true}})
+    );
+}
+
 struct TestUpstream {
     upstream: McpGatewayUpstream,
     task: JoinHandle<()>,
@@ -195,7 +237,7 @@ fn sse_filters_every_tools_result_and_preserves_valid_progress_and_error_events(
     let error = json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "Discovery failed"}});
     let result = json!({"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "allowed"}, {"name": "blocked"}, {"title": "invalid"}]}});
     let bom_prefixed = format!("\u{feff}data: {result}\n\n");
-    let filtered = filter_tools_list_sse(bom_prefixed.as_bytes(), &HashSet::from(["allowed"]))
+    let filtered = filter_tools_list_sse(bom_prefixed.as_bytes(), &granted(&["allowed"]))
         .expect("filter first event after BOM");
     let text = std::str::from_utf8(&filtered).unwrap();
     let data = text
@@ -208,7 +250,7 @@ fn sse_filters_every_tools_result_and_preserves_valid_progress_and_error_events(
         let body = format!(
             "event: message{newline}data: {progress}{newline}{newline}data: {error}{newline}{newline}id: 3{newline}data: {result}{newline}{newline}data: {result}{newline}{newline}"
         );
-        let filtered = filter_tools_list_sse(body.as_bytes(), &HashSet::from(["allowed"]))
+        let filtered = filter_tools_list_sse(body.as_bytes(), &granted(&["allowed"]))
             .expect("valid event sequence");
         let text = std::str::from_utf8(&filtered).expect("filtered UTF-8");
         let events = text
@@ -236,7 +278,7 @@ fn sse_rejects_malformed_envelopes_and_cannot_hide_tools_in_an_error_or_notifica
         json!({"method": "notifications/progress"}),
     ] {
         let body = format!("data: {value}\n\n");
-        assert!(filter_tools_list_sse(body.as_bytes(), &HashSet::new()).is_err());
+        assert!(filter_tools_list_sse(body.as_bytes(), &granted(&[])).is_err());
     }
     for envelope in [
         json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "error"}}),
@@ -246,11 +288,11 @@ fn sse_rejects_malformed_envelopes_and_cannot_hide_tools_in_an_error_or_notifica
         value["result"] = json!({"tools": [{"name": "blocked"}]});
         let body = format!("data: {value}\n\n");
         let filtered =
-            filter_tools_list_sse(body.as_bytes(), &HashSet::new()).expect("filtered result");
+            filter_tools_list_sse(body.as_bytes(), &granted(&[])).expect("filtered result");
         assert!(!std::str::from_utf8(&filtered).unwrap().contains("blocked"));
         let filtered = filter_tools_list_json(
             &serde_json::to_vec(&value).unwrap(),
-            &HashSet::new(),
+            &granted(&[]),
             Some(&json!(5)),
         )
         .expect("filtered JSON result");

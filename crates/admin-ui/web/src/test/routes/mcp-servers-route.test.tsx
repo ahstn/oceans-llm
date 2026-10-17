@@ -14,6 +14,8 @@ const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
 const refreshExternalMcpServerDiscoveryMock = vi.fn()
 const discoverExternalMcpServerOauthMock = vi.fn()
+const saveMcpToolTagsMock = vi.fn()
+const saveMcpToolAnnotationOverridesMock = vi.fn()
 
 class ResizeObserverMock {
   observe() {}
@@ -48,6 +50,12 @@ vi.mock('@/server/admin-data.functions', () => ({
   removeMcpCredentialBinding: vi.fn(),
   saveMcpCredentialBinding: vi.fn(),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
+}))
+
+vi.mock('@/server/mcp-policy-data.functions', () => ({
+  saveMcpToolTags: (...args: unknown[]) => saveMcpToolTagsMock(...args),
+  saveMcpToolAnnotationOverrides: (...args: unknown[]) =>
+    saveMcpToolAnnotationOverridesMock(...args),
 }))
 
 const server: McpServerView = {
@@ -86,6 +94,20 @@ const tool: McpToolView = {
     idempotent_hint: null,
     open_world_hint: null,
   },
+  annotation_overrides: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  effective_annotations: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  admin_tags: [],
+  effective_tags: ['destructive', 'open_world'],
   schema_hash: 'sha256:abc123',
   schema_version: 2,
   is_active: false,
@@ -319,6 +341,69 @@ describe('ServersTab', () => {
     expect(screen.getByText('Query documentation')).toBeInTheDocument()
     expect(screen.getByText('Output schema')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-tool-output-schema-code')).toHaveTextContent('answer')
+  })
+
+  it('shows upstream hints next to overrides and saves admin tags', async () => {
+    const readTool: McpToolView = {
+      ...activeTool,
+      annotations: { ...activeTool.annotations, read_only_hint: true },
+      effective_tags: ['open_world', 'read_only'],
+    }
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [readTool] } })
+    saveMcpToolTagsMock.mockResolvedValueOnce({
+      data: {
+        tool: {
+          ...readTool,
+          admin_tags: ['docs', 'finance'],
+          effective_tags: ['docs', 'finance', 'open_world', 'read_only'],
+        },
+      },
+    })
+    saveMcpToolAnnotationOverridesMock.mockResolvedValueOnce({ data: { tool: readTool } })
+    await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    expect(screen.queryByTestId('mcp-tool-policy')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show query_docs schema' }))
+
+    const overrides = screen.getByTestId('mcp-tool-annotation-overrides')
+    expect(within(overrides).getByText('Upstream: Yes')).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('mcp-tool-effective-tags')).getByText('read_only'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save overrides' }))
+    await waitFor(() =>
+      expect(saveMcpToolAnnotationOverridesMock).toHaveBeenCalledWith({
+        data: {
+          serverId: 'server_1',
+          toolId: 'tool_2',
+          annotationOverrides: {
+            read_only_hint: null,
+            destructive_hint: null,
+            idempotent_hint: null,
+            open_world_hint: null,
+          },
+        },
+      }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Admin tags'), {
+      target: { value: 'finance, docs' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() =>
+      expect(saveMcpToolTagsMock).toHaveBeenCalledWith({
+        data: { serverId: 'server_1', toolId: 'tool_2', tags: ['finance', 'docs'] },
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('mcp-tool-effective-tags')).getByText('finance'),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('contains expanded JSON schema overflow inside the tools panel', async () => {

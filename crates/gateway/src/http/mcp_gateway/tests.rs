@@ -556,6 +556,104 @@ mod proxy_policy {
         assert_eq!(body["result"]["tools"], json!([annotated_search_tool()]));
     }
 
+    /// Adds a tag rule for the key's owner user on the `notes` server.
+    async fn add_user_rule(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        server: Option<Uuid>,
+        tag: &str,
+        effect: gateway_core::McpTagRuleEffect,
+    ) {
+        state
+            .store
+            .upsert_mcp_tool_tag_rule(
+                &gateway_core::McpToolTagRuleKey {
+                    subject_kind: McpToolGrantSubjectKind::User,
+                    subject_id: auth.owner_user_id.expect("owner user"),
+                    mcp_server_id: server,
+                    tag: tag.to_string(),
+                    effect,
+                },
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("tag rule");
+    }
+
+    #[tokio::test]
+    async fn tag_rules_govern_direct_tools_list_calls_and_resources() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let search = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool");
+        // The stored tool declares no hints, so only an override makes it read-only.
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(
+                search.mcp_tool_id,
+                &gateway_core::McpAnnotationOverrides {
+                    read_only: Some(true),
+                    idempotent: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("override");
+        add_user_rule(
+            &state,
+            &auth,
+            Some(server.mcp_server_id),
+            "read_only",
+            gateway_core::McpTagRuleEffect::Include,
+        )
+        .await;
+
+        let list = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"});
+        let (status, body) = send(&state, &auth, list.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        let mut expected = annotated_search_tool();
+        expected["annotations"]["idempotentHint"] = json!(true);
+        assert_eq!(body["result"]["tools"], json!([expected]));
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // An exclude rule on every server wins over the include rule.
+        add_user_rule(
+            &state,
+            &auth,
+            None,
+            "idempotent",
+            gateway_core::McpTagRuleEffect::Exclude,
+        )
+        .await;
+        let (status, body) = send(&state, &auth, list).await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(body["result"]["tools"], json!([]));
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
     #[tokio::test]
     async fn task_augmented_tool_calls_never_reach_the_upstream() {
         let (_directory, state) = crate::http::test_support::app_state().await;

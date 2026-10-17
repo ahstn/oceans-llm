@@ -2,18 +2,22 @@ use std::collections::HashMap;
 
 use gateway_core::McpToolProjection;
 
-use super::mcp_registry::decode_tool_metadata;
+use gateway_core::{McpTagRuleSet, McpToolTagRuleKey, McpToolTagRuleRecord};
+
+use super::mcp_registry::{decode_tool_metadata, decode_tool_policy};
 use super::*;
+use crate::mcp_tool_policy::{TAG_RULE_COLUMNS, TagRuleRow};
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
-const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json::text, t.output_schema_json::text";
-/// `TOOL_COLUMNS` with the metadata columns replaced by NULLs. The row keeps
-/// the same shape, so `decode_tool` reads it and leaves the metadata empty.
-const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL::text, NULL::text, NULL::text";
+const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, t.title, t.annotations_json::text, t.output_schema_json::text, t.admin_tags_json::text, t.annotation_overrides_json::text";
+/// `TOOL_COLUMNS` with the title and output schema replaced by NULLs. The row
+/// keeps the same shape, so `decode_tool` reads it. Annotations and the admin
+/// policy stay, because tag rules are evaluated from them.
+const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL::text, t.annotations_json::text, NULL::text, t.admin_tags_json::text, t.annotation_overrides_json::text";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
-const TOOL_COLUMN_COUNT: usize = 15;
+const TOOL_COLUMN_COUNT: usize = 17;
 const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json::text, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
 
 fn decode_toolset(row: &PgRow) -> Result<McpToolsetRecord, StoreError> {
@@ -74,6 +78,7 @@ fn decode_tool(row: &PgRow) -> Result<ExternalMcpToolRecord, StoreError> {
         input_schema: serde_json::from_str(&input_schema_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         metadata: decode_tool_metadata(row, 12)?,
+        policy: decode_tool_policy(row, 15)?,
         schema_hash: row.try_get(6).map_err(to_query_error)?,
         schema_version: row.try_get(7).map_err(to_query_error)?,
         is_active: row.try_get::<i64, _>(8).map_err(to_query_error)? == 1,
@@ -454,10 +459,11 @@ impl McpAccessRepository for PostgresStore {
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
         let exposed_tool_count = active_tool_count(&self.pool, mcp_server_id).await?;
+        let rules = load_tag_rule_set(&self.pool, subjects).await?;
+        let columns = tool_columns(projection);
         let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
 
         for subject in subjects {
-            let columns = tool_columns(projection);
             collect_direct_tools(
                 &self.pool,
                 subject,
@@ -475,6 +481,14 @@ impl McpAccessRepository for PostgresStore {
             )
             .await?;
         }
+        for server_id in rules.include_server_ids(mcp_server_id) {
+            for tool in server_tools(&self.pool, server_id, columns).await? {
+                if rules.includes(&tool) {
+                    tools_by_id.insert(tool.mcp_tool_id, tool);
+                }
+            }
+        }
+        tools_by_id.retain(|_, tool| !rules.excludes(tool));
 
         let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
         allowed_tools.sort_by(|a, b| {
@@ -502,6 +516,18 @@ impl McpAccessRepository for PostgresStore {
         subjects: &[McpGrantSubject],
         mcp_server_id: Uuid,
     ) -> Result<bool, StoreError> {
+        // Rules can add or remove tools, so a caller with any rule gets the
+        // full resolution; everyone else keeps the single `EXISTS` query.
+        if !load_tag_rule_set(&self.pool, subjects).await?.is_empty() {
+            let resolution = self
+                .resolve_mcp_access_for_subjects(
+                    subjects,
+                    Some(mcp_server_id),
+                    McpToolProjection::Access,
+                )
+                .await?;
+            return Ok(!resolution.allowed_tools.is_empty());
+        }
         for subject in subjects {
             if server_grant_exists(&self.pool, subject, mcp_server_id).await? {
                 return Ok(true);
@@ -516,6 +542,7 @@ impl McpAccessRepository for PostgresStore {
         server_key: Option<&str>,
     ) -> Result<McpCatalogAccessResolution, StoreError> {
         let exposed_tool_count = active_catalog_tool_count(&self.pool, server_key).await?;
+        let rules = load_tag_rule_set(&self.pool, subjects).await?;
         let mut tools_by_id: HashMap<Uuid, McpCatalogToolRecord> = HashMap::new();
 
         for subject in subjects {
@@ -523,6 +550,14 @@ impl McpAccessRepository for PostgresStore {
             collect_catalog_toolset_tools(&self.pool, subject, server_key, &mut tools_by_id)
                 .await?;
         }
+        for server_id in rules.include_server_ids(None) {
+            for record in server_catalog_tools(&self.pool, server_id, server_key).await? {
+                if rules.includes(&record.tool) {
+                    tools_by_id.insert(record.tool.mcp_tool_id, record);
+                }
+            }
+        }
+        tools_by_id.retain(|_, record| !rules.excludes(&record.tool));
 
         let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
         allowed_tools.sort_by(|a, b| {
@@ -563,6 +598,163 @@ impl McpAccessRepository for PostgresStore {
             .map_err(to_query_error)?;
         row.as_ref().map(decode_tool).transpose()
     }
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolTagRuleRecord>, StoreError> {
+        let rows = sqlx::query(&format!(
+            "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE ($1::text IS NULL OR subject_kind = $1) AND ($2::text IS NULL OR subject_id = $2) ORDER BY subject_kind, subject_id, server_scope, tag, effect, created_at"
+        ))
+        .bind(subject_kind.map(|value| value.as_str()))
+        .bind(subject_id.map(|value| value.to_string()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_tag_rule).collect()
+    }
+
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        let id = Uuid::new_v4();
+        // `RETURNING` gives the row this statement wrote, so `created` cannot be
+        // confused by a concurrent revoke and re-create.
+        let row = sqlx::query(&format!(
+            "INSERT INTO mcp_tool_tag_rules (
+                rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
+            ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
+            DO UPDATE SET updated_at = excluded.updated_at
+            RETURNING {TAG_RULE_COLUMNS}"
+        ))
+        .bind(id.to_string())
+        .bind(key.subject_kind.as_str())
+        .bind(key.subject_id.to_string())
+        .bind(key.server_scope())
+        .bind(key.tag.as_str())
+        .bind(key.effect.as_str())
+        .bind(updated_at.unix_timestamp())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        let record = decode_tag_rule(&row)?;
+        let created = record.rule_id == id;
+        Ok((record, created))
+    }
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        sqlx::query(&format!(
+            "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE rule_id = $1"
+        ))
+        .bind(rule_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .as_ref()
+        .map(decode_tag_rule)
+        .transpose()
+    }
+
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        sqlx::query(&format!(
+            "UPDATE mcp_tool_tag_rules
+             SET is_active = 0, revoked_at = $1, updated_at = $1
+             WHERE rule_id = $2 AND is_active = 1
+             RETURNING {TAG_RULE_COLUMNS}"
+        ))
+        .bind(revoked_at.unix_timestamp())
+        .bind(rule_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_write_error)?
+        .as_ref()
+        .map(decode_tag_rule)
+        .transpose()
+    }
+}
+
+fn decode_tag_rule(row: &PgRow) -> Result<McpToolTagRuleRecord, StoreError> {
+    TagRuleRow {
+        rule_id: row.try_get(0).map_err(to_query_error)?,
+        subject_kind: row.try_get(1).map_err(to_query_error)?,
+        subject_id: row.try_get(2).map_err(to_query_error)?,
+        server_scope: row.try_get(3).map_err(to_query_error)?,
+        tag: row.try_get(4).map_err(to_query_error)?,
+        effect: row.try_get(5).map_err(to_query_error)?,
+        is_active: row.try_get(6).map_err(to_query_error)?,
+        created_at: row.try_get(7).map_err(to_query_error)?,
+        updated_at: row.try_get(8).map_err(to_query_error)?,
+        revoked_at: row.try_get(9).map_err(to_query_error)?,
+    }
+    .decode()
+}
+
+/// The active tag rules of every subject.
+async fn load_tag_rule_set(
+    pool: &PgPool,
+    subjects: &[McpGrantSubject],
+) -> Result<McpTagRuleSet, StoreError> {
+    let sql = format!(
+        "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE is_active = 1 AND subject_kind = $1 AND subject_id = $2"
+    );
+    let mut rules = Vec::new();
+    for subject in subjects {
+        let rows = sqlx::query(&sql)
+            .bind(subject.subject_kind.as_str())
+            .bind(subject.subject_id.to_string())
+            .fetch_all(pool)
+            .await
+            .map_err(to_query_error)?;
+        for row in &rows {
+            rules.push(decode_tag_rule(row)?);
+        }
+    }
+    Ok(McpTagRuleSet::new(rules))
+}
+
+/// Served tools of one active server, the candidates for its include rules.
+async fn server_tools(
+    pool: &PgPool,
+    mcp_server_id: Uuid,
+    columns: &str,
+) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+    let sql = format!(
+        "SELECT {columns} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = $1 AND t.is_active = 1 AND s.status = 'active'"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(mcp_server_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
+    rows.iter().map(decode_tool).collect()
+}
+
+async fn server_catalog_tools(
+    pool: &PgPool,
+    mcp_server_id: Uuid,
+    server_key: Option<&str>,
+) -> Result<Vec<McpCatalogToolRecord>, StoreError> {
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = $1 AND t.is_active = 1 AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2)"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(mcp_server_id.to_string())
+        .bind(server_key)
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
+    rows.iter().map(decode_catalog_tool).collect()
 }
 
 async fn active_catalog_tool_count(

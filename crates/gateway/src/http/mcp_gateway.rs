@@ -173,11 +173,18 @@ async fn dispatch_mcp_request(
                 Ok(resolution) => resolution,
                 Err(error) => return mcp_error_response(error),
             };
-            let allowed_tool_names = access_resolution
+            let granted_tools = access_resolution
                 .allowed_tools
                 .iter()
-                .map(|tool| tool.upstream_name.as_str())
-                .collect::<std::collections::HashSet<_>>();
+                .map(|tool| {
+                    (
+                        tool.upstream_name.as_str(),
+                        upstream::GrantedToolView {
+                            annotation_overrides: tool.policy.annotation_overrides.to_object(),
+                        },
+                    )
+                })
+                .collect::<upstream::GrantedTools<'_>>();
             let upstream = match gateway
                 .prepare_upstream_for_auth(auth, server.clone())
                 .await
@@ -193,7 +200,7 @@ async fn dispatch_mcp_request(
                 headers,
                 body,
                 &upstream,
-                &allowed_tool_names,
+                &granted_tools,
                 id.as_ref(),
             )
             .await;

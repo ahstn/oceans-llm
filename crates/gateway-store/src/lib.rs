@@ -22,6 +22,7 @@ mod audit_logs;
 mod budget_batch;
 mod budget_increases;
 mod libsql_store;
+mod mcp_tool_policy;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
@@ -70,6 +71,7 @@ mod skills_tests;
 #[cfg(test)]
 pub(crate) mod tests {
     mod mcp_access;
+    mod mcp_tag_rules;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;

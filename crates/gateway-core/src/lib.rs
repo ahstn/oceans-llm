@@ -7,6 +7,7 @@ pub mod domain;
 pub mod error;
 pub mod gateway_keys;
 pub mod mcp_client_oauth;
+pub mod mcp_tool_policy;
 pub mod protocol;
 pub mod rate_limits;
 pub mod reasoning_policy;
@@ -134,6 +135,10 @@ pub use mcp_client_oauth::{
     GatewayOauthTokenKind, GatewayOauthTokenRecord, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX,
     OAUTH_REFRESH_TOKEN_PREFIX, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, SUPPORTED_SCOPES,
     parse_scope_list,
+};
+pub use mcp_tool_policy::{
+    McpAnnotationOverrides, McpTagRuleEffect, McpTagRuleSet, McpToolPolicy, McpToolTagRuleKey,
+    McpToolTagRuleRecord,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

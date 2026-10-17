@@ -1,0 +1,251 @@
+//! Tool tags, annotation overrides and tag rules through the admin API.
+
+use gateway_core::{
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, McpRegistryRepository,
+    McpToolMetadata, UpsertExternalMcpToolRecord,
+};
+use serde_json::Map;
+
+use super::*;
+
+/// Creates a server through the API and stores one discovered tool for it.
+async fn seed_tool(harness: &Harness) -> (String, String) {
+    let (status, server) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/mcp/servers",
+            Some(json!({
+                "server_key": "files",
+                "display_name": "Files",
+                "server_url": "https://files.example.test/mcp",
+                "transport": "streamable_http",
+                "auth_mode": "none",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{server}");
+    let server_id: Uuid = server["data"]["server"]["id"]
+        .as_str()
+        .expect("server id")
+        .parse()
+        .expect("uuid");
+    let now = OffsetDateTime::now_utc();
+    let tools = harness
+        .state
+        .store
+        .record_external_mcp_discovery_success(
+            &ExternalMcpDiscoveryRunRecord {
+                discovery_run_id: Uuid::new_v4(),
+                mcp_server_id: server_id,
+                status: ExternalMcpDiscoveryStatus::Success,
+                started_at: now,
+                finished_at: now,
+                discovered_tool_count: 1,
+                active_tool_count: 1,
+                schema_set_hash: None,
+                error_summary: None,
+                details: Map::new(),
+            },
+            &[UpsertExternalMcpToolRecord {
+                mcp_server_id: server_id,
+                upstream_name: "read_file".to_string(),
+                display_name: "Read file".to_string(),
+                description: None,
+                input_schema: json!({"type": "object"}),
+                metadata: McpToolMetadata {
+                    title: None,
+                    annotations: json!({"readOnlyHint": false}).as_object().cloned(),
+                    output_schema: None,
+                },
+                schema_hash: "read-file-v1".to_string(),
+            }],
+        )
+        .await
+        .expect("discovery");
+    (server_id.to_string(), tools[0].mcp_tool_id.to_string())
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn tool_policy_and_tag_rule_changes_are_audited() {
+    let harness = Harness::new().await;
+    let (server_id, tool_id) = seed_tool(&harness).await;
+    let tool_path = format!("/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}");
+
+    // Tags are normalized, and a resave records nothing.
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(
+                Method::PUT,
+                &format!("{tool_path}/tags"),
+                Some(json!({ "tags": [" Finance ", "finance", "pii:low"] })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body["data"]["tool"]["admin_tags"],
+            json!(["finance", "pii:low"])
+        );
+    }
+    let (status, body) = harness
+        .admin(
+            Method::PUT,
+            &format!("{tool_path}/tags"),
+            Some(json!({ "tags": ["read_only"] })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "derived tags are reserved: {body}"
+    );
+
+    // An override is shown next to the upstream value and changes the tags.
+    let (status, body) = harness
+        .admin(
+            Method::PUT,
+            &format!("{tool_path}/annotation-overrides"),
+            Some(json!({ "annotation_overrides": { "read_only_hint": true } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let tool = &body["data"]["tool"];
+    assert_eq!(tool["annotations"]["read_only_hint"], false);
+    assert_eq!(tool["annotation_overrides"]["read_only_hint"], true);
+    assert_eq!(tool["effective_annotations"]["read_only_hint"], true);
+    assert_eq!(
+        tool["effective_tags"],
+        json!(["finance", "open_world", "pii:low", "read_only"])
+    );
+    assert_eq!(
+        tool["schema_hash"], "read-file-v1",
+        "overrides do not change the hash"
+    );
+    let (status, _) = harness
+        .admin(
+            Method::PUT,
+            &format!("{tool_path}/annotation-overrides"),
+            Some(json!({ "annotation_overrides": { "title": true } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let (status, _) = harness
+        .admin(
+            Method::PUT,
+            &format!(
+                "/api/v1/admin/mcp/servers/{}/tools/{tool_id}/tags",
+                Uuid::new_v4()
+            ),
+            Some(json!({ "tags": [] })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "the tool must be on the path's server"
+    );
+
+    // Include rules need a server; the preview lists what a rule selects.
+    let team_id = Uuid::new_v4();
+    let rule = |server: Value, effect: &str| {
+        json!({
+            "subject_kind": "team",
+            "subject_id": team_id,
+            "server_id": server,
+            "tag": "read_only",
+            "effect": effect,
+        })
+    };
+    let (status, _) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/mcp/tag-rules",
+            Some(rule(Value::Null, "include")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, preview) = harness
+        .admin(
+            Method::GET,
+            &format!(
+                "/api/v1/admin/mcp/tag-rules/preview?server_id={server_id}&tag=read_only&effect=include"
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["data"]["tools"][0]["id"], tool_id);
+    let mut rule_id = String::new();
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(
+                Method::POST,
+                "/api/v1/admin/mcp/tag-rules",
+                Some(rule(json!(server_id), "include")),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        rule_id = body["data"]["rule"]["id"]
+            .as_str()
+            .expect("rule id")
+            .to_string();
+    }
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(
+                Method::DELETE,
+                &format!("/api/v1/admin/mcp/tag-rules/{rule_id}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let tags = harness.entry("mcp_tool.tags_updated").await;
+    assert_admin_actor(&tags, harness.admin_id);
+    assert_eq!(tags["target_id"], tool_id);
+    assert_eq!(tags["target_label"], "read_file");
+    assert_eq!(tags["before"]["tags"], json!([]));
+    assert_eq!(tags["after"]["tags"], json!(["finance", "pii:low"]));
+    let overridden = harness.entry("mcp_tool.annotations_overridden").await;
+    assert_eq!(overridden["before"]["read_only_hint"], Value::Null);
+    assert_eq!(overridden["after"]["read_only_hint"], true);
+    let set = harness.entry("mcp_tag_rule.set").await;
+    assert_eq!(set["target_id"], rule_id);
+    assert_eq!(set["after"]["effect"], "include");
+    assert_eq!(set["after"]["server_id"], server_id);
+    let revoked = harness.entry("mcp_tag_rule.revoked").await;
+    assert_eq!(revoked["target_id"], rule_id);
+    assert_eq!(revoked["before"]["tag"], "read_only");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn tool_policy_changes_need_a_platform_admin() {
+    let harness = Harness::new().await;
+    let (server_id, tool_id) = seed_tool(&harness).await;
+    let (_, member) = harness.user(GlobalRole::User).await;
+    let (status, _) = harness
+        .send(
+            Method::PUT,
+            &format!("/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags"),
+            &member,
+            Some(json!({ "tags": ["finance"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = harness
+        .send(
+            Method::POST,
+            "/api/v1/admin/mcp/tag-rules",
+            &member,
+            Some(json!({
+                "subject_kind": "team",
+                "subject_id": Uuid::new_v4(),
+                "tag": "destructive",
+                "effect": "exclude",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

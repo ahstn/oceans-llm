@@ -11,6 +11,7 @@
         "**/*_tests.rs",
         "**/tests.rs",
         "**/tests/**",
+        "**/audit_tests/**",
         "**/test_support.rs",
         "crates/admin-ui/web/e2e/**",
         "crates/admin-ui/web/src/test/**",
@@ -378,6 +379,7 @@
         "crates/gateway-service/src/mcp_*/**",
         "crates/gateway-store/src/libsql_store/mcp_*.rs",
         "crates/gateway-store/src/any_store_mcp_*.rs",
+        "crates/gateway-store/src/mcp_*.rs",
         ".agents/skills/verify-oceans-admin/scripts/{drive-mcp,mcp-browser,mcp-canary}.mjs",
         ".agents/skills/verify-oceans-admin/examples/**",
         "crates/gateway-service/data/recommended_mcp_servers.json"

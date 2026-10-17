@@ -22,10 +22,12 @@ import type {
   McpEffectiveAccessPayload,
   McpGrantView,
   McpServerView,
+  McpTagRuleView,
   McpToolsetView,
   AdminTeamOption,
 } from '@/types/api'
 import { useToolCatalog } from './-catalog'
+import { TagRulesSection } from './-tag-rules'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
 
 const subjectKinds = [
@@ -61,11 +63,13 @@ export type AccessSubjects = {
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function AccessTab({
   grants,
+  tagRules,
   servers,
   toolsets,
   subjects,
 }: {
   grants: McpGrantView[]
+  tagRules: McpTagRuleView[]
   servers: McpServerView[]
   toolsets: McpToolsetView[]
   subjects: AccessSubjects
@@ -345,7 +349,8 @@ export function AccessTab({
         <div className="flex flex-col gap-1">
           <h3 className="font-medium">Grants</h3>
           <p className="text-subtle-foreground text-sm">
-            Explicit active grants for tools and toolsets.
+            Explicit active grants for tools and toolsets. Tag rules below can add or remove tools
+            on top of these.
           </p>
         </div>
         {grants.length === 0 ? (
@@ -386,6 +391,14 @@ export function AccessTab({
           </div>
         )}
       </section>
+
+      <TagRulesSection
+        rules={tagRules}
+        servers={servers}
+        tools={catalog.tools}
+        subjectKinds={subjectKinds}
+        subjectOptions={subjectOptions}
+      />
     </div>
   )
 }

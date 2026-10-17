@@ -182,7 +182,16 @@ where
         access.allowed_tools[0].input_schema,
         json!({"type": "object"})
     );
-    assert_eq!(access.allowed_tools[0].metadata, McpToolMetadata::default());
+    // The access projection keeps annotations for tag rules, but not the
+    // title or output schema.
+    assert_eq!(
+        access.allowed_tools[0].metadata,
+        McpToolMetadata {
+            title: None,
+            annotations: drive_search.metadata.annotations.clone(),
+            output_schema: None,
+        }
+    );
     assert_eq!(full.allowed_tools[0].metadata, drive_search.metadata);
 
     store

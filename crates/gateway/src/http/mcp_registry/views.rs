@@ -1,7 +1,11 @@
+use gateway_core::mcp_tool_policy::{
+    DESTRUCTIVE_HINT, EffectiveHints, IDEMPOTENT_HINT, OPEN_WORLD_HINT, READ_ONLY_HINT,
+    effective_tags,
+};
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
-    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolsetRecord,
-    McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+    McpAnnotationOverrides, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+    McpToolsetRecord, McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
 };
 use gateway_service::{
     McpDiscoveryResult, RecommendedMcpServerCatalogEntry, RedactedMcpCredentialBinding,
@@ -102,7 +106,17 @@ pub struct McpToolView {
     /// Schema of the tool's structured result, when the upstream declares one.
     #[schema(additional_properties = true)]
     output_schema: Option<Value>,
+    /// Hints as the upstream server declared them.
     annotations: McpToolAnnotationsView,
+    /// Hints an admin set. A missing value keeps the upstream's.
+    annotation_overrides: McpToolAnnotationsView,
+    /// Hints the gateway uses and serves: each override, else the upstream value.
+    effective_annotations: McpToolAnnotationsView,
+    /// Tags an admin attached to the tool.
+    admin_tags: Vec<String>,
+    /// Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)
+    /// plus admin tags. Tag rules match these.
+    effective_tags: Vec<String>,
     schema_hash: String,
     schema_version: i64,
     is_active: bool,
@@ -111,14 +125,43 @@ pub struct McpToolView {
     deactivated_at: Option<String>,
 }
 
-/// Behaviour hints declared by the upstream server. A missing value means the
-/// server did not declare the hint. Hints are not verified by the gateway.
-#[derive(Debug, Serialize, ToSchema)]
+/// The four behaviour hints. A missing value means the hint is not declared
+/// at this level. Upstream hints are not verified by the gateway.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct McpToolAnnotationsView {
-    read_only_hint: Option<bool>,
-    destructive_hint: Option<bool>,
-    idempotent_hint: Option<bool>,
-    open_world_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) read_only_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) destructive_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) idempotent_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) open_world_hint: Option<bool>,
+}
+
+impl McpToolAnnotationsView {
+    fn from_hints(hint: impl Fn(&str) -> Option<bool>) -> Self {
+        Self {
+            read_only_hint: hint(READ_ONLY_HINT),
+            destructive_hint: hint(DESTRUCTIVE_HINT),
+            idempotent_hint: hint(IDEMPOTENT_HINT),
+            open_world_hint: hint(OPEN_WORLD_HINT),
+        }
+    }
+
+    pub(super) fn overrides(overrides: &McpAnnotationOverrides) -> Self {
+        Self::from_hints(|name| overrides.get(name))
+    }
+
+    pub(super) fn to_overrides(&self) -> McpAnnotationOverrides {
+        McpAnnotationOverrides {
+            read_only: self.read_only_hint,
+            destructive: self.destructive_hint,
+            idempotent: self.idempotent_hint,
+            open_world: self.open_world_hint,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -529,6 +572,8 @@ pub(super) fn map_credential_binding(
 }
 
 pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
+    let effective = EffectiveHints::of(&tool);
+    let effective_tags = effective_tags(&tool).into_iter().collect();
     McpToolView {
         id: tool.mcp_tool_id.to_string(),
         server_id: tool.mcp_server_id.to_string(),
@@ -536,12 +581,16 @@ pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
         display_name: tool.display_name,
         description: tool.description,
         input_schema: tool.input_schema,
-        annotations: McpToolAnnotationsView {
-            read_only_hint: tool.metadata.hint("readOnlyHint"),
-            destructive_hint: tool.metadata.hint("destructiveHint"),
-            idempotent_hint: tool.metadata.hint("idempotentHint"),
-            open_world_hint: tool.metadata.hint("openWorldHint"),
+        annotations: McpToolAnnotationsView::from_hints(|name| tool.metadata.hint(name)),
+        annotation_overrides: McpToolAnnotationsView::overrides(&tool.policy.annotation_overrides),
+        effective_annotations: McpToolAnnotationsView {
+            read_only_hint: effective.read_only,
+            destructive_hint: effective.destructive,
+            idempotent_hint: effective.idempotent,
+            open_world_hint: effective.open_world,
         },
+        admin_tags: tool.policy.tags,
+        effective_tags,
         title: tool.metadata.title,
         output_schema: tool.metadata.output_schema,
         schema_hash: tool.schema_hash,

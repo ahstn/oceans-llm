@@ -1063,6 +1063,27 @@ pub trait McpRegistryRepository: Send + Sync {
         &self,
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError>;
+
+    /// Loads one tool, including an inactive one.
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's admin tags. Nothing is written when they already match.
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's annotation overrides. Nothing is written when they
+    /// already match. Overrides never change the schema hash or version.
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -1158,6 +1179,33 @@ pub trait McpAccessRepository: Send + Sync {
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Creates the rule. The flag is `true` when this call created the active
+    /// rule, and `false` when an identical rule was already active.
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &crate::mcp_tool_policy::McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(crate::mcp_tool_policy::McpToolTagRuleRecord, bool), StoreError>;
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Revokes the active rule and returns it as it was, or `None` when no
+    /// active rule has that id.
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
 }
 
 #[async_trait]

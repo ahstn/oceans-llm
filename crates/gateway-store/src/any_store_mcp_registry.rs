@@ -127,4 +127,44 @@ impl McpRegistryRepository for AnyStore {
             Self::Postgres(store) => store.record_external_mcp_discovery_failure(run).await,
         }
     }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+            Self::Postgres(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+        }
+    }
+
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.set_mcp_tool_tags(mcp_tool_id, tags).await,
+            Self::Postgres(store) => store.set_mcp_tool_tags(mcp_tool_id, tags).await,
+        }
+    }
+
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &gateway_core::McpAnnotationOverrides,
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .set_mcp_tool_annotation_overrides(mcp_tool_id, overrides)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .set_mcp_tool_annotation_overrides(mcp_tool_id, overrides)
+                    .await
+            }
+        }
+    }
 }
