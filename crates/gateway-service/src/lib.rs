@@ -26,6 +26,7 @@ pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
+pub mod outbound_fetch;
 mod payload_bounding;
 pub mod pricing_catalog;
 pub mod provider_credentials;
@@ -93,9 +94,9 @@ pub use mcp_catalog::{
 };
 pub use mcp_client_oauth::{
     AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
-    ClientRegistrationRequest, ClientRegistrationResponse, McpClientOauthService,
-    McpClientOauthSettings, McpClientOauthSettingsError, OauthError, PendingAuthorization,
-    TokenRequest, TokenResponse,
+    ClientMetadataDocumentSource, ClientMetadataDocuments, ClientRegistrationRequest,
+    ClientRegistrationResponse, FetchedDocument, McpClientOauthService, McpClientOauthSettings,
+    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,

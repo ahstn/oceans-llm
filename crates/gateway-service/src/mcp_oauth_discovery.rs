@@ -6,22 +6,26 @@
 //! protected-resource metadata (RFC 9728). That metadata names the
 //! authorization server, whose metadata comes from RFC 8414 with OpenID
 //! Connect discovery as a fallback.
-
-use std::time::Duration;
+//!
+//! Every URL after the admin-entered server URL comes from the upstream, so
+//! requests go through an [`OutboundFetcher`] scoped to the server's own
+//! address class: a public server cannot point the gateway at private or
+//! loopback addresses.
 
 use gateway_core::GatewayError;
 use reqwest::{
-    StatusCode,
+    Method, StatusCode,
     header::{ACCEPT, CONTENT_TYPE, WWW_AUTHENTICATE},
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use url::Url;
 
-use crate::mcp_upstream_auth::McpOauthTokenEndpointAuthMethod;
+use crate::{
+    mcp_upstream_auth::McpOauthTokenEndpointAuthMethod,
+    outbound_fetch::{OutboundFetchError, OutboundFetcher, OutboundResponse},
+};
 
-const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_METADATA_BYTES: usize = 256 * 1024;
 const CLIENT_NAME: &str = "Oceans LLM Gateway";
 
 /// What OAuth metadata discovery found for an MCP server URL.
@@ -215,39 +219,22 @@ struct AuthorizationServerMetadata {
 }
 
 /// Discovers how to authorize against the MCP server at `server_url`.
+///
+/// `http` must be scoped for `server_url`, as
+/// [`crate::outbound_fetch::OutboundAddressScope::of_trusted_url`] picks it.
 pub async fn discover_mcp_oauth(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     server_url: &str,
-) -> Result<McpOauthDiscovery, GatewayError> {
-    discover_mcp_oauth_with(http, server_url, false).await
-}
-
-/// Like [`discover_mcp_oauth`]. With `public_only`, every URL the gateway
-/// fetches or will call, including ones the upstream supplies, must reach a
-/// public address; team admins run discovery this way.
-pub async fn discover_mcp_oauth_with(
-    http: &reqwest::Client,
-    server_url: &str,
-    public_only: bool,
 ) -> Result<McpOauthDiscovery, GatewayError> {
     let server = Url::parse(server_url)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    ensure_fetchable(&server, &server, "server_url")?;
-    let check = |url: Url| async move {
-        if public_only {
-            crate::mcp_ownership::require_public_destination(&url).await
-        } else {
-            Ok(())
-        }
-    };
-    check(server.clone()).await?;
+    ensure_fetchable(http, &server, "server_url")?;
     let mut warnings = Vec::new();
     let challenge = probe_challenge(http, &server).await;
 
     let mut resource_metadata = None;
     for candidate in protected_resource_metadata_urls(&server, challenge.as_ref())? {
-        ensure_fetchable(&candidate, &server, "resource_metadata")?;
-        check(candidate.clone()).await?;
+        ensure_fetchable(http, &candidate, "resource_metadata")?;
         if let Some(metadata) = fetch_json::<ProtectedResourceMetadata>(http, &candidate).await? {
             resource_metadata = Some((candidate, metadata));
             break;
@@ -309,9 +296,7 @@ pub async fn discover_mcp_oauth_with(
             "authorization server `{issuer}` is invalid: {error}"
         ))
     })?;
-    ensure_fetchable(&issuer_url, &server, "authorization server")?;
-    // Every metadata candidate is on the issuer's host.
-    check(issuer_url.clone()).await?;
+    ensure_fetchable(http, &issuer_url, "authorization server")?;
     let mut server_metadata = None;
     for candidate in authorization_server_metadata_urls(&issuer_url) {
         if let Some(metadata) = fetch_json::<AuthorizationServerMetadata>(http, &candidate).await? {
@@ -341,7 +326,7 @@ pub async fn discover_mcp_oauth_with(
         let parsed = Url::parse(&value).map_err(|error| {
             GatewayError::InvalidRequest(format!("{field} is invalid: {error}"))
         })?;
-        ensure_fetchable(&parsed, &server, field)?;
+        ensure_fetchable(http, &parsed, field)?;
         Ok(value)
     };
     let authorization_endpoint =
@@ -351,12 +336,6 @@ pub async fn discover_mcp_oauth_with(
         .registration_endpoint
         .map(|value| endpoint(Some(value), "registration_endpoint"))
         .transpose()?;
-    // The gateway calls these when users connect, so they are held to the same rule.
-    for called in std::iter::once(&token_endpoint).chain(registration_endpoint.as_ref()) {
-        if let Ok(url) = Url::parse(called) {
-            check(url).await?;
-        }
-    }
     if !metadata.response_types_supported.is_empty()
         && !metadata
             .response_types_supported
@@ -446,10 +425,10 @@ pub fn choose_token_endpoint_auth_method(supported: &[String]) -> McpOauthTokenE
     .unwrap_or(McpOauthTokenEndpointAuthMethod::ClientSecretBasic)
 }
 
-async fn probe_challenge(http: &reqwest::Client, server: &Url) -> Option<BearerChallenge> {
-    let response = http
-        .post(server.clone())
-        .timeout(METADATA_TIMEOUT)
+async fn probe_challenge(http: &OutboundFetcher, server: &Url) -> Option<BearerChallenge> {
+    let request = http
+        .request(Method::POST, server)
+        .ok()?
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json, text/event-stream")
         .json(&json!({
@@ -461,10 +440,8 @@ async fn probe_challenge(http: &reqwest::Client, server: &Url) -> Option<BearerC
                 "capabilities": {},
                 "clientInfo": {"name": "oceans-llm", "version": env!("CARGO_PKG_VERSION")}
             }
-        }))
-        .send()
-        .await
-        .ok()?;
+        }));
+    let response = http.send(request).await.ok()?;
     if !matches!(
         response.status(),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
@@ -522,73 +499,62 @@ fn well_known_url(base: &Url, name: &str, path: &str) -> Url {
     url
 }
 
-/// Metadata URLs come from the upstream, so they must use https. Plain http
-/// is allowed only for loopback hosts when the MCP server is on loopback too,
-/// which keeps a remote server from pointing the gateway at local services.
-fn ensure_fetchable(url: &Url, server: &Url, field: &str) -> Result<(), GatewayError> {
-    let allowed = match url.scheme() {
-        "https" => url.host().is_some(),
-        "http" => is_loopback(url) && is_loopback(server),
-        _ => false,
-    };
-    if !allowed || !url.username().is_empty() || url.password().is_some() {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{field} must be an https URL"
-        )));
-    }
-    Ok(())
+/// Metadata URLs come from the upstream, so each one must pass the
+/// fetcher's own rules: https, or plain http to loopback when the MCP server
+/// is on loopback too, and an address within the server's scope. Naming the
+/// field tells the admin which URL was refused. The authorization endpoint
+/// is never fetched, but follows the same rule.
+fn ensure_fetchable(http: &OutboundFetcher, url: &Url, field: &str) -> Result<(), GatewayError> {
+    http.check_url(url).map_err(|error| {
+        GatewayError::InvalidRequest(format!(
+            "{field} is not allowed: {error}{}",
+            private_network_hint(&error)
+        ))
+    })
 }
 
-fn is_loopback(url: &Url) -> bool {
-    match url.host() {
-        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        None => false,
-    }
-}
-
-/// Fetches a metadata document. `Ok(None)` means it is not published there.
+/// Fetches a metadata document. `Ok(None)` means it is not published there,
+/// or the host could not be reached. A URL the fetcher refuses is an error,
+/// so the admin learns why discovery stopped.
 async fn fetch_json<T: serde::de::DeserializeOwned>(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     url: &Url,
 ) -> Result<Option<T>, GatewayError> {
-    let Ok(response) = http
-        .get(url.clone())
-        .timeout(METADATA_TIMEOUT)
-        .header(ACCEPT, "application/json")
-        .send()
-        .await
-    else {
-        return Ok(None);
+    let response = match http.get(url, "application/json").await {
+        Ok(response) => response,
+        Err(error) if error.is_transient() => return Ok(None),
+        Err(error) => return Err(fetch_error(url, &error)),
     };
     if response.status() != StatusCode::OK {
         return Ok(None);
     }
-    let body = read_limited(response).await?;
+    let body = read_body(url, response).await?;
     serde_json::from_slice(&body).map(Some).map_err(|_| {
         GatewayError::InvalidRequest(format!("OAuth metadata at {url} is not valid JSON"))
     })
 }
 
-async fn read_limited(mut response: reqwest::Response) -> Result<Vec<u8>, GatewayError> {
-    let mut body = Vec::new();
-    loop {
-        let chunk = response.chunk().await.map_err(|error| {
-            GatewayError::InvalidRequest(format!(
-                "OAuth metadata request failed: {}",
-                error.without_url()
-            ))
-        })?;
-        let Some(chunk) = chunk else {
-            return Ok(body);
-        };
-        if body.len() + chunk.len() > MAX_METADATA_BYTES {
-            return Err(GatewayError::InvalidRequest(
-                "OAuth metadata response is too large".to_string(),
-            ));
-        }
-        body.extend_from_slice(&chunk);
+async fn read_body(url: &Url, response: OutboundResponse) -> Result<Vec<u8>, GatewayError> {
+    response
+        .body()
+        .await
+        .map_err(|error| fetch_error(url, &error))
+}
+
+fn fetch_error(url: &Url, error: &OutboundFetchError) -> GatewayError {
+    GatewayError::InvalidRequest(format!(
+        "OAuth metadata at {url} cannot be fetched: {error}{}",
+        private_network_hint(error)
+    ))
+}
+
+/// A blocked address is usually an internal server the admin has not listed
+/// as private, so say how to allow it.
+fn private_network_hint(error: &OutboundFetchError) -> &'static str {
+    if matches!(error, OutboundFetchError::BlockedAddress { .. }) {
+        ". If the MCP server runs on a private network, list its host under mcp.oauth.private_network_hosts"
+    } else {
+        ""
     }
 }
 
@@ -629,8 +595,10 @@ struct RegistrationResponse {
 }
 
 /// Registers Oceans as an OAuth client (RFC 7591).
+///
+/// `http` must be scoped for the MCP server the registration is for.
 pub async fn register_oauth_client(
-    http: &reqwest::Client,
+    http: &OutboundFetcher,
     registration_endpoint: &str,
     redirect_uri: &str,
     requested_method: McpOauthTokenEndpointAuthMethod,
@@ -646,21 +614,23 @@ pub async fn register_oauth_client(
     if !scopes.is_empty() {
         request["scope"] = json!(scopes.join(" "));
     }
-    let response = http
-        .post(registration_endpoint)
-        .timeout(METADATA_TIMEOUT)
+    let endpoint = Url::parse(registration_endpoint).map_err(|error| {
+        GatewayError::InvalidRequest(format!("registration_endpoint is invalid: {error}"))
+    })?;
+    let registration_failed = |error: OutboundFetchError| {
+        GatewayError::InvalidRequest(format!(
+            "dynamic client registration failed: {error}{}",
+            private_network_hint(&error)
+        ))
+    };
+    let request = http
+        .request(Method::POST, &endpoint)
+        .map_err(registration_failed)?
         .header(ACCEPT, "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!(
-                "dynamic client registration failed: {}",
-                error.without_url()
-            ))
-        })?;
+        .json(&request);
+    let response = http.send(request).await.map_err(registration_failed)?;
     let status = response.status();
-    let body = read_limited(response).await?;
+    let body = response.body().await.map_err(registration_failed)?;
     let parsed: Option<RegistrationResponse> = serde_json::from_slice(&body).ok();
     if !status.is_success() {
         // Only the RFC 7591 error code is surfaced; descriptions can echo
