@@ -3035,20 +3035,27 @@ pub(crate) mod tests {
         // that binding changed in between, it is refused and nothing is written.
         let mut replace = binding(current.clone().with_server_url(&server.server_url));
         replace.credential_binding_id = Some(kept.credential_binding_id);
-        replace.expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+        replace.expected_replaced = Some(Some(gateway_core::McpCredentialBindingPin {
             mcp_server_id: server.mcp_server_id,
             owner_scope_key: "mcp_credential:v1:user:someone-else".to_string(),
             uses_secret_ref: true,
-        });
+        }));
         assert!(matches!(
             store.upsert_mcp_upstream_credential_binding(&replace).await,
             Err(StoreError::Conflict(_))
         ));
-        replace.expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+        // An ID checked as free is refused once a binding has it, so a binding
+        // created with it meanwhile is not overwritten.
+        replace.expected_replaced = Some(None);
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&replace).await,
+            Err(StoreError::Conflict(_))
+        ));
+        replace.expected_replaced = Some(Some(gateway_core::McpCredentialBindingPin {
             mcp_server_id: kept.mcp_server_id,
             owner_scope_key: kept.owner_scope_key.clone(),
             uses_secret_ref: kept.secret_ref.is_some(),
-        });
+        }));
         let (_, replaced) = store
             .upsert_mcp_upstream_credential_binding(&replace)
             .await

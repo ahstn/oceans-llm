@@ -2118,10 +2118,13 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     /// When set, the write is conditional on the binding's server, as
     /// [`McpServerOwnershipGuard`] describes.
     pub expected_server: Option<McpServerOwnershipGuard>,
-    /// For a replacement, the binding the caller was authorized to replace.
-    /// The store compares it with the row it locks, so a concurrent change to
-    /// that binding makes the replacement a conflict.
-    pub expected_replaced: Option<McpCredentialBindingPin>,
+    /// For a write naming `credential_binding_id`, what the caller was
+    /// authorized against: `Some(Some(pin))` the binding it replaces, and
+    /// `Some(None)` that no binding has the ID, so the write is a create. The
+    /// store compares it with the row it locks, so a binding changed, or
+    /// created with that ID, meanwhile makes the write a conflict. `None`
+    /// skips the check.
+    pub expected_replaced: Option<Option<McpCredentialBindingPin>>,
 }
 
 /// What a replacement's authorization relied on in the binding it replaces.

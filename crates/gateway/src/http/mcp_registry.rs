@@ -121,12 +121,37 @@ pub async fn list_mcp_servers(
     headers: HeaderMap,
     Query(query): Query<McpServersQuery>,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
-    let scope = match require_mcp_viewer(&state, &headers).await? {
-        McpViewer::Admin(scope) => scope,
-        McpViewer::Member { user_id, team_id } => {
-            return list_member_servers(&state, user_id, team_id, &query).await;
+    // An admin's list shows full settings for the servers their scope manages,
+    // so the scope is checked again after the reads: an admin who left or
+    // changed team meanwhile gets the list for the viewer they are now.
+    for _ in 0..3 {
+        let scope = match require_mcp_viewer(&state, &headers).await? {
+            McpViewer::Admin(scope) => scope,
+            McpViewer::Member { user_id, team_id } => {
+                return list_member_servers(&state, user_id, team_id, &query).await;
+            }
+        };
+        let listed = list_admin_servers(&state, scope, &query).await?;
+        if matches!(
+            require_mcp_viewer(&state, &headers).await?,
+            McpViewer::Admin(current) if current == scope
+        ) {
+            return Ok(listed);
         }
-    };
+    }
+    Err(AppError(GatewayError::Store(
+        gateway_core::StoreError::Conflict(
+            "your MCP access kept changing while servers were listed; try again".to_string(),
+        ),
+    )))
+}
+
+/// The registry as `scope` sees it.
+async fn list_admin_servers(
+    state: &AppState,
+    scope: McpAdminScope,
+    query: &McpServersQuery,
+) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
     // The owner filter runs in the store query; visibility is still the caller's.
@@ -147,10 +172,10 @@ pub async fn list_mcp_servers(
     .into_iter()
     .filter(|server| scope.can_view(server))
     .collect();
-    let items = present_servers(&state, &scope, servers).await?;
+    let items = present_servers(state, &scope, servers).await?;
     Ok(Json(envelope(McpServersPayload {
         items,
-        can_publish_to_organisation: ownership(&state).can_publish(&scope),
+        can_publish_to_organisation: ownership(state).can_publish(&scope),
     })))
 }
 
@@ -1267,8 +1292,10 @@ pub async fn upsert_mcp_credential_binding(
         )
         .await?;
     let service = McpCredentialService::new(state.store.clone());
-    // Replacing a binding by id must not reach one the caller could not set.
-    let mut expected_replaced = None;
+    // Replacing a binding by id must not reach one the caller could not set. A
+    // caller-chosen ID that names no binding is pinned as absent, so a binding
+    // created with it meanwhile is not overwritten on this authorization.
+    let mut expected_replaced = request.credential_binding_id.map(|_| None);
     if let Some(binding_id) = request.credential_binding_id
         && let Some(existing) = find_credential_binding(&service, binding_id).await?
     {
@@ -1296,11 +1323,11 @@ pub async fn upsert_mcp_credential_binding(
             .await?;
         // The store compares this with the row it locks, so a concurrent change
         // to the binding cannot be overwritten on this authorization.
-        expected_replaced = Some(gateway_core::McpCredentialBindingPin {
+        expected_replaced = Some(Some(gateway_core::McpCredentialBindingPin {
             mcp_server_id: existing.mcp_server_id,
             owner_scope_key: existing.owner_scope_key.clone(),
             uses_secret_ref: existing.secret_ref.is_some(),
-        });
+        }));
     }
     // The store reports whether its write replaced a binding: a caller-chosen ID
     // that does not exist yet is inserted, so it is a create.
@@ -1319,12 +1346,12 @@ pub async fn upsert_mcp_credential_binding(
             expires_at: request.expires_at,
             metadata: request.metadata,
             // As for grants: written only while the server keeps the owner and
-            // visibility the binding was authorized against.
-            // Pinned to the URL too, so a retarget that lands first refuses
-            // the write rather than store a credential for a new destination.
-            expected_server: Some(
-                McpServerOwnershipGuard::of(&server).with_server_url(&server.server_url),
-            ),
+            // visibility the binding was authorized against. Pinned to the URL
+            // and auth settings too, so a retarget or a new token endpoint that
+            // lands first refuses the write, rather than store a credential for
+            // a destination it was not checked against, or OAuth tokens the
+            // change's own revoke has already passed over.
+            expected_server: Some(McpServerOwnershipGuard::of(&server).with_auth_settings(&server)),
             expected_replaced,
         })
         .await?;

@@ -74,16 +74,16 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
         ) resolved
         WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
         "#,
-        ssa_budget = service_account_budget_sql("ssa"),
-        ksa_budget = service_account_budget_sql("ksa"),
+        ssa_budget = funded_sql("ssa"),
+        ksa_budget = funded_sql("ksa"),
     )
 }
 
-/// Whether the service account aliased `account` has an active budget, keyed
-/// as `BudgetScope::ServiceAccount` keys it.
-fn service_account_budget_sql(account: &str) -> String {
+/// Whether the service account aliased `owner` has an active budget, keyed as
+/// `BudgetScope::ServiceAccount` keys it.
+fn funded_sql(owner: &str) -> String {
     format!(
-        "EXISTS (SELECT 1 FROM budgets b WHERE b.scope_key = 'budget:v1:service_account:' || {account}.service_account_id AND b.is_active = 1)"
+        "EXISTS (SELECT 1 FROM budgets b WHERE b.scope_key = 'budget:v1:service_account:' || {owner}.service_account_id AND b.is_active = 1)"
     )
 }
 

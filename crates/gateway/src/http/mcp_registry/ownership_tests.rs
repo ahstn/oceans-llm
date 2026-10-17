@@ -2058,3 +2058,37 @@ async fn the_member_catalog_follows_the_team_the_member_is_in_now() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn a_caller_chosen_credential_id_is_created_once() {
+    let _key = CredentialKeyGuard::new();
+    let context = TestContext::new().await;
+    let own = context
+        .server(
+            "chosen-id",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let chosen = Uuid::new_v4();
+    let body = json!({
+        "credential_binding_id": chosen,
+        "server_id": own.id,
+        "owner_scope_kind": "team",
+        "owner_team_id": context.team_a,
+        "material_kind": "bearer_token",
+        "secret": "team-shared-token",
+    });
+    // The ID names no binding, so the write is pinned as a create and lands.
+    assert_eq!(
+        context.bind_credential(&admin, body.clone()).await,
+        StatusCode::OK
+    );
+    let entry = context.last_audit("mcp_credential_binding.set").await;
+    assert_eq!(entry.target_id, Some(chosen.to_string()));
+    assert_eq!(entry.metadata["operation"], "create");
+    // Now it names one, so the same request is a replacement of it.
+    assert_eq!(context.bind_credential(&admin, body).await, StatusCode::OK);
+    let entry = context.last_audit("mcp_credential_binding.set").await;
+    assert_eq!(entry.metadata["operation"], "replace");
+}

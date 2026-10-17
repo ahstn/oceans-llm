@@ -139,10 +139,12 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         } else {
             None
         };
-        if let Some(pin) = &input.expected_replaced
-            && !previous
-                .as_ref()
-                .is_some_and(|previous| pin.matches(previous))
+        if let Some(expected) = &input.expected_replaced
+            && !match (expected, &previous) {
+                (Some(pin), Some(previous)) => pin.matches(previous),
+                (None, None) => true,
+                _ => false,
+            }
         {
             return Err(StoreError::Conflict(format!(
                 "credential binding `{id}` changed since it was checked; reload and try again"

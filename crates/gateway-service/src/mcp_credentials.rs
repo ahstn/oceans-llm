@@ -75,7 +75,7 @@ pub struct UpsertMcpCredentialBindingInput {
     /// The binding a replacement was authorized against; see
     /// [`gateway_core::McpCredentialBindingPin`].
     #[serde(skip)]
-    pub expected_replaced: Option<gateway_core::McpCredentialBindingPin>,
+    pub expected_replaced: Option<Option<gateway_core::McpCredentialBindingPin>>,
 }
 
 #[derive(Clone)]
