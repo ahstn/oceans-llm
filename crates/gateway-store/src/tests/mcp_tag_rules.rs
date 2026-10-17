@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpToolRecord, ExternalMcpTransport, McpAccessRepository,
@@ -487,6 +489,61 @@ async fn libsql_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+
+    // The index the writes maintain, and the migration's backfill run again
+    // from scratch, both hold exactly `effective_tags` for every tool.
+    let expected = expected_effective_tags(&store).await;
+    assert_eq!(libsql_effective_tags(&store).await, expected);
+    store
+        .connection()
+        .execute("DELETE FROM mcp_tool_effective_tags", ())
+        .await
+        .expect("clear tags");
+    store
+        .connection()
+        .execute_batch(include_str!(
+            "../../migrations/V69__mcp_tool_effective_tags.sql"
+        ))
+        .await
+        .expect("backfill");
+    assert_eq!(libsql_effective_tags(&store).await, expected);
+}
+
+async fn libsql_effective_tags(store: &LibsqlStore) -> BTreeSet<(String, String)> {
+    let mut rows = store
+        .connection()
+        .query("SELECT mcp_tool_id, tag FROM mcp_tool_effective_tags", ())
+        .await
+        .expect("tags");
+    let mut tags = BTreeSet::new();
+    while let Some(row) = rows.next().await.expect("row") {
+        tags.insert((row.get(0).expect("id"), row.get(1).expect("tag")));
+    }
+    tags
+}
+
+/// `(tool id, tag)` for every tool's `effective_tags`.
+async fn expected_effective_tags<S>(store: &S) -> BTreeSet<(String, String)>
+where
+    S: McpRegistryRepository + Sync,
+{
+    let mut expected = BTreeSet::new();
+    for server in store
+        .list_external_mcp_servers(true)
+        .await
+        .expect("servers")
+    {
+        for tool in store
+            .list_external_mcp_tools(server.mcp_server_id, true)
+            .await
+            .expect("tools")
+        {
+            for tag in gateway_core::mcp_tool_policy::effective_tags(&tool) {
+                expected.insert((tool.mcp_tool_id.to_string(), tag));
+            }
+        }
+    }
+    expected
 }
 
 #[tokio::test]
@@ -506,6 +563,30 @@ async fn postgres_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+
+    let expected = expected_effective_tags(&store).await;
+    let read = || async {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT mcp_tool_id, tag FROM mcp_tool_effective_tags",
+        )
+        .fetch_all(store.pool())
+        .await
+        .expect("tags")
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+    };
+    assert_eq!(read().await, expected);
+    sqlx::query("DELETE FROM mcp_tool_effective_tags")
+        .execute(store.pool())
+        .await
+        .expect("clear tags");
+    sqlx::raw_sql(include_str!(
+        "../../migrations/postgres/V69__mcp_tool_effective_tags.sql"
+    ))
+    .execute(store.pool())
+    .await
+    .expect("backfill");
+    assert_eq!(read().await, expected);
     drop(store);
     drop_postgres_test_database(&test_db).await;
 }

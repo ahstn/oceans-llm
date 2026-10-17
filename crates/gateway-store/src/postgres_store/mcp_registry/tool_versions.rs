@@ -1,6 +1,7 @@
 //! Tool version persistence: the discovery snapshot, version rows, and the
 //! SQL for each shared `VersionOp`.
 use super::*;
+use gateway_core::mcp_tool_policy::effective_tags;
 
 pub(super) const VERSION_COLUMNS: &str = "mcp_tool_id, schema_version, schema_hash, description, input_schema_json::text, title, annotations_json::text, output_schema_json::text, status, discovered_at, reviewed_at, reviewed_by_user_id";
 
@@ -293,7 +294,10 @@ pub(super) async fn apply_version_op(
         VersionOp::WriteDefinition {
             definition,
             version,
-        } => write_tool_definition(conn, mcp_tool_id, definition, *version).await,
+        } => {
+            write_tool_definition(conn, mcp_tool_id, definition, *version).await?;
+            refresh_effective_tags(conn, mcp_tool_id).await
+        }
         VersionOp::RewriteVersion {
             definition,
             version,
@@ -428,7 +432,8 @@ pub(super) async fn apply_tool_write(
         } else {
             McpToolVersionStatus::Pending
         };
-        return insert_version(conn, id, 1, &definition, version_status, discovered_at).await;
+        insert_version(conn, id, 1, &definition, version_status, discovered_at).await?;
+        return refresh_effective_tags(conn, id).await;
     };
     let id = existing.tool.mcp_tool_id;
     // Every discovered tool is active again and keeps its latest display name.
@@ -449,5 +454,43 @@ pub(super) async fn apply_tool_write(
     for op in tool_write_ops(write, &definition, discovered_at) {
         apply_version_op(conn, id, &op).await?;
     }
+    Ok(())
+}
+
+/// Rewrites a tool's effective tag rows from its stored row, after anything
+/// that changes its annotations, overrides or admin tags.
+pub(super) async fn refresh_effective_tags(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+) -> Result<(), StoreError> {
+    let row = sqlx::query(&format!(
+        "SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = $1"
+    ))
+    .bind(mcp_tool_id.to_string())
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    sync_effective_tags(conn, &decode_tool(&row)?).await
+}
+
+/// Replaces the tool's effective tag rows with `effective_tags(tool)`.
+pub(super) async fn sync_effective_tags(
+    conn: &mut sqlx::PgConnection,
+    tool: &ExternalMcpToolRecord,
+) -> Result<(), StoreError> {
+    let id = tool.mcp_tool_id.to_string();
+    sqlx::query("DELETE FROM mcp_tool_effective_tags WHERE mcp_tool_id = $1")
+        .bind(&id)
+        .execute(&mut *conn)
+        .await
+        .map_err(to_write_error)?;
+    sqlx::query(
+        "INSERT INTO mcp_tool_effective_tags (mcp_tool_id, tag) SELECT $1, tag FROM UNNEST($2::text[]) AS tags(tag)",
+    )
+    .bind(&id)
+    .bind(effective_tags(tool).into_iter().collect::<Vec<_>>())
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
     Ok(())
 }

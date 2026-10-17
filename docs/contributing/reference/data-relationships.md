@@ -171,6 +171,9 @@ Model-centric overlays:
 - `mcp_tool_tag_rules`
   - Key columns: `rule_id`, `subject_kind`, `subject_id`, `server_scope`, `tag`, `effect`, `is_active`, `created_at`, `updated_at`, `revoked_at`
   - Notes: `effect` is `include` or `exclude`. `server_scope` is a server ID, or `*` for every server, which only exclude rules may use. One active rule exists per subject, scope, tag and effect. Rules are revoked, not deleted. See [ADR: MCP Tag Grants, Annotation Overrides, and Tool Versioning](../../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
+- `mcp_tool_effective_tags`
+  - Key columns: `mcp_tool_id`, `tag`
+  - Notes: each tool's effective tags (derived from its served annotations and admin overrides, plus admin tags), indexed by `(tag, mcp_tool_id)` so include tag rules select tools without scanning a server. The store rewrites a tool's rows whenever its definition or policy changes.
 - `external_mcp_discovery_runs`
   - Key columns: `discovery_run_id`, `mcp_server_id`, `status`, `started_at`, `finished_at`, `discovered_tool_count`, `active_tool_count`, `schema_set_hash`, `error_summary`, `details_json`
   - Notes: diagnostics are bounded and must not contain raw tokens or user credentials.

@@ -726,6 +726,7 @@ impl PostgresStore {
         .await
         .map_err(to_write_error)?;
         let current = decode_tool(&row)?;
+        sync_effective_tags(&mut tx, &current).await?;
         tx.commit().await.map_err(to_write_error)?;
         Ok(Updated {
             current,

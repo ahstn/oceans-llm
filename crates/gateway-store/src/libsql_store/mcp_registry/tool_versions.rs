@@ -1,6 +1,7 @@
 //! Tool version persistence: the discovery snapshot, version rows, and the
 //! SQL for each shared `VersionOp`.
 use super::*;
+use gateway_core::mcp_tool_policy::effective_tags;
 
 pub(super) const VERSION_COLUMNS: &str = "mcp_tool_id, schema_version, schema_hash, description, input_schema_json, title, annotations_json, output_schema_json, status, discovered_at, reviewed_at, reviewed_by_user_id";
 
@@ -340,7 +341,10 @@ pub(super) async fn apply_version_op(
         VersionOp::WriteDefinition {
             definition,
             version,
-        } => write_tool_definition(connection, mcp_tool_id, definition, *version).await,
+        } => {
+            write_tool_definition(connection, mcp_tool_id, definition, *version).await?;
+            refresh_effective_tags(connection, mcp_tool_id).await
+        }
         VersionOp::RewriteVersion {
             definition,
             version,
@@ -480,7 +484,7 @@ pub(super) async fn apply_tool_write(
         } else {
             McpToolVersionStatus::Pending
         };
-        return insert_version(
+        insert_version(
             connection,
             id,
             1,
@@ -488,7 +492,8 @@ pub(super) async fn apply_tool_write(
             version_status,
             discovered_at,
         )
-        .await;
+        .await?;
+        return refresh_effective_tags(connection, id).await;
     };
     let id = existing.tool.mcp_tool_id;
     // Every discovered tool is active again and keeps its latest display name.
@@ -507,5 +512,49 @@ pub(super) async fn apply_tool_write(
     for op in tool_write_ops(write, &definition, discovered_at) {
         apply_version_op(connection, id, &op).await?;
     }
+    Ok(())
+}
+
+/// Rewrites a tool's effective tag rows from its stored row, after anything
+/// that changes its annotations, overrides or admin tags.
+pub(super) async fn refresh_effective_tags(
+    connection: &libsql::Connection,
+    mcp_tool_id: Uuid,
+) -> Result<(), StoreError> {
+    let tool = find_tool(connection, mcp_tool_id)
+        .await?
+        .ok_or_else(|| StoreError::Unexpected(format!("MCP tool `{mcp_tool_id}` disappeared")))?;
+    sync_effective_tags(connection, &tool).await
+}
+
+/// Replaces the tool's effective tag rows with `effective_tags(tool)`.
+pub(super) async fn sync_effective_tags(
+    connection: &libsql::Connection,
+    tool: &ExternalMcpToolRecord,
+) -> Result<(), StoreError> {
+    let id = tool.mcp_tool_id.to_string();
+    connection
+        .execute(
+            "DELETE FROM mcp_tool_effective_tags WHERE mcp_tool_id = ?1",
+            [id.as_str()],
+        )
+        .await
+        .map_err(to_write_error)?;
+    let tags = effective_tags(tool);
+    if tags.is_empty() {
+        return Ok(());
+    }
+    let values = (0..tags.len())
+        .map(|index| format!("(?1, ?{})", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let params = std::iter::once(id).chain(tags);
+    connection
+        .execute(
+            &format!("INSERT INTO mcp_tool_effective_tags (mcp_tool_id, tag) VALUES {values}"),
+            libsql::params_from_iter(params),
+        )
+        .await
+        .map_err(to_write_error)?;
     Ok(())
 }

@@ -737,6 +737,7 @@ impl LibsqlStore {
         let current = find_tool(&tx, mcp_tool_id).await?.ok_or_else(|| {
             StoreError::Unexpected("MCP tool disappeared during update".to_string())
         })?;
+        sync_effective_tags(&tx, &current).await?;
         tx.commit().await.map_err(to_write_error)?;
         Ok(Updated {
             current,

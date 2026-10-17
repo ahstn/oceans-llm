@@ -554,9 +554,8 @@ impl McpAccessRepository for PostgresStore {
             collect_catalog_toolset_tools(&self.pool, subject, server_key, &mut tools_by_id)
                 .await?;
         }
-        let include_servers = rules.include_server_ids(None);
-        let matched =
-            include_rule_matches(&self.pool, &include_servers, server_key, None, &rules).await?;
+        let selectors = rules.include_selectors(None);
+        let matched = include_rule_matches(&self.pool, &selectors, server_key, None).await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))

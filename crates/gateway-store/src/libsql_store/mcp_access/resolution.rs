@@ -51,15 +51,9 @@ impl LibsqlStore {
             )
             .await?;
         }
-        let include_servers = rules.include_server_ids(mcp_server_id);
-        let matched = include_rule_matches(
-            &self.connection,
-            &include_servers,
-            None,
-            upstream_name,
-            rules,
-        )
-        .await?;
+        let selectors = rules.include_selectors(mcp_server_id);
+        let matched =
+            include_rule_matches(&self.connection, &selectors, None, upstream_name).await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))
@@ -144,28 +138,37 @@ pub(super) fn id_placeholders(count: usize) -> String {
         .join(", ")
 }
 
-/// Active tools on the servers that an include rule selects. Only the
-/// columns tag rules read are scanned; callers load full rows for the
-/// matches alone.
+/// Active, served tools that include rules select, found through the
+/// effective tag index: only matching tool ids are read.
 pub(super) async fn include_rule_matches(
     connection: &libsql::Connection,
-    server_ids: &BTreeSet<Uuid>,
+    selectors: &BTreeSet<(Uuid, &str)>,
     server_key: Option<&str>,
     upstream_name: Option<&str>,
-    rules: &McpTagRuleSet,
 ) -> Result<Vec<Uuid>, StoreError> {
-    if server_ids.is_empty() {
+    if selectors.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholders = id_placeholders(server_ids.len());
-    let key_param = server_ids.len() + 1;
-    let name_param = server_ids.len() + 2;
+    let pairs = (0..selectors.len())
+        .map(|index| {
+            let at = index * 2 + 1;
+            format!("(t.mcp_server_id = ?{at} AND et.tag = ?{})", at + 1)
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let key_param = selectors.len() * 2 + 1;
+    let name_param = key_param + 1;
     let sql = format!(
-        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id IN ({placeholders}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param}) AND (?{name_param} IS NULL OR t.upstream_name = ?{name_param})"
+        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE ({pairs}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param}) AND (?{name_param} IS NULL OR t.upstream_name = ?{name_param})"
     );
-    let mut params = server_ids
+    let mut params = selectors
         .iter()
-        .map(|id| libsql::Value::Text(id.to_string()))
+        .flat_map(|(server_id, tag)| {
+            [
+                libsql::Value::Text(server_id.to_string()),
+                libsql::Value::Text((*tag).to_string()),
+            ]
+        })
         .collect::<Vec<_>>();
     params.push(server_key.map_or(libsql::Value::Null, |key| {
         libsql::Value::Text(key.to_string())
@@ -179,10 +182,8 @@ pub(super) async fn include_rule_matches(
         .map_err(to_query_error)?;
     let mut matched = Vec::new();
     while let Some(row) = rows.next().await.map_err(to_query_error)? {
-        let tool = decode_tool(&row)?;
-        if rules.includes(&tool) {
-            matched.push(tool.mcp_tool_id);
-        }
+        let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
+        matched.push(parse_uuid(&mcp_tool_id)?);
     }
     Ok(matched)
 }

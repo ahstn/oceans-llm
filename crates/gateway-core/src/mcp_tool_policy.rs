@@ -409,6 +409,20 @@ impl McpTagRuleSet {
             .collect()
     }
 
+    /// The `(server, tag)` pairs include rules select, limited to `scope`
+    /// when set. Stores look these up in their effective tag index.
+    #[must_use]
+    pub fn include_selectors(&self, scope: Option<Uuid>) -> BTreeSet<(Uuid, &str)> {
+        self.includes
+            .iter()
+            .filter_map(|rule| {
+                rule.mcp_server_id
+                    .map(|server_id| (server_id, rule.tag.as_str()))
+            })
+            .filter(|(server_id, _)| scope.is_none_or(|scope| scope == *server_id))
+            .collect()
+    }
+
     #[must_use]
     pub fn includes(&self, tool: &ExternalMcpToolRecord) -> bool {
         self.includes.iter().any(|rule| rule.matches(tool))

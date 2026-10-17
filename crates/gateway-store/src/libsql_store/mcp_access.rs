@@ -603,10 +603,8 @@ impl McpAccessRepository for LibsqlStore {
             collect_catalog_toolset_tools(&self.connection, subject, server_key, &mut tools_by_id)
                 .await?;
         }
-        let include_servers = rules.include_server_ids(None);
-        let matched =
-            include_rule_matches(&self.connection, &include_servers, server_key, None, &rules)
-                .await?;
+        let selectors = rules.include_selectors(None);
+        let matched = include_rule_matches(&self.connection, &selectors, server_key, None).await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))

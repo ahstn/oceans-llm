@@ -51,9 +51,8 @@ impl PostgresStore {
             )
             .await?;
         }
-        let include_servers = rules.include_server_ids(mcp_server_id);
-        let matched =
-            include_rule_matches(&self.pool, &include_servers, None, upstream_name, rules).await?;
+        let selectors = rules.include_selectors(mcp_server_id);
+        let matched = include_rule_matches(&self.pool, &selectors, None, upstream_name).await?;
         let missing = matched
             .into_iter()
             .filter(|id| !tools_by_id.contains_key(id))
@@ -113,37 +112,37 @@ pub(super) fn subject_arrays(subjects: &[McpGrantSubject]) -> (Vec<String>, Vec<
 /// Whether any subject in the `$2`/`$3` arrays has an active tag rule.
 pub(super) const RULES_EXIST_SQL: &str = "EXISTS (SELECT 1 FROM mcp_tool_tag_rules WHERE is_active = 1 AND (subject_kind, subject_id) IN (SELECT * FROM UNNEST($2::text[], $3::text[])))";
 
-/// Active tools on the servers that an include rule selects. Only the
-/// columns tag rules read are scanned; callers load full rows for the
-/// matches alone.
+/// Active, served tools that include rules select, found through the
+/// effective tag index: only matching tool ids are read.
 pub(super) async fn include_rule_matches(
     pool: &PgPool,
-    server_ids: &BTreeSet<Uuid>,
+    selectors: &BTreeSet<(Uuid, &str)>,
     server_key: Option<&str>,
     upstream_name: Option<&str>,
-    rules: &McpTagRuleSet,
 ) -> Result<Vec<Uuid>, StoreError> {
-    if server_ids.is_empty() {
+    if selectors.is_empty() {
         return Ok(Vec::new());
     }
-    let sql = format!(
-        "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = ANY($1) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($2::text IS NULL OR s.server_key = $2) AND ($3::text IS NULL OR t.upstream_name = $3)"
-    );
-    let rows = sqlx::query(&sql)
-        .bind(server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
-        .bind(server_key)
-        .bind(upstream_name)
-        .fetch_all(pool)
-        .await
-        .map_err(to_query_error)?;
-    let mut matched = Vec::new();
-    for row in &rows {
-        let tool = decode_tool(row)?;
-        if rules.includes(&tool) {
-            matched.push(tool.mcp_tool_id);
-        }
-    }
-    Ok(matched)
+    let (server_ids, tags): (Vec<String>, Vec<String>) = selectors
+        .iter()
+        .map(|(server_id, tag)| (server_id.to_string(), (*tag).to_string()))
+        .unzip();
+    let rows = sqlx::query(
+        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE (t.mcp_server_id, et.tag) IN (SELECT * FROM UNNEST($1::text[], $2::text[])) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($3::text IS NULL OR s.server_key = $3) AND ($4::text IS NULL OR t.upstream_name = $4)",
+    )
+    .bind(server_ids)
+    .bind(tags)
+    .bind(server_key)
+    .bind(upstream_name)
+    .fetch_all(pool)
+    .await
+    .map_err(to_query_error)?;
+    rows.iter()
+        .map(|row| {
+            let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+            parse_uuid(&mcp_tool_id)
+        })
+        .collect()
 }
 
 /// Active tools by id, in one query.
