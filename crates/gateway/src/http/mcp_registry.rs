@@ -615,9 +615,10 @@ pub async fn list_mcp_server_tools(
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
     let viewer = require_mcp_viewer(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    let admin_scope = match &viewer {
-        McpViewer::Admin(scope) => Some(*scope),
-        McpViewer::Member { .. } => None,
+    // Who to recheck after the read: an admin's scope, or a member's team.
+    let recheck = match &viewer {
+        McpViewer::Admin(scope) => Ok(*scope),
+        McpViewer::Member { team_id, .. } => Err(*team_id),
     };
     let member_tools = match viewer {
         McpViewer::Admin(scope) => {
@@ -657,9 +658,33 @@ pub async fn list_mcp_server_tools(
         .map(map_tool)
         .collect();
     // Checked again after the read: a transfer to another team in between must
-    // not hand the former owner the new owner's tools.
-    if let Some(scope) = &admin_scope {
-        ownership(&state).visible_server(scope, server_id).await?;
+    // not hand a former owner or member the new owner's tools.
+    match recheck {
+        Ok(scope) => {
+            ownership(&state).visible_server(&scope, server_id).await?;
+        }
+        Err(team_id) => {
+            let still_reachable = state
+                .store
+                .get_external_mcp_server(server_id)
+                .await?
+                .is_some_and(|server| {
+                    server.status != gateway_core::ExternalMcpServerStatus::Disabled
+                        && (server.ownership.visibility
+                            == gateway_core::McpServerVisibility::Organisation
+                            || server
+                                .ownership
+                                .owner_team_id
+                                .is_some_and(|owner| Some(owner) == team_id))
+                });
+            if !still_reachable {
+                return Err(AppError(GatewayError::Store(
+                    gateway_core::StoreError::NotFound(format!(
+                        "external MCP server `{server_id}` not found"
+                    )),
+                )));
+            }
+        }
     }
     Ok(Json(envelope(McpToolsPayload { items })))
 }
