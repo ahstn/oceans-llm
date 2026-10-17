@@ -31,4 +31,5 @@ Preconditions: launch a dedicated verification stack, require `doctor` to pass, 
 
 - The route always loads 7 days first; do not infer a 31-day refresh from the selected radio alone. Wait for row values from the 31-day API response.
 - `leaderboard-mobile-list` is in the DOM but hidden (`md:hidden`) at 1440px. Use `leaderboard-table` for API comparison. The responsive step checks visibility at 600px, not DOM presence.
+- The x-axis ticks once per UTC day, at the midnight bucket; with 31 days it shows an evenly spaced subset. The tooltip names the hovered bucket's start as `16 Oct 2026, 12:00 UTC`.
 - The chart is spend-only. Most-used model and harness values belong to ranking rows and must not be inferred from chart labels.
