@@ -236,13 +236,15 @@ impl ClientMetadataDocuments {
                 .stand_in(repo, client_id, now, &failure)
                 .await
                 .unwrap_or(Err(failure)),
-            Err(failure) => {
+            Err(failure) if failure.document_refused => {
                 // The document is gone or no longer valid: a later outage must
                 // not bring the old copy back.
                 self.forget(client_id);
                 self.remember_failure(client_id, &failure, now);
                 Err(failure)
             }
+            // A store error says nothing about the document: keep the cached
+            // copy and retry on the next request.
             outcome => outcome,
         }
     }
@@ -273,7 +275,7 @@ impl ClientMetadataDocuments {
             .await
         {
             Ok(stored) => stored,
-            Err(error) => return Some(Err(ResolveFailure::permanent(error.into()))),
+            Err(error) => return Some(Err(ResolveFailure::store(error))),
         };
         self.serve_stand_in(
             stored.clone(),
@@ -299,18 +301,18 @@ impl ClientMetadataDocuments {
                     "too many client metadata documents are being fetched; try again shortly",
                 ),
                 transient: true,
+                document_refused: false,
             })?;
         let fetched = self.fetch_and_validate(client_id, now).await?;
         let stored = repo
             .upsert_gateway_oauth_metadata_document_client(&fetched.client)
             .await
-            .map_err(|error| {
-                ResolveFailure::permanent(match error {
-                    StoreError::Conflict(_) => {
-                        OauthError::invalid_client("client_id is already registered another way")
-                    }
-                    error => error.into(),
-                })
+            .map_err(|error| match error {
+                // A registered client owns this ID, which no document changes.
+                StoreError::Conflict(_) => ResolveFailure::permanent(OauthError::invalid_client(
+                    "client_id is already registered another way",
+                )),
+                error => ResolveFailure::store(error),
             })?;
         if fetched.ttl > Duration::ZERO {
             self.remember(
@@ -440,6 +442,7 @@ impl ClientMetadataDocuments {
                     OauthError::invalid_client(description)
                 },
                 transient,
+                document_refused: !transient,
             }
         })?;
         if fetched.status != 200 {
@@ -453,6 +456,7 @@ impl ClientMetadataDocuments {
                     OauthError::invalid_client(description)
                 },
                 transient,
+                document_refused: !transient,
             });
         }
         let client =
@@ -535,7 +539,11 @@ struct ValidatedDocument {
 #[derive(Clone)]
 struct ResolveFailure {
     error: OauthError,
+    /// The document's host was unreachable, so a cached copy may stand in.
     transient: bool,
+    /// The document itself was refused (missing, invalid, or not allowed),
+    /// so the cached copy is dropped and the refusal remembered briefly.
+    document_refused: bool,
 }
 
 impl ResolveFailure {
@@ -543,6 +551,16 @@ impl ResolveFailure {
         Self {
             error,
             transient: false,
+            document_refused: true,
+        }
+    }
+
+    /// The store failed: neither the host's fault nor the document's.
+    fn store(error: StoreError) -> Self {
+        Self {
+            error: error.into(),
+            transient: false,
+            document_refused: false,
         }
     }
 }

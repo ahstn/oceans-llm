@@ -416,3 +416,15 @@ fn freshness_reads_date_expires_and_vary() {
     let (ttl, reusable) = freshness(&headers(&[("vary", "Accept")]), now);
     assert_eq!((ttl, reusable), (DEFAULT_CACHE_TTL, true));
 }
+
+#[test]
+fn store_errors_are_neither_cached_nor_blamed_on_the_document() {
+    let store = ResolveFailure::store(StoreError::Unavailable("database down".into()));
+    assert!(!store.transient, "no stand-in write into a failing store");
+    assert!(
+        !store.document_refused,
+        "the cached copy stays, nothing is remembered"
+    );
+    let refused = ResolveFailure::permanent(OauthError::invalid_client("gone"));
+    assert!(refused.document_refused && !refused.transient);
+}
