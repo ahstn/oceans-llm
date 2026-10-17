@@ -139,9 +139,16 @@ describe('RequestLogsPage table', () => {
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
     // 12 rows × 56 px (requestLogDesktopPreviewRows × requestLogRowEstimatePx)
-    expect(screen.getByTestId('request-log-desktop-table-viewport')).toHaveStyle({
+    expect(screen.getByTestId('request-log-desktop-table')).toHaveStyle({
       height: '672px',
     })
+    // The table scrolls on both axes itself, so the Inspect column can stay pinned to its right edge.
+    expect(screen.getByTestId('request-log-desktop-table')).toHaveClass('overflow-auto')
+    for (const inspect of within(screen.getByTestId('request-log-desktop-table')).getAllByText(
+      'Inspect',
+    )) {
+      expect(inspect.closest('.sticky')).toHaveClass('right-0', 'shadow-sticky-edge-end')
+    }
     expect(
       screen.getByText(
         'Review each request, how long it took, and the data that the system stored.',
@@ -152,7 +159,7 @@ describe('RequestLogsPage table', () => {
     // The overview leads with the request time; request id and key name live in the detail sheet.
     expect(screen.queryByText('req_1')).not.toBeInTheDocument()
     expect(screen.queryByText('Checkout Service Key')).not.toBeInTheDocument()
-    expect(screen.getAllByText('2026-03-10 11:32:00')).toHaveLength(2)
+    expect(screen.getAllByText('10 Mar 2026, 11:32:00 UTC')).toHaveLength(2)
     expect(screen.getByText('Time')).toBeInTheDocument()
     expect(screen.getAllByText('Tools (Used / Total)')).toHaveLength(2)
     expect(screen.getAllByTestId('request-log-tool-usage').map((el) => el.textContent)).toEqual([
@@ -234,7 +241,7 @@ describe('RequestLogsPage table', () => {
     expect(screen.getAllByText('Unknown')).toHaveLength(1)
   })
 
-  it('shows a cache-hit indicator with cached token share and n/a fallbacks', async () => {
+  it('shows a cache-hit indicator with cached token share and em dash fallbacks', async () => {
     const uncachedLegacyItem: RequestLogView = {
       ...items[0],
       request_log_id: 'reqlog_4',
@@ -256,7 +263,7 @@ describe('RequestLogsPage table', () => {
     const cacheIcons = scope.getAllByTestId('request-log-cache-hit')
     expect(cacheIcons).toHaveLength(2)
     expect(scope.getAllByText('—')).toHaveLength(1)
-    expect(scope.getAllByText('0 / n/a')).toHaveLength(1)
+    expect(scope.getAllByText('0 / —')).toHaveLength(1)
 
     fireEvent.focus(cacheIcons[0])
 
@@ -337,7 +344,8 @@ describe('RequestLogsPage detail', () => {
     expect(within(dialog).getByText('req_1')).toBeInTheDocument()
     expect(within(dialog).getByText('300 of 400 prompt tokens cached (75%)')).toBeInTheDocument()
     expect(screen.getAllByText('0').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    expect(screen.queryByText('n/a')).not.toBeInTheDocument()
     expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
     expect(screen.getAllByText('success').length).toBeGreaterThan(0)

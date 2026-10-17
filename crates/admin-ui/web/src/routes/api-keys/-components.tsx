@@ -241,10 +241,10 @@ export function ApiKeyList({
                 <td className="text-subtle-foreground px-3 py-3">
                   {formatModelGrantSummary(item)}
                 </td>
-                <td className="text-subtle-foreground px-3 py-3">
+                <td className="text-subtle-foreground px-3 py-3 whitespace-nowrap tabular-nums">
                   {formatCreatedAt(item.created_at)}
                 </td>
-                <td className="text-subtle-foreground px-3 py-3">
+                <td className="text-subtle-foreground px-3 py-3 whitespace-nowrap tabular-nums">
                   {formatLastUsedAt(item.last_used_at)}
                 </td>
                 <td className="px-3 py-3">

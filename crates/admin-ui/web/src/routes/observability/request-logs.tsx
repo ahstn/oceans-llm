@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
 
+import { CompactCount } from '@/components/data/compact-count'
 import { AppIcon } from '@/components/icons/app-icon'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { canAccessPage } from '@/components/layout/admin-nav'
@@ -38,7 +39,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatUsd10000Precise } from '@/lib/format'
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatDuration,
+  formatTimestamp,
+  formatUsd10000Precise,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
@@ -61,7 +68,9 @@ const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
 const requestLogGridColumns =
-  'grid grid-cols-[minmax(11rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_88px_84px_104px_160px_104px]'
+  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_96px_92px_96px_160px_104px]'
+// The Inspect column stays pinned to the right edge so it is never scrolled out of view.
+const requestLogActionCell = 'bg-card shadow-sticky-edge-end sticky right-0 z-10 px-3'
 
 export function RequestLogsPage() {
   const { data: logPage } = Route.useLoaderData()
@@ -199,7 +208,7 @@ function RequestLogMobileList({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-foreground truncate text-sm font-semibold tabular-nums">
+                <p className="text-foreground truncate text-sm font-semibold whitespace-nowrap tabular-nums">
                   {formatOccurredAt(item.occurred_at)}
                 </p>
                 <p className="text-subtle-foreground flex items-center gap-2 truncate text-sm">
@@ -207,7 +216,9 @@ function RequestLogMobileList({
                   <span className="truncate">{item.model_key}</span>
                 </p>
               </div>
-              <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? 'n/a'}</Badge>
+              <Badge variant={badgeVariant(item.status_code)}>
+                {item.status_code ?? EMPTY_VALUE}
+              </Badge>
             </div>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -219,7 +230,7 @@ function RequestLogMobileList({
               </MobileField>
               <MobileField label="Caller">{callerPrimary(item) ?? 'Unknown'}</MobileField>
               <MobileField label="Cost">{formatRequestCost(item.cost_usd_10000)}</MobileField>
-              <MobileField label="Latency">{formatLatency(item.latency_ms)}</MobileField>
+              <MobileField label="Latency">{formatDuration(item.latency_ms)}</MobileField>
               <MobileField label="Tokens">
                 <TokensWithCache item={item} />
               </MobileField>
@@ -260,30 +271,33 @@ function RequestLogDesktopTable({
   })
 
   return (
+    // One element scrolls both ways, so the header can stick to the top and Inspect to the right.
     <div
-      className="border-border hidden min-w-0 overflow-x-auto rounded-md border lg:block"
+      ref={parentRef}
+      className="border-border hidden min-w-0 overflow-auto rounded-md border lg:block"
       data-testid="request-log-desktop-table"
+      style={{ height: `${requestLogDesktopTableHeightPx}px` }}
     >
       <div className="min-w-[68rem]">
         <div
-          className={cn(requestLogGridColumns, 'bg-surface-muted text-muted-foreground text-sm')}
+          className={cn(
+            requestLogGridColumns,
+            'bg-surface-muted text-muted-foreground sticky top-0 z-20 text-sm whitespace-nowrap',
+          )}
         >
           <span className="px-3 py-2 font-semibold">Time</span>
           <span className="px-3 py-2 font-semibold">Model</span>
           <span className="px-3 py-2 font-semibold">Caller</span>
           <span className="px-3 py-2 font-semibold">Status</span>
-          <span className="px-3 py-2 font-semibold">Cost</span>
-          <span className="px-3 py-2 font-semibold">Latency</span>
-          <span className="px-3 py-2 font-semibold">Tokens</span>
-          <span className="px-3 py-2 font-semibold">Tools (Used / Total)</span>
-          <span className="px-3 py-2 font-semibold">Inspect</span>
+          <span className="px-3 py-2 text-right font-semibold">Cost</span>
+          <span className="px-3 py-2 text-right font-semibold">Latency</span>
+          <span className="px-3 py-2 text-right font-semibold">Tokens</span>
+          <span className="px-3 py-2 text-right font-semibold">Tools (Used / Total)</span>
+          <span className={cn(requestLogActionCell, 'bg-surface-muted py-2 font-semibold')}>
+            Inspect
+          </span>
         </div>
-        <div
-          ref={parentRef}
-          className="overflow-y-auto"
-          data-testid="request-log-desktop-table-viewport"
-          style={{ height: `${requestLogDesktopTableHeightPx}px` }}
-        >
+        <div data-testid="request-log-desktop-table-viewport">
           <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => (
               <RequestLogDesktopRow
@@ -312,17 +326,21 @@ function RequestLogDesktopRow({
   start: number
   onInspect: (requestLogId: string) => void
 }) {
+  const primaryCaller = callerPrimary(item) ?? 'Unknown'
   const secondaryCaller = callerSecondary(item)
 
   return (
     <div
       className={cn(
         requestLogGridColumns,
-        'border-border hover:bg-surface-muted absolute top-0 left-0 w-full items-center border-t text-sm',
+        'group border-border hover:bg-surface-muted absolute top-0 left-0 w-full items-center border-t text-sm',
       )}
       style={{ height: `${size}px`, transform: `translateY(${start}px)` }}
     >
-      <span className="text-foreground truncate px-3 tabular-nums" title={item.occurred_at}>
+      <span
+        className="text-foreground truncate px-3 whitespace-nowrap tabular-nums"
+        title={item.occurred_at}
+      >
         {formatOccurredAt(item.occurred_at)}
       </span>
       <div className="min-w-0 px-3">
@@ -335,28 +353,36 @@ function RequestLogDesktopRow({
           <span className="truncate">{item.provider_key}</span>
         </div>
       </div>
-      <div className="min-w-0 px-3">
-        <div className="text-foreground truncate">{callerPrimary(item) ?? 'Unknown'}</div>
+      <div
+        className="min-w-0 px-3"
+        title={secondaryCaller ? `${primaryCaller} · ${secondaryCaller}` : primaryCaller}
+      >
+        <div className="text-foreground truncate">{primaryCaller}</div>
         {secondaryCaller ? (
           <div className="text-muted-foreground truncate text-xs">{secondaryCaller}</div>
         ) : null}
       </div>
       <span className="px-3">
-        <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? 'n/a'}</Badge>
+        <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? EMPTY_VALUE}</Badge>
       </span>
-      <span className="text-subtle-foreground px-3 tabular-nums">
+      <span className="text-subtle-foreground px-3 text-right tabular-nums">
         {formatRequestCost(item.cost_usd_10000)}
       </span>
-      <span className="text-subtle-foreground px-3 tabular-nums">
-        {formatLatency(item.latency_ms)}
+      <span className="text-subtle-foreground px-3 text-right whitespace-nowrap tabular-nums">
+        {formatDuration(item.latency_ms)}
       </span>
-      <span className="text-subtle-foreground px-3">
+      <span className="text-subtle-foreground px-3 text-right">
         <TokensWithCache item={item} />
       </span>
-      <span className="text-subtle-foreground px-3">
+      <span className="text-subtle-foreground px-3 text-right">
         <ToolUsage item={item} />
       </span>
-      <div className="px-3">
+      <div
+        className={cn(
+          requestLogActionCell,
+          'group-hover:bg-surface-muted flex items-center self-stretch',
+        )}
+      >
         <Button
           type="button"
           variant="outline"
@@ -443,13 +469,13 @@ function RequestLogDetailBody({ detail }: { detail: RequestLogDetailView }) {
             </span>
           }
         />
-        <DetailRow label="Occurred At" value={log.occurred_at} />
+        <DetailRow label="Occurred At" value={formatOccurredAt(log.occurred_at)} />
         <DetailRow
           label="Status"
-          value={log.status_code !== null ? String(log.status_code) : 'n/a'}
+          value={log.status_code !== null ? String(log.status_code) : EMPTY_VALUE}
         />
-        <DetailRow label="Latency" value={formatLatency(log.latency_ms)} />
-        <DetailRow label="Tokens" value={formatTokenCount(log.total_tokens)} />
+        <DetailRow label="Latency" value={formatDuration(log.latency_ms)} />
+        <DetailRow label="Tokens" value={formatCount(log.total_tokens)} />
         <DetailRow
           label="Cached Tokens"
           value={
@@ -462,7 +488,7 @@ function RequestLogDetailBody({ detail }: { detail: RequestLogDetailView }) {
         <DetailRow label="Agent Harness" value={log.agent_harness_label} />
         <DetailRow
           label="User-Agent"
-          value={detail.user_agent_raw ?? 'n/a'}
+          value={detail.user_agent_raw ?? EMPTY_VALUE}
           mono={Boolean(detail.user_agent_raw)}
         />
       </div>
@@ -538,17 +564,14 @@ function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <DetailRow
             label="Definition Tokens"
-            value={formatTokenCount(overhead.estimated_definition_tokens)}
+            value={formatCount(overhead.estimated_definition_tokens)}
           />
-          <DetailRow label="Tools" value={String(overhead.exposed_tool_count)} />
+          <DetailRow label="Tools" value={formatCount(overhead.exposed_tool_count)} />
           <DetailRow label="Estimator" value={overhead.estimator_source} mono />
           <DetailRow label="Confidence" value={overhead.confidence} />
-          <DetailRow label="Cache Hits" value={String(overhead.cache_hit_count)} />
-          <DetailRow label="Cache Misses" value={String(overhead.cache_miss_count)} />
-          <DetailRow
-            label="Context Window"
-            value={formatTokenCount(overhead.context_window_tokens)}
-          />
+          <DetailRow label="Cache Hits" value={formatCount(overhead.cache_hit_count)} />
+          <DetailRow label="Cache Misses" value={formatCount(overhead.cache_miss_count)} />
+          <DetailRow label="Context Window" value={formatCount(overhead.context_window_tokens)} />
           <DetailRow
             label="Context Share"
             value={formatBasisPoints(overhead.context_window_percent_bps)}
@@ -570,13 +593,15 @@ function MobileField({ label, children }: { label: string; children: ReactNode }
   )
 }
 
-/** Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt tokens. */
+/**
+ * Total tokens plus an OpenRouter-style cache indicator when the provider served cached prompt
+ * tokens. The indicator leads so the digits keep the column's right edge.
+ */
 function TokensWithCache({ item }: { item: RequestLogView }) {
   const cachedTokens = item.cache_read_tokens ?? 0
 
   return (
-    <span className="inline-flex items-center gap-1.5 tabular-nums">
-      {formatTokenCount(item.total_tokens)}
+    <span className="inline-flex items-center justify-end gap-1.5 tabular-nums">
       {cachedTokens > 0 ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -592,6 +617,7 @@ function TokensWithCache({ item }: { item: RequestLogView }) {
           <TooltipContent>{cacheHitLabel(cachedTokens, item.prompt_tokens)}</TooltipContent>
         </Tooltip>
       ) : null}
+      <CompactCount value={item.total_tokens} unit="tokens" />
     </span>
   )
 }
@@ -603,7 +629,7 @@ function ToolUsage({ item }: { item: RequestLogView }) {
 
   return (
     <span className="tabular-nums" data-testid="request-log-tool-usage">
-      {formatToolCount(usedTools)} / {formatToolCount(counts.request_tool_count)}
+      {formatCount(usedTools)} / {formatCount(counts.request_tool_count)}
     </span>
   )
 }
@@ -629,18 +655,15 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
-          <DetailRow
-            label="MCP Servers"
-            value={formatToolCount(counts.referenced_mcp_server_count)}
-          />
-          <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
-          <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
-          <DetailRow label="Tool Calls" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow label="MCP Servers" value={formatCount(counts.referenced_mcp_server_count)} />
+          <DetailRow label="Request Tools" value={formatCount(counts.request_tool_count)} />
+          <DetailRow label="Tools Exposed" value={formatCount(counts.exposed_tool_count)} />
+          <DetailRow label="Tool Calls" value={formatCount(counts.invoked_tool_count)} />
           <DetailRow
             label="Distinct Tools Called"
-            value={formatToolCount(counts.invoked_distinct_tool_count)}
+            value={formatCount(counts.invoked_distinct_tool_count)}
           />
-          <DetailRow label="Tools Filtered" value={formatToolCount(counts.filtered_tool_count)} />
+          <DetailRow label="Tools Filtered" value={formatCount(counts.filtered_tool_count)} />
         </dl>
       </CardContent>
     </Card>
@@ -676,7 +699,7 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
                 <TableHead>Status</TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Upstream model</TableHead>
-                <TableHead>Latency</TableHead>
+                <TableHead className="text-right">Latency</TableHead>
                 <TableHead>Flags</TableHead>
               </TableRow>
             </TableHeader>
@@ -696,7 +719,9 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
                   </TableCell>
                   <TableCell className="font-mono">{attempt.provider_key}</TableCell>
                   <TableCell className="font-mono">{attempt.upstream_model}</TableCell>
-                  <TableCell>{formatLatency(attempt.latency_ms)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatDuration(attempt.latency_ms)}
+                  </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {attempt.retryable ? <Badge variant="outline">retryable</Badge> : null}
@@ -850,8 +875,8 @@ function callerLabel(item: RequestLogView): string {
 }
 
 function formatOccurredAt(occurredAt: string) {
-  // RFC3339 from the gateway; trim to a compact second-resolution display.
-  return occurredAt.replace('T', ' ').slice(0, 19)
+  // Seconds matter here: several requests often land within the same minute.
+  return formatTimestamp(occurredAt, { seconds: true })
 }
 
 function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
@@ -866,33 +891,21 @@ function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'out
   return status === 'success' ? 'success' : status.endsWith('error') ? 'warning' : 'outline'
 }
 
-function formatLatency(latencyMs: number | null) {
-  return latencyMs === null ? 'n/a' : `${latencyMs}ms`
-}
-
-function formatTokenCount(totalTokens: number | null) {
-  return totalTokens === null ? 'n/a' : String(totalTokens)
-}
-
 function formatRequestCost(costUsd10000: number | null | undefined) {
-  return costUsd10000 == null ? '—' : formatUsd10000Precise(costUsd10000)
+  return costUsd10000 == null ? EMPTY_VALUE : formatUsd10000Precise(costUsd10000)
 }
 
 function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undefined) {
-  const cached = cachedTokens.toLocaleString('en-US')
+  const cached = formatCount(cachedTokens)
   if (!promptTokens) {
     return `${cached} prompt tokens served from cache`
   }
   const percent = Math.round((cachedTokens / promptTokens) * 100)
-  return `${cached} of ${promptTokens.toLocaleString('en-US')} prompt tokens cached (${percent}%)`
+  return `${cached} of ${formatCount(promptTokens)} prompt tokens cached (${percent}%)`
 }
 
 function formatBasisPoints(value: number | null) {
-  return value === null ? 'n/a' : `${(value / 100).toFixed(2)}%`
-}
-
-function formatToolCount(value: number | null | undefined) {
-  return value == null ? 'n/a' : String(value)
+  return value === null ? EMPTY_VALUE : `${(value / 100).toFixed(2)}%`
 }
 
 function OperationDetailRow({ item }: { item: RequestLogView }) {

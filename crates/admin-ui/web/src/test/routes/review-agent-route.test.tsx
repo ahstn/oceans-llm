@@ -190,7 +190,7 @@ describe('ReviewAgentPage', () => {
 
     expect(screen.getByText('abc1234')).toBeInTheDocument()
     expect(screen.getByText('+240 / −80')).toBeInTheDocument()
-    expect(screen.getByText('1m 32s')).toBeInTheDocument()
+    expect(screen.getByText('1 min 32 s')).toBeInTheDocument()
   })
 
   it('shows review settings toggles and lifecycle actions in the manage dialog', async () => {

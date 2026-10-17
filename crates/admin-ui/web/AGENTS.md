@@ -20,7 +20,9 @@
   - header row with muted background
   - sentence case column labels
   - muted header text color
-  - left-aligned cells
+  - left-aligned text cells; numbers right-aligned with `tabular-nums`
+  - values formatted with the `src/lib/format.ts` helpers (DESIGN.md "Numbers and time")
+  - an action column pinned right when the table can scroll sideways (DESIGN.md "Wide tables")
   - consistent row height and vertical alignment
   - row hover state
 - Prefer action buttons with consistent sizing, background, hover state, and tooltips.

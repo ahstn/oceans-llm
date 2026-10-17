@@ -12,17 +12,12 @@ import {
   getMcpOauthConnections,
 } from '@/server/admin-data.functions'
 import type { McpOauthConnectionView } from '@/types/api'
+import { formatTimestamp } from '@/lib/format'
 
 type ConnectionsSearch = {
   oauth?: string
   oauth_error?: string
 }
-
-const utcTimestampFormatter = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
 
 export const Route = createFileRoute('/account/connections')({
   validateSearch: (search: Record<string, unknown>): ConnectionsSearch => ({
@@ -133,7 +128,7 @@ export function ConnectionsPage() {
                   </div>
                   {connection.expires_at ? (
                     <p className="text-muted-foreground text-xs">
-                      Access token expires {formatUtcTimestamp(connection.expires_at)} UTC; Oceans
+                      Access token expires {formatTimestamp(connection.expires_at)}; Oceans
                       refreshes it before use.
                     </p>
                   ) : null}
@@ -167,10 +162,6 @@ export function ConnectionsPage() {
 
 function formatStatus(status: McpOauthConnectionView['status']) {
   return status.charAt(0).toUpperCase() + status.slice(1)
-}
-
-function formatUtcTimestamp(timestamp: string) {
-  return utcTimestampFormatter.format(new Date(timestamp))
 }
 
 function connectionActionLabel(status: McpOauthConnectionView['status'], pending: boolean) {

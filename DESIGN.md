@@ -325,7 +325,9 @@ Tables, virtualised lists, filters, sheets and detail panes are signature surfac
 - Timestamps read `16 Oct 2026, 02:04 UTC`: 24-hour, always with the zone, and `whitespace-nowrap` so they never wrap. Add seconds only where order within a minute matters, as in request logs.
 - A missing value is an em dash (`—`), never `n/a`.
 
-Request logs, API keys and the leaderboard predate this rule; bringing them in line is follow-up work.
+The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `formatTimestamp`, `formatUsd10000`, `formatUsd10000Precise`, `EMPTY_VALUE`), and `CompactCount` renders a compact count with its tooltip. Use them rather than a local formatter.
+
+**Wide tables.** A table never hides its last column without a cue. When a table can be wider than its card, pin its action column to the right edge with `sticky right-0`, the card's background and `shadow-sticky-edge-end`, the mirror of the `shadow-sticky-edge` that a column pinned left uses (as on the models table). If the action is the only one on the row, making the whole row open it works too. A table with no action column is sized to fit its card at 1440 px.
 
 ### Charts
 
