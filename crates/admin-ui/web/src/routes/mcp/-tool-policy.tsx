@@ -18,9 +18,11 @@ import {
   UPSTREAM,
   describeHint,
   hintValue,
+  overridesKey,
   isDerivedTag,
   parseHint,
   parseTagInput,
+  tagsKey,
   toolHints,
   type HintKey,
 } from './-tool-tags'
@@ -51,6 +53,27 @@ export function ToolPolicyEditor({
   tool: McpToolView
   onToolUpdated: (tool: McpToolView) => void
 }) {
+  return (
+    <div className="mt-4 flex max-w-full min-w-0 flex-col gap-4" data-testid="mcp-tool-policy">
+      <div className="min-w-0">
+        <div className="text-subtle-foreground mb-2 text-xs font-medium">Access tags</div>
+        <EffectiveTagBadges tags={tool.effective_tags} />
+      </div>
+      {/* Each draft restarts only when its own stored value changes, so saving
+          one keeps unsaved edits in the other. */}
+      <OverridesEditor key={overridesKey(tool)} tool={tool} onToolUpdated={onToolUpdated} />
+      <TagsEditor key={tagsKey(tool)} tool={tool} onToolUpdated={onToolUpdated} />
+    </div>
+  )
+}
+
+function OverridesEditor({
+  tool,
+  onToolUpdated,
+}: {
+  tool: McpToolView
+  onToolUpdated: (tool: McpToolView) => void
+}) {
   const [isPending, startTransition] = useTransition()
   const [overrides, setOverrides] = useState<Record<HintKey, string>>(() => ({
     read_only_hint: hintValue(tool.annotation_overrides.read_only_hint),
@@ -58,7 +81,6 @@ export function ToolPolicyEditor({
     idempotent_hint: hintValue(tool.annotation_overrides.idempotent_hint),
     open_world_hint: hintValue(tool.annotation_overrides.open_world_hint),
   }))
-  const [tagInput, setTagInput] = useState(() => tool.admin_tags.join(', '))
 
   function handleSaveOverrides() {
     const annotationOverrides: McpToolAnnotationsView = {
@@ -80,6 +102,58 @@ export function ToolPolicyEditor({
     })
   }
 
+  return (
+    <div className="min-w-0">
+      <div className="text-subtle-foreground mb-2 text-xs font-medium">Annotation overrides</div>
+      <div className="divide-y border-y" data-testid="mcp-tool-annotation-overrides">
+        {toolHints.map((hint) => (
+          <div
+            key={hint.key}
+            className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem] items-center gap-3 py-2 text-sm"
+          >
+            <span className="font-medium">{hint.label}</span>
+            <span className="text-subtle-foreground truncate">
+              Upstream: {describeHint(tool.annotations[hint.key])}
+            </span>
+            <Select
+              value={overrides[hint.key]}
+              onValueChange={(value) =>
+                setOverrides((current) => ({ ...current, [hint.key]: value }))
+              }
+            >
+              <SelectTrigger aria-label={`${hint.label} override`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={UPSTREAM}>Use upstream</SelectItem>
+                  <SelectItem value="true">Yes</SelectItem>
+                  <SelectItem value="false">No</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-end">
+        <Button type="button" size="sm" disabled={isPending} onClick={handleSaveOverrides}>
+          Save overrides
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function TagsEditor({
+  tool,
+  onToolUpdated,
+}: {
+  tool: McpToolView
+  onToolUpdated: (tool: McpToolView) => void
+}) {
+  const [isPending, startTransition] = useTransition()
+  const [tagInput, setTagInput] = useState(() => tool.admin_tags.join(', '))
+
   function handleSaveTags() {
     startTransition(async () => {
       try {
@@ -87,7 +161,6 @@ export function ToolPolicyEditor({
           data: { serverId: tool.server_id, toolId: tool.id, tags: parseTagInput(tagInput) },
         })
         onToolUpdated(response.data.tool)
-        setTagInput(response.data.tool.admin_tags.join(', '))
         toast.success('Tool tags saved')
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to save tags')
@@ -96,69 +169,23 @@ export function ToolPolicyEditor({
   }
 
   return (
-    <div className="mt-4 flex max-w-full min-w-0 flex-col gap-4" data-testid="mcp-tool-policy">
-      <div className="min-w-0">
-        <div className="text-subtle-foreground mb-2 text-xs font-medium">Access tags</div>
-        <EffectiveTagBadges tags={tool.effective_tags} />
-      </div>
-
-      <div className="min-w-0">
-        <div className="text-subtle-foreground mb-2 text-xs font-medium">Annotation overrides</div>
-        <div className="divide-y border-y" data-testid="mcp-tool-annotation-overrides">
-          {toolHints.map((hint) => (
-            <div
-              key={hint.key}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem] items-center gap-3 py-2 text-sm"
-            >
-              <span className="font-medium">{hint.label}</span>
-              <span className="text-subtle-foreground truncate">
-                Upstream: {describeHint(tool.annotations[hint.key])}
-              </span>
-              <Select
-                value={overrides[hint.key]}
-                onValueChange={(value) =>
-                  setOverrides((current) => ({ ...current, [hint.key]: value }))
-                }
-              >
-                <SelectTrigger aria-label={`${hint.label} override`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value={UPSTREAM}>Use upstream</SelectItem>
-                    <SelectItem value="true">Yes</SelectItem>
-                    <SelectItem value="false">No</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 flex justify-end">
-          <Button type="button" size="sm" disabled={isPending} onClick={handleSaveOverrides}>
-            Save overrides
-          </Button>
-        </div>
-      </div>
-
-      <div className="min-w-0">
-        <label
-          className="text-subtle-foreground mb-2 block text-xs font-medium"
-          htmlFor={`mcp-tool-tags-${tool.id}`}
-        >
-          Admin tags
-        </label>
-        <div className="flex min-w-0 gap-2">
-          <Input
-            id={`mcp-tool-tags-${tool.id}`}
-            value={tagInput}
-            placeholder="finance, pii:low"
-            onChange={(event) => setTagInput(event.target.value)}
-          />
-          <Button type="button" size="sm" disabled={isPending} onClick={handleSaveTags}>
-            Save tags
-          </Button>
-        </div>
+    <div className="min-w-0">
+      <label
+        className="text-subtle-foreground mb-2 block text-xs font-medium"
+        htmlFor={`mcp-tool-tags-${tool.id}`}
+      >
+        Admin tags
+      </label>
+      <div className="flex min-w-0 gap-2">
+        <Input
+          id={`mcp-tool-tags-${tool.id}`}
+          value={tagInput}
+          placeholder="finance, pii:low"
+          onChange={(event) => setTagInput(event.target.value)}
+        />
+        <Button type="button" size="sm" disabled={isPending} onClick={handleSaveTags}>
+          Save tags
+        </Button>
       </div>
     </div>
   )

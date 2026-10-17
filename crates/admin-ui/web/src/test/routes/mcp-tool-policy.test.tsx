@@ -42,7 +42,7 @@ const tool: McpToolView = {
 describe('ToolPolicyEditor drafts', () => {
   afterEach(() => cleanup())
 
-  it('keeps a draft while the stored policy is unchanged and resets it when the policy changes', async () => {
+  it('keeps each draft until its own stored value changes', async () => {
     const { ServerToolsPanel } = await import('@/routes/mcp/-components')
     const panel = (current: McpToolView) => (
       <ServerToolsPanel
@@ -63,7 +63,22 @@ describe('ToolPolicyEditor drafts', () => {
     rerender(panel({ ...tool, description: 'Read one file' }))
     expect(screen.getByLabelText('Admin tags')).toHaveValue('draft')
 
-    rerender(panel({ ...tool, admin_tags: ['finance'] }))
+    // Saving overrides changes only the overrides, so the unsaved tag draft stays.
+    rerender(
+      panel({
+        ...tool,
+        annotation_overrides: { ...hints, read_only_hint: true },
+      }),
+    )
+    expect(screen.getByLabelText('Admin tags')).toHaveValue('draft')
+
+    rerender(
+      panel({
+        ...tool,
+        annotation_overrides: { ...hints, read_only_hint: true },
+        admin_tags: ['finance'],
+      }),
+    )
     expect(screen.getByLabelText('Admin tags')).toHaveValue('finance')
   })
 })

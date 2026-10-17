@@ -608,6 +608,28 @@ impl McpAccessRepository for LibsqlStore {
             .transpose()
     }
 
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1) ORDER BY s.server_key, t.upstream_name"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![mcp_server_id.map(|id| id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut tools = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            tools.push(decode_tool(&row)?);
+        }
+        Ok(tools)
+    }
+
     async fn list_mcp_tool_tag_rules(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,

@@ -56,14 +56,12 @@ export function parseTagInput(value: string) {
   return value.split(/[\s,]+/).filter(Boolean)
 }
 
-/**
- * Changes whenever a tool's stored policy changes, so the policy editor can
- * start fresh drafts from it instead of keeping stale ones.
- */
-export function toolPolicyKey(tool: McpToolView) {
-  return [
-    tool.id,
-    tool.admin_tags.join(','),
-    toolHints.map((hint) => hintValue(tool.annotation_overrides[hint.key])).join(','),
-  ].join('|')
+/** Changes when a tool's stored overrides change, to restart its draft. */
+export function overridesKey(tool: McpToolView) {
+  return toolHints.map((hint) => hintValue(tool.annotation_overrides[hint.key])).join(',')
+}
+
+/** Changes when a tool's stored admin tags change, to restart its draft. */
+export function tagsKey(tool: McpToolView) {
+  return tool.admin_tags.join(',')
 }

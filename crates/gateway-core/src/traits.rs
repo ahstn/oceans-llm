@@ -1206,6 +1206,14 @@ pub trait McpAccessRepository: Send + Sync {
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
 
+    /// Served tools (active, and approved or with only a text change waiting)
+    /// on active servers, on one server or every server, in one query. Tag
+    /// rule previews read their candidates from it.
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
     async fn list_mcp_tool_tag_rules(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,

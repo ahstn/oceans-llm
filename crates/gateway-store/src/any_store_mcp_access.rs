@@ -218,6 +218,16 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_active_mcp_tools(mcp_server_id).await,
+            Self::Postgres(store) => store.list_active_mcp_tools(mcp_server_id).await,
+        }
+    }
+
     async fn list_mcp_tool_tag_rules(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,

@@ -554,6 +554,22 @@ impl McpAccessRepository for PostgresStore {
         row.as_ref().map(decode_tool).transpose()
     }
 
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        sqlx::query(&format!(
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($1::text IS NULL OR t.mcp_server_id = $1) ORDER BY s.server_key, t.upstream_name"
+        ))
+        .bind(mcp_server_id.map(|id| id.to_string()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .iter()
+        .map(decode_tool)
+        .collect()
+    }
+
     async fn list_mcp_tool_tag_rules(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,

@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
-    AdminApiKeyRepository, AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError,
+    AdminApiKeyRepository, ApiKeyAccess, AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError,
     IdentityRepository, McpAccessRepository, McpAccessResolution, McpGrantSubject,
-    McpToolGrantSubjectKind, McpToolProjection,
+    McpToolGrantSubjectKind, McpToolProjection, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
 };
 use uuid::Uuid;
 
@@ -100,8 +100,9 @@ where
     pub async fn preview_subjects(
         &self,
         selected: &[McpGrantSubject],
-    ) -> Result<Vec<McpGrantSubject>, GatewayError> {
+    ) -> Result<McpAccessPreview, GatewayError> {
         let mut subjects = Vec::new();
+        let mut key_access = Vec::new();
         let mut seen = HashSet::new();
         for subject in selected {
             push_subject(
@@ -125,6 +126,7 @@ where
                             access: key.access,
                             oauth: None,
                         };
+                        key_access.push(auth.access.clone());
                         for owned in self.grant_subjects(&auth).await? {
                             push_subject(
                                 &mut subjects,
@@ -166,7 +168,30 @@ where
                 McpToolGrantSubjectKind::Team => {}
             }
         }
-        Ok(subjects)
+        Ok(McpAccessPreview {
+            subjects,
+            key_access,
+        })
+    }
+}
+
+/// The subjects a preview resolves, and the scope limits of any previewed API
+/// key, which runtime applies on top of grants and rules.
+#[derive(Debug, Clone, Default)]
+pub struct McpAccessPreview {
+    pub subjects: Vec<McpGrantSubject>,
+    pub key_access: Vec<ApiKeyAccess>,
+}
+
+impl McpAccessPreview {
+    /// Whether every previewed key may reach the server through MCP: it has
+    /// an MCP scope (or no scope list) and the server is in its server list.
+    #[must_use]
+    pub fn allows_server(&self, server_key: &str) -> bool {
+        self.key_access.iter().all(|access| {
+            (access.has_scope(SCOPE_MCP_AGGREGATE) || access.has_scope(SCOPE_MCP_PROXY))
+                && access.allows_mcp_server(server_key)
+        })
     }
 }
 
@@ -228,5 +253,40 @@ fn push_subject(
             subject_kind,
             subject_id,
         });
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    fn access(scopes: Option<&[&str]>, servers: Option<&[&str]>) -> ApiKeyAccess {
+        ApiKeyAccess::new(
+            scopes.map(|scopes| scopes.iter().map(|scope| (*scope).to_string()).collect()),
+            servers.map(|servers| servers.iter().map(|server| (*server).to_string()).collect()),
+        )
+        .expect("access")
+    }
+
+    #[test]
+    fn key_scopes_limit_previewed_servers() {
+        let open = McpAccessPreview::default();
+        assert!(open.allows_server("github"), "no previewed key, no limit");
+
+        let limited = McpAccessPreview {
+            subjects: Vec::new(),
+            key_access: vec![access(Some(&[SCOPE_MCP_PROXY]), Some(&["notes"]))],
+        };
+        assert!(limited.allows_server("notes"));
+        assert!(!limited.allows_server("github"));
+
+        let inference_only = McpAccessPreview {
+            subjects: Vec::new(),
+            key_access: vec![access(Some(&[gateway_core::SCOPE_INFERENCE]), None)],
+        };
+        assert!(
+            !inference_only.allows_server("notes"),
+            "no MCP scope, no tools"
+        );
     }
 }

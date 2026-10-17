@@ -926,13 +926,41 @@ pub async fn preview_mcp_effective_access(
     }
     // Preview what a real caller gets: a key with its owner and team, a user
     // or service account with its team.
-    let subjects = gateway_service::McpAccess::new(state.store.clone())
+    let preview = gateway_service::McpAccess::new(state.store.clone())
         .preview_subjects(&selected)
         .await?;
-    let resolution = state
+    let mut resolution = state
         .store
-        .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)
+        .resolve_mcp_access_for_subjects(
+            &preview.subjects,
+            query.server_id,
+            McpToolProjection::Full,
+        )
         .await?;
+    // A previewed key's scopes and server list apply on top of its grants.
+    if !preview.key_access.is_empty() {
+        let server_keys = state
+            .store
+            .list_external_mcp_servers(true)
+            .await?
+            .into_iter()
+            .map(|server| (server.mcp_server_id, server.server_key))
+            .collect::<std::collections::HashMap<_, _>>();
+        resolution.allowed_tools.retain(|tool| {
+            server_keys
+                .get(&tool.mcp_server_id)
+                .is_some_and(|server_key| preview.allows_server(server_key))
+        });
+        resolution.referenced_server_count = resolution
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64;
+        resolution.filtered_tool_count = resolution
+            .exposed_tool_count
+            .saturating_sub(resolution.allowed_tools.len() as i64);
+    }
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: resolution.referenced_server_count,
         exposed_tool_count: resolution.exposed_tool_count,
