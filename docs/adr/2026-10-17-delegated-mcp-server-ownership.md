@@ -28,7 +28,7 @@ Teams already have Owner, Admin and Member roles, and Spend Controls already let
 | `owner_contact` | Free text, up to 256 characters: an email address, a chat channel or an on-call alias. |
 | `visibility` | `team` or `organisation`. |
 
-Existing servers become platform-owned and `organisation`, so nothing changes for them. In the API and UI, a platform-owned server shows its owner as "Platform".
+Existing servers become platform-owned and `organisation`, so nothing changes for them. The API returns `owner_team_id: null` for a platform-owned server, and the UI shows its owner as "Platform admins", so it cannot be mistaken for a team named "Platform".
 
 A team owner or admin who registers a server always registers it for their own team. The contact defaults to their email address. A platform admin may register a server for any team, or for the platform.
 

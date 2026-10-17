@@ -243,6 +243,7 @@ export function AccessTab({
               <Field>
                 <FieldLabel>Subject type</FieldLabel>
                 <KindSelect
+                  ariaLabel="Grant subject type"
                   value={grantForm.subject_kind}
                   options={subjectKinds}
                   onChange={(value) =>
@@ -266,6 +267,7 @@ export function AccessTab({
               <Field>
                 <FieldLabel>Target type</FieldLabel>
                 <KindSelect
+                  ariaLabel="Grant target type"
                   value={grantForm.target_kind}
                   options={scope.platformAdmin ? targetKinds : teamTargetKinds}
                   onChange={(value) =>
@@ -309,6 +311,7 @@ export function AccessTab({
               <Field>
                 <FieldLabel>Subject type</FieldLabel>
                 <KindSelect
+                  ariaLabel="Preview subject type"
                   value={previewForm.subject_kind}
                   options={subjectKinds}
                   onChange={(value) =>
@@ -414,17 +417,19 @@ export function AccessTab({
 }
 
 function KindSelect({
+  ariaLabel,
   value,
   options,
   onChange,
 }: {
+  ariaLabel: string
   value: string
   options: readonly { value: string; label: string }[]
   onChange: (value: string) => void
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger>
+      <SelectTrigger aria-label={ariaLabel}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

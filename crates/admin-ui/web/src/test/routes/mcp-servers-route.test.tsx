@@ -782,7 +782,7 @@ describe('ServersTab', () => {
     await renderServersTab(null, [server, teamServer])
 
     const registry = within(screen.getByTestId('mcp-server-list'))
-    expect(registry.getByText('Platform')).toBeInTheDocument()
+    expect(registry.getByText('Platform admins')).toBeInTheDocument()
     expect(registry.getByText('Team A')).toHaveAttribute('title', '#team-a')
     expect(registry.getByText('Organisation')).toBeInTheDocument()
     expect(registry.getByText('Team only')).toBeInTheDocument()
@@ -805,7 +805,7 @@ describe('ServersTab', () => {
     expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
-    expect(await screen.findByText(/Platform manages this server/)).toBeInTheDocument()
+    expect(await screen.findByText(/Platform admins manages this server/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit GitHub' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Disable GitHub' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()

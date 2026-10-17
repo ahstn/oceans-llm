@@ -38,7 +38,11 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { ownerLabel, visibilityLabel } from '@/components/mcp/server-ownership'
+import {
+  PLATFORM_OWNER_LABEL,
+  ownerLabel,
+  visibilityLabel,
+} from '@/components/mcp/server-ownership'
 import type {
   AdminTeamOption,
   McpCredentialBindingView,
@@ -163,7 +167,7 @@ export function ServerOwnershipTransfer({
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="platform">Platform</SelectItem>
+              <SelectItem value="platform">{PLATFORM_OWNER_LABEL}</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id}>
                   {team.name}
@@ -940,7 +944,7 @@ function ServerAuthFields({
           value={form.auth_mode}
           onValueChange={(value) => onFormChange({ ...form, auth_mode: value })}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Auth mode">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

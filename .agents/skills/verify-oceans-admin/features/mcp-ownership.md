@@ -4,7 +4,7 @@ Team owners and admins reach a scoped MCP area. They register servers for their 
 
 ## Sub-features
 
-- `mcp-owner-registry` shows the `Owner` column (`Platform` or the team name, with the contact as its title) and a visibility badge (`Team only` or `Organisation`) in `mcp-server-list`, and filters it with the `Filter by owner` select (`All owners`, `Platform`, then each team).
+- `mcp-owner-registry` shows the `Owner` column (`Platform admins` or the team name, with the contact as its title) and a visibility badge (`Team only` or `Organisation`) in `mcp-server-list`, and filters it with the `Filter by owner` select (`All owners`, `Platform admins`, then each team).
 - `mcp-team-register` lets a team admin register a server through `Add server`. The form's `Visibility` select starts at `Team only`, `Organisation` is disabled with `Only a platform admin can publish this server to the organisation.` under the default `mcp.registry.organisation_publishing: platform_admins`, and `Owner contact` defaults to the admin's email.
 - `mcp-team-read-only` shows servers the team does not manage with a `View` button instead of `Manage`, a disabled refresh, and an overview line `<owner> manages this server.` with no `Configuration` or `Credentials` sections and no edit or disable buttons.
 - `mcp-team-access` limits the team admin's Access tab to `Tool` targets from their own servers and their own team's subjects, and hides the `Tool Sets` nav entry. `/admin/mcp/toolsets` redirects to `/admin/mcp?tab=servers`.
@@ -28,13 +28,15 @@ Steps:
 
 - **Team admin registers.** As `cara@research.local`, open `/admin/mcp` and use `Add server`. Check the `Visibility` select shows `Team only` and the publish hint, fill `Server key`, `Display name`, and `Server URL`, then submit. The new row's `Owner` cell reads `Research` with `Team only`. `GET /api/v1/admin/mcp/servers` returns the row with `owner_team_id` set, `visibility: "team"`, `can_manage: true`, and `can_publish_to_organisation: false`.
 - **Publishing is blocked.** `PATCH /api/v1/admin/mcp/servers/{id}` with `"visibility": "organisation"` from the team admin's session returns `403`.
-- **Platform view.** As `admin@local`, the same row appears with `Research` and `Team only`. Register a second server as the platform admin; its `Owner` reads `Platform` with `Organisation`. Use `Filter by owner` to select `Research`, then `Platform`, and check `Showing 1 of N servers` each time.
-- **Read-only for other owners.** Back as the team admin, the platform server shows `View <display name>`, its refresh is disabled, and its detail shows `Platform manages this server.` with no `Edit` or `Disable` buttons. `PATCH` and `POST .../disable` on it return `403`.
-- **Scoped access.** Open `Access`. `Target type` offers only `Tool`, and `MCP sections` has no `Tool Sets`. Visiting `/admin/mcp/toolsets` lands on the servers registry.
-- **Transfer.** As `admin@local`, open the team server's `Overview`, choose `Platform` in `Owning team`, and use `Transfer ownership`. The row's `Owner` becomes `Platform` with `Organisation`. In the Audit Log, filter `mcp_server.ownership_transferred` and open the entry: **Details** has `actor_access: platform_admin`, and the before and after show the owner change. The `mcp_server.created` entry for the team admin's server has `actor_access: team_admin` and `actor_team_role: admin`.
+- **Platform view.** As `admin@local`, the same row appears with `Research` and `Team only`. Register a second server as the platform admin; its `Owner` reads `Platform admins` with `Organisation`. Use `Filter by owner` to select `Research`, then `Platform admins`, and check `Showing <n> of <total> servers` against the API each time.
+- **Read-only for other owners.** Back as the team admin, the platform server shows `View <display name>`, its refresh is disabled, and its detail shows `Platform admins manages this server.` with no `Edit` or `Disable` buttons. `PATCH` and `POST .../disable` on it return `403`.
+- **Scoped access.** Open `Access`. The `Grant target type` select offers only `Tool`, and `MCP sections` has no `Tool Sets`. Visiting `/admin/mcp/toolsets` lands on the servers registry.
+- **Transfer.** As `admin@local`, open the team server's `Overview`, choose `Platform admins` in `Owning team`, and use `Transfer ownership`. The row's `Owner` becomes `Platform admins` with `Organisation`. In the Audit Log, filter `mcp_server.ownership_transferred` and open the entry: **Details** has `actor_access: platform_admin`, and the before and after show the owner change. The `mcp_server.created` entry for the team admin's server has `actor_access: team_admin` and `actor_team_role: admin`.
 - **Clean up.** Disable both servers as the platform admin, then record the proof with `control-oceans-admin record mcp-ownership` and one `--check` per step above.
 
 ## Gotchas
+
+- The demo seed has a team named `Platform`. Platform-owned servers are labelled `Platform admins`, so pick options by that exact label.
 
 - `cara@research.local` must keep the `admin` (or `owner`) role in Research. A `member` gets `403` on every MCP admin route; that is the expected boundary, not a regression.
 - Explicit `team_admins.pages` lists in a gateway config replace the default. A config that omits `mcp` keeps team admins out of the MCP area even though the code default grants it. `gateway.prod.yaml` and the deploy configs set `pages: []`.
