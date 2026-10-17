@@ -35,6 +35,7 @@ pub(super) async fn seed_server(state: &AppState, server_key: &str, server_url: 
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: server_key.to_string(),
             display_name: "Repository".to_string(),
             description: None,

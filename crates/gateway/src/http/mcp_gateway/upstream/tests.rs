@@ -29,6 +29,7 @@ impl TestUpstream {
         Self {
             upstream: McpGatewayUpstream {
                 server: ExternalMcpServerRecord {
+                    ownership: Default::default(),
                     mcp_server_id: Uuid::new_v4(),
                     server_key: "upstream".into(),
                     display_name: "Upstream".into(),

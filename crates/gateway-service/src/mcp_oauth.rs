@@ -1107,6 +1107,7 @@ mod tests {
 
     fn oauth_server() -> ExternalMcpServerRecord {
         ExternalMcpServerRecord {
+            ownership: Default::default(),
             mcp_server_id: Uuid::new_v4(),
             server_key: "google_drive".to_string(),
             display_name: "Google Drive".to_string(),

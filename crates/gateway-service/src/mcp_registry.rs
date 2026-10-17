@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
-    GatewayError, McpRegistryRepository, McpToolMetadata, NewExternalMcpServerRecord, StoreError,
+    GatewayError, McpRegistryRepository, McpServerOwnership, McpServerVisibility, McpToolMetadata,
+    NewExternalMcpServerRecord, StoreError, TransferExternalMcpServerOwnershipRecord,
     UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
 };
 use gateway_mcp::{McpClientError, NormalizedMcpTool, StreamableHttpClient};
@@ -59,6 +60,8 @@ pub struct CreateExternalMcpServerInput {
     pub auth_mode: Option<String>,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// Resolved by [`crate::McpOwnership::new_server_ownership`].
+    pub ownership: McpServerOwnership,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +72,11 @@ pub struct UpdateExternalMcpServerInput {
     pub auth_mode: String,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// `None` keeps the current contact; a blank value clears it.
+    pub owner_contact: Option<String>,
+    /// `None` keeps the current visibility. Callers check the change with
+    /// [`crate::McpOwnership::authorize_visibility_change`] first.
+    pub visibility: Option<McpServerVisibility>,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +165,12 @@ where
         &self,
         input: CreateExternalMcpServerInput,
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
+        let ownership = input.ownership.clone();
+        if ownership.owner_team_id.is_none() && ownership.visibility == McpServerVisibility::Team {
+            return Err(GatewayError::InvalidRequest(
+                "a platform-owned MCP server is always visible to the organisation".to_string(),
+            ));
+        }
         let resolved = self.resolve_create_input(input)?;
         let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
@@ -184,6 +198,7 @@ where
 
         self.repo
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership,
                 server_key,
                 display_name: resolved.display_name,
                 description: resolved.description,
@@ -205,12 +220,22 @@ where
         mcp_server_id: Uuid,
         input: UpdateExternalMcpServerInput,
     ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
-        self.server_or_not_found(mcp_server_id).await?;
+        let existing = self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
         validate_mcp_server_auth_destination(&input.server_url, auth_mode, &input.auth_config)?;
         let timeout_ms = validate_timeout_ms(input.timeout_ms)?;
+        let owner_contact = match input.owner_contact {
+            Some(contact) => crate::normalize_owner_contact(Some(contact))?,
+            None => existing.ownership.owner_contact,
+        };
+        let visibility = input.visibility.unwrap_or(existing.ownership.visibility);
+        if existing.ownership.owner_team_id.is_none() && visibility == McpServerVisibility::Team {
+            return Err(GatewayError::InvalidRequest(
+                "a platform-owned MCP server is always visible to the organisation".to_string(),
+            ));
+        }
 
         self.repo
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
@@ -221,6 +246,25 @@ where
                 auth_mode,
                 auth_config: input.auth_config,
                 timeout_ms,
+                owner_contact,
+                visibility,
+                updated_at: OffsetDateTime::now_utc(),
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Moves the server to another owner. Callers resolve the ownership with
+    /// [`crate::McpOwnership::transfer_ownership`] first.
+    pub async fn transfer_ownership(
+        &self,
+        mcp_server_id: Uuid,
+        ownership: McpServerOwnership,
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
+        self.repo
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id,
+                ownership,
                 updated_at: OffsetDateTime::now_utc(),
             })
             .await
@@ -743,6 +787,7 @@ mod tests {
                 auth_mode: Some(ExternalMcpAuthMode::None.as_str().to_string()),
                 auth_config: Map::new(),
                 timeout_ms: None,
+                ownership: McpServerOwnership::default(),
             })
             .expect("resolve input");
 

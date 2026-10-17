@@ -1,6 +1,8 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::Updated;
+use gateway_core::{
+    McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord, Updated,
+};
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
@@ -54,6 +56,23 @@ fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreErro
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+        ownership: decode_server_ownership(row, 18)?,
+    })
+}
+
+/// Decodes `owner_team_id, owner_contact, visibility` starting at `offset`.
+pub(super) fn decode_server_ownership(
+    row: &libsql::Row,
+    offset: i32,
+) -> Result<McpServerOwnership, StoreError> {
+    let owner_team_id: Option<String> = row.get(offset).map_err(to_query_error)?;
+    let visibility: String = row.get(offset + 2).map_err(to_query_error)?;
+    Ok(McpServerOwnership {
+        owner_team_id: owner_team_id.as_deref().map(parse_uuid).transpose()?,
+        owner_contact: row.get(offset + 1).map_err(to_query_error)?,
+        visibility: McpServerVisibility::from_db(&visibility).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid MCP server visibility `{visibility}`"))
+        })?,
     })
 }
 
@@ -126,6 +145,8 @@ fn server_settings_match(
     existing.display_name == input.display_name
         && existing.description == input.description
         && existing.timeout_ms == input.timeout_ms
+        && existing.ownership.owner_contact == input.owner_contact
+        && existing.ownership.visibility == input.visibility
         && !discovery_config_changed(existing, input)
 }
 
@@ -148,7 +169,7 @@ async fn load_server(
 
 macro_rules! server_columns {
     () => {
-        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at"
+        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at, owner_team_id, owner_contact, visibility"
     };
 }
 
@@ -230,8 +251,9 @@ impl McpRegistryRepository for LibsqlStore {
                     r#"
                 INSERT INTO external_mcp_servers (
                     mcp_server_id, server_key, display_name, description, transport, server_url,
-                    auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10)
+                    auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at,
+                    owner_team_id, owner_contact, visibility
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?10, ?11, ?12, ?13)
                 RETURNING {SERVER_COLUMNS}
                 "#
                 ),
@@ -246,6 +268,9 @@ impl McpRegistryRepository for LibsqlStore {
                     auth_config_json,
                     input.timeout_ms,
                     input.created_at.unix_timestamp(),
+                    input.ownership.owner_team_id.map(|id| id.to_string()),
+                    input.ownership.owner_contact.as_deref(),
+                    input.ownership.visibility.as_str(),
                 ],
             )
             .await
@@ -276,7 +301,8 @@ impl McpRegistryRepository for LibsqlStore {
             r#"
             UPDATE external_mcp_servers
             SET display_name = ?1, description = ?2, server_url = ?3, auth_mode = ?4,
-                auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7
+                auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7,
+                owner_contact = ?9, visibility = ?10
             WHERE mcp_server_id = ?8
             "#,
             libsql::params![
@@ -288,6 +314,8 @@ impl McpRegistryRepository for LibsqlStore {
                 input.timeout_ms,
                 input.updated_at.unix_timestamp(),
                 input.mcp_server_id.to_string(),
+                input.owner_contact.as_deref(),
+                input.visibility.as_str(),
             ],
         )
         .await
@@ -356,6 +384,58 @@ impl McpRegistryRepository for LibsqlStore {
         }
         drop(rows);
         Ok((load_server(&self.connection, mcp_server_id).await?, false))
+    }
+
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
+        // Read under the write lock, so `previous` is the owner this call replaced.
+        let tx = self.begin_transaction().await?;
+        let existing = load_server(&tx, input.mcp_server_id).await?;
+        if existing.ownership == input.ownership {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        tx.execute(
+            r#"
+            UPDATE external_mcp_servers
+            SET owner_team_id = ?1, owner_contact = ?2, visibility = ?3, updated_at = ?4
+            WHERE mcp_server_id = ?5
+            "#,
+            libsql::params![
+                input.ownership.owner_team_id.map(|id| id.to_string()),
+                input.ownership.owner_contact.as_deref(),
+                input.ownership.visibility.as_str(),
+                input.updated_at.unix_timestamp(),
+                input.mcp_server_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        let current = load_server(&tx, input.mcp_server_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        let sql = format!("SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = ?1");
+        let mut rows = self
+            .connection
+            .query(&sql, [mcp_tool_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        rows.next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_tool(&row))
+            .transpose()
     }
 
     async fn list_external_mcp_tools(

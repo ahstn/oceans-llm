@@ -208,6 +208,7 @@ async fn oauth_server(state: &AppState) -> gateway_core::ExternalMcpServerRecord
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "google_drive".to_string(),
             display_name: "Google Drive".to_string(),
             description: None,

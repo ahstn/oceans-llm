@@ -16,6 +16,8 @@ fn defaults_resolve_in_stable_order() {
             .pages
             .contains(&AdminPage::SpendControls)
     );
+    assert!(resolved.team_admins.pages.contains(&AdminPage::Mcp));
+    assert!(!resolved.users.pages.contains(&AdminPage::Mcp));
     assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
     assert_eq!(resolved.users.actions, USER_ACTIONS);
     assert_eq!(resolved.team_admins.actions, ADMIN_ACTION_ORDER);
@@ -145,10 +147,26 @@ users:
     let platform_only_page = parse(
         r#"
 team_admins:
-  pages: [mcp]
+  pages: [rate_limits]
 "#,
     );
     assert!(platform_only_page.resolve().is_err());
+
+    // Team admins may receive MCP; the API limits them to their team's servers.
+    let team_mcp = parse(
+        r#"
+team_admins:
+  pages: [mcp]
+"#,
+    );
+    assert!(
+        team_mcp
+            .resolve()
+            .expect("team admins can receive mcp")
+            .team_admins
+            .pages
+            .contains(&AdminPage::Mcp)
+    );
 
     let unsupported_action = parse(
         r#"

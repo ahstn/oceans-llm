@@ -120,6 +120,7 @@ async fn server(state: &AppState, origin: &str, registration: Value) -> External
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: format!("files_{}", &Uuid::new_v4().simple().to_string()[..8]),
             display_name: "Files".to_string(),
             description: None,

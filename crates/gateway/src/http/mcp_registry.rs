@@ -1,6 +1,8 @@
 mod views;
 
 #[cfg(test)]
+mod ownership_tests;
+#[cfg(test)]
 mod tests;
 
 use std::time::Instant;
@@ -14,20 +16,22 @@ use gateway_client_config::{
     DEFAULT_GATEWAY_BASE_URL, normalize_gateway_base_url, render_mcp_client_configs,
 };
 use gateway_core::{
-    GatewayError, McpAccessRepository, McpGrantSubject, McpRegistryRepository,
-    McpToolGrantSubjectKind, McpToolProjection, NewMcpToolsetRecord, UpdateMcpToolsetRecord,
-    UpsertMcpToolGrantRecord,
+    ExternalMcpServerRecord, GatewayError, IdentityRepository, McpAccessRepository,
+    McpGrantSubject, McpRegistryRepository, McpToolGrantSubjectKind, McpToolProjection,
+    NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpCredentialService,
-    McpRegistryService, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
-    admin_audit::actions,
+    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpAdminScope,
+    McpCredentialService, McpOwnership, McpRegistryService, RedactedMcpCredentialBinding,
+    RequestedMcpServerOwnership, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
+    admin_audit::actions, parse_mcp_server_visibility,
 };
+use gateway_store::AnyStore;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::{require_mcp_admin_scope, require_mcp_platform_scope},
     admin_contract::{Envelope, OpenAiErrorEnvelopeView, envelope},
     audit::AuditRequestMeta,
     error::AppError,
@@ -49,7 +53,7 @@ pub async fn get_mcp_connection_info(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<McpConnectionInfoPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_mcp_admin_scope(&state, &headers).await?;
     let gateway_base_url = state
         .client_config_gateway_base_url
         .as_ref()
@@ -92,7 +96,7 @@ pub async fn list_recommended_mcp_servers(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<RecommendedMcpServersPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_mcp_admin_scope(&state, &headers).await?;
     let service = McpRegistryService::new(state.store.clone());
     let items = service
         .recommended_servers()?
@@ -114,15 +118,21 @@ pub async fn list_mcp_servers(
     headers: HeaderMap,
     Query(query): Query<McpServersQuery>,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
-    let items = service
+    let servers = service
         .list_servers(query.include_disabled)
         .await?
         .into_iter()
-        .map(map_server)
+        .filter(|server| scope.can_view(server))
+        .filter(|server| owner.is_none_or(|owner| server.ownership.owner_team_id == owner))
         .collect();
-    Ok(Json(envelope(McpServersPayload { items })))
+    let items = present_servers(&state, &scope, servers).await?;
+    Ok(Json(envelope(McpServersPayload {
+        items,
+        can_publish_to_organisation: ownership(&state).can_publish(&scope),
+    })))
 }
 
 #[utoipa::path(
@@ -138,7 +148,22 @@ pub async fn create_mcp_server(
     meta: AuditRequestMeta,
     Json(request): Json<CreateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let ownership = ownership(&state)
+        .new_server_ownership(
+            &scope,
+            RequestedMcpServerOwnership {
+                owner_team_id: request.owner_team_id,
+                owner_contact: request.owner_contact,
+                visibility: request
+                    .visibility
+                    .as_deref()
+                    .map(parse_mcp_server_visibility)
+                    .transpose()?,
+            },
+            &actor.email,
+        )
+        .await?;
     let service = McpRegistryService::new(state.store.clone());
     let server = service
         .create_server(CreateExternalMcpServerInput {
@@ -151,16 +176,20 @@ pub async fn create_mcp_server(
             auth_mode: request.auth_mode,
             auth_config: request.auth_config,
             timeout_ms: request.timeout_ms,
+            ownership,
         })
         .await?;
-    let server = map_server(server);
+    let view = map_server(server.clone());
     state
         .audit()
         .record(
             &meta.user_context(&actor),
-            server_event(actions::MCP_SERVER_CREATED, &server).after(server_audit_summary(&server)),
+            scope.annotate(
+                server_event(actions::MCP_SERVER_CREATED, &view).after(server_audit_summary(&view)),
+            ),
         )
         .await;
+    let server = present_server(&state, &scope, server).await?;
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
@@ -183,8 +212,20 @@ pub async fn update_mcp_server(
     Path(server_id): Path<String>,
     Json(request): Json<UpdateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    let ownership = ownership(&state);
+    let existing = ownership.managed_server(&scope, server_id).await?;
+    let visibility = request
+        .visibility
+        .as_deref()
+        .map(parse_mcp_server_visibility)
+        .transpose()?;
+    if let Some(visibility) = visibility {
+        ownership
+            .authorize_visibility_change(&scope, &existing, visibility)
+            .await?;
+    }
     let service = McpRegistryService::new(state.store.clone());
     let update = service
         .update_server(
@@ -196,9 +237,12 @@ pub async fn update_mcp_server(
                 auth_mode: request.auth_mode,
                 auth_config: request.auth_config,
                 timeout_ms: request.timeout_ms,
+                owner_contact: request.owner_contact,
+                visibility,
             },
         )
         .await?;
+    let current = update.current.clone();
     let server = map_server(update.current);
     // The store compares the unredacted settings under the write lock and writes
     // nothing when they match, so a resave records nothing while rotating a
@@ -208,12 +252,15 @@ pub async fn update_mcp_server(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                server_event(actions::MCP_SERVER_UPDATED, &server)
-                    .before(server_audit_summary(&map_server(previous)))
-                    .after(server_audit_summary(&server)),
+                scope.annotate(
+                    server_event(actions::MCP_SERVER_UPDATED, &server)
+                        .before(server_audit_summary(&map_server(previous)))
+                        .after(server_audit_summary(&server)),
+                ),
             )
             .await;
     }
+    let server = present_server(&state, &scope, current).await?;
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
@@ -234,12 +281,13 @@ pub async fn disable_mcp_server(
     meta: AuditRequestMeta,
     Path(server_id): Path<String>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    let before = server_before_summary(&state, server_id).await?;
+    let existing = ownership(&state).managed_server(&scope, server_id).await?;
+    let before = server_audit_summary(&map_server(existing));
     let service = McpRegistryService::new(state.store.clone());
-    let (server, disabled) = service.disable_server(server_id).await?;
-    let server = map_server(server);
+    let (record, disabled) = service.disable_server(server_id).await?;
+    let server = map_server(record.clone());
     // Disabling a disabled server is not a transition. The store decides this in
     // its update, so concurrent requests record one entry.
     if disabled {
@@ -247,13 +295,88 @@ pub async fn disable_mcp_server(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                server_event(actions::MCP_SERVER_DISABLED, &server)
-                    .before(serde_json::json!({ "status": before["status"] }))
-                    .after(serde_json::json!({ "status": "disabled" })),
+                scope.annotate(
+                    server_event(actions::MCP_SERVER_DISABLED, &server)
+                        .before(serde_json::json!({ "status": before["status"] }))
+                        .after(serde_json::json!({ "status": "disabled" })),
+                ),
             )
             .await;
     }
+    let server = present_server(&state, &scope, record).await?;
     Ok(Json(envelope(McpServerPayload { server })))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/mcp/servers/{server_id}/owner",
+    request_body = TransferMcpServerOwnershipRequest,
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 403, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+/// Moves a server to another team, or takes it over for the platform.
+/// Platform admins only.
+pub async fn transfer_mcp_server_ownership(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    meta: AuditRequestMeta,
+    Path(server_id): Path<String>,
+    Json(request): Json<TransferMcpServerOwnershipRequest>,
+) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
+    let (actor, scope) = require_mcp_platform_scope(&state, &headers).await?;
+    let server_id = parse_uuid(&server_id, "server_id")?;
+    let ownership = ownership(&state);
+    let existing = ownership.managed_server(&scope, server_id).await?;
+    let resolved = ownership
+        .transfer_ownership(
+            &scope,
+            &existing,
+            RequestedMcpServerOwnership {
+                owner_team_id: request.owner_team_id,
+                owner_contact: request.owner_contact,
+                visibility: request
+                    .visibility
+                    .as_deref()
+                    .map(parse_mcp_server_visibility)
+                    .transpose()?,
+            },
+        )
+        .await?;
+    let update = McpRegistryService::new(state.store.clone())
+        .transfer_ownership(server_id, resolved)
+        .await?;
+    // The store writes nothing when the ownership already matches.
+    if let Some(previous) = update.previous {
+        let current = map_server(update.current.clone());
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                scope.annotate(
+                    server_event(actions::MCP_SERVER_OWNERSHIP_TRANSFERRED, &current)
+                        .before(ownership_audit_summary(&previous.ownership))
+                        .after(ownership_audit_summary(&update.current.ownership)),
+                ),
+            )
+            .await;
+    }
+    let server = present_server(&state, &scope, update.current).await?;
+    Ok(Json(envelope(McpServerPayload { server })))
+}
+
+fn ownership_audit_summary(ownership: &gateway_core::McpServerOwnership) -> serde_json::Value {
+    serde_json::json!({
+        "owner_team_id": ownership.owner_team_id,
+        "owner_contact": ownership.owner_contact,
+        "visibility": ownership.visibility.as_str(),
+    })
 }
 
 #[utoipa::path(
@@ -276,8 +399,9 @@ pub async fn list_mcp_server_tools(
     Path(server_id): Path<String>,
     Query(query): Query<McpToolsQuery>,
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    ownership(&state).visible_server(&scope, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
     let items = service
         .list_tools(server_id, query.include_inactive)
@@ -306,7 +430,7 @@ pub async fn discover_mcp_server_oauth(
     headers: HeaderMap,
     Json(request): Json<McpOauthDiscoveryRequest>,
 ) -> Result<Json<Envelope<McpOauthDiscoveryPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_mcp_admin_scope(&state, &headers).await?;
     let discovery = state
         .mcp_oauth_runtime
         .discover(request.server_url.trim())
@@ -361,8 +485,9 @@ pub async fn refresh_mcp_server_discovery(
     meta: AuditRequestMeta,
     Path(server_id): Path<String>,
 ) -> Result<Json<Envelope<McpDiscoveryRefreshPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    ownership(&state).managed_server(&scope, server_id).await?;
     let service = McpRegistryService::new(state.store.clone());
     let started_at = Instant::now();
     let progress = AuditProgress::default();
@@ -396,9 +521,15 @@ pub async fn refresh_mcp_server_discovery(
                 .after(serde_json::json!({ "tool_count": result.tools.len() }));
             state
                 .audit()
-                .record(&meta.user_context(&actor), event)
+                .record(&meta.user_context(&actor), scope.annotate(event))
                 .await;
-            Ok(Json(envelope(map_discovery_result(result))))
+            // Only a caller who manages the server can refresh it.
+            let owner_team_name =
+                owner_team_name(&state, result.server.ownership.owner_team_id).await?;
+            Ok(Json(envelope(map_discovery_result(
+                result,
+                owner_team_name,
+            ))))
         }
         Err(error) => {
             state
@@ -417,7 +548,7 @@ pub async fn refresh_mcp_server_discovery(
                     .meta("outcome", "partial");
                 state
                     .audit()
-                    .record(&meta.user_context(&actor), event)
+                    .record(&meta.user_context(&actor), scope.annotate(event))
                     .await;
             }
             Err(error.into())
@@ -437,7 +568,7 @@ pub async fn list_mcp_toolsets(
     headers: HeaderMap,
     Query(query): Query<McpToolsetsQuery>,
 ) -> Result<Json<Envelope<McpToolsetsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_mcp_platform_scope(&state, &headers).await?;
     let items = state
         .store
         .list_mcp_toolsets(query.include_disabled)
@@ -461,7 +592,7 @@ pub async fn create_mcp_toolset(
     meta: AuditRequestMeta,
     Json(request): Json<CreateMcpToolsetRequest>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_platform_scope(&state, &headers).await?;
     let record = NewMcpToolsetRecord {
         toolset_key: request.toolset_key,
         display_name: request.display_name,
@@ -474,8 +605,10 @@ pub async fn create_mcp_toolset(
             &meta.user_context(&actor),
             state.store.create_mcp_toolset(&record),
             |toolset| {
-                toolset_event(actions::MCP_TOOLSET_CREATED, &map_toolset(toolset.clone()))
-                    .after(map_toolset(toolset.clone()))
+                scope.annotate(
+                    toolset_event(actions::MCP_TOOLSET_CREATED, &map_toolset(toolset.clone()))
+                        .after(map_toolset(toolset.clone())),
+                )
             },
         )
         .await?;
@@ -498,7 +631,7 @@ pub async fn update_mcp_toolset(
     Path(toolset_id): Path<Uuid>,
     Json(request): Json<UpdateMcpToolsetRequest>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_platform_scope(&state, &headers).await?;
     let record = UpdateMcpToolsetRecord {
         toolset_id,
         display_name: request.display_name,
@@ -513,9 +646,11 @@ pub async fn update_mcp_toolset(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                toolset_event(actions::MCP_TOOLSET_UPDATED, &map_toolset(toolset.clone()))
-                    .before(toolset_details(&previous))
-                    .after(toolset_details(&toolset)),
+                scope.annotate(
+                    toolset_event(actions::MCP_TOOLSET_UPDATED, &map_toolset(toolset.clone()))
+                        .before(toolset_details(&previous))
+                        .after(toolset_details(&toolset)),
+                ),
             )
             .await;
     }
@@ -536,7 +671,7 @@ pub async fn disable_mcp_toolset(
     meta: AuditRequestMeta,
     Path(toolset_id): Path<Uuid>,
 ) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_platform_scope(&state, &headers).await?;
     let toolset = state
         .audit()
         .audited(
@@ -545,8 +680,10 @@ pub async fn disable_mcp_toolset(
                 .store
                 .disable_mcp_toolset(toolset_id, OffsetDateTime::now_utc()),
             |toolset| {
-                toolset_event(actions::MCP_TOOLSET_DISABLED, &map_toolset(toolset.clone()))
-                    .after(serde_json::json!({ "status": toolset.status.as_str() }))
+                scope.annotate(
+                    toolset_event(actions::MCP_TOOLSET_DISABLED, &map_toolset(toolset.clone()))
+                        .after(serde_json::json!({ "status": toolset.status.as_str() })),
+                )
             },
         )
         .await?;
@@ -571,7 +708,7 @@ pub async fn list_mcp_toolset_tools(
     headers: HeaderMap,
     Path(toolset_id): Path<String>,
 ) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    require_mcp_platform_scope(&state, &headers).await?;
     let toolset_id = parse_uuid(&toolset_id, "toolset_id")?;
     let tools = state.store.list_mcp_toolset_tools(toolset_id).await?;
     Ok(Json(envelope(McpToolsetToolsPayload {
@@ -596,7 +733,7 @@ pub async fn replace_mcp_toolset_tools(
     Path(toolset_id): Path<Uuid>,
     Json(request): Json<ReplaceMcpToolsetToolsRequest>,
 ) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_platform_scope(&state, &headers).await?;
     let sorted_ids = |tools: &[gateway_core::McpToolsetToolRecord]| {
         let mut ids: Vec<String> = tools
             .iter()
@@ -605,6 +742,10 @@ pub async fn replace_mcp_toolset_tools(
         ids.sort();
         ids
     };
+    // Tool sets are granted organisation-wide, so team-only tools stay out.
+    ownership(&state)
+        .authorize_toolset_tools(&request.tool_ids)
+        .await?;
     let update = state
         .store
         .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
@@ -620,14 +761,19 @@ pub async fn replace_mcp_toolset_tools(
                 &meta.user_context(&actor),
                 // Labelled like the other tool set entries, so it stays readable
                 // after the tool set is renamed or disabled.
-                match state.store.get_mcp_toolset(toolset_id).await? {
-                    Some(toolset) => {
-                        toolset_event(actions::MCP_TOOLSET_TOOLS_REPLACED, &map_toolset(toolset))
+                scope.annotate(
+                    match state.store.get_mcp_toolset(toolset_id).await? {
+                        Some(toolset) => toolset_event(
+                            actions::MCP_TOOLSET_TOOLS_REPLACED,
+                            &map_toolset(toolset),
+                        ),
+                        None => {
+                            AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED).target(toolset_id)
+                        }
                     }
-                    None => AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED).target(toolset_id),
-                }
-                .before(serde_json::json!({ "tool_ids": before }))
-                .after(serde_json::json!({ "tool_ids": after })),
+                    .before(serde_json::json!({ "tool_ids": before }))
+                    .after(serde_json::json!({ "tool_ids": after })),
+                ),
             )
             .await;
     }
@@ -651,15 +797,18 @@ pub async fn list_mcp_grants(
     headers: HeaderMap,
     Query(query): Query<McpGrantsQuery>,
 ) -> Result<Json<Envelope<McpGrantsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let subject_kind = query
         .subject_kind
         .as_deref()
         .map(parse_grant_subject_kind)
         .transpose()?;
-    let items = state
+    let grants = state
         .store
         .list_mcp_tool_grants(subject_kind, query.subject_id)
+        .await?;
+    let items = ownership(&state)
+        .visible_grants(&scope, grants)
         .await?
         .into_iter()
         .map(map_grant)
@@ -680,7 +829,7 @@ pub async fn upsert_mcp_grant(
     meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpGrantRequest>,
 ) -> Result<Json<Envelope<McpGrantPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let record = UpsertMcpToolGrantRecord {
         subject_kind: parse_grant_subject_kind(&request.subject_kind)?,
         subject_id: request.subject_id,
@@ -688,6 +837,17 @@ pub async fn upsert_mcp_grant(
         target_id: request.target_id,
         updated_at: OffsetDateTime::now_utc(),
     };
+    ownership(&state)
+        .authorize_grant(
+            &scope,
+            McpGrantSubject {
+                subject_kind: record.subject_kind,
+                subject_id: record.subject_id,
+            },
+            record.target_kind,
+            record.target_id,
+        )
+        .await?;
     let (grant, created) = state.store.upsert_mcp_tool_grant(&record).await?;
     let grant_id = grant.grant_id;
     let grant = map_grant(grant);
@@ -697,9 +857,11 @@ pub async fn upsert_mcp_grant(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_GRANT_SET)
-                    .target(grant_id)
-                    .after(&grant),
+                scope.annotate(
+                    AuditEvent::new(actions::MCP_GRANT_SET)
+                        .target(grant_id)
+                        .after(&grant),
+                ),
             )
             .await;
     }
@@ -719,9 +881,12 @@ pub async fn revoke_mcp_grant(
     meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpGrantRequest>,
 ) -> Result<Json<Envelope<McpGrantsPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let subject_kind = parse_grant_subject_kind(&request.subject_kind)?;
     let target_kind = parse_grant_target_kind(&request.target_kind)?;
+    ownership(&state)
+        .authorize_grant_revoke(&scope, target_kind, request.target_id)
+        .await?;
     // The store returns the id of the grant it revoked, so the entry targets the
     // same id as that grant's `mcp_grant.set`. Nothing active means no change.
     let revoked = state
@@ -739,14 +904,16 @@ pub async fn revoke_mcp_grant(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_GRANT_REVOKED)
-                    .target(grant_id)
-                    .before(serde_json::json!({
-                        "subject_kind": subject_kind.as_str(),
-                        "subject_id": request.subject_id,
-                        "target_kind": target_kind.as_str(),
-                        "target_id": request.target_id,
-                    })),
+                scope.annotate(
+                    AuditEvent::new(actions::MCP_GRANT_REVOKED)
+                        .target(grant_id)
+                        .before(serde_json::json!({
+                            "subject_kind": subject_kind.as_str(),
+                            "subject_id": request.subject_id,
+                            "target_kind": target_kind.as_str(),
+                            "target_id": request.target_id,
+                        })),
+                ),
             )
             .await;
     }
@@ -768,7 +935,11 @@ pub async fn list_mcp_credential_bindings(
     headers: HeaderMap,
     Query(query): Query<McpCredentialBindingsQuery>,
 ) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    if let Some(server_id) = query.server_id {
+        ownership(&state).managed_server(&scope, server_id).await?;
+    }
+    let managed = managed_server_ids(&state, &scope).await?;
     let owner_scope_kind = query
         .owner_scope_kind
         .as_deref()
@@ -784,6 +955,11 @@ pub async fn list_mcp_credential_bindings(
         )
         .await?
         .into_iter()
+        .filter(|binding| {
+            managed
+                .as_ref()
+                .is_none_or(|managed| managed.contains(&binding.mcp_server_id))
+        })
         .map(map_credential_binding)
         .collect();
     Ok(Json(envelope(McpCredentialBindingsPayload { items })))
@@ -805,15 +981,44 @@ pub async fn upsert_mcp_credential_binding(
     meta: AuditRequestMeta,
     Json(request): Json<UpsertMcpCredentialBindingRequest>,
 ) -> Result<Json<Envelope<McpCredentialBindingPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let owner_scope_kind = parse_credential_owner_scope_kind(&request.owner_scope_kind)?;
+    let ownership = ownership(&state);
+    let server = ownership.managed_server(&scope, request.server_id).await?;
+    ownership
+        .authorize_credential_binding(
+            &scope,
+            &server,
+            owner_scope_kind,
+            request.owner_team_id,
+            request.owner_service_account_id,
+        )
+        .await?;
     let service = McpCredentialService::new(state.store.clone());
+    // Replacing a binding by id must not reach one the caller could not set.
+    if let Some(binding_id) = request.credential_binding_id
+        && let Some(existing) = find_credential_binding(&service, binding_id).await?
+    {
+        let existing_server = ownership
+            .managed_server(&scope, existing.mcp_server_id)
+            .await?;
+        ownership
+            .authorize_credential_binding(
+                &scope,
+                &existing_server,
+                existing.owner_scope_kind,
+                existing.owner_team_id,
+                existing.owner_service_account_id,
+            )
+            .await?;
+    }
     // The store reports whether its write replaced a binding: a caller-chosen ID
     // that does not exist yet is inserted, so it is a create.
     let (binding, replaced) = service
         .upsert_binding(UpsertMcpCredentialBindingInput {
             credential_binding_id: request.credential_binding_id,
             mcp_server_id: request.server_id,
-            owner_scope_kind: parse_credential_owner_scope_kind(&request.owner_scope_kind)?,
+            owner_scope_kind,
             owner_user_id: request.owner_user_id,
             owner_team_id: request.owner_team_id,
             owner_service_account_id: request.owner_service_account_id,
@@ -847,7 +1052,7 @@ pub async fn upsert_mcp_credential_binding(
     }
     state
         .audit()
-        .record(&meta.user_context(&actor), event)
+        .record(&meta.user_context(&actor), scope.annotate(event))
         .await;
     Ok(Json(envelope(McpCredentialBindingPayload { binding })))
 }
@@ -865,9 +1070,24 @@ pub async fn revoke_mcp_credential_binding(
     meta: AuditRequestMeta,
     Path(credential_binding_id): Path<String>,
 ) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
-    let actor = require_platform_admin(&state, &headers).await?;
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let credential_binding_id = parse_uuid(&credential_binding_id, "credential_binding_id")?;
     let service = McpCredentialService::new(state.store.clone());
+    // A team admin may revoke any binding on their team's servers. A binding on
+    // a server they cannot see is reported as missing.
+    if !scope.is_platform_admin() {
+        let Some(existing) = find_credential_binding(&service, credential_binding_id).await? else {
+            return Err(
+                GatewayError::Store(gateway_core::StoreError::NotFound(format!(
+                    "MCP credential binding `{credential_binding_id}` not found"
+                )))
+                .into(),
+            );
+        };
+        ownership(&state)
+            .managed_server(&scope, existing.mcp_server_id)
+            .await?;
+    }
     // The revoke returns the binding it changed, so the entry names its owner and
     // keeps its redacted settings. A missing or already-revoked binding records
     // nothing.
@@ -885,11 +1105,13 @@ pub async fn revoke_mcp_credential_binding(
             .audit()
             .record(
                 &meta.user_context(&actor),
-                AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
-                    .target(binding.id())
-                    .label(binding.owner_scope_key().to_string())
-                    .before(before)
-                    .after(serde_json::json!({ "revoked_at": revoked_at })),
+                scope.annotate(
+                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                        .target(binding.id())
+                        .label(binding.owner_scope_key().to_string())
+                        .before(before)
+                        .after(serde_json::json!({ "revoked_at": revoked_at })),
+                ),
             )
             .await;
     }
@@ -910,13 +1132,31 @@ pub async fn preview_mcp_effective_access(
     headers: HeaderMap,
     Query(query): Query<McpEffectiveAccessQuery>,
 ) -> Result<Json<Envelope<McpEffectiveAccessPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let subjects = preview_subjects(&query);
     if subjects.is_empty() {
         return Err(GatewayError::InvalidRequest(
             "at least one access preview subject is required".to_string(),
         )
         .into());
+    }
+    // A team admin previews their own team's subjects on one of their servers,
+    // so the preview never shows access granted elsewhere.
+    if let Some(team_id) = scope.managed_team_id() {
+        let server_id = query.server_id.ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "server_id is required to preview access".to_string(),
+            ))
+        })?;
+        let ownership = ownership(&state);
+        ownership.managed_server(&scope, server_id).await?;
+        for subject in &subjects {
+            if ownership.subject_team(subject.clone()).await? != Some(team_id) {
+                return Err(AppError(GatewayError::Auth(
+                    gateway_core::AuthError::InsufficientPrivileges,
+                )));
+            }
+        }
     }
     let resolution = state
         .store
@@ -974,16 +1214,92 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
         .label(toolset.toolset_key().to_string())
 }
 
-async fn server_before_summary(
+fn ownership(state: &AppState) -> McpOwnership<AnyStore> {
+    McpOwnership::new(state.store.clone(), state.mcp_organisation_publishing)
+}
+
+/// `platform` selects platform-owned servers; a UUID selects a team's.
+fn parse_owner_filter(raw: &str) -> Result<Option<Uuid>, AppError> {
+    if raw == "platform" {
+        return Ok(None);
+    }
+    parse_uuid(raw, "owner").map(Some)
+}
+
+async fn owner_team_name(
     state: &AppState,
-    server_id: Uuid,
-) -> Result<serde_json::Value, AppError> {
-    Ok(state
-        .store
-        .get_external_mcp_server(server_id)
+    owner_team_id: Option<Uuid>,
+) -> Result<Option<String>, AppError> {
+    let Some(team_id) = owner_team_id else {
+        return Ok(None);
+    };
+    Ok(IdentityRepository::get_team_by_id(&*state.store, team_id)
         .await?
-        .map(|server| server_audit_summary(&map_server(server)))
-        .unwrap_or(serde_json::Value::Null))
+        .map(|team| team.team_name))
+}
+
+async fn present_server(
+    state: &AppState,
+    scope: &McpAdminScope,
+    server: ExternalMcpServerRecord,
+) -> Result<McpServerView, AppError> {
+    let can_manage = scope.can_manage(&server);
+    let name = owner_team_name(state, server.ownership.owner_team_id).await?;
+    Ok(map_server(server).for_viewer(name, can_manage))
+}
+
+async fn present_servers(
+    state: &AppState,
+    scope: &McpAdminScope,
+    servers: Vec<ExternalMcpServerRecord>,
+) -> Result<Vec<McpServerView>, AppError> {
+    let mut names = std::collections::HashMap::new();
+    let mut views = Vec::with_capacity(servers.len());
+    for server in servers {
+        let owner = server.ownership.owner_team_id;
+        let name = match names.get(&owner) {
+            Some(name) => Clone::clone(name),
+            None => {
+                let name = owner_team_name(state, owner).await?;
+                names.insert(owner, name.clone());
+                name
+            }
+        };
+        let can_manage = scope.can_manage(&server);
+        views.push(map_server(server).for_viewer(name, can_manage));
+    }
+    Ok(views)
+}
+
+/// The servers a team admin manages; `None` for a platform admin, who manages all.
+async fn managed_server_ids(
+    state: &AppState,
+    scope: &McpAdminScope,
+) -> Result<Option<std::collections::HashSet<Uuid>>, AppError> {
+    let Some(team_id) = scope.managed_team_id() else {
+        return Ok(None);
+    };
+    Ok(Some(
+        state
+            .store
+            .list_external_mcp_servers(true)
+            .await?
+            .into_iter()
+            .filter(|server| server.ownership.owned_by(team_id))
+            .map(|server| server.mcp_server_id)
+            .collect(),
+    ))
+}
+
+async fn find_credential_binding(
+    service: &McpCredentialService<AnyStore>,
+    credential_binding_id: Uuid,
+) -> Result<Option<RedactedMcpCredentialBinding>, AppError> {
+    Ok(service
+        .list_bindings(None, None, None, true)
+        .await?
+        .into_iter()
+        .find(|binding| binding.credential_binding_id == credential_binding_id))
 }
 
 /// The audited details of a tool set.

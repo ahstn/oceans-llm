@@ -379,6 +379,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V64__gateway_oauth_cleanup_indexes.sql"),
         postgres_sql: include_str!("../migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql"),
     },
+    MigrationManifest {
+        version: 65,
+        name: "mcp_server_ownership",
+        checksum: "V65__mcp_server_ownership.sql",
+        libsql_sql: include_str!("../migrations/V65__mcp_server_ownership.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V65__mcp_server_ownership.sql"),
+    },
 ];
 
 #[cfg(test)]

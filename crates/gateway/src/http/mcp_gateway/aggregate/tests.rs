@@ -668,6 +668,7 @@ async fn seed_authorized_tool_with_config(
         .expect("API key");
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "repository".to_string(),
             display_name: "Repository".to_string(),
             description: None,

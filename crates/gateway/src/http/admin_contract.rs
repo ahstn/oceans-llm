@@ -2089,6 +2089,7 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::disable_mcp_server,
         crate::http::mcp_registry::list_mcp_server_tools,
         crate::http::mcp_registry::refresh_mcp_server_discovery,
+        crate::http::mcp_registry::transfer_mcp_server_ownership,
         crate::http::mcp_registry::discover_mcp_server_oauth,
         crate::http::mcp_registry::list_mcp_toolsets,
         crate::http::mcp_registry::create_mcp_toolset,

@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
-    McpRegistryRepository, NewExternalMcpServerRecord, StoreError, UpdateExternalMcpServerRecord,
+    McpRegistryRepository, NewExternalMcpServerRecord, StoreError,
+    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
     UpsertExternalMcpToolRecord,
 };
 use time::OffsetDateTime;
@@ -77,6 +78,26 @@ impl McpRegistryRepository for AnyStore {
                     .disable_external_mcp_server(mcp_server_id, disabled_at)
                     .await
             }
+        }
+    }
+
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.transfer_external_mcp_server_ownership(input).await,
+            Self::Postgres(store) => store.transfer_external_mcp_server_ownership(input).await,
+        }
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+            Self::Postgres(store) => store.get_external_mcp_tool(mcp_tool_id).await,
         }
     }
 

@@ -1227,6 +1227,7 @@ mod tests {
     fn server_record() -> ExternalMcpServerRecord {
         let now = OffsetDateTime::now_utc();
         ExternalMcpServerRecord {
+            ownership: Default::default(),
             mcp_server_id: Uuid::new_v4(),
             server_key: "github".to_string(),
             display_name: "GitHub".to_string(),

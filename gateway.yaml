@@ -32,6 +32,7 @@ permissions:
     default_page: usage_costs
   team_admins:
     pages:
+      - mcp
       - spend_controls
     actions:
       - reveal_api_key

@@ -340,6 +340,7 @@ async fn run_serve_with_store(
         budget_defaults: human_budget_defaults,
         agent_analysis: agent_analysis.capabilities,
         admin_permissions,
+        mcp_organisation_publishing: config.mcp.registry.organisation_publishing,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         count_tokens_limiter: Arc::default(),

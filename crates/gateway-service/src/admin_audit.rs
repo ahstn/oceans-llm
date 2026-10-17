@@ -144,6 +144,9 @@ pub mod actions {
     pub const MCP_SERVER_DISABLED: AuditAction = AuditAction("mcp_server.disabled");
     pub const MCP_SERVER_DISCOVERY_REFRESHED: AuditAction =
         AuditAction("mcp_server.discovery_refreshed");
+    /// A platform admin moved a server to another team or to the platform.
+    pub const MCP_SERVER_OWNERSHIP_TRANSFERRED: AuditAction =
+        AuditAction("mcp_server.ownership_transferred");
 
     pub const MCP_TOOLSET_CREATED: AuditAction = AuditAction("mcp_toolset.created");
     pub const MCP_TOOLSET_UPDATED: AuditAction = AuditAction("mcp_toolset.updated");
@@ -215,6 +218,7 @@ pub mod actions {
         MCP_SERVER_UPDATED,
         MCP_SERVER_DISABLED,
         MCP_SERVER_DISCOVERY_REFRESHED,
+        MCP_SERVER_OWNERSHIP_TRANSFERRED,
         MCP_TOOLSET_CREATED,
         MCP_TOOLSET_UPDATED,
         MCP_TOOLSET_DISABLED,
@@ -374,6 +378,12 @@ impl AuditEvent {
     #[must_use]
     pub fn action(&self) -> &str {
         &self.action
+    }
+
+    /// The metadata added so far, before redaction.
+    #[must_use]
+    pub fn metadata(&self) -> &Map<String, Value> {
+        &self.metadata
     }
 
     fn into_record(

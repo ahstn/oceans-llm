@@ -46,6 +46,8 @@ pub struct AppState {
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
+    /// Who may publish an MCP server to the organisation catalog.
+    pub mcp_organisation_publishing: gateway_service::McpOrganisationPublishing,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
     pub count_tokens_limiter: Arc<CountTokensLimiter>,

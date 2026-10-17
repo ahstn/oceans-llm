@@ -378,6 +378,7 @@ mod proxy_policy {
             .expect("API key");
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "notes".to_string(),
                 display_name: "Notes".to_string(),
                 description: None,

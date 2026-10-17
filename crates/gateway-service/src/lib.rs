@@ -19,6 +19,7 @@ pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_oauth;
 pub mod mcp_oauth_discovery;
+pub mod mcp_ownership;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
@@ -111,6 +112,10 @@ pub use mcp_oauth::{
 pub use mcp_oauth_discovery::{
     BearerChallenge, McpOauthDiscovery, RegisteredOauthClient, choose_token_endpoint_auth_method,
     parse_bearer_challenge, register_oauth_client,
+};
+pub use mcp_ownership::{
+    McpAdminScope, McpOrganisationPublishing, McpOwnership, RequestedMcpServerOwnership,
+    normalize_owner_contact, parse_mcp_server_visibility,
 };
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,

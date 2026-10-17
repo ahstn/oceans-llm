@@ -48,8 +48,9 @@ use crate::{
         ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
         SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
         SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
-        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
+        UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
         UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
@@ -1047,11 +1048,34 @@ pub trait McpRegistryRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// Changes the owning team, contact and visibility together. Nothing is
+    /// written when they already match.
+    async fn transfer_external_mcp_server_ownership(
+        &self,
+        input: &TransferExternalMcpServerOwnershipRecord,
+    ) -> Result<crate::audit::Updated<ExternalMcpServerRecord>, StoreError> {
+        let _ = input;
+        Err(StoreError::Unexpected(
+            "MCP server ownership transfer is not implemented for this repository".to_string(),
+        ))
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,
         include_inactive: bool,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    /// Loads one tool, including an inactive one.
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        let _ = mcp_tool_id;
+        Err(StoreError::Unexpected(
+            "MCP tool lookup is not implemented for this repository".to_string(),
+        ))
+    }
 
     async fn record_external_mcp_discovery_success(
         &self,

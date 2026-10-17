@@ -14,7 +14,7 @@ const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.d
 const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, NULL, NULL";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
 const TOOL_COLUMN_COUNT: usize = 15;
-const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
+const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at, s.owner_team_id, s.owner_contact, s.visibility";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
     let toolset_id: String = row.get(0).map_err(to_query_error)?;
@@ -157,6 +157,7 @@ fn decode_server_at(
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+        ownership: super::mcp_registry::decode_server_ownership(row, libsql_idx(offset, 18))?,
     })
 }
 

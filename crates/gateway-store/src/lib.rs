@@ -1444,6 +1444,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "github-prod".to_string(),
                 display_name: "GitHub Production".to_string(),
                 description: Some("Production GitHub MCP".to_string()),
@@ -1476,6 +1477,8 @@ pub(crate) mod tests {
                     json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
                 )]),
                 timeout_ms: 45_000,
+                owner_contact: None,
+                visibility: Default::default(),
                 updated_at: now + Duration::seconds(1),
             })
             .await
@@ -1596,6 +1599,8 @@ pub(crate) mod tests {
                     json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
                 )]),
                 timeout_ms: 45_000,
+                owner_contact: None,
+                visibility: Default::default(),
                 updated_at: now + Duration::seconds(6),
             })
             .await
@@ -1726,6 +1731,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "notes".to_string(),
                 display_name: "Notes".to_string(),
                 description: None,
@@ -1795,6 +1801,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "github-creds".to_string(),
                 display_name: "GitHub Credentials".to_string(),
                 description: None,

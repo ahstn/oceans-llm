@@ -2,6 +2,7 @@ use axum::http::HeaderMap;
 use gateway_core::{
     AuthError, GatewayError, GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
+use gateway_service::McpAdminScope;
 
 use crate::config::{AdminPage, AdminPermissionGroup};
 use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
@@ -66,6 +67,50 @@ pub(crate) async fn require_spend_controls_scope(
         return Err(insufficient_privileges());
     }
     Ok((current_user, AdminDataScope::Team(membership.team_id)))
+}
+
+/// MCP administration is open to platform admins and, when the `team_admins`
+/// permission group includes the `mcp` page, to owners/admins of a team. The
+/// scope limits a team admin to their own team's servers; see
+/// `gateway_service::McpOwnership`.
+pub(crate) async fn require_mcp_admin_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, McpAdminScope), AppError> {
+    let current_user = require_active_session(state, headers).await?;
+    let membership = state
+        .store
+        .get_team_membership_for_user(current_user.user_id)
+        .await?;
+    if current_user.global_role == GlobalRole::PlatformAdmin {
+        let scope = McpAdminScope::platform_admin(membership.as_ref());
+        return Ok((current_user, scope));
+    }
+    let page_granted = state
+        .admin_permissions
+        .for_group(AdminPermissionGroup::TeamAdmins)
+        .pages
+        .contains(&AdminPage::Mcp);
+    let scope = membership
+        .as_ref()
+        .and_then(McpAdminScope::team_admin)
+        .filter(|_| page_granted)
+        .ok_or_else(insufficient_privileges)?;
+    Ok((current_user, scope))
+}
+
+/// Like [`require_mcp_admin_scope`], for MCP routes only platform admins use,
+/// such as tool sets. The scope is kept for the audit entry.
+pub(crate) async fn require_mcp_platform_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(UserRecord, McpAdminScope), AppError> {
+    let (actor, scope) = require_mcp_admin_scope(state, headers).await?;
+    if scope.is_platform_admin() {
+        Ok((actor, scope))
+    } else {
+        Err(insufficient_privileges())
+    }
 }
 
 pub(crate) async fn require_agent_analysis_scope(

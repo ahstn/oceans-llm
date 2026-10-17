@@ -1626,6 +1626,64 @@ impl ExternalMcpDiscoveryStatus {
     }
 }
 
+/// Who may be granted a server's tools, and who sees it in the admin catalog.
+/// See `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpServerVisibility {
+    /// Only subjects of the owning team can be granted the server's tools.
+    Team,
+    /// Published to the organisation catalog.
+    #[default]
+    Organisation,
+}
+
+impl McpServerVisibility {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+            Self::Organisation => "organisation",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "team" => Some(Self::Team),
+            "organisation" => Some(Self::Organisation),
+            _ => None,
+        }
+    }
+}
+
+/// The accountable owner of an MCP server. The default is platform-owned and
+/// published to the organisation, which is what every server was before
+/// ownership existed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerOwnership {
+    /// The owning team; `None` means the platform owns the server.
+    pub owner_team_id: Option<Uuid>,
+    pub owner_contact: Option<String>,
+    pub visibility: McpServerVisibility,
+}
+
+impl McpServerOwnership {
+    #[must_use]
+    pub fn team(team_id: Uuid, owner_contact: Option<String>) -> Self {
+        Self {
+            owner_team_id: Some(team_id),
+            owner_contact,
+            visibility: McpServerVisibility::Team,
+        }
+    }
+
+    #[must_use]
+    pub fn owned_by(&self, team_id: Uuid) -> bool {
+        self.owner_team_id == Some(team_id)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalMcpServerRecord {
     pub mcp_server_id: Uuid,
@@ -1646,6 +1704,7 @@ pub struct ExternalMcpServerRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
+    pub ownership: McpServerOwnership,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1658,9 +1717,12 @@ pub struct NewExternalMcpServerRecord {
     pub auth_mode: ExternalMcpAuthMode,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
+    pub ownership: McpServerOwnership,
     pub created_at: OffsetDateTime,
 }
 
+/// A settings save. The owning team is changed only by
+/// [`TransferExternalMcpServerOwnershipRecord`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateExternalMcpServerRecord {
     pub mcp_server_id: Uuid,
@@ -1670,6 +1732,15 @@ pub struct UpdateExternalMcpServerRecord {
     pub auth_mode: ExternalMcpAuthMode,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
+    pub owner_contact: Option<String>,
+    pub visibility: McpServerVisibility,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferExternalMcpServerOwnershipRecord {
+    pub mcp_server_id: Uuid,
+    pub ownership: McpServerOwnership,
     pub updated_at: OffsetDateTime,
 }
 

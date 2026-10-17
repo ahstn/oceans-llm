@@ -26,6 +26,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: server_key.to_string(),
             display_name: server_key.to_string(),
             description: None,

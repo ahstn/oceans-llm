@@ -86,6 +86,7 @@ async fn seed_drive(
         .expect("API key");
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "drive".to_string(),
             display_name: "Drive".to_string(),
             description: None,

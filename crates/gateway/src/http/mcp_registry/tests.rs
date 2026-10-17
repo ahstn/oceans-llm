@@ -131,6 +131,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
         .state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "google_drive".to_string(),
             display_name: "Google Drive".to_string(),
             description: None,
@@ -149,6 +150,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
         headers.clone(),
         Query(McpServersQuery {
             include_disabled: false,
+            owner: None,
         }),
     )
     .await;
@@ -333,6 +335,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "repository".to_string(),
             display_name: "Repository".to_string(),
             description: None,
