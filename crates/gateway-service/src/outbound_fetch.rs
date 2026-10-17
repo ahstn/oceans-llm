@@ -393,6 +393,47 @@ impl OutboundFetcher {
     }
 }
 
+/// One fetcher per address scope, sharing limits, for requests made on
+/// behalf of an admin-registered server.
+#[derive(Debug, Clone)]
+pub struct ScopedOutboundFetchers {
+    fetchers: Arc<[OutboundFetcher; 3]>,
+}
+
+impl ScopedOutboundFetchers {
+    #[must_use]
+    pub fn new(timeout: Duration, max_body_bytes: usize) -> Self {
+        let fetcher = |scope| OutboundFetcher::with_limits(scope, timeout, max_body_bytes);
+        Self {
+            fetchers: Arc::new([
+                fetcher(OutboundAddressScope::Public),
+                fetcher(OutboundAddressScope::PrivateNetwork),
+                fetcher(OutboundAddressScope::Loopback),
+            ]),
+        }
+    }
+
+    #[must_use]
+    pub fn for_scope(&self, scope: OutboundAddressScope) -> &OutboundFetcher {
+        let index = match scope {
+            OutboundAddressScope::Public => 0,
+            OutboundAddressScope::PrivateNetwork => 1,
+            OutboundAddressScope::Loopback => 2,
+        };
+        &self.fetchers[index]
+    }
+
+    /// The fetcher scoped to the admin-entered `server_url`'s address class.
+    /// An unparseable URL gets the public scope.
+    pub async fn for_trusted_url(&self, server_url: &str) -> &OutboundFetcher {
+        let scope = match Url::parse(server_url) {
+            Ok(url) => OutboundAddressScope::of_trusted_url(&url).await,
+            Err(_) => OutboundAddressScope::Public,
+        };
+        self.for_scope(scope)
+    }
+}
+
 /// A response whose body has not been read yet. The body is read only on
 /// request, and never past the fetcher's size limit.
 #[derive(Debug)]

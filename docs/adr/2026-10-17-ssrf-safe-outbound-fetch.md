@@ -55,16 +55,17 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 ### 4. How each feature picks a scope
 
 - **Client ID Metadata Documents** always use `Public`, with a 5 second timeout and a 64 KiB limit. The URL comes from an unauthenticated caller.
-- **Upstream discovery and dynamic registration** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. That function resolves the server's host and picks `Loopback`, `PrivateNetwork`, or `Public` to match its address. An admin who registers a server on a private network has already chosen to trust that network, and its authorization server often lives there too. A public server cannot point the gateway at private or loopback addresses. Registration at connect time uses the scope of the server's saved `resource` URL.
+- **Upstream discovery, dynamic registration, and token requests** use the scope of the MCP server the admin entered, from `OutboundAddressScope::of_trusted_url`. That function resolves the server's host and picks `Loopback`, `PrivateNetwork`, or `Public` to match its address. An admin who registers a server on a private network has already chosen to trust that network, and its authorization server often lives there too. A public server cannot point the gateway at private or loopback addresses. Registration, code exchange, and refresh use the scope of the server's saved `resource` URL. Token requests keep their 60 second timeout and read at most 256 KiB.
+- **Configured providers** under `mcp.oauth.providers` keep the plain HTTP client for their token requests. Their endpoints are gateway configuration, not values an upstream supplied.
 
 ## Trade-offs
 
 - A gateway that reaches the internet only through an HTTP proxy cannot fetch metadata documents or run discovery against public servers. Following a proxy would hand resolution to it and lose the address check.
 - Scoping discovery by the admin-entered server keeps internal deployments working, but an internal server can still point discovery at other internal hosts on the same class of network. Link-local and metadata addresses stay blocked for it.
-- Each lookup happens twice when the scope is derived from the server URL: once to pick the scope, once in the resolver. Discovery and registration are rare admin-time and connect-time operations, so this costs little.
+- Each lookup happens twice when the scope is derived from the server URL: once to pick the scope, once in the resolver. Discovery, registration, and token requests are occasional, at most one refresh per access-token lifetime, so this costs little.
+- A server-level OAuth client whose token endpoint sits on a more private network than its MCP server, such as a public server with an internal identity provider, cannot exchange or refresh tokens. Discovery would already have refused that authorization server. Such a deployment can configure the identity provider under `mcp.oauth.providers` instead.
 - The classification table is maintained by hand. New special-purpose ranges need adding as they are assigned.
 
 ## Follow-ups
 
-- Route upstream token and refresh requests through the fetcher too. Their endpoints come from discovery, but an admin reviews and saves them, so they still use the plain client today.
 - Use the fetcher for any future feature that fetches a URL a user or upstream supplies, such as logos named in client metadata.
