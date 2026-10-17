@@ -10,7 +10,8 @@ use gateway_core::{
     AdminApiKeyRepository, AuthError, ExternalMcpServerRecord, GatewayError, IdentityRepository,
     McpAccessRepository, McpGrantSubject, McpRegistryRepository, McpServerOwnership,
     McpServerVisibility, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-    McpUpstreamCredentialOwnerScopeKind, MembershipRole, StoreError, TeamMembershipRecord,
+    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository, MembershipRole,
+    StoreError, TeamMembershipRecord,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -132,7 +133,11 @@ pub struct McpOwnership<R> {
 
 impl<R> McpOwnership<R>
 where
-    R: McpRegistryRepository + McpAccessRepository + IdentityRepository + AdminApiKeyRepository,
+    R: McpRegistryRepository
+        + McpAccessRepository
+        + IdentityRepository
+        + AdminApiKeyRepository
+        + McpUpstreamCredentialRepository,
 {
     #[must_use]
     pub fn new(repo: Arc<R>, publishing: McpOrganisationPublishing) -> Self {
@@ -208,6 +213,48 @@ where
             owner_contact,
             visibility,
         })
+    }
+
+    /// Checks a team admin pointing a server at a new URL. Credentials the team
+    /// did not set itself (users' own, or a `secret_ref` to a gateway-wide
+    /// variable) would be sent to the new destination, so they must be revoked
+    /// first.
+    pub async fn authorize_retarget(
+        &self,
+        scope: &McpAdminScope,
+        server: &ExternalMcpServerRecord,
+        server_url: &str,
+    ) -> Result<(), GatewayError> {
+        if scope.is_platform_admin() || server_url.trim() == server.server_url {
+            return Ok(());
+        }
+        let foreign = self
+            .repo
+            .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, false)
+            .await?
+            .into_iter()
+            .filter(|binding| {
+                binding.owner_scope_kind == McpUpstreamCredentialOwnerScopeKind::User
+                    || binding.secret_ref.is_some()
+            })
+            .count();
+        if foreign > 0 {
+            return Err(conflict(format!(
+                "{foreign} user or secret-reference credential binding(s) would be sent to the new URL; revoke them before changing server_url"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Re-runs the narrowing check after a write that limited a server to
+    /// `team_id`. Each side of a race between a grant and a transfer checks
+    /// after its own write, so whichever lands second sees the other.
+    pub async fn confirm_no_stranded_access(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Uuid,
+    ) -> Result<(), GatewayError> {
+        self.check_no_stranded_access(mcp_server_id, team_id).await
     }
 
     /// Checks a visibility change on a server the caller manages.

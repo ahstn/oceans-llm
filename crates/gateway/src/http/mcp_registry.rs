@@ -251,6 +251,9 @@ pub async fn update_mcp_server(
     // editable; only a new URL is checked.
     if request.server_url.trim() != existing.server_url {
         authorize_destination(&scope, &request.server_url).await?;
+        ownership
+            .authorize_retarget(&scope, &existing, &request.server_url)
+            .await?;
     }
     authorize_team_auth_config(
         &scope,
@@ -289,6 +292,27 @@ pub async fn update_mcp_server(
             },
         )
         .await?;
+    // As for transfers: recheck after narrowing, and restore the previous
+    // visibility if a grant outside the team landed meanwhile.
+    if let (Some(previous), Some(team_id)) =
+        (&update.previous, update.current.ownership.owner_team_id)
+        && previous.ownership.visibility == gateway_core::McpServerVisibility::Organisation
+        && update.current.ownership.visibility == gateway_core::McpServerVisibility::Team
+        && let Err(error) = ownership
+            .confirm_no_stranded_access(server_id, team_id)
+            .await
+    {
+        service
+            .transfer_ownership(
+                server_id,
+                gateway_core::McpServerOwnership {
+                    visibility: gateway_core::McpServerVisibility::Organisation,
+                    ..update.current.ownership.clone()
+                },
+            )
+            .await?;
+        return Err(error.into());
+    }
     let current = update.current.clone();
     let server = map_server(update.current);
     // The store compares the unredacted settings under the write lock and writes
@@ -404,9 +428,24 @@ pub async fn transfer_mcp_server_ownership(
             },
         )
         .await?;
-    let update = McpRegistryService::new(state.store.clone())
-        .transfer_ownership(server_id, resolved)
-        .await?;
+    let service = McpRegistryService::new(state.store.clone());
+    let update = service.transfer_ownership(server_id, resolved).await?;
+    // A grant that raced the narrowing check checks after its own write; this
+    // side checks after the transfer, so whichever lands second sees the
+    // other. Undo the transfer if access is now stranded.
+    if let (Some(previous), Some(team_id), gateway_core::McpServerVisibility::Team) = (
+        &update.previous,
+        update.current.ownership.owner_team_id,
+        update.current.ownership.visibility,
+    ) && let Err(error) = ownership
+        .confirm_no_stranded_access(server_id, team_id)
+        .await
+    {
+        service
+            .transfer_ownership(server_id, previous.ownership.clone())
+            .await?;
+        return Err(error.into());
+    }
     // The store writes nothing when the ownership already matches.
     if let Some(previous) = update.previous {
         let current = map_server(update.current.clone());

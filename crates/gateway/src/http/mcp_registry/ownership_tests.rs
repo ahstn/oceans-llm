@@ -1380,3 +1380,53 @@ async fn inherited_internal_endpoints_are_rechecked_when_the_server_moves() {
         "{response}"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn team_admins_cannot_retarget_a_server_holding_other_credentials() {
+    let _key = CredentialKeyGuard::new();
+    let context = TestContext::new().await;
+    let own = context
+        .server(
+            "own",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let member = context.member(context.team_a).await;
+    // A platform admin stores a user's credential on the team's server.
+    let platform = context.platform_admin().await;
+    assert_eq!(
+        context
+            .bind_credential(
+                &platform,
+                json!({
+                    "server_id": own.id,
+                    "owner_scope_kind": "user",
+                    "owner_user_id": member,
+                    "material_kind": "bearer_token",
+                    "secret": "user-token",
+                }),
+            )
+            .await,
+        StatusCode::OK
+    );
+    // Moving the server would send that credential to the new destination.
+    let (status, response) = context
+        .update(
+            &admin,
+            own.id,
+            json!({ "server_url": "https://1.1.1.1/elsewhere/mcp" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{response}");
+    // Other edits that keep the URL still work.
+    let (status, response) = context
+        .update(
+            &admin,
+            own.id,
+            json!({ "server_url": "https://own.example.test/mcp", "owner_contact": "#team-a" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+}
