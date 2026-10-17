@@ -36,11 +36,8 @@ export function ApiKeyScopeFields({
   onChange: (value: ApiKeyScopesValue) => void
 }) {
   const selectedScopes = new Set(value.scopes)
-  const setScopes = (scopes: string[] | null) => {
-    const next = { ...value, scopes }
-    // A server list needs an MCP scope, so drop it with the last one.
-    onChange(allowsMcp(next) ? next : { ...next, mcp_server_keys: null })
-  }
+  // The server list is kept while hidden; it is dropped on save if no MCP scope remains.
+  const setScopes = (scopes: string[] | null) => onChange({ ...value, scopes })
 
   return (
     <>

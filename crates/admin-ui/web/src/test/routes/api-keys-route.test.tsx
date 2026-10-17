@@ -364,6 +364,52 @@ describe('ApiKeysPage', () => {
     expect(within(dialog).queryByRole('checkbox', { name: /Wiki/ })).toBeNull()
   })
 
+  it("keeps a key's server list when it is narrowed from full access", async () => {
+    const serverOnly = { ...basePayload.items[0], scopes: null, mcp_server_keys: ['notes'] }
+    routeMock.useLoaderData.mockReturnValue({ data: { ...basePayload, items: [serverOnly] } })
+    updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: serverOnly } })
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    // Limited starts with no scope ticked, which hides the server list but keeps it.
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /MCP proxy/ }))
+    expect(within(dialog).getByRole('checkbox', { name: /Notes/ })).toBeChecked()
+    expect(within(dialog).getByRole('checkbox', { name: /Wiki/ })).not.toBeChecked()
+
+    const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledTimes(1))
+    expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledWith({
+      data: { apiKeyId: 'api_key_1', input: { scopes: ['mcp:proxy'], mcp_server_keys: ['notes'] } },
+    })
+  })
+
+  it('drops a hidden server list when no MCP scope is saved', async () => {
+    const serverOnly = { ...basePayload.items[0], scopes: null, mcp_server_keys: ['notes'] }
+    routeMock.useLoaderData.mockReturnValue({ data: { ...basePayload, items: [serverOnly] } })
+    updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: serverOnly } })
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Inference/ }))
+    const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledTimes(1))
+    expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledWith({
+      data: { apiKeyId: 'api_key_1', input: { scopes: ['inference'], mcp_server_keys: null } },
+    })
+  })
+
   it('edits scopes after creation without touching model access', async () => {
     updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: basePayload.items[0] } })
     const { ApiKeysPage } = await import('@/routes/api-keys')

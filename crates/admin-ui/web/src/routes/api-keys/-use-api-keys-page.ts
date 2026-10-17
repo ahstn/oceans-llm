@@ -22,6 +22,7 @@ import {
   fullAccessScopes,
   isScopesValueIncomplete,
   sameScopesValue,
+  savedScopesValue,
   scopesOf,
 } from '@/lib/api-key-scopes'
 
@@ -285,6 +286,7 @@ export function useApiKeysPageState({
       const response = await createGatewayApiKey({
         data: {
           ...form,
+          ...savedScopesValue(scopesOf(form)),
           name: form.name.trim(),
           model_keys: form.model_grant_mode === 'all' ? [] : form.model_keys,
         },
@@ -324,7 +326,7 @@ export function useApiKeysPageState({
       }
       if (!sameScopesValue(scopesOf(manageTarget), manageScopes)) {
         await updateGatewayApiKeyScopes({
-          data: { apiKeyId: manageDialog.apiKeyId, input: manageScopes },
+          data: { apiKeyId: manageDialog.apiKeyId, input: savedScopesValue(manageScopes) },
         })
       }
       toast.success('API key updated')

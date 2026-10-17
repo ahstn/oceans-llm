@@ -48,17 +48,29 @@ export function allowsMcp(value: ApiKeyScopesValue) {
   return value.scopes === null || value.scopes.some((scope) => MCP_SCOPES.has(scope))
 }
 
+/**
+ * What a form value saves as. The form keeps a server list while no MCP scope is ticked, so
+ * re-ticking one restores it; the list is dropped only when the key can't use it.
+ */
+export function savedScopesValue(value: ApiKeyScopesValue): ApiKeyScopesValue {
+  return allowsMcp(value) ? value : { ...value, mcp_server_keys: null }
+}
+
 /** Whether a limited key is missing its scopes or servers. */
 export function isScopesValueIncomplete(value: ApiKeyScopesValue) {
+  const saved = savedScopesValue(value)
   return (
-    (value.scopes !== null && value.scopes.length === 0) ||
-    (value.mcp_server_keys !== null && value.mcp_server_keys.length === 0)
+    (saved.scopes !== null && saved.scopes.length === 0) ||
+    (saved.mcp_server_keys !== null && saved.mcp_server_keys.length === 0)
   )
 }
 
+/** Whether two values save as the same access. */
 export function sameScopesValue(left: ApiKeyScopesValue, right: ApiKeyScopesValue) {
+  const [savedLeft, savedRight] = [savedScopesValue(left), savedScopesValue(right)]
   return (
-    sameList(left.scopes, right.scopes) && sameList(left.mcp_server_keys, right.mcp_server_keys)
+    sameList(savedLeft.scopes, savedRight.scopes) &&
+    sameList(savedLeft.mcp_server_keys, savedRight.mcp_server_keys)
   )
 }
 

@@ -520,6 +520,50 @@ async fn server_lists_limit_the_proxy_without_revealing_other_servers() {
 }
 
 #[tokio::test]
+async fn request_telemetry_counts_only_listed_servers() {
+    let harness = Harness::new().await;
+    let (_, notes_only) = harness
+        .create_key(json!(["inference", "mcp:aggregate"]), json!(["notes"]))
+        .await;
+    let auth = harness
+        .state
+        .service
+        .authenticate_bearer_token_for_scope(&notes_only, "inference")
+        .await
+        .unwrap();
+    let resolution = gateway_service::McpAccess::new(harness.state.store.clone())
+        .effective_tools_for_api_key(&auth, None, gateway_core::McpToolProjection::Full)
+        .await
+        .unwrap();
+    assert_eq!(
+        resolution.referenced_server_count, 2,
+        "the owner is granted both"
+    );
+
+    let restricted =
+        crate::http::handlers::restrict_to_listed_servers(&harness.state, &auth, resolution)
+            .await
+            .unwrap();
+    let notes = harness
+        .state
+        .store
+        .get_external_mcp_server_by_key("notes")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(restricted.referenced_server_count, 1);
+    assert_eq!(restricted.allowed_tools.len(), 1);
+    assert_eq!(
+        restricted.allowed_tools[0].mcp_server_id,
+        notes.mcp_server_id
+    );
+    assert_eq!(
+        restricted.filtered_tool_count,
+        restricted.exposed_tool_count - 1
+    );
+}
+
+#[tokio::test]
 async fn multi_server_lists_drop_tools_on_unlisted_servers() {
     let harness = Harness::new().await;
     // The owner is also granted a tool on a third server the key does not list.

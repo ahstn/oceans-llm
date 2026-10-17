@@ -53,6 +53,8 @@ const LAST_EVENT_ID: &str = "last-event-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
 const GUARDRAIL_POLICY_DENIED_CODE: i64 = -32001;
+/// The documented JSON-RPC code for a credential missing a scope or server.
+const INSUFFICIENT_SCOPE_CODE: i64 = -32001;
 
 #[tracing::instrument(
     skip(state, request),
@@ -780,7 +782,7 @@ fn insufficient_scope_response(error: &GatewayError) -> Response<Body> {
         "jsonrpc": "2.0",
         "id": null,
         "error": {
-            "code": GUARDRAIL_POLICY_DENIED_CODE,
+            "code": INSUFFICIENT_SCOPE_CODE,
             "message": error.to_string(),
             "data": data,
         }
