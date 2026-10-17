@@ -1945,7 +1945,7 @@ pub(crate) mod tests {
         // nothing until it is moved back.
         assert!(
             store
-                .list_mcp_tool_grants_for_owner_team(team.team_id)
+                .list_mcp_tool_grants_for_owner_team(team.team_id, None, None)
                 .await
                 .expect("team grants")
                 .is_empty()
@@ -1973,10 +1973,21 @@ pub(crate) mod tests {
         assert!(disabled);
         assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
         // Revoked grants are listed too, as the unscoped grant list does: the
+        // Subject filters run in the query: only the team's own grant.
+        let team_grants = store
+            .list_mcp_tool_grants_for_owner_team(
+                team.team_id,
+                Some(gateway_core::McpToolGrantSubjectKind::Team),
+                Some(team.team_id),
+            )
+            .await
+            .expect("filtered team grants");
+        assert_eq!(team_grants.len(), 1);
+        assert_eq!(team_grants[0].subject_id, team.team_id);
         // two above and the twelve the subject-team check revoked.
         assert_eq!(
             store
-                .list_mcp_tool_grants_for_owner_team(team.team_id)
+                .list_mcp_tool_grants_for_owner_team(team.team_id, None, None)
                 .await
                 .expect("team grants")
                 .len(),

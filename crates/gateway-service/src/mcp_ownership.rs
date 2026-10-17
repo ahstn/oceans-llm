@@ -419,12 +419,8 @@ where
         };
         Ok(self
             .repo
-            .list_mcp_tool_grants_for_owner_team(team_id)
-            .await?
-            .into_iter()
-            .filter(|grant| subject_kind.is_none_or(|kind| grant.subject_kind == kind))
-            .filter(|grant| subject_id.is_none_or(|id| grant.subject_id == id))
-            .collect())
+            .list_mcp_tool_grants_for_owner_team(team_id, subject_kind, subject_id)
+            .await?)
     }
 
     /// Checks a credential binding write on a server the caller manages. Team

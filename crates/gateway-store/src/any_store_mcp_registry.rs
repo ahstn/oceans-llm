@@ -207,10 +207,20 @@ impl McpRegistryRepository for AnyStore {
     async fn list_mcp_tool_grants_for_owner_team(
         &self,
         team_id: Uuid,
+        subject_kind: Option<gateway_core::McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.list_mcp_tool_grants_for_owner_team(team_id).await,
-            Self::Postgres(store) => store.list_mcp_tool_grants_for_owner_team(team_id).await,
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tool_grants_for_owner_team(team_id, subject_kind, subject_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tool_grants_for_owner_team(team_id, subject_kind, subject_id)
+                    .await
+            }
         }
     }
 

@@ -1166,12 +1166,15 @@ pub trait McpRegistryRepository: Send + Sync {
         ))
     }
 
-    /// Grants, active or revoked, on tools of servers the team owns.
+    /// Grants, active or revoked, on tools of servers the team owns, optionally
+    /// for one subject kind or subject, filtered in the query.
     async fn list_mcp_tool_grants_for_owner_team(
         &self,
         team_id: Uuid,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
-        let _ = team_id;
+        let _ = (team_id, subject_kind, subject_id);
         Err(StoreError::Unexpected(
             "MCP grant lookup by owning team is not implemented for this repository".to_string(),
         ))

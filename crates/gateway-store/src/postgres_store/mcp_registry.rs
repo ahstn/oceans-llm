@@ -716,12 +716,16 @@ impl McpRegistryRepository for PostgresStore {
     async fn list_mcp_tool_grants_for_owner_team(
         &self,
         team_id: Uuid,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
         let sql = format!(
-            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = $1 ORDER BY g.created_at, g.grant_id"
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = $1 AND ($2::text IS NULL OR g.subject_kind = $2) AND ($3::text IS NULL OR g.subject_id = $3) ORDER BY g.created_at, g.grant_id"
         );
         let rows = sqlx::query(&sql)
             .bind(team_id.to_string())
+            .bind(subject_kind.map(|kind| kind.as_str()))
+            .bind(subject_id.map(|id| id.to_string()))
             .fetch_all(&self.pool)
             .await
             .map_err(to_query_error)?;

@@ -760,13 +760,22 @@ impl McpRegistryRepository for LibsqlStore {
     async fn list_mcp_tool_grants_for_owner_team(
         &self,
         team_id: Uuid,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
         let sql = format!(
-            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = ?1 ORDER BY g.created_at, g.grant_id"
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = ?1 AND (?2 IS NULL OR g.subject_kind = ?2) AND (?3 IS NULL OR g.subject_id = ?3) ORDER BY g.created_at, g.grant_id"
         );
         let mut rows = self
             .connection
-            .query(&sql, [team_id.to_string()])
+            .query(
+                &sql,
+                libsql::params![
+                    team_id.to_string(),
+                    subject_kind.map(|kind| kind.as_str()),
+                    subject_id.map(|id| id.to_string())
+                ],
+            )
             .await
             .map_err(to_query_error)?;
         let mut grants = Vec::new();
