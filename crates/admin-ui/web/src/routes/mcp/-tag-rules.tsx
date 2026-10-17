@@ -139,6 +139,8 @@ export function TagRulesSection({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // "All servers" is the `ALL_SERVERS` value, not an empty one, so an
+    // exclude rule for every server passes here and is sent with no server.
     if (!form.subject_id || !form.tag || !form.server_id) {
       toast.error('Select a subject, a server, and a tag')
       return

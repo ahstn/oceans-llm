@@ -59,6 +59,7 @@ const server: McpServerView = {
   created_at: '2026-05-27T08:00:00Z',
   updated_at: '2026-05-27T09:00:00Z',
   disabled_at: null,
+  approve_tool_changes: false,
 }
 
 const toolset: McpToolsetView = {

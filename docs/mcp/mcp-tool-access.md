@@ -231,14 +231,14 @@ comma-separated list of at most 10), or one page of history newest first:
 `limit` (1 to 100, default 20) and `before`, with `next_before` in the response
 for the next page.
 
-The server setting is `approve_tool_changes` on `POST` and `PATCH
-/api/v1/admin/mcp/servers`.
+The server setting is `approve_tool_changes` on `POST /api/v1/admin/mcp/servers`
+and `PATCH /api/v1/admin/mcp/servers/{server_id}`.
 
 ## Runtime Behavior
 
 For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_tools`, `describe_tool`, and `call_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`, including the upstream `title`, `output_schema`, and `annotations` when the server declares them. Annotations include any [admin overrides](#annotation-overrides). `search_tools` results include the `title` and `annotations`. `call_tool` re-checks the grant, resolves the upstream credential, and calls the upstream server.
 
-For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. Granted tool objects pass through unchanged, including `title`, `annotations`, and `outputSchema`, except that admin [annotation overrides](#annotation-overrides) replace the matching hints. The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
+For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. On servers without approval, granted tool objects pass through unchanged, including `title`, `annotations`, and `outputSchema`, except that admin [annotation overrides](#annotation-overrides) replace the matching hints. On approval servers, and for a tool whose change still waits, the gateway returns the stored approved definition instead, which replaces the whole upstream object, so upstream members it does not store, such as `_meta` and `icons`, are not returned (see [Tool versions and approval](#tool-versions-and-approval)). The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
 
 For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error, and the gateway logs them as policy-denied invocations.
 
