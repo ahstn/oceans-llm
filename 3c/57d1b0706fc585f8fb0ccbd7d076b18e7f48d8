@@ -1,0 +1,19 @@
+crates/admin-ui/web/e2e/admin-page-permissions.e2e.ts
+  s_7a5811202bdfd5::t_85f6893bb761ba 20-22,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c57d1b0706fc585f8fb0ccbd7d076b18e7f48d8",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
