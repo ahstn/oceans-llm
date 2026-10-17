@@ -1437,6 +1437,170 @@ pub(crate) mod tests {
         );
     }
 
+    /// Ownership survives create, settings saves and transfers, and a write that
+    /// changes nothing reports no previous record.
+    async fn exercise_mcp_server_ownership_repository<S>(store: &S)
+    where
+        S: GatewayStore + McpRegistryRepository + Sync,
+    {
+        use gateway_core::{
+            McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord,
+        };
+
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team("mcp-owners", "MCP Owners")
+            .await
+            .expect("create team");
+        let owned = McpServerOwnership::team(team.team_id, Some("#mcp-owners".to_string()));
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "team-docs".to_string(),
+                display_name: "Team Docs".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://docs.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                ownership: owned.clone(),
+                created_at: now,
+            })
+            .await
+            .expect("create team-owned MCP server");
+        assert_eq!(server.ownership, owned);
+        let listed = store
+            .list_external_mcp_servers(true)
+            .await
+            .expect("list MCP servers");
+        assert_eq!(listed[0].ownership, owned);
+
+        let settings = |owner_contact: Option<&str>, visibility| UpdateExternalMcpServerRecord {
+            mcp_server_id: server.mcp_server_id,
+            display_name: server.display_name.clone(),
+            description: None,
+            server_url: server.server_url.clone(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 30_000,
+            owner_contact: owner_contact.map(str::to_string),
+            visibility,
+            updated_at: now + Duration::seconds(1),
+        };
+        let published = store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+            ))
+            .await
+            .expect("publish server");
+        assert_eq!(
+            published
+                .previous
+                .expect("publishing is a change")
+                .ownership,
+            owned
+        );
+        assert_eq!(
+            published.current.ownership.visibility,
+            McpServerVisibility::Organisation
+        );
+        assert_eq!(
+            published.current.ownership.owner_contact.as_deref(),
+            Some("docs@example.com")
+        );
+        // The owning team is not part of a settings save.
+        assert_eq!(
+            published.current.ownership.owner_team_id,
+            Some(team.team_id)
+        );
+        let resaved = store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+            ))
+            .await
+            .expect("resave server");
+        assert!(resaved.previous.is_none());
+
+        let transfer = TransferExternalMcpServerOwnershipRecord {
+            mcp_server_id: server.mcp_server_id,
+            ownership: McpServerOwnership::default(),
+            updated_at: now + Duration::seconds(2),
+        };
+        let taken_over = store
+            .transfer_external_mcp_server_ownership(&transfer)
+            .await
+            .expect("take over server");
+        assert_eq!(
+            taken_over
+                .previous
+                .expect("a transfer is a change")
+                .ownership
+                .owner_team_id,
+            Some(team.team_id)
+        );
+        assert_eq!(taken_over.current.ownership, McpServerOwnership::default());
+        assert!(
+            store
+                .transfer_external_mcp_server_ownership(&transfer)
+                .await
+                .expect("repeat transfer")
+                .previous
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_external_mcp_server(server.mcp_server_id)
+                .await
+                .expect("load server")
+                .expect("server exists")
+                .ownership,
+            McpServerOwnership::default()
+        );
+
+        let run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: now,
+            finished_at: now,
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: None,
+            error_summary: None,
+            details: Map::new(),
+        };
+        let tools = store
+            .record_external_mcp_discovery_success(
+                &run,
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .expect("discover tool");
+        let tool = store
+            .get_external_mcp_tool(tools[0].mcp_tool_id)
+            .await
+            .expect("load tool")
+            .expect("tool exists");
+        assert_eq!(tool.mcp_server_id, server.mcp_server_id);
+        assert!(
+            store
+                .get_external_mcp_tool(Uuid::new_v4())
+                .await
+                .expect("load missing tool")
+                .is_none()
+        );
+    }
+
     async fn exercise_mcp_registry_repository<S>(store: &S)
     where
         S: GatewayStore + McpRegistryRepository + Sync,
@@ -4889,6 +5053,20 @@ pub(crate) mod tests {
             .expect("store");
 
         exercise_mcp_registry_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_server_ownership_round_trip_and_transfer() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_server_ownership_repository(&store).await;
     }
 
     #[tokio::test]
@@ -10360,6 +10538,32 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_mcp_registry_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_server_ownership_round_trip_and_transfer() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres MCP ownership test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_server_ownership_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;
