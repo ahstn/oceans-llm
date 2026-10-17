@@ -423,6 +423,10 @@ impl GatewayStore for LibsqlStore {
         Self::consume_mcp_oauth_state(self, state_hash, user_id, provider_key, consumed_at).await
     }
 
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        Self::mcp_oauth_state_exists(self, state_hash).await
+    }
+
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,

@@ -468,6 +468,12 @@ impl McpRegistryRepository for LibsqlStore {
             tx.commit().await.map_err(to_write_error)?;
             return Err(owner_changed(input.mcp_server_id));
         }
+        if let Some(guard) = &input.expected_server
+            && !guard.matches(&McpServerGuardRow::of(&existing))
+        {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(guard.conflict());
+        }
         // An omitted contact keeps the one read under the write lock, so a
         // concurrent contact change is never undone by a stale copy.
         let owner_contact = input
@@ -558,6 +564,14 @@ impl McpRegistryRepository for LibsqlStore {
             // again, and its secret and users' codes never go to a new endpoint.
             tx.execute(
                 "DELETE FROM mcp_oauth_clients WHERE mcp_server_id = ?1",
+                libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+            // A flow started against the old settings must not finish against
+            // the new ones; its callback finds no state and is refused.
+            tx.execute(
+                "DELETE FROM mcp_oauth_states WHERE mcp_server_id = ?1",
                 libsql::params![input.mcp_server_id.to_string()],
             )
             .await

@@ -41,7 +41,8 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                             OR (' ' || k.scopes || ' ') LIKE '% mcp:aggregate %'
                             OR (' ' || k.scopes || ' ') LIKE '% mcp:proxy %')
                         AND (k.mcp_server_keys IS NULL
-                            OR (' ' || k.mcp_server_keys || ' ') LIKE ('% ' || srv.server_key || ' %'))
+                            OR (' ' || k.mcp_server_keys || ' ')
+                                LIKE ('% ' || replace(replace(srv.server_key, '%', '\%'), '_', '\_') || ' %') ESCAPE '\')
                         AND CASE
                         WHEN k.owner_team_id IS NOT NULL THEN TRUE
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL

@@ -87,6 +87,8 @@ pub struct UpdateExternalMcpServerInput {
     /// Refuse a URL change, under the write lock, while credentials other than
     /// the owning team's own encrypted ones remain. Set for team admins.
     pub retarget_owner_credentials_only: bool,
+    /// The URL and auth settings the save was authorized against.
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 #[derive(Debug, Clone)]
@@ -292,6 +294,7 @@ where
                 owner_contact,
                 visibility,
                 retarget_owner_credentials_only: input.retarget_owner_credentials_only,
+                expected_server: input.expected_server,
                 expected_owner_team_id: input.expected_owner_team_id,
                 expected_visibility: input.expected_visibility,
                 updated_at: OffsetDateTime::now_utc(),

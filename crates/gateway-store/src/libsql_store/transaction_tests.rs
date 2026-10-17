@@ -89,6 +89,7 @@ async fn store_write_waits_for_another_store_transaction() {
                     expected_owner_team_id: None,
                     expected_visibility: Default::default(),
                     retarget_owner_credentials_only: false,
+                    expected_server: None,
                     updated_at: now,
                 })
                 .await

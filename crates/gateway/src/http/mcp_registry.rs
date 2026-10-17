@@ -354,6 +354,12 @@ pub async fn update_mcp_server(
                 // `authorize_retarget` checked this above; the store repeats it
                 // under the write lock, so a credential added meanwhile counts.
                 retarget_owner_credentials_only: !scope.is_platform_admin(),
+                // The auth checks above ran against these settings; a newer
+                // change makes the save a conflict rather than overwrite it.
+                expected_server: Some(McpServerOwnershipGuard {
+                    visibility: expected_visibility,
+                    ..McpServerOwnershipGuard::of(&existing).with_auth_settings(&existing)
+                }),
             },
         )
         .await;
@@ -1211,20 +1217,26 @@ pub async fn list_mcp_credential_bindings(
         .map(parse_credential_owner_scope_kind)
         .transpose()?;
     let service = McpCredentialService::new(state.store.clone());
-    // A named server was authorized above. Otherwise a team admin's list is
-    // limited to their team's servers in the query itself.
-    let bindings = match (query.server_id, scope.managed_team_id()) {
-        (None, Some(team_id)) => {
-            service
-                .list_bindings_for_owner_team(
-                    team_id,
-                    owner_scope_kind,
-                    query.owner_scope_id,
-                    query.include_revoked,
-                )
-                .await?
-        }
-        _ => {
+    // A team admin's list is limited to their team's servers in the query
+    // itself, a named server included, so a transfer after the check above
+    // cannot hand them the new owner's bindings.
+    let bindings = match scope.managed_team_id() {
+        Some(team_id) => service
+            .list_bindings_for_owner_team(
+                team_id,
+                owner_scope_kind,
+                query.owner_scope_id,
+                query.include_revoked,
+            )
+            .await?
+            .into_iter()
+            .filter(|binding| {
+                query
+                    .server_id
+                    .is_none_or(|server_id| binding.mcp_server_id == server_id)
+            })
+            .collect(),
+        None => {
             service
                 .list_bindings(
                     query.server_id,

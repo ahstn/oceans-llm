@@ -362,7 +362,7 @@ async fn complete_oauth_callback(
         transaction.mcp_server_id,
         transaction.user_id,
         grant,
-        Some(exchanged_with),
+        Some(exchanged_with.clone()),
     );
     // Token values never leave the service; the entry keeps binding metadata only.
     // A reconnect replaces the user's binding, so it also records what it replaced.
@@ -389,7 +389,24 @@ async fn complete_oauth_callback(
         })
         .await;
     match connected {
-        Ok(_) => Ok(connection_success_redirect(&transaction.redirect_to)),
+        Ok((binding, _)) => {
+            // Membership is not part of the write's guard, so check it again
+            // now the binding is stored: a user who left the team meanwhile
+            // keeps no connection to its team-only server.
+            let team_id = user_team(state, transaction.user_id).await?;
+            let reachable = exchanged_with.visibility
+                == gateway_core::McpServerVisibility::Organisation
+                || exchanged_with
+                    .owner_team_id
+                    .is_some_and(|owner| Some(owner) == team_id);
+            if !reachable {
+                credentials
+                    .revoke_binding(binding.credential_binding_id)
+                    .await?;
+                return Ok(connection_error_redirect("provider_failure"));
+            }
+            Ok(connection_success_redirect(&transaction.redirect_to))
+        }
         // The server's settings changed during the flow; the user connects again.
         Err(GatewayError::Store(gateway_core::StoreError::Conflict(message))) => {
             tracing::warn!(%message, "MCP OAuth settings changed before the token was stored");
@@ -425,6 +442,18 @@ async fn exchange_callback_code(
     if !user_can_reach(team_id, &server) {
         return Err(GatewayError::InvalidRequest(
             "the MCP server is no longer available to this user".to_string(),
+        ));
+    }
+    // A change to the server's auth settings deletes its OAuth states in the
+    // same write. The state still existing after the reload above means the
+    // code goes to the endpoints the flow started with, not replacements.
+    if !state
+        .store
+        .mcp_oauth_state_exists(&transaction.state_hash)
+        .await?
+    {
+        return Err(GatewayError::InvalidRequest(
+            "MCP server OAuth settings changed during the connection".to_string(),
         ));
     }
     let config = mcp_oauth_server_config(&server.auth_config)?;

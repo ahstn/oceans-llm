@@ -1577,6 +1577,7 @@ pub(crate) mod tests {
                 expected_owner_team_id: Some(team.team_id),
                 expected_visibility,
                 retarget_owner_credentials_only: false,
+                expected_server: None,
                 updated_at: now + Duration::seconds(1),
             }
         };
@@ -2018,6 +2019,7 @@ pub(crate) mod tests {
             owner_contact,
             visibility: server.ownership.visibility,
             retarget_owner_credentials_only: retarget,
+            expected_server: None,
             expected_owner_team_id: server.ownership.owner_team_id,
             expected_visibility: server.ownership.visibility,
             updated_at: now,
@@ -2126,12 +2128,68 @@ pub(crate) mod tests {
             .revoke_mcp_upstream_credential_binding(user_binding.credential_binding_id, now)
             .await
             .expect("revoke user binding");
+        // A save authorized against other auth settings is refused, so a stale
+        // form cannot overwrite a newer change.
+        let current = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        let mut stale_settings = current.clone();
+        stale_settings.auth_config = Map::from_iter([(
+            "client_secret_ref".to_string(),
+            json!("env/OCEANS_MCP_REMOVED_SECRET"),
+        )]);
+        assert!(matches!(
+            store
+                .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                    expected_server: Some(
+                        gateway_core::McpServerOwnershipGuard::of(&current)
+                            .with_auth_settings(&stale_settings),
+                    ),
+                    display_name: "Stale form".to_string(),
+                    ..save(&current.server_url, None, false)
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        // An OAuth flow started now cannot finish once the settings change.
+        let state_hash = "retarget-state-hash";
+        store
+            .create_mcp_oauth_state(&gateway_core::McpOauthStateRecord {
+                state_hash: state_hash.to_string(),
+                user_id: user.user_id,
+                mcp_server_id,
+                provider_key: "mcp_server".to_string(),
+                pkce_verifier: "verifier".to_string(),
+                redirect_to: "/admin/account/connections".to_string(),
+                resource: current.server_url.clone(),
+                scopes: Vec::new(),
+                expires_at: now + Duration::minutes(10),
+                consumed_at: None,
+                created_at: now,
+            })
+            .await
+            .expect("OAuth state");
+        assert!(
+            store
+                .mcp_oauth_state_exists(state_hash)
+                .await
+                .expect("state")
+        );
         // The team's own encrypted credential may follow it.
         let moved_server = store
             .update_external_mcp_server(&save(moved, None, true))
             .await
             .expect("retarget");
         assert_eq!(moved_server.current.server_url, moved);
+        assert!(
+            !store
+                .mcp_oauth_state_exists(state_hash)
+                .await
+                .expect("state"),
+            "a settings change drops the server's OAuth states"
+        );
     }
 
     /// Resolves each kind of grant subject to its team in one query, as the
@@ -2319,6 +2377,83 @@ pub(crate) mod tests {
                 )
                 .await
                 .expect("revoke subject grant");
+        }
+
+        // A server list matches keys exactly: `_` is not a wildcard, so a key
+        // listing `fooxbar` cannot call `foo_bar`.
+        let underscored = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
+                server_key: "foo_bar".to_string(),
+                display_name: "Foo bar".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://foo-bar.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 5_000,
+                created_at: now,
+            })
+            .await
+            .expect("underscored server");
+        let underscored_tool = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: underscored.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .expect("underscored tool")
+            .remove(0);
+        for (public_id, listed, counted) in [
+            ("mcpwildcard", "fooxbar", 0_u64),
+            ("mcpexact", "foo_bar", 1_u64),
+        ] {
+            let key = store
+                .create_api_key(&scoped_key(
+                    public_id,
+                    gateway_core::ApiKeyAccess::new(None, Some(vec![listed.to_string()])).unwrap(),
+                ))
+                .await
+                .expect("listed key");
+            store
+                .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                    subject_kind: Kind::ApiKey,
+                    subject_id: key.id,
+                    target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                    target_id: underscored_tool.mcp_tool_id,
+                    updated_at: now,
+                    expected_server: None,
+                })
+                .await
+                .expect("grant");
+            assert_eq!(
+                store
+                    .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                    .await
+                    .expect("count"),
+                counted,
+                "{listed}"
+            );
         }
     }
 
@@ -2653,6 +2788,7 @@ pub(crate) mod tests {
                 expected_owner_team_id: None,
                 expected_visibility: Default::default(),
                 retarget_owner_credentials_only: false,
+                expected_server: None,
                 updated_at: now + Duration::seconds(1),
             })
             .await
@@ -2780,6 +2916,7 @@ pub(crate) mod tests {
                 expected_owner_team_id: None,
                 expected_visibility: Default::default(),
                 retarget_owner_credentials_only: false,
+                expected_server: None,
                 updated_at: now + Duration::seconds(6),
             })
             .await

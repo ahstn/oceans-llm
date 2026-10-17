@@ -164,6 +164,10 @@ pub trait GatewayStore:
         provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError>;
+    /// Whether the state row still exists, consumed or not. A change to the
+    /// server's auth settings deletes its states, so a callback checks this
+    /// after reloading the server.
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError>;
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -1513,6 +1517,10 @@ impl GatewayStore for AnyStore {
             self,
             consume_mcp_oauth_state(state_hash, user_id, provider_key, consumed_at)
         )
+    }
+
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        dispatch_store!(self, mcp_oauth_state_exists(state_hash))
     }
 
     async fn get_user_by_email_normalized(

@@ -1699,6 +1699,20 @@ pub struct McpServerGuardRow<'a> {
     pub auth_config: &'a Map<String, Value>,
 }
 
+impl<'a> McpServerGuardRow<'a> {
+    #[must_use]
+    pub fn of(server: &'a ExternalMcpServerRecord) -> Self {
+        Self {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: server.ownership.owner_team_id,
+            visibility: server.ownership.visibility,
+            server_url: &server.server_url,
+            auth_mode: server.auth_mode,
+            auth_config: &server.auth_config,
+        }
+    }
+}
+
 /// The owner and visibility a grant or credential write was authorized
 /// against. A store write that carries one happens only while the server
 /// still has them, checked in the same transaction with the server row
@@ -1831,6 +1845,10 @@ pub struct UpdateExternalMcpServerRecord {
     /// counted under the write lock, since the gateway would send it to the new
     /// URL. Set for team admins.
     pub retarget_owner_credentials_only: bool,
+    /// When set, the save also needs the server to still have this URL and
+    /// these auth settings, checked under the write lock, so a stale form
+    /// cannot overwrite a newer change, such as bring back a removed secret.
+    pub expected_server: Option<McpServerOwnershipGuard>,
     /// The owning team the caller was authorized against. The save fails with a
     /// conflict when the server has changed owner since.
     pub expected_owner_team_id: Option<Uuid>,
