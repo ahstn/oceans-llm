@@ -20,6 +20,9 @@ use super::{LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP
 pub(super) struct GrantedToolView {
     /// Admin hint overrides merged into the upstream `annotations`.
     pub(super) annotation_overrides: Map<String, Value>,
+    /// The approved definition to serve instead of the upstream's object, on
+    /// servers that hold changed tools for review.
+    pub(super) definition: Option<Map<String, Value>>,
 }
 
 /// Granted tools by upstream name. Tools not in the map are removed.
@@ -369,7 +372,10 @@ fn filter_tools_array(
             .and_then(Value::as_str)
             .and_then(|name| granted.get(name));
         if let Some(view) = view {
-            apply_annotation_overrides(tool, &view.annotation_overrides);
+            match &view.definition {
+                Some(definition) => *tool = Value::Object(definition.clone()),
+                None => apply_annotation_overrides(tool, &view.annotation_overrides),
+            }
         }
     }
     if let (Some(id), Some(object)) = (id, value.as_object_mut()) {

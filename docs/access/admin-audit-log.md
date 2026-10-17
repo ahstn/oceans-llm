@@ -32,7 +32,7 @@ Each entry shows:
 | MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.discovery_refreshed` |
 | MCP tool sets | `mcp_toolset.created`, `mcp_toolset.updated`, `mcp_toolset.disabled`, `mcp_toolset.tools_replaced` |
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
-| MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden` |
+| MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tool.version_approved`, `mcp_tool.version_rejected` |
 | MCP tag rules | `mcp_tag_rule.set`, `mcp_tag_rule.revoked` |
 | MCP credentials | `mcp_credential_binding.set` (create, replace, or a user's OAuth connect), `mcp_credential_binding.revoked` |
 | Provider credentials | `provider_credential.set`, `provider_credential.deleted` |

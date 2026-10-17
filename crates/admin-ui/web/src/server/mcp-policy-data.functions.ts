@@ -3,6 +3,8 @@ import { createServerFn } from '@tanstack/react-start'
 import {
   createMcpTagRule,
   listMcpTagRules,
+  listMcpToolVersions,
+  reviewMcpToolVersion,
   previewMcpTagRule,
   revokeMcpTagRule,
   setMcpToolAnnotationOverrides,
@@ -38,3 +40,18 @@ export const removeMcpTagRule = createServerFn({ method: 'POST' })
 export const getMcpTagRulePreview = createServerFn({ method: 'GET' })
   .validator((data: McpTagRulePreviewQuery) => data)
   .handler(({ data }) => previewMcpTagRule(data))
+
+export const getMcpToolVersions = createServerFn({ method: 'GET' })
+  .validator((data: { serverId: string; toolId: string }) => data)
+  .handler(({ data }) => listMcpToolVersions(data))
+
+export const saveMcpToolReview = createServerFn({ method: 'POST' })
+  .validator(
+    (data: {
+      serverId: string
+      toolId: string
+      schemaVersion: number
+      decision: 'approve' | 'reject'
+    }) => data,
+  )
+  .handler(({ data }) => reviewMcpToolVersion(data))

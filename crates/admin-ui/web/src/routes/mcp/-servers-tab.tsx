@@ -1,6 +1,7 @@
 import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
 import {
   Cancel01Icon,
+  CheckListIcon,
   Configuration01Icon,
   Delete02Icon,
   Edit02Icon,
@@ -72,13 +73,15 @@ import {
   type CredentialBindingFormState,
   type ServerFormState,
 } from './-server-forms'
+import { ToolReviewsPanel } from './-tool-reviews'
 
-type ServerSection = 'overview' | 'configuration' | 'tools' | 'credentials'
+type ServerSection = 'overview' | 'configuration' | 'tools' | 'reviews' | 'credentials'
 
 const serverSections = [
   { value: 'overview', label: 'Overview', icon: ViewIcon },
   { value: 'configuration', label: 'Configuration', icon: Configuration01Icon },
   { value: 'tools', label: 'Tools', icon: ToolsIcon },
+  { value: 'reviews', label: 'Reviews', icon: CheckListIcon },
   { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
@@ -699,6 +702,9 @@ function ServerDetailDialog({
                     onAddToToolset={onAddToToolset}
                     onToolUpdated={onToolUpdated}
                   />
+                ) : null}
+                {section === 'reviews' ? (
+                  <ToolReviewsPanel server={server} tools={tools} onToolUpdated={onToolUpdated} />
                 ) : null}
                 {section === 'credentials' ? (
                   <CredentialBindingsPanel

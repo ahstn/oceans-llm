@@ -27,7 +27,7 @@ use crate::http::{
 /// `mcp_server_id` is the server the change applies to, or `None` for a rule
 /// across every server. Platform admins only, like grants, for now; delegated
 /// server owners (#445) widen this check here.
-async fn require_mcp_policy_admin(
+pub(super) async fn require_mcp_policy_admin(
     state: &AppState,
     headers: &HeaderMap,
     _mcp_server_id: Option<Uuid>,
@@ -37,7 +37,7 @@ async fn require_mcp_policy_admin(
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct McpToolPayload {
-    tool: McpToolView,
+    pub(super) tool: McpToolView,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -145,7 +145,7 @@ fn tag_rule_summary(rule: &McpToolTagRuleRecord) -> serde_json::Value {
     })
 }
 
-fn tool_event(
+pub(super) fn tool_event(
     action: gateway_service::AuditAction,
     tool: &gateway_core::ExternalMcpToolRecord,
 ) -> AuditEvent {

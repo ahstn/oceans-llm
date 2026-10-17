@@ -432,6 +432,13 @@ function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
         <DetailRow label="Server" value={invocation.server_display_key} mono />
         <DetailRow label="Method" value={invocation.mcp_method} mono />
         <DetailRow label="Target" value={invocation.tool_display_key} mono />
+        <DetailRow
+          label="Tool version"
+          value={
+            invocation.tool_schema_version == null ? 'n/a' : String(invocation.tool_schema_version)
+          }
+          mono
+        />
         <DetailRow label="Occurred At" value={invocation.occurred_at} />
         <DetailRow label="Latency" value={formatLatency(invocation.latency_ms)} />
         <DetailRow

@@ -1646,6 +1646,9 @@ pub struct ExternalMcpServerRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
+    /// Hold new and changed tools until an admin approves them.
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1659,6 +1662,8 @@ pub struct NewExternalMcpServerRecord {
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
     pub created_at: OffsetDateTime,
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1671,6 +1676,7 @@ pub struct UpdateExternalMcpServerRecord {
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
     pub updated_at: OffsetDateTime,
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1686,6 +1692,9 @@ pub struct ExternalMcpToolRecord {
     /// Admin tags and annotation overrides. Discovery never writes them.
     #[serde(default)]
     pub policy: crate::mcp_tool_policy::McpToolPolicy,
+    /// Approval state. The definition fields hold the served version.
+    #[serde(default)]
+    pub review: crate::mcp_tool_review::McpToolReviewState,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,
@@ -2216,6 +2225,9 @@ pub struct McpToolInvocationRecord {
     /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
     #[serde(default = "default_mcp_invocation_method")]
     pub mcp_method: String,
+    /// Served schema version of the tool a `tools/call` used.
+    #[serde(default)]
+    pub tool_schema_version: Option<i64>,
     pub occurred_at: OffsetDateTime,
 }
 

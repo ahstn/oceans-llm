@@ -76,6 +76,8 @@ pub struct McpServerView {
     #[schema(additional_properties = true)]
     auth_config: Map<String, Value>,
     timeout_ms: i64,
+    /// New and changed tools wait for an admin to approve them.
+    approve_tool_changes: bool,
     status: String,
     last_discovery_status: Option<String>,
     last_discovery_at: Option<String>,
@@ -117,6 +119,13 @@ pub struct McpToolView {
     /// Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)
     /// plus admin tags. Tag rules match these.
     effective_tags: Vec<String>,
+    /// `approved`, `pending_change` (served as the approved version while a
+    /// text change waits), `pending_review` or `rejected` (both withheld).
+    approval_status: String,
+    /// The served version; null until the tool is first approved.
+    approved_schema_version: Option<i64>,
+    /// The version waiting for review.
+    pending_schema_version: Option<i64>,
     schema_hash: String,
     schema_version: i64,
     is_active: bool,
@@ -349,6 +358,9 @@ pub struct CreateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Off when omitted.
+    #[serde(default)]
+    pub(super) approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -393,6 +405,9 @@ pub struct UpdateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Kept as it is when omitted.
+    #[serde(default)]
+    pub(super) approve_tool_changes: Option<bool>,
 }
 
 pub(super) fn map_recommended_server(
@@ -423,6 +438,7 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
         auth_mode: server.auth_mode.as_str().to_string(),
         auth_config,
         timeout_ms: server.timeout_ms,
+        approve_tool_changes: server.approve_tool_changes,
         status: server.status.as_str().to_string(),
         last_discovery_status: server
             .last_discovery_status
@@ -591,6 +607,9 @@ pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
         },
         admin_tags: tool.policy.tags,
         effective_tags,
+        approval_status: tool.review.approval_status.as_str().to_string(),
+        approved_schema_version: tool.review.approved_schema_version,
+        pending_schema_version: tool.review.pending_schema_version,
         title: tool.metadata.title,
         output_schema: tool.metadata.output_schema,
         schema_hash: tool.schema_hash,
@@ -751,6 +770,7 @@ mod audit_summary_tests {
             auth_mode: "oauth_obo".to_string(),
             auth_config,
             timeout_ms: 1000,
+            approve_tool_changes: false,
             status: "active".to_string(),
             last_discovery_status: None,
             last_discovery_at: None,

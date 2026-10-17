@@ -1084,6 +1084,23 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_tool_id: Uuid,
         overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
     ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Every version of the tool, newest first.
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
+
+    /// Approves or rejects the tool's pending version. Fails with `Conflict`
+    /// when that version is not pending, so two reviews cannot both apply.
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: crate::mcp_tool_review::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 }
 
 #[async_trait]

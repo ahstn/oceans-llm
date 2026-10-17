@@ -166,7 +166,13 @@ async fn dispatch_mcp_request(
                 .effective_tools_for_api_key(
                     auth,
                     Some(server.mcp_server_id),
-                    McpToolProjection::Access,
+                    // Approval servers serve the stored definition, which needs
+                    // the title and output schema.
+                    if server.approve_tool_changes {
+                        McpToolProjection::Full
+                    } else {
+                        McpToolProjection::Access
+                    },
                 )
                 .await
             {
@@ -181,6 +187,9 @@ async fn dispatch_mcp_request(
                         tool.upstream_name.as_str(),
                         upstream::GrantedToolView {
                             annotation_overrides: tool.policy.annotation_overrides.to_object(),
+                            definition: server
+                                .approve_tool_changes
+                                .then(|| approved_tool_object(tool)),
                         },
                     )
                 })
@@ -301,6 +310,7 @@ async fn dispatch_mcp_request(
                         result_json: None,
                         metadata: Map::new(),
                         occurred_at: OffsetDateTime::now_utc(),
+                        tool_schema_version: None,
                     },
                 )
                 .await;
@@ -378,14 +388,11 @@ async fn handle_tools_call(
     match rate_limits::check_tool_call(state, policy, auth, &server).await {
         Ok(None) => {}
         Ok(Some(rejected)) => {
-            let mut log_input = tool_invocation_log_input(
+            let mut log_input = tool_call_log_input(
                 &server,
-                "tools/call",
                 &id,
-                Some(mcp_tool_invocation_id),
-                Some(tool.mcp_tool_id),
-                &tool.upstream_name,
-                &tool.display_name,
+                mcp_tool_invocation_id,
+                &tool,
                 McpToolInvocationStatus::PolicyDenied,
                 McpToolPolicyResult::Denied,
                 Some(rate_limits::RATE_LIMITED_ERROR_CODE.to_string()),
@@ -400,14 +407,11 @@ async fn handle_tools_call(
         Err(error) => {
             // The limiter cannot check the call in `closed` mode: a JSON-RPC
             // error with the HTTP 503, as the aggregate route returns.
-            let log_input = tool_invocation_log_input(
+            let log_input = tool_call_log_input(
                 &server,
-                "tools/call",
                 &id,
-                Some(mcp_tool_invocation_id),
-                Some(tool.mcp_tool_id),
-                &tool.upstream_name,
-                &tool.display_name,
+                mcp_tool_invocation_id,
+                &tool,
                 McpToolInvocationStatus::GatewayError,
                 McpToolPolicyResult::NotEvaluated,
                 Some(error.error_code().to_string()),
@@ -431,14 +435,11 @@ async fn handle_tools_call(
     )
     .await;
     if guardrail_evaluation.denied() {
-        let mut log_input = tool_invocation_log_input(
+        let mut log_input = tool_call_log_input(
             &server,
-            "tools/call",
             &id,
-            Some(mcp_tool_invocation_id),
-            Some(tool.mcp_tool_id),
-            &tool.upstream_name,
-            &tool.display_name,
+            mcp_tool_invocation_id,
+            &tool,
             McpToolInvocationStatus::PolicyDenied,
             McpToolPolicyResult::Denied,
             Some("guardrail_policy_denied".to_string()),
@@ -481,14 +482,11 @@ async fn handle_tools_call(
                 .service
                 .log_mcp_tool_invocation(
                     auth,
-                    tool_invocation_log_input(
+                    tool_call_log_input(
                         &server,
-                        "tools/call",
                         &id,
-                        Some(mcp_tool_invocation_id),
-                        Some(tool.mcp_tool_id),
-                        &tool.upstream_name,
-                        &tool.display_name,
+                        mcp_tool_invocation_id,
+                        &tool,
                         McpToolInvocationStatus::Unauthorized,
                         McpToolPolicyResult::Allowed,
                         Some(error.error_code().to_string()),
@@ -517,14 +515,11 @@ async fn handle_tools_call(
             Err(error) => Err(error),
         };
     let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);
-    let mut log_input = tool_invocation_log_input(
+    let mut log_input = tool_call_log_input(
         &upstream.server,
-        "tools/call",
         &id,
-        Some(mcp_tool_invocation_id),
-        Some(tool.mcp_tool_id),
-        &tool.upstream_name,
-        &tool.display_name,
+        mcp_tool_invocation_id,
+        &tool,
         status,
         policy_result,
         error_code,
@@ -612,6 +607,61 @@ fn tools_list_metadata(
     ])
 }
 
+/// The approved definition of a tool as an MCP `tools/list` entry, with the
+/// effective annotations.
+fn approved_tool_object(tool: &gateway_core::ExternalMcpToolRecord) -> Map<String, Value> {
+    let mut object = Map::new();
+    object.insert("name".to_string(), json!(tool.upstream_name));
+    if let Some(title) = &tool.metadata.title {
+        object.insert("title".to_string(), json!(title));
+    }
+    if let Some(description) = &tool.description {
+        object.insert("description".to_string(), json!(description));
+    }
+    object.insert("inputSchema".to_string(), tool.input_schema.clone());
+    if let Some(output_schema) = &tool.metadata.output_schema {
+        object.insert("outputSchema".to_string(), output_schema.clone());
+    }
+    if let Some(annotations) = gateway_core::mcp_tool_policy::effective_annotations(tool) {
+        object.insert("annotations".to_string(), Value::Object(annotations));
+    }
+    object
+}
+
+/// `tool_invocation_log_input` for a granted `tools/call`, which also records
+/// the served schema version of the tool.
+#[allow(clippy::too_many_arguments)]
+fn tool_call_log_input(
+    server: &gateway_core::ExternalMcpServerRecord,
+    id: &Option<serde_json::Value>,
+    mcp_tool_invocation_id: Uuid,
+    tool: &gateway_core::ExternalMcpToolRecord,
+    status: McpToolInvocationStatus,
+    policy_result: McpToolPolicyResult,
+    error_code: Option<String>,
+    arguments_json: Option<serde_json::Value>,
+    result_json: Option<serde_json::Value>,
+    started_at: Instant,
+) -> McpInvocationLogInput {
+    let mut input = tool_invocation_log_input(
+        server,
+        "tools/call",
+        id,
+        Some(mcp_tool_invocation_id),
+        Some(tool.mcp_tool_id),
+        &tool.upstream_name,
+        &tool.display_name,
+        status,
+        policy_result,
+        error_code,
+        arguments_json,
+        result_json,
+        started_at,
+    );
+    input.tool_schema_version = Some(tool.schema_version);
+    input
+}
+
 #[allow(clippy::too_many_arguments)]
 fn tool_invocation_log_input(
     server: &gateway_core::ExternalMcpServerRecord,
@@ -647,6 +697,7 @@ fn tool_invocation_log_input(
         result_json,
         metadata: Map::new(),
         occurred_at: OffsetDateTime::now_utc(),
+        tool_schema_version: None,
     }
 }
 

@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -266,9 +267,7 @@ function ToolDisclosureRow({
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
-          <Badge variant={tool.is_active ? 'default' : 'secondary'}>
-            {tool.is_active ? 'Active' : 'Inactive'}
-          </Badge>
+          <ToolStatusBadge tool={tool} />
           <CollapsibleTrigger asChild>
             <Button
               type="button"
@@ -344,6 +343,25 @@ function ToolDisclosureRow({
         </CollapsibleContent>
       </div>
     </Collapsible>
+  )
+}
+
+const reviewBadges: Record<string, { label: string; variant: 'warning' | 'destructive' }> = {
+  pending_change: { label: 'Change pending', variant: 'warning' },
+  pending_review: { label: 'Pending review', variant: 'warning' },
+  rejected: { label: 'Rejected', variant: 'destructive' },
+}
+
+/** Active state, or the review state when a change waits or was rejected. */
+function ToolStatusBadge({ tool }: { tool: McpToolView }) {
+  const review = tool.is_active ? reviewBadges[tool.approval_status] : undefined
+  if (review) {
+    return <Badge variant={review.variant}>{review.label}</Badge>
+  }
+  return (
+    <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+      {tool.is_active ? 'Active' : 'Inactive'}
+    </Badge>
   )
 }
 
@@ -870,7 +888,34 @@ export function ServerFormFields({
           <FieldDescription>{AUTH_CONFIG_HINTS[form.auth_mode]}</FieldDescription>
         ) : null}
       </Field>
+      <ApproveToolChangesField
+        checked={form.approve_tool_changes}
+        onCheckedChange={(approve_tool_changes) => onFormChange({ ...form, approve_tool_changes })}
+      />
     </FieldGroup>
+  )
+}
+
+function ApproveToolChangesField({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <Field orientation="horizontal" className="md:col-span-2">
+      <Switch id="mcp-approve-tool-changes" checked={checked} onCheckedChange={onCheckedChange} />
+      <div className="flex flex-col gap-1">
+        <FieldLabel htmlFor="mcp-approve-tool-changes">
+          Require approval for tool changes
+        </FieldLabel>
+        <FieldDescription>
+          New tools and changed definitions wait in Reviews until an admin approves them. A
+          description-only change keeps the approved version served meanwhile.
+        </FieldDescription>
+      </div>
+    </Field>
   )
 }
 

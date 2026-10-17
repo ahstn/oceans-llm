@@ -387,6 +387,7 @@ mod proxy_policy {
                 auth_config: Map::new(),
                 timeout_ms: 2_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("server");
@@ -652,6 +653,91 @@ mod proxy_policy {
         assert_eq!(status, StatusCode::FORBIDDEN);
         let (status, _) = send(&state, &auth, read_resource()).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn approval_servers_serve_the_approved_definition_and_withhold_pending_tools() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        state
+            .store
+            .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: server.description.clone(),
+                server_url: server.server_url.clone(),
+                auth_mode: server.auth_mode,
+                auth_config: server.auth_config.clone(),
+                timeout_ms: server.timeout_ms,
+                updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("enable approval");
+
+        // The upstream now declares metadata the gateway has not approved; the
+        // approved definition is served instead.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(
+            body["result"]["tools"],
+            json!([{"name": "search", "inputSchema": {"type": "object"}}])
+        );
+
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let called = invocations(&state)
+            .await
+            .into_iter()
+            .find(|invocation| invocation.mcp_method == "tools/call")
+            .expect("call invocation");
+        assert_eq!(called.tool_schema_version, Some(1));
+
+        // Discovery sees the declared metadata as a contract change: the tool is
+        // withheld, even with its explicit grant, until an admin approves it.
+        gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery");
+        let search = state
+            .store
+            .list_external_mcp_tools(server.mcp_server_id, false)
+            .await
+            .expect("tools")
+            .into_iter()
+            .find(|tool| tool.upstream_name == "search")
+            .expect("search tool");
+        assert_eq!(
+            search.review.approval_status,
+            gateway_core::McpToolApprovalStatus::PendingReview
+        );
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (_, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 5, "method": "tools/list"}),
+        )
+        .await;
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(body["result"]["tools"], json!([]));
     }
 
     #[tokio::test]

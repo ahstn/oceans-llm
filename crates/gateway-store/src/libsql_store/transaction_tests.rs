@@ -60,6 +60,7 @@ async fn store_write_waits_for_another_store_transaction() {
             auth_config: Map::new(),
             timeout_ms: 30_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");
@@ -84,6 +85,7 @@ async fn store_write_waits_for_another_store_transaction() {
                     auth_config: Map::new(),
                     timeout_ms: 30_000,
                     updated_at: now,
+                    approve_tool_changes: false,
                 })
                 .await
         }

@@ -23,6 +23,7 @@ mod budget_batch;
 mod budget_increases;
 mod libsql_store;
 mod mcp_tool_policy;
+mod mcp_tool_review;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
@@ -72,6 +73,7 @@ mod skills_tests;
 pub(crate) mod tests {
     mod mcp_access;
     mod mcp_tag_rules;
+    mod mcp_tool_versions;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;
@@ -1279,6 +1281,7 @@ pub(crate) mod tests {
             metadata: Map::new(),
             mcp_method: "tools/call".to_string(),
             occurred_at,
+            tool_schema_version: None,
         }
     }
 
@@ -1455,6 +1458,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server");
@@ -1479,6 +1483,7 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(1),
+                approve_tool_changes: false,
             })
             .await
             .expect("update MCP server")
@@ -1599,6 +1604,7 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(6),
+                approve_tool_changes: false,
             })
             .await
             .expect("invalidate discovery on config update")
@@ -1737,6 +1743,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server");
@@ -1806,6 +1813,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server for credentials");

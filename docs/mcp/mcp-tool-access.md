@@ -161,6 +161,58 @@ log](../access/admin-audit-log.md) as `mcp_tool.tags_updated`,
 See [MCP Tag Grants, Annotation Overrides, and Tool
 Versioning](../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
 
+## Tool versions and approval
+
+Every definition an upstream serves for a tool is kept as a version: its
+description, input schema, title, annotations, output schema, schema hash, and
+when it was discovered. Discovery stores a new version whenever a tool's schema
+hash changes. Admin [annotation overrides](#annotation-overrides) are not part of
+the hash and never create a version.
+
+Each server has a **Require approval for tool changes** setting, off by default.
+When it is off, discovery approves every new version, so changes are served at
+once as before. When it is on:
+
+| Discovery finds | Result |
+| --- | --- |
+| A new tool | **Pending review**. Not listed, searchable, or callable. |
+| A change to the description or title only | **Change pending**. The previous approved version keeps being served and callable. Clients never see the new text until it is approved. |
+| A change to the input schema, output schema, or annotations | **Pending review**. The tool is withheld, because the approved definition no longer describes what the upstream accepts or claims. |
+| The approved definition again | The waiting version is superseded and the tool is served as approved. |
+| A definition an admin already rejected | No change. Rejected definitions do not reopen review. |
+
+Waiting and rejected tools are excluded from every grant: explicit tool and
+toolset grants as well as [tag rules](#tag-rules). On approval servers, direct
+`tools/list` returns the approved definition stored by the gateway, with
+effective annotations, instead of the live upstream object. Members the gateway
+does not store, such as `_meta`, are not returned.
+
+Review changes from the server dialog's **Reviews** section. Each waiting tool
+shows a line diff of every section that changed, from the served version to the
+waiting one, with **Approve** and **Reject**:
+
+- **Approve** serves the waiting version.
+- **Reject** keeps a description-only change on the previous version, and keeps
+  a new tool or a contract change withheld until a later definition is approved.
+
+A version can be reviewed once. A second review, or a review of a version a newer
+discovery has replaced, returns HTTP 409. Turning the setting off approves the
+current definitions at the next discovery.
+
+Each `tools/call` [invocation](mcp-invocations.md) records the version it used.
+Approvals and rejections are written to the [admin audit
+log](../access/admin-audit-log.md) as `mcp_tool.version_approved` and
+`mcp_tool.version_rejected`.
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions` |
+| `POST` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve` |
+| `POST` | `/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject` |
+
+The server setting is `approve_tool_changes` on `POST` and `PATCH
+/api/v1/admin/mcp/servers`.
+
 ## Runtime Behavior
 
 For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_tools`, `describe_tool`, and `call_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`, including the upstream `title`, `output_schema`, and `annotations` when the server declares them. Annotations include any [admin overrides](#annotation-overrides). `search_tools` results include the `title` and `annotations`. `call_tool` re-checks the grant, resolves the upstream credential, and calls the upstream server.
@@ -205,7 +257,7 @@ Before this change, the direct proxy forwarded every method other than `tools/li
 
 If the caller supplies `schema_hash` and it no longer matches the persisted tool schema, title, annotations, or output schema, the gateway returns `tool_schema_changed` without contacting the upstream server. Missing upstream credentials return `credential_required`; expired bindings return `credential_expired`.
 
-Disabled servers, disabled toolsets, inactive tools, revoked grants, and inactive team memberships do not resolve as callable access.
+Disabled servers, disabled toolsets, inactive tools, tools waiting for review or rejected, revoked grants, and inactive team memberships do not resolve as callable access.
 
 ## What Clients Can See
 

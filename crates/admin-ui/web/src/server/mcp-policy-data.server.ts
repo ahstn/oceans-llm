@@ -58,3 +58,37 @@ export async function previewMcpTagRule(query: McpTagRulePreviewQuery) {
     }),
   )
 }
+
+export async function listMcpToolVersions(input: { serverId: string; toolId: string }) {
+  return unwrapGatewayResponse(
+    await createGatewayApiClient().GET(
+      '/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions',
+      { params: { path: { server_id: input.serverId, tool_id: input.toolId } } },
+    ),
+  )
+}
+
+export async function reviewMcpToolVersion(input: {
+  serverId: string
+  toolId: string
+  schemaVersion: number
+  decision: 'approve' | 'reject'
+}) {
+  const path = {
+    server_id: input.serverId,
+    tool_id: input.toolId,
+    schema_version: input.schemaVersion,
+  }
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    input.decision === 'approve'
+      ? await client.POST(
+          '/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve',
+          { params: { path } },
+        )
+      : await client.POST(
+          '/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject',
+          { params: { path } },
+        ),
+  )
+}

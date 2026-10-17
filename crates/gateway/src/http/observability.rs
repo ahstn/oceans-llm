@@ -521,6 +521,7 @@ fn mcp_invocation_summary_view(
         tool_display_key: invocation.tool_display_key.clone(),
         tool_display_name: invocation.tool_display_name.clone(),
         mcp_method: invocation.mcp_method.clone(),
+        tool_schema_version: invocation.tool_schema_version,
         status: invocation.status.as_str().to_string(),
         policy_result: invocation.policy_result.as_str().to_string(),
         latency_ms: invocation.latency_ms,

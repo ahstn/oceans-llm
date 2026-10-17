@@ -220,6 +220,7 @@ mod tests {
             first_discovered_at: now,
             last_discovered_at: now,
             deactivated_at: None,
+            review: Default::default(),
         }
     }
 

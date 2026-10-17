@@ -74,6 +74,7 @@ Each invocation record should carry:
 - outcome: status, error code, latency, and policy result
 - payload state: `has_payload`, argument/result redaction flags, and argument/result truncation flags
 - occurrence time
+- tool version: for `tools/call`, the served schema version of the called tool (`tool_schema_version`, shown as **Tool version** in the detail view). See [Tool versions and approval](mcp-tool-access.md#tool-versions-and-approval).
 
 The gateway must redact and bound arguments and results before persistence. It must never store sensitive headers, tokens, provider credentials, OAuth material, or API keys in MCP invocation payloads.
 

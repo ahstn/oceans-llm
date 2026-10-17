@@ -2264,6 +2264,219 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_tool_versions",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolVersionsPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Approves a pending version, which becomes the served definition.",
+        "operationId": "approve_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to approve",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Rejects a pending version. A text-only change keeps serving the previous\nversion; a new tool or a contract change stays withheld.",
+        "operationId": "reject_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to reject",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/tag-rules": {
       "get": {
         "tags": [
@@ -12013,6 +12226,13 @@
       "CreateMcpServerRequest": {
         "type": "object",
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Off when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -14395,6 +14615,33 @@
           }
         }
       },
+      "Envelope_McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolVersionView"
+                },
+                "description": "Newest first."
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpToolsPayload": {
         "type": "object",
         "required": [
@@ -16641,11 +16888,16 @@
           "auth_mode",
           "auth_config",
           "timeout_ms",
+          "approve_tool_changes",
           "status",
           "created_at",
           "updated_at"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": "boolean",
+            "description": "New and changed tools wait for an admin to approve them."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -17046,6 +17298,14 @@
               "null"
             ]
           },
+          "tool_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Served schema version of the tool a `tools/call` used; null otherwise."
+          },
           "user_id": {
             "type": [
               "string",
@@ -17065,6 +17325,83 @@
           }
         }
       },
+      "McpToolVersionView": {
+        "type": "object",
+        "description": "One definition the upstream served for a tool.",
+        "required": [
+          "schema_version",
+          "schema_hash",
+          "status",
+          "input_schema",
+          "discovered_at"
+        ],
+        "properties": {
+          "annotations": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Annotations as the upstream declared them, without admin overrides.",
+            "additionalProperties": true
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discovered_at": {
+            "type": "string"
+          },
+          "input_schema": {},
+          "output_schema": {},
+          "reviewed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Empty for a version approved automatically by discovery."
+          },
+          "schema_hash": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "description": "`approved`, `pending`, `rejected` or `superseded`."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolVersionView"
+            },
+            "description": "Newest first."
+          }
+        }
+      },
       "McpToolView": {
         "type": "object",
         "required": [
@@ -17078,6 +17415,7 @@
           "effective_annotations",
           "admin_tags",
           "effective_tags",
+          "approval_status",
           "schema_hash",
           "schema_version",
           "is_active",
@@ -17099,6 +17437,18 @@
           "annotations": {
             "$ref": "#/components/schemas/McpToolAnnotationsView",
             "description": "Hints as the upstream server declared them."
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "`approved`, `pending_change` (served as the approved version while a\ntext change waits), `pending_review` or `rejected` (both withheld)."
+          },
+          "approved_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The served version; null until the tool is first approved."
           },
           "deactivated_at": {
             "type": [
@@ -17141,6 +17491,14 @@
           },
           "output_schema": {
             "description": "Schema of the tool's structured result, when the upstream declares one."
+          },
+          "pending_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The version waiting for review."
           },
           "schema_hash": {
             "type": "string"
@@ -20075,6 +20433,13 @@
           "auth_mode"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Kept as it is when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true

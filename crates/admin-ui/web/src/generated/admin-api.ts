@@ -621,6 +621,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tool_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approves a pending version, which becomes the served definition. */
+        post: operations["approve_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rejects a pending version. A text-only change keeps serving the previous
+         *     version; a new tool or a contract change stays withheld.
+         */
+        post: operations["reject_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/tag-rules": {
         parameters: {
             query?: never;
@@ -3192,6 +3245,8 @@ export interface components {
             user_id: string;
         };
         CreateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Off when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -3768,6 +3823,13 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpToolVersionsPayload: {
+            data: {
+                /** @description Newest first. */
+                items: components["schemas"]["McpToolVersionView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpToolsPayload: {
             data: {
                 items: components["schemas"]["McpToolView"][];
@@ -4303,6 +4365,8 @@ export interface components {
             server: components["schemas"]["McpServerView"];
         };
         McpServerView: {
+            /** @description New and changed tools wait for an admin to approve them. */
+            approve_tool_changes: boolean;
             auth_config: {
                 [key: string]: unknown;
             };
@@ -4412,10 +4476,39 @@ export interface components {
             tool_display_key: string;
             tool_display_name: string;
             tool_id?: string | null;
+            /**
+             * Format: int64
+             * @description Served schema version of the tool a `tools/call` used; null otherwise.
+             */
+            tool_schema_version?: number | null;
             user_id?: string | null;
         };
         McpToolPayload: {
             tool: components["schemas"]["McpToolView"];
+        };
+        /** @description One definition the upstream served for a tool. */
+        McpToolVersionView: {
+            /** @description Annotations as the upstream declared them, without admin overrides. */
+            annotations?: {
+                [key: string]: unknown;
+            } | null;
+            description?: string | null;
+            discovered_at: string;
+            input_schema: unknown;
+            output_schema?: unknown;
+            reviewed_at?: string | null;
+            /** @description Empty for a version approved automatically by discovery. */
+            reviewed_by_user_id?: string | null;
+            schema_hash: string;
+            /** Format: int64 */
+            schema_version: number;
+            /** @description `approved`, `pending`, `rejected` or `superseded`. */
+            status: string;
+            title?: string | null;
+        };
+        McpToolVersionsPayload: {
+            /** @description Newest first. */
+            items: components["schemas"]["McpToolVersionView"][];
         };
         McpToolView: {
             /** @description Tags an admin attached to the tool. */
@@ -4424,6 +4517,16 @@ export interface components {
             annotation_overrides: components["schemas"]["McpToolAnnotationsView"];
             /** @description Hints as the upstream server declared them. */
             annotations: components["schemas"]["McpToolAnnotationsView"];
+            /**
+             * @description `approved`, `pending_change` (served as the approved version while a
+             *     text change waits), `pending_review` or `rejected` (both withheld).
+             */
+            approval_status: string;
+            /**
+             * Format: int64
+             * @description The served version; null until the tool is first approved.
+             */
+            approved_schema_version?: number | null;
             deactivated_at?: string | null;
             description?: string | null;
             display_name: string;
@@ -4441,6 +4544,11 @@ export interface components {
             last_discovered_at: string;
             /** @description Schema of the tool's structured result, when the upstream declares one. */
             output_schema?: unknown;
+            /**
+             * Format: int64
+             * @description The version waiting for review.
+             */
+            pending_schema_version?: number | null;
             schema_hash: string;
             /** Format: int64 */
             schema_version: number;
@@ -5255,6 +5363,8 @@ export interface components {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
         UpdateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Kept as it is when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -6627,6 +6737,122 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_tool_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolVersionsPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    approve_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to approve */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    reject_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to reject */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

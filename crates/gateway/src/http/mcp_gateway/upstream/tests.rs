@@ -32,6 +32,7 @@ fn tools_list_merges_admin_annotation_overrides_and_keeps_other_members() {
             name,
             GrantedToolView {
                 annotation_overrides: overrides.as_object().cloned().unwrap(),
+                definition: None,
             },
         );
     }
@@ -89,6 +90,7 @@ impl TestUpstream {
                     created_at: now,
                     updated_at: now,
                     disabled_at: None,
+                    approve_tool_changes: false,
                 },
                 headers: None,
                 query_credential: None,
