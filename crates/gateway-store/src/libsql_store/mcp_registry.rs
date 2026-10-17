@@ -363,8 +363,16 @@ impl McpRegistryRepository for LibsqlStore {
         team_id: Uuid,
         include_disabled: bool,
     ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        // Two branches rather than `owner_team_id = ?2 OR visibility = ...`:
+        // SQLite would scan the whole table in key order for the OR, while
+        // each branch searches its own index, and both come out in key order,
+        // so they merge without a sort. The second branch leaves out the
+        // team's own servers, which the first already returned.
         let sql = format!(
-            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND (owner_team_id = ?2 OR visibility = 'organisation') ORDER BY server_key"
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND owner_team_id = ?2 \
+             UNION ALL \
+             SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE (?1 = 1 OR status != 'disabled') AND visibility = 'organisation' AND owner_team_id IS NOT ?2 \
+             ORDER BY server_key"
         );
         let mut rows = self
             .connection

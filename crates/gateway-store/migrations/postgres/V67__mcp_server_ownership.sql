@@ -14,3 +14,8 @@ ALTER TABLE external_mcp_servers ADD CONSTRAINT external_mcp_servers_platform_vi
 
 CREATE INDEX IF NOT EXISTS external_mcp_servers_owner_team_idx
   ON external_mcp_servers (owner_team_id, server_key);
+-- A team admin's registry is their team's servers or the organisation's
+-- (`owner_team_id = ? OR visibility = 'organisation'`); this index serves the
+-- second branch, so neither branch scans the table.
+CREATE INDEX IF NOT EXISTS external_mcp_servers_visibility_idx
+  ON external_mcp_servers (visibility, server_key);

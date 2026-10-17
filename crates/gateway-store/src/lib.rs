@@ -2148,6 +2148,29 @@ pub(crate) mod tests {
                 .expect("server");
             servers.push(server);
         }
+        // A team admin's registry lists each server it reaches exactly once,
+        // in key order: the team's own published server is in both branches
+        // of the query.
+        for caller_team in [team_id, other_team] {
+            let listed: Vec<_> = store
+                .list_external_mcp_servers_visible_to_team(caller_team, true)
+                .await
+                .expect("visible to team")
+                .into_iter()
+                .filter(|listed| {
+                    servers
+                        .iter()
+                        .any(|server| server.mcp_server_id == listed.mcp_server_id)
+                })
+                .map(|listed| listed.server_key)
+                .collect();
+            let expected: Vec<_> = servers
+                .iter()
+                .filter(|server| server.ownership.is_reachable_from(Some(caller_team)))
+                .map(|server| server.server_key.clone())
+                .collect();
+            assert_eq!(listed, expected, "for {caller_team}");
+        }
         for caller_team in [None, Some(team_id), Some(other_team)] {
             let outside = store
                 .list_team_only_mcp_server_ids_outside(caller_team)

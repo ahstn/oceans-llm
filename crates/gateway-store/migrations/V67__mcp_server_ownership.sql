@@ -15,6 +15,11 @@ ALTER TABLE external_mcp_servers ADD COLUMN visibility TEXT NOT NULL DEFAULT 'or
 
 CREATE INDEX IF NOT EXISTS external_mcp_servers_owner_team_idx
   ON external_mcp_servers (owner_team_id, server_key);
+-- A team admin's registry is their team's servers or the organisation's
+-- (`owner_team_id = ? OR visibility = 'organisation'`); this index serves the
+-- second branch, so neither branch scans the table.
+CREATE INDEX IF NOT EXISTS external_mcp_servers_visibility_idx
+  ON external_mcp_servers (visibility, server_key);
 
 CREATE TRIGGER IF NOT EXISTS external_mcp_servers_platform_visibility_insert
 BEFORE INSERT ON external_mcp_servers
