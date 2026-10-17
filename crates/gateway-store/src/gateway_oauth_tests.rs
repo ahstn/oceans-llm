@@ -997,3 +997,204 @@ where
             .is_none()
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn libsql_metadata_document_clients_upsert() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_metadata_document_clients(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_metadata_document_clients_upsert() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres metadata document test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_metadata_document_clients(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
+async fn exercise_metadata_document_clients<S>(store: &S)
+where
+    S: GatewayOauthRepository,
+{
+    let client_id = "https://editor.example.com/oauth/client.json";
+    let mut document = dynamic_client(client_id, timestamp(0));
+    document.registration_kind = "metadata_document".to_string();
+    let stored = store
+        .upsert_gateway_oauth_metadata_document_client(&document)
+        .await
+        .expect("insert");
+    assert_eq!(stored, document);
+
+    // A refresh replaces the metadata and keeps the first-seen time.
+    let mut refreshed = document.clone();
+    refreshed.client_name = Some("Editor 2".to_string());
+    refreshed.redirect_uris = vec!["https://editor.example.com/callback".to_string()];
+    refreshed.created_at = timestamp(500);
+    refreshed.updated_at = timestamp(500);
+    let stored = store
+        .upsert_gateway_oauth_metadata_document_client(&refreshed)
+        .await
+        .expect("refresh");
+    assert_eq!(stored.created_at, timestamp(0));
+    assert_eq!(stored.updated_at, timestamp(500));
+    assert_eq!(stored.client_name.as_deref(), Some("Editor 2"));
+    assert_eq!(
+        store.get_gateway_oauth_client(client_id).await.unwrap(),
+        Some(stored)
+    );
+
+    // A dynamically registered client is never overwritten by a document.
+    let dynamic = dynamic_client("https://taken.example.com/client", timestamp(0));
+    store
+        .create_gateway_oauth_client(&dynamic)
+        .await
+        .expect("dynamic client");
+    let mut collision = dynamic.clone();
+    collision.client_name = Some("Impostor".to_string());
+    assert!(matches!(
+        store
+            .upsert_gateway_oauth_metadata_document_client(&collision)
+            .await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(
+        store
+            .get_gateway_oauth_client(&dynamic.client_id)
+            .await
+            .unwrap(),
+        Some(dynamic)
+    );
+
+    // Unused metadata document clients are cleaned up like dynamic ones.
+    let counts = store
+        .purge_gateway_oauth_records(timestamp(1), timestamp(1), timestamp(1))
+        .await
+        .expect("purge");
+    assert_eq!(counts.clients, 2);
+    assert_eq!(
+        store.get_gateway_oauth_client(client_id).await.unwrap(),
+        None
+    );
+}
+
+/// The libsql rebuild of `gateway_oauth_clients` must keep the requests and
+/// grants that reference it, which a cascading drop would delete.
+#[tokio::test]
+#[serial]
+async fn libsql_metadata_document_migration_keeps_client_children() {
+    use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
+
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+        .build()
+        .await
+        .expect("db");
+    let conn = db.connect().expect("connection");
+    conn.execute("PRAGMA foreign_keys = ON", ())
+        .await
+        .expect("foreign keys");
+    conn.execute(
+        "CREATE TABLE refinery_schema_history (
+            version INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            applied_on INTEGER NOT NULL, checksum TEXT NOT NULL)",
+        (),
+    )
+    .await
+    .expect("schema history");
+    for migration in MIGRATION_REGISTRY.iter().filter(|m| m.version < 65) {
+        conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+            .await
+            .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+             VALUES (?1, ?2, unixepoch(), ?3)",
+            libsql::params![migration.version as i64, migration.name, migration.checksum],
+        )
+        .await
+        .expect("record migration");
+    }
+    conn.execute(
+        "INSERT INTO gateway_oauth_clients (client_id, registration_kind, redirect_uris_json,
+            grant_types_json, token_endpoint_auth_method, created_at, updated_at)
+         VALUES ('client-1', 'dynamic', '[\"http://127.0.0.1/cb\"]',
+            '[\"authorization_code\"]', 'none', 1, 1)",
+        (),
+    )
+    .await
+    .expect("client");
+    conn.execute(
+        "INSERT INTO gateway_oauth_authorization_requests (request_id, client_id,
+            redirect_uri, code_challenge, resource, scope, status, expires_at, created_at)
+         VALUES ('request-1', 'client-1', 'http://127.0.0.1/cb', 'challenge',
+            'https://oceans.example.com/mcp', 'mcp:aggregate', 'pending', 99, 1)",
+        (),
+    )
+    .await
+    .expect("request");
+    drop(conn);
+    drop(db);
+
+    run_migrations(&db_path)
+        .await
+        .expect("migrate to the rebuild");
+
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+        .build()
+        .await
+        .expect("db");
+    let conn = db.connect().expect("connection");
+    let mut rows = conn
+        .query(
+            "SELECT client_id FROM gateway_oauth_authorization_requests WHERE request_id = 'request-1'",
+            (),
+        )
+        .await
+        .expect("query");
+    let row = rows.next().await.expect("row").expect("request kept");
+    assert_eq!(row.get::<String>(0).expect("client id"), "client-1");
+    let mut rows = conn.query("PRAGMA foreign_keys", ()).await.expect("pragma");
+    let row = rows.next().await.expect("row").expect("pragma row");
+    assert_eq!(row.get::<i64>(0).expect("flag"), 1, "foreign keys restored");
+    // The widened CHECK accepts a metadata document client, and still
+    // refuses a secret on one.
+    let mut document = dynamic_client("https://editor.example.com/client.json", timestamp(0));
+    document.registration_kind = "metadata_document".to_string();
+    store
+        .upsert_gateway_oauth_metadata_document_client(&document)
+        .await
+        .expect("metadata document client");
+    let result = conn
+        .execute(
+            "INSERT INTO gateway_oauth_clients (client_id, registration_kind,
+                redirect_uris_json, grant_types_json, token_endpoint_auth_method,
+                client_secret_hash, created_at, updated_at)
+             VALUES ('https://secret.example.com/c', 'metadata_document', '[]', '[]',
+                'client_secret_post', 'x', 1, 1)",
+            (),
+        )
+        .await;
+    assert!(result.is_err(), "{result:?}");
+}

@@ -95,7 +95,7 @@ The client handles the rest:
 
 1. Its first request gets `401` with `WWW-Authenticate: Bearer resource_metadata="https://gateway.example.com/.well-known/oauth-protected-resource/mcp", scope="mcp:aggregate"`. A per-server URL names its own metadata document and `scope="mcp:proxy"`.
 2. It reads the protected-resource metadata, then the authorization-server metadata at `/.well-known/oauth-authorization-server`.
-3. It registers at `/oauth/register` (RFC 7591 Dynamic Client Registration).
+3. It identifies itself in one of two ways. The metadata advertises `client_id_metadata_document_supported: true`, so a client that publishes a Client ID Metadata Document uses that document's https URL as its `client_id` and skips registration. Other clients register at `/oauth/register` (RFC 7591 Dynamic Client Registration).
 4. It opens `/oauth/authorize` in the browser with PKCE (`S256`) and `resource` set to the MCP URL. The user signs in to Oceans the usual way, with a password, OIDC, or GitHub, and sees the consent page at `/admin/oauth/consent`. It names the client, the host it returns to, and the MCP access requested. The user chooses `Allow` or `Deny`.
 5. It exchanges the code at `/oauth/token` for an `oat_` access token (one hour by default) and, when it registered for refresh, an `ort_` refresh token.
 6. It sends `Authorization: Bearer oat_…` on every MCP request and refreshes when the token expires.
@@ -117,7 +117,24 @@ When access ends:
 - Reusing a refresh token that was already rotated revokes the grant.
 - Tokens never outlive the session that approved them. Expect to sign in again when that session expires (30 days).
 
-Consent is asked every time a client signs in. When the code goes to a loopback redirect URI, the consent page shows a warning, because Oceans cannot verify who published the client. Client ID Metadata Documents are not supported yet, so clients fall back to registration.
+Consent is asked every time a client signs in. When the code goes to a loopback redirect URI, the consent page shows a warning, because Oceans cannot verify who published the client.
+
+### Client ID Metadata Documents
+
+A client that uses a metadata document passes its URL, such as `https://editor.example.com/oauth/client.json`, as `client_id`. Oceans fetches that URL and checks the document before it shows the consent page:
+
+- `client_id` in the document must equal the URL exactly.
+- `client_name` and `redirect_uris` are required. Redirect URIs follow the registration rules: HTTPS, or `http` on `localhost`, `127.0.0.1`, or `[::1]`, with no fragment.
+- `token_endpoint_auth_method` must be `none` or left out, and the document must not contain a client secret.
+- The URL must be HTTPS with a path, in canonical form, with no fragment or user information.
+
+Oceans fetches documents only from public addresses. It refuses hosts that are, or resolve to, private, loopback, link-local, or cloud metadata addresses, and it does not follow redirects. A fetch has 5 seconds and 64 KiB. Oceans keeps a document for as long as its `Cache-Control` allows, up to 24 hours, or 10 minutes without one. It checks the document again when the client exchanges a code, refreshes, or revokes, so a removed document stops new sign-ins and refreshes once the cached copy expires.
+
+The consent page shows the host that published the document, marked `Unverified`. Oceans checked only that this host serves the document, not who runs the client. A platform admin can limit which hosts may publish documents, or turn them off, under `mcp.client_oauth.client_id_metadata_documents` in the [configuration reference](../configuration/configuration-reference.md).
+
+### Browser-based clients
+
+The metadata, token, registration, and revocation endpoints answer CORS requests from any origin, so a client that runs in a web page can complete sign-in. They send no credentials-allowing CORS headers and read no cookies. `/oauth/authorize` opens as a normal page, not a cross-origin call.
 
 API keys keep working on the same URLs. Clients that support custom headers can use either method.
 

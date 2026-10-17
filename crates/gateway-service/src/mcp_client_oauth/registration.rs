@@ -14,9 +14,9 @@ use super::{
     secrets::{generate_token, run_argon2},
 };
 
-const MAX_REDIRECT_URIS: usize = 10;
+pub(super) const MAX_REDIRECT_URIS: usize = 10;
 const MAX_TEXT_LENGTH: usize = 200;
-const MAX_URI_LENGTH: usize = 2048;
+pub(super) const MAX_URI_LENGTH: usize = 2048;
 const CLIENT_SECRET_PREFIX: &str = "ocs_";
 const SUPPORTED_GRANT_TYPES: [&str; 2] = ["authorization_code", "refresh_token"];
 
@@ -142,7 +142,9 @@ where
 }
 
 /// Defaults to `authorization_code`, the only flow the gateway runs.
-fn validate_grant_types(grant_types: Option<Vec<String>>) -> Result<Vec<String>, OauthError> {
+pub(super) fn validate_grant_types(
+    grant_types: Option<Vec<String>>,
+) -> Result<Vec<String>, OauthError> {
     let requested = grant_types.unwrap_or_else(|| vec!["authorization_code".to_string()]);
     let mut grant_types: Vec<String> = Vec::new();
     for grant_type in requested {
@@ -169,7 +171,9 @@ fn validate_grant_types(grant_types: Option<Vec<String>>) -> Result<Vec<String>,
     Ok(grant_types)
 }
 
-fn validate_response_types(response_types: Option<Vec<String>>) -> Result<(), OauthError> {
+pub(super) fn validate_response_types(
+    response_types: Option<Vec<String>>,
+) -> Result<(), OauthError> {
     match response_types.as_deref() {
         None => Ok(()),
         Some(values) if !values.is_empty() && values.iter().all(|value| value == "code") => Ok(()),
@@ -188,7 +192,10 @@ fn parse_auth_method(raw: Option<&str>) -> Result<GatewayOauthClientAuthMethod, 
     })
 }
 
-fn optional_text(value: Option<String>, field: &str) -> Result<Option<String>, OauthError> {
+pub(super) fn optional_text(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, OauthError> {
     let Some(value) = value.map(|value| value.trim().to_string()) else {
         return Ok(None);
     };
@@ -203,7 +210,10 @@ fn optional_text(value: Option<String>, field: &str) -> Result<Option<String>, O
     Ok(Some(value))
 }
 
-fn optional_https_uri(value: Option<String>, field: &str) -> Result<Option<String>, OauthError> {
+pub(super) fn optional_https_uri(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, OauthError> {
     let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
         return Ok(None);
     };

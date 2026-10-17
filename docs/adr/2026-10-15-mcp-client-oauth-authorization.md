@@ -1,6 +1,7 @@
 # ADR: OAuth Authorization for MCP Clients Connecting to the Gateway
 
 - Date: 2026-10-15
+- Updated: 2026-10-17 (Client ID Metadata Documents and CORS)
 - Status: Accepted
 - Issue: #441 (epic #458)
 
@@ -8,6 +9,7 @@
 
 - [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in)
 - [OIDC and SSO](../access/oidc-and-sso-status.md)
+- [ADR: SSRF-safe outbound fetch](2026-10-17-ssrf-safe-outbound-fetch.md), which Client ID Metadata Documents use
 
 ## Context
 
@@ -52,7 +54,7 @@ The feature is off unless `mcp.client_oauth.enabled` is `true`. The issuer is `m
 
 There is no root `/.well-known/oauth-protected-resource` document. RFC 9728 requires the `resource` in a document to match the URL it was fetched for. A root document would therefore name `{issuer}`, which is not an MCP resource. Clients find the per-route document from the `WWW-Authenticate` header first, and from the path-suffixed well-known URI second.
 
-The metadata advertises `response_types_supported: ["code"]`, `grant_types_supported: ["authorization_code", "refresh_token"]`, `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"]`, and `authorization_response_iss_parameter_supported: true`. The authorization response always carries `iss`, including error responses.
+The metadata advertises `response_types_supported: ["code"]`, `grant_types_supported: ["authorization_code", "refresh_token"]`, `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"]`, `authorization_response_iss_parameter_supported: true`, and `client_id_metadata_document_supported`, which is `true` unless documents are turned off (section 7). The authorization response always carries `iss`, including error responses.
 
 ### 2. Token format: opaque, stored as a hash
 
@@ -74,7 +76,7 @@ Four tables back the flow. They use a `gateway_oauth_` prefix to keep them apart
 
 | Table | Holds |
 | --- | --- |
-| `gateway_oauth_clients` | Registered clients: name, URIs, redirect URIs, grant types, auth method, and a secret hash for confidential clients |
+| `gateway_oauth_clients` | Clients: name, URIs, redirect URIs, grant types, auth method, and a secret hash for confidential clients. `registration_kind` is `dynamic` for a registered client, or `metadata_document` for a client known by its document, whose row mirrors the last document fetched |
 | `gateway_oauth_authorization_requests` | One row per `/oauth/authorize` call: client, redirect URI, `state`, PKCE challenge, resource, and scope. After consent it also holds the user, the approving session, and the code hash. Each row can be used once |
 | `gateway_oauth_grants` | One row per approved consent, so one token family: client, user, approving `user_sessions` row, resource, scope, and revocation |
 | `gateway_oauth_tokens` | Access and refresh token hashes, each with an expiry. A refresh token also records when it was consumed |
@@ -128,6 +130,7 @@ The consent page shows:
 
 - the signed-in user
 - the client name, marked as provided by the client
+- for a metadata document client, the host that published the document, marked `Unverified`, with a note that Oceans checked only that this host serves the document
 - the redirect URI's host, which the spec says must be shown
 - a warning when the redirect URI for this request is loopback, judged per request rather than per registration
 - the MCP server, or "all MCP servers you have access to"
@@ -153,12 +156,33 @@ Only active users can approve. A user who has no MCP grants can still approve, b
 
 `mcp.client_oauth.dynamic_client_registration` (default `true`) turns the endpoint off. When it is off, `registration_endpoint` is left out of the metadata.
 
-We ship Dynamic Client Registration before Client ID Metadata Documents, even though the spec now prefers the latter:
+Dynamic Client Registration shipped first, because most deployed MCP clients still register that way. Client ID Metadata Documents followed once the gateway had an outbound fetcher that cannot be pointed at internal addresses.
 
-- Most deployed MCP clients still register dynamically, because earlier revisions required it.
-- Client ID Metadata Documents make the gateway fetch a URL the client chooses. That needs an outbound fetcher that blocks requests to private addresses (SSRF). The gateway does not have one yet. Upstream metadata discovery in #442 needs the same guard, so we will build it once and share it rather than build two.
+### 7a. Client ID Metadata Documents
 
-Until then the metadata omits `client_id_metadata_document_supported`. Clients that follow the spec's priority order then fall back to registration.
+A client may use an https URL as its `client_id` instead of registering. The URL serves a JSON document with the client's metadata, and the gateway fetches it. The feature is on by default, like dynamic registration, and is configured under `mcp.client_oauth.client_id_metadata_documents`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Accept metadata document clients and advertise `client_id_metadata_document_supported: true` |
+| `allowed_domains` | `[]` | Hosts that may publish documents. Each entry also allows its subdomains. Empty allows any public host |
+
+**Which client IDs are documents.** A `client_id` that starts with `https://` is a document URL. Registered clients get UUIDs, so the two never collide. The URL must have a path, and must not have user information, a fragment, or dot segments. It must also be in canonical form, so the URL fetched, the `client_id` compared, and the stored key are the same string. A host outside `allowed_domains` is refused before any fetch.
+
+**Fetching.** Documents are fetched with the shared outbound fetcher, scoped to public addresses only: no private, loopback, link-local, or cloud metadata addresses, checked on every resolved address and pinned for the connection. Redirects are not followed, and the fetch is limited to 5 seconds and 64 KiB. See the [outbound fetch ADR](2026-10-17-ssrf-safe-outbound-fetch.md).
+
+**Validation.** The document must be a JSON object whose `client_id` equals the URL exactly, with no normalization. `client_name` and `redirect_uris` are required. The redirect URIs, grant types, response types, text fields, and URIs follow the registration rules in section 7. `token_endpoint_auth_method` must be `none` or absent, and the document must not carry a client secret, since the gateway shares no secret with such a client. A document that fails any check is refused with `invalid_client`, and the authorization endpoint shows an error page rather than redirecting.
+
+**Storage and caching.** A valid document is written to `gateway_oauth_clients` as a `metadata_document` row keyed by its URL, inserted the first time and refreshed after. Requests and grants reference that row like any other client. A document can never overwrite a registered client. The resolved client is also cached in memory, per gateway process, for as long as the response's `Cache-Control` allows: `max-age`, capped at 24 hours, or 10 minutes when the header gives no freshness. `no-store`, `no-cache`, and `max-age=0` mean fetching on every use. `Expires` is not read. The cache holds at most 1,024 documents.
+
+**When it is used.** The gateway resolves the document at the authorization endpoint, at the token endpoint for both the code and refresh grants, and at revocation. A changed document therefore takes effect when the cache entry expires. When the code is redeemed, its redirect URI must still be in the document. Two failure cases fall back to the stored row instead of failing:
+
+- A transient fetch failure (timeout, DNS failure, or a `5xx`) uses the stored row if there is one, so a short outage at the client's host does not break refreshes.
+- Revocation uses the stored row whatever went wrong, because ending a grant is always safe. A client whose document was removed can still revoke its tokens.
+
+Any other failure, such as a `404` or a document that no longer validates, refuses the request. Removing the document therefore stops new sign-ins and refreshes for that client.
+
+Turning documents off stops those clients at once: a stored `metadata_document` row is ignored while the feature is off.
 
 ### 8. Coexistence with `gwk_` keys
 
@@ -201,7 +225,7 @@ The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin
 
 Revoking a session also revokes its grants, with reason `session_ended`. The session is revoked first and its grants second. A grant is stored only while its session is unrevoked, checked in the same statement, and on Postgres that statement takes a share lock on the session row. A code exchange racing a sign-out therefore either sees the revocation and is refused, or its grant exists in time to be revoked. Each grant keeps a copy of its session's expiry, which never changes. An hourly loop runs while the feature is enabled. It first marks grants whose session has expired by the time of the run as revoked, using an index on that copy and dating each grant to its session's expiry. Together these keep dead grants out of the live-grant index that the authorized clients listing walks. The loop then deletes:
 
-- dynamically registered clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
+- dynamically registered and metadata document clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
 - authorization requests that expired more than a day ago, unless their grant can still be used
 - tokens that expired more than a day ago, except consumed refresh tokens of a grant that can still be used
 
@@ -213,6 +237,16 @@ The admin audit log records each consent decision (`mcp_client_grant.authorized`
 
 Turning `mcp.client_oauth` off stops all OAuth access, but it does not revoke anything. Grants come back if the feature is turned on again. Listing and revoking authorized clients therefore keep working while it is off, both on the account page and through the admin API. With no issuer configured, the listing shows every live grant.
 
+### 11. CORS on the public endpoints
+
+Browser-based MCP clients call the metadata, token, registration, and revocation endpoints from their own origin. Those endpoints answer CORS requests from any origin, for `GET` and `POST` with the `Authorization`, `Content-Type`, and `MCP-Protocol-Version` headers, and cache preflights for a day:
+
+- `/.well-known/oauth-protected-resource/mcp` and `/mcp/{server_key}`
+- `/.well-known/oauth-authorization-server`
+- `/oauth/token`, `/oauth/register`, and `/oauth/revoke`
+
+The policy grants no credentials, and these endpoints read no cookies. Clients authenticate with the request body or `Authorization`, so a page cannot use them to act as a signed-in user. `/oauth/authorize` is a top-level navigation, not a cross-origin call, and the consent APIs are cookie-authenticated. Neither sends CORS headers.
+
 ## Trade-offs
 
 - Signing out of the admin UI also disconnects the MCP clients that session approved. That is the guarantee #441 asks for, but it can surprise someone who signs out to switch accounts. The consent page says so.
@@ -221,12 +255,14 @@ Turning `mcp.client_oauth` off stops all OAuth access, but it does not revoke an
 - Open registration lets anyone create client rows. The rows are inert without consent, and cleanup removes the unused ones after the retention window. Until then they take space.
 - The issuer must be configured. A deployment that serves the gateway at more than one origin can expose OAuth on only one of them.
 - Plain `http` loopback issuers break the HTTPS rule for authorization servers. They are allowed only so the local stack and tests work.
+- A metadata document proves only that its host published it. The consent screen names that host and marks the client unverified, but a user can still approve a client from a host they do not know.
+- Metadata documents let an unauthenticated request make the gateway fetch a URL, and each new URL creates a client row. The fetcher's address rules, timeout, and size limit bound each fetch, and cleanup removes unused rows. Per-IP throttling, tracked with registration in #513, would bound how many fetches one caller can start.
+- The document cache is per process. Replicas fetch the same document independently, and a change can take up to the cache lifetime to reach every replica.
 
 ## Follow-up
 
-- Client ID Metadata Documents, once #442 provides an SSRF-safe fetcher.
+- Throttle metadata document fetches per IP, together with dynamic registration (#513).
 - An admin UI view of a user's authorized clients. The admin API exists; the user management sheet does not show it yet.
 - Pre-registered clients that admins manage, with an option to skip consent for trusted clients.
-- CORS on the metadata, token, registration, and revocation endpoints for browser-based clients.
 - Show `auth_method` in the invocation-log UI and filters (#448).
 - Capability scopes on API keys (#446), using the same names.

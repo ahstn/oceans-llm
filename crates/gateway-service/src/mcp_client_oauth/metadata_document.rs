@@ -1,0 +1,497 @@
+//! Client ID Metadata Documents: a client whose `client_id` is an https URL
+//! publishes its metadata at that URL, and the gateway fetches it instead of
+//! asking the client to register.
+//!
+//! The gateway only learns that whoever controls the URL's host published
+//! the document, so the consent screen names that host and says the client is
+//! unverified. Fetches go through an [`OutboundFetcher`] that reaches public
+//! addresses only. A validated document is stored as a `metadata_document`
+//! client row, which requests and grants reference, and cached in memory for
+//! as long as its `Cache-Control` allows, within [`MAX_CACHE_TTL`].
+
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::Duration as StdDuration,
+};
+
+use async_trait::async_trait;
+use gateway_core::{
+    GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository, StoreError,
+};
+use reqwest::header::CACHE_CONTROL;
+use serde::Deserialize;
+use serde_json::Value;
+use time::{Duration, OffsetDateTime};
+use url::{Host, Url};
+
+use super::{
+    error::OauthError,
+    redirect::validate_redirect_uri,
+    registration::{
+        MAX_REDIRECT_URIS, MAX_URI_LENGTH, optional_https_uri, optional_text, validate_grant_types,
+        validate_response_types,
+    },
+};
+use crate::outbound_fetch::{OutboundAddressScope, OutboundFetchError, OutboundFetcher};
+
+pub const METADATA_DOCUMENT_REGISTRATION_KIND: &str = "metadata_document";
+/// Used when the response has no `Cache-Control` freshness.
+pub const DEFAULT_CACHE_TTL: Duration = Duration::minutes(10);
+/// The longest the gateway trusts a document without fetching it again.
+pub const MAX_CACHE_TTL: Duration = Duration::hours(24);
+const MAX_CACHED_DOCUMENTS: usize = 1024;
+const FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
+
+/// A fetched document, before validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchedDocument {
+    pub status: u16,
+    pub cache_control: Option<String>,
+    pub body: Vec<u8>,
+}
+
+/// Where documents come from: the network in production, a fixture in tests.
+#[async_trait]
+pub trait ClientMetadataDocumentSource: Send + Sync {
+    async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError>;
+}
+
+#[async_trait]
+impl ClientMetadataDocumentSource for OutboundFetcher {
+    async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
+        let response = self.get(url, "application/json").await?;
+        let status = response.status().as_u16();
+        let cache_control = response
+            .headers()
+            .get(CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        let body = if status == 200 {
+            response.body().await?
+        } else {
+            Vec::new()
+        };
+        Ok(FetchedDocument {
+            status,
+            cache_control,
+            body,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CachedClient {
+    client: GatewayOauthClientRecord,
+    fresh_until: OffsetDateTime,
+}
+
+/// Resolves metadata document clients and caches what it fetched.
+pub struct ClientMetadataDocuments {
+    allowed_domains: Vec<String>,
+    source: Arc<dyn ClientMetadataDocumentSource>,
+    cache: Mutex<HashMap<String, CachedClient>>,
+}
+
+impl fmt::Debug for ClientMetadataDocuments {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ClientMetadataDocuments")
+            .field("allowed_domains", &self.allowed_domains)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An `allowed_domains` entry that is not a bare domain name.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` is not a domain name; use a host such as example.com")]
+pub struct InvalidAllowedDomain(pub String);
+
+impl ClientMetadataDocuments {
+    /// Fetches over the network. An empty `allowed_domains` allows any host.
+    pub fn new(allowed_domains: Vec<String>) -> Result<Self, InvalidAllowedDomain> {
+        let fetcher = OutboundFetcher::with_limits(
+            OutboundAddressScope::Public,
+            FETCH_TIMEOUT,
+            MAX_DOCUMENT_BYTES,
+        );
+        Self::with_source(allowed_domains, Arc::new(fetcher))
+    }
+
+    pub fn with_source(
+        allowed_domains: Vec<String>,
+        source: Arc<dyn ClientMetadataDocumentSource>,
+    ) -> Result<Self, InvalidAllowedDomain> {
+        let allowed_domains = allowed_domains
+            .into_iter()
+            .map(|domain| normalize_domain(&domain).ok_or(InvalidAllowedDomain(domain)))
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            allowed_domains,
+            source,
+            cache: Mutex::new(HashMap::new()),
+        })
+    }
+
+    #[must_use]
+    pub fn allowed_domains(&self) -> &[String] {
+        &self.allowed_domains
+    }
+
+    /// Returns the client for `client_id`, fetching its document when the
+    /// cached copy is stale.
+    ///
+    /// With `stored_fallback`, a stored copy stands in when the document
+    /// cannot be fetched or no longer validates. Revocation uses it, since
+    /// ending a grant is safe whatever the document now says. Otherwise only
+    /// a transient fetch failure falls back to the stored copy.
+    pub(crate) async fn resolve<R>(
+        &self,
+        repo: &R,
+        client_id: &str,
+        now: OffsetDateTime,
+        stored_fallback: bool,
+    ) -> Result<GatewayOauthClientRecord, OauthError>
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        if let Some(client) = self.cached(client_id, now) {
+            return Ok(client);
+        }
+        let fetched = match self.fetch_and_validate(client_id, now).await {
+            Ok(fetched) => fetched,
+            Err(failure) => {
+                if (failure.transient || stored_fallback)
+                    && let Some(stored) = stored_client(repo, client_id).await?
+                {
+                    tracing::warn!(
+                        client_id,
+                        error = %failure.error.description,
+                        "using the stored copy of an unavailable client metadata document"
+                    );
+                    return Ok(stored);
+                }
+                return Err(failure.error);
+            }
+        };
+        let stored = repo
+            .upsert_gateway_oauth_metadata_document_client(&fetched.client)
+            .await
+            .map_err(|error| match error {
+                StoreError::Conflict(_) => {
+                    OauthError::invalid_client("client_id is already registered another way")
+                }
+                error => error.into(),
+            })?;
+        if fetched.ttl > Duration::ZERO {
+            self.remember(stored.clone(), now, now + fetched.ttl);
+        } else {
+            self.forget(client_id);
+        }
+        Ok(stored)
+    }
+
+    fn cached(&self, client_id: &str, now: OffsetDateTime) -> Option<GatewayOauthClientRecord> {
+        let cache = self.cache.lock().expect("metadata document cache lock");
+        cache
+            .get(client_id)
+            .filter(|entry| entry.fresh_until > now)
+            .map(|entry| entry.client.clone())
+    }
+
+    fn remember(
+        &self,
+        client: GatewayOauthClientRecord,
+        now: OffsetDateTime,
+        fresh_until: OffsetDateTime,
+    ) {
+        let mut cache = self.cache.lock().expect("metadata document cache lock");
+        if cache.len() >= MAX_CACHED_DOCUMENTS && !cache.contains_key(&client.client_id) {
+            cache.retain(|_, entry| entry.fresh_until > now);
+            if cache.len() >= MAX_CACHED_DOCUMENTS
+                && let Some(oldest) = cache
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.fresh_until)
+                    .map(|(key, _)| key.clone())
+            {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            client.client_id.clone(),
+            CachedClient {
+                client,
+                fresh_until,
+            },
+        );
+    }
+
+    fn forget(&self, client_id: &str) {
+        self.cache
+            .lock()
+            .expect("metadata document cache lock")
+            .remove(client_id);
+    }
+
+    async fn fetch_and_validate(
+        &self,
+        client_id: &str,
+        now: OffsetDateTime,
+    ) -> Result<ValidatedDocument, ResolveFailure> {
+        let url = parse_client_id_url(client_id).map_err(ResolveFailure::permanent)?;
+        if !self.host_is_allowed(&url) {
+            return Err(ResolveFailure::permanent(OauthError::invalid_client(
+                "client metadata documents from this host are not accepted",
+            )));
+        }
+        let fetched = self.source.fetch(&url).await.map_err(|error| {
+            let transient = error.is_transient();
+            let description = format!("client metadata document could not be fetched: {error}");
+            ResolveFailure {
+                error: if transient {
+                    OauthError::temporarily_unavailable(description)
+                } else {
+                    OauthError::invalid_client(description)
+                },
+                transient,
+            }
+        })?;
+        if fetched.status != 200 {
+            return Err(ResolveFailure {
+                error: OauthError::invalid_client(format!(
+                    "client metadata document returned HTTP {}",
+                    fetched.status
+                )),
+                transient: fetched.status >= 500,
+            });
+        }
+        let client =
+            validate_document(client_id, &fetched.body, now).map_err(ResolveFailure::permanent)?;
+        Ok(ValidatedDocument {
+            client,
+            ttl: cache_ttl(fetched.cache_control.as_deref()),
+        })
+    }
+
+    fn host_is_allowed(&self, url: &Url) -> bool {
+        if self.allowed_domains.is_empty() {
+            return true;
+        }
+        let Some(Host::Domain(host)) = url.host() else {
+            return false;
+        };
+        let host = host.to_ascii_lowercase();
+        self.allowed_domains.iter().any(|domain| {
+            host == *domain
+                || host
+                    .strip_suffix(domain.as_str())
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+        })
+    }
+}
+
+struct ValidatedDocument {
+    client: GatewayOauthClientRecord,
+    ttl: Duration,
+}
+
+struct ResolveFailure {
+    error: OauthError,
+    transient: bool,
+}
+
+impl ResolveFailure {
+    fn permanent(error: OauthError) -> Self {
+        Self {
+            error,
+            transient: false,
+        }
+    }
+}
+
+async fn stored_client<R>(
+    repo: &R,
+    client_id: &str,
+) -> Result<Option<GatewayOauthClientRecord>, OauthError>
+where
+    R: GatewayOauthRepository + ?Sized,
+{
+    Ok(repo
+        .get_gateway_oauth_client(client_id)
+        .await?
+        .filter(|client| client.registration_kind == METADATA_DOCUMENT_REGISTRATION_KIND))
+}
+
+/// Whether `client_id` names a metadata document rather than a registration.
+/// Registered clients get UUIDs, so an https URL is never one of them.
+#[must_use]
+pub fn is_metadata_document_client_id(client_id: &str) -> bool {
+    client_id.starts_with("https://")
+}
+
+/// The host that published a metadata document client, for the consent
+/// screen.
+#[must_use]
+pub fn metadata_document_host(client: &GatewayOauthClientRecord) -> Option<String> {
+    if client.registration_kind != METADATA_DOCUMENT_REGISTRATION_KIND {
+        return None;
+    }
+    Url::parse(&client.client_id)
+        .ok()?
+        .host_str()
+        .map(ToOwned::to_owned)
+}
+
+/// The client ID rules of the metadata document draft: https, a path, and no
+/// fragment, user information, or dot segments. It must also be in canonical
+/// form, so the URL fetched, the `client_id` compared, and the stored key are
+/// the same string.
+fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
+    let invalid = |reason: &str| {
+        OauthError::invalid_client(format!(
+            "client_id is not a valid metadata document URL: {reason}"
+        ))
+    };
+    if client_id.len() > MAX_URI_LENGTH {
+        return Err(invalid("it is too long"));
+    }
+    let url = Url::parse(client_id).map_err(|_| invalid("it is not an absolute URL"))?;
+    if url.scheme() != "https" || url.host().is_none() {
+        return Err(invalid("it must use https"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(invalid("it must not include user information"));
+    }
+    if url.fragment().is_some() {
+        return Err(invalid("it must not include a fragment"));
+    }
+    if url.path() == "/" {
+        return Err(invalid("it must include a path"));
+    }
+    if url.as_str() != client_id {
+        return Err(invalid(
+            "it must be in canonical form, without dot segments",
+        ));
+    }
+    Ok(url)
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ClientMetadataDocument {
+    client_id: Option<String>,
+    client_name: Option<String>,
+    client_uri: Option<String>,
+    logo_uri: Option<String>,
+    redirect_uris: Option<Vec<String>>,
+    grant_types: Option<Vec<String>>,
+    response_types: Option<Vec<String>>,
+    token_endpoint_auth_method: Option<String>,
+    software_id: Option<String>,
+    software_version: Option<String>,
+    client_secret: Option<Value>,
+    client_secret_expires_at: Option<Value>,
+}
+
+/// Checks a fetched document and turns it into the client row to store.
+fn validate_document(
+    client_id: &str,
+    body: &[u8],
+    now: OffsetDateTime,
+) -> Result<GatewayOauthClientRecord, OauthError> {
+    let invalid = |reason: String| {
+        OauthError::invalid_client(format!("client metadata document is invalid: {reason}"))
+    };
+    let document: ClientMetadataDocument =
+        serde_json::from_slice(body).map_err(|_| invalid("it is not a JSON object".into()))?;
+    if document.client_id.as_deref() != Some(client_id) {
+        return Err(invalid("its client_id does not match its URL".into()));
+    }
+    if document.client_secret.is_some() || document.client_secret_expires_at.is_some() {
+        return Err(invalid("it must not contain a client secret".into()));
+    }
+    match document.token_endpoint_auth_method.as_deref() {
+        None | Some("none") => {}
+        Some(_) => {
+            return Err(invalid(
+                "token_endpoint_auth_method must be none, since the gateway shares no secret with it"
+                    .into(),
+            ));
+        }
+    }
+    let to_invalid = |error: OauthError| invalid(error.description);
+    let client_name = optional_text(document.client_name, "client_name")
+        .map_err(to_invalid)?
+        .ok_or_else(|| invalid("client_name is required".into()))?;
+    let redirect_uris = document.redirect_uris.unwrap_or_default();
+    if redirect_uris.is_empty() {
+        return Err(invalid("redirect_uris is required".into()));
+    }
+    if redirect_uris.len() > MAX_REDIRECT_URIS {
+        return Err(invalid(format!(
+            "at most {MAX_REDIRECT_URIS} redirect URIs are allowed"
+        )));
+    }
+    for redirect_uri in &redirect_uris {
+        validate_redirect_uri(redirect_uri).map_err(to_invalid)?;
+    }
+    let grant_types = validate_grant_types(document.grant_types).map_err(to_invalid)?;
+    validate_response_types(document.response_types).map_err(to_invalid)?;
+    Ok(GatewayOauthClientRecord {
+        client_id: client_id.to_string(),
+        registration_kind: METADATA_DOCUMENT_REGISTRATION_KIND.to_string(),
+        client_name: Some(client_name),
+        client_uri: optional_https_uri(document.client_uri, "client_uri").map_err(to_invalid)?,
+        logo_uri: optional_https_uri(document.logo_uri, "logo_uri").map_err(to_invalid)?,
+        redirect_uris,
+        grant_types,
+        token_endpoint_auth_method: GatewayOauthClientAuthMethod::None,
+        client_secret_hash: None,
+        software_id: optional_text(document.software_id, "software_id").map_err(to_invalid)?,
+        software_version: optional_text(document.software_version, "software_version")
+            .map_err(to_invalid)?,
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+/// How long a document stays fresh. `no-store`, `no-cache`, and `max-age=0`
+/// mean fetching it each time; otherwise `max-age` applies, capped at
+/// [`MAX_CACHE_TTL`]. `Expires` is not read.
+fn cache_ttl(cache_control: Option<&str>) -> Duration {
+    let Some(cache_control) = cache_control else {
+        return DEFAULT_CACHE_TTL;
+    };
+    let mut max_age = None;
+    for directive in cache_control.split(',') {
+        let directive = directive.trim().to_ascii_lowercase();
+        if directive == "no-store" || directive == "no-cache" {
+            return Duration::ZERO;
+        }
+        if let Some(seconds) = directive.strip_prefix("max-age=") {
+            max_age = seconds.trim_matches('"').parse::<i64>().ok();
+        }
+    }
+    max_age.map_or(DEFAULT_CACHE_TTL, |seconds| {
+        Duration::seconds(seconds.max(0)).min(MAX_CACHE_TTL)
+    })
+}
+
+/// A bare, lowercase domain: no scheme, port, path, or wildcard.
+fn normalize_domain(raw: &str) -> Option<String> {
+    let domain = raw.trim().trim_end_matches('.').to_ascii_lowercase();
+    let valid = !domain.is_empty()
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    valid.then_some(domain)
+}
+
+#[cfg(test)]
+mod tests;

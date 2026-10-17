@@ -4414,6 +4414,13 @@ export interface components {
         /** @description What the consent screen shows for a pending authorization request. */
         OauthAuthorizationRequestView: {
             client_id: string;
+            /**
+             * @description Set when the client identifies itself with a Client ID Metadata
+             *     Document: the host that published it. The gateway checked only that
+             *     this host serves the document, not who the client is, so the consent
+             *     screen shows the host and marks the client unverified.
+             */
+            client_metadata_host?: string | null;
             /** @description Self-asserted by the client at registration. */
             client_name?: string | null;
             client_uri?: string | null;

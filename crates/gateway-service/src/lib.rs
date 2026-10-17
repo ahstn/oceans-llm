@@ -92,9 +92,9 @@ pub use mcp_catalog::{
 };
 pub use mcp_client_oauth::{
     AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
-    ClientRegistrationRequest, ClientRegistrationResponse, McpClientOauthService,
-    McpClientOauthSettings, McpClientOauthSettingsError, OauthError, PendingAuthorization,
-    TokenRequest, TokenResponse,
+    ClientMetadataDocumentSource, ClientMetadataDocuments, ClientRegistrationRequest,
+    ClientRegistrationResponse, FetchedDocument, McpClientOauthService, McpClientOauthSettings,
+    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,

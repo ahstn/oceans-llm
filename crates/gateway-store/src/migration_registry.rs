@@ -7,7 +7,15 @@ pub(crate) struct MigrationManifest {
     pub postgres_sql: &'static str,
 }
 
+/// libsql migrations that rebuild a table other tables reference. They run
+/// with foreign keys off, as SQLite's table-rebuild procedure requires.
+const LIBSQL_FOREIGN_KEYS_OFF: &[u32] = &[65];
+
 impl MigrationManifest {
+    pub(crate) fn libsql_foreign_keys_off(&self) -> bool {
+        LIBSQL_FOREIGN_KEYS_OFF.contains(&self.version)
+    }
+
     pub(crate) fn sql_for(&self, backend: MigrationBackend) -> &'static str {
         match backend {
             MigrationBackend::Libsql => self.libsql_sql,
@@ -378,6 +386,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V64__gateway_oauth_cleanup_indexes.sql",
         libsql_sql: include_str!("../migrations/V64__gateway_oauth_cleanup_indexes.sql"),
         postgres_sql: include_str!("../migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 65,
+        name: "gateway_oauth_metadata_document_clients",
+        checksum: "V65__gateway_oauth_metadata_document_clients.sql",
+        libsql_sql: include_str!("../migrations/V65__gateway_oauth_metadata_document_clients.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V65__gateway_oauth_metadata_document_clients.sql"
+        ),
     },
 ];
 

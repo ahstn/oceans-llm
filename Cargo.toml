@@ -105,7 +105,7 @@ tokio = { version = "1", features = [
 ] }
 toml = "0.8"
 tower = "0.5"
-tower-http = { version = "0.7", features = ["request-id", "trace", "util"] }
+tower-http = { version = "0.7", features = ["cors", "request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = [

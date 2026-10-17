@@ -216,3 +216,67 @@ mcp:
         "{error:#}"
     );
 }
+
+#[test]
+fn client_id_metadata_documents_are_on_by_default_and_configurable() {
+    let enabled = |yaml: &str| {
+        load(yaml)
+            .expect("valid config")
+            .mcp_client_oauth_settings()
+            .expect("settings")
+            .expect("enabled")
+    };
+    let settings = enabled(
+        "mcp:\n  client_oauth:\n    enabled: true\n    public_base_url: https://oceans.example.com\n",
+    );
+    let documents = settings
+        .client_id_metadata_documents()
+        .expect("documents accepted by default");
+    assert!(documents.allowed_domains().is_empty());
+
+    let settings = enabled(
+        r#"
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://oceans.example.com
+    client_id_metadata_documents:
+      allowed_domains: [Tools.Example.com, editor.dev]
+"#,
+    );
+    assert_eq!(
+        settings
+            .client_id_metadata_documents()
+            .expect("documents")
+            .allowed_domains(),
+        ["tools.example.com", "editor.dev"]
+    );
+
+    let settings = enabled(
+        r#"
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://oceans.example.com
+    client_id_metadata_documents:
+      enabled: false
+"#,
+    );
+    assert!(settings.client_id_metadata_documents().is_none());
+
+    let error = load(
+        r#"
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://oceans.example.com
+    client_id_metadata_documents:
+      allowed_domains: ["https://tools.example.com"]
+"#,
+    )
+    .expect_err("a URL is not a domain");
+    assert!(
+        format!("{error:#}").contains("client_id_metadata_documents.allowed_domains"),
+        "{error:#}"
+    );
+}

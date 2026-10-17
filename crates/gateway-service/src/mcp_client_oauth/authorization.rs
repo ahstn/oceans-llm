@@ -11,6 +11,7 @@ use uuid::Uuid;
 use super::{
     McpClientOauthService,
     error::OauthError,
+    metadata_document::metadata_document_host,
     redirect::{is_loopback_redirect, redirect_uri_is_registered},
     secrets::{generate_token, is_valid_s256_challenge, oauth_token_hash},
 };
@@ -58,6 +59,9 @@ pub struct PendingAuthorization {
     /// The code goes to a loopback URI, so the receiving app runs on the
     /// user's device and the gateway cannot verify who published it.
     pub redirect_is_loopback: bool,
+    /// For a metadata document client, the host that published the
+    /// document. It is the only thing about the client the gateway checked.
+    pub client_metadata_host: Option<String>,
 }
 
 impl<R> McpClientOauthService<R>
@@ -74,10 +78,9 @@ where
             AuthorizationRejection::Display(OauthError::invalid_request("client_id is required"))
         })?;
         let client = self
-            .repo
-            .get_gateway_oauth_client(client_id)
+            .load_client(client_id, now, false)
             .await
-            .map_err(|error| AuthorizationRejection::Display(error.into()))?
+            .map_err(AuthorizationRejection::Display)?
             .ok_or_else(|| {
                 AuthorizationRejection::Display(OauthError::invalid_client(
                     "client_id is not registered",
@@ -255,6 +258,7 @@ where
         // a client may register an HTTPS URI next to a loopback one.
         let redirect_is_loopback = is_loopback_redirect(&request.redirect_uri);
         Ok(PendingAuthorization {
+            client_metadata_host: metadata_document_host(&client),
             scopes: parse_scope_list(&request.scope),
             request,
             client,

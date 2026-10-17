@@ -232,6 +232,47 @@ impl GatewayOauthRepository for LibsqlStore {
         query_one(&self.connection, &sql, [client_id], decode_client).await
     }
 
+    async fn upsert_gateway_oauth_metadata_document_client(
+        &self,
+        client: &GatewayOauthClientRecord,
+    ) -> Result<GatewayOauthClientRecord, StoreError> {
+        let sql = format!(
+            "INSERT INTO gateway_oauth_clients ({CLIENT_COLUMNS})
+             VALUES (?1, 'metadata_document', ?2, ?3, ?4, ?5, ?6, 'none', NULL, ?7, ?8, ?9, ?9)
+             ON CONFLICT (client_id) DO UPDATE SET
+               client_name = excluded.client_name,
+               client_uri = excluded.client_uri,
+               logo_uri = excluded.logo_uri,
+               redirect_uris_json = excluded.redirect_uris_json,
+               grant_types_json = excluded.grant_types_json,
+               software_id = excluded.software_id,
+               software_version = excluded.software_version,
+               updated_at = excluded.updated_at
+             WHERE gateway_oauth_clients.registration_kind = 'metadata_document'
+             RETURNING {CLIENT_COLUMNS}"
+        );
+        query_one(
+            &self.connection,
+            &sql,
+            libsql::params![
+                client.client_id.as_str(),
+                client.client_name.clone(),
+                client.client_uri.clone(),
+                client.logo_uri.clone(),
+                encode_json_list(&client.redirect_uris)?,
+                encode_json_list(&client.grant_types)?,
+                client.software_id.clone(),
+                client.software_version.clone(),
+                client.updated_at.unix_timestamp(),
+            ],
+            decode_client,
+        )
+        .await?
+        .ok_or_else(|| {
+            StoreError::Conflict("client_id belongs to a dynamically registered client".into())
+        })
+    }
+
     async fn create_gateway_oauth_authorization_request(
         &self,
         request: &GatewayOauthAuthorizationRequestRecord,
@@ -716,7 +757,7 @@ const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
 const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
      WHERE client_id IN (
          SELECT c.client_id FROM gateway_oauth_clients c
-         WHERE c.registration_kind = 'dynamic' AND c.created_at < ?1
+         WHERE c.registration_kind IN ('dynamic', 'metadata_document') AND c.created_at < ?1
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = c.client_id)
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
                            WHERE r.client_id = c.client_id)

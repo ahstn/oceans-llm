@@ -252,6 +252,17 @@ async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::
             "starting migration transaction"
         );
 
+        // A migration that rebuilds a table other tables reference must run
+        // with foreign keys off, or dropping the old table cascades into its
+        // children. The pragma is a no-op inside a transaction, so it is set
+        // here and restored once the migration ends either way.
+        let foreign_keys_off = migration.libsql_foreign_keys_off();
+        if foreign_keys_off {
+            conn.execute("PRAGMA foreign_keys = OFF", ())
+                .await
+                .context("failed disabling foreign keys for a table rebuild")?;
+        }
+
         let tx = conn.transaction().await.with_context(|| {
             format!(
                 "failed starting transaction for migration {}",
@@ -270,6 +281,9 @@ async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::
             tx.execute_batch(migration.sql_for(MigrationBackend::Libsql))
                 .await
                 .with_context(|| format!("failed applying migration {}", migration.version))?;
+            if foreign_keys_off {
+                ensure_libsql_foreign_keys_hold(&tx, migration.version).await?;
+            }
             hook.maybe_fail_after_apply(migration.version)?;
 
             tracing::debug!(
@@ -315,11 +329,33 @@ async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::
         }
         .await;
 
+        let migration_result = match migration_result {
+            Ok(()) => tx
+                .commit()
+                .await
+                .with_context(|| format!("failed committing migration {}", migration.version)),
+            Err(error) => {
+                if let Err(rollback_error) = tx.rollback().await {
+                    tracing::warn!(
+                        backend = "libsql",
+                        migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "rollback",
+                        error = %rollback_error,
+                        "failed rolling back libsql migration transaction"
+                    );
+                }
+                Err(error)
+            }
+        };
+        if foreign_keys_off {
+            conn.execute("PRAGMA foreign_keys = ON", ())
+                .await
+                .context("failed re-enabling foreign keys after a table rebuild")?;
+        }
+
         match migration_result {
             Ok(()) => {
-                tx.commit().await.with_context(|| {
-                    format!("failed committing migration {}", migration.version)
-                })?;
                 tracing::info!(
                     backend = "libsql",
                     migration_version = migration.version,
@@ -335,24 +371,29 @@ async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::
                     migration_name = migration.name,
                     migration_event = "rollback",
                     error = %error,
-                    "migration failed, rolling back transaction"
+                    "migration failed, rolled back transaction"
                 );
-                let rollback_error = tx.rollback().await.err();
-                if let Some(rollback_error) = rollback_error {
-                    tracing::warn!(
-                        backend = "libsql",
-                        migration_version = migration.version,
-                        migration_name = migration.name,
-                        migration_event = "rollback",
-                        error = %rollback_error,
-                        "failed rolling back libsql migration transaction"
-                    );
-                }
                 return Err(error);
             }
         }
     }
 
+    Ok(())
+}
+
+/// Fails the migration if the rebuild left a row whose parent is gone.
+async fn ensure_libsql_foreign_keys_hold(
+    tx: &libsql::Transaction,
+    version: u32,
+) -> anyhow::Result<()> {
+    let mut rows = tx
+        .query("PRAGMA foreign_key_check", ())
+        .await
+        .with_context(|| format!("failed checking foreign keys after migration {version}"))?;
+    if let Some(row) = rows.next().await? {
+        let table: String = row.get(0).unwrap_or_default();
+        bail!("migration {version} left a row in `{table}` without its parent");
+    }
     Ok(())
 }
 
