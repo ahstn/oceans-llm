@@ -34,7 +34,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { McpServerView } from '@/types/api'
-import { VisibilityBadge, matchesOwner, ownerLabel, ownerOptions } from './server-ownership'
+import { matchesOwner, ownerLabel, ownerOptions, visibilityLabel } from './server-ownership'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
 
@@ -494,6 +494,14 @@ function RegistryActions({
         <TooltipContent>Refresh {server.display_name} tools</TooltipContent>
       </Tooltip>
     </div>
+  )
+}
+
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  return (
+    <Badge variant={visibility === 'team' ? 'outline' : 'secondary'}>
+      {visibilityLabel(visibility)}
+    </Badge>
   )
 }
 

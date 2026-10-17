@@ -567,9 +567,7 @@ function ServerDetailDialog({
     onSectionChange(nextSection)
   }
 
-  const canManage = server?.can_manage ?? false
-  const sections = serverSections.filter((entry) => canManage || readOnlySections.has(entry.value))
-  const visibleSection = canManage || readOnlySections.has(section) ? section : 'overview'
+  const { canManage, sections, visibleSection } = useServerSections(server, section)
 
   return (
     <Dialog open={Boolean(server)} onOpenChange={onOpenChange}>
@@ -631,37 +629,13 @@ function ServerDetailDialog({
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {canManage ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Refresh ${server.display_name}`}
-                          onClick={() => onRefresh(server)}
-                          disabled={actionPending || server.status !== 'active'}
-                        >
-                          <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Edit ${server.display_name}`}
-                          onClick={() => onEdit(server)}
-                        >
-                          <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="destructive"
-                          aria-label={`Disable ${server.display_name}`}
-                          onClick={() => onDisable(server)}
-                          disabled={actionPending || server.status !== 'active'}
-                        >
-                          <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
-                        </Button>
-                      </>
+                      <ServerManageActions
+                        server={server}
+                        actionPending={actionPending}
+                        onRefresh={onRefresh}
+                        onEdit={onEdit}
+                        onDisable={onDisable}
+                      />
                     ) : null}
                     <DialogClose asChild>
                       <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
@@ -702,48 +676,25 @@ function ServerDetailDialog({
                     refreshStatus={refreshStatus}
                     refreshErrorSummary={refreshErrorSummary}
                     ownershipControl={
-                      scope.platformAdmin ? (
-                        <ServerOwnershipTransfer
-                          key={server.id}
-                          server={server}
-                          teams={scope.teams}
-                          pending={actionPending}
-                          onTransfer={(ownerTeamId) => onTransfer(server, ownerTeamId)}
-                        />
-                      ) : null
+                      <PlatformOwnershipControl
+                        server={server}
+                        scope={scope}
+                        pending={actionPending}
+                        onTransfer={onTransfer}
+                      />
                     }
                   />
                 ) : null}
                 {visibleSection === 'configuration' ? (
-                  <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
-                    <div className="flex flex-col gap-2">
-                      <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
-                      <p className="text-subtle-foreground text-sm">
-                        Update endpoint, auth mode, timeout, and gateway auth configuration.
-                      </p>
-                    </div>
-                    <ServerFormFields
-                      mode="edit"
-                      form={form}
-                      ownership={{
-                        canPublish: scope.canPublish,
-                        platformOwned: !server.owner_team_id,
-                      }}
-                      onFormChange={onFormChange}
-                    />
-                    <DialogFooter className="border-border mt-auto border-t pt-4">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setSection('overview')}
-                      >
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={actionPending}>
-                        {actionPending ? 'Saving...' : 'Save changes'}
-                      </Button>
-                    </DialogFooter>
-                  </form>
+                  <ServerConfigurationForm
+                    server={server}
+                    scope={scope}
+                    form={form}
+                    pending={actionPending}
+                    onFormChange={onFormChange}
+                    onSubmit={onSubmit}
+                    onCancel={() => setSection('overview')}
+                  />
                 ) : null}
                 {visibleSection === 'tools' ? (
                   <ServerToolsPanel
@@ -774,6 +725,131 @@ function ServerDetailDialog({
         ) : null}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Which detail sections the caller sees for `server`, and the one to show. */
+function useServerSections(server: McpServerView | null, section: ServerSection) {
+  const canManage = server?.can_manage ?? false
+  const sections = serverSections.filter((entry) => canManage || readOnlySections.has(entry.value))
+  const visibleSection: ServerSection =
+    canManage || readOnlySections.has(section) ? section : 'overview'
+  return { canManage, sections, visibleSection }
+}
+
+function ServerManageActions({
+  server,
+  actionPending,
+  onRefresh,
+  onEdit,
+  onDisable,
+}: {
+  server: McpServerView
+  actionPending: boolean
+  onRefresh: (server: McpServerView) => void
+  onEdit: (server: McpServerView) => void
+  onDisable: (server: McpServerView) => void
+}) {
+  const inactive = actionPending || server.status !== 'active'
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`Refresh ${server.display_name}`}
+        onClick={() => onRefresh(server)}
+        disabled={inactive}
+      >
+        <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`Edit ${server.display_name}`}
+        onClick={() => onEdit(server)}
+      >
+        <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="destructive"
+        aria-label={`Disable ${server.display_name}`}
+        onClick={() => onDisable(server)}
+        disabled={inactive}
+      >
+        <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
+      </Button>
+    </>
+  )
+}
+
+function ServerConfigurationForm({
+  server,
+  scope,
+  form,
+  pending,
+  onFormChange,
+  onSubmit,
+  onCancel,
+}: {
+  server: McpServerView
+  scope: McpWorkspaceScope
+  form: ServerFormState
+  pending: boolean
+  onFormChange: (form: ServerFormState) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}) {
+  return (
+    <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
+      <div className="flex flex-col gap-2">
+        <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
+        <p className="text-subtle-foreground text-sm">
+          Update endpoint, auth mode, timeout, and gateway auth configuration.
+        </p>
+      </div>
+      <ServerFormFields
+        mode="edit"
+        form={form}
+        ownership={{ canPublish: scope.canPublish, platformOwned: !server.owner_team_id }}
+        onFormChange={onFormChange}
+      />
+      <DialogFooter className="border-border mt-auto border-t pt-4">
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Saving...' : 'Save changes'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+/** Platform admins move a server between teams from its overview. */
+function PlatformOwnershipControl({
+  server,
+  scope,
+  pending,
+  onTransfer,
+}: {
+  server: McpServerView
+  scope: McpWorkspaceScope
+  pending: boolean
+  onTransfer: (server: McpServerView, ownerTeamId: string | null) => void
+}) {
+  if (!scope.platformAdmin) return null
+  return (
+    <ServerOwnershipTransfer
+      key={server.id}
+      server={server}
+      teams={scope.teams}
+      pending={pending}
+      onTransfer={(ownerTeamId) => onTransfer(server, ownerTeamId)}
+    />
   )
 }
 

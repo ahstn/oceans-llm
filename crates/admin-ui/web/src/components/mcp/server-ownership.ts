@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge'
 import type { McpServerView } from '@/types/api'
 
 export const PLATFORM_OWNER_LABEL = 'Platform admins'
@@ -14,14 +13,6 @@ export function ownerLabel(server: Pick<McpServerView, 'owner_team_id' | 'owner_
 
 export function visibilityLabel(visibility: string) {
   return visibility === 'team' ? 'Team only' : 'Organisation'
-}
-
-export function VisibilityBadge({ visibility }: { visibility: string }) {
-  return (
-    <Badge variant={visibility === 'team' ? 'outline' : 'secondary'}>
-      {visibilityLabel(visibility)}
-    </Badge>
-  )
 }
 
 /** One entry per owner present in `servers`, platform first. */
