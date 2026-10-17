@@ -1,0 +1,60 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 65-66
+.github/dist-build-setup.yml
+  h_2f452a9c375069 2
+.github/workflows/ci.yml
+  h_2f452a9c375069 53
+.github/workflows/cli-ci.yml
+  h_2f452a9c375069 56
+.github/workflows/docs-ci.yml
+  h_2f452a9c375069 36
+.github/workflows/helm-ci.yml
+  h_2f452a9c375069 41
+.github/workflows/oceans-review-agent.yml
+  h_2f452a9c375069 82
+.github/workflows/react-doctor.yml
+  h_2f452a9c375069 31
+.github/workflows/release-product.yml
+  h_2f452a9c375069 51,131
+.github/workflows/release.yml
+  h_2f452a9c375069 131
+.github/workflows/review-agent-ci.yml
+  h_2f452a9c375069 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  h_2f452a9c375069 44
+.github/workflows/ui-ci.yml
+  h_2f452a9c375069 36
+.pre-commit-config.yaml
+  h_2f452a9c375069 3-5,19-23
+AGENTS.md
+  h_2f452a9c375069 18-21
+Cargo.lock
+  h_2f452a9c375069 2720,2722,4627,4629
+actions/review-agent/bun.lock
+  h_2f452a9c375069 15,19-24,95,97,99,101,103,105,107,109,111,113,115,117,119,121,123,125,127,129,131,133,135,137,139,141,143,145,179,181,183,185,187,189,191,193,195,197,199,201,203,205,207,209,211,213,215,217,219,221,223,225,227,229,231,233,235,237,239,241,243,245,247,249,251,253,255,257,259,261,263,265,301,305-344,383,467,693,695,697,801,809,827,835
+actions/review-agent/package.json
+  h_2f452a9c375069 23,27-32
+crates/admin-ui/web/bun.lock
+  h_2f452a9c375069 9,11-16,18,20-21,29,35,41,45,52,54-55,184,204,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,356,358,360,362,364,366,368,370,372,374,378,380,382,384,386,388,390,392,394,396,400,402,404,406,408,410,412,414,416,418,420,422,424,426,428,430,432,434,436,438,440,442,444,446,448,450,452,454,458,468,470,512,516,518,520,522,524,526,528,596,600,604,608,612,614,616,618,620,622,626,628,630,636,640,642,644,646,648,710,828,1324,1328,1364,1366,1396,1484,1570,1744-1745,1852-1853
+crates/admin-ui/web/package.json
+  h_2f452a9c375069 23,25-30,32,34-35,43,49,55,59,66,68-69
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  h_2f452a9c375069 74,141
+mise.lock
+  h_2f452a9c375069 71-104,129-152,361-384,449-455
+mise.toml
+  h_2f452a9c375069 37-38,40
+scripts/strip-ai-coauthors.sh
+  h_2f452a9c375069 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60a7d4781cfdda5389a79178840107a3cb359a74",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
