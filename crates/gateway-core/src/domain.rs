@@ -1905,6 +1905,16 @@ impl McpToolMetadata {
     }
 }
 
+/// One active tool an API key is granted, directly or through an active tool
+/// set, with the server key its MCP server list is checked against.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpApiKeyToolAccess {
+    pub api_key_id: Uuid,
+    pub mcp_tool_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub server_key: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpCatalogToolRecord {
     pub server: ExternalMcpServerRecord,

@@ -1295,6 +1295,15 @@ pub trait McpAccessRepository: Send + Sync {
         team_id: Option<Uuid>,
     ) -> Result<bool, StoreError>;
 
+    /// Every active tool these API keys are granted, directly or through an
+    /// active tool set, on active servers, in one query, with the granting key
+    /// on each row so its own MCP server list can be applied.
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<crate::McpApiKeyToolAccess>, StoreError>;
+
     async fn resolve_mcp_access_for_subjects(
         &self,
         subjects: &[McpGrantSubject],

@@ -161,6 +161,33 @@ where
             .await
             .expect("direct grant check")
     );
+    // Key grants come back in one query, each row naming its key and server
+    // key; the disabled tool set's tools are gone.
+    let key_access = store
+        .list_mcp_tool_access_for_api_keys(&[subjects[0].subject_id, Uuid::new_v4()], None)
+        .await
+        .expect("key tool access");
+    assert_eq!(
+        key_access
+            .iter()
+            .map(|row| (row.api_key_id, row.mcp_tool_id, row.server_key.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(subjects[0].subject_id, drive_search.mcp_tool_id, "drive")]
+    );
+    assert!(
+        store
+            .list_mcp_tool_access_for_api_keys(&[subjects[0].subject_id], Some(notes.mcp_server_id))
+            .await
+            .expect("filtered key tool access")
+            .is_empty()
+    );
+    assert!(
+        store
+            .list_mcp_tool_access_for_api_keys(&[], None)
+            .await
+            .expect("no keys")
+            .is_empty()
+    );
 
     let access = store
         .resolve_mcp_access_for_subjects(

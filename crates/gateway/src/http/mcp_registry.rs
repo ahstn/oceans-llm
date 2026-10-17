@@ -633,15 +633,7 @@ pub async fn list_mcp_server_tools(
                 server.mcp_server_id == server_id
                     && server.status != gateway_core::ExternalMcpServerStatus::Disabled
             });
-            let allowed: Vec<_> = if active {
-                access
-                    .tools
-                    .into_iter()
-                    .map(|tool| tool.mcp_tool_id)
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            let allowed: Vec<_> = if active { access.tool_ids } else { Vec::new() };
             if allowed.is_empty() {
                 return Err(AppError(GatewayError::Store(
                     gateway_core::StoreError::NotFound(format!(
@@ -1668,20 +1660,18 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
         .label(toolset.toolset_key().to_string())
 }
 
-/// The active tools a user can call. Grants to them or their team count as
-/// they reach any of the user's MCP clients. A grant to one of their API keys
-/// counts only while that key may call MCP at all and its server list, if it
-/// has one, includes the tool's server, as runtime resolution enforces.
-/// Restricted-key groups resolved at once for a member's access.
-const MEMBER_ACCESS_CONCURRENCY: usize = 4;
-
-/// Resolves which tools a member can call, as identities and lifecycle only
-/// (callers need tool and server IDs, not metadata).
+/// The active tools a user can call, by ID, and the servers they are on, read
+/// by ID. Grants to the user or their team count as they reach any of the
+/// user's MCP clients. A grant to one of their API keys counts only while that
+/// key may call MCP at all and its server list, if it has one, includes the
+/// tool's server, as runtime resolution enforces. As at runtime, a team-only
+/// server counts only for its own team's members.
 ///
-/// `server_id` limits the resolution to one server's tools.
-/// The tools a member can call and the servers they are on, read by ID.
+/// `server_id` limits the result to one server. The cost is a fixed number of
+/// queries however many keys, or distinct server lists, the user has: every
+/// key's grants come back in one query that names the granting key.
 struct MemberAccess {
-    tools: Vec<gateway_core::ExternalMcpToolRecord>,
+    tool_ids: Vec<Uuid>,
     servers: Vec<gateway_core::ExternalMcpServerRecord>,
 }
 
@@ -1691,15 +1681,56 @@ async fn member_access(
     team_id: Option<Uuid>,
     server_id: Option<Uuid>,
 ) -> Result<MemberAccess, AppError> {
-    let mut tools = granted_member_tools(state, user_id, team_id, server_id).await?;
-    let referenced: Vec<Uuid> = tools
-        .iter()
-        .map(|tool| tool.mcp_server_id)
+    use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
+    let keys: std::collections::HashMap<Uuid, gateway_core::ApiKeyAccess> = state
+        .store
+        .list_api_keys_for_user_scope(user_id, None)
+        .await?
+        .into_iter()
+        .filter(|key| key.owner_user_id == Some(user_id) && key.revoked_at.is_none())
+        .filter(|key| {
+            key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)
+        })
+        .map(|key| (key.id, key.access))
+        .collect();
+    let mut subjects = vec![McpGrantSubject {
+        subject_kind: McpToolGrantSubjectKind::User,
+        subject_id: user_id,
+    }];
+    if let Some(team_id) = team_id {
+        subjects.push(McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: team_id,
+        });
+    }
+    // Tool ID to server ID, for every tool the user can call.
+    let mut tool_servers: std::collections::HashMap<Uuid, Uuid> = state
+        .store
+        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Access)
+        .await?
+        .allowed_tools
+        .into_iter()
+        .map(|tool| (tool.mcp_tool_id, tool.mcp_server_id))
+        .collect();
+    let key_ids: Vec<Uuid> = keys.keys().copied().collect();
+    for row in state
+        .store
+        .list_mcp_tool_access_for_api_keys(&key_ids, server_id)
+        .await?
+    {
+        if keys
+            .get(&row.api_key_id)
+            .is_some_and(|access| access.allows_mcp_server(&row.server_key))
+        {
+            tool_servers.insert(row.mcp_tool_id, row.mcp_server_id);
+        }
+    }
+    let referenced: Vec<Uuid> = tool_servers
+        .values()
+        .copied()
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
-    // Only the servers these tools are on are read. As at runtime, a team-only
-    // server counts only for its own team's members.
     let mut servers = state
         .store
         .list_external_mcp_servers_by_ids(&referenced)
@@ -1713,115 +1744,12 @@ async fn member_access(
     });
     let reachable: std::collections::HashSet<Uuid> =
         servers.iter().map(|server| server.mcp_server_id).collect();
-    tools.retain(|tool| reachable.contains(&tool.mcp_server_id));
-    Ok(MemberAccess { tools, servers })
-}
-
-async fn granted_member_tools(
-    state: &AppState,
-    user_id: Uuid,
-    team_id: Option<Uuid>,
-    server_id: Option<Uuid>,
-) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
-    use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
-    let keys: Vec<_> = state
-        .store
-        .list_api_keys_for_user_scope(user_id, None)
-        .await?
+    let tool_ids = tool_servers
         .into_iter()
-        .filter(|key| key.owner_user_id == Some(user_id) && key.revoked_at.is_none())
-        .filter(|key| {
-            key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)
-        })
+        .filter(|(_, server)| reachable.contains(server))
+        .map(|(tool, _)| tool)
         .collect();
-    let key_subject = |id| McpGrantSubject {
-        subject_kind: McpToolGrantSubjectKind::ApiKey,
-        subject_id: id,
-    };
-    // The user, their team and every key without a server list resolve in one
-    // query; only a key limited to some servers needs its own, to filter it.
-    let mut subjects = vec![McpGrantSubject {
-        subject_kind: McpToolGrantSubjectKind::User,
-        subject_id: user_id,
-    }];
-    if let Some(team_id) = team_id {
-        subjects.push(McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::Team,
-            subject_id: team_id,
-        });
-    }
-    let (unrestricted, restricted): (Vec<_>, Vec<_>) = keys
-        .into_iter()
-        .partition(|key| key.access.mcp_server_keys.is_none());
-    subjects.extend(unrestricted.iter().map(|key| key_subject(key.id)));
-    let mut tools = state
-        .store
-        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Access)
-        .await?
-        .allowed_tools;
-    if restricted.is_empty() {
-        return Ok(tools);
-    }
-    // Keys with the same server list resolve together, which is exact: their
-    // grants are filtered by the one list they share. The groups resolve
-    // concurrently, so a user's many restricted keys cost one round trip.
-    let mut groups: std::collections::BTreeMap<Vec<String>, Vec<McpGrantSubject>> =
-        std::collections::BTreeMap::new();
-    for key in restricted {
-        let allow_list = key.access.mcp_server_keys.clone().unwrap_or_default();
-        groups
-            .entry(allow_list)
-            .or_default()
-            .push(key_subject(key.id));
-    }
-    // A few groups at a time, so one user's many keys cannot fan out without
-    // bound; results keep the groups' order.
-    let groups: Vec<_> = groups.into_iter().collect();
-    let mut resolutions = Vec::with_capacity(groups.len());
-    for chunk in groups.chunks(MEMBER_ACCESS_CONCURRENCY) {
-        resolutions.extend(
-            futures_util::future::try_join_all(chunk.iter().map(|(_, subjects)| {
-                state.store.resolve_mcp_access_for_subjects(
-                    subjects,
-                    server_id,
-                    McpToolProjection::Access,
-                )
-            }))
-            .await?,
-        );
-    }
-    // Only the servers these tools are on are read, to check each key's list.
-    let referenced: Vec<Uuid> = resolutions
-        .iter()
-        .flat_map(|resolution| {
-            resolution
-                .allowed_tools
-                .iter()
-                .map(|tool| tool.mcp_server_id)
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let server_keys: std::collections::HashMap<Uuid, String> = state
-        .store
-        .list_external_mcp_servers_by_ids(&referenced)
-        .await?
-        .into_iter()
-        .map(|server| (server.mcp_server_id, server.server_key))
-        .collect();
-    let mut seen: std::collections::HashSet<Uuid> =
-        tools.iter().map(|tool| tool.mcp_tool_id).collect();
-    for ((allow_list, _), resolution) in groups.iter().zip(resolutions) {
-        for tool in resolution.allowed_tools {
-            let allowed = server_keys
-                .get(&tool.mcp_server_id)
-                .is_some_and(|server_key| allow_list.iter().any(|allowed| allowed == server_key));
-            if allowed && seen.insert(tool.mcp_tool_id) {
-                tools.push(tool);
-            }
-        }
-    }
-    Ok(tools)
+    Ok(MemberAccess { tool_ids, servers })
 }
 
 /// A member's read-only server list: the servers they can connect to.

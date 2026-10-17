@@ -4,7 +4,10 @@ use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, subject_team_changed, unix_to_datetime};
+use crate::shared::{
+    api_key_tool_access_sql, json_object_from_str, parse_uuid, subject_team_changed,
+    unix_to_datetime,
+};
 use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
@@ -578,6 +581,36 @@ impl McpAccessRepository for PostgresStore {
         .await
         .map_err(to_query_error)?
         .is_some())
+    }
+
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::McpApiKeyToolAccess>, StoreError> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(&api_key_tool_access_sql("= ANY($1)", "$2::text"))
+            .bind(api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+            .bind(mcp_server_id.map(|id| id.to_string()))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter()
+            .map(|row| {
+                let id = |index: usize| -> Result<Uuid, StoreError> {
+                    let raw: String = row.try_get(index).map_err(to_query_error)?;
+                    parse_uuid(&raw)
+                };
+                Ok(gateway_core::McpApiKeyToolAccess {
+                    api_key_id: id(0)?,
+                    mcp_tool_id: id(1)?,
+                    mcp_server_id: id(2)?,
+                    server_key: row.try_get(3).map_err(to_query_error)?,
+                })
+            })
+            .collect()
     }
 
     async fn resolve_mcp_access_for_subjects(

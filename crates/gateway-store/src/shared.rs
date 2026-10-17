@@ -85,6 +85,33 @@ pub(crate) fn foreign_credentials_conflict(count: i64) -> StoreError {
     ))
 }
 
+/// SQL for `list_mcp_tool_access_for_api_keys`: `keys` is the backend's
+/// predicate on `g.subject_id`, `server` its placeholder for the optional
+/// server filter.
+pub(crate) fn api_key_tool_access_sql(keys: &str, server: &str) -> String {
+    format!(
+        r#"
+        SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key
+        FROM mcp_tool_grants g
+        JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
+        JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+        WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = 'api_key'
+          AND g.subject_id {keys} AND t.is_active = 1 AND s.status = 'active'
+          AND ({server} IS NULL OR t.mcp_server_id = {server})
+        UNION
+        SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key
+        FROM mcp_tool_grants g
+        JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id
+        JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id
+        JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
+        JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+        WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = 'api_key'
+          AND g.subject_id {keys} AND ts.status = 'active' AND t.is_active = 1
+          AND s.status = 'active' AND ({server} IS NULL OR t.mcp_server_id = {server})
+        "#
+    )
+}
+
 /// A grant write whose subject changed team since it was authorized.
 pub(crate) fn subject_team_changed() -> StoreError {
     StoreError::Conflict(
