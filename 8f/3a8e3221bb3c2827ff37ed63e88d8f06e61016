@@ -1,0 +1,25 @@
+.agents/skills/verify-oceans-admin/features/mcp-ownership.md
+  s_7a5811202bdfd5::t_4f7666266ce1a0 16,42
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_7a5811202bdfd5::t_09591a91a290e9 247-249,255,300-309,318-340,352,366
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7a5811202bdfd5::t_a1adb057db3c1b 912-926
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_c720ae899d6ff3 283-322,337,340-362,364,370-377,384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f3a8e3221bb3c2827ff37ed63e88d8f06e61016",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
