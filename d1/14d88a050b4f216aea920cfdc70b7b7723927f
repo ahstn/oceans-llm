@@ -1,0 +1,31 @@
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_e791dc25ba9f88 6,8,641-653,1044,1048,1056-1150,1225-1231
+crates/gateway-store/src/mcp_tool_review.rs
+  s_7a5811202bdfd5::t_2888e0d45947a9 1-2,5-7,13-17,19-20,268,284-285,344,358-584,589-792
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_69583f5f4f972d 6,8,629-640,993,996,1006-1094,1164-1170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d114d88a050b4f216aea920cfdc70b7b7723927f",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
