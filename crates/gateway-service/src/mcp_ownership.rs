@@ -442,15 +442,21 @@ where
     /// Tool sets are granted organisation-wide, so they hold only tools of
     /// servers published to the organisation.
     pub async fn authorize_toolset_tools(&self, tool_ids: &[Uuid]) -> Result<(), GatewayError> {
-        for tool_id in tool_ids {
-            let Some(tool) = self.repo.get_external_mcp_tool(*tool_id).await? else {
+        if tool_ids.is_empty() {
+            return Ok(());
+        }
+        let requested: std::collections::HashSet<Uuid> = tool_ids.iter().copied().collect();
+        // Reads scale with the number of team-only servers, not the request.
+        for server in self.repo.list_external_mcp_servers(true).await? {
+            if server.ownership.visibility != McpServerVisibility::Team {
                 continue;
-            };
-            if let Some(server) = self
+            }
+            if let Some(tool) = self
                 .repo
-                .get_external_mcp_server(tool.mcp_server_id)
+                .list_external_mcp_tools(server.mcp_server_id, true)
                 .await?
-                && server.ownership.visibility == McpServerVisibility::Team
+                .into_iter()
+                .find(|tool| requested.contains(&tool.mcp_tool_id))
             {
                 return Err(GatewayError::InvalidRequest(format!(
                     "tool `{}` belongs to MCP server `{}`, which is visible to its team only; publish the server to the organisation before adding its tools to a tool set",
