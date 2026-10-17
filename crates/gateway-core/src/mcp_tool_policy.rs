@@ -438,6 +438,7 @@ mod tests {
             first_discovered_at: OffsetDateTime::UNIX_EPOCH,
             last_discovered_at: OffsetDateTime::UNIX_EPOCH,
             deactivated_at: None,
+            review: Default::default(),
         }
     }
 

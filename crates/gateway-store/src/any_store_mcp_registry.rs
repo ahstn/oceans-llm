@@ -167,4 +167,49 @@ impl McpRegistryRepository for AnyStore {
             }
         }
     }
+
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &gateway_core::McpToolVersionQuery,
+    ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+            Self::Postgres(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+        }
+    }
+
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: gateway_core::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .review_mcp_tool_version(
+                        mcp_tool_id,
+                        schema_version,
+                        decision,
+                        reviewed_by_user_id,
+                        reviewed_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .review_mcp_tool_version(
+                        mcp_tool_id,
+                        schema_version,
+                        decision,
+                        reviewed_by_user_id,
+                        reviewed_at,
+                    )
+                    .await
+            }
+        }
+    }
 }

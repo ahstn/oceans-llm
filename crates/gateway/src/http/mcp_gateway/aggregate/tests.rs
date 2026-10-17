@@ -725,6 +725,7 @@ async fn assert_failed_invocation(
     assert_eq!(invocation.server_display_key, "repository");
     assert_eq!(invocation.tool_display_key, "search");
     assert_eq!(invocation.metadata["mcp_route"], "aggregate");
+    assert_eq!(invocation.tool_schema_version, Some(1));
     assert!(invocation.metadata.contains_key("guardrail_call"));
 }
 
@@ -781,6 +782,7 @@ async fn seed_authorized_tool_with_config(
             auth_config,
             timeout_ms: 2_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");

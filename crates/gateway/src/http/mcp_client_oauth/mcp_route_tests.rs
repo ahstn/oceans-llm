@@ -104,6 +104,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
             auth_config: Map::new(),
             timeout_ms: 2_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");

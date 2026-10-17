@@ -181,6 +181,25 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for SingleServerRepo {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn get_external_mcp_tool(
             &self,
             _mcp_tool_id: Uuid,
@@ -295,6 +314,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

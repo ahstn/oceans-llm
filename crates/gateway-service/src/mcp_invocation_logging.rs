@@ -76,6 +76,8 @@ pub struct McpInvocationLogInput {
     pub arguments_json: Option<Value>,
     pub result_json: Option<Value>,
     pub metadata: Map<String, Value>,
+    /// Served schema version of the called tool, for `tools/call`.
+    pub tool_schema_version: Option<i64>,
     pub occurred_at: OffsetDateTime,
 }
 
@@ -144,6 +146,7 @@ where
             result_payload_redacted: payload.is_some(),
             metadata: with_auth_metadata(input.metadata, auth),
             mcp_method: input.mcp_method,
+            tool_schema_version: input.tool_schema_version,
             occurred_at: input.occurred_at,
         };
 

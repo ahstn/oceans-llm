@@ -59,6 +59,8 @@ pub struct CreateExternalMcpServerInput {
     pub auth_mode: Option<String>,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Off when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +71,8 @@ pub struct UpdateExternalMcpServerInput {
     pub auth_mode: String,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Kept as it is when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +161,7 @@ where
         &self,
         input: CreateExternalMcpServerInput,
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
+        let approve_tool_changes = input.approve_tool_changes.unwrap_or(false);
         let resolved = self.resolve_create_input(input)?;
         let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
@@ -193,6 +198,7 @@ where
                 auth_config: resolved.auth_config,
                 timeout_ms,
                 created_at: now,
+                approve_tool_changes,
             })
             .await
             .map_err(Into::into)
@@ -205,7 +211,7 @@ where
         mcp_server_id: Uuid,
         input: UpdateExternalMcpServerInput,
     ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
-        self.server_or_not_found(mcp_server_id).await?;
+        let existing = self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
@@ -222,6 +228,9 @@ where
                 auth_config: input.auth_config,
                 timeout_ms,
                 updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: input
+                    .approve_tool_changes
+                    .unwrap_or(existing.approve_tool_changes),
             })
             .await
             .map_err(Into::into)
@@ -743,6 +752,7 @@ mod tests {
                 auth_mode: Some(ExternalMcpAuthMode::None.as_str().to_string()),
                 auth_config: Map::new(),
                 timeout_ms: None,
+                approve_tool_changes: None,
             })
             .expect("resolve input");
 
@@ -767,6 +777,25 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for NoopMcpRegistryRepository {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn get_external_mcp_tool(
             &self,
             _mcp_tool_id: Uuid,

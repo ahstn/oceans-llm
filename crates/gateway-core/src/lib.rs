@@ -9,6 +9,7 @@ pub mod error;
 pub mod gateway_keys;
 pub mod mcp_client_oauth;
 pub mod mcp_tool_policy;
+pub mod mcp_tool_review;
 pub mod protocol;
 pub mod rate_limits;
 pub mod reasoning_policy;
@@ -142,6 +143,10 @@ pub use mcp_client_oauth::{
 pub use mcp_tool_policy::{
     McpAnnotationOverrides, McpTagRuleEffect, McpTagRuleSet, McpToolPolicy, McpToolTagRuleKey,
     McpToolTagRuleRecord,
+};
+pub use mcp_tool_review::{
+    McpToolApprovalStatus, McpToolDefinition, McpToolDefinitionKey, McpToolReviewDecision,
+    McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord, McpToolVersionStatus,
 };
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{

@@ -1,13 +1,15 @@
-//! Admin operations on MCP tool policy: tags, annotation overrides and tag
-//! rules. Evaluation lives in `gateway_core::mcp_tool_policy`; this service
+//! Admin operations on MCP tool policy: tags, annotation overrides, tag rules
+//! and reviews of changed tool versions. Tag evaluation lives in
+//! `gateway_core::mcp_tool_policy`; this service
 //! validates admin input and previews which tools a rule selects.
 
 use std::sync::Arc;
 
 use gateway_core::{
     ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError, McpAccessRepository,
-    McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect, McpToolTagRuleKey,
-    McpToolTagRuleRecord, StoreError, Updated,
+    McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect, McpToolReviewDecision,
+    McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionQuery, McpToolVersionRecord, StoreError,
+    Updated,
     mcp_tool_policy::{effective_tags, normalize_admin_tags, normalize_rule_tag},
 };
 use time::OffsetDateTime;
@@ -90,6 +92,42 @@ where
         Ok(self
             .repo
             .set_mcp_tool_annotation_overrides(mcp_tool_id, overrides)
+            .await?)
+    }
+
+    /// Versions of a tool on the server, newest first: named ones or one
+    /// page of history.
+    pub async fn list_versions(
+        &self,
+        mcp_server_id: Uuid,
+        mcp_tool_id: Uuid,
+        query: &McpToolVersionQuery,
+    ) -> Result<Vec<McpToolVersionRecord>, GatewayError> {
+        self.tool_on_server(mcp_server_id, mcp_tool_id).await?;
+        Ok(self.repo.list_mcp_tool_versions(mcp_tool_id, query).await?)
+    }
+
+    /// Approves or rejects the tool's pending version. A version that is no
+    /// longer pending, for example because another admin reviewed it or a later
+    /// discovery replaced it, is a conflict.
+    pub async fn review_version(
+        &self,
+        mcp_server_id: Uuid,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: McpToolReviewDecision,
+        reviewer: Option<Uuid>,
+    ) -> Result<Updated<ExternalMcpToolRecord>, GatewayError> {
+        self.tool_on_server(mcp_server_id, mcp_tool_id).await?;
+        Ok(self
+            .repo
+            .review_mcp_tool_version(
+                mcp_tool_id,
+                schema_version,
+                decision,
+                reviewer,
+                OffsetDateTime::now_utc(),
+            )
             .await?)
     }
 

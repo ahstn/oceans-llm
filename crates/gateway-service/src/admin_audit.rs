@@ -165,6 +165,11 @@ pub mod actions {
     pub const MCP_TAG_RULE_SET: AuditAction = AuditAction("mcp_tag_rule.set");
     pub const MCP_TAG_RULE_REVOKED: AuditAction = AuditAction("mcp_tag_rule.revoked");
 
+    /// An admin approved a pending tool version, which is now served.
+    pub const MCP_TOOL_VERSION_APPROVED: AuditAction = AuditAction("mcp_tool.version_approved");
+    /// An admin rejected a pending tool version.
+    pub const MCP_TOOL_VERSION_REJECTED: AuditAction = AuditAction("mcp_tool.version_rejected");
+
     pub const MCP_CREDENTIAL_BINDING_SET: AuditAction = AuditAction("mcp_credential_binding.set");
     /// A user allowed an MCP client on the OAuth consent page. The grant is
     /// created when the client redeems the code, so the target is the
@@ -238,6 +243,8 @@ pub mod actions {
         MCP_TOOL_ANNOTATIONS_OVERRIDDEN,
         MCP_TAG_RULE_SET,
         MCP_TAG_RULE_REVOKED,
+        MCP_TOOL_VERSION_APPROVED,
+        MCP_TOOL_VERSION_REJECTED,
         MCP_CREDENTIAL_BINDING_SET,
         MCP_CREDENTIAL_BINDING_REVOKED,
         MCP_CLIENT_GRANT_AUTHORIZED,

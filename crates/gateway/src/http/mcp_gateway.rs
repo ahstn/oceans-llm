@@ -170,29 +170,47 @@ async fn dispatch_mcp_request(
 
     match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
-            let access_resolution = match access
-                .effective_tools_for_api_key(
-                    auth,
-                    Some(server.mcp_server_id),
-                    McpToolProjection::Access,
-                )
-                .await
-            {
-                Ok(resolution) => resolution,
-                Err(error) => return mcp_error_response(error),
+            // Approval servers serve the stored definition, which needs the
+            // title and output schema. Other servers read the access
+            // projection, unless approval was turned off while a change still
+            // waits: those tools keep their stored definition, so the set is
+            // resolved once more with the full projection.
+            let mut projection = if server.approve_tool_changes {
+                McpToolProjection::Full
+            } else {
+                McpToolProjection::Access
             };
-            let granted_tools = access_resolution
-                .allowed_tools
-                .iter()
-                .map(|tool| {
-                    (
-                        tool.upstream_name.as_str(),
-                        upstream::GrantedToolView {
-                            annotation_overrides: tool.policy.annotation_overrides.to_object(),
-                        },
-                    )
-                })
-                .collect::<upstream::GrantedTools<'_>>();
+            let access_resolution = loop {
+                let resolution = match access
+                    .effective_tools_for_api_key(auth, Some(server.mcp_server_id), projection)
+                    .await
+                {
+                    Ok(resolution) => resolution,
+                    Err(error) => return mcp_error_response(error),
+                };
+                if matches!(projection, McpToolProjection::Access)
+                    && resolution
+                        .allowed_tools
+                        .iter()
+                        .any(|tool| serves_stored_definition(&server, tool))
+                {
+                    projection = McpToolProjection::Full;
+                    continue;
+                }
+                break resolution;
+            };
+            let mut granted_tools = upstream::GrantedTools::new();
+            for tool in &access_resolution.allowed_tools {
+                let definition =
+                    serves_stored_definition(&server, tool).then(|| approved_tool_object(tool));
+                granted_tools.insert(
+                    tool.upstream_name.as_str(),
+                    upstream::GrantedToolView {
+                        annotation_overrides: tool.policy.annotation_overrides.to_object(),
+                        definition,
+                    },
+                );
+            }
             let upstream = match gateway
                 .prepare_upstream_for_auth(auth, server.clone())
                 .await
@@ -309,6 +327,7 @@ async fn dispatch_mcp_request(
                         result_json: None,
                         metadata: Map::new(),
                         occurred_at: OffsetDateTime::now_utc(),
+                        tool_schema_version: None,
                     },
                 )
                 .await;
@@ -386,14 +405,11 @@ async fn handle_tools_call(
     match rate_limits::check_tool_call(state, policy, auth, &server).await {
         Ok(None) => {}
         Ok(Some(rejected)) => {
-            let mut log_input = tool_invocation_log_input(
+            let mut log_input = tool_call_log_input(
                 &server,
-                "tools/call",
                 &id,
-                Some(mcp_tool_invocation_id),
-                Some(tool.mcp_tool_id),
-                &tool.upstream_name,
-                &tool.display_name,
+                mcp_tool_invocation_id,
+                &tool,
                 McpToolInvocationStatus::PolicyDenied,
                 McpToolPolicyResult::Denied,
                 Some(rate_limits::RATE_LIMITED_ERROR_CODE.to_string()),
@@ -408,14 +424,11 @@ async fn handle_tools_call(
         Err(error) => {
             // The limiter cannot check the call in `closed` mode: a JSON-RPC
             // error with the HTTP 503, as the aggregate route returns.
-            let log_input = tool_invocation_log_input(
+            let log_input = tool_call_log_input(
                 &server,
-                "tools/call",
                 &id,
-                Some(mcp_tool_invocation_id),
-                Some(tool.mcp_tool_id),
-                &tool.upstream_name,
-                &tool.display_name,
+                mcp_tool_invocation_id,
+                &tool,
                 McpToolInvocationStatus::GatewayError,
                 McpToolPolicyResult::NotEvaluated,
                 Some(error.error_code().to_string()),
@@ -439,14 +452,11 @@ async fn handle_tools_call(
     )
     .await;
     if guardrail_evaluation.denied() {
-        let mut log_input = tool_invocation_log_input(
+        let mut log_input = tool_call_log_input(
             &server,
-            "tools/call",
             &id,
-            Some(mcp_tool_invocation_id),
-            Some(tool.mcp_tool_id),
-            &tool.upstream_name,
-            &tool.display_name,
+            mcp_tool_invocation_id,
+            &tool,
             McpToolInvocationStatus::PolicyDenied,
             McpToolPolicyResult::Denied,
             Some("guardrail_policy_denied".to_string()),
@@ -489,14 +499,11 @@ async fn handle_tools_call(
                 .service
                 .log_mcp_tool_invocation(
                     auth,
-                    tool_invocation_log_input(
+                    tool_call_log_input(
                         &server,
-                        "tools/call",
                         &id,
-                        Some(mcp_tool_invocation_id),
-                        Some(tool.mcp_tool_id),
-                        &tool.upstream_name,
-                        &tool.display_name,
+                        mcp_tool_invocation_id,
+                        &tool,
                         McpToolInvocationStatus::Unauthorized,
                         McpToolPolicyResult::Allowed,
                         Some(error.error_code().to_string()),
@@ -525,14 +532,11 @@ async fn handle_tools_call(
             Err(error) => Err(error),
         };
     let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);
-    let mut log_input = tool_invocation_log_input(
+    let mut log_input = tool_call_log_input(
         &upstream.server,
-        "tools/call",
         &id,
-        Some(mcp_tool_invocation_id),
-        Some(tool.mcp_tool_id),
-        &tool.upstream_name,
-        &tool.display_name,
+        mcp_tool_invocation_id,
+        &tool,
         status,
         policy_result,
         error_code,
@@ -620,6 +624,77 @@ fn tools_list_metadata(
     ])
 }
 
+/// Whether direct `tools/list` serves the stored approved definition instead
+/// of the live upstream object: on servers that require approval, and for a
+/// tool whose change still waits, even after approval was turned off, until
+/// discovery approves what the upstream serves.
+fn serves_stored_definition(
+    server: &gateway_core::ExternalMcpServerRecord,
+    tool: &gateway_core::ExternalMcpToolRecord,
+) -> bool {
+    server.approve_tool_changes
+        || tool.review.pending_schema_version.is_some()
+        || tool.review.approval_status != gateway_core::McpToolApprovalStatus::Approved
+}
+
+/// The approved definition of a tool as an MCP `tools/list` entry, with the
+/// effective annotations.
+fn approved_tool_object(tool: &gateway_core::ExternalMcpToolRecord) -> Map<String, Value> {
+    let mut object = Map::new();
+    object.insert("name".to_string(), json!(tool.upstream_name));
+    if let Some(title) = &tool.metadata.title {
+        object.insert("title".to_string(), json!(title));
+    }
+    if let Some(description) = &tool.description {
+        object.insert("description".to_string(), json!(description));
+    }
+    object.insert("inputSchema".to_string(), tool.input_schema.clone());
+    if let Some(output_schema) = &tool.metadata.output_schema {
+        object.insert("outputSchema".to_string(), output_schema.clone());
+    }
+    if let Some(annotations) = gateway_core::mcp_tool_policy::effective_annotations(tool) {
+        object.insert("annotations".to_string(), Value::Object(annotations));
+    }
+    object
+}
+
+/// `tool_invocation_log_input` for a granted `tools/call`, which also records
+/// the served schema version of the tool.
+#[allow(clippy::too_many_arguments)]
+fn tool_call_log_input(
+    server: &gateway_core::ExternalMcpServerRecord,
+    id: &Option<serde_json::Value>,
+    mcp_tool_invocation_id: Uuid,
+    tool: &gateway_core::ExternalMcpToolRecord,
+    status: McpToolInvocationStatus,
+    policy_result: McpToolPolicyResult,
+    error_code: Option<String>,
+    arguments_json: Option<serde_json::Value>,
+    result_json: Option<serde_json::Value>,
+    started_at: Instant,
+) -> McpInvocationLogInput {
+    let mut input = tool_invocation_log_input(
+        server,
+        "tools/call",
+        id,
+        Some(mcp_tool_invocation_id),
+        Some(tool.mcp_tool_id),
+        &tool.upstream_name,
+        &tool.display_name,
+        status,
+        policy_result,
+        error_code,
+        arguments_json,
+        result_json,
+        started_at,
+    );
+    // Only a stored definition the gateway served has a known version; a
+    // passed-through upstream definition may have changed since discovery.
+    input.tool_schema_version =
+        serves_stored_definition(server, tool).then_some(tool.schema_version);
+    input
+}
+
 #[allow(clippy::too_many_arguments)]
 fn tool_invocation_log_input(
     server: &gateway_core::ExternalMcpServerRecord,
@@ -655,6 +730,7 @@ fn tool_invocation_log_input(
         result_json,
         metadata: Map::new(),
         occurred_at: OffsetDateTime::now_utc(),
+        tool_schema_version: None,
     }
 }
 

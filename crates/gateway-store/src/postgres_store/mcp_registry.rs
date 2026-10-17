@@ -1,11 +1,23 @@
 use super::*;
+use std::collections::HashMap;
+
 use crate::mcp_tool_policy::tool_policy_from_json;
+use crate::mcp_tool_review::{
+    HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite,
+    discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
+    reuse_historical_versions,
+};
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::{McpAnnotationOverrides, McpToolPolicy, Updated};
+use gateway_core::mcp_tool_review::status_after_rejection;
+use gateway_core::{
+    McpAnnotationOverrides, McpToolApprovalStatus, McpToolDefinition, McpToolPolicy,
+    McpToolReviewDecision, McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord,
+    McpToolVersionStatus, Updated,
+};
 
 macro_rules! server_columns {
     () => {
-        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json::text, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at"
+        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json::text, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at, approve_tool_changes"
     };
 }
 
@@ -16,7 +28,7 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = $1"
 );
-const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json::text, output_schema_json::text, admin_tags_json::text, annotation_overrides_json::text";
+const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json::text, output_schema_json::text, admin_tags_json::text, annotation_overrides_json::text, approval_status, approved_schema_version, pending_schema_version";
 
 fn decode_server(row: &PgRow) -> Result<ExternalMcpServerRecord, StoreError> {
     let mcp_server_id: String = row.try_get(0).map_err(to_query_error)?;
@@ -70,6 +82,7 @@ fn decode_server(row: &PgRow) -> Result<ExternalMcpServerRecord, StoreError> {
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+        approve_tool_changes: row.try_get::<i64, _>(18).map_err(to_query_error)? == 1,
     })
 }
 
@@ -99,6 +112,7 @@ fn decode_tool(row: &PgRow) -> Result<ExternalMcpToolRecord, StoreError> {
         first_discovered_at: unix_to_datetime(first_discovered_at)?,
         last_discovered_at: unix_to_datetime(last_discovered_at)?,
         deactivated_at: deactivated_at.map(unix_to_datetime).transpose()?,
+        review: decode_tool_review(row, 17)?,
     })
 }
 
@@ -150,6 +164,7 @@ fn server_settings_match(
     existing.display_name == input.display_name
         && existing.description == input.description
         && existing.timeout_ms == input.timeout_ms
+        && existing.approve_tool_changes == input.approve_tool_changes
         && !discovery_config_changed(existing, input)
 }
 
@@ -226,8 +241,9 @@ impl McpRegistryRepository for PostgresStore {
             r#"
             INSERT INTO external_mcp_servers (
                 mcp_server_id, server_key, display_name, description, transport, server_url,
-                auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'active', $10, $10)
+                auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at,
+                approve_tool_changes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'active', $10, $10, $11)
             RETURNING {SERVER_COLUMNS}
             "#
         ))
@@ -241,6 +257,7 @@ impl McpRegistryRepository for PostgresStore {
         .bind(auth_config_json)
         .bind(input.timeout_ms)
         .bind(input.created_at.unix_timestamp())
+        .bind(i64::from(input.approve_tool_changes))
         .fetch_one(&self.pool)
         .await
         .map_err(to_write_error)?;
@@ -275,7 +292,8 @@ impl McpRegistryRepository for PostgresStore {
             r#"
             UPDATE external_mcp_servers
             SET display_name = $1, description = $2, server_url = $3, auth_mode = $4,
-                auth_config_json = $5::jsonb, timeout_ms = $6, updated_at = $7
+                auth_config_json = $5::jsonb, timeout_ms = $6, updated_at = $7,
+                approve_tool_changes = $9
             WHERE mcp_server_id = $8
             "#,
         )
@@ -287,6 +305,7 @@ impl McpRegistryRepository for PostgresStore {
         .bind(input.timeout_ms)
         .bind(input.updated_at.unix_timestamp())
         .bind(input.mcp_server_id.to_string())
+        .bind(i64::from(input.approve_tool_changes))
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
@@ -404,6 +423,19 @@ impl McpRegistryRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
 
+        // Lock the server, then its tools, so concurrent discoveries of one
+        // server run one at a time and a review cannot change a tool between
+        // the snapshot below and the writes planned from it.
+        let approve_tool_changes = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
+            .bind(run.mcp_server_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_server)
+            .transpose()?
+            .is_some_and(|server| server.approve_tool_changes);
+        let stored = load_stored_tools(&mut tx, run.mcp_server_id).await?;
         sqlx::query(
             "UPDATE external_mcp_tools SET is_active = 0, deactivated_at = $1 WHERE mcp_server_id = $2",
         )
@@ -413,70 +445,19 @@ impl McpRegistryRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
 
-        for tool in tools {
-            let input_schema_json = serialize_json(&tool.input_schema)?;
-            let annotations_json = tool
-                .metadata
-                .annotations
-                .as_ref()
-                .map(serialize_json)
-                .transpose()?;
-            let output_schema_json = tool
-                .metadata
-                .output_schema
-                .as_ref()
-                .map(serialize_json)
-                .transpose()?;
-            // A row discovered before metadata was stored keeps its schema
-            // version when only the newly captured metadata moved the hash.
-            sqlx::query(
-                r#"
-                INSERT INTO external_mcp_tools (
-                    mcp_tool_id, mcp_server_id, upstream_name, display_name, description,
-                    input_schema_json, schema_hash, schema_version, is_active,
-                    first_discovered_at, last_discovered_at, deactivated_at,
-                    title, annotations_json, output_schema_json, metadata_captured
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6::jsonb, $7, 1, 1, $8, $8, NULL,
-                    $9, $10::jsonb, $11::jsonb, 1
-                )
-                ON CONFLICT(mcp_server_id, upstream_name) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    description = excluded.description,
-                    input_schema_json = excluded.input_schema_json,
-                    schema_version = CASE
-                        WHEN external_mcp_tools.schema_hash != excluded.schema_hash
-                            AND NOT (
-                                external_mcp_tools.metadata_captured = 0
-                                AND external_mcp_tools.input_schema_json = excluded.input_schema_json
-                            )
-                        THEN external_mcp_tools.schema_version + 1
-                        ELSE external_mcp_tools.schema_version
-                    END,
-                    schema_hash = excluded.schema_hash,
-                    title = excluded.title,
-                    annotations_json = excluded.annotations_json,
-                    output_schema_json = excluded.output_schema_json,
-                    metadata_captured = 1,
-                    is_active = 1,
-                    last_discovered_at = excluded.last_discovered_at,
-                    deactivated_at = NULL
-                "#,
+        let mut planned = plan_tool_writes(&stored, tools, approve_tool_changes);
+        let historical =
+            find_versions_by_definition(&mut tx, &historical_lookups(&planned)).await?;
+        reuse_historical_versions(&mut planned, &historical);
+        for plan in &planned {
+            apply_tool_write(
+                &mut tx,
+                run.finished_at,
+                plan.tool,
+                plan.existing,
+                &plan.write,
             )
-            .bind(Uuid::new_v4().to_string())
-            .bind(tool.mcp_server_id.to_string())
-            .bind(tool.upstream_name.as_str())
-            .bind(tool.display_name.as_str())
-            .bind(tool.description.as_deref())
-            .bind(input_schema_json)
-            .bind(tool.schema_hash.as_str())
-            .bind(run.finished_at.unix_timestamp())
-            .bind(tool.metadata.title.as_deref())
-            .bind(annotations_json)
-            .bind(output_schema_json)
-            .execute(&mut *tx)
-            .await
-            .map_err(to_query_error)?;
+            .await?;
         }
 
         sqlx::query(
@@ -588,6 +569,135 @@ impl McpRegistryRepository for PostgresStore {
         )
         .await
     }
+
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &McpToolVersionQuery,
+    ) -> Result<Vec<McpToolVersionRecord>, StoreError> {
+        let named_sql = format!(
+            "SELECT {VERSION_COLUMNS} FROM mcp_tool_versions WHERE mcp_tool_id = $1 AND schema_version = ANY($2) ORDER BY schema_version DESC"
+        );
+        let page_sql = format!(
+            "SELECT {VERSION_COLUMNS} FROM mcp_tool_versions WHERE mcp_tool_id = $1 AND ($2::bigint IS NULL OR schema_version < $2) ORDER BY schema_version DESC LIMIT $3"
+        );
+        let statement = match query {
+            McpToolVersionQuery::Versions(versions) => sqlx::query(&named_sql)
+                .bind(mcp_tool_id.to_string())
+                .bind(versions.clone()),
+            McpToolVersionQuery::Page { before, limit } => sqlx::query(&page_sql)
+                .bind(mcp_tool_id.to_string())
+                .bind(*before)
+                .bind(i64::from(*limit)),
+        };
+        statement
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .iter()
+            .map(decode_version)
+            .collect()
+    }
+
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<Updated<ExternalMcpToolRecord>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Locking the tool row makes the pending check and the review one step,
+        // so two admins reviewing at once cannot both apply.
+        let existing = sqlx::query(&format!(
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = $1 FOR UPDATE"
+        ))
+        .bind(mcp_tool_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| StoreError::NotFound(format!("MCP tool `{mcp_tool_id}` was not found")))
+        .and_then(|row| decode_tool(&row))?;
+        let version = sqlx::query(&format!(
+            "SELECT {VERSION_COLUMNS} FROM mcp_tool_versions WHERE mcp_tool_id = $1 AND schema_version = $2"
+        ))
+        .bind(mcp_tool_id.to_string())
+        .bind(schema_version)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| {
+            StoreError::NotFound(format!(
+                "MCP tool `{mcp_tool_id}` has no version {schema_version}"
+            ))
+        })
+        .and_then(|row| decode_version(&row))?;
+        if version.status != McpToolVersionStatus::Pending {
+            return Err(StoreError::Conflict(format!(
+                "version {schema_version} of MCP tool `{mcp_tool_id}` is {}, not pending",
+                version.status.as_str()
+            )));
+        }
+        let at = reviewed_at.unix_timestamp();
+        let reviewer = reviewed_by_user_id.map(|id| id.to_string());
+        match decision {
+            McpToolReviewDecision::Approve => {
+                write_tool_definition(&mut tx, mcp_tool_id, &version.definition, schema_version)
+                    .await?;
+                sqlx::query("UPDATE external_mcp_tools SET approval_status = 'approved', approved_schema_version = $1, pending_schema_version = NULL WHERE mcp_tool_id = $2")
+                    .bind(schema_version)
+                    .bind(mcp_tool_id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(to_write_error)?;
+                set_version_status(
+                    &mut tx,
+                    mcp_tool_id,
+                    schema_version,
+                    McpToolVersionStatus::Approved,
+                    Some(at),
+                    reviewer.as_deref(),
+                )
+                .await?;
+                supersede_pending(&mut tx, mcp_tool_id, schema_version).await?;
+            }
+            McpToolReviewDecision::Reject => {
+                let status = status_after_rejection(
+                    existing.review.approval_status,
+                    existing.review.approved_schema_version,
+                );
+                sqlx::query("UPDATE external_mcp_tools SET approval_status = $1, pending_schema_version = NULL WHERE mcp_tool_id = $2")
+                    .bind(status.as_str())
+                    .bind(mcp_tool_id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(to_write_error)?;
+                set_version_status(
+                    &mut tx,
+                    mcp_tool_id,
+                    schema_version,
+                    McpToolVersionStatus::Rejected,
+                    Some(at),
+                    reviewer.as_deref(),
+                )
+                .await?;
+            }
+        }
+        let current = sqlx::query(&format!(
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = $1"
+        ))
+        .bind(mcp_tool_id.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(to_query_error)
+        .and_then(|row| decode_tool(&row))?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
+    }
 }
 
 impl PostgresStore {
@@ -629,4 +739,498 @@ impl PostgresStore {
             previous: Some(existing),
         })
     }
+}
+
+const VERSION_COLUMNS: &str = "mcp_tool_id, schema_version, schema_hash, description, input_schema_json::text, title, annotations_json::text, output_schema_json::text, status, discovered_at, reviewed_at, reviewed_by_user_id";
+
+/// Decodes `approval_status, approved_schema_version, pending_schema_version`
+/// starting at `offset`.
+pub(super) fn decode_tool_review(
+    row: &PgRow,
+    offset: usize,
+) -> Result<McpToolReviewState, StoreError> {
+    let status: String = row.try_get(offset).map_err(to_query_error)?;
+    Ok(McpToolReviewState {
+        approval_status: McpToolApprovalStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid MCP tool approval status `{status}`"))
+        })?,
+        approved_schema_version: row.try_get(offset + 1).map_err(to_query_error)?,
+        pending_schema_version: row.try_get(offset + 2).map_err(to_query_error)?,
+    })
+}
+
+fn decode_version(row: &PgRow) -> Result<McpToolVersionRecord, StoreError> {
+    let input_schema_json: String = row.try_get(4).map_err(to_query_error)?;
+    let status: String = row.try_get(8).map_err(to_query_error)?;
+    let reviewed_at: Option<i64> = row.try_get(10).map_err(to_query_error)?;
+    let reviewed_by: Option<String> = row.try_get(11).map_err(to_query_error)?;
+    let metadata = decode_tool_metadata(row, 5)?;
+    Ok(McpToolVersionRecord {
+        mcp_tool_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
+        schema_version: row.try_get(1).map_err(to_query_error)?,
+        definition: McpToolDefinition {
+            description: row.try_get(3).map_err(to_query_error)?,
+            input_schema: serde_json::from_str(&input_schema_json)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?,
+            title: metadata.title,
+            annotations: metadata.annotations,
+            output_schema: metadata.output_schema,
+            schema_hash: row.try_get(2).map_err(to_query_error)?,
+        },
+        status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+        })?,
+        discovered_at: unix_to_datetime(row.try_get(9).map_err(to_query_error)?)?,
+        reviewed_at: reviewed_at.map(unix_to_datetime).transpose()?,
+        reviewed_by_user_id: reviewed_by.as_deref().map(parse_uuid).transpose()?,
+    })
+}
+
+/// The server's tools with their versions, by upstream name.
+async fn load_stored_tools(
+    conn: &mut sqlx::PgConnection,
+    mcp_server_id: Uuid,
+) -> Result<HashMap<String, StoredTool>, StoreError> {
+    let rows = sqlx::query(&format!(
+        "SELECT {TOOL_COLUMNS}, metadata_captured FROM external_mcp_tools WHERE mcp_server_id = $1 FOR UPDATE"
+    ))
+    .bind(mcp_server_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    let mut by_id = HashMap::new();
+    for row in &rows {
+        let tool = decode_tool(row)?;
+        let metadata_captured: i64 = row.try_get(20).map_err(to_query_error)?;
+        by_id.insert(
+            tool.mcp_tool_id,
+            StoredTool {
+                tool,
+                metadata_captured: metadata_captured == 1,
+                versions: Vec::new(),
+                latest_version: 0,
+            },
+        );
+    }
+    let rows = sqlx::query(
+        "SELECT v.mcp_tool_id, v.schema_version, v.schema_hash, v.status, v.description, v.title FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1 AND v.status IN ('pending', 'rejected')",
+    )
+    .bind(mcp_server_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    for row in &rows {
+        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+        let status: String = row.try_get(3).map_err(to_query_error)?;
+        if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
+            stored.versions.push(StoredVersion {
+                schema_version: row.try_get(1).map_err(to_query_error)?,
+                schema_hash: row.try_get(2).map_err(to_query_error)?,
+                description: row.try_get(4).map_err(to_query_error)?,
+                title: row.try_get(5).map_err(to_query_error)?,
+                status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+                })?,
+            });
+        }
+    }
+    let rows = sqlx::query(
+        "SELECT v.mcp_tool_id, MAX(v.schema_version) FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1 GROUP BY v.mcp_tool_id",
+    )
+    .bind(mcp_server_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    for row in &rows {
+        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+        if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
+            stored.latest_version = row.try_get(1).map_err(to_query_error)?;
+        }
+    }
+    Ok(by_id
+        .into_values()
+        .map(|stored| (stored.tool.upstream_name.clone(), stored))
+        .collect())
+}
+
+/// Serialized definition columns: input schema, annotations, output schema.
+fn definition_json(
+    definition: &McpToolDefinition,
+) -> Result<(String, Option<String>, Option<String>), StoreError> {
+    Ok((
+        serialize_json(&definition.input_schema)?,
+        definition
+            .annotations
+            .as_ref()
+            .map(serialize_json)
+            .transpose()?,
+        definition
+            .output_schema
+            .as_ref()
+            .map(serialize_json)
+            .transpose()?,
+    ))
+}
+
+/// Writes a definition into the tool row as `schema_version`.
+async fn write_tool_definition(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    definition: &McpToolDefinition,
+    schema_version: i64,
+) -> Result<(), StoreError> {
+    let (input_schema_json, annotations_json, output_schema_json) = definition_json(definition)?;
+    sqlx::query(
+        r#"
+        UPDATE external_mcp_tools
+        SET description = $1, input_schema_json = $2::jsonb, title = $3, annotations_json = $4::jsonb,
+            output_schema_json = $5::jsonb, schema_hash = $6, schema_version = $7, metadata_captured = 1
+        WHERE mcp_tool_id = $8
+        "#,
+    )
+    .bind(definition.description.as_deref())
+    .bind(input_schema_json)
+    .bind(definition.title.as_deref())
+    .bind(annotations_json)
+    .bind(output_schema_json)
+    .bind(definition.schema_hash.as_str())
+    .bind(schema_version)
+    .bind(mcp_tool_id.to_string())
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+async fn insert_version(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    schema_version: i64,
+    definition: &McpToolDefinition,
+    status: McpToolVersionStatus,
+    discovered_at: OffsetDateTime,
+) -> Result<(), StoreError> {
+    let (input_schema_json, annotations_json, output_schema_json) = definition_json(definition)?;
+    sqlx::query(
+        r#"
+        INSERT INTO mcp_tool_versions (
+            mcp_tool_id, schema_version, schema_hash, description, input_schema_json, title,
+            annotations_json, output_schema_json, status, discovered_at
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9, $10)
+        "#,
+    )
+    .bind(mcp_tool_id.to_string())
+    .bind(schema_version)
+    .bind(definition.schema_hash.as_str())
+    .bind(definition.description.as_deref())
+    .bind(input_schema_json)
+    .bind(definition.title.as_deref())
+    .bind(annotations_json)
+    .bind(output_schema_json)
+    .bind(status.as_str())
+    .bind(discovered_at.unix_timestamp())
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+async fn set_version_status(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    schema_version: i64,
+    status: McpToolVersionStatus,
+    reviewed_at: Option<i64>,
+    reviewed_by_user_id: Option<&str>,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE mcp_tool_versions SET status = $1, reviewed_at = $2, reviewed_by_user_id = $3 WHERE mcp_tool_id = $4 AND schema_version = $5",
+    )
+    .bind(status.as_str())
+    .bind(reviewed_at)
+    .bind(reviewed_by_user_id)
+    .bind(mcp_tool_id.to_string())
+    .bind(schema_version)
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+/// Approves a version automatically, because the server does not require
+/// review. A version an admin already approved keeps its reviewer; one an
+/// admin rejected loses the rejection's attribution.
+async fn auto_approve_version(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    schema_version: i64,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE mcp_tool_versions SET status = 'approved', reviewed_at = NULL, reviewed_by_user_id = NULL WHERE mcp_tool_id = $1 AND schema_version = $2 AND status <> 'approved'",
+    )
+    .bind(mcp_tool_id.to_string())
+    .bind(schema_version)
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+/// The newest stored version with each looked-up definition (schema hash,
+/// description and title), by tool, in one query, for discovery to reuse
+/// instead of creating duplicates.
+async fn find_versions_by_definition(
+    conn: &mut sqlx::PgConnection,
+    lookups: &[HistoricalLookup],
+) -> Result<HashMap<Uuid, HistoricalVersion>, StoreError> {
+    let mut by_tool: HashMap<Uuid, HistoricalVersion> = HashMap::new();
+    if lookups.is_empty() {
+        return Ok(by_tool);
+    }
+    let tool_ids = lookups
+        .iter()
+        .map(|lookup| lookup.mcp_tool_id.to_string())
+        .collect::<Vec<_>>();
+    let hashes = lookups
+        .iter()
+        .map(|lookup| lookup.key.schema_hash.clone())
+        .collect::<Vec<_>>();
+    let descriptions = lookups
+        .iter()
+        .map(|lookup| lookup.key.description.clone())
+        .collect::<Vec<_>>();
+    let titles = lookups
+        .iter()
+        .map(|lookup| lookup.key.title.clone())
+        .collect::<Vec<_>>();
+    let rows = sqlx::query(
+        "SELECT v.mcp_tool_id, v.schema_version, v.status, v.reviewed_by_user_id IS NOT NULL FROM mcp_tool_versions v JOIN UNNEST($1::text[], $2::text[], $3::text[], $4::text[]) AS l(tool_id, schema_hash, description, title) ON v.mcp_tool_id = l.tool_id AND v.schema_hash = l.schema_hash AND v.description IS NOT DISTINCT FROM l.description AND v.title IS NOT DISTINCT FROM l.title",
+    )
+    .bind(tool_ids)
+    .bind(hashes)
+    .bind(descriptions)
+    .bind(titles)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(to_query_error)?;
+    for row in &rows {
+        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
+        let status: String = row.try_get(2).map_err(to_query_error)?;
+        keep_newest(
+            &mut by_tool,
+            parse_uuid(&mcp_tool_id)?,
+            HistoricalVersion {
+                schema_version: row.try_get(1).map_err(to_query_error)?,
+                status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+                    StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+                })?,
+                reviewed: row.try_get(3).map_err(to_query_error)?,
+            },
+        );
+    }
+    Ok(by_tool)
+}
+
+/// Marks every pending version other than `keep` as superseded.
+async fn supersede_pending(
+    conn: &mut sqlx::PgConnection,
+    mcp_tool_id: Uuid,
+    keep: i64,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE mcp_tool_versions SET status = 'superseded' WHERE mcp_tool_id = $1 AND status = 'pending' AND schema_version != $2",
+    )
+    .bind(mcp_tool_id.to_string())
+    .bind(keep)
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    Ok(())
+}
+
+/// Runs what discovery planned for one tool.
+async fn apply_tool_write(
+    conn: &mut sqlx::PgConnection,
+    discovered_at: OffsetDateTime,
+    tool: &UpsertExternalMcpToolRecord,
+    existing: Option<&StoredTool>,
+    write: &ToolWrite,
+) -> Result<(), StoreError> {
+    let definition = discovered_definition(tool);
+    let at = discovered_at.unix_timestamp();
+    let Some(existing) = existing else {
+        let ToolWrite::Insert { status } = write else {
+            return Err(StoreError::Unexpected(
+                "a new MCP tool must be inserted".to_string(),
+            ));
+        };
+        let id = Uuid::new_v4();
+        let approved = *status == McpToolApprovalStatus::Approved;
+        let (input_schema_json, annotations_json, output_schema_json) =
+            definition_json(&definition)?;
+        sqlx::query(
+            r#"
+            INSERT INTO external_mcp_tools (
+                mcp_tool_id, mcp_server_id, upstream_name, display_name, description,
+                input_schema_json, schema_hash, schema_version, is_active,
+                first_discovered_at, last_discovered_at, deactivated_at,
+                title, annotations_json, output_schema_json, metadata_captured,
+                approval_status, approved_schema_version, pending_schema_version
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6::jsonb, $7, 1, 1, $8, $8, NULL,
+                $9, $10::jsonb, $11::jsonb, 1, $12, $13, $14
+            )
+            "#,
+        )
+        .bind(id.to_string())
+        .bind(tool.mcp_server_id.to_string())
+        .bind(tool.upstream_name.as_str())
+        .bind(tool.display_name.as_str())
+        .bind(tool.description.as_deref())
+        .bind(input_schema_json)
+        .bind(tool.schema_hash.as_str())
+        .bind(at)
+        .bind(tool.metadata.title.as_deref())
+        .bind(annotations_json)
+        .bind(output_schema_json)
+        .bind(status.as_str())
+        .bind(approved.then_some(1_i64))
+        .bind((!approved).then_some(1_i64))
+        .execute(&mut *conn)
+        .await
+        .map_err(to_write_error)?;
+        let version_status = if approved {
+            McpToolVersionStatus::Approved
+        } else {
+            McpToolVersionStatus::Pending
+        };
+        return insert_version(conn, id, 1, &definition, version_status, discovered_at).await;
+    };
+    let id = existing.tool.mcp_tool_id;
+    // Every discovered tool is active again and keeps its latest display name.
+    sqlx::query(
+        "UPDATE external_mcp_tools SET display_name = $1, is_active = 1, last_discovered_at = $2, deactivated_at = NULL WHERE mcp_tool_id = $3",
+    )
+    .bind(tool.display_name.as_str())
+    .bind(at)
+    .bind(id.to_string())
+    .execute(&mut *conn)
+    .await
+    .map_err(to_write_error)?;
+    match write {
+        ToolWrite::Insert { .. } => {
+            return Err(StoreError::Unexpected(
+                "an existing MCP tool cannot be inserted".to_string(),
+            ));
+        }
+        ToolWrite::Touch => {}
+        ToolWrite::CaptureMetadata { version } => {
+            write_tool_definition(conn, id, &definition, *version).await?;
+            let (input_schema_json, annotations_json, output_schema_json) =
+                definition_json(&definition)?;
+            sqlx::query(
+                "UPDATE mcp_tool_versions SET schema_hash = $1, description = $2, input_schema_json = $3::jsonb, title = $4, annotations_json = $5::jsonb, output_schema_json = $6::jsonb WHERE mcp_tool_id = $7 AND schema_version = $8",
+            )
+            .bind(definition.schema_hash.as_str())
+            .bind(definition.description.as_deref())
+            .bind(input_schema_json)
+            .bind(definition.title.as_deref())
+            .bind(annotations_json)
+            .bind(output_schema_json)
+            .bind(id.to_string())
+            .bind(*version)
+            .execute(&mut *conn)
+            .await
+            .map_err(to_write_error)?;
+        }
+        ToolWrite::Serve {
+            version,
+            insert_version: insert,
+        } => {
+            write_tool_definition(conn, id, &definition, *version).await?;
+            sqlx::query("UPDATE external_mcp_tools SET approval_status = 'approved', approved_schema_version = $1, pending_schema_version = NULL WHERE mcp_tool_id = $2")
+                .bind(*version)
+                .bind(id.to_string())
+                .execute(&mut *conn)
+                .await
+                .map_err(to_write_error)?;
+            supersede_pending(conn, id, *version).await?;
+            if *insert {
+                insert_version(
+                    conn,
+                    id,
+                    *version,
+                    &definition,
+                    McpToolVersionStatus::Approved,
+                    discovered_at,
+                )
+                .await?;
+            } else {
+                auto_approve_version(conn, id, *version).await?;
+            }
+        }
+        ToolWrite::Hold {
+            version,
+            status,
+            write_definition,
+            insert_version: insert,
+        } => {
+            supersede_pending(conn, id, *version).await?;
+            if *insert {
+                insert_version(
+                    conn,
+                    id,
+                    *version,
+                    &definition,
+                    McpToolVersionStatus::Pending,
+                    discovered_at,
+                )
+                .await?;
+            } else {
+                set_version_status(
+                    conn,
+                    id,
+                    *version,
+                    McpToolVersionStatus::Pending,
+                    None,
+                    None,
+                )
+                .await?;
+            }
+            if *write_definition {
+                write_tool_definition(conn, id, &definition, *version).await?;
+            }
+            sqlx::query("UPDATE external_mcp_tools SET approval_status = $1, pending_schema_version = $2 WHERE mcp_tool_id = $3")
+                .bind(status.as_str())
+                .bind(*version)
+                .bind(id.to_string())
+                .execute(&mut *conn)
+                .await
+                .map_err(to_write_error)?;
+        }
+        ToolWrite::Settle {
+            status,
+            restore_version,
+        } => {
+            supersede_pending(conn, id, -1).await?;
+            if let Some(version) = restore_version {
+                write_tool_definition(conn, id, &definition, *version).await?;
+            }
+            sqlx::query("UPDATE external_mcp_tools SET approval_status = $1, pending_schema_version = NULL WHERE mcp_tool_id = $2")
+                .bind(status.as_str())
+                .bind(id.to_string())
+                .execute(&mut *conn)
+                .await
+                .map_err(to_write_error)?;
+        }
+        ToolWrite::Revert => {
+            supersede_pending(conn, id, -1).await?;
+            sqlx::query("UPDATE external_mcp_tools SET approval_status = 'approved', pending_schema_version = NULL WHERE mcp_tool_id = $1")
+                .bind(id.to_string())
+                .execute(&mut *conn)
+                .await
+                .map_err(to_write_error)?;
+        }
+    }
+    Ok(())
 }

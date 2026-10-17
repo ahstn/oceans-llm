@@ -1,4 +1,5 @@
 mod tool_policy;
+mod tool_reviews;
 mod views;
 
 #[cfg(test)]
@@ -36,6 +37,7 @@ use crate::http::{
 };
 use crate::observability::McpDiscoveryRefreshMetric;
 pub use tool_policy::*;
+pub use tool_reviews::*;
 use views::*;
 
 #[utoipa::path(
@@ -153,6 +155,7 @@ pub async fn create_mcp_server(
             auth_mode: request.auth_mode,
             auth_config: request.auth_config,
             timeout_ms: request.timeout_ms,
+            approve_tool_changes: request.approve_tool_changes,
         })
         .await?;
     let server = map_server(server);
@@ -198,6 +201,7 @@ pub async fn update_mcp_server(
                 auth_mode: request.auth_mode,
                 auth_config: request.auth_config,
                 timeout_ms: request.timeout_ms,
+                approve_tool_changes: request.approve_tool_changes,
             },
         )
         .await?;

@@ -1093,6 +1093,24 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_tool_id: Uuid,
         overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
     ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Versions of the tool, newest first: named ones or one page.
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &crate::mcp_tool_review::McpToolVersionQuery,
+    ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
+
+    /// Approves or rejects the tool's pending version. Fails with `Conflict`
+    /// when that version is not pending, so two reviews cannot both apply.
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: crate::mcp_tool_review::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -1189,8 +1207,9 @@ pub trait McpAccessRepository: Send + Sync {
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
 
-    /// One page of active tools on active servers, on one server or every
-    /// server, ordered by server id then upstream name. `after` is the last
+    /// One page of served tools (active, and approved or with only a text
+    /// change waiting) on active servers, on one server or every server,
+    /// ordered by server id then upstream name. `after` is the last
     /// `(mcp_server_id, upstream_name)` of the previous page. Tag rule
     /// previews read their candidates from it.
     async fn list_active_mcp_tools(
