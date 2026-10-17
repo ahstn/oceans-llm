@@ -28,6 +28,8 @@ pub(super) fn decode_api_key(row: &PgRow) -> Result<ApiKeyRecord, StoreError> {
     let created_at: i64 = row.try_get(10).map_err(to_query_error)?;
     let last_used_at: Option<i64> = row.try_get(11).map_err(to_query_error)?;
     let revoked_at: Option<i64> = row.try_get(12).map_err(to_query_error)?;
+    let scopes: Option<String> = row.try_get(13).map_err(to_query_error)?;
+    let mcp_server_keys: Option<String> = row.try_get(14).map_err(to_query_error)?;
 
     Ok(ApiKeyRecord {
         id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
@@ -54,6 +56,10 @@ pub(super) fn decode_api_key(row: &PgRow) -> Result<ApiKeyRecord, StoreError> {
             .as_deref()
             .map(parse_uuid)
             .transpose()?,
+        access: gateway_core::ApiKeyAccess::from_columns(
+            scopes.as_deref(),
+            mcp_server_keys.as_deref(),
+        ),
         created_at: unix_to_datetime(created_at)?,
         last_used_at: last_used_at.map(unix_to_datetime).transpose()?,
         revoked_at: revoked_at.map(unix_to_datetime).transpose()?,

@@ -58,6 +58,8 @@ mod budget_increase_tests;
 mod change_report_tests;
 
 #[cfg(test)]
+mod api_key_scope_tests;
+#[cfg(test)]
 mod gateway_oauth_tests;
 
 #[cfg(test)]

@@ -22,6 +22,8 @@ import type {
   RateLimitPolicyView,
   UpdateApiKeyInput,
   UpdateApiKeyResult,
+  UpdateApiKeyScopesInput,
+  UpdateApiKeyScopesResult,
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
@@ -185,6 +187,19 @@ export async function updateApiKey(
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.PATCH('/api/v1/admin/api-keys/{api_key_id}', {
+      params: { path: { api_key_id: apiKeyId } },
+      body: input,
+    }),
+  )
+}
+
+export async function updateApiKeyScopes(
+  apiKeyId: string,
+  input: UpdateApiKeyScopesInput,
+): Promise<ApiEnvelope<UpdateApiKeyScopesResult>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/api-keys/{api_key_id}/scopes', {
       params: { path: { api_key_id: apiKeyId } },
       body: input,
     }),

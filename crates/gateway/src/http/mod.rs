@@ -36,6 +36,8 @@ pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
+#[cfg(test)]
+mod scoped_api_key_tests;
 pub mod skills;
 pub mod spend;
 pub mod spend_budget_increases;
@@ -150,6 +152,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(list_api_keys).post(create_api_key),
         )
         .route("/api/v1/admin/api-keys/{api_key_id}", patch(update_api_key))
+        .route(
+            "/api/v1/admin/api-keys/{api_key_id}/scopes",
+            put(update_api_key_scopes),
+        )
         .route(
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),

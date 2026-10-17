@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/api-keys/{api_key_id}/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_api_key_scopes"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
         parameters: {
             query?: never;
@@ -2074,6 +2090,10 @@ export interface components {
         };
         /** @enum {string} */
         AdminAction: "create_api_key" | "update_api_key" | "revoke_api_key" | "reveal_api_key";
+        AdminApiKeyMcpServerView: {
+            display_name: string;
+            key: string;
+        };
         AdminApiKeyModelView: {
             description?: string | null;
             id: string;
@@ -2097,6 +2117,8 @@ export interface components {
             created_at: string;
             id: string;
             last_used_at?: string | null;
+            /** @description `null`: every MCP server the owner's grants reach. */
+            mcp_server_keys?: string[] | null;
             model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
@@ -2110,10 +2132,16 @@ export interface components {
             owner_team_key?: string | null;
             prefix: string;
             revoked_at?: string | null;
+            /** @description `null`: full access, as for keys created before scopes existed. */
+            scopes?: string[] | null;
             status: string;
         };
         AdminApiKeysPayload: {
+            /** @description Scopes a key may carry, in display order. */
+            available_scopes: string[];
             items: components["schemas"]["AdminApiKeyView"][];
+            /** @description Active MCP servers, the options for a key's server list. */
+            mcp_servers: components["schemas"]["AdminApiKeyMcpServerView"][];
             models: components["schemas"]["AdminApiKeyModelView"][];
             service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
@@ -3207,6 +3235,8 @@ export interface components {
             status: string;
         };
         CreateApiKeyRequest: {
+            /** @description Omit or `null` to reach every server the owner's grants reach. */
+            mcp_server_keys?: string[] | null;
             model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
@@ -3214,6 +3244,8 @@ export interface components {
             owner_service_account_id?: string | null;
             owner_team_id?: string | null;
             owner_user_id?: string | null;
+            /** @description Omit or `null` for full access. */
+            scopes?: string[] | null;
         };
         CreateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
@@ -3379,7 +3411,11 @@ export interface components {
         };
         Envelope_AdminApiKeysPayload: {
             data: {
+                /** @description Scopes a key may carry, in display order. */
+                available_scopes: string[];
                 items: components["schemas"]["AdminApiKeyView"][];
+                /** @description Active MCP servers, the options for a key's server list. */
+                mcp_servers: components["schemas"]["AdminApiKeyMcpServerView"][];
                 models: components["schemas"]["AdminApiKeyModelView"][];
                 service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
                 users: components["schemas"]["AdminApiKeyUserOwnerView"][];
@@ -4033,6 +4069,12 @@ export interface components {
             meta: components["schemas"]["ResponseMeta"];
         };
         Envelope_UpdateApiKeyResponse: {
+            data: {
+                api_key: components["schemas"]["AdminApiKeyView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_UpdateApiKeyScopesResponse: {
             data: {
                 api_key: components["schemas"]["AdminApiKeyView"];
             };
@@ -5372,6 +5414,17 @@ export interface components {
         UpdateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        /**
+         * @description Both fields are required, so leaving one out can't widen a key by
+         *     accident. `null` restores full access or every server.
+         */
+        UpdateApiKeyScopesRequest: {
+            mcp_server_keys: string[] | null;
+            scopes: string[] | null;
+        };
+        UpdateApiKeyScopesResponse: {
+            api_key: components["schemas"]["AdminApiKeyView"];
+        };
         UpdateMcpServerRequest: {
             /** @description Hold new and changed tools for review. Kept as it is when omitted. */
             approve_tool_changes?: boolean | null;
@@ -5566,6 +5619,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
+                };
+            };
+        };
+    };
+    update_api_key_scopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateApiKeyScopesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_UpdateApiKeyScopesResponse"];
                 };
             };
         };

@@ -1,4 +1,4 @@
-import type { McpToolAnnotationsView } from '@/types/api'
+import type { McpToolAnnotationsView, McpToolView } from '@/types/api'
 
 export type HintKey = keyof McpToolAnnotationsView
 
@@ -54,4 +54,16 @@ export function describeHint(value: boolean | null | undefined) {
 /** Admin tags as typed: split on commas and whitespace, without empties. */
 export function parseTagInput(value: string) {
   return value.split(/[\s,]+/).filter(Boolean)
+}
+
+/**
+ * Changes whenever a tool's stored policy changes, so the policy editor can
+ * start fresh drafts from it instead of keeping stale ones.
+ */
+export function toolPolicyKey(tool: McpToolView) {
+  return [
+    tool.id,
+    tool.admin_tags.join(','),
+    toolHints.map((hint) => hintValue(tool.annotation_overrides[hint.key])).join(','),
+  ].join('|')
 }

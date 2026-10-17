@@ -577,6 +577,14 @@ impl AdminApiKeyRepository for AnyStore {
         )
     }
 
+    async fn replace_api_key_access(
+        &self,
+        api_key_id: Uuid,
+        access: &gateway_core::ApiKeyAccess,
+    ) -> Result<Option<gateway_core::ApiKeyAccess>, StoreError> {
+        dispatch_store!(self, replace_api_key_access(api_key_id, access))
+    }
+
     async fn revoke_api_key(
         &self,
         api_key_id: Uuid,

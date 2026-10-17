@@ -766,6 +766,7 @@ async fn seed_authorized_tool_with_config(
             owner_user_id: Some(user.user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             created_at: now,
         })
         .await
@@ -830,6 +831,7 @@ async fn seed_authorized_tool_with_config(
         owner_user_id: key.owner_user_id,
         owner_team_id: key.owner_team_id,
         owner_service_account_id: key.owner_service_account_id,
+        access: Default::default(),
         oauth: None,
     }
 }

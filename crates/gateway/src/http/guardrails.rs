@@ -79,7 +79,11 @@ pub async fn evaluate_guardrail(
     let authorization = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
-    let _auth = state.service.authenticate(authorization).await?;
+    // Harness hooks call this with the key they use for model traffic.
+    let _auth = state
+        .service
+        .authenticate_for_scope(authorization, gateway_core::SCOPE_INFERENCE)
+        .await?;
 
     let payload = match (request.command, request.arguments) {
         (Some(command), None) => EvaluationPayload::ShellCommand { command },
