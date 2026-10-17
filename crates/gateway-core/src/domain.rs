@@ -1837,6 +1837,20 @@ pub struct ExternalMcpServerRecord {
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
     pub ownership: McpServerOwnership,
+    /// Set once a team has owned the server, until a platform admin saves its
+    /// settings: a team may have chosen its URL and auth endpoints, which a
+    /// platform admin has not vouched for.
+    pub team_destinations: bool,
+}
+
+impl ExternalMcpServerRecord {
+    /// Whether the server's traffic keeps the public-address guard: it is
+    /// team-owned, or a team set destinations no platform admin has vouched
+    /// for since, so a takeover never widens where they can reach.
+    #[must_use]
+    pub fn guards_destinations(&self) -> bool {
+        self.ownership.owner_team_id.is_some() || self.team_destinations
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1886,6 +1900,9 @@ pub struct UpdateExternalMcpServerRecord {
     /// The visibility the caller's change was authorized against, checked the
     /// same way, so a save cannot republish a server another request narrowed.
     pub expected_visibility: McpServerVisibility,
+    /// Set for a platform admin: the save vouches for the server's
+    /// destinations, clearing [`ExternalMcpServerRecord::team_destinations`].
+    pub vouch_for_destinations: bool,
     pub updated_at: OffsetDateTime,
 }
 

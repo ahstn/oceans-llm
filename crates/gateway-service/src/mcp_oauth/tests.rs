@@ -259,6 +259,7 @@ fn oauth_bundle_must_match_the_current_server_contract() {
 
 fn oauth_server() -> ExternalMcpServerRecord {
     ExternalMcpServerRecord {
+        team_destinations: false,
         ownership: Default::default(),
         mcp_server_id: Uuid::new_v4(),
         server_key: "google_drive".to_string(),

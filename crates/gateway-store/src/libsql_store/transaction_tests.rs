@@ -77,6 +77,7 @@ async fn store_write_waits_for_another_store_transaction() {
         async move {
             store
                 .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                    vouch_for_destinations: false,
                     mcp_server_id: server.mcp_server_id,
                     display_name: "Renamed docs".into(),
                     description: None,

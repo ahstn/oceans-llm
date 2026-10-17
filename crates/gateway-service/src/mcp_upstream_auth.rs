@@ -1154,6 +1154,7 @@ mod tests {
     ) -> ExternalMcpServerRecord {
         let now = OffsetDateTime::now_utc();
         ExternalMcpServerRecord {
+            team_destinations: false,
             ownership: Default::default(),
             mcp_server_id: Uuid::new_v4(),
             server_key: "github".to_string(),

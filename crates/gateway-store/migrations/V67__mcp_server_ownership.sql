@@ -12,6 +12,11 @@ ALTER TABLE external_mcp_servers ADD COLUMN owner_team_id TEXT
 ALTER TABLE external_mcp_servers ADD COLUMN owner_contact TEXT;
 ALTER TABLE external_mcp_servers ADD COLUMN visibility TEXT NOT NULL DEFAULT 'organisation'
   CHECK (visibility IN ('team', 'organisation'));
+-- 1 once a team has owned the server, until a platform admin saves its
+-- settings: a team may have set its URL or auth endpoints, so its traffic keeps
+-- the public-address guard after a platform takeover.
+ALTER TABLE external_mcp_servers ADD COLUMN team_destinations INTEGER NOT NULL DEFAULT 0
+  CHECK (team_destinations IN (0, 1));
 
 CREATE INDEX IF NOT EXISTS external_mcp_servers_owner_team_idx
   ON external_mcp_servers (owner_team_id, server_key);

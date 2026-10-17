@@ -111,6 +111,8 @@ pub async fn list_mcp_oauth_connections(
         .collect();
     let team_id = user_team(&state, user.user_id).await?;
     let mut items = Vec::new();
+    // Servers listed only because the user can reach them, rechecked below.
+    let mut listed_for_reach = std::collections::HashSet::new();
     for server in state.store.list_external_mcp_servers(true).await? {
         let binding = bindings.get(&server.mcp_server_id);
         let oauth_binding = binding.filter(|binding| {
@@ -118,8 +120,11 @@ pub async fn list_mcp_oauth_connections(
         });
         // A team-only server the user cannot reach stays hidden, as in the
         // member registry, unless they hold a binding they may still revoke.
-        if oauth_binding.is_none() && !user_can_reach(team_id, &server) {
-            continue;
+        if oauth_binding.is_none() {
+            if !user_can_reach(team_id, &server) {
+                continue;
+            }
+            listed_for_reach.insert(server.mcp_server_id);
         }
         let config = if server.status == ExternalMcpServerStatus::Active
             && server.auth_mode == ExternalMcpAuthMode::OauthObo
@@ -202,6 +207,24 @@ pub async fn list_mcp_oauth_connections(
             status,
             expires_at: expires_at.map(format_timestamp),
             availability_error,
+        });
+    }
+    // Checked again after the reads, against the user's team and each server
+    // as they are now: leaving the team, or the server moving, in between must
+    // not show a team-only server the user no longer reaches.
+    if !listed_for_reach.is_empty() {
+        let current_team = user_team(&state, user.user_id).await?;
+        let ids: Vec<Uuid> = listed_for_reach.iter().copied().collect();
+        let still_reached: std::collections::HashSet<Uuid> = state
+            .store
+            .list_external_mcp_servers_by_ids(&ids)
+            .await?
+            .into_iter()
+            .filter(|server| user_can_reach(current_team, server))
+            .map(|server| server.mcp_server_id)
+            .collect();
+        items.retain(|item: &McpOauthConnectionView| {
+            !listed_for_reach.contains(&item.server_id) || still_reached.contains(&item.server_id)
         });
     }
     Ok(([(CACHE_CONTROL, "no-store")], Json(items)).into_response())

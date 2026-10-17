@@ -134,6 +134,11 @@ way. A platform admin who registers a server on an internal network for a
 team by hostname lists that host there. This traffic follows no redirects and
 does not use an HTTP proxy. Platform-owned servers are not limited.
 
+A server keeps this guard after a platform admin takes it over, because its
+team may have chosen its URL and auth endpoints. Saving the server's settings as
+a platform admin vouches for them and lifts the guard; the save is recorded in
+the audit log with `destinations_vouched: true`, even when no setting changed.
+
 ### Take over a server
 
 Platform admins move a server to another team, or take it over for the

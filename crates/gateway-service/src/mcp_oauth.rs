@@ -205,13 +205,14 @@ fn secure_token_url(raw: &str) -> Result<url::Url, GatewayError> {
     }
 }
 
-/// The URL whose host scopes requests to `endpoint`. A platform admin wrote a
-/// platform-owned server's URL and stands behind every endpoint it uses. A team
-/// admin may have edited a team-owned server's endpoints, which were checked
-/// only when saved, so each is scoped by its own URL: a hostname reaches public
-/// addresses unless listed in `mcp.oauth.private_network_hosts`.
+/// The URL whose host scopes requests to `endpoint`. A platform admin who
+/// wrote, or vouched for, a platform-owned server's settings stands behind
+/// every endpoint it uses. A team admin may have edited the endpoints of a
+/// server their team owns or owned, which were checked only when saved, so
+/// each is scoped by its own URL: a hostname reaches public addresses unless
+/// listed in `mcp.oauth.private_network_hosts`.
 fn endpoint_scope_url<'a>(server: &'a ExternalMcpServerRecord, endpoint: &'a str) -> &'a str {
-    if server.ownership.owner_team_id.is_some() {
+    if server.guards_destinations() {
         endpoint
     } else {
         &server.server_url

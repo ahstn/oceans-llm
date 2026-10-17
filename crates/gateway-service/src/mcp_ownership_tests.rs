@@ -20,6 +20,7 @@ fn membership(team_id: Uuid, role: MembershipRole) -> TeamMembershipRecord {
 fn server(ownership: McpServerOwnership) -> ExternalMcpServerRecord {
     let now = OffsetDateTime::now_utc();
     ExternalMcpServerRecord {
+        team_destinations: false,
         mcp_server_id: Uuid::new_v4(),
         server_key: "docs".to_string(),
         display_name: "Docs".to_string(),

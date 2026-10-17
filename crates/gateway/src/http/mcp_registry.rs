@@ -131,27 +131,47 @@ pub async fn list_mcp_servers(
                 return list_member_servers(&state, user_id, team_id, &query).await;
             }
         };
-        let listed = list_admin_servers(&state, scope, &query).await?;
-        if matches!(
+        let (listed, owners) = list_admin_servers(&state, scope, &query).await?;
+        if !matches!(
             require_mcp_viewer(&state, &headers).await?,
             McpViewer::Admin(current) if current == scope
         ) {
+            continue;
+        }
+        // The view of each server follows its owner as read, so a transfer in
+        // between must not leave its former team's admin the full settings.
+        let ids: Vec<Uuid> = owners.keys().copied().collect();
+        let unchanged = state
+            .store
+            .list_external_mcp_servers_by_ids(&ids)
+            .await?
+            .iter()
+            .all(|server| owners.get(&server.mcp_server_id) == Some(&server.ownership));
+        if unchanged {
             return Ok(listed);
         }
     }
     Err(AppError(GatewayError::Store(
         gateway_core::StoreError::Conflict(
-            "your MCP access kept changing while servers were listed; try again".to_string(),
+            "MCP servers or your access to them kept changing while they were listed; try again"
+                .to_string(),
         ),
     )))
 }
 
-/// The registry as `scope` sees it.
+/// The registry as `scope` sees it, with the ownership each listed server
+/// had when read.
 async fn list_admin_servers(
     state: &AppState,
     scope: McpAdminScope,
     query: &McpServersQuery,
-) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
+) -> Result<
+    (
+        Json<Envelope<McpServersPayload>>,
+        std::collections::HashMap<Uuid, gateway_core::McpServerOwnership>,
+    ),
+    AppError,
+> {
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
     // The owner filter runs in the store query; visibility is still the caller's.
@@ -171,12 +191,19 @@ async fn list_admin_servers(
     }
     .into_iter()
     .filter(|server| scope.can_view(server))
-    .collect();
+    .collect::<Vec<_>>();
+    let owners = servers
+        .iter()
+        .map(|server| (server.mcp_server_id, server.ownership.clone()))
+        .collect();
     let items = present_servers(state, &scope, servers).await?;
-    Ok(Json(envelope(McpServersPayload {
-        items,
-        can_publish_to_organisation: ownership(state).can_publish(&scope),
-    })))
+    Ok((
+        Json(envelope(McpServersPayload {
+            items,
+            can_publish_to_organisation: ownership(state).can_publish(&scope),
+        })),
+        owners,
+    ))
 }
 
 #[utoipa::path(
@@ -339,6 +366,9 @@ pub async fn update_mcp_server(
                 // between cannot let the former team overwrite the server.
                 expected_owner_team_id: existing.ownership.owner_team_id,
                 expected_visibility: existing.ownership.visibility,
+                // A platform admin's save vouches for any destinations a team
+                // set, so the server's traffic no longer needs the guard.
+                vouch_for_destinations: scope.is_platform_admin(),
                 // `authorize_retarget` checked this above; the store repeats it
                 // under the write lock, so a credential added meanwhile counts.
                 retarget_owner_credentials_only: !scope.is_platform_admin(),
@@ -356,16 +386,18 @@ pub async fn update_mcp_server(
     // nothing when they match, so a resave records nothing while rotating a
     // credential inside the URL still counts even though the summary hides it.
     if let Some(before) = update.previous {
+        // A save that only vouches for a team's destinations changes no field
+        // the summary shows, so the entry says so.
+        let vouched = before.team_destinations && !current.team_destinations;
+        let mut event = server_event(actions::MCP_SERVER_UPDATED, &server)
+            .before(server_audit_summary(&map_server(before)))
+            .after(server_audit_summary(&server));
+        if vouched {
+            event = event.meta("destinations_vouched", true);
+        }
         state
             .audit()
-            .record(
-                &meta.user_context(&actor),
-                scope.annotate(
-                    server_event(actions::MCP_SERVER_UPDATED, &server)
-                        .before(server_audit_summary(&map_server(before)))
-                        .after(server_audit_summary(&server)),
-                ),
-            )
+            .record(&meta.user_context(&actor), scope.annotate(event))
             .await;
     }
     // Users' OAuth connections end with the endpoints that issued them. Each
@@ -752,12 +784,26 @@ pub async fn refresh_mcp_server_discovery(
                 .audit()
                 .record(&meta.user_context(&actor), scope.annotate(event))
                 .await;
-            // The server is reloaded after the guarded write; a transfer since
-            // then must not hand the new owner's settings to the former team.
-            if !scope.can_manage(&result.server) {
+            // The server and the caller are read again now, after the audit
+            // write: a transfer, or the caller leaving the team, since the
+            // discovery write must not hand the new owner's settings and tool
+            // schemas to the former team's admin.
+            let current_scope = require_mcp_admin_scope(&state, &headers)
+                .await
+                .ok()
+                .map(|(_, scope)| scope);
+            let current = state.store.get_external_mcp_server(server_id).await?;
+            let unchanged = matches!(
+                (current_scope, current.as_ref()),
+                (Some(now), Some(current))
+                    if now == scope
+                        && current.ownership == result.server.ownership
+                        && scope.can_manage(current)
+            );
+            if !unchanged {
                 return Err(AppError(GatewayError::Store(
                     gateway_core::StoreError::Conflict(format!(
-                        "external MCP server `{server_id}` changed owner during discovery; reload it"
+                        "external MCP server `{server_id}` changed owner, or your access to it changed, during discovery; reload it"
                     )),
                 )));
             }

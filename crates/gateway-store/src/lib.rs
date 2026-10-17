@@ -1565,6 +1565,7 @@ pub(crate) mod tests {
 
         let settings = |owner_contact: Option<&str>, visibility, expected_visibility| {
             UpdateExternalMcpServerRecord {
+                vouch_for_destinations: false,
                 mcp_server_id: server.mcp_server_id,
                 display_name: server.display_name.clone(),
                 description: None,
@@ -1795,12 +1796,54 @@ pub(crate) mod tests {
         assert_eq!(
             taken_over
                 .previous
+                .as_ref()
                 .expect("a transfer is a change")
                 .ownership
                 .owner_team_id,
             Some(team.team_id)
         );
         assert_eq!(taken_over.current.ownership, McpServerOwnership::default());
+        // The team may have set its destinations, so the takeover keeps them
+        // unvouched until a platform admin saves the settings.
+        assert!(taken_over.current.team_destinations);
+        assert!(taken_over.current.guards_destinations());
+        let mut unvouched = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
+        unvouched.expected_owner_team_id = None;
+        unvouched.owner_contact = None;
+        unvouched.display_name = taken_over.current.display_name.clone();
+        unvouched.description = taken_over.current.description.clone();
+        unvouched.server_url = taken_over.current.server_url.clone();
+        unvouched.auth_mode = taken_over.current.auth_mode;
+        unvouched.auth_config = taken_over.current.auth_config.clone();
+        unvouched.timeout_ms = taken_over.current.timeout_ms;
+        assert!(
+            store
+                .update_external_mcp_server(&unvouched)
+                .await
+                .expect("unchanged save")
+                .previous
+                .is_none(),
+            "a save that does not vouch changes nothing"
+        );
+        let vouched = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: true,
+                ..unvouched.clone()
+            })
+            .await
+            .expect("vouching save");
+        assert!(
+            vouched
+                .previous
+                .expect("vouching is a change")
+                .team_destinations
+        );
+        assert!(!vouched.current.team_destinations);
+        assert!(!vouched.current.guards_destinations());
         assert!(
             store
                 .transfer_external_mcp_server_ownership(&transfer)
@@ -2213,6 +2256,7 @@ pub(crate) mod tests {
             .expect("load server")
             .expect("server exists");
         let save = |server_url: &str, owner_contact, retarget| UpdateExternalMcpServerRecord {
+            vouch_for_destinations: false,
             mcp_server_id,
             display_name: server.display_name.clone(),
             description: server.description.clone(),
@@ -3152,6 +3196,7 @@ pub(crate) mod tests {
 
         let updated = store
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: false,
                 mcp_server_id: server.mcp_server_id,
                 display_name: "GitHub".to_string(),
                 description: None,
@@ -3280,6 +3325,7 @@ pub(crate) mod tests {
 
         let invalidated = store
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: false,
                 mcp_server_id: server.mcp_server_id,
                 display_name: "GitHub".to_string(),
                 description: None,

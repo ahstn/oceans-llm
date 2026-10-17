@@ -59,11 +59,13 @@ impl McpUpstreamClients {
     }
 
     /// The addresses `server`'s traffic may reach, or `None` for a
-    /// platform-owned server, whose traffic is not limited. An unparseable URL
-    /// gets the public scope.
+    /// platform-owned server whose destinations a platform admin vouched for,
+    /// whose traffic is not limited. An unparseable URL gets the public scope.
     #[must_use]
     pub fn scope_for(&self, server: &ExternalMcpServerRecord) -> Option<OutboundAddressScope> {
-        server.ownership.owner_team_id?;
+        if !server.guards_destinations() {
+            return None;
+        }
         Some(match Url::parse(&server.server_url) {
             Ok(url) => OutboundAddressScope::of_trusted_url(&url, &self.private_network_hosts),
             Err(_) => OutboundAddressScope::Public,
@@ -165,6 +167,7 @@ mod tests {
                 Some(team_id) => McpServerOwnership::team(team_id, None),
                 None => McpServerOwnership::default(),
             },
+            team_destinations: false,
         }
     }
 
@@ -201,6 +204,32 @@ mod tests {
         assert!(clients.is_private_network_host("https://mcp.corp.internal/mcp"));
         assert!(!clients.is_private_network_host("https://mcp.example.com/mcp"));
         assert!(!clients.is_private_network_host("http://10.0.0.5/mcp"));
+    }
+
+    #[test]
+    fn a_takeover_keeps_the_guard_until_a_platform_admin_vouches() {
+        let clients = McpUpstreamClients::default();
+        let taken_over = ExternalMcpServerRecord {
+            team_destinations: true,
+            ..server("https://mcp.example.com/mcp", None)
+        };
+        assert_eq!(
+            clients.scope_for(&taken_over),
+            Some(OutboundAddressScope::Public)
+        );
+        assert!(
+            clients
+                .for_server(&ExternalMcpServerRecord {
+                    team_destinations: true,
+                    ..server("http://169.254.169.254/latest/meta-data", None)
+                })
+                .is_err()
+        );
+        let vouched = ExternalMcpServerRecord {
+            team_destinations: false,
+            ..taken_over
+        };
+        assert_eq!(clients.scope_for(&vouched), None);
     }
 
     #[test]

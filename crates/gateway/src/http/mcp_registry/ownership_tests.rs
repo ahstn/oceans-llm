@@ -990,6 +990,34 @@ async fn only_platform_admins_transfer_ownership() {
     );
     assert_eq!(entry.after.as_ref().unwrap()["owner_team_id"], Value::Null);
     assert_eq!(entry.metadata["actor_access"], "platform_admin");
+    // The team chose its destinations, so its traffic keeps the guard until a
+    // platform admin's save vouches for them.
+    let taken_over = context
+        .state
+        .store
+        .get_external_mcp_server(own.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        context
+            .state
+            .mcp_http_clients
+            .scope_for(&taken_over)
+            .is_some()
+    );
+    let (status, body) = context.update(&platform, own.id, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let entry = context.last_audit("mcp_server.updated").await;
+    assert_eq!(entry.metadata["destinations_vouched"], true);
+    let vouched = context
+        .state
+        .store
+        .get_external_mcp_server(own.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(context.state.mcp_http_clients.scope_for(&vouched).is_none());
 
     // The former owners can no longer change it.
     assert_eq!(

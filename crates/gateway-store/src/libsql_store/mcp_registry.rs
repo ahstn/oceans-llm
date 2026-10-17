@@ -62,6 +62,7 @@ fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreErro
         updated_at: unix_to_datetime(updated_at)?,
         disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
         ownership: decode_server_ownership(row, 18)?,
+        team_destinations: row.get::<i64>(21).map_err(to_query_error)? != 0,
     })
 }
 
@@ -163,6 +164,8 @@ fn server_settings_match(
             .is_none_or(|contact| *contact == existing.ownership.owner_contact)
         && existing.ownership.visibility == input.visibility
         && !discovery_config_changed(existing, input)
+        // A platform admin's save vouches for destinations a team set.
+        && !(input.vouch_for_destinations && existing.team_destinations)
 }
 
 async fn load_server(
@@ -296,7 +299,7 @@ pub(super) async fn check_no_team_only_tools(
 
 macro_rules! server_columns {
     () => {
-        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at, owner_team_id, owner_contact, visibility"
+        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at, owner_team_id, owner_contact, visibility, team_destinations"
     };
 }
 
@@ -571,7 +574,8 @@ impl McpRegistryRepository for LibsqlStore {
             UPDATE external_mcp_servers
             SET display_name = ?1, description = ?2, server_url = ?3, auth_mode = ?4,
                 auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7,
-                owner_contact = ?9, visibility = ?10
+                owner_contact = ?9, visibility = ?10,
+                team_destinations = CASE WHEN ?11 = 1 THEN 0 ELSE team_destinations END
             WHERE mcp_server_id = ?8
             "#,
             libsql::params![
@@ -585,6 +589,7 @@ impl McpRegistryRepository for LibsqlStore {
                 input.mcp_server_id.to_string(),
                 owner_contact.as_deref(),
                 input.visibility.as_str(),
+                i64::from(input.vouch_for_destinations),
             ],
         )
         .await
@@ -764,7 +769,10 @@ impl McpRegistryRepository for LibsqlStore {
         tx.execute(
             r#"
             UPDATE external_mcp_servers
-            SET owner_team_id = ?1, owner_contact = ?2, visibility = ?3, updated_at = ?4
+            SET owner_team_id = ?1, owner_contact = ?2, visibility = ?3, updated_at = ?4,
+                -- A server leaving a team keeps the destinations it set
+                -- unvouched, and so keeps the public-address guard.
+                team_destinations = CASE WHEN owner_team_id IS NOT NULL THEN 1 ELSE team_destinations END
             WHERE mcp_server_id = ?5
             "#,
             libsql::params![
