@@ -114,6 +114,7 @@ where
             target_id: toolset.toolset_id,
             updated_at: now,
             expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("toolset grant");
@@ -150,6 +151,7 @@ where
             target_id: drive_search.mcp_tool_id,
             updated_at: now,
             expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("tool grant");

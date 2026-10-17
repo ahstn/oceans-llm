@@ -4,7 +4,7 @@ use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use crate::shared::{json_object_from_str, parse_uuid, subject_team_changed, unix_to_datetime};
 use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
@@ -212,6 +212,34 @@ async fn toolset_tools_on(
     Ok(tools)
 }
 
+/// The subject's team, read inside a grant write. libSQL transactions hold the
+/// write lock, so a team move cannot land before the grant commits.
+async fn subject_team_in(
+    connection: &libsql::Connection,
+    subject_kind: McpToolGrantSubjectKind,
+    subject_id: Uuid,
+) -> Result<Option<Uuid>, StoreError> {
+    let sql = match subject_kind {
+        McpToolGrantSubjectKind::Team => return Ok(Some(subject_id)),
+        McpToolGrantSubjectKind::User => "SELECT team_id FROM team_memberships WHERE user_id = ?1",
+        McpToolGrantSubjectKind::ServiceAccount => {
+            "SELECT team_id FROM service_accounts WHERE service_account_id = ?1"
+        }
+        McpToolGrantSubjectKind::ApiKey => {
+            "SELECT COALESCE(k.owner_team_id, sa.team_id, m.team_id) FROM api_keys k LEFT JOIN service_accounts sa ON sa.service_account_id = k.owner_service_account_id LEFT JOIN team_memberships m ON m.user_id = k.owner_user_id WHERE k.id = ?1"
+        }
+    };
+    let mut rows = connection
+        .query(sql, [subject_id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    let team: Option<String> = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => row.get(0).map_err(to_query_error)?,
+        None => None,
+    };
+    team.as_deref().map(parse_uuid).transpose()
+}
+
 #[async_trait]
 impl McpAccessRepository for LibsqlStore {
     async fn list_mcp_toolsets(
@@ -401,6 +429,11 @@ impl McpAccessRepository for LibsqlStore {
             let tool_id =
                 (grant.target_kind == McpToolGrantTargetKind::Tool).then_some(grant.target_id);
             check_ownership_guard(&tx, guard, tool_id).await?;
+        }
+        if let Some(expected) = grant.expected_subject_team
+            && subject_team_in(&tx, grant.subject_kind, grant.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
         }
         // `RETURNING` gives the row this statement wrote, so `created` cannot be
         // confused by a concurrent revoke and re-grant.

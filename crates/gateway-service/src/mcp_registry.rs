@@ -374,28 +374,27 @@ where
     /// Like [`Self::refresh_discovery`]; `progress` is marked once the discovery run
     /// is stored, so an audit entry can record a refresh whose reload fails afterwards.
     ///
-    /// With `expected_owner`, the result is stored only while the server still
-    /// has that owner (`Some(None)` for the platform). Discovery can take a
-    /// while, so a transfer in between makes the refresh a conflict.
+    /// With `expected_server`, the server the caller authorized, the refresh
+    /// runs only if the server still matches it when loaded, and its result is
+    /// stored only while it still does. Discovery can take a while, so a
+    /// transfer or settings change in between makes the refresh a conflict.
     pub async fn refresh_discovery_tracked(
         &self,
         mcp_server_id: Uuid,
         progress: &AuditProgress,
-        expected_owner: Option<Option<Uuid>>,
+        expected_server: Option<McpServerOwnershipGuard>,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
         let server = self.server_or_not_found(mcp_server_id).await?;
-        // With an expected owner, every result is stored only while the server
-        // keeps the owner, visibility, URL and auth settings read here, checked
-        // under the store's write lock.
-        let expected_server = match expected_owner {
-            Some(owner) if owner != server.ownership.owner_team_id => {
-                return Err(owner_changed_during_discovery(mcp_server_id));
-            }
-            Some(_) => Some(McpServerOwnershipGuard::of(&server).with_auth_settings(&server)),
-            None => None,
-        };
+        // The server must still be the one the caller authorized: the same
+        // owner, visibility, URL and auth settings. The result is stored only
+        // while it still is, checked under the store's write lock.
+        if let Some(guard) = &expected_server
+            && !guard.matches(&gateway_core::McpServerGuardRow::of(&server))
+        {
+            return Err(owner_changed_during_discovery(mcp_server_id));
+        }
         let persist = DiscoveryPersist {
             progress,
             expected_server,

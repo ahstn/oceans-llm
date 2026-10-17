@@ -4,7 +4,7 @@ use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use crate::shared::{json_object_from_str, parse_uuid, subject_team_changed, unix_to_datetime};
 use gateway_core::Updated;
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
@@ -172,6 +172,60 @@ async fn load_toolset(pool: &PgPool, toolset_id: Uuid) -> Result<McpToolsetRecor
     find_toolset(pool, toolset_id)
         .await?
         .ok_or_else(|| StoreError::NotFound(format!("MCP toolset `{toolset_id}` was not found")))
+}
+
+/// The subject's team, read inside a grant write with the rows that decide it
+/// held `FOR SHARE`, so a team move waits for the grant or is seen by it.
+async fn subject_team_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    subject_kind: McpToolGrantSubjectKind,
+    subject_id: Uuid,
+) -> Result<Option<Uuid>, StoreError> {
+    let user_team = async |tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: String| {
+        sqlx::query_scalar::<_, String>(
+            "SELECT team_id FROM team_memberships WHERE user_id = $1 FOR SHARE",
+        )
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(to_query_error)
+    };
+    let sa_team = async |tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: String| {
+        sqlx::query_scalar::<_, String>(
+            "SELECT team_id FROM service_accounts WHERE service_account_id = $1 FOR SHARE",
+        )
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(to_query_error)
+    };
+    let team = match subject_kind {
+        McpToolGrantSubjectKind::Team => Some(subject_id.to_string()),
+        McpToolGrantSubjectKind::User => user_team(tx, subject_id.to_string()).await?,
+        McpToolGrantSubjectKind::ServiceAccount => sa_team(tx, subject_id.to_string()).await?,
+        McpToolGrantSubjectKind::ApiKey => {
+            let Some(row) = sqlx::query(
+                "SELECT owner_team_id, owner_service_account_id, owner_user_id FROM api_keys WHERE id = $1 FOR SHARE",
+            )
+            .bind(subject_id.to_string())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(to_query_error)?
+            else {
+                return Ok(None);
+            };
+            let owner_team: Option<String> = row.try_get(0).map_err(to_query_error)?;
+            let owner_sa: Option<String> = row.try_get(1).map_err(to_query_error)?;
+            let owner_user: Option<String> = row.try_get(2).map_err(to_query_error)?;
+            match (owner_team, owner_sa, owner_user) {
+                (Some(team), _, _) => Some(team),
+                (None, Some(sa), _) => sa_team(tx, sa).await?,
+                (None, None, Some(user)) => user_team(tx, user).await?,
+                (None, None, None) => None,
+            }
+        }
+    };
+    team.as_deref().map(parse_uuid).transpose()
 }
 
 #[async_trait]
@@ -373,6 +427,11 @@ impl McpAccessRepository for PostgresStore {
             let tool_id =
                 (grant.target_kind == McpToolGrantTargetKind::Tool).then_some(grant.target_id);
             check_ownership_guard(&mut tx, guard, tool_id).await?;
+        }
+        if let Some(expected) = grant.expected_subject_team
+            && subject_team_locked(&mut tx, grant.subject_kind, grant.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
         }
         // `RETURNING` gives the row this statement wrote, so `created` cannot be
         // confused by a concurrent revoke and re-grant.

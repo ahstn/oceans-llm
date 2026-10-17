@@ -15,7 +15,8 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 /// placeholders for the server and team IDs. Each subject's team follows the
 /// same precedence as the service's subject lookup, so both agree on who is
 /// inside the team. An API key that is revoked, has no MCP scope, or whose
-/// server list leaves this server out holds no access, as at runtime.
+/// server list leaves this server out holds no access, as at runtime, and nor
+/// does a disabled service account or a key it owns.
 pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
     format!(
         r#"
@@ -34,7 +35,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                 CASE g.subject_kind
                     WHEN 'team' THEN st.team_id IS NOT NULL
                     WHEN 'user' THEN su.user_id IS NOT NULL
-                    WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL
+                    WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL AND ssa.status = 'active'
                     WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL
                         -- The key may call MCP and this server: NULL lists allow all.
                         AND (k.scopes IS NULL
@@ -45,7 +46,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                                 LIKE ('% ' || replace(replace(srv.server_key, '%', '\%'), '_', '\_') || ' %') ESCAPE '\')
                         AND CASE
                         WHEN k.owner_team_id IS NOT NULL THEN TRUE
-                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL
+                        WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL AND ksa.status = 'active'
                         WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
                         ELSE TRUE
                     END
@@ -82,6 +83,13 @@ pub(crate) fn foreign_credentials_conflict(count: i64) -> StoreError {
     StoreError::Conflict(format!(
         "{count} user or secret-reference credential binding(s) would be sent to the new URL; revoke them before changing server_url"
     ))
+}
+
+/// A grant write whose subject changed team since it was authorized.
+pub(crate) fn subject_team_changed() -> StoreError {
+    StoreError::Conflict(
+        "the grant subject moved to another team; reload and try again".to_string(),
+    )
 }
 
 /// A tool set write that names a tool of a team-only server. Tool sets are

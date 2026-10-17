@@ -1909,6 +1909,7 @@ pub(crate) mod tests {
             target_id: tool.mcp_tool_id,
             updated_at: now,
             expected_server: None,
+            expected_subject_team: None,
         };
         let revoked_subject = Uuid::new_v4();
         store
@@ -2354,6 +2355,7 @@ pub(crate) mod tests {
                     target_id: tool.mcp_tool_id,
                     updated_at: now,
                     expected_server: None,
+                    expected_subject_team: None,
                 })
                 .await
                 .expect("grant subject");
@@ -2443,6 +2445,7 @@ pub(crate) mod tests {
                     target_id: underscored_tool.mcp_tool_id,
                     updated_at: now,
                     expected_server: None,
+                    expected_subject_team: None,
                 })
                 .await
                 .expect("grant");
@@ -2455,6 +2458,40 @@ pub(crate) mod tests {
                 "{listed}"
             );
         }
+        // A disabled service account cannot authenticate, so its grant strands
+        // nothing either.
+        let other_team = store
+            .create_team("mcp-other-team", "MCP Other Team")
+            .await
+            .expect("other team");
+        let disabled = store
+            .create_service_account(other_team.team_id, "mcp-disabled-bot", "Disabled bot", now)
+            .await
+            .expect("service account");
+        store
+            .disable_service_account(disabled.service_account_id, now)
+            .await
+            .expect("disable");
+        store
+            .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                subject_kind: Kind::ServiceAccount,
+                subject_id: disabled.service_account_id,
+                target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                target_id: underscored_tool.mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .expect("grant");
+        assert_eq!(
+            store
+                .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                .await
+                .expect("count"),
+            1,
+            "only the exact key still counts"
+        );
     }
 
     /// Grant, credential and tool set writes checked against the server's
@@ -2493,6 +2530,7 @@ pub(crate) mod tests {
             target_id: tool_id,
             updated_at: now,
             expected_server: Some(expected_server),
+            expected_subject_team: None,
         };
         let grants_for_subject = || async {
             store
@@ -2525,8 +2563,19 @@ pub(crate) mod tests {
             0,
             "a refused grant writes nothing"
         );
+        // A subject checked in one team and found in another is refused: the
+        // subject here belongs to no team.
+        let mut moved_subject = grant(current.clone());
+        moved_subject.expected_subject_team = Some(Some(team_id));
+        assert!(matches!(
+            store.upsert_mcp_tool_grant(&moved_subject).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(grants_for_subject().await, 0);
+        let mut pinned = grant(current.clone());
+        pinned.expected_subject_team = Some(None);
         let (_, created) = store
-            .upsert_mcp_tool_grant(&grant(current.clone()))
+            .upsert_mcp_tool_grant(&pinned)
             .await
             .expect("grant under the current owner");
         assert!(created);

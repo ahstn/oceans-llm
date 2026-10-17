@@ -135,6 +135,7 @@ async fn seed_drive(
             target_id: tools[0].mcp_tool_id,
             updated_at: now,
             expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("tool grant");

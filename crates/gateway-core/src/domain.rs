@@ -2241,6 +2241,10 @@ pub struct UpsertMcpToolGrantRecord {
     /// When set, the grant is written only while the target tool belongs to
     /// this server and the server still has this owner and visibility.
     pub expected_server: Option<McpServerOwnershipGuard>,
+    /// When set, the subject's team (`None` for no team) the grant was
+    /// authorized against, checked in the same transaction: a user or key that
+    /// moved team in between is not granted on the old team's terms.
+    pub expected_subject_team: Option<Option<Uuid>>,
 }
 
 /// Which tool columns an access resolution loads.

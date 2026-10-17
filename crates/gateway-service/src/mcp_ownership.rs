@@ -323,16 +323,17 @@ where
     /// writes are bounded by ownership; tag-based grants call
     /// [`Self::authorize_server_grant`] for each server a tag reaches.
     ///
-    /// Returns the server a tool grant was authorized against. The caller
-    /// passes it to the store as a [`gateway_core::McpServerOwnershipGuard`], so the grant
-    /// is written only while the server still has that owner and visibility.
+    /// Returns the server a tool grant was authorized against and the
+    /// subject's team at that moment. The caller passes both to the store (a
+    /// [`gateway_core::McpServerOwnershipGuard`] and the expected subject team),
+    /// so the grant is written only while neither has changed.
     pub async fn authorize_grant(
         &self,
         scope: &McpAdminScope,
         subject: McpGrantSubject,
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
-    ) -> Result<Option<ExternalMcpServerRecord>, GatewayError> {
+    ) -> Result<Option<(ExternalMcpServerRecord, Option<Uuid>)>, GatewayError> {
         match target_kind {
             McpToolGrantTargetKind::Toolset => {
                 if scope.is_platform_admin() {
@@ -343,19 +344,20 @@ where
             }
             McpToolGrantTargetKind::Tool => {
                 let server = self.tool_server(scope, target_id).await?;
-                self.authorize_server_grant(scope, &server, subject).await?;
-                Ok(Some(server))
+                let subject_team = self.authorize_server_grant(scope, &server, subject).await?;
+                Ok(Some((server, subject_team)))
             }
         }
     }
 
-    /// Checks that `subject` may be granted tools of `server` by the caller.
+    /// Checks that `subject` may be granted tools of `server` by the caller, and
+    /// returns the subject's team the check relied on.
     pub async fn authorize_server_grant(
         &self,
         scope: &McpAdminScope,
         server: &ExternalMcpServerRecord,
         subject: McpGrantSubject,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Option<Uuid>, GatewayError> {
         if !scope.can_manage(server) {
             return Err(forbidden());
         }
@@ -373,7 +375,7 @@ where
                 server.server_key
             )));
         }
-        Ok(())
+        Ok(subject_team)
     }
 
     /// Checks a grant revoke. A team admin may revoke any grant on their own

@@ -321,13 +321,7 @@ pub async fn update_mcp_server(
                 .confirm_no_stranded_access(server_id, team_id)
                 .await
             {
-                match service
-                    .transfer_ownership_if(server_id, existing.ownership.clone(), Some(narrowed))
-                    .await
-                {
-                    Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
-                    Err(other) => return Err(other.into()),
-                }
+                undo_transfer(&state, &service, server_id, &existing.ownership, narrowed).await?;
                 return Err(error.into());
             }
             expected_visibility = gateway_core::McpServerVisibility::Team;
@@ -372,17 +366,14 @@ pub async fn update_mcp_server(
                     visibility: gateway_core::McpServerVisibility::Team,
                     ..existing.ownership.clone()
                 };
-                match service
-                    .transfer_ownership_if(
-                        server_id,
-                        existing.ownership.clone(),
-                        Some(narrowed_ownership),
-                    )
-                    .await
-                {
-                    Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
-                    Err(other) => return Err(other.into()),
-                }
+                undo_transfer(
+                    &state,
+                    &service,
+                    server_id,
+                    &existing.ownership,
+                    narrowed_ownership,
+                )
+                .await?;
             }
             return Err(error.into());
         }
@@ -526,19 +517,14 @@ pub async fn transfer_mcp_server_ownership(
         .confirm_no_stranded_access(server_id, team_id)
         .await
     {
-        // Undo only our own transfer: a newer one, which already ran its own
-        // check, wins and is left in place.
-        match service
-            .transfer_ownership_if(
-                server_id,
-                previous.ownership.clone(),
-                Some(update.current.ownership.clone()),
-            )
-            .await
-        {
-            Ok(_) | Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {}
-            Err(other) => return Err(other.into()),
-        }
+        undo_transfer(
+            &state,
+            &service,
+            server_id,
+            &previous.ownership,
+            update.current.ownership.clone(),
+        )
+        .await?;
         return Err(error.into());
     }
     // The store writes nothing when the ownership already matches.
@@ -558,6 +544,45 @@ pub async fn transfer_mcp_server_ownership(
     }
     let server = present_server(&state, &scope, update.current).await?;
     Ok(Json(envelope(McpServerPayload { server })))
+}
+
+/// Undoes a transfer or narrowing that would strand access, back to
+/// `previous`. Only the owner and visibility it wrote must still hold: a
+/// contact edit since does not stop the undo, while a newer transfer, which
+/// ran its own check, wins and is left in place. An undo that cannot land is
+/// reported rather than leaving the server moved behind a failed request.
+async fn undo_transfer(
+    state: &AppState,
+    service: &McpRegistryService<AnyStore>,
+    server_id: Uuid,
+    previous: &gateway_core::McpServerOwnership,
+    mut written: gateway_core::McpServerOwnership,
+) -> Result<(), AppError> {
+    for _ in 0..3 {
+        match service
+            .transfer_ownership_if(server_id, previous.clone(), Some(written.clone()))
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {
+                let Some(current) = state.store.get_external_mcp_server(server_id).await? else {
+                    return Ok(());
+                };
+                if current.ownership.owner_team_id != written.owner_team_id
+                    || current.ownership.visibility != written.visibility
+                {
+                    return Ok(());
+                }
+                written = current.ownership;
+            }
+            Err(other) => return Err(other.into()),
+        }
+    }
+    Err(AppError(GatewayError::Store(
+        gateway_core::StoreError::Conflict(format!(
+            "external MCP server `{server_id}` kept changing while an ownership change was undone; check its owner and visibility"
+        )),
+    )))
 }
 
 fn ownership_audit_summary(ownership: &gateway_core::McpServerOwnership) -> serde_json::Value {
@@ -590,6 +615,10 @@ pub async fn list_mcp_server_tools(
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
     let viewer = require_mcp_viewer(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
+    let admin_scope = match &viewer {
+        McpViewer::Admin(scope) => Some(*scope),
+        McpViewer::Member { .. } => None,
+    };
     let member_tools = match viewer {
         McpViewer::Admin(scope) => {
             ownership(&state).visible_server(&scope, server_id).await?;
@@ -635,6 +664,11 @@ pub async fn list_mcp_server_tools(
         })
         .map(map_tool)
         .collect();
+    // Checked again after the read: a transfer to another team in between must
+    // not hand the former owner the new owner's tools.
+    if let Some(scope) = &admin_scope {
+        ownership(&state).visible_server(scope, server_id).await?;
+    }
     Ok(Json(envelope(McpToolsPayload { items })))
 }
 
@@ -739,7 +773,12 @@ pub async fn refresh_mcp_server_discovery(
     let started_at = Instant::now();
     let progress = AuditProgress::default();
     let result = service
-        .refresh_discovery_tracked(server_id, &progress, Some(server.ownership.owner_team_id))
+        .refresh_discovery_tracked(
+            server_id,
+            &progress,
+            // Pinned to the server the destination check above ran against.
+            Some(McpServerOwnershipGuard::of(&server).with_auth_settings(&server)),
+        )
         .await;
     let latency_seconds = started_at.elapsed().as_secs_f64();
     match result {
@@ -1086,6 +1125,7 @@ pub async fn upsert_mcp_grant(
         target_id: request.target_id,
         updated_at: OffsetDateTime::now_utc(),
         expected_server: None,
+        expected_subject_team: None,
     };
     let authorized_server = ownership(&state)
         .authorize_grant(
@@ -1099,9 +1139,13 @@ pub async fn upsert_mcp_grant(
         )
         .await?;
     // The store writes the grant only while the server still has the owner
-    // and visibility it was authorized against, so a transfer or narrowing in
-    // between is a conflict rather than a grant the new owner never allowed.
-    record.expected_server = authorized_server.as_ref().map(McpServerOwnershipGuard::of);
+    // and visibility it was authorized against, and the subject is still in
+    // the team it was checked in, so a transfer, narrowing or team move in
+    // between is a conflict rather than a grant nobody allowed.
+    if let Some((server, subject_team)) = &authorized_server {
+        record.expected_server = Some(McpServerOwnershipGuard::of(server));
+        record.expected_subject_team = Some(*subject_team);
+    }
     let (grant, created) = state.store.upsert_mcp_tool_grant(&record).await?;
     let grant_id = grant.grant_id;
     let grant = map_grant(grant);

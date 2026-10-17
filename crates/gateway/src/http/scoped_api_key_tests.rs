@@ -360,6 +360,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
             target_id: tools[0].mcp_tool_id,
             updated_at: now,
             expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("grant");
