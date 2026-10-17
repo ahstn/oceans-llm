@@ -920,6 +920,15 @@ pub async fn preview_mcp_effective_access(
         )
         .into());
     }
+    // A key preview already includes the key's owner and team, and its scope
+    // limits apply to everything it resolves. A key mixed with another
+    // subject describes no real caller.
+    if query.api_key_id.is_some() && selected.len() > 1 {
+        return Err(GatewayError::InvalidRequest(
+            "an API key access preview cannot include other subjects; its owner and team are included automatically".to_string(),
+        )
+        .into());
+    }
     // Preview what a real caller gets: a key with its owner and team, a user
     // or service account with its team.
     let preview = gateway_service::McpAccess::new(state.store.clone())

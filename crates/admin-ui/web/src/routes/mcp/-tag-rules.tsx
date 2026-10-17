@@ -43,6 +43,13 @@ type RuleForm = {
   effect: string
 }
 
+/** A preview with the server, tag, and effect it was requested for. */
+type RulePreview = { key: string; data: McpTagRulePreviewPayload }
+
+function previewKey(form: RuleForm) {
+  return `${form.effect}|${form.server_id}|${form.tag}`
+}
+
 /**
  * Rules that grant or deny tools by tag. Include rules cover tools discovered
  * later; exclude rules win over every grant the subject's callers hold.
@@ -71,7 +78,9 @@ export function TagRulesSection({
     tag: 'read_only',
     effect: 'include',
   })
-  const [preview, setPreview] = useState<McpTagRulePreviewPayload | null>(null)
+  const [requested, setRequested] = useState<RulePreview | null>(null)
+  // A response for an earlier server, tag, or effect is never shown.
+  const preview = requested?.key === previewKey(form) ? requested.data : null
 
   const serverNameById = useMemo(
     () => new Map(servers.map((server) => [server.id, server.display_name])),
@@ -102,7 +111,6 @@ export function TagRulesSection({
       }
       return merged
     })
-    setPreview(null)
   }
 
   function serverIdForRequest() {
@@ -114,12 +122,13 @@ export function TagRulesSection({
       toast.error('Select a server and a tag to preview')
       return
     }
+    const key = previewKey(form)
     startTransition(async () => {
       try {
         const response = await getMcpTagRulePreview({
           data: { server_id: serverIdForRequest(), tag: form.tag, effect: form.effect },
         })
-        setPreview(response.data)
+        setRequested({ key, data: response.data })
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to preview the rule')
       }
@@ -144,7 +153,7 @@ export function TagRulesSection({
           },
         })
         toast.success('Tag rule saved')
-        setPreview(null)
+        setRequested(null)
         await router.invalidate()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to save the tag rule')

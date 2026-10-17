@@ -502,9 +502,28 @@ impl McpAccessRepository for LibsqlStore {
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
-        let rules = load_tag_rule_set(&self.connection, subjects).await?;
-        self.resolve_access_with_rules(subjects, mcp_server_id, projection, &rules)
-            .await
+        let (exposed_tool_count, has_rules) =
+            active_tool_count(&self.connection, mcp_server_id, subjects).await?;
+        let rules = if has_rules {
+            load_tag_rule_set(&self.connection, subjects).await?
+        } else {
+            McpTagRuleSet::default()
+        };
+        let allowed_tools = self
+            .allowed_tools_with_rules(subjects, mcp_server_id, projection, &rules)
+            .await?;
+        let referenced_server_count = allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64;
+        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+        Ok(McpAccessResolution {
+            allowed_tools,
+            referenced_server_count,
+            exposed_tool_count,
+            filtered_tool_count,
+        })
     }
 
     async fn has_mcp_server_grant(
@@ -512,26 +531,23 @@ impl McpAccessRepository for LibsqlStore {
         subjects: &[McpGrantSubject],
         mcp_server_id: Uuid,
     ) -> Result<bool, StoreError> {
-        // Rules can add or remove tools, so a caller with any rule gets the
-        // full resolution; everyone else keeps the single `EXISTS` query.
+        // One query answers both questions. Rules can add or remove tools, so
+        // a caller with any rule gets the full resolution instead.
+        let (granted, has_rules) =
+            server_grant_exists(&self.connection, subjects, mcp_server_id).await?;
+        if !has_rules {
+            return Ok(granted);
+        }
         let rules = load_tag_rule_set(&self.connection, subjects).await?;
-        if !rules.is_empty() {
-            let resolution = self
-                .resolve_access_with_rules(
-                    subjects,
-                    Some(mcp_server_id),
-                    McpToolProjection::Access,
-                    &rules,
-                )
-                .await?;
-            return Ok(!resolution.allowed_tools.is_empty());
-        }
-        for subject in subjects {
-            if server_grant_exists(&self.connection, subject, mcp_server_id).await? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        let allowed_tools = self
+            .allowed_tools_with_rules(
+                subjects,
+                Some(mcp_server_id),
+                McpToolProjection::Access,
+                &rules,
+            )
+            .await?;
+        Ok(!allowed_tools.is_empty())
     }
 
     async fn resolve_mcp_catalog_access_for_subjects(
@@ -539,8 +555,13 @@ impl McpAccessRepository for LibsqlStore {
         subjects: &[McpGrantSubject],
         server_key: Option<&str>,
     ) -> Result<McpCatalogAccessResolution, StoreError> {
-        let exposed_tool_count = active_catalog_tool_count(&self.connection, server_key).await?;
-        let rules = load_tag_rule_set(&self.connection, subjects).await?;
+        let (exposed_tool_count, has_rules) =
+            active_catalog_tool_count(&self.connection, server_key, subjects).await?;
+        let rules = if has_rules {
+            load_tag_rule_set(&self.connection, subjects).await?
+        } else {
+            McpTagRuleSet::default()
+        };
         let mut tools_by_id: HashMap<Uuid, McpCatalogToolRecord> = HashMap::new();
 
         for subject in subjects {
@@ -606,15 +627,23 @@ impl McpAccessRepository for LibsqlStore {
     async fn list_active_mcp_tools(
         &self,
         mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let sql = format!(
-            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1) ORDER BY s.server_key, t.upstream_name"
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1) AND (?2 IS NULL OR (t.mcp_server_id, t.upstream_name) > (?2, ?3)) ORDER BY t.mcp_server_id, t.upstream_name LIMIT ?4"
         );
+        let (after_server, after_name) = after.unzip();
         let mut rows = self
             .connection
             .query(
                 &sql,
-                libsql::params![mcp_server_id.map(|id| id.to_string())],
+                libsql::params![
+                    mcp_server_id.map(|id| id.to_string()),
+                    after_server.map(|id| id.to_string()),
+                    after_name,
+                    i64::from(limit),
+                ],
             )
             .await
             .map_err(to_query_error)?;
@@ -752,15 +781,14 @@ fn decode_tag_rule(row: &libsql::Row) -> Result<McpToolTagRuleRecord, StoreError
 }
 
 impl LibsqlStore {
-    /// Access resolution with the subjects' tag rules already loaded.
-    async fn resolve_access_with_rules(
+    /// The subjects' allowed tools, with their tag rules already loaded.
+    async fn allowed_tools_with_rules(
         &self,
         subjects: &[McpGrantSubject],
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
         rules: &McpTagRuleSet,
-    ) -> Result<McpAccessResolution, StoreError> {
-        let exposed_tool_count = active_tool_count(&self.connection, mcp_server_id).await?;
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let columns = tool_columns(projection);
         let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
 
@@ -796,19 +824,7 @@ impl LibsqlStore {
                 .cmp(&b.mcp_server_id)
                 .then_with(|| a.upstream_name.cmp(&b.upstream_name))
         });
-        let referenced_server_count = allowed_tools
-            .iter()
-            .map(|tool| tool.mcp_server_id)
-            .collect::<std::collections::HashSet<_>>()
-            .len() as i64;
-        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
-
-        Ok(McpAccessResolution {
-            allowed_tools,
-            referenced_server_count,
-            exposed_tool_count,
-            filtered_tool_count,
-        })
+        Ok(allowed_tools)
     }
 }
 
@@ -820,30 +836,12 @@ async fn load_tag_rule_set(
     if subjects.is_empty() {
         return Ok(McpTagRuleSet::default());
     }
-    let matches = (0..subjects.len())
-        .map(|index| {
-            format!(
-                "(subject_kind = ?{} AND subject_id = ?{})",
-                index * 2 + 1,
-                index * 2 + 2
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" OR ");
+    let matches = subject_matches("subject_kind", "subject_id", subjects.len(), 1);
     let sql = format!(
         "SELECT {TAG_RULE_COLUMNS} FROM mcp_tool_tag_rules WHERE is_active = 1 AND ({matches})"
     );
-    let params = subjects
-        .iter()
-        .flat_map(|subject| {
-            [
-                subject.subject_kind.as_str().to_string(),
-                subject.subject_id.to_string(),
-            ]
-        })
-        .collect::<Vec<_>>();
     let mut rows = connection
-        .query(&sql, libsql::params_from_iter(params))
+        .query(&sql, libsql::params_from_iter(subject_params(subjects)))
         .await
         .map_err(to_query_error)?;
     let mut rules = Vec::new();
@@ -851,6 +849,40 @@ async fn load_tag_rule_set(
         rules.push(decode_tag_rule(&row)?);
     }
     Ok(McpTagRuleSet::new(rules))
+}
+
+/// `(kind = ?n AND id = ?n+1) OR ...` for `count` subjects, numbering from
+/// `first`; `0` when there are none. Bind the values with `subject_params`.
+fn subject_matches(kind: &str, id: &str, count: usize, first: usize) -> String {
+    if count == 0 {
+        return "0".to_string();
+    }
+    (0..count)
+        .map(|index| {
+            let at = first + index * 2;
+            format!("({kind} = ?{at} AND {id} = ?{})", at + 1)
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
+fn subject_params(subjects: &[McpGrantSubject]) -> Vec<libsql::Value> {
+    subjects
+        .iter()
+        .flat_map(|subject| {
+            [
+                libsql::Value::Text(subject.subject_kind.as_str().to_string()),
+                libsql::Value::Text(subject.subject_id.to_string()),
+            ]
+        })
+        .collect()
+}
+
+/// Whether any of the subjects has an active tag rule, as a SQL expression
+/// over subject parameters numbered from `first`.
+fn rules_exist_sql(count: usize, first: usize) -> String {
+    let matches = subject_matches("subject_kind", "subject_id", count, first);
+    format!("EXISTS (SELECT 1 FROM mcp_tool_tag_rules WHERE is_active = 1 AND ({matches}))")
 }
 
 /// `?1, ?2, ...` placeholders for a list of server IDs.
@@ -920,71 +952,80 @@ async fn server_catalog_tools(
     Ok(records)
 }
 
+/// Active catalog tools, and whether any subject has a tag rule, so callers
+/// without rules skip loading them.
 async fn active_catalog_tool_count(
     connection: &libsql::Connection,
     server_key: Option<&str>,
-) -> Result<i64, StoreError> {
-    let mut rows = connection
-        .query(
-            r#"
-            SELECT COUNT(*)
-            FROM external_mcp_tools t
-            JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
-            WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR s.server_key = ?1)
-            "#,
-            libsql::params![server_key],
-        )
-        .await
-        .map_err(to_query_error)?;
-    let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
-        StoreError::Unexpected("active MCP catalog tool count returned no row".to_string())
-    })?;
-    row.get(0).map_err(to_query_error)
+    subjects: &[McpGrantSubject],
+) -> Result<(i64, bool), StoreError> {
+    let sql = format!(
+        "SELECT (SELECT COUNT(*) FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR s.server_key = ?1)), {}",
+        rules_exist_sql(subjects.len(), 2)
+    );
+    let params = std::iter::once(server_key.map_or(libsql::Value::Null, |key| {
+        libsql::Value::Text(key.to_string())
+    }))
+    .chain(subject_params(subjects));
+    count_and_rules(connection, &sql, params, "active MCP catalog tool count").await
 }
 
+/// Active tools, and whether any subject has a tag rule, so callers without
+/// rules skip loading them.
 async fn active_tool_count(
     connection: &libsql::Connection,
     mcp_server_id: Option<Uuid>,
-) -> Result<i64, StoreError> {
-    let mut rows = connection
-        .query(
-            r#"
-            SELECT COUNT(*)
-            FROM external_mcp_tools t
-            JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
-            WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1)
-            "#,
-            libsql::params![mcp_server_id.map(|value| value.to_string())],
-        )
-        .await
-        .map_err(to_query_error)?;
-    let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
-        StoreError::Unexpected("active MCP tool count returned no row".to_string())
-    })?;
-    row.get(0).map_err(to_query_error)
+    subjects: &[McpGrantSubject],
+) -> Result<(i64, bool), StoreError> {
+    let sql = format!(
+        "SELECT (SELECT COUNT(*) FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1)), {}",
+        rules_exist_sql(subjects.len(), 2)
+    );
+    let params = std::iter::once(mcp_server_id.map_or(libsql::Value::Null, |id| {
+        libsql::Value::Text(id.to_string())
+    }))
+    .chain(subject_params(subjects));
+    count_and_rules(connection, &sql, params, "active MCP tool count").await
 }
 
+/// Whether any subject holds a grant on the server, and whether any subject
+/// has a tag rule, in one query.
 async fn server_grant_exists(
     connection: &libsql::Connection,
-    subject: &McpGrantSubject,
+    subjects: &[McpGrantSubject],
     mcp_server_id: Uuid,
-) -> Result<bool, StoreError> {
+) -> Result<(bool, bool), StoreError> {
+    let grants = subject_matches("g.subject_kind", "g.subject_id", subjects.len(), 2);
+    let sql = format!(
+        "SELECT EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND ({grants}) AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?1) OR EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND ({grants}) AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?1), {}",
+        rules_exist_sql(subjects.len(), 2)
+    );
+    let params = std::iter::once(libsql::Value::Text(mcp_server_id.to_string()))
+        .chain(subject_params(subjects));
+    let (granted, has_rules) =
+        count_and_rules(connection, &sql, params, "MCP server grant check").await?;
+    Ok((granted != 0, has_rules))
+}
+
+/// Runs a query returning an integer and a rule-existence flag.
+async fn count_and_rules(
+    connection: &libsql::Connection,
+    sql: &str,
+    params: impl Iterator<Item = libsql::Value>,
+    what: &str,
+) -> Result<(i64, bool), StoreError> {
     let mut rows = connection
-        .query(
-            "SELECT EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?3) OR EXISTS (SELECT 1 FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND t.mcp_server_id = ?3)",
-            libsql::params![
-                subject.subject_kind.as_str(),
-                subject.subject_id.to_string(),
-                mcp_server_id.to_string(),
-            ],
-        )
+        .query(sql, libsql::params_from_iter(params))
         .await
         .map_err(to_query_error)?;
-    let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
-        StoreError::Unexpected("MCP server grant check returned no row".to_string())
-    })?;
-    let exists: i64 = row.get(0).map_err(to_query_error)?;
-    Ok(exists != 0)
+    let row = rows
+        .next()
+        .await
+        .map_err(to_query_error)?
+        .ok_or_else(|| StoreError::Unexpected(format!("{what} returned no row")))?;
+    let value: i64 = row.get(0).map_err(to_query_error)?;
+    let has_rules: i64 = row.get(1).map_err(to_query_error)?;
+    Ok((value, has_rules != 0))
 }
 
 fn tool_columns(projection: McpToolProjection) -> &'static str {

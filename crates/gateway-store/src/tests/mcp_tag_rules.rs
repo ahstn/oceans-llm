@@ -395,6 +395,67 @@ where
             .iter()
             .any(|rule| rule.rule_id == include.rule_id)
     );
+
+    assert_active_tool_pages(store).await;
+}
+
+/// Paging through active tools two at a time yields the same tools, in the
+/// same order, as one large page.
+async fn assert_active_tool_pages<S>(store: &S)
+where
+    S: McpAccessRepository + Sync,
+{
+    let ids = |tools: &[ExternalMcpToolRecord]| {
+        tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>()
+    };
+    let all = store
+        .list_active_mcp_tools(None, None, 1_000)
+        .await
+        .expect("all tools");
+    assert!(all.len() > 2, "need more than one page");
+    let mut paged = Vec::new();
+    let mut after: Option<(Uuid, String)> = None;
+    loop {
+        let page = store
+            .list_active_mcp_tools(
+                None,
+                after
+                    .as_ref()
+                    .map(|(server, name)| (*server, name.as_str())),
+                2,
+            )
+            .await
+            .expect("page");
+        after = page
+            .last()
+            .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
+        let done = page.len() < 2;
+        paged.extend(page);
+        if done {
+            break;
+        }
+    }
+    assert_eq!(ids(&paged), ids(&all));
+
+    let server_id = all[0].mcp_server_id;
+    let one_server = store
+        .list_active_mcp_tools(Some(server_id), None, 1_000)
+        .await
+        .expect("server tools");
+    assert!(
+        one_server
+            .iter()
+            .all(|tool| tool.mcp_server_id == server_id)
+    );
+    assert_eq!(
+        one_server.len(),
+        all.iter()
+            .filter(|tool| tool.mcp_server_id == server_id)
+            .count()
+    );
 }
 
 #[tokio::test]

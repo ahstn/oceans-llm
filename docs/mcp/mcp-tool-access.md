@@ -64,7 +64,9 @@ The Access tab supports:
 
 - creating a grant from a real subject picker and a real tool/toolset picker
 - revoking existing grants
-- previewing effective access for a subject, optionally scoped to one server
+- previewing effective access for one subject, optionally scoped to one server.
+  An API key preview includes the key's owner and team and applies the key's
+  scopes and server list, so it cannot be combined with another subject.
 
 Use direct tool grants for exceptions. Prefer toolset grants when teams, service
 accounts, users, or API keys need the same bundle.

@@ -316,6 +316,20 @@ async fn previews_match_runtime_resolution() {
     let (_, access) = harness.admin(Method::GET, &preview, None).await;
     assert_eq!(access["data"]["tools"][0]["id"], tool_id);
 
+    // A key's scope limits cover everything it resolves, so a key cannot be
+    // previewed alongside an unrelated subject.
+    let (status, body) = harness
+        .admin(
+            Method::GET,
+            &format!(
+                "/api/v1/admin/mcp/effective-access?api_key_id={}&user_id={user_id}",
+                Uuid::new_v4()
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
     // `read_file` declares readOnlyHint false, so it is destructive.
     let (status, body) = harness
         .admin(

@@ -21,6 +21,8 @@ pub struct McpToolPolicyService<R> {
 /// Most tools a tag rule preview returns. A preview across every server stops
 /// reading servers once it has this many matches.
 pub const MAX_TAG_RULE_PREVIEW_MATCHES: usize = 200;
+/// Candidate tools read per query while building a preview.
+const TAG_RULE_PREVIEW_PAGE_SIZE: u32 = 256;
 
 /// The tools a tag rule would select.
 #[derive(Debug, Clone, Default)]
@@ -149,23 +151,43 @@ where
         if let Some(server_id) = mcp_server_id {
             self.rule_server(server_id).await?;
         }
-        // One query for active tools on active servers, the same candidates
-        // runtime resolution reads; a disabled server yields nothing.
+        // Active tools on active servers, the same candidates runtime
+        // resolution reads, read a page at a time until the cap is passed.
+        // A disabled server yields nothing.
         let mut preview = McpTagRulePreview::default();
-        for tool in self.repo.list_active_mcp_tools(mcp_server_id).await? {
-            let tags = effective_tags(&tool);
-            if !tags.contains(&tag) {
-                continue;
+        let mut after: Option<(Uuid, String)> = None;
+        loop {
+            let page = self
+                .repo
+                .list_active_mcp_tools(
+                    mcp_server_id,
+                    after
+                        .as_ref()
+                        .map(|(server, name)| (*server, name.as_str())),
+                    TAG_RULE_PREVIEW_PAGE_SIZE,
+                )
+                .await?;
+            let last_page = page.len() < TAG_RULE_PREVIEW_PAGE_SIZE as usize;
+            after = page
+                .last()
+                .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
+            for tool in page {
+                let tags = effective_tags(&tool);
+                if !tags.contains(&tag) {
+                    continue;
+                }
+                if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
+                    preview.truncated = true;
+                    return Ok(preview);
+                }
+                preview.matches.push(McpTagRuleMatch {
+                    tool,
+                    effective_tags: tags.into_iter().collect(),
+                });
             }
-            if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
-                preview.truncated = true;
-                break;
+            if last_page {
+                return Ok(preview);
             }
-            preview.matches.push(McpTagRuleMatch {
-                tool,
-                effective_tags: tags.into_iter().collect(),
-            });
         }
-        Ok(preview)
     }
 }

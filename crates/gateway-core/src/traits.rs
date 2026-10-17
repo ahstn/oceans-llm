@@ -1189,11 +1189,15 @@ pub trait McpAccessRepository: Send + Sync {
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
 
-    /// Active tools on active servers, on one server or every server, in one
-    /// query. Tag rule previews read their candidates from it.
+    /// One page of active tools on active servers, on one server or every
+    /// server, ordered by server id then upstream name. `after` is the last
+    /// `(mcp_server_id, upstream_name)` of the previous page. Tag rule
+    /// previews read their candidates from it.
     async fn list_active_mcp_tools(
         &self,
         mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
 
     async fn list_mcp_tool_tag_rules(

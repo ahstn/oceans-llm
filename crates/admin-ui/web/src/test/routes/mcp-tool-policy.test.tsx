@@ -1,12 +1,14 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpToolView } from '@/types/api'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
+const saveMcpToolTagsMock = vi.fn()
+
 vi.mock('@/server/mcp-policy-data.functions', () => ({
-  saveMcpToolTags: vi.fn(),
+  saveMcpToolTags: (...args: unknown[]) => saveMcpToolTagsMock(...args),
   saveMcpToolAnnotationOverrides: vi.fn(),
 }))
 
@@ -80,5 +82,22 @@ describe('ToolPolicyEditor drafts', () => {
       }),
     )
     expect(screen.getByLabelText('Admin tags')).toHaveValue('finance')
+  })
+
+  it('locks an editor while its save is pending', async () => {
+    const { ToolPolicyEditor } = await import('@/routes/mcp/-tool-policy')
+    let finish: (value: unknown) => void = () => {}
+    saveMcpToolTagsMock.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const onToolUpdated = vi.fn()
+    render(<ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} />)
+
+    fireEvent.change(screen.getByLabelText('Admin tags'), { target: { value: 'finance' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    // No newer edit can be typed for the response to overwrite.
+    expect(screen.getByLabelText('Admin tags')).toBeDisabled()
+
+    await act(async () => finish({ data: { tool: { ...tool, admin_tags: ['finance'] } } }))
+    expect(onToolUpdated).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText('Admin tags')).toBeEnabled()
   })
 })
