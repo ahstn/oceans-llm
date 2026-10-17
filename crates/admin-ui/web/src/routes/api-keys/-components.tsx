@@ -61,12 +61,9 @@ import {
   maskApiKeyPrefix,
 } from '@/lib/api-key-format'
 
-import {
-  ApiKeyScopeFields,
-  type ApiKeyScopesValue,
-  formatScopeSummary,
-  scopesOf,
-} from './-scope-fields'
+import { type ApiKeyScopesValue, formatScopeSummary, scopesOf } from '@/lib/api-key-scopes'
+
+import { ApiKeyScopeFields } from './-scope-fields'
 
 const apiKeyDialogContentClassName =
   'flex max-h-[calc(100dvh-2rem)] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden sm:max-h-[80vh]'
@@ -460,8 +457,6 @@ export function CreateApiKeyDialog({
   )
 }
 
-// Summary, secret, model access, and lifecycle sections share one key and permission contract.
-// oxlint-disable-next-line eslint/max-lines-per-function
 export function ManageApiKeyDialog({
   actions,
   availableScopes,
@@ -503,10 +498,6 @@ export function ManageApiKeyDialog({
   onScopesChange: (value: ApiKeyScopesValue) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
-  const canReveal = actions.includes('reveal_api_key')
-  const canRevoke = actions.includes('revoke_api_key')
-  const canUpdate = actions.includes('update_api_key')
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={apiKeyDialogContentClassName}>
@@ -519,195 +510,323 @@ export function ManageApiKeyDialog({
         </DialogHeader>
 
         {target ? (
-          <form
-            className="flex min-h-0 flex-1 flex-col gap-6"
-            onSubmit={canUpdate ? onSubmit : (event) => event.preventDefault()}
-          >
-            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
-              <section
-                data-testid="manage-api-key-summary"
-                className="border-border flex flex-col gap-3 border-y py-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <p className="text-foreground font-semibold">{target.name}</p>
-                    <p className="text-muted-foreground font-mono text-xs">
-                      {maskApiKeyPrefix(target.prefix)}
-                    </p>
-                  </div>
-                  <Badge variant={target.status === 'active' ? 'success' : 'warning'}>
-                    {target.status}
-                  </Badge>
-                </div>
-
-                <dl
-                  data-testid="manage-api-key-metadata"
-                  className="divide-border flex flex-col divide-y text-sm"
-                >
-                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-muted-foreground">Owner</dt>
-                    <dd className="text-foreground min-w-0">{formatOwner(target)}</dd>
-                  </div>
-                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-muted-foreground">Created</dt>
-                    <dd className="text-foreground min-w-0">
-                      {formatCreatedAt(target.created_at)}
-                    </dd>
-                  </div>
-                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
-                    <dt className="text-muted-foreground">Last used</dt>
-                    <dd className="text-foreground min-w-0">
-                      {formatLastUsedAt(target.last_used_at)}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
-              {canReveal &&
-              target.owner_kind === 'service_account' &&
-              target.status === 'active' ? (
-                <section
-                  data-testid="manage-api-key-secret"
-                  className="border-border flex flex-col gap-3 border-b pb-4"
-                >
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
-                    <p className="text-subtle-foreground text-sm">
-                      Service-account-owned keys can be revealed for this owner scope.
-                    </p>
-                  </div>
-
-                  {revealedKey ? (
-                    <div className="flex flex-col gap-3">
-                      <div className="border-border bg-surface-muted rounded-md border p-3">
-                        <p
-                          data-testid="manage-api-key-raw-key"
-                          className="text-foreground font-mono text-xs break-all"
-                        >
-                          {revealedKey}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => onCopy(revealedKey, 'API key copied')}
-                        >
-                          Copy API key
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={onReveal}
-                        disabled={isPending}
-                      >
-                        {isPending ? 'Revealing...' : 'Reveal API key'}
-                      </Button>
-                    </div>
-                  )}
-                </section>
-              ) : null}
-
-              {target.status === 'revoked' ? (
-                <Alert>
-                  <AlertTitle>Revoked keys are read-only</AlertTitle>
-                  <AlertDescription>
-                    This key has already been revoked. Model access and scopes can no longer be
-                    changed in the admin UI.
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-
-              <ModelGrantModeField
-                disabled={
-                  !canUpdate ||
-                  target.status !== 'active' ||
-                  target.owner_kind === 'service_account'
-                }
-                mode={form.model_grant_mode}
-                onChange={onModelGrantModeChange}
-              />
-
-              {form.model_grant_mode === 'explicit' ? (
-                <ModelMultiSelectField
-                  description={
-                    target.status === 'active'
-                      ? 'Save model access changes to apply them immediately.'
-                      : 'Current model access is shown for reference only.'
-                  }
-                  disabled={!canUpdate || target.status !== 'active'}
-                  label="Granted models"
-                  modelOptions={modelOptions}
-                  placeholder="Select models"
-                  searchPlaceholder="Search models..."
-                  selectedKeys={form.model_keys}
-                  onToggle={onModelToggle}
-                />
-              ) : (
-                <Field>
-                  <FieldLabel>Granted models</FieldLabel>
-                  <FieldDescription>
-                    This key can use every current and future gateway model allowed by its owner.
-                  </FieldDescription>
-                </Field>
-              )}
-
-              <ApiKeyScopeFields
-                availableScopes={availableScopes}
-                disabled={!canUpdate || target.status !== 'active'}
-                idPrefix="manage-api-key"
-                mcpServers={mcpServers}
-                value={scopes}
-                onChange={onScopesChange}
-              />
-
-              {canRevoke ? (
-                <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-foreground text-sm font-semibold">Lifecycle actions</h3>
-                    <p className="text-subtle-foreground text-sm">
-                      Revocation takes effect immediately and cannot be undone in this slice.
-                    </p>
-                  </div>
-
-                  {target.status === 'active' ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={onRevoke}
-                        disabled={isPending}
-                      >
-                        {isPending ? 'Revoking...' : 'Revoke key'}
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-subtle-foreground text-sm">
-                      This key has already been revoked.
-                    </p>
-                  )}
-                </section>
-              ) : null}
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              {canUpdate ? (
-                <Button type="submit" disabled={submitDisabled}>
-                  {isPending ? 'Saving...' : 'Save access'}
-                </Button>
-              ) : null}
-            </DialogFooter>
-          </form>
+          <ManageApiKeyForm
+            actions={actions}
+            availableScopes={availableScopes}
+            form={form}
+            isPending={isPending}
+            mcpServers={mcpServers}
+            modelOptions={modelOptions}
+            revealedKey={revealedKey}
+            scopes={scopes}
+            submitDisabled={submitDisabled}
+            target={target}
+            onModelGrantModeChange={onModelGrantModeChange}
+            onModelToggle={onModelToggle}
+            onCancel={() => onOpenChange(false)}
+            onReveal={onReveal}
+            onRevoke={onRevoke}
+            onCopy={onCopy}
+            onScopesChange={onScopesChange}
+            onSubmit={onSubmit}
+          />
         ) : null}
       </DialogContent>
     </Dialog>
+  )
+}
+
+type ManageApiKeyFormProps = Omit<
+  Parameters<typeof ManageApiKeyDialog>[0],
+  'open' | 'target' | 'onOpenChange'
+> & {
+  target: ApiKeyView
+  onCancel: () => void
+}
+
+// Summary, secret, model access, scopes, and lifecycle sections share one key and permission
+// contract.
+// oxlint-disable-next-line eslint/max-lines-per-function
+function ManageApiKeyForm({
+  actions,
+  availableScopes,
+  form,
+  isPending,
+  mcpServers,
+  modelOptions,
+  revealedKey,
+  scopes,
+  submitDisabled,
+  target,
+  onModelGrantModeChange,
+  onModelToggle,
+  onCancel,
+  onReveal,
+  onRevoke,
+  onCopy,
+  onScopesChange,
+  onSubmit,
+}: ManageApiKeyFormProps) {
+  const canUpdate = actions.includes('update_api_key')
+  const isActive = target.status === 'active'
+  const editable = canUpdate && isActive
+  const showSecret =
+    actions.includes('reveal_api_key') && target.owner_kind === 'service_account' && isActive
+
+  return (
+    <form
+      className="flex min-h-0 flex-1 flex-col gap-6"
+      onSubmit={canUpdate ? onSubmit : (event) => event.preventDefault()}
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
+        <ManageApiKeySummary target={target} />
+
+        {showSecret ? (
+          <ManageApiKeySecret
+            isPending={isPending}
+            revealedKey={revealedKey}
+            onCopy={onCopy}
+            onReveal={onReveal}
+          />
+        ) : null}
+
+        {isActive ? null : (
+          <Alert>
+            <AlertTitle>Revoked keys are read-only</AlertTitle>
+            <AlertDescription>
+              This key has already been revoked. Model access and scopes can no longer be changed in
+              the admin UI.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <ManageModelAccessFields
+          editable={editable}
+          form={form}
+          modelOptions={modelOptions}
+          ownerKind={target.owner_kind}
+          onModelGrantModeChange={onModelGrantModeChange}
+          onModelToggle={onModelToggle}
+        />
+
+        <ApiKeyScopeFields
+          availableScopes={availableScopes}
+          disabled={!editable}
+          idPrefix="manage-api-key"
+          mcpServers={mcpServers}
+          value={scopes}
+          onChange={onScopesChange}
+        />
+
+        {actions.includes('revoke_api_key') ? (
+          <ManageApiKeyLifecycle isActive={isActive} isPending={isPending} onRevoke={onRevoke} />
+        ) : null}
+      </div>
+
+      <ManageApiKeyFooter
+        canUpdate={canUpdate}
+        isPending={isPending}
+        submitDisabled={submitDisabled}
+        onCancel={onCancel}
+      />
+    </form>
+  )
+}
+
+function ManageApiKeyFooter({
+  canUpdate,
+  isPending,
+  submitDisabled,
+  onCancel,
+}: {
+  canUpdate: boolean
+  isPending: boolean
+  submitDisabled: boolean
+  onCancel: () => void
+}) {
+  return (
+    <DialogFooter>
+      <Button type="button" variant="secondary" onClick={onCancel}>
+        Cancel
+      </Button>
+      {canUpdate ? (
+        <Button type="submit" disabled={submitDisabled}>
+          {isPending ? 'Saving...' : 'Save access'}
+        </Button>
+      ) : null}
+    </DialogFooter>
+  )
+}
+
+function ManageApiKeySummary({ target }: { target: ApiKeyView }) {
+  return (
+    <section
+      data-testid="manage-api-key-summary"
+      className="border-border flex flex-col gap-3 border-y py-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-foreground font-semibold">{target.name}</p>
+          <p className="text-muted-foreground font-mono text-xs">
+            {maskApiKeyPrefix(target.prefix)}
+          </p>
+        </div>
+        <Badge variant={target.status === 'active' ? 'success' : 'warning'}>{target.status}</Badge>
+      </div>
+
+      <dl
+        data-testid="manage-api-key-metadata"
+        className="divide-border flex flex-col divide-y text-sm"
+      >
+        <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
+          <dt className="text-muted-foreground">Owner</dt>
+          <dd className="text-foreground min-w-0">{formatOwner(target)}</dd>
+        </div>
+        <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
+          <dt className="text-muted-foreground">Created</dt>
+          <dd className="text-foreground min-w-0">{formatCreatedAt(target.created_at)}</dd>
+        </div>
+        <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
+          <dt className="text-muted-foreground">Last used</dt>
+          <dd className="text-foreground min-w-0">{formatLastUsedAt(target.last_used_at)}</dd>
+        </div>
+      </dl>
+    </section>
+  )
+}
+
+function ManageApiKeySecret({
+  isPending,
+  revealedKey,
+  onCopy,
+  onReveal,
+}: {
+  isPending: boolean
+  revealedKey: string | null
+  onCopy: (value: string, successMessage: string) => void | Promise<void>
+  onReveal: () => void | Promise<void>
+}) {
+  return (
+    <section
+      data-testid="manage-api-key-secret"
+      className="border-border flex flex-col gap-3 border-b pb-4"
+    >
+      <div className="flex flex-col gap-1">
+        <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
+        <p className="text-subtle-foreground text-sm">
+          Service-account-owned keys can be revealed for this owner scope.
+        </p>
+      </div>
+
+      {revealedKey ? (
+        <div className="flex flex-col gap-3">
+          <div className="border-border bg-surface-muted rounded-md border p-3">
+            <p
+              data-testid="manage-api-key-raw-key"
+              className="text-foreground font-mono text-xs break-all"
+            >
+              {revealedKey}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onCopy(revealedKey, 'API key copied')}
+            >
+              Copy API key
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={onReveal} disabled={isPending}>
+            {isPending ? 'Revealing...' : 'Reveal API key'}
+          </Button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ManageModelAccessFields({
+  editable,
+  form,
+  modelOptions,
+  ownerKind,
+  onModelGrantModeChange,
+  onModelToggle,
+}: {
+  editable: boolean
+  form: UpdateApiKeyInput
+  modelOptions: ApiKeyModelOptionView[]
+  ownerKind: ApiKeyView['owner_kind']
+  onModelGrantModeChange: (mode: UpdateApiKeyInput['model_grant_mode']) => void
+  onModelToggle: (modelKey: string, checked: boolean) => void
+}) {
+  return (
+    <>
+      <ModelGrantModeField
+        disabled={!editable || ownerKind === 'service_account'}
+        mode={form.model_grant_mode}
+        onChange={onModelGrantModeChange}
+      />
+
+      {form.model_grant_mode === 'explicit' ? (
+        <ModelMultiSelectField
+          description={
+            editable
+              ? 'Save model access changes to apply them immediately.'
+              : 'Current model access is shown for reference only.'
+          }
+          disabled={!editable}
+          label="Granted models"
+          modelOptions={modelOptions}
+          placeholder="Select models"
+          searchPlaceholder="Search models..."
+          selectedKeys={form.model_keys}
+          onToggle={onModelToggle}
+        />
+      ) : (
+        <Field>
+          <FieldLabel>Granted models</FieldLabel>
+          <FieldDescription>
+            This key can use every current and future gateway model allowed by its owner.
+          </FieldDescription>
+        </Field>
+      )}
+    </>
+  )
+}
+
+function ManageApiKeyLifecycle({
+  isActive,
+  isPending,
+  onRevoke,
+}: {
+  isActive: boolean
+  isPending: boolean
+  onRevoke: () => void | Promise<void>
+}) {
+  return (
+    <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-foreground text-sm font-semibold">Lifecycle actions</h3>
+        <p className="text-subtle-foreground text-sm">
+          Revocation takes effect immediately and cannot be undone in this slice.
+        </p>
+      </div>
+
+      {isActive ? (
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="destructive" onClick={onRevoke} disabled={isPending}>
+            {isPending ? 'Revoking...' : 'Revoke key'}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-subtle-foreground text-sm">This key has already been revoked.</p>
+      )}
+    </section>
   )
 }
 

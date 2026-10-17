@@ -23,7 +23,7 @@ import {
   isScopesValueIncomplete,
   sameScopesValue,
   scopesOf,
-} from './-scope-fields'
+} from '@/lib/api-key-scopes'
 
 export type ApiKeysSearch = { api_key_id?: string; create?: true }
 

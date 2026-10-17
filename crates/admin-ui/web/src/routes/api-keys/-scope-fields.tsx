@@ -10,79 +10,14 @@ import {
   FieldTitle,
 } from '@/components/ui/field'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { ApiKeyMcpServerOptionView, ApiKeyView } from '@/types/api'
-
-/** A key's scopes and MCP server list. `null` is full access, or every server. */
-export type ApiKeyScopesValue = {
-  scopes: string[] | null
-  mcp_server_keys: string[] | null
-}
-
-export const fullAccessScopes: ApiKeyScopesValue = { scopes: null, mcp_server_keys: null }
-
-const MCP_SCOPES = new Set(['mcp:aggregate', 'mcp:proxy'])
-
-const SCOPE_DETAILS: Record<string, { label: string; description: string }> = {
-  inference: {
-    label: 'Inference',
-    description: 'Model calls, model listing, batches, and guardrail checks.',
-  },
-  'mcp:aggregate': {
-    label: 'MCP aggregate',
-    description: 'The /mcp endpoint: search_tools, describe_tool, and call_tool.',
-  },
-  'mcp:proxy': {
-    label: 'MCP proxy',
-    description: 'Per-server /mcp/{server_key} routes.',
-  },
-}
-
-function scopeLabel(scope: string) {
-  return SCOPE_DETAILS[scope]?.label ?? scope
-}
-
-export function scopesOf(item: Pick<ApiKeyView, 'scopes' | 'mcp_server_keys'>): ApiKeyScopesValue {
-  return { scopes: item.scopes ?? null, mcp_server_keys: item.mcp_server_keys ?? null }
-}
-
-/** One line for listings, such as "MCP proxy · notes, wiki". */
-export function formatScopeSummary(item: Pick<ApiKeyView, 'scopes' | 'mcp_server_keys'>) {
-  const { scopes, mcp_server_keys } = scopesOf(item)
-  const capabilities = scopes === null ? 'Full access' : scopes.map(scopeLabel).join(', ')
-  return mcp_server_keys === null ? capabilities : `${capabilities} · ${mcp_server_keys.join(', ')}`
-}
-
-function allowsMcp(value: ApiKeyScopesValue) {
-  return value.scopes === null || value.scopes.some((scope) => MCP_SCOPES.has(scope))
-}
-
-/** Whether a limited key is missing its scopes or servers. */
-export function isScopesValueIncomplete(value: ApiKeyScopesValue) {
-  return (
-    (value.scopes !== null && value.scopes.length === 0) ||
-    (value.mcp_server_keys !== null && value.mcp_server_keys.length === 0)
-  )
-}
-
-export function sameScopesValue(left: ApiKeyScopesValue, right: ApiKeyScopesValue) {
-  return (
-    sameList(left.scopes, right.scopes) && sameList(left.mcp_server_keys, right.mcp_server_keys)
-  )
-}
-
-function sameList(left: string[] | null, right: string[] | null) {
-  if (left === null || right === null) {
-    return left === right
-  }
-  const sortedRight = [...right].sort()
-  return left.length === right.length && [...left].sort().every((v, i) => v === sortedRight[i])
-}
-
-function toggle(values: string[], value: string, on: boolean) {
-  return on
-    ? [...values.filter((existing) => existing !== value), value]
-    : values.filter((v) => v !== value)
-}
+import {
+  type ApiKeyScopesValue,
+  SCOPE_DETAILS,
+  allowsMcp,
+  scopeLabel,
+  toggleValue,
+} from '@/lib/api-key-scopes'
+import type { ApiKeyMcpServerOptionView } from '@/types/api'
 
 /** Capabilities and MCP servers for a key, shared by the create and manage dialogs. */
 export function ApiKeyScopeFields({
@@ -100,6 +35,7 @@ export function ApiKeyScopeFields({
   value: ApiKeyScopesValue
   onChange: (value: ApiKeyScopesValue) => void
 }) {
+  const selectedScopes = new Set(value.scopes)
   const setScopes = (scopes: string[] | null) => {
     const next = { ...value, scopes }
     // A server list needs an MCP scope, so drop it with the last one.
@@ -146,10 +82,10 @@ export function ApiKeyScopeFields({
                 <Field orientation="horizontal" data-disabled={disabled}>
                   <Checkbox
                     id={`${idPrefix}-scope-${scope}`}
-                    checked={value.scopes?.includes(scope) ?? false}
+                    checked={selectedScopes.has(scope)}
                     disabled={disabled}
                     onCheckedChange={(on) =>
-                      setScopes(toggle(value.scopes ?? [], scope, on === true))
+                      setScopes(toggleValue(value.scopes ?? [], scope, on === true))
                     }
                   />
                   <FieldContent>
@@ -194,12 +130,13 @@ function McpServerListField({
 }) {
   // A saved key may list a server that has since been disabled; keep it visible.
   const listed = new Set(mcpServers.map((server) => server.key))
-  const options = [
-    ...mcpServers,
-    ...(value ?? [])
-      .filter((key) => !listed.has(key))
-      .map((key) => ({ key, display_name: `${key} (disabled)` })),
-  ]
+  const options = [...mcpServers]
+  for (const key of value ?? []) {
+    if (!listed.has(key)) {
+      options.push({ key, display_name: `${key} (disabled)` })
+    }
+  }
+  const selected = new Set(value)
 
   return (
     <Field>
@@ -230,9 +167,9 @@ function McpServerListField({
             <Field key={server.key} orientation="horizontal" data-disabled={disabled}>
               <Checkbox
                 id={`${idPrefix}-server-${server.key}`}
-                checked={value.includes(server.key)}
+                checked={selected.has(server.key)}
                 disabled={disabled}
-                onCheckedChange={(on) => onChange(toggle(value, server.key, on === true))}
+                onCheckedChange={(on) => onChange(toggleValue(value, server.key, on === true))}
               />
               <FieldLabel htmlFor={`${idPrefix}-server-${server.key}`} className="font-normal">
                 {server.display_name}{' '}
