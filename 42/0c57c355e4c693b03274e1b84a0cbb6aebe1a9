@@ -1,0 +1,35 @@
+crates/gateway-service/src/mcp_oauth.rs
+  s_4394d7bb181c63::t_7db9e92a6b1c38 25-28,37,145,148,208-209,211-214,228,232-239,321,325-360,495-497,572-574,576-577,583,684-687,693,695-696,726-727,733,966-968,976,1042-1045,1065,1108-1118,1125-1170
+crates/gateway-service/src/outbound_fetch.rs
+  s_4394d7bb181c63::t_d24c133e1b156c 396-436
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_945fb39c9a6adc::t_6e0366680c87f1 6
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_945fb39c9a6adc::t_7324540dc8e39a 58-59,65-66
+docs/configuration/mcp-servers.md
+  s_945fb39c9a6adc::t_0a8800c783c508 212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "420c57c355e4c693b03274e1b84a0cbb6aebe1a9",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_945fb39c9a6adc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8c5ea47-24b1-4f15-8bef-26a4962acdc2",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
