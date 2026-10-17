@@ -1,5 +1,7 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
   - repo: "https://github.com/pre-commit/pre-commit-hooks"
     rev: v6.0.0
@@ -13,6 +15,11 @@ repos:
 
   - repo: local
     hooks:
+      - id: strip-ai-coauthors
+        name: strip AI co-author trailers
+        language: system
+        entry: scripts/strip-ai-coauthors.sh
+        stages: [commit-msg]
       - id: lint
         name: lint
         language: system
