@@ -556,9 +556,15 @@ async fn team_admins_see_own_and_published_servers_and_filter_by_owner() {
         ]
     );
 
+    // `owner=platform` keeps only platform-owned servers, unlike no filter.
     let (_, body) = context.list(&admin, Some("platform")).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
     assert_eq!(body["data"]["items"][0]["server_key"], "platform");
+    let platform_view = context.platform_admin().await;
+    let (_, body) = context.list(&platform_view, Some("platform")).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    let (status, _) = context.list(&admin, Some("not-a-team")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, body) = context
         .list(&admin, Some(&context.team_a.to_string()))
         .await;

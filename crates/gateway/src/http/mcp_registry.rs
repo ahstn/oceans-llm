@@ -126,7 +126,7 @@ pub async fn list_mcp_servers(
         .await?
         .into_iter()
         .filter(|server| scope.can_view(server))
-        .filter(|server| owner.is_none_or(|owner| server.ownership.owner_team_id == owner))
+        .filter(|server| owner.is_none_or(|owner| owner.matches(server)))
         .collect();
     let items = present_servers(&state, &scope, servers).await?;
     Ok(Json(envelope(McpServersPayload {
@@ -1223,12 +1223,29 @@ fn ownership(state: &AppState) -> McpOwnership<AnyStore> {
     McpOwnership::new(state.store.clone(), state.mcp_organisation_publishing)
 }
 
-/// `platform` selects platform-owned servers; a UUID selects a team's.
-fn parse_owner_filter(raw: &str) -> Result<Option<Uuid>, AppError> {
-    if raw == "platform" {
-        return Ok(None);
+/// The `owner` query of the server list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnerFilter {
+    /// `owner=platform`: platform-owned servers only.
+    Platform,
+    /// `owner=<team id>`: one team's servers.
+    Team(Uuid),
+}
+
+impl OwnerFilter {
+    fn matches(self, server: &ExternalMcpServerRecord) -> bool {
+        match self {
+            Self::Platform => server.ownership.owner_team_id.is_none(),
+            Self::Team(team_id) => server.ownership.owned_by(team_id),
+        }
     }
-    parse_uuid(raw, "owner").map(Some)
+}
+
+fn parse_owner_filter(raw: &str) -> Result<OwnerFilter, AppError> {
+    if raw == "platform" {
+        return Ok(OwnerFilter::Platform);
+    }
+    parse_uuid(raw, "owner").map(OwnerFilter::Team)
 }
 
 async fn owner_team_name(
