@@ -149,7 +149,7 @@ export function ConnectionsPage() {
                         {connection.server_key} · via {connection.provider_label}
                       </CardDescription>
                     </div>
-                    <Badge variant={connected ? 'default' : 'secondary'}>
+                    <Badge variant={connected ? 'success' : 'secondary'}>
                       {formatStatus(connection.status)}
                     </Badge>
                   </div>

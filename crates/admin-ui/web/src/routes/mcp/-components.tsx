@@ -3,6 +3,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@hugeicons/core-f
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { discoveryLabel } from '@/components/mcp/server-discovery'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -260,7 +261,7 @@ function ToolDisclosureRow({
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
-          <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+          <Badge variant={tool.is_active ? 'success' : 'secondary'}>
             {tool.is_active ? 'Active' : 'Inactive'}
           </Badge>
           <CollapsibleTrigger asChild>
@@ -869,16 +870,30 @@ export function ServerFormFields({
 
 export function ServerStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+    <Badge variant={status === 'active' ? 'success' : 'secondary'}>
       {status === 'active' ? 'Active' : 'Disabled'}
     </Badge>
   )
 }
 
-export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
-  const label = status ?? 'not run'
-  const variant = status === 'success' ? 'default' : status ? 'secondary' : 'outline'
-  return <Badge variant={variant}>{label}</Badge>
+// Sits beside the registration badge, so it uses the registry's labels ("Discovery failed", not a
+// raw enum) and stays hidden when it would only repeat that badge: after a successful discovery, or
+// once disabling the server has also disabled discovery. `attention` follows needsAttention, so a
+// failed or blocked discovery on an active server reads as destructive.
+export function DiscoveryStatusBadge({
+  status,
+  attention = false,
+}: {
+  status?: string | null
+  attention?: boolean
+}) {
+  if (status === 'success' || status === 'disabled') return null
+  return <Badge variant={discoveryVariant(status, attention)}>{discoveryLabel(status)}</Badge>
+}
+
+function discoveryVariant(status: string | null | undefined, attention: boolean) {
+  if (attention) return 'destructive'
+  return status ? 'secondary' : 'outline'
 }
 
 function formatOverviewValue(value: string) {

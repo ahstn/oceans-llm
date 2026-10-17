@@ -12,7 +12,7 @@ export const COMPACT_FORMATTER = new Intl.NumberFormat('en-US', {
 })
 
 /** Neutral tone for the folded "Other" model series, kept apart from the ranked palette. */
-const OTHER_SERIES_COLOR = 'var(--color-text-soft)'
+const OTHER_SERIES_COLOR = 'var(--chart-other)'
 
 const percent = (fraction: number) => `${Math.round(fraction * 100)}%`
 
@@ -21,8 +21,8 @@ const HEALTHY_HIT_RATE = 0.5
 
 /**
  * Bar colour for a cache hit rate. Below 50% it warms from danger red to warning amber; from 50%
- * it is primary blue, deepening from a softer tint to full strength. Blending amber straight into
- * blue passes through green, so the scale switches families at the threshold instead.
+ * it is the primary colour, deepening from a softer tint to full strength. Blending warning straight
+ * into primary muddies the middle, so the scale switches families at the threshold instead.
  */
 export function hitRateColor(rate: number): string {
   const clamped = Math.min(1, Math.max(0, rate))

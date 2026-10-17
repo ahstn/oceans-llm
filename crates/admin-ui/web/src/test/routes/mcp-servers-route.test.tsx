@@ -608,6 +608,87 @@ describe('ServersTab', () => {
     ).toBeDisabled()
   })
 
+  it('labels discovery in the server details and marks failures while the server is active', async () => {
+    const failed: McpServerView = {
+      ...server,
+      id: 'failed',
+      display_name: 'Notion',
+      server_key: 'notion',
+      last_discovery_status: 'failed',
+    }
+    const authRequired: McpServerView = {
+      ...server,
+      id: 'auth',
+      display_name: 'Figma',
+      server_key: 'figma',
+      last_discovery_status: 'auth_required',
+    }
+    const disabled: McpServerView = {
+      ...failed,
+      id: 'disabled',
+      display_name: 'Legacy',
+      server_key: 'legacy',
+      status: 'disabled',
+    }
+    const unrun: McpServerView = {
+      ...server,
+      id: 'unrun',
+      display_name: 'Exa',
+      server_key: 'exa',
+      last_discovery_status: null,
+      last_discovery_at: null,
+    }
+    const servers = [server, failed, authRequired, disabled, unrun]
+    const headerBadges = (name: string) => {
+      const header = screen.getByRole('heading', { level: 2, name }).parentElement as HTMLElement
+      return [...header.querySelectorAll('[data-slot="badge"]')].map((badge) => [
+        badge.textContent,
+        badge.getAttribute('data-variant'),
+      ])
+    }
+
+    for (const [selected, name, badges] of [
+      [
+        'failed',
+        'Notion',
+        [
+          ['Active', 'success'],
+          ['Discovery failed', 'destructive'],
+        ],
+      ],
+      [
+        'auth',
+        'Figma',
+        [
+          ['Active', 'success'],
+          ['Authentication required', 'destructive'],
+        ],
+      ],
+      [
+        'disabled',
+        'Legacy',
+        [
+          ['Disabled', 'secondary'],
+          ['Discovery failed', 'secondary'],
+        ],
+      ],
+      [
+        'unrun',
+        'Exa',
+        [
+          ['Active', 'success'],
+          ['Not discovered', 'outline'],
+        ],
+      ],
+      // A successful discovery adds nothing beside the registration badge.
+      ['server_1', 'GitHub', [['Active', 'success']]],
+    ] as const) {
+      await renderServersTab(selected, servers)
+      expect(headerBadges(name)).toEqual(badges)
+      cleanup()
+    }
+  })
+
   it('retains discovery, count, endpoint, and authentication details in mobile rows', async () => {
     await renderServersTab()
     const mobile = within(screen.getByTestId('mcp-server-list-mobile'))

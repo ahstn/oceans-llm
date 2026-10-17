@@ -35,7 +35,7 @@ export function AuthLayout({ title, description, children, cardClassName }: Auth
         </section>
 
         <section className="flex items-center justify-center py-8 lg:py-12">
-          <div className={cn('flex w-full max-w-xl flex-col gap-8', cardClassName)}>
+          <div className={cn('animate-page-in flex w-full max-w-xl flex-col gap-8', cardClassName)}>
             <div className="flex items-center gap-3 lg:hidden">
               <img src={oceansLogo} alt="" className="size-10 rounded-lg" />
               <span className="font-heading text-lg font-medium">Oceans Gateway</span>

@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
+import { needsAttention } from '@/components/mcp/server-discovery'
 import { ServerRegistry } from '@/components/mcp/server-registry'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
@@ -584,7 +585,10 @@ function ServerDetailDialog({
                         {server.display_name}
                       </h2>
                       <ServerStatusBadge status={server.status} />
-                      <DiscoveryStatusBadge status={server.last_discovery_status} />
+                      <DiscoveryStatusBadge
+                        status={server.last_discovery_status}
+                        attention={needsAttention(server)}
+                      />
                     </div>
                     <p className="text-subtle-foreground mt-1 truncate font-mono text-sm">
                       /mcp/{server.server_key}
