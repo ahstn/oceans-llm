@@ -1880,7 +1880,7 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
             .0,
         StatusCode::OK
     );
-    let account_preview = || {
+    let direct_preview = || {
         let headers = admin.headers.clone();
         let state = context.state.clone();
         async move {
@@ -1901,7 +1901,7 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
             .await
         }
     };
-    let (_, body) = account_preview().await;
+    let (_, body) = direct_preview().await;
     assert_eq!(
         body["data"]["tools"].as_array().map(Vec::len),
         Some(1),
@@ -1917,6 +1917,6 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
         .unwrap();
     let (_, body) = preview().await;
     assert_eq!(body["data"]["tools"], json!([]), "{body}");
-    let (_, body) = account_preview().await;
+    let (_, body) = direct_preview().await;
     assert_eq!(body["data"]["tools"], json!([]), "{body}");
 }
