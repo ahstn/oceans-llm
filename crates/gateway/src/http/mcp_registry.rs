@@ -1570,6 +1570,17 @@ pub async fn preview_mcp_effective_access(
             McpToolGrantSubjectKind::User | McpToolGrantSubjectKind::Team => {}
         }
     }
+    // As at runtime, a team-only server's tools count only for its own team,
+    // judged for each subject by that subject's team, so subjects from
+    // different teams each keep what their own team reaches.
+    for (subject, (_, part)) in subjects.iter().zip(&mut parts) {
+        let team_id = preview_subject_team(&state, subject).await?;
+        part.allowed_tools.retain(|tool| {
+            servers
+                .get(&tool.mcp_server_id)
+                .is_none_or(|server| server.ownership.is_reachable_from(team_id))
+        });
+    }
     let exposed_tool_count = parts.first().map_or(0, |(_, part)| part.exposed_tool_count);
     let mut tools: std::collections::BTreeMap<(Uuid, String), gateway_core::ExternalMcpToolRecord> =
         std::collections::BTreeMap::new();
@@ -1581,7 +1592,7 @@ pub async fn preview_mcp_effective_access(
         }
     }
     let allowed_tools: Vec<_> = tools.into_values().collect();
-    let mut resolution = gateway_core::McpAccessResolution {
+    Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: allowed_tools
             .iter()
             .map(|tool| tool.mcp_server_id)
@@ -1589,24 +1600,7 @@ pub async fn preview_mcp_effective_access(
             .len() as i64,
         filtered_tool_count: exposed_tool_count.saturating_sub(allowed_tools.len() as i64),
         exposed_tool_count,
-        allowed_tools,
-    };
-    // As at runtime, a team-only server's tools count only for its own team.
-    let caller_team = preview_caller_team(&state, &query).await?;
-    let hidden = servers
-        .values()
-        .filter(|server| {
-            server.ownership.visibility == gateway_core::McpServerVisibility::Team
-                && server.ownership.owner_team_id != caller_team
-        })
-        .map(|server| server.mcp_server_id)
-        .collect();
-    gateway_service::mcp_access::retain_reachable_tools(&mut resolution, &hidden);
-    Ok(Json(envelope(McpEffectiveAccessPayload {
-        referenced_server_count: resolution.referenced_server_count,
-        exposed_tool_count: resolution.exposed_tool_count,
-        filtered_tool_count: resolution.filtered_tool_count,
-        tools: resolution.allowed_tools.into_iter().map(map_tool).collect(),
+        tools: allowed_tools.into_iter().map(map_tool).collect(),
     })))
 }
 
@@ -1682,11 +1676,11 @@ async fn service_account_can_authenticate(
     .is_some())
 }
 
-/// The team the previewed caller acts for: an API key's (its own, or its
+/// The team a previewed subject acts for: an API key's (its own, or its
 /// owner's), a user's current team, a service account's, or the team itself.
-async fn preview_caller_team(
+async fn preview_subject_team(
     state: &AppState,
-    query: &McpEffectiveAccessQuery,
+    subject: &McpGrantSubject,
 ) -> Result<Option<Uuid>, AppError> {
     use gateway_core::AdminApiKeyRepository;
     let user_team = |user_id| async move {
@@ -1696,29 +1690,27 @@ async fn preview_caller_team(
                 .map(|membership| membership.team_id),
         )
     };
-    if let Some(api_key_id) = query.api_key_id {
-        let Some(key) = AdminApiKeyRepository::get_api_key_by_id(&*state.store, api_key_id).await?
-        else {
-            return Ok(None);
-        };
-        return match (key.owner_team_id, key.owner_user_id) {
-            (Some(team_id), _) => Ok(Some(team_id)),
-            (None, Some(user_id)) => user_team(user_id).await,
-            (None, None) => Ok(None),
-        };
+    match subject.subject_kind {
+        McpToolGrantSubjectKind::ApiKey => {
+            let Some(key) =
+                AdminApiKeyRepository::get_api_key_by_id(&*state.store, subject.subject_id).await?
+            else {
+                return Ok(None);
+            };
+            match (key.owner_team_id, key.owner_user_id) {
+                (Some(team_id), _) => Ok(Some(team_id)),
+                (None, Some(user_id)) => user_team(user_id).await,
+                (None, None) => Ok(None),
+            }
+        }
+        McpToolGrantSubjectKind::User => user_team(subject.subject_id).await,
+        McpToolGrantSubjectKind::ServiceAccount => Ok(
+            IdentityRepository::get_service_account_by_id(&*state.store, subject.subject_id)
+                .await?
+                .map(|service_account| service_account.team_id),
+        ),
+        McpToolGrantSubjectKind::Team => Ok(Some(subject.subject_id)),
     }
-    if let Some(user_id) = query.user_id {
-        return user_team(user_id).await;
-    }
-    if let Some(service_account_id) = query.service_account_id {
-        return Ok(IdentityRepository::get_service_account_by_id(
-            &*state.store,
-            service_account_id,
-        )
-        .await?
-        .map(|service_account| service_account.team_id));
-    }
-    Ok(query.team_id)
 }
 
 fn preview_subjects(query: &McpEffectiveAccessQuery) -> Vec<McpGrantSubject> {
@@ -1860,83 +1852,75 @@ async fn list_member_servers(
     query: &McpServersQuery,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
     // Only the servers the member can reach are read, not the whole registry.
-    // The reads follow the member's team, so it is checked again after them: a
-    // member who left or changed team meanwhile gets the list for the team they
-    // are in now, never the former team's servers.
+    // The reads follow the member's team, so after them each listed server's
+    // ownership is read again, and then the member's team, last: a server
+    // moved away, or a member who left or changed team, in between gets the
+    // list for the team they are in now, never the former team's servers.
+    let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let mut team_id = team_id;
-    let mut attempts = 0;
-    let access = loop {
+    for _ in 0..3 {
         let access = member_access(state, user_id, team_id, None).await?;
+        let servers: Vec<_> = access
+            .servers
+            .into_iter()
+            .filter(|server| {
+                query.include_disabled
+                    || server.status != gateway_core::ExternalMcpServerStatus::Disabled
+            })
+            .filter(|server| owner.is_none_or(|owner| owner.matches(server)))
+            .collect();
+        let names: std::collections::HashMap<Uuid, String> = if servers
+            .iter()
+            .any(|server| server.ownership.owner_team_id.is_some())
+        {
+            gateway_core::AdminIdentityRepository::list_teams_by_ids(
+                &*state.store,
+                &owner_team_ids(&servers),
+            )
+            .await?
+            .into_iter()
+            .map(|team| (team.team_id, team.team_name))
+            .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+        let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
+        let ownerships = state.store.list_mcp_server_ownerships(&ids).await?;
         let current =
             gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
                 .await?
                 .map(|membership| membership.team_id);
-        if current == team_id {
-            break access;
+        if current != team_id {
+            team_id = current;
+            continue;
         }
-        attempts += 1;
-        if attempts == 3 {
-            return Err(AppError(GatewayError::Store(
-                gateway_core::StoreError::Conflict(
-                    "your team membership kept changing while MCP servers were listed; try again"
-                        .to_string(),
-                ),
-            )));
-        }
-        team_id = current;
-    };
-    let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
-    let servers: Vec<_> = access
-        .servers
-        .into_iter()
-        .filter(|server| {
-            query.include_disabled
-                || server.status != gateway_core::ExternalMcpServerStatus::Disabled
-        })
-        .filter(|server| owner.is_none_or(|owner| owner.matches(server)))
-        .collect();
-    let names: std::collections::HashMap<Uuid, String> = if servers
-        .iter()
-        .any(|server| server.ownership.owner_team_id.is_some())
-    {
-        gateway_core::AdminIdentityRepository::list_teams_by_ids(
-            &*state.store,
-            &owner_team_ids(&servers),
-        )
-        .await?
-        .into_iter()
-        .map(|team| (team.team_id, team.team_name))
-        .collect()
-    } else {
-        std::collections::HashMap::new()
-    };
-    // Checked again after the last read, against each server as it is now: a
-    // server narrowed or moved away from the member's team in between must not
-    // be listed.
-    let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
-    let still_reached: std::collections::HashSet<Uuid> = state
-        .store
-        .list_mcp_server_ownerships(&ids)
-        .await?
-        .into_iter()
-        .filter(|(_, ownership)| ownership.is_reachable_from(team_id))
-        .map(|(mcp_server_id, _)| mcp_server_id)
-        .collect();
-    let items = servers
-        .into_iter()
-        .filter(|server| still_reached.contains(&server.mcp_server_id))
-        .map(|server| {
-            let name = server
-                .ownership
-                .owner_team_id
-                .and_then(|team_id| names.get(&team_id).cloned());
-            map_server(server).for_viewer(name, false)
-        })
-        .collect();
-    Ok(Json(envelope(McpServersPayload {
-        items,
-        can_publish_to_organisation: false,
-    })))
+        let still_reached: std::collections::HashSet<Uuid> = ownerships
+            .into_iter()
+            .filter(|(_, ownership)| ownership.is_reachable_from(team_id))
+            .map(|(mcp_server_id, _)| mcp_server_id)
+            .collect();
+        let items = servers
+            .into_iter()
+            .filter(|server| still_reached.contains(&server.mcp_server_id))
+            .map(|server| {
+                let name = server
+                    .ownership
+                    .owner_team_id
+                    .and_then(|team_id| names.get(&team_id).cloned());
+                map_server(server).for_viewer(name, false)
+            })
+            .collect();
+        return Ok(Json(envelope(McpServersPayload {
+            items,
+            can_publish_to_organisation: false,
+        })));
+    }
+    Err(AppError(GatewayError::Store(
+        gateway_core::StoreError::Conflict(
+            "your team membership kept changing while MCP servers were listed; try again"
+                .to_string(),
+        ),
+    )))
 }
 
 /// The distinct owning teams of `servers`, whose names a response needs.

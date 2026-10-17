@@ -2175,3 +2175,46 @@ async fn a_revoked_key_hides_only_its_own_tools_in_a_combined_preview() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(tools(&body), Some(1), "{body}");
 }
+
+#[tokio::test]
+async fn combined_previews_judge_each_subject_by_its_own_team() {
+    let context = TestContext::new().await;
+    let server_b = context
+        .server(
+            "team-b-only",
+            context.team_owned(context.team_b, McpServerVisibility::Team),
+        )
+        .await;
+    let platform = context.platform_admin().await;
+    let member_a = context.member(context.team_a).await;
+    let key_a = context.user_api_key(member_a).await;
+    let member_b = context.member(context.team_b).await;
+    let (status, body) = context
+        .grant(&platform, "user", member_b, "tool", server_b.tool_id)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = read(
+        preview_mcp_effective_access(
+            State(context.state.clone()),
+            platform.headers.clone(),
+            Query(
+                serde_json::from_value(json!({ "api_key_id": key_a, "user_id": member_b }))
+                    .unwrap(),
+            ),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Team B's member keeps the team-only tool though the key is team A's.
+    assert_eq!(
+        body["data"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>(),
+        vec![server_b.tool_id.to_string()],
+        "{body}"
+    );
+}
