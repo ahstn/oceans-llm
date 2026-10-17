@@ -1,0 +1,131 @@
+.agents/skills/verify-oceans-admin/features/mcp-client-oauth.md
+  s_7a5811202bdfd5::t_d4286e0f1e2e73 3,10-11,33-36,58-59
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_7a5811202bdfd5::t_1c823547917a41 404,598-600,617-621
+Cargo.lock
+  s_7a5811202bdfd5::t_711c81b36af90d 2014
+Cargo.toml
+  s_7a5811202bdfd5::t_cc755e277ad223 77,109
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_e88dc7cf2999d1::t_b3b4d58364281c 4500-4506
+crates/admin-ui/web/src/routes/oauth/consent.tsx
+  s_7a5811202bdfd5::t_24874824c3a5bb 120-131,158-168
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  s_7a5811202bdfd5::t_0fe7abe8d1b0bf 31,74-93
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_7a5811202bdfd5::t_2f1225bbdbbdf0 170-171,401-409,527
+crates/gateway-service/Cargo.toml
+  s_7a5811202bdfd5::t_bdb24ef3c47a8c 17
+crates/gateway-service/src/lib.rs
+  s_7a5811202bdfd5::t_d1427dd906e038 29,97-99
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_7a5811202bdfd5::t_17a36756499e7b 8-9,19-21,25-28,54-88
+crates/gateway-service/src/mcp_client_oauth/authorization.rs
+  s_7a5811202bdfd5::t_b5ca31659be529 12,14,62-64,81,83,261
+crates/gateway-service/src/mcp_client_oauth/metadata_document.rs
+  s_7a5811202bdfd5::t_51c105f4cfee63 1-878
+crates/gateway-service/src/mcp_client_oauth/metadata_document/tests.rs
+  s_7a5811202bdfd5::t_99af4139ee3a46 1-476
+crates/gateway-service/src/mcp_client_oauth/registration.rs
+  s_7a5811202bdfd5::t_12175d96b0e783 17,19,145-147,174-176,195-198,213-216
+crates/gateway-service/src/mcp_client_oauth/settings.rs
+  s_7a5811202bdfd5::t_d8533ce8da1f2c 1,7-8,28-29,78,82-93
+crates/gateway-service/src/mcp_client_oauth/token.rs
+  s_7a5811202bdfd5::t_d67ff3d040ccf1 12,14,83-85,103-104,108-109,112,205-210,393-397
+crates/gateway-service/src/mcp_oauth.rs
+  s_7a5811202bdfd5::t_23b54921a4c27f 23-27,37,72-81,97-100,159,162,190-221,254-255,257-260,274,278-279,284-296,374-414,423-428,443,464-465,493,513-514,521,530,561,636,638-639,645,733,746,748-750,754,756-757,787-788,794,1027-1029,1037,1103-1114,1132
+crates/gateway-service/src/mcp_oauth/tests.rs
+  s_7a5811202bdfd5::t_4710db44d090ed 1-270
+crates/gateway-service/src/mcp_oauth_discovery.rs
+  s_7a5811202bdfd5::t_849c43bc558c5d 9-13,17,24-27,222-224,226,231,237,299,329,428-431,443-444,502-513,516-518,520,523-526,531,537-557,598-599,601,617-628,630-631,633
+crates/gateway-service/src/mcp_oauth_discovery/tests.rs
+  s_7a5811202bdfd5::t_5229d62369817c 24-25,256-313
+crates/gateway-service/src/mcp_upstream_auth.rs
+  s_7a5811202bdfd5::t_ea87914ab5fea4 441
+crates/gateway-service/src/outbound_fetch.rs
+  s_7a5811202bdfd5::t_11617923e0e20a 1-561
+crates/gateway-service/src/outbound_fetch/tests.rs
+  s_7a5811202bdfd5::t_74fd5388ce735d 1-354
+crates/gateway-store/migrations/V66__gateway_oauth_metadata_document_clients.sql
+  s_7a5811202bdfd5::t_caff3d7a458c8c 1-53
+crates/gateway-store/migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql
+  s_7a5811202bdfd5::t_d30eb304b5eecb 1-22
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_7a5811202bdfd5::t_d7bf3bb4ad725c 38-44
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_7a5811202bdfd5::t_f85a6a71602f51 1000-1225
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_7a5811202bdfd5::t_7de328c9f48e0e 235-275,760-763
+crates/gateway-store/src/migrate.rs
+  s_7a5811202bdfd5::t_9905c3f4905da7 12,255-261,263-268,270-272,276,293,303-406
+crates/gateway-store/src/migration_registry.rs
+  s_7a5811202bdfd5::t_1a9d42705bf803 10-14,16-22,403-411,413-415
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_7a5811202bdfd5::t_f7e103ade82841 219-255,752-755
+crates/gateway/openapi/admin-api.json
+  s_e88dc7cf2999d1::t_56307142e65591 17265-17271
+crates/gateway/src/config/mcp.rs
+  s_7a5811202bdfd5::t_843dd5c374a260 40-45,90-91,109-111
+crates/gateway/src/config/mcp_client_oauth.rs
+  s_7a5811202bdfd5::t_039d8638be5769 2,28-51,63,112,120-127
+crates/gateway/src/config/mod.rs
+  s_7a5811202bdfd5::t_e26288a9fcd659 58
+crates/gateway/src/config/tests/mcp.rs
+  s_7a5811202bdfd5::t_39a70e633b1ee9 42,61,85,124,191
+crates/gateway/src/config/tests/mcp_client_oauth.rs
+  s_7a5811202bdfd5::t_b7de9b2747c968 219-308
+crates/gateway/src/http/mcp_client_oauth.rs
+  s_7a5811202bdfd5::t_e04b79f0703222 14-22,26-27,61-127,196-197
+crates/gateway/src/http/mcp_client_oauth/consent.rs
+  s_7a5811202bdfd5::t_b6501c76ed4a31 45-49,160,193
+crates/gateway/src/http/mcp_client_oauth/flow_tests.rs
+  s_7a5811202bdfd5::t_615dba84308394 24-26,47-51
+crates/gateway/src/http/mcp_client_oauth/metadata.rs
+  s_7a5811202bdfd5::t_f87d960254a03c 43,139
+crates/gateway/src/http/mcp_client_oauth/metadata_document_tests.rs
+  s_7a5811202bdfd5::t_352b273d9556cd 1-704
+crates/gateway/src/http/mcp_client_oauth/tests.rs
+  s_7a5811202bdfd5::t_51705c79ecb1d2 25-30,32
+crates/gateway/src/http/mcp_oauth.rs
+  s_7a5811202bdfd5::t_623af3a67b45bb 229,394
+crates/gateway/src/http/mod.rs
+  s_7a5811202bdfd5::t_05296d2f1edc3d 134-135,493
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_7a5811202bdfd5::t_02b929a3668bdf 6
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_7a5811202bdfd5::t_652928e5c4b6bc 4,12,57,79,133,166-193,235,247-258,267-269,273
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_ad757ade01514b 23,111
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_7a5811202bdfd5::t_9011cc303672cc 1-80
+docs/configuration/configuration-reference.md
+  s_7a5811202bdfd5::t_69a3dd104edf3e 633-634,650-652,660-662
+docs/configuration/mcp-servers.md
+  s_7a5811202bdfd5::t_7f9c4531b676e7 292
+docs/mcp/mcp-client-setup.md
+  s_7a5811202bdfd5::t_7e204085967ad0 128,150-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "013e87123552c61209aa55cff714d542c9ea2cb9",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
