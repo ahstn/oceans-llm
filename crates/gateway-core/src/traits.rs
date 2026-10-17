@@ -1048,6 +1048,24 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_server_id: Uuid,
     ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
 
+    /// The servers a team admin of `team_id` sees: the team's own, and every
+    /// server published to the organisation. Stores filter in the query.
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        Ok(self
+            .list_external_mcp_servers(include_disabled)
+            .await?
+            .into_iter()
+            .filter(|server| {
+                server.ownership.owned_by(team_id)
+                    || server.ownership.visibility == crate::McpServerVisibility::Organisation
+            })
+            .collect())
+    }
+
     /// The servers with these IDs, disabled ones included, in one read.
     async fn list_external_mcp_servers_by_ids(
         &self,
@@ -1253,17 +1271,7 @@ pub trait McpAccessRepository: Send + Sync {
         mcp_tool_id: Uuid,
         expected_server: &crate::McpServerOwnershipGuard,
         revoked_at: OffsetDateTime,
-    ) -> Result<Option<Uuid>, StoreError> {
-        let _ = expected_server;
-        self.revoke_mcp_tool_grant(
-            subject_kind,
-            subject_id,
-            McpToolGrantTargetKind::Tool,
-            mcp_tool_id,
-            revoked_at,
-        )
-        .await
-    }
+    ) -> Result<Option<Uuid>, StoreError>;
 
     async fn list_mcp_tool_grants(
         &self,
@@ -1277,10 +1285,7 @@ pub trait McpAccessRepository: Send + Sync {
     async fn list_team_only_mcp_server_ids_outside(
         &self,
         team_id: Option<Uuid>,
-    ) -> Result<Vec<Uuid>, StoreError> {
-        let _ = team_id;
-        Ok(Vec::new())
-    }
+    ) -> Result<Vec<Uuid>, StoreError>;
 
     /// Whether one server is visible to its team only and `team_id` does not
     /// own it: a point lookup for requests that name the server.
@@ -1288,12 +1293,7 @@ pub trait McpAccessRepository: Send + Sync {
         &self,
         mcp_server_id: Uuid,
         team_id: Option<Uuid>,
-    ) -> Result<bool, StoreError> {
-        Ok(self
-            .list_team_only_mcp_server_ids_outside(team_id)
-            .await?
-            .contains(&mcp_server_id))
-    }
+    ) -> Result<bool, StoreError>;
 
     async fn resolve_mcp_access_for_subjects(
         &self,
@@ -1448,9 +1448,12 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         expected_server: &crate::McpServerOwnershipGuard,
         revoked_at: OffsetDateTime,
     ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
-        let _ = expected_server;
-        self.revoke_mcp_upstream_credential_binding(credential_binding_id, revoked_at)
-            .await
+        // Fails closed: a repository that cannot check the guard under its
+        // write lock must not revoke without it.
+        let _ = (credential_binding_id, expected_server, revoked_at);
+        Err(StoreError::Unexpected(
+            "guarded MCP credential revoke is not implemented for this repository".to_string(),
+        ))
     }
 
     async fn touch_mcp_upstream_credential_binding_last_used(

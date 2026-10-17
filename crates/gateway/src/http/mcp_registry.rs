@@ -130,13 +130,20 @@ pub async fn list_mcp_servers(
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
     // The owner filter runs in the store query; visibility is still the caller's.
-    let servers = match owner {
-        Some(owner) => {
+    let servers = match (owner, scope.managed_team_id()) {
+        (Some(owner), _) => {
             service
                 .list_servers_owned_by(owner.team_id(), query.include_disabled)
                 .await?
         }
-        None => service.list_servers(query.include_disabled).await?,
+        // A team admin's registry is filtered to what they see in the query.
+        (None, Some(team_id)) => {
+            state
+                .store
+                .list_external_mcp_servers_visible_to_team(team_id, query.include_disabled)
+                .await?
+        }
+        (None, None) => service.list_servers(query.include_disabled).await?,
     }
     .into_iter()
     .filter(|server| scope.can_view(server))
@@ -585,22 +592,20 @@ pub async fn list_mcp_server_tools(
         // A member sees only the tools their grants let them call, on a server
         // they can connect to; anything else does not exist for them.
         McpViewer::Member { user_id, team_id } => {
-            // Only this server is loaded and resolved, not the whole registry.
-            let active = state
-                .store
-                .get_external_mcp_server(server_id)
-                .await?
-                .is_some_and(|server| {
-                    server.status != gateway_core::ExternalMcpServerStatus::Disabled
-                });
-            let allowed: Vec<_> = if !active {
-                Vec::new()
-            } else {
-                member_access(&state, user_id, team_id, Some(server_id))
-                    .await?
+            // Only this server is resolved and read, not the whole registry.
+            let access = member_access(&state, user_id, team_id, Some(server_id)).await?;
+            let active = access.servers.iter().any(|server| {
+                server.mcp_server_id == server_id
+                    && server.status != gateway_core::ExternalMcpServerStatus::Disabled
+            });
+            let allowed: Vec<_> = if active {
+                access
+                    .tools
                     .into_iter()
                     .map(|tool| tool.mcp_tool_id)
                     .collect()
+            } else {
+                Vec::new()
             };
             if allowed.is_empty() {
                 return Err(AppError(GatewayError::Store(
@@ -1618,22 +1623,42 @@ const MEMBER_ACCESS_CONCURRENCY: usize = 4;
 /// (callers need tool and server IDs, not metadata).
 ///
 /// `server_id` limits the resolution to one server's tools.
+/// The tools a member can call and the servers they are on, read by ID.
+struct MemberAccess {
+    tools: Vec<gateway_core::ExternalMcpToolRecord>,
+    servers: Vec<gateway_core::ExternalMcpServerRecord>,
+}
+
 async fn member_access(
     state: &AppState,
     user_id: Uuid,
     team_id: Option<Uuid>,
     server_id: Option<Uuid>,
-) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
-    // As at runtime, a team-only server counts only for its own team's members.
-    let hidden: std::collections::HashSet<Uuid> = state
-        .store
-        .list_team_only_mcp_server_ids_outside(team_id)
-        .await?
+) -> Result<MemberAccess, AppError> {
+    let mut tools = granted_member_tools(state, user_id, team_id, server_id).await?;
+    let referenced: Vec<Uuid> = tools
+        .iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
-    let mut tools = granted_member_tools(state, user_id, team_id, server_id).await?;
-    tools.retain(|tool| !hidden.contains(&tool.mcp_server_id));
-    Ok(tools)
+    // Only the servers these tools are on are read. As at runtime, a team-only
+    // server counts only for its own team's members.
+    let mut servers = state
+        .store
+        .list_external_mcp_servers_by_ids(&referenced)
+        .await?;
+    servers.retain(|server| {
+        server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
+            || server
+                .ownership
+                .owner_team_id
+                .is_some_and(|owner| Some(owner) == team_id)
+    });
+    let reachable: std::collections::HashSet<Uuid> =
+        servers.iter().map(|server| server.mcp_server_id).collect();
+    tools.retain(|tool| reachable.contains(&tool.mcp_server_id));
+    Ok(MemberAccess { tools, servers })
 }
 
 async fn granted_member_tools(
@@ -1751,18 +1776,10 @@ async fn list_member_servers(
     query: &McpServersQuery,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
     // Only the servers the member can reach are read, not the whole registry.
-    let accessible: Vec<Uuid> = member_access(state, user_id, team_id, None)
-        .await?
-        .into_iter()
-        .map(|tool| tool.mcp_server_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
+    let access = member_access(state, user_id, team_id, None).await?;
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
-    let servers: Vec<_> = state
-        .store
-        .list_external_mcp_servers_by_ids(&accessible)
-        .await?
+    let servers: Vec<_> = access
+        .servers
         .into_iter()
         .filter(|server| {
             query.include_disabled

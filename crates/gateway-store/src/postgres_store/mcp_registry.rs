@@ -308,6 +308,23 @@ impl McpRegistryRepository for PostgresStore {
         rows.iter().map(decode_server).collect()
     }
 
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE ($1::bigint = 1 OR status != 'disabled') AND (owner_team_id = $2 OR visibility = 'organisation') ORDER BY server_key"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(if include_disabled { 1_i64 } else { 0_i64 })
+            .bind(team_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_server).collect()
+    }
+
     async fn list_external_mcp_servers_by_ids(
         &self,
         mcp_server_ids: &[Uuid],

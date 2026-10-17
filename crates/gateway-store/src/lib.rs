@@ -1504,6 +1504,23 @@ pub(crate) mod tests {
                 .collect::<Vec<_>>(),
             vec![server.mcp_server_id]
         );
+        // A team admin's registry, filtered in the query: the team's own server,
+        // which is team-only, is visible to that team and no other.
+        let visible_to = |team_id| store.list_external_mcp_servers_visible_to_team(team_id, true);
+        assert!(
+            visible_to(team.team_id)
+                .await
+                .expect("own team")
+                .iter()
+                .any(|listed| listed.mcp_server_id == server.mcp_server_id)
+        );
+        assert!(
+            !visible_to(Uuid::new_v4())
+                .await
+                .expect("another team")
+                .iter()
+                .any(|listed| listed.mcp_server_id == server.mcp_server_id)
+        );
         assert!(
             store
                 .list_external_mcp_servers_by_ids(&[])

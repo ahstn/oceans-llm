@@ -41,6 +41,25 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn list_external_mcp_servers_visible_to_team(
+        &self,
+        team_id: Uuid,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_external_mcp_servers_visible_to_team(team_id, include_disabled)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_external_mcp_servers_visible_to_team(team_id, include_disabled)
+                    .await
+            }
+        }
+    }
+
     async fn list_external_mcp_servers_by_ids(
         &self,
         mcp_server_ids: &[Uuid],
