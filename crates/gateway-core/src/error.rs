@@ -44,8 +44,12 @@ pub enum AuthError {
     OauthTokenInvalid,
     #[error("oauth access token was not issued for this MCP resource")]
     OauthTokenWrongResource,
-    #[error("oauth access token lacks the `{required}` scope")]
-    OauthInsufficientScope { required: String },
+    #[error("credential lacks the `{required}` scope")]
+    InsufficientScope { required: String },
+    #[error("this route needs an api key with full access; scoped keys cannot call it")]
+    FullAccessRequired,
+    #[error("api key is not scoped to this MCP server")]
+    McpServerNotInScope,
 }
 
 #[derive(Debug, Error)]
@@ -192,7 +196,11 @@ impl GatewayError {
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::ServiceAccountBudgetRequired)
             | Self::Auth(AuthError::InsufficientPrivileges)
-            | Self::Auth(AuthError::OauthInsufficientScope { .. }) => 403,
+            | Self::Auth(
+                AuthError::InsufficientScope { .. }
+                | AuthError::FullAccessRequired
+                | AuthError::McpServerNotInScope,
+            ) => 403,
             Self::BudgetExceeded { status, .. } => status.as_u16(),
             Self::RateLimited(_) => 429,
             Self::IdentityConstraint(_) => 400,
@@ -287,7 +295,11 @@ impl GatewayError {
             Self::Auth(AuthError::OauthTokenNotAccepted) => "oauth_token_not_accepted",
             Self::Auth(AuthError::OauthTokenInvalid) => "invalid_token",
             Self::Auth(AuthError::OauthTokenWrongResource) => "invalid_token_resource",
-            Self::Auth(AuthError::OauthInsufficientScope { .. }) => "insufficient_scope",
+            Self::Auth(
+                AuthError::InsufficientScope { .. }
+                | AuthError::FullAccessRequired
+                | AuthError::McpServerNotInScope,
+            ) => "insufficient_scope",
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
             Self::Store(StoreError::NotFound(_)) => "not_found",

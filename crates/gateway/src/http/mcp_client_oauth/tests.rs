@@ -221,7 +221,7 @@ fn insufficient_scope_challenge_names_the_missing_scope() {
     let challenge = bearer_challenge(
         &oauth_settings(),
         &McpOauthResource::Aggregate,
-        &GatewayError::Auth(AuthError::OauthInsufficientScope {
+        &GatewayError::Auth(AuthError::InsufficientScope {
             required: "mcp:aggregate".to_string(),
         }),
     )
