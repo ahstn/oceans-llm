@@ -2155,6 +2155,639 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Replaces the tool's annotation overrides. Overrides never change the\nschema hash or version, and the upstream values stay visible.",
+        "operationId": "set_mcp_tool_annotation_overrides",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMcpToolAnnotationOverridesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "set_mcp_tool_tags",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMcpToolTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_tool_versions",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_versions",
+            "in": "query",
+            "description": "Comma-separated version numbers to read, at most 10. A review diff asks\nfor the approved and pending versions. Paging is ignored when set.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Read versions older than this one.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100. Defaults to 20.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolVersionsPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Approves a pending version, which becomes the served definition.",
+        "operationId": "approve_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to approve",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Rejects a pending version. A text-only change keeps serving the previous\nversion; a new tool or a contract change stays withheld.",
+        "operationId": "reject_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to reject",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_tag_rules",
+        "parameters": [
+          {
+            "name": "subject_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulesPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "create_mcp_tag_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpTagRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulePayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules/preview": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Lists the active tools a rule would select, before it is saved.",
+        "operationId": "preview_mcp_tag_rule",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "effect",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulePreviewPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules/{rule_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "revoke_mcp_tag_rule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "description": "MCP tag rule identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulesPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/toolsets": {
       "get": {
         "tags": [
@@ -11759,6 +12392,13 @@
       "CreateMcpServerRequest": {
         "type": "object",
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Off when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -11813,6 +12453,39 @@
             ]
           }
         }
+      },
+      "CreateMcpTagRuleRequest": {
+        "type": "object",
+        "required": [
+          "subject_kind",
+          "subject_id",
+          "tag",
+          "effect"
+        ],
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Required for `include`. Omit for an `exclude` rule on every server."
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "CreateMcpToolsetRequest": {
         "type": "object",
@@ -13948,6 +14621,87 @@
           }
         }
       },
+      "Envelope_McpTagRulePayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "rule"
+            ],
+            "properties": {
+              "rule": {
+                "$ref": "#/components/schemas/McpTagRuleView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpTagRulePreviewPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tools",
+              "truncated"
+            ],
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolView"
+                },
+                "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+              },
+              "truncated": {
+                "type": "boolean",
+                "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpTagRulesPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpTagRuleView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -14017,6 +14771,64 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tool"
+            ],
+            "properties": {
+              "tool": {
+                "$ref": "#/components/schemas/McpToolView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolVersionView"
+                },
+                "description": "Newest first."
+              },
+              "next_before": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
               }
             }
           },
@@ -16294,11 +17106,16 @@
           "auth_mode",
           "auth_config",
           "timeout_ms",
+          "approve_tool_changes",
           "status",
           "created_at",
           "updated_at"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": "boolean",
+            "description": "New and changed tools wait for an admin to approve them."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -16393,9 +17210,107 @@
           }
         }
       },
+      "McpTagRulePayload": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/McpTagRuleView"
+          }
+        }
+      },
+      "McpTagRulePreviewPayload": {
+        "type": "object",
+        "required": [
+          "tools",
+          "truncated"
+        ],
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            },
+            "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
+          }
+        }
+      },
+      "McpTagRuleView": {
+        "type": "object",
+        "required": [
+          "id",
+          "subject_kind",
+          "subject_id",
+          "tag",
+          "effect",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "description": "`include` grants matching tools; `exclude` removes them and wins."
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The server the rule applies to; null for every server (exclude only)."
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpTagRulesPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTagRuleView"
+            }
+          }
+        }
+      },
       "McpToolAnnotationsView": {
         "type": "object",
-        "description": "Behaviour hints declared by the upstream server. A missing value means the\nserver did not declare the hint. Hints are not verified by the gateway.",
+        "description": "The four behaviour hints. A missing value means the hint is not declared\nat this level. Upstream hints are not verified by the gateway.",
         "properties": {
           "destructive_hint": {
             "type": [
@@ -16421,7 +17336,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "McpToolInvocationDetailView": {
         "type": "object",
@@ -16605,11 +17521,115 @@
               "null"
             ]
           },
+          "tool_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Served schema version of the tool a `tools/call` used; null otherwise."
+          },
           "user_id": {
             "type": [
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "McpToolPayload": {
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/McpToolView"
+          }
+        }
+      },
+      "McpToolVersionView": {
+        "type": "object",
+        "description": "One definition the upstream served for a tool.",
+        "required": [
+          "schema_version",
+          "schema_hash",
+          "status",
+          "input_schema",
+          "discovered_at"
+        ],
+        "properties": {
+          "annotations": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Annotations as the upstream declared them, without admin overrides.",
+            "additionalProperties": true
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discovered_at": {
+            "type": "string"
+          },
+          "input_schema": {},
+          "output_schema": {},
+          "reviewed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Empty for a version approved automatically by discovery."
+          },
+          "schema_hash": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "description": "`approved`, `pending`, `rejected` or `superseded`."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolVersionView"
+            },
+            "description": "Newest first."
+          },
+          "next_before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
           }
         }
       },
@@ -16622,6 +17642,11 @@
           "display_name",
           "input_schema",
           "annotations",
+          "annotation_overrides",
+          "effective_annotations",
+          "admin_tags",
+          "effective_tags",
+          "approval_status",
           "schema_hash",
           "schema_version",
           "is_active",
@@ -16629,8 +17654,32 @@
           "last_discovered_at"
         ],
         "properties": {
+          "admin_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags an admin attached to the tool."
+          },
+          "annotation_overrides": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints an admin set. A missing value keeps the upstream's."
+          },
           "annotations": {
-            "$ref": "#/components/schemas/McpToolAnnotationsView"
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints as the upstream server declared them."
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "`approved`, `pending_change` (served as the approved version while a\ntext change waits), `pending_review` or `rejected` (both withheld)."
+          },
+          "approved_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The served version; null until the tool is first approved."
           },
           "deactivated_at": {
             "type": [
@@ -16647,6 +17696,17 @@
           "display_name": {
             "type": "string"
           },
+          "effective_annotations": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints the gateway uses and serves: each override, else the upstream value."
+          },
+          "effective_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)\nplus admin tags. Tag rules match these."
+          },
           "first_discovered_at": {
             "type": "string"
           },
@@ -16662,6 +17722,14 @@
           },
           "output_schema": {
             "description": "Schema of the tool's structured result, when the upstream declares one."
+          },
+          "pending_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The version waiting for review."
           },
           "schema_hash": {
             "type": "string"
@@ -18732,6 +19800,35 @@
           }
         }
       },
+      "SetMcpToolAnnotationOverridesRequest": {
+        "type": "object",
+        "required": [
+          "annotation_overrides"
+        ],
+        "properties": {
+          "annotation_overrides": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints to override. A missing or null hint keeps the upstream's value."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetMcpToolTagsRequest": {
+        "type": "object",
+        "required": [
+          "tags"
+        ],
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Admin tags. They are lowercased, deduplicated and sorted."
+          }
+        },
+        "additionalProperties": false
+      },
       "SetMyProviderCredentialRequest": {
         "type": "object",
         "required": [
@@ -19613,6 +20710,13 @@
           "auth_mode"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Kept as it is when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true

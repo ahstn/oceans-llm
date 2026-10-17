@@ -63,6 +63,7 @@ fn decode_mcp_tool_invocation_row(
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         mcp_method,
         occurred_at: unix_to_datetime(occurred_at)?,
+        tool_schema_version: row.get(25).map_err(to_query_error)?,
     })
 }
 
@@ -83,8 +84,8 @@ impl McpToolInvocationRepository for LibsqlStore {
                 owner_kind, server_id, server_display_key, server_display_name, tool_id, tool_display_key,
                 tool_display_name, status, policy_result, latency_ms, error_code, has_payload,
                 arguments_payload_truncated, result_payload_truncated, arguments_payload_redacted,
-                result_payload_redacted, metadata_json, occurred_at, mcp_method
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+                result_payload_redacted, metadata_json, occurred_at, mcp_method, tool_schema_version
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
             "#,
             libsql::params![
                 invocation.mcp_tool_invocation_id.to_string(),
@@ -112,6 +113,7 @@ impl McpToolInvocationRepository for LibsqlStore {
                 metadata_json,
                 invocation.occurred_at.unix_timestamp(),
                 invocation.mcp_method.as_str(),
+                invocation.tool_schema_version,
             ],
         )
         .await
@@ -210,7 +212,7 @@ impl McpToolInvocationRepository for LibsqlStore {
                        tool_display_key, tool_display_name, status, policy_result, latency_ms,
                        error_code, has_payload, arguments_payload_truncated,
                        result_payload_truncated, arguments_payload_redacted,
-                       result_payload_redacted, metadata_json, occurred_at, mcp_method
+                       result_payload_redacted, metadata_json, occurred_at, mcp_method, tool_schema_version
                 FROM mcp_tool_invocations
                 WHERE (?1 IS NULL OR request_id = ?1)
                   AND (?2 IS NULL OR server_display_key = ?2)
@@ -281,7 +283,7 @@ impl McpToolInvocationRepository for LibsqlStore {
                        mti.policy_result, mti.latency_ms, mti.error_code, mti.has_payload,
                        mti.arguments_payload_truncated, mti.result_payload_truncated,
                        mti.arguments_payload_redacted, mti.result_payload_redacted,
-                       mti.metadata_json, mti.occurred_at, mti.mcp_method, mtip.arguments_json, mtip.result_json
+                       mti.metadata_json, mti.occurred_at, mti.mcp_method, mti.tool_schema_version, mtip.arguments_json, mtip.result_json
                 FROM mcp_tool_invocations mti
                 LEFT JOIN mcp_tool_invocation_payloads mtip
                   ON mtip.mcp_tool_invocation_id = mti.mcp_tool_invocation_id
@@ -303,8 +305,8 @@ impl McpToolInvocationRepository for LibsqlStore {
         };
 
         let invocation = decode_mcp_tool_invocation_row(&row)?;
-        let arguments_json: Option<String> = row.get(25).map_err(to_query_error)?;
-        let result_json: Option<String> = row.get(26).map_err(to_query_error)?;
+        let arguments_json: Option<String> = row.get(26).map_err(to_query_error)?;
+        let result_json: Option<String> = row.get(27).map_err(to_query_error)?;
         let payload = match (arguments_json, result_json) {
             (Some(arguments_json), Some(result_json)) => Some(McpToolInvocationPayloadRecord {
                 mcp_tool_invocation_id,

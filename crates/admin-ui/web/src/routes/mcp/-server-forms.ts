@@ -16,6 +16,7 @@ export type ServerFormState = {
   auth_mode: string
   auth_config: string
   timeout_ms: string
+  approve_tool_changes: boolean
 }
 
 export type CredentialBindingFormState = {
@@ -40,6 +41,7 @@ export function emptyServerForm(): ServerFormState {
     auth_mode: 'none',
     auth_config: '{}',
     timeout_ms: '30000',
+    approve_tool_changes: false,
   }
 }
 
@@ -67,6 +69,7 @@ export function formFromRecommended(server: RecommendedMcpServerView): ServerFor
     auth_mode: server.auth_mode,
     auth_config: JSON.stringify(server.auth_config ?? {}, null, 2),
     timeout_ms: '30000',
+    approve_tool_changes: false,
   }
 }
 
@@ -79,6 +82,7 @@ export function formFromServer(server: McpServerView): ServerFormState {
     auth_mode: server.auth_mode,
     auth_config: JSON.stringify(server.auth_config ?? {}, null, 2),
     timeout_ms: String(server.timeout_ms),
+    approve_tool_changes: server.approve_tool_changes,
   }
 }
 
@@ -96,6 +100,7 @@ export function formToCreateInput(form: ServerFormState): CreateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    approve_tool_changes: form.approve_tool_changes,
   }
 }
 
@@ -111,6 +116,7 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    approve_tool_changes: form.approve_tool_changes,
   }
 }
 

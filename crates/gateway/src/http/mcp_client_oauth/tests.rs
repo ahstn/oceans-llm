@@ -50,6 +50,7 @@ pub(super) async fn seed_server(state: &AppState, server_key: &str, server_url: 
             auth_config: Map::new(),
             timeout_ms: 2_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("server");

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io, time::Duration};
+use std::{collections::HashMap, io, time::Duration};
 
 use axum::{
     body::{Body, Bytes},
@@ -10,10 +10,23 @@ use axum::{
 use futures_util::TryStreamExt;
 use gateway_core::{GatewayError, ProviderError};
 use gateway_service::McpGatewayUpstream;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use url::Url;
 
 use super::{LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID};
+
+/// How direct `tools/list` presents one granted tool.
+#[derive(Debug, Default)]
+pub(super) struct GrantedToolView {
+    /// Admin hint overrides merged into the upstream `annotations`.
+    pub(super) annotation_overrides: Map<String, Value>,
+    /// The approved definition to serve instead of the upstream's object, on
+    /// servers that hold changed tools for review.
+    pub(super) definition: Option<Map<String, Value>>,
+}
+
+/// Granted tools by upstream name. Tools not in the map are removed.
+pub(super) type GrantedTools<'a> = HashMap<&'a str, GrantedToolView>;
 
 pub(super) struct BufferedMcpResponse {
     pub(super) status: StatusCode,
@@ -82,14 +95,14 @@ pub(super) async fn proxy_tools_list(
     inbound_headers: &HeaderMap,
     body: Bytes,
     upstream: &McpGatewayUpstream,
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<Response<Body>, GatewayError> {
     let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
     let filtered_body = if is_event_stream(&response.headers) {
-        filter_tools_list_sse(&response.body, allowed_tool_names)?
+        filter_tools_list_sse(&response.body, granted)?
     } else {
-        filter_tools_list_json(&response.body, allowed_tool_names, id)?
+        filter_tools_list_json(&response.body, granted, id)?
     };
     Ok(response_from_parts(
         response.status,
@@ -165,6 +178,50 @@ fn remove_task_support(tool: &mut Value) {
     }
 }
 
+/// Admin-set hints take precedence over the upstream's. Other annotation
+/// members and the rest of the tool object pass through unchanged.
+fn apply_annotation_overrides(tool: &mut Value, overrides: &Map<String, Value>) {
+    if overrides.is_empty() {
+        return;
+    }
+    let Some(tool) = tool.as_object_mut() else {
+        return;
+    };
+    let annotations = tool
+        .entry("annotations")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !annotations.is_object() {
+        *annotations = Value::Object(Map::new());
+    }
+    if let Some(annotations) = annotations.as_object_mut() {
+        annotations.extend(overrides.clone());
+    }
+}
+
+/// The tool members the gateway versions and approves. A stored definition
+/// owns them; any other member the upstream sends passes through.
+const VERSIONED_TOOL_MEMBERS: [&str; 6] = [
+    "name",
+    "title",
+    "description",
+    "inputSchema",
+    "outputSchema",
+    "annotations",
+];
+
+/// Serves the stored approved definition for the versioned members and keeps
+/// the upstream's other members, such as `icons`, `_meta` and `execution`.
+fn serve_stored_definition(tool: &mut Value, definition: &Map<String, Value>) {
+    let Some(object) = tool.as_object_mut() else {
+        *tool = Value::Object(definition.clone());
+        return;
+    };
+    for member in VERSIONED_TOOL_MEMBERS {
+        object.remove(member);
+    }
+    object.extend(definition.clone());
+}
+
 fn is_event_stream(headers: &HeaderMap) -> bool {
     headers
         .get(CONTENT_TYPE)
@@ -194,7 +251,7 @@ fn upstream_request(
 
 fn filter_tools_list_json(
     body: &[u8],
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<Vec<u8>, GatewayError> {
     let mut value: Value = serde_json::from_slice(body).map_err(|error| {
@@ -203,21 +260,18 @@ fn filter_tools_list_json(
         ))
     })?;
     if value.get("error").is_none() || value.get("result").is_some() {
-        filter_tools_array(&mut value, allowed_tool_names, id)?;
+        filter_tools_array(&mut value, granted, id)?;
     }
     serde_json::to_vec(&value)
         .map_err(|error| GatewayError::Internal(format!("failed encoding MCP tools/list: {error}")))
 }
 
-fn filter_tools_list_sse(
-    body: &[u8],
-    allowed_tool_names: &HashSet<&str>,
-) -> Result<Vec<u8>, GatewayError> {
+fn filter_tools_list_sse(body: &[u8], granted: &GrantedTools<'_>) -> Result<Vec<u8>, GatewayError> {
     rewrite_sse_messages(body, "tools/list", |value| {
         // Notifications and RPC errors can precede the tools result in an SSE response.
         // Any result must still pass the tool allowlist, even in a malformed envelope.
         if value.get("result").is_some() || !is_rpc_error_or_notification(value) {
-            filter_tools_array(value, allowed_tool_names, None)?;
+            filter_tools_array(value, granted, None)?;
         }
         Ok(())
     })
@@ -317,7 +371,7 @@ async fn read_limited_response_body(response: reqwest::Response) -> Result<Bytes
 
 fn filter_tools_array(
     value: &mut Value,
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<(), GatewayError> {
     let tools = value
@@ -333,9 +387,21 @@ fn filter_tools_array(
     tools.retain(|tool| {
         tool.get("name")
             .and_then(Value::as_str)
-            .is_some_and(|name| allowed_tool_names.contains(name))
+            .is_some_and(|name| granted.contains_key(name))
     });
-    tools.iter_mut().for_each(remove_task_support);
+    for tool in tools.iter_mut() {
+        remove_task_support(tool);
+        let view = tool
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(|name| granted.get(name));
+        if let Some(view) = view {
+            match &view.definition {
+                Some(definition) => serve_stored_definition(tool, definition),
+                None => apply_annotation_overrides(tool, &view.annotation_overrides),
+            }
+        }
+    }
     if let (Some(id), Some(object)) = (id, value.as_object_mut()) {
         object.insert("id".to_string(), id.clone());
     }

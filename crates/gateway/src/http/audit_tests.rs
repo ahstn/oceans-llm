@@ -21,6 +21,8 @@ use crate::http::{
     test_support::{app_state, install_rate_limits},
 };
 
+mod mcp_tool_policy;
+
 const AUDIT_LOGS: &str = "/api/v1/admin/audit-logs";
 const CLIENT_IP: &str = "203.0.113.9";
 

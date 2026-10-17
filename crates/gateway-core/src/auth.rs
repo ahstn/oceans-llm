@@ -2,7 +2,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::credential_scopes::ApiKeyAccess;
-use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
+use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord};
 use crate::error::AuthError;
 use crate::mcp_client_oauth::{GatewayAuthMethod, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX};
 
@@ -46,6 +46,25 @@ pub struct AuthenticatedApiKey {
     /// whose scopes and resource are in `oauth`.
     pub access: ApiKeyAccess,
     pub oauth: Option<OauthAccessContext>,
+}
+
+impl From<ApiKeyRecord> for AuthenticatedApiKey {
+    /// The caller an API key row stands for. Checking that the key may be used
+    /// is the caller's job; see [`ApiKeyRecord::is_active`].
+    fn from(record: ApiKeyRecord) -> Self {
+        Self {
+            id: record.id,
+            public_id: record.public_id,
+            name: record.name,
+            model_grant_mode: record.model_grant_mode,
+            owner_kind: record.owner_kind,
+            owner_user_id: record.owner_user_id,
+            owner_team_id: record.owner_team_id,
+            owner_service_account_id: record.owner_service_account_id,
+            access: record.access,
+            oauth: None,
+        }
+    }
 }
 
 impl AuthenticatedApiKey {

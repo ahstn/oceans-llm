@@ -181,6 +181,55 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for SingleServerRepo {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tool(
+            &self,
+            _mcp_tool_id: Uuid,
+        ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tools(
+            &self,
+            _mcp_tool_ids: &[Uuid],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_tags(
+            &self,
+            _mcp_tool_id: Uuid,
+            _tags: &[String],
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_annotation_overrides(
+            &self,
+            _mcp_tool_id: Uuid,
+            _overrides: &gateway_core::McpAnnotationOverrides,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_external_mcp_servers(
             &self,
             _include_disabled: bool,
@@ -272,6 +321,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

@@ -122,6 +122,109 @@ async fn describe_and_search_return_declared_tool_metadata() {
 }
 
 #[tokio::test]
+async fn tag_rules_govern_aggregate_search_describe_and_call() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let auth =
+        seed_authorized_tool(&state, "http://127.0.0.1:9/mcp", ExternalMcpAuthMode::None).await;
+    let server = state
+        .store
+        .get_external_mcp_server_by_key("repository")
+        .await
+        .expect("server lookup")
+        .expect("server");
+    let search = state
+        .store
+        .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+        .await
+        .expect("tool lookup")
+        .expect("search tool");
+    // Swap the explicit grant for an include rule on the user.
+    state
+        .store
+        .revoke_mcp_tool_grant(
+            McpToolGrantSubjectKind::ApiKey,
+            auth.id,
+            McpToolGrantTargetKind::Tool,
+            search.mcp_tool_id,
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("revoke grant");
+    let rule = |mcp_server_id, tag: &str, effect| gateway_core::McpToolTagRuleKey {
+        subject_kind: McpToolGrantSubjectKind::User,
+        subject_id: auth.owner_user_id.expect("owner user"),
+        mcp_server_id,
+        tag: tag.to_string(),
+        effect,
+    };
+    state
+        .store
+        .upsert_mcp_tool_tag_rule(
+            &rule(
+                Some(server.mcp_server_id),
+                "read_only",
+                gateway_core::McpTagRuleEffect::Include,
+            ),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("include rule");
+    state
+        .store
+        .set_mcp_tool_annotation_overrides(
+            search.mcp_tool_id,
+            &gateway_core::McpAnnotationOverrides {
+                open_world: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("override");
+
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    assert_eq!(searched["total"], 1);
+    // Clients see the admin's value, not the upstream's `openWorldHint: false`.
+    assert_eq!(
+        searched["items"][0]["tool"]["annotations"]["openWorldHint"],
+        true
+    );
+    let described = builtin_tool_result(
+        &state,
+        &auth,
+        "describe_tool",
+        json!({"address": "mcp://repository/tools/search"}),
+    )
+    .await;
+    assert_eq!(described["tool"]["annotations"]["openWorldHint"], true);
+    assert_eq!(described["tool"]["schema_hash"], "search-v1");
+
+    state
+        .store
+        .upsert_mcp_tool_tag_rule(
+            &rule(None, "open_world", gateway_core::McpTagRuleEffect::Exclude),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("exclude rule");
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    assert_eq!(searched["total"], 0);
+    let response = call_builtin_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(6),
+        "call_tool".to_string(),
+        json!({"address": "mcp://repository/tools/search", "arguments": {}}),
+    )
+    .await;
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body = String::from_utf8_lossy(&bytes);
+    assert!(body.contains("not granted"), "{body}");
+}
+
+#[tokio::test]
 async fn missing_oauth_credential_returns_the_connect_url() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     state.mcp_oauth_runtime = Arc::new(gateway_service::McpOauthRuntime::new(
@@ -622,6 +725,7 @@ async fn assert_failed_invocation(
     assert_eq!(invocation.server_display_key, "repository");
     assert_eq!(invocation.tool_display_key, "search");
     assert_eq!(invocation.metadata["mcp_route"], "aggregate");
+    assert_eq!(invocation.tool_schema_version, Some(1));
     assert!(invocation.metadata.contains_key("guardrail_call"));
 }
 
@@ -678,6 +782,7 @@ async fn seed_authorized_tool_with_config(
             auth_config,
             timeout_ms: 2_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");
