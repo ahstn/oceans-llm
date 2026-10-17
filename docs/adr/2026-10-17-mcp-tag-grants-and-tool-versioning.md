@@ -138,7 +138,7 @@ The new admin handlers check permission through one function, `require_mcp_polic
 - Tag rules are evaluated in Rust after loading the candidate tools of each include rule's server, not in SQL. One query per rule server is cheap at registry sizes, and both backends share the evaluation. A server with thousands of tools would load them all for each resolution.
 - An exclude rule on a team also removes tools that were granted to a member's own key. That is the intent of a deny rule, but it can surprise someone who reads only the key's grants. The effective-access preview shows the result.
 - `pending_change` keeps a tool callable while a text change waits. The upstream's behaviour may already have changed with its description. Admins who want every change held can reject text-only changes, which keeps the old text, or disable the server.
-- With approval on, direct `tools/list` drops upstream members the gateway does not store, such as `_meta` and `icons`, for every tool.
+- With approval on, members the gateway does not version, such as `_meta` and `icons`, pass through from the live upstream without review. They are not part of the call contract, so a change to them is not held.
 - Discovery only runs on refresh, so a change made upstream between refreshes is not seen until the next one.
 
 ## Follow-up
