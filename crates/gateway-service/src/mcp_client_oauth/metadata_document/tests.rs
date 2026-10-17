@@ -134,6 +134,8 @@ fn client_ids_follow_the_draft_rules_as_sent() {
         "https://editor.example.com:8443/client",
         // A root path is valid, though the draft advises against it.
         "https://editor.example.com/",
+        // The scheme is case-insensitive (RFC 3986 §3.1).
+        "HTTPS://editor.example.com/client",
     ] {
         assert!(parse_client_id_url(raw).is_ok(), "{raw}");
     }
@@ -142,7 +144,6 @@ fn client_ids_follow_the_draft_rules_as_sent() {
         ("https://editor.example.com?x=1", "path"),
         ("http://editor.example.com/client", "https"),
         ("https:editor.example.com/client", "https"),
-        ("HTTPS://editor.example.com/client", "https"),
         ("https://user@editor.example.com/client", "user information"),
         ("https://editor.example.com/client#x", "fragment"),
         ("https://editor.example.com/a/../client", "dot segments"),
@@ -163,6 +164,12 @@ fn client_ids_follow_the_draft_rules_as_sent() {
     let long = format!("https://editor.example.com/{}", "a".repeat(2100));
     assert!(parse_client_id_url(&long).is_err());
     assert!(is_metadata_document_client_id(CLIENT_ID));
+    assert!(is_metadata_document_client_id(
+        "HtTpS://editor.example.com/c"
+    ));
+    assert!(!is_metadata_document_client_id(
+        "https:/editor.example.com/c"
+    ));
     assert!(!is_metadata_document_client_id(
         "3f0b1c2a-7d4e-4b8a-9c1d-2e3f4a5b6c7d"
     ));
@@ -170,65 +177,77 @@ fn client_ids_follow_the_draft_rules_as_sent() {
 
 #[test]
 fn cache_headers_set_freshness_within_bounds() {
-    assert_eq!(cache_ttl(None, None), DEFAULT_CACHE_TTL);
-    assert_eq!(cache_ttl(Some("public"), None), DEFAULT_CACHE_TTL);
+    assert_eq!(cache_ttl(None, None, None), DEFAULT_CACHE_TTL);
+    assert_eq!(cache_ttl(Some("public"), None, None), DEFAULT_CACHE_TTL);
     assert_eq!(
-        cache_ttl(Some("public, max-age=120"), None),
+        cache_ttl(Some("public, max-age=120"), None, None),
         Duration::seconds(120)
     );
     assert_eq!(
-        cache_ttl(Some("Max-Age=\"60\""), None),
+        cache_ttl(Some("Max-Age=\"60\""), None, None),
         Duration::seconds(60)
     );
-    assert_eq!(cache_ttl(Some("max-age=31536000"), None), MAX_CACHE_TTL);
-    assert_eq!(cache_ttl(Some("max-age=0"), None), Duration::ZERO);
     assert_eq!(
-        cache_ttl(Some("max-age=600, no-cache"), None),
+        cache_ttl(Some("max-age=31536000"), None, None),
+        MAX_CACHE_TTL
+    );
+    assert_eq!(cache_ttl(Some("max-age=0"), None, None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=600, no-cache"), None, None),
         Duration::ZERO
     );
-    assert_eq!(cache_ttl(Some("no-store"), None), Duration::ZERO);
+    assert_eq!(cache_ttl(Some("no-store"), None, None), Duration::ZERO);
     // One copy serves every user, so it is read as a shared cache would.
     assert_eq!(
-        cache_ttl(Some("s-maxage=0, max-age=86400"), None),
+        cache_ttl(Some("s-maxage=0, max-age=86400"), None, None),
         Duration::ZERO
     );
     assert_eq!(
-        cache_ttl(Some("max-age=0, s-maxage=120"), None),
+        cache_ttl(Some("max-age=0, s-maxage=120"), None, None),
         Duration::seconds(120)
     );
     assert_eq!(
-        cache_ttl(Some("private, max-age=600"), None),
+        cache_ttl(Some("private, max-age=600"), None, None),
         Duration::ZERO
     );
     assert_eq!(
-        cache_ttl(Some("s-maxage=60, s-maxage=600"), None),
+        cache_ttl(Some("s-maxage=60, s-maxage=600"), None, None),
         Duration::ZERO
     );
     // Invalid or conflicting freshness is treated as stale.
-    assert_eq!(cache_ttl(Some("max-age=nonsense"), None), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("max-age=+86400"), None), Duration::ZERO);
-    assert_eq!(cache_ttl(Some("max-age=-1"), None), Duration::ZERO);
     assert_eq!(
-        cache_ttl(Some("max-age=\"\"86400\"\""), None),
+        cache_ttl(Some("max-age=nonsense"), None, None),
         Duration::ZERO
     );
-    assert_eq!(cache_ttl(Some("max-age="), None), Duration::ZERO);
     assert_eq!(
-        cache_ttl(Some("max-age=99999999999999999999"), None),
+        cache_ttl(Some("max-age=+86400"), None, None),
+        Duration::ZERO
+    );
+    assert_eq!(cache_ttl(Some("max-age=-1"), None, None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=\"\"86400\"\""), None, None),
+        Duration::ZERO
+    );
+    assert_eq!(cache_ttl(Some("max-age="), None, None), Duration::ZERO);
+    assert_eq!(
+        cache_ttl(Some("max-age=99999999999999999999"), None, None),
         MAX_CACHE_TTL
     );
     assert_eq!(
-        cache_ttl(Some("max-age=0, max-age=86400"), None),
+        cache_ttl(Some("max-age=0, max-age=86400"), None, None),
         Duration::ZERO
     );
     // A cache in between already used part of the lifetime.
     assert_eq!(
-        cache_ttl(Some("max-age=86400"), Some(86_390)),
+        cache_ttl(Some("max-age=86400"), Some(86_390), None),
         Duration::seconds(10)
     );
-    assert_eq!(cache_ttl(Some("max-age=60"), Some(600)), Duration::ZERO);
     assert_eq!(
-        cache_ttl(Some("max-age=60"), Some(-5)),
+        cache_ttl(Some("max-age=60"), Some(600), None),
+        Duration::ZERO
+    );
+    assert_eq!(
+        cache_ttl(Some("max-age=60"), Some(-5), None),
         Duration::seconds(60)
     );
 }
@@ -334,16 +353,66 @@ async fn every_cache_control_line_counts() {
         .await
         .expect("fetch");
     assert_eq!(
-        fetched.cache_control.as_deref(),
-        Some("max-age=86400, no-store")
+        fetched
+            .headers
+            .get_all(header::CACHE_CONTROL)
+            .iter()
+            .count(),
+        2
     );
-    assert_eq!(fetched.age_seconds, Some(5));
+    // The later no-store line wins over the earlier max-age line.
     assert_eq!(
-        fetched.date,
-        Some(OffsetDateTime::from_unix_timestamp(784_111_777).unwrap())
-    );
-    assert_eq!(
-        cache_ttl(fetched.cache_control.as_deref(), fetched.age_seconds),
+        freshness(&fetched.headers, OffsetDateTime::now_utc()).0,
         Duration::ZERO
     );
+}
+
+fn headers(fields: &[(&str, &str)]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in fields {
+        headers.append(
+            HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            value.parse().unwrap(),
+        );
+    }
+    headers
+}
+
+#[test]
+fn freshness_reads_date_expires_and_vary() {
+    let now = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+    let http = |offset: i64| httpdate::fmt_http_date((now + Duration::seconds(offset)).into());
+    // The time since Date counts as age, as Age does.
+    let (ttl, _) = freshness(
+        &headers(&[("cache-control", "max-age=86400"), ("date", &http(-86_390))]),
+        now,
+    );
+    assert_eq!(ttl, Duration::seconds(10));
+    // Expires applies when there is no max-age, measured from Date.
+    let (ttl, _) = freshness(
+        &headers(&[("date", &http(0)), ("expires", &http(120))]),
+        now,
+    );
+    assert_eq!(ttl, Duration::seconds(120));
+    // An expired or invalid Expires is already stale; max-age still wins.
+    for expires in [http(-60), "0".to_string()] {
+        let (ttl, _) = freshness(
+            &headers(&[("cache-control", "public"), ("expires", &expires)]),
+            now,
+        );
+        assert_eq!(ttl, Duration::ZERO, "{expires}");
+    }
+    let (ttl, _) = freshness(
+        &headers(&[("cache-control", "max-age=60"), ("expires", "0")]),
+        now,
+    );
+    assert_eq!(ttl, Duration::seconds(60));
+    // Vary: * never matches again, so it is neither cached nor reused stale.
+    let (ttl, reusable) = freshness(
+        &headers(&[("cache-control", "max-age=600"), ("vary", "Accept, *")]),
+        now,
+    );
+    assert_eq!((ttl, reusable), (Duration::ZERO, false));
+    let (ttl, reusable) = freshness(&headers(&[("vary", "Accept")]), now);
+    assert_eq!((ttl, reusable), (DEFAULT_CACHE_TTL, true));
 }

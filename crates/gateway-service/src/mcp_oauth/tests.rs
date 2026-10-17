@@ -72,6 +72,8 @@ fn server_client(token_url: &str) -> McpOauthClient {
         default_scopes: Vec::new(),
         google: false,
         token_endpoint_source: TokenEndpointSource::Upstream,
+        // A public MCP server, named by an IP literal so the tests need no DNS.
+        server_url: "https://93.184.215.14/mcp".to_string(),
     }
 }
 
@@ -104,6 +106,32 @@ async fn server_token_endpoints_cannot_reach_internal_addresses() {
         );
         assert!(!is_transport_error(&error), "{token_url}");
     }
+}
+
+#[tokio::test]
+async fn token_requests_are_scoped_by_the_admin_entered_server() {
+    let runtime = McpOauthRuntime::new(Some("https://oceans.example.com".into()), Vec::new());
+    // The saved resource names a private address, but the server the admin
+    // entered is public, so the token request may not go there.
+    let config = McpOauthServerConfig {
+        provider_key: MCP_SERVER_OAUTH_PROVIDER_KEY.to_string(),
+        resource: "https://10.0.0.5/mcp".to_string(),
+        scopes: Vec::new(),
+        resource_indicator: false,
+        server_oauth: None,
+        discovery_tool_allowlist: None,
+    };
+    let error = runtime
+        .exchange_code(
+            &server_client("https://10.0.0.5/token"),
+            &config,
+            "code",
+            "verifier",
+            &[],
+        )
+        .await
+        .expect_err("scope comes from the server URL");
+    assert!(error.to_string().contains("not allowed"), "{error}");
 }
 
 #[test]

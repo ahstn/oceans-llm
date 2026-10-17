@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use gateway_core::{
     GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository, StoreError,
 };
-use reqwest::header::{AGE, CACHE_CONTROL, DATE};
+use reqwest::header::{AGE, CACHE_CONTROL, DATE, EXPIRES, HeaderMap, HeaderName, VARY};
 use serde::Deserialize;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
@@ -55,18 +55,18 @@ const MAX_CACHED_DOCUMENTS: usize = 1024;
 /// Documents fetched at once. A request beyond this fails as temporarily
 /// unavailable instead of queueing, so callers cannot pile up fetches.
 const MAX_CONCURRENT_FETCHES: usize = 32;
+/// How long a document that was refused for good (missing, invalid, or not
+/// allowed) is refused again without another fetch.
+const FAILURE_TTL: Duration = Duration::seconds(30);
 const FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
 
-/// A fetched document, before validation.
+/// A fetched document, before validation. The headers decide how long it
+/// may be cached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchedDocument {
     pub status: u16,
-    pub cache_control: Option<String>,
-    /// The response's `Age` in seconds: how long a cache in between held it.
-    pub age_seconds: Option<i64>,
-    /// The response's `Date`, when the origin generated it.
-    pub date: Option<OffsetDateTime>,
+    pub headers: HeaderMap,
     pub body: Vec<u8>,
 }
 
@@ -81,25 +81,7 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         let response = self.get(url, "application/json").await?;
         let status = response.status().as_u16();
-        // Several field lines form one comma-separated list (RFC 9110 §5.2).
-        let cache_control = response
-            .headers()
-            .get_all(CACHE_CONTROL)
-            .iter()
-            .filter_map(|value| value.to_str().ok())
-            .collect::<Vec<_>>();
-        let cache_control = (!cache_control.is_empty()).then(|| cache_control.join(", "));
-        let age_seconds = response
-            .headers()
-            .get(AGE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| delta_seconds(value.trim()));
-        let date = response
-            .headers()
-            .get(DATE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| httpdate::parse_http_date(value).ok())
-            .map(OffsetDateTime::from);
+        let headers = response.headers().clone();
         let body = if status == 200 {
             response.body().await?
         } else {
@@ -107,9 +89,7 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
         };
         Ok(FetchedDocument {
             status,
-            cache_control,
-            age_seconds,
-            date,
+            headers,
             body,
         })
     }
@@ -149,6 +129,9 @@ pub struct ClientMetadataDocuments {
     /// document wait for the same fetch and share its result.
     in_flight: Flights,
     fetch_permits: Semaphore,
+    /// Documents recently refused for good, so repeating the request does
+    /// not fetch again until [`FAILURE_TTL`] passes.
+    failures: Mutex<HashMap<String, (ResolveFailure, OffsetDateTime)>>,
 }
 
 type RefreshOutcome = Result<GatewayOauthClientRecord, ResolveFailure>;
@@ -182,6 +165,7 @@ impl ClientMetadataDocuments {
             source,
             cache: Mutex::new(HashMap::new()),
             in_flight: Mutex::new(HashMap::new()),
+            failures: Mutex::new(HashMap::new()),
             fetch_permits: Semaphore::new(MAX_CONCURRENT_FETCHES),
         })
     }
@@ -214,13 +198,19 @@ impl ClientMetadataDocuments {
         if let Some(client) = self.cached(client_id, now) {
             return Ok(client);
         }
-        let flight = InFlight::join(&self.in_flight, client_id);
-        let outcome = flight
-            .cell
-            .get_or_init(|| self.refresh(repo, client_id, now))
-            .await
-            .clone();
-        drop(flight);
+        let outcome = match self.recent_failure(client_id, now) {
+            Some(failure) => Err(failure),
+            None => {
+                let flight = InFlight::join(&self.in_flight, client_id);
+                let outcome = flight
+                    .cell
+                    .get_or_init(|| self.refresh(repo, client_id, now))
+                    .await
+                    .clone();
+                drop(flight);
+                outcome
+            }
+        };
         let failure = match outcome {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
@@ -246,6 +236,13 @@ impl ClientMetadataDocuments {
                 .stand_in(repo, client_id, now, &failure)
                 .await
                 .unwrap_or(Err(failure)),
+            Err(failure) => {
+                // The document is gone or no longer valid: a later outage must
+                // not bring the old copy back.
+                self.forget(client_id);
+                self.remember_failure(client_id, &failure, now);
+                Err(failure)
+            }
             outcome => outcome,
         }
     }
@@ -390,6 +387,31 @@ impl ClientMetadataDocuments {
         );
     }
 
+    fn recent_failure(&self, client_id: &str, now: OffsetDateTime) -> Option<ResolveFailure> {
+        let failures = self
+            .failures
+            .lock()
+            .expect("metadata document failure lock");
+        failures
+            .get(client_id)
+            .filter(|(_, until)| *until > now)
+            .map(|(failure, _)| failure.clone())
+    }
+
+    fn remember_failure(&self, client_id: &str, failure: &ResolveFailure, now: OffsetDateTime) {
+        let mut failures = self
+            .failures
+            .lock()
+            .expect("metadata document failure lock");
+        if failures.len() >= MAX_CACHED_DOCUMENTS && !failures.contains_key(client_id) {
+            failures.retain(|_, (_, until)| *until > now);
+            if failures.len() >= MAX_CACHED_DOCUMENTS {
+                return;
+            }
+        }
+        failures.insert(client_id.to_string(), (failure.clone(), now + FAILURE_TTL));
+    }
+
     fn forget(&self, client_id: &str) {
         self.cache
             .lock()
@@ -435,16 +457,11 @@ impl ClientMetadataDocuments {
         }
         let client =
             validate_document(client_id, &fetched.body, now).map_err(ResolveFailure::permanent)?;
-        // RFC 9111 §4.2.3: the response is at least as old as its `Age`, and
-        // as the time since its `Date`.
-        let apparent_age = fetched
-            .date
-            .map_or(0, |date| (now - date).whole_seconds().max(0));
-        let age = fetched.age_seconds.unwrap_or(0).max(apparent_age);
+        let (ttl, reusable_when_stale) = freshness(&fetched.headers, now);
         Ok(ValidatedDocument {
             client,
-            ttl: cache_ttl(fetched.cache_control.as_deref(), Some(age)),
-            reusable_when_stale: !must_revalidate(fetched.cache_control.as_deref()),
+            ttl,
+            reusable_when_stale,
         })
     }
 
@@ -547,7 +564,14 @@ where
 /// Registered clients get UUIDs, so an https URL is never one of them.
 #[must_use]
 pub fn is_metadata_document_client_id(client_id: &str) -> bool {
-    client_id.starts_with("https://")
+    https_rest(client_id).is_some()
+}
+
+/// What follows `https://`, matching the scheme case-insensitively
+/// (RFC 3986 §3.1). The `client_id` itself is kept as sent.
+fn https_rest(client_id: &str) -> Option<&str> {
+    let (scheme, rest) = client_id.split_at_checked("https://".len())?;
+    scheme.eq_ignore_ascii_case("https://").then_some(rest)
 }
 
 /// The host that published a metadata document client, for the consent
@@ -580,7 +604,7 @@ fn parse_client_id_url(client_id: &str) -> Result<Url, OauthError> {
     if client_id.len() > MAX_URI_LENGTH {
         return Err(invalid("it is too long"));
     }
-    let Some(rest) = client_id.strip_prefix("https://") else {
+    let Some(rest) = https_rest(client_id) else {
         return Err(invalid("it must use https"));
     };
     if client_id
@@ -698,18 +722,61 @@ fn validate_document(
     })
 }
 
+/// How long a fetched document may be cached, and whether it may stand in
+/// once stale, from its response headers.
+fn freshness(headers: &HeaderMap, now: OffsetDateTime) -> (Duration, bool) {
+    let field = |name: HeaderName| {
+        // Several field lines form one comma-separated list (RFC 9110 §5.2).
+        let lines = headers
+            .get_all(name)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>();
+        (!lines.is_empty()).then(|| lines.join(", "))
+    };
+    let http_date = |value: &str| {
+        httpdate::parse_http_date(value.trim())
+            .ok()
+            .map(OffsetDateTime::from)
+    };
+    // `Vary: *` never matches a later request (RFC 9111 §4.1).
+    if field(VARY).is_some_and(|vary| vary.split(',').any(|item| item.trim() == "*")) {
+        return (Duration::ZERO, false);
+    }
+    let cache_control = field(CACHE_CONTROL);
+    let date = field(DATE).and_then(|value| http_date(&value));
+    // RFC 9111 §4.2.3: the response is at least as old as its `Age`, and as
+    // the time since its `Date`.
+    let apparent_age = date.map_or(0, |date| (now - date).whole_seconds().max(0));
+    let age = field(AGE)
+        .and_then(|value| delta_seconds(value.trim()))
+        .unwrap_or(0)
+        .max(apparent_age);
+    // RFC 9111 §4.2.1: `Expires` less `Date`; an invalid one is already past.
+    let expires_lifetime = field(EXPIRES).map(|value| {
+        http_date(&value).map_or(0, |expires| (expires - date.unwrap_or(now)).whole_seconds())
+    });
+    (
+        cache_ttl(cache_control.as_deref(), Some(age), expires_lifetime),
+        !must_revalidate(cache_control.as_deref()),
+    )
+}
+
 /// How long a document stays fresh, read as a shared cache would (RFC 9111),
 /// since one copy serves every user of this process.
 ///
 /// `no-store`, `no-cache`, and `private` mean fetching it each time.
-/// Otherwise `s-maxage` applies, or else `max-age`, less the time a cache in
-/// between already held it (`Age`), capped at [`MAX_CACHE_TTL`]. A malformed
-/// or repeated value makes the response stale (RFC 9111 §4.2.1). `Expires` is
-/// not read.
-fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration {
-    let Some(cache_control) = cache_control else {
-        return DEFAULT_CACHE_TTL;
-    };
+/// Otherwise `s-maxage` applies, else `max-age`, else the `Expires`
+/// lifetime, less the time a cache in between already held it (`Age`),
+/// capped at [`MAX_CACHE_TTL`]. A malformed or repeated value makes the
+/// response stale (RFC 9111 §4.2.1). Without any of them, it is
+/// [`DEFAULT_CACHE_TTL`].
+fn cache_ttl(
+    cache_control: Option<&str>,
+    age_seconds: Option<i64>,
+    expires_lifetime: Option<i64>,
+) -> Duration {
+    let cache_control = cache_control.unwrap_or_default();
     let mut max_age = None;
     let mut s_maxage = None;
     for directive in cache_control.split(',') {
@@ -736,10 +803,13 @@ fn cache_ttl(cache_control: Option<&str>, age_seconds: Option<i64>) -> Duration 
             return Duration::ZERO;
         }
     }
-    s_maxage.or(max_age).map_or(DEFAULT_CACHE_TTL, |seconds| {
-        let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
-        Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
-    })
+    s_maxage
+        .or(max_age)
+        .or(expires_lifetime)
+        .map_or(DEFAULT_CACHE_TTL, |seconds| {
+            let remaining = seconds.saturating_sub(age_seconds.unwrap_or(0).max(0));
+            Duration::seconds(remaining.max(0)).min(MAX_CACHE_TTL)
+        })
 }
 
 /// Whether the document forbids reuse once stale without a successful fetch:

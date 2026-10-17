@@ -95,6 +95,9 @@ pub struct McpOauthClient {
     default_scopes: Vec<String>,
     google: bool,
     token_endpoint_source: TokenEndpointSource,
+    /// The admin-entered MCP server URL, which scopes this client's
+    /// registration and token requests. Never a URL an upstream supplied.
+    server_url: String,
 }
 
 impl std::fmt::Debug for McpOauthClient {
@@ -376,7 +379,7 @@ impl McpOauthRuntime {
     ///
     /// A server-level client's token endpoint came from upstream metadata or
     /// the server's auth config, so it goes through the SSRF guard, scoped to
-    /// the MCP server at `resource`. A configured provider's endpoint is the
+    /// the admin-entered MCP server URL. A configured provider's endpoint is the
     /// gateway's own configuration and uses the plain client.
     ///
     /// A failure to reach the endpoint is a [`ProviderError::Transport`]; an
@@ -385,7 +388,6 @@ impl McpOauthRuntime {
     async fn send_token_request(
         &self,
         client: &McpOauthClient,
-        resource: &str,
         form: Vec<(&'static str, String)>,
     ) -> Result<(reqwest::StatusCode, Vec<u8>), GatewayError> {
         let token_url = secure_token_url(&client.token_url)?;
@@ -399,7 +401,7 @@ impl McpOauthRuntime {
             let body = response.bytes().await.map_err(oauth_transport_error)?;
             return Ok((status, body.to_vec()));
         }
-        let fetcher = self.token_fetchers.for_trusted_url(resource);
+        let fetcher = self.token_fetchers.for_trusted_url(&client.server_url);
         let request = fetcher
             .request(reqwest::Method::POST, &token_url)
             .map_err(oauth_fetch_error)?;
@@ -424,7 +426,7 @@ impl McpOauthRuntime {
     pub async fn resolve_client<R>(
         &self,
         repo: &R,
-        mcp_server_id: Uuid,
+        server: &ExternalMcpServerRecord,
         config: &McpOauthServerConfig,
         register: bool,
     ) -> Result<McpOauthClient, GatewayError>
@@ -446,6 +448,7 @@ impl McpOauthRuntime {
                 default_scopes: provider.scopes.clone(),
                 google: provider.provider_type == McpOauthProviderType::Google,
                 token_endpoint_source: TokenEndpointSource::GatewayConfig,
+                server_url: server.server_url.clone(),
             });
         };
         let (client_id, client_secret, method) = match &endpoints.registration {
@@ -473,14 +476,7 @@ impl McpOauthRuntime {
             ),
             McpOauthClientRegistration::Dynamic => {
                 let registered = self
-                    .registered_client(
-                        repo,
-                        mcp_server_id,
-                        config,
-                        endpoints,
-                        &redirect_uri,
-                        register,
-                    )
+                    .registered_client(repo, server, config, endpoints, &redirect_uri, register)
                     .await?;
                 (
                     registered.client_id,
@@ -501,13 +497,14 @@ impl McpOauthRuntime {
             default_scopes: Vec::new(),
             google: false,
             token_endpoint_source: TokenEndpointSource::Upstream,
+            server_url: server.server_url.clone(),
         })
     }
 
     async fn registered_client<R>(
         &self,
         repo: &R,
-        mcp_server_id: Uuid,
+        server: &ExternalMcpServerRecord,
         config: &McpOauthServerConfig,
         endpoints: &McpServerOauthEndpoints,
         redirect_uri: &str,
@@ -516,6 +513,7 @@ impl McpOauthRuntime {
     where
         R: McpUpstreamCredentialRepository + ?Sized,
     {
+        let mcp_server_id = server.mcp_server_id;
         let now = OffsetDateTime::now_utc();
         if let Some(stored) = repo.get_mcp_oauth_client(mcp_server_id).await? {
             let expired = stored
@@ -546,7 +544,7 @@ impl McpOauthRuntime {
                 )
             })?;
         let registered = register_oauth_client(
-            self.discovery_fetchers.for_trusted_url(&config.resource),
+            self.discovery_fetchers.for_trusted_url(&server.server_url),
             registration_endpoint,
             redirect_uri,
             endpoints
@@ -621,9 +619,7 @@ impl McpOauthRuntime {
         if config.resource_indicator {
             form.push(("resource", config.resource.clone()));
         }
-        let (status, body) = self
-            .send_token_request(client, &config.resource, form)
-            .await?;
+        let (status, body) = self.send_token_request(client, form).await?;
         let mut grant = parse_token_response(
             status,
             &body,
@@ -720,7 +716,7 @@ impl McpOauthRuntime {
         let config = mcp_oauth_server_config(&server.auth_config)
             .map_err(|_| credential_required(server))?;
         let client = self
-            .resolve_client(repo, server.mcp_server_id, &config, false)
+            .resolve_client(repo, server, &config, false)
             .await
             .map_err(|error| match error {
                 GatewayError::McpCredentialRequired { .. } => credential_required(server),
@@ -733,10 +729,7 @@ impl McpOauthRuntime {
         if config.resource_indicator {
             form.push(("resource", bundle.resource.clone()));
         }
-        let (status, body) = match self
-            .send_token_request(&client, &config.resource, form)
-            .await
-        {
+        let (status, body) = match self.send_token_request(&client, form).await {
             Ok(response) => response,
             // Only an unreachable endpoint keeps the current token; a refused
             // one is a configuration problem and surfaces as one.

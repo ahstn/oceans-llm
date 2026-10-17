@@ -44,9 +44,7 @@ impl Fixture {
             url.to_string(),
             FetchedDocument {
                 status: 200,
-                cache_control: cache_control.map(ToOwned::to_owned),
-                age_seconds: None,
-                date: None,
+                headers: cache_headers(cache_control),
                 body: serde_json::to_vec(document).unwrap(),
             },
         );
@@ -57,9 +55,7 @@ impl Fixture {
             url.to_string(),
             FetchedDocument {
                 status,
-                cache_control: Some("no-store".to_string()),
-                age_seconds: None,
-                date: None,
+                headers: cache_headers(Some("no-store")),
                 body: Vec::new(),
             },
         );
@@ -86,12 +82,18 @@ impl ClientMetadataDocumentSource for Fixture {
             .cloned()
             .unwrap_or(FetchedDocument {
                 status: 404,
-                cache_control: None,
-                age_seconds: None,
-                date: None,
+                headers: cache_headers(None),
                 body: Vec::new(),
             }))
     }
+}
+
+fn cache_headers(cache_control: Option<&str>) -> axum::http::HeaderMap {
+    let mut headers = axum::http::HeaderMap::new();
+    if let Some(value) = cache_control {
+        headers.insert(header::CACHE_CONTROL, value.parse().unwrap());
+    }
+    headers
 }
 
 fn editor_document() -> Value {
@@ -401,6 +403,31 @@ async fn passing_failures_reuse_only_a_cacheable_copy() {
     let (status, page) = body_text(&harness, &harness.authorize_query(uncached, &[])).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{page}");
     assert!(page.contains("temporarily_unavailable"), "{page}");
+}
+
+#[tokio::test]
+async fn withdrawn_documents_are_refused_without_refetching_or_standing_in() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
+    harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    // The publisher withdraws the document.
+    fixture.respond(CLIENT_ID, 404);
+    let query = harness.authorize_query(CLIENT_ID, &[]);
+    let (status, page) = body_text(&harness, &query).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{page}");
+    let fetches = fixture.fetches();
+    // Repeats are refused from memory, and an outage now cannot bring the
+    // withdrawn copy back.
+    fixture.respond(CLIENT_ID, 503);
+    for _ in 0..3 {
+        let (status, page) = body_text(&harness, &query).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{page}");
+        assert!(page.contains("HTTP 404"), "{page}");
+    }
+    assert_eq!(fixture.fetches(), fetches);
 }
 
 #[tokio::test]
