@@ -14,58 +14,16 @@ import {
 } from '@/components/ui/select'
 import { saveMcpToolAnnotationOverrides, saveMcpToolTags } from '@/server/mcp-policy-data.functions'
 import type { McpToolAnnotationsView, McpToolView } from '@/types/api'
-
-type HintKey = keyof McpToolAnnotationsView
-
-export const toolHints: { key: HintKey; label: string }[] = [
-  { key: 'read_only_hint', label: 'Read-only' },
-  { key: 'destructive_hint', label: 'Destructive' },
-  { key: 'idempotent_hint', label: 'Idempotent' },
-  { key: 'open_world_hint', label: 'Open world' },
-]
-
-/** Tags derived from the effective hints; admin tags cannot use these names. */
-export const derivedTags = ['read_only', 'destructive', 'idempotent', 'open_world'] as const
-
-const UPSTREAM = 'upstream'
-
-function hintValue(value: boolean | null | undefined) {
-  if (value === true) {
-    return 'true'
-  }
-  if (value === false) {
-    return 'false'
-  }
-  return UPSTREAM
-}
-
-function parseHint(value: string): boolean | null {
-  if (value === 'true') {
-    return true
-  }
-  if (value === 'false') {
-    return false
-  }
-  return null
-}
-
-function describeHint(value: boolean | null | undefined) {
-  if (value === true) {
-    return 'Yes'
-  }
-  if (value === false) {
-    return 'No'
-  }
-  return 'Not declared'
-}
-
-/** Admin tags as typed: split on commas and whitespace, without empties. */
-export function parseTagInput(value: string) {
-  return value
-    .split(/[\s,]+/)
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-}
+import {
+  UPSTREAM,
+  describeHint,
+  hintValue,
+  isDerivedTag,
+  parseHint,
+  parseTagInput,
+  toolHints,
+  type HintKey,
+} from './-tool-tags'
 
 export function EffectiveTagBadges({ tags }: { tags: string[] }) {
   if (tags.length === 0) {
@@ -74,10 +32,7 @@ export function EffectiveTagBadges({ tags }: { tags: string[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1" data-testid="mcp-tool-effective-tags">
       {tags.map((tag) => (
-        <Badge
-          key={tag}
-          variant={(derivedTags as readonly string[]).includes(tag) ? 'secondary' : 'outline'}
-        >
+        <Badge key={tag} variant={isDerivedTag(tag) ? 'secondary' : 'outline'}>
           {tag}
         </Badge>
       ))}

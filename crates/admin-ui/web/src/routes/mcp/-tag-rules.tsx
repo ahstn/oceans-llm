@@ -20,7 +20,7 @@ import {
   saveMcpTagRule,
 } from '@/server/mcp-policy-data.functions'
 import type { McpServerView, McpTagRuleView, McpToolView } from '@/types/api'
-import { derivedTags } from './-tool-policy'
+import { derivedTags } from './-tool-tags'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
 
 const ALL_SERVERS = 'all'
@@ -74,13 +74,11 @@ export function TagRulesSection({
   )
   const serverOptions: ComboOption[] = [
     ...(form.effect === 'exclude' ? [{ value: ALL_SERVERS, label: 'All servers' }] : []),
-    ...servers
-      .filter((server) => server.status === 'active')
-      .map((server) => ({
-        value: server.id,
-        label: server.display_name,
-        sublabel: server.server_key,
-      })),
+    ...servers.flatMap((server) =>
+      server.status === 'active'
+        ? [{ value: server.id, label: server.display_name, sublabel: server.server_key }]
+        : [],
+    ),
   ]
   const tagOptions: ComboOption[] = useMemo(() => {
     const adminTags = new Set(tools.flatMap((tool) => tool.admin_tags))
