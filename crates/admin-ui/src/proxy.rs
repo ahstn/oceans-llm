@@ -61,12 +61,16 @@ pub fn mount_admin_ui(router: Router, config: AdminUiConfig) -> Router {
     };
 
     let state = ProxyState::new(&config);
-    let mut admin_ui_router = Router::new()
-        .route(&base_path, any(proxy_request))
-        .route(&wildcard_path, any(proxy_request));
-    if base_path != "/" {
-        // The wildcard needs at least one character, and the UI redirects `/admin` to `/admin/`.
-        admin_ui_router = admin_ui_router.route(&format!("{base_path}/"), any(proxy_request));
+    let mut admin_ui_router = Router::new().route(&wildcard_path, any(proxy_request));
+    if base_path == "/" {
+        admin_ui_router = admin_ui_router.route(&base_path, any(proxy_request));
+    } else {
+        // The UI lives under `/admin/`, and the wildcard needs at least one character, so that
+        // route is explicit. A bare `/admin` redirects to it here rather than relying on the
+        // upstream: the Vite dev server answers it with a 404.
+        admin_ui_router = admin_ui_router
+            .route(&base_path, any(redirect_to_admin_ui))
+            .route(&format!("{base_path}/"), any(proxy_request));
     }
     let admin_ui_router = admin_ui_router.with_state(state.clone());
 
@@ -79,12 +83,19 @@ pub fn mount_admin_ui(router: Router, config: AdminUiConfig) -> Router {
     router.merge(admin_ui_router)
 }
 
-async fn redirect_to_admin_ui(State(state): State<ProxyState>) -> Response {
+/// Sends `/` and the bare base path to `{base_path}/`, keeping the query string.
+async fn redirect_to_admin_ui(State(state): State<ProxyState>, uri: Uri) -> Response {
+    let query = uri
+        .query()
+        .map(|query| format!("?{query}"))
+        .unwrap_or_default();
+    let location = format!("{}/{query}", state.base_path);
     Response::builder()
         .status(StatusCode::FOUND)
         .header(
             LOCATION,
-            HeaderValue::from_str(&state.base_path).expect("admin UI base path is a valid header"),
+            // A parsed URI's path and query only hold characters that are valid in a header.
+            HeaderValue::from_str(&location).expect("admin UI redirect is a valid header"),
         )
         .body(Body::empty())
         .expect("redirect response should build")
@@ -619,7 +630,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_redirects_to_admin_base_path() {
+    async fn root_redirects_to_admin_base_path_with_trailing_slash() {
         let app = mount_admin_ui(Router::new(), AdminUiConfig::default());
 
         let request = Request::builder()
@@ -636,8 +647,40 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FOUND);
         assert_eq!(
             response.headers().get("location"),
-            Some(&HeaderValue::from_static("/admin"))
+            Some(&HeaderValue::from_static("/admin/"))
         );
+    }
+
+    #[tokio::test]
+    async fn bare_base_path_redirects_to_trailing_slash_without_reaching_upstream() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        let request = Request::builder()
+            .uri("/admin?redirect=%2Fapi-keys")
+            .method("GET")
+            .body(Body::empty())
+            .expect("request must build");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("base path redirect should succeed");
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get("location"),
+            Some(&HeaderValue::from_static("/admin/?redirect=%2Fapi-keys"))
+        );
+        assert!(captured.lock().expect("capture lock").is_empty());
     }
 
     #[tokio::test]

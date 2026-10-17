@@ -7,7 +7,20 @@ test('bare root redirects into the admin app', async ({ request, baseURL }) => {
   const response = await request.get(root, { maxRedirects: 0 })
 
   expect(response.status()).toBe(302)
-  expect(response.headers().location).toBe('/admin')
+  expect(response.headers().location).toBe('/admin/')
+})
+
+test('bare base path redirects to the admin app with a trailing slash', async ({
+  request,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const response = await request.get(new URL('/admin?redirect=%2Fapi-keys', root).toString(), {
+    maxRedirects: 0,
+  })
+
+  expect(response.status()).toBe(302)
+  expect(response.headers().location).toBe('/admin/?redirect=%2Fapi-keys')
 })
 
 function extractAttribute(tag: string, name: string): string | null {
