@@ -140,6 +140,7 @@ const activeTool: McpToolView = {
   },
   schema_hash: 'sha256:def456',
   schema_version: 3,
+  approved_schema_version: 3,
   is_active: true,
   deactivated_at: null,
 }

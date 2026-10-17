@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS mcp_tool_versions (
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_versions_status
   ON mcp_tool_versions(status, mcp_tool_id);
 
+-- Discovery looks up an older version with the same definition before it
+-- creates one; this keeps that lookup to the tool's same-hash versions.
+CREATE INDEX IF NOT EXISTS idx_mcp_tool_versions_definition
+  ON mcp_tool_versions(mcp_tool_id, schema_hash);
+
 -- Every existing tool starts with its current definition as an approved version.
 INSERT INTO mcp_tool_versions (
   mcp_tool_id, schema_version, schema_hash, description, input_schema_json, title,

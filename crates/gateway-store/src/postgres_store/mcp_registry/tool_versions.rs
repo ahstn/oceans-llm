@@ -37,7 +37,7 @@ pub(super) async fn load_stored_tools(
     mcp_server_id: Uuid,
 ) -> Result<HashMap<String, StoredTool>, StoreError> {
     let rows = sqlx::query(&format!(
-        "SELECT {TOOL_COLUMNS}, metadata_captured FROM external_mcp_tools WHERE mcp_server_id = $1 FOR UPDATE"
+        "SELECT {TOOL_COLUMNS}, metadata_captured, (SELECT MAX(v.schema_version) FROM mcp_tool_versions v WHERE v.mcp_tool_id = external_mcp_tools.mcp_tool_id) FROM external_mcp_tools WHERE mcp_server_id = $1 FOR UPDATE"
     ))
     .bind(mcp_server_id.to_string())
     .fetch_all(&mut *conn)
@@ -47,13 +47,16 @@ pub(super) async fn load_stored_tools(
     for row in &rows {
         let tool = decode_tool(row)?;
         let metadata_captured: i64 = row.try_get(20).map_err(to_query_error)?;
+        // The newest version number of any status, read per tool through the
+        // `(mcp_tool_id, schema_version)` key rather than the whole history.
+        let latest_version: Option<i64> = row.try_get(21).map_err(to_query_error)?;
         by_id.insert(
             tool.mcp_tool_id,
             StoredTool {
                 tool,
                 metadata_captured: metadata_captured == 1,
                 versions: Vec::new(),
-                latest_version: 0,
+                latest_version: latest_version.unwrap_or(0),
             },
         );
     }
@@ -77,19 +80,6 @@ pub(super) async fn load_stored_tools(
                     StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
                 })?,
             });
-        }
-    }
-    let rows = sqlx::query(
-        "SELECT v.mcp_tool_id, MAX(v.schema_version) FROM mcp_tool_versions v JOIN external_mcp_tools t ON t.mcp_tool_id = v.mcp_tool_id WHERE t.mcp_server_id = $1 GROUP BY v.mcp_tool_id",
-    )
-    .bind(mcp_server_id.to_string())
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(to_query_error)?;
-    for row in &rows {
-        let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;
-        if let Some(stored) = by_id.get_mut(&parse_uuid(&mcp_tool_id)?) {
-            stored.latest_version = row.try_get(1).map_err(to_query_error)?;
         }
     }
     Ok(by_id
