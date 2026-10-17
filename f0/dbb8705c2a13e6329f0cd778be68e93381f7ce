@@ -1,0 +1,61 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_1864c803a90a0e::t_73bc4e5d84fd77 572-591,3136-3142,3149-3150,3655-3656,4219-4220,4232-4235,4243-4244,4247-4248,5118-5132,5151-5152,5156-5157,6244-6245,6404-6457,6459
+  s_1864c803a90a0e::t_83d2f90bc02e1f 6458
+  s_1864c803a90a0e::t_94b2de414b2e57 6460-6461
+crates/admin-ui/web/src/components/mcp/server-ownership.tsx
+  s_7a5811202bdfd5::t_b3f4fa32280f31 1-45
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_7a5811202bdfd5::t_0f4239352e49c7 25-32,37,65,77,135-136,139,149-157,168-201,205-206,209,213-214,217,221-248,283-322,348-354,437,470,473,482-484,500-510
+crates/admin-ui/web/src/routes/mcp/-access-tab.tsx
+  s_7a5811202bdfd5::t_28aa12f845cd13 30,44-46,71,77,80-85,90,144,209-212,236-238,270,337,345,365-367,374-378
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_7a5811202bdfd5::t_af060021e0dbf9 1,41-47,49-56,78,83,118-120,124-183,214-215,256-260,536,545-546,585,802,811,829-834,852,857,915-936,981-1039
+crates/admin-ui/web/src/routes/mcp/-navigation.tsx
+  s_7a5811202bdfd5::t_7f087e505e0e75 4-11,23-33
+crates/admin-ui/web/src/routes/mcp/-scope.ts
+  s_1864c803a90a0e::t_badae6ca124263 1-23
+crates/admin-ui/web/src/routes/mcp/-server-forms.ts
+  s_7a5811202bdfd5::t_40468adb267637 19-21,24-25,39-40,49-50,54-55,57,59,70-73,75-76,96-97,115-116,132-134
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_7a5811202bdfd5::t_b1d60767f8f07a 48,62,66,88-90,97,104,108,120,171-172,229-233,369,391-404,452,460,490-491,504,528,534,557-558,570-573,595,600,633-665,675,680,699,704-714,717,725-733,748,759,765
+crates/admin-ui/web/src/routes/mcp/index.tsx
+  s_7a5811202bdfd5::t_85a62811a92189 4,11,14,18,35-37,40-41,44,47-49,52,55,57,69-74,90,114,123-126,131-133,151-177
+crates/admin-ui/web/src/routes/mcp/toolsets.tsx
+  s_7a5811202bdfd5::t_f4351b438a86bb 1-2,10-15
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_7a5811202bdfd5::t_4aaf751a707205 90,668-680
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_7a5811202bdfd5::t_e7eb429d596c12 105,497-498,506,537-549
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  s_7a5811202bdfd5::t_88d0f60b232b5d 51-55,153-183
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7a5811202bdfd5::t_22b8dd03e5459d 6,18,53-54,76-80,142-160,164,176,780-863
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  s_7a5811202bdfd5::t_a6381db38619b4 62-66
+crates/admin-ui/web/src/types/live-api.ts
+  s_7a5811202bdfd5::t_4c845ee99ee346 177-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0dbb8705c2a13e6329f0cd778be68e93381f7ce",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
