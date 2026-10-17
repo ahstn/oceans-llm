@@ -2000,3 +2000,38 @@ async fn settings_changes_audit_each_oauth_connection_they_end() {
     assert!(entry.before.unwrap()["revoked_at"].is_null());
     assert!(!entry.after.unwrap()["revoked_at"].is_null());
 }
+
+#[tokio::test]
+async fn the_member_catalog_follows_the_team_the_member_is_in_now() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "team-catalog",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let member = context.member(context.team_a).await;
+    let admin = context.team_admin(context.team_a).await;
+    let (status, body) = context
+        .grant(&admin, "team", context.team_a, "tool", server.tool_id)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let query: McpServersQuery = serde_json::from_value(json!({})).unwrap();
+    let listed = |team_id| list_member_servers(&context.state, member, team_id, &query);
+    let (_, body) = read(listed(Some(context.team_a)).await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+
+    // The viewer was resolved while still in the team, and left before the reads.
+    context
+        .state
+        .store
+        .remove_team_membership(context.team_a, member)
+        .await
+        .unwrap();
+    let (status, body) = read(listed(Some(context.team_a)).await).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["data"]["items"].as_array().unwrap().is_empty(),
+        "{body}"
+    );
+}

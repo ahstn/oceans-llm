@@ -1777,7 +1777,31 @@ async fn list_member_servers(
     query: &McpServersQuery,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
     // Only the servers the member can reach are read, not the whole registry.
-    let access = member_access(state, user_id, team_id, None).await?;
+    // The reads follow the member's team, so it is checked again after them: a
+    // member who left or changed team meanwhile gets the list for the team they
+    // are in now, never the former team's servers.
+    let mut team_id = team_id;
+    let mut attempts = 0;
+    let access = loop {
+        let access = member_access(state, user_id, team_id, None).await?;
+        let current =
+            gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
+                .await?
+                .map(|membership| membership.team_id);
+        if current == team_id {
+            break access;
+        }
+        attempts += 1;
+        if attempts == 3 {
+            return Err(AppError(GatewayError::Store(
+                gateway_core::StoreError::Conflict(
+                    "your team membership kept changing while MCP servers were listed; try again"
+                        .to_string(),
+                ),
+            )));
+        }
+        team_id = current;
+    };
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let servers: Vec<_> = access
         .servers

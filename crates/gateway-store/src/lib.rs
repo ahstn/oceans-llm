@@ -2645,6 +2645,51 @@ pub(crate) mod tests {
             1,
             "only the exact key still counts"
         );
+        // Nor does an active service account without a budget, whose keys
+        // authentication refuses, until it gets one.
+        let unfunded = store
+            .create_service_account(other_team.team_id, "mcp-unfunded-bot", "Unfunded bot", now)
+            .await
+            .expect("service account");
+        store
+            .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                subject_kind: Kind::ServiceAccount,
+                subject_id: unfunded.service_account_id,
+                target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                target_id: underscored_tool.mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .expect("grant");
+        let outside =
+            || store.count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id);
+        assert_eq!(
+            outside().await.expect("count"),
+            1,
+            "an unfunded account does not count"
+        );
+        gateway_core::BudgetRepository::upsert_active_budget(
+            store,
+            &gateway_core::BudgetScope::ServiceAccount {
+                service_account_id: unfunded.service_account_id,
+            },
+            &gateway_core::BudgetSettings {
+                cadence: gateway_core::BudgetCadence::Monthly,
+                amount_usd: gateway_core::Money4::from_scaled(10_000),
+                hard_limit: true,
+                timezone: "UTC".into(),
+            },
+            now,
+        )
+        .await
+        .expect("budget");
+        assert_eq!(
+            outside().await.expect("count"),
+            2,
+            "a funded account counts"
+        );
         // A disabled server exposes nothing and cannot be enabled again, so its
         // grants strand nothing.
         store

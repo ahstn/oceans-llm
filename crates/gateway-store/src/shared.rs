@@ -16,7 +16,8 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 /// same precedence as the service's subject lookup, so both agree on who is
 /// inside the team. An API key that is revoked, has no MCP scope, or whose
 /// server list leaves this server out holds no access, as at runtime, and nor
-/// does a disabled service account or a key it owns.
+/// does a service account that is disabled or has no active budget, or a key
+/// it owns: authentication refuses every key of such an account.
 pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
     format!(
         r#"
@@ -36,6 +37,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     WHEN 'team' THEN st.team_id IS NOT NULL
                     WHEN 'user' THEN su.user_id IS NOT NULL
                     WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL AND ssa.status = 'active'
+                        AND {ssa_budget}
                     WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL
                         -- The key may call MCP and this server: NULL lists allow all.
                         AND (k.scopes IS NULL
@@ -48,6 +50,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                         -- A service account's key also names its team, so the
                         -- account is checked first.
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL AND ksa.status = 'active'
+                            AND {ksa_budget}
                         WHEN k.owner_team_id IS NOT NULL THEN TRUE
                         WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
                         ELSE TRUE
@@ -70,7 +73,17 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
               AND srv.status = 'active'
         ) resolved
         WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
-        "#
+        "#,
+        ssa_budget = service_account_budget_sql("ssa"),
+        ksa_budget = service_account_budget_sql("ksa"),
+    )
+}
+
+/// Whether the service account aliased `account` has an active budget, keyed
+/// as `BudgetScope::ServiceAccount` keys it.
+fn service_account_budget_sql(account: &str) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM budgets b WHERE b.scope_key = 'budget:v1:service_account:' || {account}.service_account_id AND b.is_active = 1)"
     )
 }
 
