@@ -1,0 +1,21 @@
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_e7ee888aca3799 1152-1157
+docs/reference/provider-api-compatibility.md
+  s_dd118f467446e0::t_6e444e22189783 161,163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac1ff4d3576974fdc519c4fad2137de4c2356152",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
