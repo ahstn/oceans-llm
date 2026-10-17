@@ -1,0 +1,47 @@
+crates/admin-ui/web/src/routes/mcp/-tool-diff.ts
+  s_e88dc7cf2999d1::t_27ee399bbc87b9 29-38,43-71
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_e88dc7cf2999d1::t_4cf715225aa641 4,82-93
+crates/gateway-core/src/lib.rs
+  s_33d90a19d63897::t_e3ebc93c026f2e 145-146
+crates/gateway-core/src/mcp_tool_review.rs
+  s_33d90a19d63897::t_cda87ab5f0ad95 106-114,116-129,162-164,188-191,211-213,220-221,246-260,326-327,334-336,394-395,400,403-415,426,431,447-490
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_33d90a19d63897::t_4abb3dc4f1a672 819,831,940,954-971,1114,1143-1152
+crates/gateway-store/src/mcp_tool_review.rs
+  s_33d90a19d63897::t_a835de4ed513e0 7-8,17,21-29,60-62,102,110,114-115,119,133-134,157
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_33d90a19d63897::t_bef63315fbf7e8 423-426,770,790,803,907,920-938,1074,1103-1111
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_e88dc7cf2999d1::t_2059e8deef22ba 21-22,48,450-603
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_c78fb0852170ed 89-91,106
+docs/contributing/reference/data-relationships.md
+  s_e88dc7cf2999d1::t_4e795cce1e6995 170
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_b98a80ded03167 172-175,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "092e2b70b3a9b5d51be4fae734e3511bb5a339e1",
+  "prompts": {},
+  "sessions": {
+    "s_33d90a19d63897": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed06c798-8802-41c0-9291-c5fd2a3c7dfa",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
