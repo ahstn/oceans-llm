@@ -225,3 +225,54 @@ fn the_domain_allowlist_matches_hosts_and_their_subdomains() {
         );
     }
 }
+
+#[test]
+fn in_flight_entries_leave_with_their_last_caller() {
+    let map = Mutex::new(HashMap::new());
+    let first = InFlight::join(&map, CLIENT_ID);
+    let second = InFlight::join(&map, CLIENT_ID);
+    assert!(
+        Arc::ptr_eq(&first.cell, &second.cell),
+        "callers share a refresh"
+    );
+    // A cancelled request drops its share without finishing the refresh.
+    drop(first);
+    drop(second);
+    assert!(map.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn every_cache_control_line_counts() {
+    use axum::{Router, http::header, routing::get};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let address = listener.local_addr().expect("address");
+    let router = Router::new().route(
+        "/client.json",
+        get(|| async {
+            // Appended, so the response carries two separate field lines.
+            let mut headers = axum::http::HeaderMap::new();
+            headers.append(header::CACHE_CONTROL, "max-age=86400".parse().unwrap());
+            headers.append(header::CACHE_CONTROL, "no-store".parse().unwrap());
+            headers.append(header::AGE, "5".parse().unwrap());
+            (headers, "{}")
+        }),
+    );
+    tokio::spawn(async move { axum::serve(listener, router).await.expect("serve") });
+    let fetcher = OutboundFetcher::new(OutboundAddressScope::Loopback);
+    let fetched = fetcher
+        .fetch(&Url::parse(&format!("http://{address}/client.json")).unwrap())
+        .await
+        .expect("fetch");
+    assert_eq!(
+        fetched.cache_control.as_deref(),
+        Some("max-age=86400, no-store")
+    );
+    assert_eq!(fetched.age_seconds, Some(5));
+    assert_eq!(
+        cache_ttl(fetched.cache_control.as_deref(), fetched.age_seconds),
+        Duration::ZERO
+    );
+}

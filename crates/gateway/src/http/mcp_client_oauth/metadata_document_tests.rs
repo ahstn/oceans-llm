@@ -315,6 +315,32 @@ async fn concurrent_requests_share_one_fetch() {
 }
 
 #[tokio::test]
+async fn document_fetches_are_capped() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    // Slow, distinct documents; each holds a fetch slot while it waits.
+    fixture.delay_ms.store(300, Ordering::SeqCst);
+    let queries = (0..40)
+        .map(|index| {
+            harness.authorize_query(
+                &format!("https://editor.example.com/clients/{index}.json"),
+                &[],
+            )
+        })
+        .collect::<Vec<_>>();
+    let pages =
+        futures_util::future::join_all(queries.iter().map(|query| body_text(&harness, query)))
+            .await;
+    let unavailable = pages
+        .iter()
+        .filter(|(status, page)| {
+            *status == StatusCode::SERVICE_UNAVAILABLE && page.contains("temporarily_unavailable")
+        })
+        .count();
+    assert!(unavailable >= 8, "{unavailable} requests were turned away");
+    assert!(fixture.fetches() <= 32, "{} fetches ran", fixture.fetches());
+}
+
+#[tokio::test]
 async fn rate_limited_documents_fall_back_to_the_stored_client() {
     let (harness, fixture) = harness_with_fixture(&[]).await;
     fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));

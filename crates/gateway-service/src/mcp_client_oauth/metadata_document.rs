@@ -24,7 +24,7 @@ use reqwest::header::{AGE, CACHE_CONTROL};
 use serde::Deserialize;
 use serde_json::Value;
 use time::{Duration, OffsetDateTime};
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, Semaphore};
 use url::{Host, Url};
 
 use super::{
@@ -46,6 +46,9 @@ pub const DEFAULT_CACHE_TTL: Duration = Duration::minutes(10);
 /// The longest the gateway trusts a document without fetching it again.
 pub const MAX_CACHE_TTL: Duration = Duration::hours(24);
 const MAX_CACHED_DOCUMENTS: usize = 1024;
+/// Documents fetched at once. A request beyond this fails as temporarily
+/// unavailable instead of queueing, so callers cannot pile up fetches.
+const MAX_CONCURRENT_FETCHES: usize = 32;
 const FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
 
@@ -70,11 +73,14 @@ impl ClientMetadataDocumentSource for OutboundFetcher {
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         let response = self.get(url, "application/json").await?;
         let status = response.status().as_u16();
+        // Several field lines form one comma-separated list (RFC 9110 §5.2).
         let cache_control = response
             .headers()
-            .get(CACHE_CONTROL)
-            .and_then(|value| value.to_str().ok())
-            .map(ToOwned::to_owned);
+            .get_all(CACHE_CONTROL)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>();
+        let cache_control = (!cache_control.is_empty()).then(|| cache_control.join(", "));
         let age_seconds = response
             .headers()
             .get(AGE)
@@ -108,6 +114,7 @@ pub struct ClientMetadataDocuments {
     /// One refresh per client at a time: concurrent requests for a stale
     /// document wait for the same fetch and share its result.
     in_flight: Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
+    fetch_permits: Semaphore,
 }
 
 type RefreshOutcome = Result<GatewayOauthClientRecord, ResolveFailure>;
@@ -141,6 +148,7 @@ impl ClientMetadataDocuments {
             source,
             cache: Mutex::new(HashMap::new()),
             in_flight: Mutex::new(HashMap::new()),
+            fetch_permits: Semaphore::new(MAX_CONCURRENT_FETCHES),
         })
     }
 
@@ -169,29 +177,13 @@ impl ClientMetadataDocuments {
         if let Some(client) = self.cached(client_id, now) {
             return Ok(client);
         }
-        let flight = self
-            .in_flight
-            .lock()
-            .expect("metadata document flight lock")
-            .entry(client_id.to_string())
-            .or_default()
-            .clone();
+        let flight = InFlight::join(&self.in_flight, client_id);
         let outcome = flight
+            .cell
             .get_or_init(|| self.refresh(repo, client_id, now))
             .await
             .clone();
-        {
-            let mut in_flight = self
-                .in_flight
-                .lock()
-                .expect("metadata document flight lock");
-            if in_flight
-                .get(client_id)
-                .is_some_and(|current| Arc::ptr_eq(current, &flight))
-            {
-                in_flight.remove(client_id);
-            }
-        }
+        drop(flight);
         let failure = match outcome {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
@@ -215,6 +207,15 @@ impl ClientMetadataDocuments {
     where
         R: GatewayOauthRepository + ?Sized,
     {
+        let _permit = self
+            .fetch_permits
+            .try_acquire()
+            .map_err(|_| ResolveFailure {
+                error: OauthError::temporarily_unavailable(
+                    "too many client metadata documents are being fetched; try again shortly",
+                ),
+                transient: true,
+            })?;
         let fetched = self.fetch_and_validate(client_id, now).await?;
         let stored = repo
             .upsert_gateway_oauth_metadata_document_client(&fetched.client)
@@ -326,6 +327,48 @@ impl ClientMetadataDocuments {
             return false;
         };
         host_matches_domains(host, &self.allowed_domains)
+    }
+}
+
+/// A caller's share of a refresh in flight. Dropping it, whether the refresh
+/// finished or the request was cancelled, removes the map entry, so entries
+/// never outlive the requests that made them.
+struct InFlight<'a> {
+    map: &'a Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
+    client_id: &'a str,
+    cell: Arc<OnceCell<RefreshOutcome>>,
+}
+
+impl<'a> InFlight<'a> {
+    fn join(
+        map: &'a Mutex<HashMap<String, Arc<OnceCell<RefreshOutcome>>>>,
+        client_id: &'a str,
+    ) -> Self {
+        let cell = map
+            .lock()
+            .expect("metadata document flight lock")
+            .entry(client_id.to_string())
+            .or_default()
+            .clone();
+        Self {
+            map,
+            client_id,
+            cell,
+        }
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        let Ok(mut map) = self.map.lock() else {
+            return;
+        };
+        if map
+            .get(self.client_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.cell))
+        {
+            map.remove(self.client_id);
+        }
     }
 }
 

@@ -71,7 +71,9 @@ IP-literal hosts never reach a resolver, so `check_url` classifies them before t
 - A listed internal server can still point discovery at other internal hosts on any private network. Link-local and metadata addresses stay blocked for it.
 - A server-level OAuth client whose token endpoint sits on a more private network than its MCP server, such as a public server with an internal identity provider, cannot exchange or refresh tokens. Discovery would already have refused that authorization server. Such a deployment can configure the identity provider under `mcp.oauth.providers` instead.
 - The classification table is maintained by hand. New special-purpose ranges need adding as they are assigned.
+- Only the well-known NAT64 prefix `64:ff9b::/96` is decoded. RFC 6052 also allows network-specific NAT64 prefixes, which only the operator of a network knows. On a gateway host that routes one, an address under it is judged as ordinary IPv6, so the IPv4 address it embeds is not checked. Such a deployment should filter the translated IPv4 traffic at the NAT64 gateway, or not route the prefix from the gateway host.
 
 ## Follow-ups
 
+- Accept configured network-specific NAT64 prefixes and judge addresses under them by their embedded IPv4 address.
 - Use the fetcher for any future feature that fetches a URL a user or upstream supplies, such as logos named in client metadata.
