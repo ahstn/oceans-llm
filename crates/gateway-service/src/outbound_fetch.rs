@@ -288,14 +288,25 @@ impl Resolve for GuardedResolver {
             if addresses.is_empty() {
                 return Err(rejection(OutboundFetchError::Unresolved { host }));
             }
-            // One disallowed answer rejects the name: a host that mixes public
-            // and internal addresses is not one to trust with either.
-            if addresses.iter().any(|address| !scope.allows(address.ip())) {
+            let ips = addresses.iter().map(SocketAddr::ip).collect::<Vec<_>>();
+            if !answers_allowed(scope, &host, &ips) {
                 return Err(rejection(OutboundFetchError::BlockedAddress { host }));
             }
             Ok(Box::new(addresses.into_iter()) as Addrs)
         })
     }
+}
+
+/// Whether every DNS answer for `host` may be used. One disallowed answer
+/// rejects the name: a host that mixes public and internal addresses is not
+/// one to trust with either. `localhost` must resolve to loopback only, since
+/// it is what permits plain `http`; anything else means the name is broken or
+/// hijacked.
+fn answers_allowed(scope: OutboundAddressScope, host: &str, answers: &[IpAddr]) -> bool {
+    let localhost = host.trim_end_matches('.').eq_ignore_ascii_case("localhost");
+    answers.iter().all(|&address| {
+        scope.allows(address) && (!localhost || classify(address) == AddressClass::Loopback)
+    })
 }
 
 /// An HTTP client that only connects to addresses within its scope.

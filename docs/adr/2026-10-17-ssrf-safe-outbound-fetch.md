@@ -42,7 +42,7 @@ IPv6 forms that embed an IPv4 address (mapped `::ffff:0:0/96`, NAT64 `64:ff9b::/
 
 ### 2. The check happens at resolution, pinned to the connection
 
-A check on the URL alone fails against DNS rebinding: the name resolves to a public address when checked and to an internal one when connected. The fetcher installs its own DNS resolver in the HTTP client. The resolver looks the name up, rejects it if any answer is outside the scope, and hands back exactly the addresses it checked. The client connects only to those. One disallowed answer rejects the whole name, since a host that mixes public and internal addresses is not one to trust with either.
+A check on the URL alone fails against DNS rebinding: the name resolves to a public address when checked and to an internal one when connected. The fetcher installs its own DNS resolver in the HTTP client. The resolver looks the name up, rejects it if any answer is outside the scope, and hands back exactly the addresses it checked. The client connects only to those. One disallowed answer rejects the whole name, since a host that mixes public and internal addresses is not one to trust with either. `localhost` must resolve to loopback addresses only, whatever the scope: it is the name that permits plain `http`, so a misconfigured or hijacked `localhost` could otherwise carry codes or secrets off the machine unencrypted.
 
 IP-literal hosts never reach a resolver, so `check_url` classifies them before the request. It also requires https, and allows `http` only to a loopback host in the `Loopback` scope. It rejects user information in the URL.
 

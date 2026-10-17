@@ -319,3 +319,36 @@ fn configured_domains_must_be_bare_names() {
     assert!(!host_matches_domains("badexample.com", &domains));
     assert!(!host_matches_domains("example.com.evil.net", &domains));
 }
+
+#[test]
+fn localhost_must_resolve_to_loopback_only() {
+    let loopback = OutboundAddressScope::Loopback;
+    assert!(answers_allowed(
+        loopback,
+        "localhost",
+        &[address("127.0.0.1"), address("::1")]
+    ));
+    // A hijacked or misconfigured localhost could carry plain-http secrets
+    // off the machine, even to addresses the scope otherwise allows.
+    for answer in ["10.0.0.5", "93.184.215.14"] {
+        assert!(
+            !answers_allowed(loopback, "localhost", &[address(answer)]),
+            "{answer}"
+        );
+        assert!(
+            !answers_allowed(loopback, "LOCALHOST.", &[address(answer)]),
+            "{answer}"
+        );
+    }
+    // Other names keep the scope's rules.
+    assert!(answers_allowed(
+        loopback,
+        "mcp.example.com",
+        &[address("10.0.0.5")]
+    ));
+    assert!(!answers_allowed(
+        OutboundAddressScope::Public,
+        "mcp.example.com",
+        &[address("93.184.215.14"), address("10.0.0.5")]
+    ));
+}
