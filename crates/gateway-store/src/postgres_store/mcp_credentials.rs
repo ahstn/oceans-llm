@@ -1,3 +1,4 @@
+use super::mcp_registry::check_ownership_guard;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 
@@ -118,6 +119,12 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         // `FOR UPDATE` locks the row, so the replaced row read here is exactly the
         // one the update below overwrites.
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        if let Some(guard) = &input.expected_server {
+            if guard.mcp_server_id != input.mcp_server_id {
+                return Err(guard.conflict());
+            }
+            check_ownership_guard(&mut tx, guard, None).await?;
+        }
         let previous = if input.credential_binding_id.is_some() {
             let row = sqlx::query(&format!(
                 "SELECT {CREDENTIAL_COLUMNS} FROM mcp_upstream_credential_bindings WHERE credential_binding_id = $1 FOR UPDATE"

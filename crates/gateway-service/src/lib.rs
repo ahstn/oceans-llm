@@ -23,6 +23,7 @@ pub mod mcp_ownership;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
 pub mod mcp_upstream_auth;
+pub mod mcp_upstream_http;
 pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
@@ -130,6 +131,7 @@ pub use mcp_upstream_auth::{
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,
     gateway_mcp_upstream_query, mcp_oauth_server_config, supports_public_discovery,
 };
+pub use mcp_upstream_http::McpUpstreamClients;
 pub use model_access::ModelAccess;
 pub use model_resolution::{
     ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,

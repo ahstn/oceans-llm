@@ -155,6 +155,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
                 target_kind: McpToolGrantTargetKind::Tool,
                 target_id: tool.mcp_tool_id,
                 updated_at: now,
+                expected_server: None,
             })
             .await
             .expect("grant");

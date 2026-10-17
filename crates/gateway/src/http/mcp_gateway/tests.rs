@@ -426,6 +426,7 @@ mod proxy_policy {
                     target_kind: McpToolGrantTargetKind::Tool,
                     target_id: tools[0].mcp_tool_id,
                     updated_at: now,
+                    expected_server: None,
                 })
                 .await
                 .expect("tool grant");
@@ -630,6 +631,87 @@ mod proxy_policy {
             .find(|tool| tool.upstream_name == "purge")
             .expect("purge tool");
         assert_eq!(purge.metadata, gateway_core::McpToolMetadata::default());
+    }
+
+    #[tokio::test]
+    async fn team_servers_reach_only_the_addresses_their_url_allows() {
+        // `localhost.` is a name other than `localhost`, so its spelling makes it
+        // public, yet it resolves to loopback: a public name rebound inside.
+        let resolves = tokio::net::lookup_host("localhost.:0")
+            .await
+            .is_ok_and(|mut addresses| addresses.next().is_some());
+        if !resolves {
+            eprintln!("skipping: `localhost.` does not resolve here");
+            return;
+        }
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(
+            &state,
+            &upstream.url.replace("127.0.0.1", "localhost."),
+            true,
+        )
+        .await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let call = json!({
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let registry = gateway_service::McpRegistryService::with_client(
+            state.store.clone(),
+            Arc::new(gateway_service::HttpMcpDiscoveryClient::new(
+                state.mcp_http_clients.clone(),
+            )),
+        );
+        let refresh = || registry.refresh_discovery(server.mcp_server_id);
+
+        // A platform admin's server may point anywhere.
+        let (status, body) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            refresh().await.expect("discovery").status,
+            ExternalMcpDiscoveryStatus::Success
+        );
+        let reached = upstream.requests.load(Ordering::SeqCst);
+        assert!(reached > 0);
+
+        // Once a team owns it, the same name is held to public addresses when
+        // it connects, for the proxy and for discovery alike.
+        let team = state
+            .store
+            .create_team("notes-owners", "Notes Owners")
+            .await
+            .expect("team");
+        state
+            .store
+            .transfer_external_mcp_server_ownership(
+                &gateway_core::TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: gateway_core::McpServerOwnership {
+                        owner_team_id: Some(team.team_id),
+                        owner_contact: None,
+                        visibility: gateway_core::McpServerVisibility::Organisation,
+                    },
+                    expected_ownership: None,
+                    updated_at: OffsetDateTime::now_utc(),
+                },
+            )
+            .await
+            .expect("transfer");
+        let (status, body) = send(&state, &auth, call).await;
+        assert_ne!(status, StatusCode::OK, "{body}");
+        let refreshed = refresh().await.expect("discovery result");
+        assert_eq!(refreshed.status, ExternalMcpDiscoveryStatus::Failed);
+        assert_eq!(
+            upstream.requests.load(Ordering::SeqCst),
+            reached,
+            "nothing reached the upstream"
+        );
     }
 
     fn read_resource() -> Value {

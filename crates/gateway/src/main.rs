@@ -298,10 +298,11 @@ async fn run_serve_with_store(
         guardrail_engine,
         guardrail_config,
         metrics,
-        mcp_http_client: reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("MCP HTTP client configuration must be valid"),
+        mcp_http_clients: config
+            .mcp
+            .oauth
+            .upstream_clients()
+            .context("mcp.oauth.private_network_hosts")?,
         mcp_oauth_runtime: Arc::new(
             config
                 .mcp

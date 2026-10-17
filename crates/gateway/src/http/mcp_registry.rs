@@ -5,7 +5,7 @@ mod ownership_tests;
 #[cfg(test)]
 mod tests;
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use axum::{
     Json,
@@ -17,15 +17,15 @@ use gateway_client_config::{
 };
 use gateway_core::{
     ExternalMcpServerRecord, GatewayError, IdentityRepository, McpAccessRepository,
-    McpGrantSubject, McpRegistryRepository, McpToolGrantSubjectKind, McpToolProjection,
-    NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
+    McpGrantSubject, McpRegistryRepository, McpServerOwnershipGuard, McpToolGrantSubjectKind,
+    McpToolProjection, NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpAdminScope,
-    McpCredentialService, McpOwnership, McpRegistryService, RedactedMcpCredentialBinding,
-    RequestedMcpServerOwnership, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
-    admin_audit::actions, authorize_destination, authorize_team_auth_config,
-    parse_mcp_server_visibility,
+    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, HttpMcpDiscoveryClient,
+    McpAdminScope, McpCredentialService, McpOwnership, McpRegistryService,
+    RedactedMcpCredentialBinding, RequestedMcpServerOwnership, UpdateExternalMcpServerInput,
+    UpsertMcpCredentialBindingInput, admin_audit::actions, authorize_destination,
+    authorize_team_auth_config, parse_mcp_server_visibility,
 };
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
@@ -688,7 +688,10 @@ pub async fn refresh_mcp_server_discovery(
     let server = ownership(&state).managed_server(&scope, server_id).await?;
     // Re-checked on each refresh, since the host may now resolve elsewhere.
     authorize_destination(&scope, &server.server_url).await?;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::with_client(
+        state.store.clone(),
+        Arc::new(HttpMcpDiscoveryClient::new(state.mcp_http_clients.clone())),
+    );
     let started_at = Instant::now();
     let progress = AuditProgress::default();
     let result = service
@@ -942,10 +945,8 @@ pub async fn replace_mcp_toolset_tools(
         ids.sort();
         ids
     };
-    // Tool sets are granted organisation-wide, so team-only tools stay out.
-    ownership(&state)
-        .authorize_toolset_tools(&request.tool_ids)
-        .await?;
+    // Tool sets are granted organisation-wide; the store refuses team-only
+    // tools under the same write, so a concurrent narrowing cannot slip one in.
     let update = state
         .store
         .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
@@ -1026,15 +1027,15 @@ pub async fn upsert_mcp_grant(
     Json(request): Json<UpsertMcpGrantRequest>,
 ) -> Result<Json<Envelope<McpGrantPayload>>, AppError> {
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
-    let record = UpsertMcpToolGrantRecord {
+    let mut record = UpsertMcpToolGrantRecord {
         subject_kind: parse_grant_subject_kind(&request.subject_kind)?,
         subject_id: request.subject_id,
         target_kind: parse_grant_target_kind(&request.target_kind)?,
         target_id: request.target_id,
         updated_at: OffsetDateTime::now_utc(),
+        expected_server: None,
     };
-    let ownership = ownership(&state);
-    let authorized_server = ownership
+    let authorized_server = ownership(&state)
         .authorize_grant(
             &scope,
             McpGrantSubject {
@@ -1045,40 +1046,11 @@ pub async fn upsert_mcp_grant(
             record.target_id,
         )
         .await?;
+    // The store writes the grant only while the server still has the owner
+    // and visibility it was authorized against, so a transfer or narrowing in
+    // between is a conflict rather than a grant the new owner never allowed.
+    record.expected_server = authorized_server.as_ref().map(McpServerOwnershipGuard::of);
     let (grant, created) = state.store.upsert_mcp_tool_grant(&record).await?;
-    // A transfer between the check and the write would leave a grant the new
-    // owner never allowed; undo a grant this call created and report a conflict.
-    if let Some(server) = &authorized_server
-        && !ownership.ownership_unchanged(server).await?
-    {
-        // Undo only the row this call created: if another request has since
-        // replaced it with its own grant, that grant stands.
-        let still_ours = created
-            && state
-                .store
-                .list_mcp_tool_grants(Some(record.subject_kind), Some(record.subject_id))
-                .await?
-                .iter()
-                .any(|active| {
-                    active.is_active
-                        && active.grant_id == grant.grant_id
-                        && active.target_kind == record.target_kind
-                        && active.target_id == record.target_id
-                });
-        if still_ours {
-            state
-                .store
-                .revoke_mcp_tool_grant(
-                    record.subject_kind,
-                    record.subject_id,
-                    record.target_kind,
-                    record.target_id,
-                    OffsetDateTime::now_utc(),
-                )
-                .await?;
-        }
-        return Err(ownership_changed(server.mcp_server_id));
-    }
     let grant_id = grant.grant_id;
     let grant = map_grant(grant);
     // Repeating an active grant changes no access, so only a new grant is recorded.
@@ -1260,17 +1232,11 @@ pub async fn upsert_mcp_credential_binding(
             secret_ref: request.secret_ref,
             expires_at: request.expires_at,
             metadata: request.metadata,
+            // As for grants: written only while the server keeps the owner and
+            // visibility the binding was authorized against.
+            expected_server: Some(McpServerOwnershipGuard::of(&server)),
         })
         .await?;
-    // As for grants: undo a binding this call created if the server moved to
-    // another owner between the check and the write. A replacement updates a
-    // binding the server already had, so it stands.
-    if replaced.is_none() && !ownership.ownership_unchanged(&server).await? {
-        service
-            .revoke_binding(binding.credential_binding_id)
-            .await?;
-        return Err(ownership_changed(server.mcp_server_id));
-    }
     // The service returns bindings without their secrets; only those views are
     // recorded. A replacement also records the binding it overwrote, read in the
     // same transaction, so the entry shows what access changed.
@@ -1569,12 +1535,6 @@ async fn list_member_servers(
         items,
         can_publish_to_organisation: false,
     })))
-}
-
-fn ownership_changed(mcp_server_id: Uuid) -> AppError {
-    AppError(GatewayError::Store(gateway_core::StoreError::Conflict(
-        format!("external MCP server `{mcp_server_id}` changed owner; reload it and try again"),
-    )))
 }
 
 fn ownership(state: &AppState) -> McpOwnership<AnyStore> {

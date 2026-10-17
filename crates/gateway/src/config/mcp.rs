@@ -100,6 +100,14 @@ impl McpOauthConfig {
         normalize_https_origin(value.trim(), "mcp.oauth.public_base_url").map(Some)
     }
 
+    /// Clients for upstream MCP traffic. A team-owned server on a host listed
+    /// in `private_network_hosts` may reach private-network addresses too.
+    pub fn upstream_clients(&self) -> anyhow::Result<gateway_service::McpUpstreamClients> {
+        let hosts =
+            gateway_service::outbound_fetch::normalize_domains(self.private_network_hosts.clone())?;
+        Ok(gateway_service::McpUpstreamClients::new(&hosts))
+    }
+
     pub fn runtime(&self) -> anyhow::Result<McpOauthRuntime> {
         let providers = self
             .providers

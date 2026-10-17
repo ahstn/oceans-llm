@@ -1,7 +1,10 @@
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use crate::shared::{
+    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+};
 use gateway_core::{
-    McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord, Updated,
+    McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
+    TransferExternalMcpServerOwnershipRecord, Updated,
 };
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
@@ -172,6 +175,71 @@ async fn load_server(
             StoreError::NotFound(format!("external MCP server `{mcp_server_id}` not found"))
         })
         .and_then(|row| decode_server(&row))
+}
+
+/// Checks `guard` inside a write transaction, which holds the write lock from
+/// its start, so the server cannot change before the caller commits. With
+/// `tool_id`, the tool must also belong to the guard's server.
+pub(super) async fn check_ownership_guard(
+    connection: &libsql::Connection,
+    guard: &McpServerOwnershipGuard,
+    tool_id: Option<Uuid>,
+) -> Result<(), StoreError> {
+    let (sql, id) = match tool_id {
+        Some(tool_id) => (
+            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
+            tool_id,
+        ),
+        None => (
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility FROM external_mcp_servers WHERE mcp_server_id = ?1",
+            guard.mcp_server_id,
+        ),
+    };
+    let mut rows = connection
+        .query(sql, [id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    let holds = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => {
+            let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
+            let ownership = decode_server_ownership(&row, 1)?;
+            guard.matches(
+                parse_uuid(&mcp_server_id)?,
+                ownership.owner_team_id,
+                ownership.visibility,
+            )
+        }
+        None => false,
+    };
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    if holds { Ok(()) } else { Err(guard.conflict()) }
+}
+
+/// Rejects tools of team-only servers, read inside the tool set write.
+/// Tool sets are granted organisation-wide, so they hold only tools of servers
+/// published to the organisation.
+pub(super) async fn check_no_team_only_tools(
+    connection: &libsql::Connection,
+    tool_ids: &[Uuid],
+) -> Result<(), StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(());
+    }
+    let ids = serialize_json(&tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())?;
+    let mut rows = connection
+        .query(
+            "SELECT t.upstream_name, s.server_key FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id IN (SELECT value FROM json_each(?1)) AND s.visibility = 'team' ORDER BY s.server_key, t.upstream_name LIMIT 1",
+            [ids],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let Some(row) = rows.next().await.map_err(to_query_error)? else {
+        return Ok(());
+    };
+    let tool: String = row.get(0).map_err(to_query_error)?;
+    let server_key: String = row.get(1).map_err(to_query_error)?;
+    while rows.next().await.map_err(to_query_error)?.is_some() {}
+    Err(team_only_toolset_tool(&tool, &server_key))
 }
 
 macro_rules! server_columns {

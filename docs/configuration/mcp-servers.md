@@ -95,7 +95,9 @@ mcp:
 A team admin can always unpublish their own server. Narrowing a server to `team`,
 or moving a team-only server to another team, fails with `409` while one of its
 tools is in a tool set or granted to a subject outside the new owning team. Revoke
-those first.
+those first. Adding a team-only server's tools to a tool set also fails with `409`.
+A grant or credential binding saved while its server changes owner or visibility
+fails with `409` and writes nothing; reload the server and try again.
 
 ### What team owners and admins can do
 
@@ -118,6 +120,14 @@ Every other signed-in user also gets the `mcp` page by default, through the `use
 
 A server they cannot see returns `404`. An action they cannot take on a server
 they can see returns `403`.
+
+A team-owned server's traffic, for discovery and for every call through the
+gateway, reaches public addresses only, checked each time it connects. A URL
+entered by IP address or as `localhost` keeps that address's own kind, and a
+host listed under `mcp.oauth.private_network_hosts` may also reach private
+networks. A platform admin who registers a server on an internal network for a
+team by hostname lists that host there. This traffic follows no redirects and
+does not use an HTTP proxy. Platform-owned servers are not limited.
 
 ### Take over a server
 

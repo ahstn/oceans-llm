@@ -112,6 +112,7 @@ where
             target_kind: McpToolGrantTargetKind::Toolset,
             target_id: toolset.toolset_id,
             updated_at: now,
+            expected_server: None,
         })
         .await
         .expect("toolset grant");
@@ -147,6 +148,7 @@ where
             target_kind: McpToolGrantTargetKind::Tool,
             target_id: drive_search.mcp_tool_id,
             updated_at: now,
+            expected_server: None,
         })
         .await
         .expect("tool grant");

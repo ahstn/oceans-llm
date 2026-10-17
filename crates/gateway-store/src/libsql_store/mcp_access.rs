@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use gateway_core::McpToolProjection;
 
-use super::mcp_registry::decode_tool_metadata;
+use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 use gateway_core::Updated;
@@ -344,6 +344,9 @@ impl McpAccessRepository for LibsqlStore {
     ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         let tx = self.begin_transaction().await?;
         let existing = toolset_tools_on(&tx, toolset_id).await?;
+        // Checked even for an unchanged set, so a resave never confirms a tool
+        // whose server has since been narrowed to its team.
+        check_no_team_only_tools(&tx, tool_ids).await?;
         if same_tool_ids(&existing, tool_ids) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -393,10 +396,15 @@ impl McpAccessRepository for LibsqlStore {
         grant: &UpsertMcpToolGrantRecord,
     ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
+        let tx = self.begin_transaction().await?;
+        if let Some(guard) = &grant.expected_server {
+            let tool_id =
+                (grant.target_kind == McpToolGrantTargetKind::Tool).then_some(grant.target_id);
+            check_ownership_guard(&tx, guard, tool_id).await?;
+        }
         // `RETURNING` gives the row this statement wrote, so `created` cannot be
         // confused by a concurrent revoke and re-grant.
-        let mut rows = self
-            .connection
+        let mut rows = tx
             .query(
                 r#"
                 INSERT INTO mcp_tool_grants (
@@ -421,6 +429,8 @@ impl McpAccessRepository for LibsqlStore {
             StoreError::Unexpected("MCP grant upsert returned no row".to_string())
         })?;
         let record = decode_grant(&row)?;
+        while rows.next().await.map_err(to_write_error)?.is_some() {}
+        tx.commit().await.map_err(to_write_error)?;
         // The insert keeps this call's id; an already-active grant keeps its own.
         let created = record.grant_id == id;
         Ok((record, created))

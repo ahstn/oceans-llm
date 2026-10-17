@@ -11,6 +11,14 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
     Uuid::parse_str(raw).map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+/// A tool set write that names a tool of a team-only server. Tool sets are
+/// granted organisation-wide, so the store refuses it under the same write.
+pub(crate) fn team_only_toolset_tool(tool: &str, server_key: &str) -> StoreError {
+    StoreError::Conflict(format!(
+        "tool `{tool}` belongs to MCP server `{server_key}`, which is visible to its team only; publish the server to the organisation before adding its tools to a tool set"
+    ))
+}
+
 pub(crate) fn unix_to_datetime(ts: i64) -> Result<OffsetDateTime, StoreError> {
     OffsetDateTime::from_unix_timestamp(ts)
         .map_err(|error| StoreError::Serialization(error.to_string()))

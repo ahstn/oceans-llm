@@ -1,7 +1,10 @@
 use super::*;
-use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
+use crate::shared::{
+    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
+};
 use gateway_core::{
-    McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord, Updated,
+    McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
+    TransferExternalMcpServerOwnershipRecord, Updated,
 };
 
 macro_rules! server_columns {
@@ -187,6 +190,75 @@ async fn load_server(
             StoreError::NotFound(format!("external MCP server `{mcp_server_id}` not found"))
         })?;
     decode_server(&row)
+}
+
+/// Checks `guard` inside a write transaction. `FOR SHARE` holds the server row
+/// until the caller commits, so a transfer or narrowing waits for this write,
+/// and one that committed first is the row read here. With `tool_id`, the tool
+/// must also belong to the guard's server.
+pub(super) async fn check_ownership_guard(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    guard: &McpServerOwnershipGuard,
+    tool_id: Option<Uuid>,
+) -> Result<(), StoreError> {
+    let (sql, id) = match tool_id {
+        Some(tool_id) => (
+            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = $1 FOR SHARE OF s",
+            tool_id,
+        ),
+        None => (
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility FROM external_mcp_servers WHERE mcp_server_id = $1 FOR SHARE",
+            guard.mcp_server_id,
+        ),
+    };
+    let row = sqlx::query(sql)
+        .bind(id.to_string())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    let holds = match row {
+        Some(row) => {
+            let mcp_server_id: String = row.try_get(0).map_err(to_query_error)?;
+            let ownership = decode_server_ownership(&row, 1)?;
+            guard.matches(
+                parse_uuid(&mcp_server_id)?,
+                ownership.owner_team_id,
+                ownership.visibility,
+            )
+        }
+        None => false,
+    };
+    if holds { Ok(()) } else { Err(guard.conflict()) }
+}
+
+/// Rejects tools of team-only servers, read inside the tool set write. Every
+/// named tool's server is held `FOR SHARE` until commit, so none can be
+/// narrowed to its team while the set is written. Tool sets are granted
+/// organisation-wide, so they hold only tools of servers published to the
+/// organisation.
+pub(super) async fn check_no_team_only_tools(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tool_ids: &[Uuid],
+) -> Result<(), StoreError> {
+    if tool_ids.is_empty() {
+        return Ok(());
+    }
+    let rows = sqlx::query(
+        "SELECT t.upstream_name, s.server_key, s.visibility FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ANY($1) ORDER BY s.mcp_server_id, t.upstream_name FOR SHARE OF s",
+    )
+    .bind(tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    for row in rows {
+        let visibility: String = row.try_get(2).map_err(to_query_error)?;
+        if McpServerVisibility::from_db(&visibility) == Some(McpServerVisibility::Team) {
+            let tool: String = row.try_get(0).map_err(to_query_error)?;
+            let server_key: String = row.try_get(1).map_err(to_query_error)?;
+            return Err(team_only_toolset_tool(&tool, &server_key));
+        }
+    }
+    Ok(())
 }
 
 #[async_trait]

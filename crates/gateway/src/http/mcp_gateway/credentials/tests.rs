@@ -133,6 +133,7 @@ async fn seed_drive(
             target_kind: McpToolGrantTargetKind::Tool,
             target_id: tools[0].mcp_tool_id,
             updated_at: now,
+            expected_server: None,
         })
         .await
         .expect("tool grant");

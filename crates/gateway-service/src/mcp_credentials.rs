@@ -2,9 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
-    IdentityRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
-    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
-    McpUpstreamSecretStorageKind, StoreError, UpsertMcpUpstreamCredentialBindingRecord,
+    IdentityRepository, McpServerOwnershipGuard, McpUpstreamCredentialBindingRecord,
+    McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+    McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, StoreError,
+    UpsertMcpUpstreamCredentialBindingRecord,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -67,6 +68,10 @@ pub struct UpsertMcpCredentialBindingInput {
     pub expires_at: Option<OffsetDateTime>,
     #[serde(default)]
     pub metadata: Map<String, serde_json::Value>,
+    /// Makes the write conditional on the server's owner and visibility; see
+    /// [`McpServerOwnershipGuard`]. Callers set it, never a request body.
+    #[serde(skip)]
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 #[derive(Clone)]
@@ -244,6 +249,7 @@ where
             expires_at: input.expires_at,
             metadata: input.metadata,
             updated_at: now,
+            expected_server: input.expected_server,
         };
         let (binding, replaced) = self
             .repo
@@ -290,6 +296,7 @@ where
             secret_ref: None,
             expires_at: grant.expires_at,
             metadata,
+            expected_server: None,
         })
         .await
     }

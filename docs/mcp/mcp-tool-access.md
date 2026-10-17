@@ -35,8 +35,10 @@ and purpose-oriented; they are the main way to keep agent-visible tool catalogs
 understandable.
 
 Toolsets are platform-managed and granted organisation-wide, so they hold only
-tools of servers published to the organisation. Adding a tool of a `team` server
-returns `400`. See [Team-Managed Servers](#team-managed-servers).
+tools of servers published to the organisation. Saving a toolset that holds a tool
+of a `team` server returns `409`, even when the set is unchanged, so a server
+narrowed to its team cannot keep tools in one. See
+[Team-Managed Servers](#team-managed-servers).
 
 ## Grants
 
@@ -94,8 +96,10 @@ server's tools can be granted only to subjects of its owning team; granting one 
 anyone else returns `400`. Publish the server to the organisation first. See
 [Ownership and Visibility](../configuration/mcp-servers.md#ownership-and-visibility).
 
-Visibility is checked when a grant is written. A user grant stays after the user
-leaves the team, like any other user grant, so revoke it when someone moves teams.
+Visibility is checked when a grant is written, inside the same write: if the
+server changes owner or visibility while the grant is saved, it returns `409` and
+nothing is written. A user grant stays after the user leaves the team, like any
+other user grant, so revoke it when someone moves teams.
 
 Every grant change is written to the [admin audit log](../access/admin-audit-log.md)
 with the actor's `actor_access` (`platform_admin` or `team_admin`) and, when they

@@ -36,7 +36,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         guardrail_engine: Arc::new(GuardrailEngine::new(Vec::new(), Default::default())),
         guardrail_config: Arc::new(GuardrailConfig::default()),
         metrics: Arc::new(GatewayMetrics::new()),
-        mcp_http_client: reqwest::Client::new(),
+        mcp_http_clients: gateway_service::McpUpstreamClients::default(),
         mcp_oauth_runtime: Arc::new(McpOauthRuntime::new(None, Vec::new())),
         mcp_client_oauth: None,
         oauth_streams: crate::http::mcp_client_oauth::OauthStreamWatcher::new(

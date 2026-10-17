@@ -317,6 +317,18 @@ fn answers_allowed(scope: OutboundAddressScope, host: &str, answers: &[IpAddr]) 
     })
 }
 
+/// A client builder whose connections reach only addresses in `scope`: names
+/// resolve through the guard, which the client then connects to exactly, and
+/// redirects and proxies are off. An IP-literal host skips the resolver, so a
+/// caller either checks it ([`OutboundFetcher::check_url`]) or derives `scope`
+/// from it ([`OutboundAddressScope::of_trusted_url`]).
+pub fn guarded_client_builder(scope: OutboundAddressScope) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .dns_resolver(Arc::new(GuardedResolver { scope }))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+}
+
 /// An HTTP client that only connects to addresses within its scope.
 #[derive(Clone)]
 pub struct OutboundFetcher {
@@ -353,10 +365,7 @@ impl OutboundFetcher {
         timeout: Duration,
         max_body_bytes: usize,
     ) -> Self {
-        let client = reqwest::Client::builder()
-            .dns_resolver(Arc::new(GuardedResolver { scope }))
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
+        let client = guarded_client_builder(scope)
             .referer(false)
             .connect_timeout(timeout)
             .timeout(timeout)

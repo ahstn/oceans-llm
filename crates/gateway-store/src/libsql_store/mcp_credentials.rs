@@ -1,3 +1,4 @@
+use super::mcp_registry::check_ownership_guard;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 
@@ -135,6 +136,12 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         // An immediate transaction holds the write lock, so the replaced row read
         // here is exactly the one the update below overwrites.
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &input.expected_server {
+            if guard.mcp_server_id != input.mcp_server_id {
+                return Err(guard.conflict());
+            }
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         let previous = if input.credential_binding_id.is_some() {
             let mut rows = tx
                 .query(

@@ -919,7 +919,7 @@ async fn team_visible_tools_cannot_be_granted_outside_the_owning_team() {
     };
     assert_eq!(
         read(replace(private.tool_id).await).await.0,
-        StatusCode::BAD_REQUEST
+        StatusCode::CONFLICT
     );
     assert_eq!(
         read(replace(published.tool_id).await).await.0,

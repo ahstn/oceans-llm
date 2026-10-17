@@ -1744,6 +1744,7 @@ pub(crate) mod tests {
             target_kind: gateway_core::McpToolGrantTargetKind::Tool,
             target_id: tool.mcp_tool_id,
             updated_at: now,
+            expected_server: None,
         };
         let revoked_subject = Uuid::new_v4();
         store
@@ -1809,6 +1810,165 @@ pub(crate) mod tests {
                 .expect("team grants")
                 .len(),
             2
+        );
+
+        exercise_mcp_ownership_guards(
+            store,
+            &server,
+            tool.mcp_tool_id,
+            team.team_id,
+            toolset.toolset_id,
+        )
+        .await;
+    }
+
+    /// Grant, credential and tool set writes checked against the server's
+    /// owner and visibility under the same write. `server` is owned by `team`
+    /// and visible to it only; `toolset_id` already holds `tool_id`.
+    async fn exercise_mcp_ownership_guards<S>(
+        store: &S,
+        server: &gateway_core::ExternalMcpServerRecord,
+        tool_id: Uuid,
+        team_id: Uuid,
+        toolset_id: Uuid,
+    ) where
+        S: gateway_core::McpAccessRepository + gateway_core::McpUpstreamCredentialRepository + Sync,
+    {
+        use gateway_core::{McpServerOwnershipGuard, McpServerVisibility};
+
+        let now = OffsetDateTime::now_utc();
+        let current = McpServerOwnershipGuard {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: Some(team_id),
+            visibility: McpServerVisibility::Team,
+        };
+        // As a check made before a transfer to the team would have seen it.
+        let stale = McpServerOwnershipGuard {
+            owner_team_id: None,
+            visibility: McpServerVisibility::Organisation,
+            ..current
+        };
+        let subject_id = Uuid::new_v4();
+        let grant = |expected_server| gateway_core::UpsertMcpToolGrantRecord {
+            subject_kind: gateway_core::McpToolGrantSubjectKind::User,
+            subject_id,
+            target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+            target_id: tool_id,
+            updated_at: now,
+            expected_server: Some(expected_server),
+        };
+        let grants_for_subject = || async {
+            store
+                .list_mcp_tool_grants(
+                    Some(gateway_core::McpToolGrantSubjectKind::User),
+                    Some(subject_id),
+                )
+                .await
+                .expect("subject grants")
+                .len()
+        };
+
+        assert!(matches!(
+            store.upsert_mcp_tool_grant(&grant(stale)).await,
+            Err(StoreError::Conflict(_))
+        ));
+        // A guard must name the tool's own server, or a check against one server
+        // could authorize a grant on another's tool.
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_grant(&grant(McpServerOwnershipGuard {
+                    mcp_server_id: Uuid::new_v4(),
+                    ..current
+                }))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            grants_for_subject().await,
+            0,
+            "a refused grant writes nothing"
+        );
+        let (_, created) = store
+            .upsert_mcp_tool_grant(&grant(current))
+            .await
+            .expect("grant under the current owner");
+        assert!(created);
+        assert_eq!(grants_for_subject().await, 1);
+
+        let binding = |expected_server| UpsertMcpUpstreamCredentialBindingRecord {
+            credential_binding_id: None,
+            mcp_server_id: server.mcp_server_id,
+            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::Team,
+            owner_scope_key: format!("mcp_credential:v1:team:{team_id}"),
+            owner_user_id: None,
+            owner_team_id: Some(team_id),
+            owner_service_account_id: None,
+            material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+            header_name: None,
+            storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+            secret_ciphertext: Some("ciphertext".to_string()),
+            secret_nonce: Some("nonce".to_string()),
+            secret_key_id: Some("key".to_string()),
+            secret_ref: None,
+            expires_at: None,
+            metadata: Map::new(),
+            updated_at: now,
+            expected_server: Some(expected_server),
+        };
+        let bindings_for_server = || async {
+            store
+                .list_mcp_upstream_credential_bindings(
+                    Some(server.mcp_server_id),
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .expect("server bindings")
+                .len()
+        };
+        let before = bindings_for_server().await;
+        assert!(matches!(
+            store
+                .upsert_mcp_upstream_credential_binding(&binding(stale))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            bindings_for_server().await,
+            before,
+            "a refused binding writes nothing"
+        );
+        store
+            .upsert_mcp_upstream_credential_binding(&binding(current))
+            .await
+            .expect("binding under the current owner");
+        assert_eq!(bindings_for_server().await, before + 1);
+
+        // The tool set picked the tool up while the server was published. Now
+        // that it is team-only, even resaving the same set is refused.
+        assert!(matches!(
+            store
+                .replace_mcp_toolset_tools(toolset_id, &[tool_id], now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        store
+            .replace_mcp_toolset_tools(toolset_id, &[], now)
+            .await
+            .expect("empty the tool set");
+        assert!(matches!(
+            store
+                .replace_mcp_toolset_tools(toolset_id, &[tool_id], now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            store
+                .list_mcp_toolset_tools(toolset_id)
+                .await
+                .expect("tool set tools")
+                .is_empty()
         );
     }
 
@@ -2309,6 +2469,7 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(1)),
                 metadata: Map::from_iter([("source".to_string(), json!("test"))]),
                 updated_at: now,
+                expected_server: None,
             })
             .await
             .expect("create credential binding");
@@ -2340,6 +2501,7 @@ pub(crate) mod tests {
                 expires_at: None,
                 metadata: Map::new(),
                 updated_at: now + Duration::seconds(1),
+                expected_server: None,
             })
             .await;
         assert!(
@@ -2500,6 +2662,7 @@ pub(crate) mod tests {
                 expires_at: None,
                 metadata: Map::new(),
                 updated_at: now + Duration::minutes(11),
+                expected_server: None,
             })
             .await
             .expect("create replacement credential")
@@ -2540,6 +2703,7 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(1)),
                 metadata: Map::from_iter([("grant".to_string(), json!("v1"))]),
                 updated_at: now + Duration::minutes(20),
+                expected_server: None,
             })
             .await
             .expect("create OAuth credential")
@@ -2595,6 +2759,7 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(3)),
                 metadata: Map::from_iter([("grant".to_string(), json!("v3"))]),
                 updated_at: now + Duration::minutes(22),
+                expected_server: None,
             })
             .await
             .expect("reconnect OAuth credential");

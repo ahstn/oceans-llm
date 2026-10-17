@@ -27,6 +27,7 @@ use crate::mcp_upstream_auth::{
     normalize_mcp_server_key, supports_public_discovery, validate_mcp_auth_config,
     validate_mcp_server_auth_destination,
 };
+use crate::mcp_upstream_http::McpUpstreamClients;
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
 const MIN_DISCOVERY_TIMEOUT_MS: i64 = 1_000;
@@ -101,8 +102,20 @@ pub trait McpDiscoveryClient: Send + Sync {
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError>;
 }
 
+/// Lists tools over HTTP, through the client [`McpUpstreamClients`] picks for
+/// the server, so a team-owned server's discovery reaches only the addresses
+/// its URL allows.
 #[derive(Debug, Clone, Default)]
-pub struct HttpMcpDiscoveryClient;
+pub struct HttpMcpDiscoveryClient {
+    clients: McpUpstreamClients,
+}
+
+impl HttpMcpDiscoveryClient {
+    #[must_use]
+    pub fn new(clients: McpUpstreamClients) -> Self {
+        Self { clients }
+    }
+}
 
 #[async_trait]
 impl McpDiscoveryClient for HttpMcpDiscoveryClient {
@@ -114,7 +127,8 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
         let timeout = Duration::from_millis(server.timeout_ms.max(1) as u64);
         let query_credential = gateway_mcp_upstream_query(server)
             .map_err(|error| McpClientError::InvalidHeader(error.to_string()))?;
-        StreamableHttpClient::new(&server.server_url, timeout)?
+        let client = self.clients.for_server(server).clone();
+        StreamableHttpClient::with_http_client(&server.server_url, client, timeout)?
             .with_query_credential(query_credential)
             .list_tools(headers)
             .await
@@ -135,7 +149,7 @@ where
     pub fn new(repo: Arc<R>) -> Self {
         Self {
             repo,
-            client: Arc::new(HttpMcpDiscoveryClient),
+            client: Arc::new(HttpMcpDiscoveryClient::default()),
         }
     }
 }

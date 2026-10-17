@@ -1687,6 +1687,50 @@ impl McpServerOwnership {
     }
 }
 
+/// The owner and visibility a grant or credential write was authorized
+/// against. A store write that carries one happens only while the server
+/// still has them, checked in the same transaction with the server row
+/// locked; otherwise it is a conflict and nothing is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerOwnershipGuard {
+    pub mcp_server_id: Uuid,
+    pub owner_team_id: Option<Uuid>,
+    pub visibility: McpServerVisibility,
+}
+
+impl McpServerOwnershipGuard {
+    #[must_use]
+    pub fn of(server: &ExternalMcpServerRecord) -> Self {
+        Self {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: server.ownership.owner_team_id,
+            visibility: server.ownership.visibility,
+        }
+    }
+
+    /// Whether a server row read under the write lock still matches.
+    #[must_use]
+    pub fn matches(
+        &self,
+        mcp_server_id: Uuid,
+        owner_team_id: Option<Uuid>,
+        visibility: McpServerVisibility,
+    ) -> bool {
+        self.mcp_server_id == mcp_server_id
+            && self.owner_team_id == owner_team_id
+            && self.visibility == visibility
+    }
+
+    /// The conflict a store returns when the server no longer matches.
+    #[must_use]
+    pub fn conflict(&self) -> crate::StoreError {
+        crate::StoreError::Conflict(format!(
+            "external MCP server `{}` changed owner or visibility; reload it and try again",
+            self.mcp_server_id
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalMcpServerRecord {
     pub mcp_server_id: Uuid,
@@ -1934,6 +1978,9 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     pub expires_at: Option<OffsetDateTime>,
     pub metadata: Map<String, Value>,
     pub updated_at: OffsetDateTime,
+    /// When set, the write is conditional on the binding's server, as
+    /// [`McpServerOwnershipGuard`] describes.
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2118,6 +2165,9 @@ pub struct UpsertMcpToolGrantRecord {
     pub target_kind: McpToolGrantTargetKind,
     pub target_id: Uuid,
     pub updated_at: OffsetDateTime,
+    /// When set, the grant is written only while the target tool belongs to
+    /// this server and the server still has this owner and visibility.
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 /// Which tool columns an access resolution loads.

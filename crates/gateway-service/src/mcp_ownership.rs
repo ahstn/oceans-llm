@@ -323,8 +323,9 @@ where
     /// writes are bounded by ownership; tag-based grants call
     /// [`Self::authorize_server_grant`] for each server a tag reaches.
     ///
-    /// Returns the server a tool grant was authorized against, so the caller can
-    /// confirm with [`Self::ownership_unchanged`] after the write.
+    /// Returns the server a tool grant was authorized against. The caller
+    /// passes it to the store as a [`gateway_core::McpServerOwnershipGuard`], so the grant
+    /// is written only while the server still has that owner and visibility.
     pub async fn authorize_grant(
         &self,
         scope: &McpAdminScope,
@@ -346,24 +347,6 @@ where
                 Ok(Some(server))
             }
         }
-    }
-
-    /// Whether `server` still has the owner and visibility it was authorized
-    /// with. Grant and credential writes are not conditional in the store, so
-    /// handlers call this right after the write and undo a new row when a
-    /// transfer landed in between.
-    pub async fn ownership_unchanged(
-        &self,
-        server: &ExternalMcpServerRecord,
-    ) -> Result<bool, GatewayError> {
-        Ok(self
-            .repo
-            .get_external_mcp_server(server.mcp_server_id)
-            .await?
-            .is_some_and(|current| {
-                current.ownership.owner_team_id == server.ownership.owner_team_id
-                    && current.ownership.visibility == server.ownership.visibility
-            }))
     }
 
     /// Checks that `subject` may be granted tools of `server` by the caller.
@@ -437,34 +420,6 @@ where
             .filter(|grant| subject_kind.is_none_or(|kind| grant.subject_kind == kind))
             .filter(|grant| subject_id.is_none_or(|id| grant.subject_id == id))
             .collect())
-    }
-
-    /// Tool sets are granted organisation-wide, so they hold only tools of
-    /// servers published to the organisation.
-    pub async fn authorize_toolset_tools(&self, tool_ids: &[Uuid]) -> Result<(), GatewayError> {
-        if tool_ids.is_empty() {
-            return Ok(());
-        }
-        let requested: std::collections::HashSet<Uuid> = tool_ids.iter().copied().collect();
-        // Reads scale with the number of team-only servers, not the request.
-        for server in self.repo.list_external_mcp_servers(true).await? {
-            if server.ownership.visibility != McpServerVisibility::Team {
-                continue;
-            }
-            if let Some(tool) = self
-                .repo
-                .list_external_mcp_tools(server.mcp_server_id, true)
-                .await?
-                .into_iter()
-                .find(|tool| requested.contains(&tool.mcp_tool_id))
-            {
-                return Err(GatewayError::InvalidRequest(format!(
-                    "tool `{}` belongs to MCP server `{}`, which is visible to its team only; publish the server to the organisation before adding its tools to a tool set",
-                    tool.upstream_name, server.server_key
-                )));
-            }
-        }
-        Ok(())
     }
 
     /// Checks a credential binding write on a server the caller manages. Team

@@ -196,7 +196,7 @@ async fn dispatch_mcp_request(
                 }
             };
             let outcome = proxy_tools_list(
-                &state.mcp_http_client,
+                state.mcp_http_clients.for_server(&upstream.server),
                 method,
                 headers,
                 body,
@@ -502,21 +502,28 @@ async fn handle_tools_call(
             return tool_call_auth_error_response(state, auth, &server, id.as_ref(), error);
         }
     };
-    let outcome =
-        match proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await {
-            Ok(response) => {
-                enforce_direct_mcp_result(
-                    state,
-                    &upstream.server.server_key,
-                    &tool.upstream_name,
-                    id.as_ref(),
-                    mcp_tool_invocation_id,
-                    response,
-                )
-                .await
-            }
-            Err(error) => Err(error),
-        };
+    let outcome = match proxy_upstream(
+        state.mcp_http_clients.for_server(&upstream.server),
+        method,
+        headers,
+        body,
+        &upstream,
+    )
+    .await
+    {
+        Ok(response) => {
+            enforce_direct_mcp_result(
+                state,
+                &upstream.server.server_key,
+                &tool.upstream_name,
+                id.as_ref(),
+                mcp_tool_invocation_id,
+                response,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
     let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);
     let mut log_input = tool_invocation_log_input(
         &upstream.server,
