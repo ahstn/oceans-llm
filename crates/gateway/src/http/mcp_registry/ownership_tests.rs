@@ -1493,3 +1493,83 @@ async fn team_admins_cannot_retarget_a_server_holding_other_credentials() {
         .await;
     assert_eq!(status, StatusCode::OK, "{response}");
 }
+
+#[tokio::test]
+async fn member_access_follows_each_api_keys_mcp_scopes() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "keyed",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let member = context
+        .actor(
+            GlobalRole::User,
+            Some((context.team_a, MembershipRole::Member)),
+        )
+        .await;
+    let key = |access: gateway_core::ApiKeyAccess| NewApiKeyRecord {
+        name: "Scoped".into(),
+        public_id: Uuid::new_v4().simple().to_string(),
+        secret_hash: gateway_core::hash_gateway_key_secret("test-secret").unwrap(),
+        model_grant_mode: ApiKeyModelGrantMode::Explicit,
+        owner_kind: ApiKeyOwnerKind::User,
+        owner_user_id: Some(member.user_id),
+        owner_team_id: None,
+        owner_service_account_id: None,
+        access,
+        created_at: OffsetDateTime::now_utc(),
+    };
+    let admin = context.team_admin(context.team_a).await;
+    // A grant on an inference-only key, and on an MCP key limited to another
+    // server, reaches nothing the member can call.
+    for access in [
+        gateway_core::ApiKeyAccess {
+            scopes: Some(vec!["inference".to_string()]),
+            mcp_server_keys: None,
+        },
+        gateway_core::ApiKeyAccess {
+            scopes: Some(vec!["mcp:proxy".to_string()]),
+            mcp_server_keys: Some(vec!["other".to_string()]),
+        },
+    ] {
+        let id = context
+            .state
+            .store
+            .create_api_key(&key(access))
+            .await
+            .unwrap()
+            .id;
+        assert_eq!(
+            context
+                .grant(&admin, "api_key", id, "tool", server.tool_id)
+                .await
+                .0,
+            StatusCode::OK
+        );
+    }
+    let (_, body) = context.list(&member, None).await;
+    assert_eq!(body["data"]["items"], json!([]));
+
+    // A key that may call this server makes it connectable.
+    let id = context
+        .state
+        .store
+        .create_api_key(&key(gateway_core::ApiKeyAccess {
+            scopes: Some(vec!["mcp:proxy".to_string()]),
+            mcp_server_keys: Some(vec!["keyed".to_string()]),
+        }))
+        .await
+        .unwrap()
+        .id;
+    assert_eq!(
+        context
+            .grant(&admin, "api_key", id, "tool", server.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let (_, body) = context.list(&member, None).await;
+    assert_eq!(body["data"]["items"][0]["id"], server.id.to_string());
+}

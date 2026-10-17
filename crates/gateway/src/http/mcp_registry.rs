@@ -1402,14 +1402,16 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
         .label(toolset.toolset_key().to_string())
 }
 
-/// The active tools a user can call: those granted to them, their team, or one
-/// of their own API keys. This is the access a member's MCP client gets.
+/// The active tools a user can call. Grants to them or their team count as
+/// they reach any of the user's MCP clients. A grant to one of their API keys
+/// counts only while that key may call MCP at all and its server list, if it
+/// has one, includes the tool's server, as runtime resolution enforces.
 async fn member_access(
     state: &AppState,
     user_id: Uuid,
     team_id: Option<Uuid>,
 ) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
-    use gateway_core::AdminApiKeyRepository;
+    use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
     let mut subjects = vec![McpGrantSubject {
         subject_kind: McpToolGrantSubjectKind::User,
         subject_id: user_id,
@@ -1420,23 +1422,53 @@ async fn member_access(
             subject_id: team_id,
         });
     }
-    subjects.extend(
-        state
-            .store
-            .list_api_keys_for_user_scope(user_id, None)
-            .await?
-            .into_iter()
-            .filter(|key| key.owner_user_id == Some(user_id) && key.revoked_at.is_none())
-            .map(|key| McpGrantSubject {
-                subject_kind: McpToolGrantSubjectKind::ApiKey,
-                subject_id: key.id,
-            }),
-    );
-    Ok(state
+    let mut tools = state
         .store
         .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Full)
         .await?
-        .allowed_tools)
+        .allowed_tools;
+    let keys: Vec<_> = state
+        .store
+        .list_api_keys_for_user_scope(user_id, None)
+        .await?
+        .into_iter()
+        .filter(|key| key.owner_user_id == Some(user_id) && key.revoked_at.is_none())
+        .filter(|key| {
+            key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)
+        })
+        .collect();
+    if keys.is_empty() {
+        return Ok(tools);
+    }
+    let server_keys: std::collections::HashMap<Uuid, String> = state
+        .store
+        .list_external_mcp_servers(false)
+        .await?
+        .into_iter()
+        .map(|server| (server.mcp_server_id, server.server_key))
+        .collect();
+    let mut seen: std::collections::HashSet<Uuid> =
+        tools.iter().map(|tool| tool.mcp_tool_id).collect();
+    for key in keys {
+        let subject = McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::ApiKey,
+            subject_id: key.id,
+        };
+        for tool in state
+            .store
+            .resolve_mcp_access_for_subjects(&[subject], None, McpToolProjection::Full)
+            .await?
+            .allowed_tools
+        {
+            let allowed = server_keys
+                .get(&tool.mcp_server_id)
+                .is_some_and(|server_key| key.access.allows_mcp_server(server_key));
+            if allowed && seen.insert(tool.mcp_tool_id) {
+                tools.push(tool);
+            }
+        }
+    }
+    Ok(tools)
 }
 
 /// A member's read-only server list: the servers they can connect to.
@@ -1453,6 +1485,7 @@ async fn list_member_servers(
         .collect();
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let mut items = Vec::new();
+    let mut names = std::collections::HashMap::new();
     for server in McpRegistryService::new(state.store.clone())
         .list_servers(query.include_disabled)
         .await?
@@ -1462,7 +1495,15 @@ async fn list_member_servers(
         {
             continue;
         }
-        let name = owner_team_name(state, server.ownership.owner_team_id).await?;
+        let owner = server.ownership.owner_team_id;
+        let name = match names.get(&owner) {
+            Some(name) => Clone::clone(name),
+            None => {
+                let name = owner_team_name(state, owner).await?;
+                names.insert(owner, name.clone());
+                name
+            }
+        };
         items.push(map_server(server).for_viewer(name, false));
     }
     Ok(Json(envelope(McpServersPayload {

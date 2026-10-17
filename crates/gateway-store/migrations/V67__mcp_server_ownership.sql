@@ -4,7 +4,9 @@
 -- The team reference restricts deletion: a team that owns servers cannot be
 -- deleted until a platform admin moves them, so a team-only server never loses
 -- its owner.
--- A platform-owned server is always `organisation`; the service enforces it.
+-- A platform-owned server is always `organisation`. SQLite cannot add a
+-- cross-column CHECK to an existing table, so triggers enforce it, matching the
+-- Postgres constraint.
 ALTER TABLE external_mcp_servers ADD COLUMN owner_team_id TEXT
   REFERENCES teams(team_id);
 ALTER TABLE external_mcp_servers ADD COLUMN owner_contact TEXT;
@@ -13,3 +15,17 @@ ALTER TABLE external_mcp_servers ADD COLUMN visibility TEXT NOT NULL DEFAULT 'or
 
 CREATE INDEX IF NOT EXISTS external_mcp_servers_owner_team_idx
   ON external_mcp_servers (owner_team_id, server_key);
+
+CREATE TRIGGER IF NOT EXISTS external_mcp_servers_platform_visibility_insert
+BEFORE INSERT ON external_mcp_servers
+WHEN NEW.owner_team_id IS NULL AND NEW.visibility <> 'organisation'
+BEGIN
+  SELECT RAISE(ABORT, 'a platform-owned MCP server must be visible to the organisation');
+END;
+
+CREATE TRIGGER IF NOT EXISTS external_mcp_servers_platform_visibility_update
+BEFORE UPDATE OF owner_team_id, visibility ON external_mcp_servers
+WHEN NEW.owner_team_id IS NULL AND NEW.visibility <> 'organisation'
+BEGIN
+  SELECT RAISE(ABORT, 'a platform-owned MCP server must be visible to the organisation');
+END;

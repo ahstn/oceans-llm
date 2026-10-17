@@ -216,9 +216,9 @@ where
     }
 
     /// Checks a team admin pointing a server at a new URL. Credentials the team
-    /// did not set itself (users' own, or a `secret_ref` to a gateway-wide
-    /// variable) would be sent to the new destination, so they must be revoked
-    /// first.
+    /// did not set itself (users' own, another team's, or a `secret_ref` to a
+    /// gateway-wide variable) would be sent to the new destination, so they must
+    /// be revoked first.
     pub async fn authorize_retarget(
         &self,
         scope: &McpAdminScope,
@@ -233,9 +233,12 @@ where
             .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, false)
             .await?
             .into_iter()
+            // Only the current owner's own team and service-account credentials,
+            // stored as encrypted secrets, may follow the server to a new URL.
             .filter(|binding| {
                 binding.owner_scope_kind == McpUpstreamCredentialOwnerScopeKind::User
                     || binding.secret_ref.is_some()
+                    || binding.owner_team_id != server.ownership.owner_team_id
             })
             .count();
         if foreign > 0 {

@@ -1471,6 +1471,28 @@ pub(crate) mod tests {
             .await
             .expect("create team-owned MCP server");
         assert_eq!(server.ownership, owned);
+        // Both backends refuse a platform-owned server that is team-only.
+        assert!(
+            store
+                .create_external_mcp_server(&NewExternalMcpServerRecord {
+                    server_key: "orphan".to_string(),
+                    display_name: "Orphan".to_string(),
+                    description: None,
+                    transport: ExternalMcpTransport::StreamableHttp,
+                    server_url: "https://orphan.example.com/mcp".to_string(),
+                    auth_mode: ExternalMcpAuthMode::None,
+                    auth_config: Map::new(),
+                    timeout_ms: 30_000,
+                    ownership: McpServerOwnership {
+                        owner_team_id: None,
+                        owner_contact: None,
+                        visibility: McpServerVisibility::Team,
+                    },
+                    created_at: now,
+                })
+                .await
+                .is_err()
+        );
         let listed = store
             .list_external_mcp_servers(true)
             .await
