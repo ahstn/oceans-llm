@@ -1,0 +1,19 @@
+crates/gateway-service/src/outbound_fetch.rs
+  s_4394d7bb181c63::t_8634dee6cc9eba 424-428
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "102b5f0bddd5e45d85a3a89fa58bbb976e6abda2",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
