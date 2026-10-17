@@ -568,6 +568,115 @@ where
     assert_eq!(versions[0].reviewed_at, None);
 }
 
+/// An upstream back on an older definition reuses that version: one an admin
+/// approved is served again, and a superseded one waits under its old number.
+async fn exercise_historical_reuse<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    let now = OffsetDateTime::now_utc();
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "archive".to_string(),
+            display_name: "Archive".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://archive.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: now,
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("server");
+    let object = json!({"type": "object"});
+    let reviewer = Uuid::new_v4();
+    let id = find(
+        &discover(store, &server, &[Def("fetch", "A", object.clone())]).await,
+        "fetch",
+    )
+    .mcp_tool_id;
+    store
+        .review_mcp_tool_version(id, 1, McpToolReviewDecision::Approve, Some(reviewer), now)
+        .await
+        .expect("approve A");
+    discover(store, &server, &[Def("fetch", "B", object.clone())]).await;
+    store
+        .review_mcp_tool_version(id, 2, McpToolReviewDecision::Approve, Some(reviewer), now)
+        .await
+        .expect("approve B");
+
+    // Back on approved A: served again as version 1, no review, no new row.
+    let tools = discover(store, &server, &[Def("fetch", "A", object.clone())]).await;
+    let fetch = find(&tools, "fetch");
+    assert_eq!(fetch.schema_version, 1);
+    assert_eq!(fetch.description.as_deref(), Some("A"));
+    assert_eq!(
+        fetch.review.approval_status,
+        McpToolApprovalStatus::Approved
+    );
+    assert_eq!(
+        store
+            .list_mcp_tool_versions(id)
+            .await
+            .expect("versions")
+            .len(),
+        2
+    );
+
+    // C waits, D replaces it (C superseded), then C returns: it waits again
+    // as version 3, not as a new version.
+    discover(store, &server, &[Def("fetch", "C", object.clone())]).await;
+    discover(store, &server, &[Def("fetch", "D", object.clone())]).await;
+    let tools = discover(store, &server, &[Def("fetch", "C", object)]).await;
+    let fetch = find(&tools, "fetch");
+    assert_eq!(fetch.review.pending_schema_version, Some(3));
+    let versions = store.list_mcp_tool_versions(id).await.expect("versions");
+    assert_eq!(versions.len(), 4);
+    let status_of = |version: i64| {
+        versions
+            .iter()
+            .find(|candidate| candidate.schema_version == version)
+            .map(|candidate| candidate.status)
+    };
+    assert_eq!(status_of(3), Some(McpToolVersionStatus::Pending));
+    assert_eq!(status_of(4), Some(McpToolVersionStatus::Superseded));
+}
+
+#[tokio::test]
+#[serial]
+async fn libsql_mcp_tool_historical_reuse() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_historical_reuse(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_mcp_tool_historical_reuse() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres MCP tool reuse test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_historical_reuse(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}
+
 #[tokio::test]
 #[serial]
 async fn libsql_mcp_tool_review_edge_cases() {

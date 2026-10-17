@@ -104,3 +104,14 @@ function lcsDiff(left: string[], right: string[]): DiffLine[] {
   }
   return lines
 }
+
+/** Most diff lines rendered per section; the rest are counted, not drawn. */
+export const MAX_RENDERED_DIFF_LINES = 400
+
+/** The lines to render and how many were left out. */
+export function limitDiff(lines: DiffLine[]): { shown: DiffLine[]; hidden: number } {
+  return {
+    shown: lines.slice(0, MAX_RENDERED_DIFF_LINES),
+    hidden: Math.max(0, lines.length - MAX_RENDERED_DIFF_LINES),
+  }
+}

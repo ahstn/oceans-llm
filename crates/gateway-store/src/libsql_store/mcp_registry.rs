@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
     StoredTool, StoredVersion, ToolWrite, discovered_definition, plan_tool_write,
+    reuse_historical_version,
 };
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::mcp_tool_review::status_after_rejection;
@@ -471,7 +472,14 @@ impl McpRegistryRepository for LibsqlStore {
 
         for tool in tools {
             let existing = stored.get(&tool.upstream_name);
-            let write = plan_tool_write(existing, tool, approve_tool_changes);
+            let mut write = plan_tool_write(existing, tool, approve_tool_changes);
+            if let Some(existing) = existing
+                && write.allocates_version()
+            {
+                let historical =
+                    find_version_by_definition(&tx, existing.tool.mcp_tool_id, tool).await?;
+                write = reuse_historical_version(write, historical);
+            }
             apply_tool_write(&tx, run.finished_at, tool, existing, &write).await?;
         }
 
@@ -983,6 +991,34 @@ async fn auto_approve_version(
     Ok(())
 }
 
+/// The newest version of a tool with this definition (schema hash and
+/// description), and its status.
+async fn find_version_by_definition(
+    connection: &libsql::Connection,
+    mcp_tool_id: Uuid,
+    tool: &UpsertExternalMcpToolRecord,
+) -> Result<Option<(i64, McpToolVersionStatus)>, StoreError> {
+    let mut rows = connection
+        .query(
+            "SELECT schema_version, status FROM mcp_tool_versions WHERE mcp_tool_id = ?1 AND schema_hash = ?2 AND description IS ?3 ORDER BY schema_version DESC LIMIT 1",
+            libsql::params![
+                mcp_tool_id.to_string(),
+                tool.schema_hash.as_str(),
+                tool.description.as_deref(),
+            ],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let Some(row) = rows.next().await.map_err(to_query_error)? else {
+        return Ok(None);
+    };
+    let status: String = row.get(1).map_err(to_query_error)?;
+    let status = McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+        StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
+    })?;
+    Ok(Some((row.get(0).map_err(to_query_error)?, status)))
+}
+
 /// Marks every pending version other than `keep` as superseded.
 async fn supersede_pending(
     connection: &libsql::Connection,
@@ -1132,17 +1168,30 @@ async fn apply_tool_write(
             version,
             status,
             write_definition,
+            insert_version: insert,
         } => {
             supersede_pending(connection, id, *version).await?;
-            insert_version(
-                connection,
-                id,
-                *version,
-                &definition,
-                McpToolVersionStatus::Pending,
-                discovered_at,
-            )
-            .await?;
+            if *insert {
+                insert_version(
+                    connection,
+                    id,
+                    *version,
+                    &definition,
+                    McpToolVersionStatus::Pending,
+                    discovered_at,
+                )
+                .await?;
+            } else {
+                set_version_status(
+                    connection,
+                    id,
+                    *version,
+                    McpToolVersionStatus::Pending,
+                    None,
+                    None,
+                )
+                .await?;
+            }
             if *write_definition {
                 write_tool_definition(connection, id, &definition, *version).await?;
             }

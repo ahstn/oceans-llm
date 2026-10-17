@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { getMcpToolVersions, saveMcpToolReview } from '@/server/mcp-policy-data.functions'
 import type { McpServerView, McpToolVersionView, McpToolView } from '@/types/api'
-import { diffText, lineDiff } from './-tool-diff'
+import { diffText, limitDiff, lineDiff } from './-tool-diff'
 
 /** The server's tools with a version waiting for review. */
 function pendingReviewTools(server: McpServerView, tools: McpToolView[]) {
@@ -105,7 +105,12 @@ function ReviewList({
   return (
     <div className="divide-y border-y">
       {pending.map((tool) => (
-        <ToolReview key={tool.id} tool={tool} onToolUpdated={onToolUpdated} />
+        // A newer pending version starts a fresh row: no cached versions or error.
+        <ToolReview
+          key={`${tool.id}:${tool.pending_schema_version}`}
+          tool={tool}
+          onToolUpdated={onToolUpdated}
+        />
       ))}
     </div>
   )
@@ -126,8 +131,12 @@ function ToolReview({
   function handleOpenChange(next: boolean) {
     setOpen(next)
     if (next && versions == null) {
+      setError(null)
       void getMcpToolVersions({ data: { serverId: tool.server_id, toolId: tool.id } })
-        .then((response) => setVersions(response.data.items))
+        .then((response) => {
+          setError(null)
+          setVersions(response.data.items)
+        })
         .catch((loadError: unknown) =>
           setError(loadError instanceof Error ? loadError.message : 'Failed to load versions'),
         )
@@ -199,37 +208,66 @@ function ToolReview({
         </div>
       </div>
       <CollapsibleContent className="flex max-w-full min-w-0 flex-col gap-3 pb-4">
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Versions failed to load</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : versions == null ? (
-          <Skeleton className="h-24 w-full" />
-        ) : (
-          <VersionDiff served={served} waiting={waiting} />
-        )}
-        <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending || !waiting}
-            onClick={() => review('reject')}
-          >
-            Reject
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={isPending || !waiting}
-            onClick={() => review('approve')}
-          >
-            Approve
-          </Button>
-        </div>
+        <ReviewBody
+          versions={versions}
+          error={error}
+          served={served}
+          waiting={waiting}
+          isPending={isPending}
+          onReview={review}
+        />
       </CollapsibleContent>
     </Collapsible>
+  )
+}
+
+function ReviewBody({
+  versions,
+  error,
+  served,
+  waiting,
+  isPending,
+  onReview,
+}: {
+  versions: McpToolVersionView[] | null
+  error: string | null
+  served: McpToolVersionView | undefined
+  waiting: McpToolVersionView | undefined
+  isPending: boolean
+  onReview: (decision: 'approve' | 'reject') => void
+}) {
+  return (
+    <>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Versions failed to load</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : versions == null ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <VersionDiff served={served} waiting={waiting} />
+      )}
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={isPending || !waiting}
+          onClick={() => onReview('reject')}
+        >
+          Reject
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={isPending || !waiting}
+          onClick={() => onReview('approve')}
+        >
+          Approve
+        </Button>
+      </div>
+    </>
   )
 }
 
@@ -255,14 +293,14 @@ function VersionDiff({
 }
 
 function DiffBlock({ label, before, after }: { label: string; before: string; after: string }) {
-  const lines = lineDiff(before, after)
+  const { shown, hidden } = limitDiff(lineDiff(before, after))
   return (
     <div className="max-w-full min-w-0" data-testid="mcp-tool-diff">
       <div className="text-subtle-foreground mb-1 text-xs font-medium">{label}</div>
       <div className="bg-muted max-w-full min-w-0 overflow-hidden rounded-md border">
         <pre className="max-h-72 max-w-full overflow-x-auto overflow-y-auto p-3 text-xs leading-relaxed">
           <code className="block min-w-max">
-            {lines.map((line, index) => (
+            {shown.map((line, index) => (
               <span
                 // Lines repeat, so the position is the only stable key.
                 // oxlint-disable-next-line react/no-array-index-key
@@ -280,6 +318,11 @@ function DiffBlock({ label, before, after }: { label: string; before: string; af
             ))}
           </code>
         </pre>
+        {hidden > 0 ? (
+          <div className="text-subtle-foreground border-t px-3 py-2 text-xs">
+            {hidden} more line{hidden === 1 ? '' : 's'} not shown
+          </div>
+        ) : null}
       </div>
     </div>
   )

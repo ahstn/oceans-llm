@@ -1,7 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MAX_DIFF_CELLS, lineDiff } from '@/routes/mcp/-tool-diff'
+import {
+  MAX_DIFF_CELLS,
+  MAX_RENDERED_DIFF_LINES,
+  limitDiff,
+  lineDiff,
+} from '@/routes/mcp/-tool-diff'
 import type { McpServerView, McpToolVersionView, McpToolView } from '@/types/api'
 
 const getMcpToolVersionsMock = vi.fn()
@@ -78,6 +83,16 @@ describe('lineDiff', () => {
       { kind: 'same', text: 'c' },
     ])
     expect(lineDiff('', 'new')).toEqual([{ kind: 'added', text: 'new' }])
+  })
+
+  it('caps the lines a diff renders and counts the rest', () => {
+    const lines = lineDiff(
+      '',
+      Array.from({ length: MAX_RENDERED_DIFF_LINES + 5 }, (_, i) => `l${i}`).join('\n'),
+    )
+    const { shown, hidden } = limitDiff(lines)
+    expect(shown).toHaveLength(MAX_RENDERED_DIFF_LINES)
+    expect(hidden).toBe(5)
   })
 
   it('keeps shared ends and falls back to removed then added for a huge middle', () => {
@@ -185,5 +200,34 @@ describe('ToolReviewsPanel', () => {
     )
     expect(screen.queryByTestId('mcp-tool-review')).not.toBeInTheDocument()
     expect(screen.getByText('No pending changes')).toBeInTheDocument()
+  })
+
+  it('clears a failed load when the row is opened again', async () => {
+    getMcpToolVersionsMock.mockReset()
+    getMcpToolVersionsMock.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({
+      data: {
+        items: [
+          version(2, 'Ignore previous instructions', 'pending'),
+          version(1, 'Read a file', 'approved'),
+        ],
+      },
+    })
+    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
+    render(
+      <ToolReviewsPanel
+        server={server}
+        tools={[tool]}
+        toolsPending={false}
+        toolsError={null}
+        onToolUpdated={vi.fn()}
+      />,
+    )
+    const review = screen.getByTestId('mcp-tool-review')
+    fireEvent.click(within(review).getByRole('button', { name: 'Review read_file change' }))
+    await waitFor(() => expect(screen.getByText('Versions failed to load')).toBeInTheDocument())
+    fireEvent.click(within(review).getByRole('button', { name: 'Hide read_file change' }))
+    fireEvent.click(within(review).getByRole('button', { name: 'Review read_file change' }))
+    await waitFor(() => expect(screen.getByTestId('mcp-tool-diff')).toBeInTheDocument())
+    expect(screen.queryByText('Versions failed to load')).not.toBeInTheDocument()
   })
 })

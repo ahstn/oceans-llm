@@ -56,6 +56,8 @@ pub(crate) enum ToolWrite {
         version: i64,
         status: McpToolApprovalStatus,
         write_definition: bool,
+        /// False when an older version with this definition is reused.
+        insert_version: bool,
     },
     /// Serve the approved definition again; pending versions are superseded.
     Revert,
@@ -146,8 +148,109 @@ pub(crate) fn plan_tool_write(
             version,
             status,
             write_definition: stored.tool.review.approved_schema_version.is_none(),
+            insert_version: true,
         },
         DiscoveryDecision::Revert => ToolWrite::Revert,
         DiscoveryDecision::Settle { status } => ToolWrite::Settle { status },
+    }
+}
+
+impl ToolWrite {
+    /// Whether this write would create a new version number, so discovery
+    /// should first look for an older version with the same definition.
+    pub(crate) fn allocates_version(&self) -> bool {
+        matches!(
+            self,
+            Self::Serve {
+                insert_version: true,
+                ..
+            } | Self::Hold { .. }
+        )
+    }
+}
+
+/// Reuses an older version with the same definition instead of allocating a
+/// new one. A definition an admin approved before is served again; one that
+/// was superseded waits for review under its old number. Discovery reads only
+/// pending and rejected versions up front, so older approved and superseded
+/// ones are looked up here, only when a new version would be created.
+pub(crate) fn reuse_historical_version(
+    write: ToolWrite,
+    historical: Option<(i64, McpToolVersionStatus)>,
+) -> ToolWrite {
+    let Some((version, historical_status)) = historical else {
+        return write;
+    };
+    match write {
+        ToolWrite::Serve {
+            insert_version: true,
+            ..
+        } => ToolWrite::Serve {
+            version,
+            insert_version: false,
+        },
+        ToolWrite::Hold { .. } if historical_status == McpToolVersionStatus::Approved => {
+            ToolWrite::Serve {
+                version,
+                insert_version: false,
+            }
+        }
+        ToolWrite::Hold {
+            status,
+            write_definition,
+            ..
+        } => ToolWrite::Hold {
+            version,
+            status,
+            write_definition,
+            insert_version: false,
+        },
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn historical_versions_are_reused_instead_of_duplicated() {
+        let hold = ToolWrite::Hold {
+            version: 5,
+            status: McpToolApprovalStatus::PendingReview,
+            write_definition: false,
+            insert_version: true,
+        };
+        assert_eq!(
+            reuse_historical_version(hold.clone(), Some((2, McpToolVersionStatus::Approved))),
+            ToolWrite::Serve {
+                version: 2,
+                insert_version: false
+            },
+            "a definition an admin approved before is served again"
+        );
+        assert_eq!(
+            reuse_historical_version(hold.clone(), Some((3, McpToolVersionStatus::Superseded))),
+            ToolWrite::Hold {
+                version: 3,
+                status: McpToolApprovalStatus::PendingReview,
+                write_definition: false,
+                insert_version: false,
+            }
+        );
+        assert_eq!(reuse_historical_version(hold.clone(), None), hold);
+        assert_eq!(
+            reuse_historical_version(
+                ToolWrite::Serve {
+                    version: 5,
+                    insert_version: true
+                },
+                Some((2, McpToolVersionStatus::Superseded))
+            ),
+            ToolWrite::Serve {
+                version: 2,
+                insert_version: false
+            }
+        );
     }
 }

@@ -105,6 +105,7 @@ When it is on:
 - **Approve** copies the version into the tool row, makes it the served definition, and marks older pending versions `superseded`.
 - **Reject** marks the version `rejected`. A text-only change goes back to `approved` and keeps serving the previous version. A new tool, or a rejected contract change, becomes `rejected` and stays withheld until a later discovery brings a definition an admin approves. Discovery does not reopen a rejected definition. If the upstream serves a rejected definition again, any newer pending version is superseded, because the upstream no longer offers it, and the tool settles to `approved` when the rejected change kept the contract of the served version, or `rejected` otherwise.
 - If the upstream goes back to the approved definition, the pending version is `superseded` and the tool is `approved` again.
+- If the upstream goes back to an older definition, discovery reuses that version instead of creating a duplicate. A version an admin approved before is served again without review. One that was superseded before review waits again under its old number. Discovery looks this up only when it would otherwise create a version, so it does not read the whole history on every refresh.
 
 Turning the setting off does not approve anything on its own. The next discovery approves the current definitions. Turning it on leaves existing tools approved.
 
