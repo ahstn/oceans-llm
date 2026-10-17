@@ -273,10 +273,12 @@ function buckets(end: Date, range: number) {
   return { starts, bucketOf }
 }
 
+// Stacked bottom to top. Light, dark, light, so neighbouring bands differ in lightness as well as
+// hue (about 1.9:1 each way), not by hue alone.
 const TOKEN_KEYS = [
   { key: 'output', label: 'Output', color: 'var(--chart-2)' },
-  { key: 'uncached', label: 'Input', color: 'var(--chart-4)' },
-  { key: 'cached', label: 'Cached input', color: 'var(--chart-1)' },
+  { key: 'uncached', label: 'Input', color: 'var(--chart-5)' },
+  { key: 'cached', label: 'Cached input', color: 'var(--chart-4)' },
 ]
 
 /**
@@ -303,7 +305,7 @@ export function tokenVolumeChart(profile: MyProfileView, range: ProfileRange): S
   return { config: toConfig(TOKEN_KEYS), keys: TOKEN_KEYS, rows: [...rows.values()] }
 }
 
-const OTHER_COLOR = 'var(--color-text-soft)'
+const OTHER_COLOR = 'var(--chart-other)'
 const TOP_SERIES = 5
 
 /** Requests per bucket for the top keys, with the long tail folded into "Other". */
