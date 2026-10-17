@@ -4,7 +4,10 @@
 //! so tool grants, tag-based grants and tool approvals agree on the boundary.
 //! See `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+};
 
 use gateway_core::{
     AdminApiKeyRepository, AuthError, ExternalMcpServerRecord, GatewayError, IdentityRepository,
@@ -13,6 +16,7 @@ use gateway_core::{
     McpUpstreamCredentialOwnerScopeKind, MembershipRole, StoreError, TeamMembershipRecord,
 };
 use serde::Deserialize;
+use url::Url;
 use uuid::Uuid;
 
 use crate::admin_audit::AuditEvent;
@@ -341,22 +345,27 @@ where
         }
     }
 
-    /// Keeps the grants a team admin may see: those on their servers' tools.
-    pub async fn visible_grants(
+    /// The grants the caller may see, optionally for one subject. A team admin
+    /// sees only grants on their team's servers' tools, read in one query.
+    pub async fn list_grants(
         &self,
         scope: &McpAdminScope,
-        grants: Vec<McpToolGrantRecord>,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, GatewayError> {
         let Some(team_id) = scope.managed_team_id() else {
-            return Ok(grants);
+            return Ok(self
+                .repo
+                .list_mcp_tool_grants(subject_kind, subject_id)
+                .await?);
         };
-        let tool_ids = self.team_tool_ids(team_id).await?;
-        Ok(grants
+        Ok(self
+            .repo
+            .list_mcp_tool_grants_for_owner_team(team_id)
+            .await?
             .into_iter()
-            .filter(|grant| {
-                grant.target_kind == McpToolGrantTargetKind::Tool
-                    && tool_ids.contains(&grant.target_id)
-            })
+            .filter(|grant| subject_kind.is_none_or(|kind| grant.subject_kind == kind))
+            .filter(|grant| subject_id.is_none_or(|id| grant.subject_id == id))
             .collect())
     }
 
@@ -472,36 +481,23 @@ where
         mcp_server_id: Uuid,
         team_id: Uuid,
     ) -> Result<(), GatewayError> {
-        let tool_ids: HashSet<Uuid> = self
+        // Both reads are scoped to this server's tools, not the whole organisation.
+        if let Some(toolset_key) = self
             .repo
-            .list_external_mcp_tools(mcp_server_id, true)
+            .list_mcp_toolset_keys_for_server(mcp_server_id)
             .await?
-            .into_iter()
-            .map(|tool| tool.mcp_tool_id)
-            .collect();
-        if tool_ids.is_empty() {
-            return Ok(());
-        }
-        for toolset in self.repo.list_mcp_toolsets(true).await? {
-            let members = self.repo.list_mcp_toolset_tools(toolset.toolset_id).await?;
-            if members
-                .iter()
-                .any(|member| tool_ids.contains(&member.mcp_tool_id))
-            {
-                return Err(conflict(format!(
-                    "tool set `{}` contains this server's tools; remove them before limiting the server to one team",
-                    toolset.toolset_key
-                )));
-            }
+            .first()
+        {
+            return Err(conflict(format!(
+                "tool set `{toolset_key}` contains this server's tools; remove them before limiting the server to one team"
+            )));
         }
         let mut outside = 0_usize;
-        for grant in self.repo.list_mcp_tool_grants(None, None).await? {
-            if !grant.is_active
-                || grant.target_kind != McpToolGrantTargetKind::Tool
-                || !tool_ids.contains(&grant.target_id)
-            {
-                continue;
-            }
+        for grant in self
+            .repo
+            .list_active_mcp_tool_grants_for_server(mcp_server_id)
+            .await?
+        {
             let subject = McpGrantSubject {
                 subject_kind: grant.subject_kind,
                 subject_id: grant.subject_id,
@@ -554,22 +550,6 @@ where
             .map_err(|_| tool_not_found(mcp_tool_id))
     }
 
-    async fn team_tool_ids(&self, team_id: Uuid) -> Result<HashSet<Uuid>, GatewayError> {
-        let mut tool_ids = HashSet::new();
-        for server in self.repo.list_external_mcp_servers(true).await? {
-            if server.ownership.owned_by(team_id) {
-                tool_ids.extend(
-                    self.repo
-                        .list_external_mcp_tools(server.mcp_server_id, true)
-                        .await?
-                        .into_iter()
-                        .map(|tool| tool.mcp_tool_id),
-                );
-            }
-        }
-        Ok(tool_ids)
-    }
-
     async fn existing_team(&self, team_id: Uuid) -> Result<Uuid, GatewayError> {
         IdentityRepository::get_team_by_id(&*self.repo, team_id)
             .await?
@@ -602,6 +582,94 @@ where
                 .map(|service_account| Some(service_account.team_id)),
         )
     }
+}
+
+/// Rejects a server URL a team admin may not point the gateway at: one whose
+/// host is, or resolves to, a loopback, private, link-local, shared or other
+/// non-public address. Platform admins register internal servers, including for
+/// a team. A host that does not resolve is left to fail at connection time.
+///
+/// This runs when a team admin saves a URL, runs OAuth discovery or refreshes
+/// discovery. It does not pin the address for the later connection, so it is
+/// not a defence against DNS rebinding; the outbound fetcher in #523 is.
+pub async fn authorize_destination(
+    scope: &McpAdminScope,
+    server_url: &str,
+) -> Result<(), GatewayError> {
+    if scope.is_platform_admin() {
+        return Ok(());
+    }
+    let url = Url::parse(server_url.trim())
+        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    let blocked = || {
+        GatewayError::InvalidRequest(
+            "server_url must reach a public address; ask a platform admin to register servers on internal networks".to_string(),
+        )
+    };
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addresses: Vec<IpAddr> = match url.host() {
+        Some(url::Host::Ipv4(address)) => vec![IpAddr::V4(address)],
+        Some(url::Host::Ipv6(address)) => vec![IpAddr::V6(address)],
+        Some(url::Host::Domain(domain)) => {
+            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+            if domain == "localhost" || domain.ends_with(".localhost") {
+                return Err(blocked());
+            }
+            match tokio::net::lookup_host((domain.as_str(), port)).await {
+                Ok(resolved) => resolved.map(|address| address.ip()).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+        None => return Err(blocked()),
+    };
+    if addresses.into_iter().all(is_public_address) {
+        Ok(())
+    } else {
+        Err(blocked())
+    }
+}
+
+/// Whether an address is reachable on the public internet. Mapped and
+/// compatible IPv6 forms are judged by their IPv4 address.
+#[must_use]
+pub fn is_public_address(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_public_ipv4(address),
+        IpAddr::V6(address) => match address.to_ipv4_mapped() {
+            Some(mapped) => is_public_ipv4(mapped),
+            None => is_public_ipv6(address),
+        },
+    }
+}
+
+fn is_public_ipv4(address: Ipv4Addr) -> bool {
+    let [a, b, ..] = address.octets();
+    !(address.is_unspecified()
+        || address.is_loopback()
+        || address.is_private()
+        || address.is_link_local()
+        || address.is_broadcast()
+        || address.is_multicast()
+        || address.is_documentation()
+        || a == 0
+        // Shared address space (100.64.0.0/10), used by carrier NAT and some
+        // cloud metadata services.
+        || (a == 100 && (64..128).contains(&b))
+        // Benchmarking (198.18.0.0/15) and reserved (240.0.0.0/4).
+        || (a == 198 && (b == 18 || b == 19))
+        || a >= 240)
+}
+
+fn is_public_ipv6(address: Ipv6Addr) -> bool {
+    let first = address.segments()[0];
+    !(address.is_unspecified()
+        || address.is_loopback()
+        || address.is_multicast()
+        // Unique local (fc00::/7) and link-local (fe80::/10).
+        || (first & 0xfe00) == 0xfc00
+        || (first & 0xffc0) == 0xfe80
+        // Documentation (2001:db8::/32).
+        || (first == 0x2001 && address.segments()[1] == 0x0db8))
 }
 
 /// Trims an owner contact; blank means none.

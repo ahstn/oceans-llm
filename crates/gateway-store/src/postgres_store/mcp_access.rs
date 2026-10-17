@@ -41,7 +41,7 @@ fn decode_toolset_tool(row: &PgRow) -> Result<McpToolsetToolRecord, StoreError> 
     })
 }
 
-fn decode_grant(row: &PgRow) -> Result<McpToolGrantRecord, StoreError> {
+pub(super) fn decode_grant(row: &PgRow) -> Result<McpToolGrantRecord, StoreError> {
     let subject_kind: String = row.try_get(1).map_err(to_query_error)?;
     let target_kind: String = row.try_get(3).map_err(to_query_error)?;
     let revoked_at: Option<i64> = row.try_get(8).map_err(to_query_error)?;

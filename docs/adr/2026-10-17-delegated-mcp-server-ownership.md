@@ -65,7 +65,7 @@ Team owners and admins reach a scoped MCP area when the `team_admins` permission
 | Action | Team owner or admin |
 |---|---|
 | List servers | Their team's servers, and every `organisation` server read-only |
-| Register a server | Yes, owned by their team |
+| Register a server | Yes, owned by their team, at a public address |
 | Edit, disable, refresh discovery | Their team's servers only |
 | Change visibility and contact | Their team's servers. Publishing follows the platform setting |
 | Change the owning team | No |
@@ -105,10 +105,10 @@ Server summaries include `owner_team_id`, `owner_contact` and `visibility`, so a
 
 ## Trade-offs
 
-- **Checks run before the write, not inside it.** The narrowing check reads grants and tool sets, then writes. A platform admin granting an outside subject at the same moment as a team admin unpublishes could leave one stranded grant. The window is short, needs two admins, and the grant stays visible in the access list and the audit log. Moving these checks into the store's transaction would mean changing grant and tool set methods that parallel work is also changing.
+- **Most checks run before the write, not inside it.** A settings save is the exception: it names the owner it was authorized against, and the store rejects it with `409` under the write lock if the server has moved since, so a former team cannot overwrite a server mid-transfer. The narrowing check reads the server's grants and tool sets, scoped to that server, then writes. A platform admin granting an outside subject at the same moment as a team admin unpublishes could leave one stranded grant. The window is short, needs two admins, and the grant stays visible in the access list and the audit log. Moving these checks into the store's transaction would mean changing grant and tool set methods that parallel work is also changing.
 - **Grants do not follow team membership changes.** A user grant on a `team` server stays after the user leaves the team, as user grants do today. Grant resolution is unchanged by this decision. The team admin, or a platform admin, revokes it.
 - **No per-team quotas on registration.** A team admin can register many servers. Discovery is admin-triggered and bounded by the existing timeout, and servers are visible to platform admins with their owner.
-- **OAuth discovery reaches arbitrary URLs.** Team admins can now run `oauth-discovery` and discovery refresh. Both already reach the URL a server admin enters, under the same URL validation. Deployments that need tighter outbound rules use network egress policy.
+- **Team admins reach public addresses only.** When a team admin saves a server URL, runs `oauth-discovery` or refreshes discovery, the host must not be, or resolve to, a loopback, private, link-local, shared or other non-public address. Platform admins register internal servers, including for a team, and the owning team can still edit them while the URL is unchanged. A team admin cannot refresh such a server. The check runs when the URL is used, not when the connection is made, so it does not stop DNS rebinding. Once the SSRF-safe outbound fetcher (#523) lands, team-owned servers should connect through its public scope.
 
 ## Follow-up
 

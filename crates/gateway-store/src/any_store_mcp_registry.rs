@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
-    McpRegistryRepository, NewExternalMcpServerRecord, StoreError,
+    McpRegistryRepository, McpToolGrantRecord, NewExternalMcpServerRecord, StoreError,
     TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
     UpsertExternalMcpToolRecord,
 };
@@ -88,6 +88,44 @@ impl McpRegistryRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.transfer_external_mcp_server_ownership(input).await,
             Self::Postgres(store) => store.transfer_external_mcp_server_ownership(input).await,
+        }
+    }
+
+    async fn list_mcp_toolset_keys_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_mcp_toolset_keys_for_server(mcp_server_id).await,
+            Self::Postgres(store) => store.list_mcp_toolset_keys_for_server(mcp_server_id).await,
+        }
+    }
+
+    async fn list_active_mcp_tool_grants_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_active_mcp_tool_grants_for_server(mcp_server_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_active_mcp_tool_grants_for_server(mcp_server_id)
+                    .await
+            }
+        }
+    }
+
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_mcp_tool_grants_for_owner_team(team_id).await,
+            Self::Postgres(store) => store.list_mcp_tool_grants_for_owner_team(team_id).await,
         }
     }
 

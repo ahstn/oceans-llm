@@ -24,7 +24,7 @@ use gateway_service::{
     AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpAdminScope,
     McpCredentialService, McpOwnership, McpRegistryService, RedactedMcpCredentialBinding,
     RequestedMcpServerOwnership, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
-    admin_audit::actions, parse_mcp_server_visibility,
+    admin_audit::actions, authorize_destination, parse_mcp_server_visibility,
 };
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
@@ -149,6 +149,10 @@ pub async fn create_mcp_server(
     Json(request): Json<CreateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    // A catalog entry supplies its own public URL, so only a typed one is checked.
+    if let Some(server_url) = request.server_url.as_deref() {
+        authorize_destination(&scope, server_url).await?;
+    }
     let ownership = ownership(&state)
         .new_server_ownership(
             &scope,
@@ -216,6 +220,11 @@ pub async fn update_mcp_server(
     let server_id = parse_uuid(&server_id, "server_id")?;
     let ownership = ownership(&state);
     let existing = ownership.managed_server(&scope, server_id).await?;
+    // A server a platform admin registered on an internal network stays
+    // editable; only a new URL is checked.
+    if request.server_url.trim() != existing.server_url {
+        authorize_destination(&scope, &request.server_url).await?;
+    }
     let visibility = request
         .visibility
         .as_deref()
@@ -239,6 +248,9 @@ pub async fn update_mcp_server(
                 timeout_ms: request.timeout_ms,
                 owner_contact: request.owner_contact,
                 visibility,
+                // Ties the save to the owner authorized above, so a transfer in
+                // between cannot let the former team overwrite the server.
+                expected_owner_team_id: existing.ownership.owner_team_id,
             },
         )
         .await?;
@@ -435,7 +447,8 @@ pub async fn discover_mcp_server_oauth(
     headers: HeaderMap,
     Json(request): Json<McpOauthDiscoveryRequest>,
 ) -> Result<Json<Envelope<McpOauthDiscoveryPayload>>, AppError> {
-    require_mcp_admin_scope(&state, &headers).await?;
+    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    authorize_destination(&scope, &request.server_url).await?;
     let discovery = state
         .mcp_oauth_runtime
         .discover(request.server_url.trim())
@@ -492,7 +505,9 @@ pub async fn refresh_mcp_server_discovery(
 ) -> Result<Json<Envelope<McpDiscoveryRefreshPayload>>, AppError> {
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    ownership(&state).managed_server(&scope, server_id).await?;
+    let server = ownership(&state).managed_server(&scope, server_id).await?;
+    // Re-checked on each refresh, since the host may now resolve elsewhere.
+    authorize_destination(&scope, &server.server_url).await?;
     let service = McpRegistryService::new(state.store.clone());
     let started_at = Instant::now();
     let progress = AuditProgress::default();
@@ -808,12 +823,8 @@ pub async fn list_mcp_grants(
         .as_deref()
         .map(parse_grant_subject_kind)
         .transpose()?;
-    let grants = state
-        .store
-        .list_mcp_tool_grants(subject_kind, query.subject_id)
-        .await?;
     let items = ownership(&state)
-        .visible_grants(&scope, grants)
+        .list_grants(&scope, subject_kind, query.subject_id)
         .await?
         .into_iter()
         .map(map_grant)

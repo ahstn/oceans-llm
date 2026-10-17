@@ -128,6 +128,13 @@ pub(super) fn decode_tool_metadata(
     })
 }
 
+/// A settings save authorized against an owner the server no longer has.
+fn owner_changed(mcp_server_id: Uuid) -> StoreError {
+    StoreError::Conflict(format!(
+        "external MCP server `{mcp_server_id}` changed owner; reload it and try again"
+    ))
+}
+
 fn discovery_config_changed(
     existing: &ExternalMcpServerRecord,
     input: &UpdateExternalMcpServerRecord,
@@ -180,6 +187,8 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = ?1"
 );
+/// Grant columns, aliased `g`, in the order `decode_grant` reads them.
+const GRANT_COLUMNS: &str = "g.grant_id, g.subject_kind, g.subject_id, g.target_kind, g.target_id, g.is_active, g.created_at, g.updated_at, g.revoked_at";
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json";
 
 #[async_trait]
@@ -292,6 +301,10 @@ impl McpRegistryRepository for LibsqlStore {
         // exactly the one this update replaces.
         let tx = self.begin_transaction().await?;
         let existing = load_server(&tx, input.mcp_server_id).await?;
+        if existing.ownership.owner_team_id != input.expected_owner_team_id {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(owner_changed(input.mcp_server_id));
+        }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -419,6 +432,70 @@ impl McpRegistryRepository for LibsqlStore {
             current,
             previous: Some(existing),
         })
+    }
+
+    async fn list_mcp_toolset_keys_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT DISTINCT ts.toolset_key
+                FROM mcp_toolset_tools tst
+                JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
+                JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
+                WHERE t.mcp_server_id = ?1
+                ORDER BY ts.toolset_key
+                "#,
+                [mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut keys = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            keys.push(row.get(0).map_err(to_query_error)?);
+        }
+        Ok(keys)
+    }
+
+    async fn list_active_mcp_tool_grants_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = ?1"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [mcp_server_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        let mut grants = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            grants.push(super::mcp_access::decode_grant(&row)?);
+        }
+        Ok(grants)
+    }
+
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = ?1 ORDER BY g.created_at, g.grant_id"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [team_id.to_string()])
+            .await
+            .map_err(to_query_error)?;
+        let mut grants = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            grants.push(super::mcp_access::decode_grant(&row)?);
+        }
+        Ok(grants)
     }
 
     async fn get_external_mcp_tool(

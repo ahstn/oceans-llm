@@ -1066,6 +1066,40 @@ pub trait McpRegistryRepository: Send + Sync {
         include_inactive: bool,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
 
+    /// Keys of the tool sets, including disabled ones, that hold any of the
+    /// server's tools.
+    async fn list_mcp_toolset_keys_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        let _ = mcp_server_id;
+        Err(StoreError::Unexpected(
+            "MCP tool set lookup by server is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Active grants whose target is one of the server's tools.
+    async fn list_active_mcp_tool_grants_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let _ = mcp_server_id;
+        Err(StoreError::Unexpected(
+            "MCP grant lookup by server is not implemented for this repository".to_string(),
+        ))
+    }
+
+    /// Grants, active or revoked, on tools of servers the team owns.
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let _ = team_id;
+        Err(StoreError::Unexpected(
+            "MCP grant lookup by owning team is not implemented for this repository".to_string(),
+        ))
+    }
+
     /// Loads one tool, including an inactive one.
     async fn get_external_mcp_tool(
         &self,

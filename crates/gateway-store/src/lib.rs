@@ -1441,7 +1441,7 @@ pub(crate) mod tests {
     /// changes nothing reports no previous record.
     async fn exercise_mcp_server_ownership_repository<S>(store: &S)
     where
-        S: GatewayStore + McpRegistryRepository + Sync,
+        S: GatewayStore + McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
     {
         use gateway_core::{
             McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord,
@@ -1485,6 +1485,7 @@ pub(crate) mod tests {
             timeout_ms: 30_000,
             owner_contact: owner_contact.map(str::to_string),
             visibility,
+            expected_owner_team_id: Some(team.team_id),
             updated_at: now + Duration::seconds(1),
         };
         let published = store
@@ -1522,6 +1523,14 @@ pub(crate) mod tests {
             .await
             .expect("resave server");
         assert!(resaved.previous.is_none());
+        // A save authorized against another owner is rejected under the write lock.
+        let mut stale = settings(Some("docs@example.com"), McpServerVisibility::Organisation);
+        stale.expected_owner_team_id = None;
+        stale.display_name = "Renamed".to_string();
+        assert!(matches!(
+            store.update_external_mcp_server(&stale).await,
+            Err(StoreError::Conflict(_))
+        ));
 
         let transfer = TransferExternalMcpServerOwnershipRecord {
             mcp_server_id: server.mcp_server_id,
@@ -1599,6 +1608,86 @@ pub(crate) mod tests {
                 .expect("load missing tool")
                 .is_none()
         );
+
+        // Server- and team-scoped lookups used by the ownership checks.
+        let toolset = store
+            .create_mcp_toolset(&gateway_core::NewMcpToolsetRecord {
+                toolset_key: "team-docs-set".to_string(),
+                display_name: "Team docs".to_string(),
+                description: None,
+                created_at: now,
+            })
+            .await
+            .expect("create tool set");
+        store
+            .replace_mcp_toolset_tools(toolset.toolset_id, &[tool.mcp_tool_id], now)
+            .await
+            .expect("add tool to set");
+        assert_eq!(
+            store
+                .list_mcp_toolset_keys_for_server(server.mcp_server_id)
+                .await
+                .expect("tool sets for server"),
+            vec!["team-docs-set".to_string()]
+        );
+        let grant = |subject_id| gateway_core::UpsertMcpToolGrantRecord {
+            subject_kind: gateway_core::McpToolGrantSubjectKind::Team,
+            subject_id,
+            target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+            target_id: tool.mcp_tool_id,
+            updated_at: now,
+        };
+        let revoked_subject = Uuid::new_v4();
+        store
+            .upsert_mcp_tool_grant(&grant(team.team_id))
+            .await
+            .expect("grant team");
+        store
+            .upsert_mcp_tool_grant(&grant(revoked_subject))
+            .await
+            .expect("grant other subject");
+        store
+            .revoke_mcp_tool_grant(
+                gateway_core::McpToolGrantSubjectKind::Team,
+                revoked_subject,
+                gateway_core::McpToolGrantTargetKind::Tool,
+                tool.mcp_tool_id,
+                now,
+            )
+            .await
+            .expect("revoke grant");
+        let active = store
+            .list_active_mcp_tool_grants_for_server(server.mcp_server_id)
+            .await
+            .expect("active grants for server");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].subject_id, team.team_id);
+        // The server is platform-owned after the takeover above, so the team owns
+        // nothing until it is moved back.
+        assert!(
+            store
+                .list_mcp_tool_grants_for_owner_team(team.team_id)
+                .await
+                .expect("team grants")
+                .is_empty()
+        );
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                updated_at: now + Duration::seconds(3),
+            })
+            .await
+            .expect("move back to the team");
+        // Revoked grants are listed too, as the unscoped grant list does.
+        assert_eq!(
+            store
+                .list_mcp_tool_grants_for_owner_team(team.team_id)
+                .await
+                .expect("team grants")
+                .len(),
+            2
+        );
     }
 
     async fn exercise_mcp_registry_repository<S>(store: &S)
@@ -1643,6 +1732,7 @@ pub(crate) mod tests {
                 timeout_ms: 45_000,
                 owner_contact: None,
                 visibility: Default::default(),
+                expected_owner_team_id: None,
                 updated_at: now + Duration::seconds(1),
             })
             .await
@@ -1765,6 +1855,7 @@ pub(crate) mod tests {
                 timeout_ms: 45_000,
                 owner_contact: None,
                 visibility: Default::default(),
+                expected_owner_team_id: None,
                 updated_at: now + Duration::seconds(6),
             })
             .await

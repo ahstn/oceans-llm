@@ -17,6 +17,8 @@ const SERVER_SELECT_BY_ID: &str = concat!(
     server_columns!(),
     " FROM external_mcp_servers WHERE mcp_server_id = $1"
 );
+/// Grant columns, aliased `g`, in the order `decode_grant` reads them.
+const GRANT_COLUMNS: &str = "g.grant_id, g.subject_kind, g.subject_id, g.target_kind, g.target_id, g.is_active, g.created_at, g.updated_at, g.revoked_at";
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json::text, output_schema_json::text";
 
 fn decode_server(row: &PgRow) -> Result<ExternalMcpServerRecord, StoreError> {
@@ -141,6 +143,13 @@ pub(super) fn decode_tool_metadata(
             })
             .transpose()?,
     })
+}
+
+/// A settings save authorized against an owner the server no longer has.
+fn owner_changed(mcp_server_id: Uuid) -> StoreError {
+    StoreError::Conflict(format!(
+        "external MCP server `{mcp_server_id}` changed owner; reload it and try again"
+    ))
 }
 
 fn discovery_config_changed(
@@ -282,6 +291,10 @@ impl McpRegistryRepository for PostgresStore {
                 ))
             })
             .and_then(|row| decode_server(&row))?;
+        if existing.ownership.owner_team_id != input.expected_owner_team_id {
+            tx.commit().await.map_err(to_write_error)?;
+            return Err(owner_changed(input.mcp_server_id));
+        }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -421,6 +434,59 @@ impl McpRegistryRepository for PostgresStore {
             current,
             previous: Some(existing),
         })
+    }
+
+    async fn list_mcp_toolset_keys_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT ts.toolset_key
+            FROM mcp_toolset_tools tst
+            JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
+            JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
+            WHERE t.mcp_server_id = $1
+            ORDER BY ts.toolset_key
+            "#,
+        )
+        .bind(mcp_server_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter()
+            .map(|row| row.try_get(0).map_err(to_query_error))
+            .collect()
+    }
+
+    async fn list_active_mcp_tool_grants_for_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = $1"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(mcp_server_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(super::mcp_access::decode_grant).collect()
+    }
+
+    async fn list_mcp_tool_grants_for_owner_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {GRANT_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.target_kind = 'tool' AND s.owner_team_id = $1 ORDER BY g.created_at, g.grant_id"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(team_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(super::mcp_access::decode_grant).collect()
     }
 
     async fn get_external_mcp_tool(

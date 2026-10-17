@@ -47,7 +47,7 @@ fn decode_toolset_tool(row: &libsql::Row) -> Result<McpToolsetToolRecord, StoreE
     })
 }
 
-fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
+pub(super) fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
     let grant_id: String = row.get(0).map_err(to_query_error)?;
     let subject_kind: String = row.get(1).map_err(to_query_error)?;
     let subject_id: String = row.get(2).map_err(to_query_error)?;

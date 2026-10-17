@@ -109,3 +109,35 @@ fn owner_contacts_are_trimmed_and_bounded() {
     );
     assert!(normalize_owner_contact(Some("x".repeat(MAX_OWNER_CONTACT_CHARS + 1))).is_err());
 }
+
+#[test]
+fn only_public_addresses_pass_the_destination_check() {
+    use std::net::IpAddr;
+    for public in ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"] {
+        assert!(
+            is_public_address(public.parse::<IpAddr>().unwrap()),
+            "{public}"
+        );
+    }
+    for internal in [
+        "127.0.0.1",
+        "10.1.2.3",
+        "172.16.0.1",
+        "192.168.0.1",
+        "169.254.169.254",
+        "100.100.100.200",
+        "0.0.0.0",
+        "255.255.255.255",
+        "::1",
+        "::",
+        "fd00::1",
+        "fe80::1",
+        "::ffff:10.0.0.1",
+        "2001:db8::1",
+    ] {
+        assert!(
+            !is_public_address(internal.parse::<IpAddr>().unwrap()),
+            "{internal}"
+        );
+    }
+}

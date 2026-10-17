@@ -1126,7 +1126,8 @@ async fn servers_a_caller_cannot_manage_hide_their_url_secrets_and_auth_config()
     let (_, body) = context.list(&admin, None).await;
     let view = &body["data"]["items"][0];
     assert_eq!(view["can_manage"], false);
-    assert_eq!(view["server_url"], "https://mcp.example.test/mcp");
+    // Only the origin: an opaque path segment could itself be a credential.
+    assert_eq!(view["server_url"], "https://mcp.example.test");
     assert_eq!(view["auth_config"], json!({}));
     assert!(!body.to_string().contains("query-secret"));
 
@@ -1140,4 +1141,77 @@ async fn servers_a_caller_cannot_manage_hide_their_url_secrets_and_auth_config()
         "https://mcp.example.test/mcp?token=query-secret"
     );
     assert_eq!(view["auth_config"]["header_name"], "X-Api-Key");
+}
+
+#[tokio::test]
+async fn team_admins_cannot_point_the_gateway_at_internal_addresses() {
+    let context = TestContext::new().await;
+    let admin = context.team_admin(context.team_a).await;
+    for (index, url) in [
+        "https://10.0.0.5/mcp",
+        "http://127.0.0.1:9/mcp",
+        "https://localhost/mcp",
+        "https://api.localhost/mcp",
+        "https://[::1]/mcp",
+        "https://[::ffff:192.168.1.1]/mcp",
+        "https://169.254.169.254/latest",
+        "https://100.100.100.200/mcp",
+        "https://[fd00::1]/mcp",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut body = create_body(&format!("internal-{index}"));
+        body["server_url"] = json!(url);
+        let (status, response) = context.create(&admin, body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{url}: {response}");
+    }
+    let (status, _) = read(
+        discover_mcp_server_oauth(
+            State(context.state.clone()),
+            admin.headers.clone(),
+            Json(serde_json::from_value(json!({ "server_url": "https://127.0.0.1/mcp" })).unwrap()),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A public URL is fine, and moving it to an internal one is not.
+    let own = context
+        .server(
+            "own",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let (status, _) = context
+        .update(
+            &admin,
+            own.id,
+            json!({ "server_url": "https://192.168.1.10/mcp" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Platform admins register internal servers, including for a team.
+    let platform = context.platform_admin().await;
+    let mut body = create_body("internal-docs");
+    body["server_url"] = json!("https://10.0.0.5/mcp");
+    body["owner_team_id"] = json!(context.team_a);
+    let (status, created) = context.create(&platform, body).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    // The owning team can still edit it while the URL stays the same.
+    let internal = created["data"]["server"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let (status, _) = context
+        .update(
+            &admin,
+            internal,
+            json!({ "server_url": "https://10.0.0.5/mcp", "owner_contact": "#docs" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
 }

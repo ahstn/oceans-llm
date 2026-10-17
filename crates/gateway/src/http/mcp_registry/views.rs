@@ -390,6 +390,15 @@ pub struct TransferMcpServerOwnershipRequest {
     pub(super) visibility: Option<String>,
 }
 
+/// `scheme://host[:port]` of a URL, or nothing for one that does not parse.
+fn url_origin(raw: &str) -> String {
+    url::Url::parse(raw)
+        .ok()
+        .map(|url| url.origin().ascii_serialization())
+        .filter(|origin| origin != "null")
+        .unwrap_or_default()
+}
+
 /// Distinguishes an explicit `null` (`Some(None)`) from an omitted field (`None`).
 fn present_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
@@ -449,14 +458,15 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
 impl McpServerView {
     /// Adds what depends on who is asking: the owning team's name and whether the
     /// caller may manage the server.
-    /// A caller who cannot manage the server sees its URL without credentials,
-    /// query or token-like path segments, and none of its auth settings or
-    /// discovery errors, which may embed upstream details.
+    /// A caller who cannot manage the server sees only its URL's origin, because
+    /// a path segment can be an opaque credential that no pattern recognises,
+    /// and none of its auth settings or discovery errors, which may embed
+    /// upstream details.
     pub(super) fn for_viewer(mut self, owner_team_name: Option<String>, can_manage: bool) -> Self {
         self.owner_team_name = owner_team_name;
         self.can_manage = can_manage;
         if !can_manage {
-            self.server_url = audit_safe_url(&self.server_url);
+            self.server_url = url_origin(&self.server_url);
             self.auth_config = Map::new();
             self.last_error_summary = None;
         }

@@ -77,6 +77,9 @@ pub struct UpdateExternalMcpServerInput {
     /// `None` keeps the current visibility. Callers check the change with
     /// [`crate::McpOwnership::authorize_visibility_change`] first.
     pub visibility: Option<McpServerVisibility>,
+    /// The owner the caller was authorized against; the save is rejected if the
+    /// server has moved since.
+    pub expected_owner_team_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -248,6 +251,7 @@ where
                 timeout_ms,
                 owner_contact,
                 visibility,
+                expected_owner_team_id: input.expected_owner_team_id,
                 updated_at: OffsetDateTime::now_utc(),
             })
             .await

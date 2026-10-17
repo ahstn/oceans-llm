@@ -115,7 +115,7 @@ pub use mcp_oauth_discovery::{
 };
 pub use mcp_ownership::{
     McpAdminScope, McpOrganisationPublishing, McpOwnership, RequestedMcpServerOwnership,
-    normalize_owner_contact, parse_mcp_server_visibility,
+    authorize_destination, normalize_owner_contact, parse_mcp_server_visibility,
 };
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,

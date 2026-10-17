@@ -1734,6 +1734,9 @@ pub struct UpdateExternalMcpServerRecord {
     pub timeout_ms: i64,
     pub owner_contact: Option<String>,
     pub visibility: McpServerVisibility,
+    /// The owning team the caller was authorized against. The save fails with a
+    /// conflict when the server has changed owner since.
+    pub expected_owner_team_id: Option<Uuid>,
     pub updated_at: OffsetDateTime,
 }
 
