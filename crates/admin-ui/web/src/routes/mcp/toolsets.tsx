@@ -1,4 +1,5 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getMcpServers, getMcpToolsets } from '@/server/admin-data.functions'
 import { ToolsetsTab } from './-toolsets-tab'
 import { McpNavigation } from './-navigation'
@@ -6,6 +7,12 @@ import { normalizeToolsetsSearch } from './-search'
 
 export const Route = createFileRoute('/mcp/toolsets')({
   validateSearch: normalizeToolsetsSearch,
+  // Tool sets are platform-managed; team admins manage their servers instead.
+  beforeLoad: ({ context }) => {
+    if (!isPlatformAdminSession(context.session)) {
+      throw redirect({ to: '/mcp', search: { tab: 'servers' } })
+    }
+  },
   loader: async () => {
     const [servers, toolsets] = await Promise.all([
       getMcpServers({ data: { include_disabled: true } }),

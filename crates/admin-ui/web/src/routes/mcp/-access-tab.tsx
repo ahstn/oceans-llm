@@ -27,6 +27,7 @@ import type {
 } from '@/types/api'
 import { useToolCatalog } from './-catalog'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
+import { platformMcpScope, type McpWorkspaceScope } from './-scope'
 
 const subjectKinds = [
   { value: 'user', label: 'User' },
@@ -39,6 +40,9 @@ const targetKinds = [
   { value: 'toolset', label: 'Toolset' },
   { value: 'tool', label: 'Tool' },
 ] as const
+
+// Tool sets are platform-managed, so team admins grant single tools.
+const teamTargetKinds = [{ value: 'tool', label: 'Tool' }] as const
 
 const subjectQueryField: Record<
   string,
@@ -64,19 +68,26 @@ export function AccessTab({
   servers,
   toolsets,
   subjects,
+  scope = platformMcpScope,
 }: {
   grants: McpGrantView[]
   servers: McpServerView[]
   toolsets: McpToolsetView[]
   subjects: AccessSubjects
+  scope?: McpWorkspaceScope
 }) {
   const router = useRouter()
-  const catalog = useToolCatalog(servers)
+  // Team admins grant tools of the servers their team manages.
+  const grantableServers = useMemo(
+    () => (scope.platformAdmin ? servers : servers.filter((server) => server.can_manage)),
+    [scope.platformAdmin, servers],
+  )
+  const catalog = useToolCatalog(grantableServers)
   const [isPending, startTransition] = useTransition()
   const [grantForm, setGrantForm] = useState({
     subject_kind: 'user',
     subject_id: '',
-    target_kind: 'toolset',
+    target_kind: scope.platformAdmin ? 'toolset' : 'tool',
     target_id: '',
   })
   const [previewForm, setPreviewForm] = useState({
@@ -130,7 +141,7 @@ export function AccessTab({
       sublabel: toolset.toolset_key,
     }))
 
-  const serverOptions: ComboOption[] = servers.map((server) => ({
+  const serverOptions: ComboOption[] = grantableServers.map((server) => ({
     value: server.id,
     label: server.display_name,
     sublabel: server.server_key,
@@ -195,6 +206,10 @@ export function AccessTab({
       toast.error('Select a subject to preview')
       return
     }
+    if (!scope.platformAdmin && !previewForm.server_id) {
+      toast.error('Select one of your servers to preview')
+      return
+    }
     const query: Record<string, string> = {
       [subjectQueryField[previewForm.subject_kind]]: previewForm.subject_id,
     }
@@ -218,7 +233,9 @@ export function AccessTab({
           <div className="flex flex-col gap-1">
             <h3 className="font-medium">New grant</h3>
             <p className="text-subtle-foreground text-sm">
-              Assign a tool or toolset to a subject — pick from real entities, no UUIDs.
+              {scope.platformAdmin
+                ? 'Assign a tool or toolset to a subject — pick from real entities, no UUIDs.'
+                : "Grant your team's server tools to your team, its members, service accounts, or keys."}
             </p>
           </div>
           <form className="flex flex-col gap-3" onSubmit={handleGrantSubmit}>
@@ -250,7 +267,7 @@ export function AccessTab({
                 <FieldLabel>Target type</FieldLabel>
                 <KindSelect
                   value={grantForm.target_kind}
-                  options={targetKinds}
+                  options={scope.platformAdmin ? targetKinds : teamTargetKinds}
                   onChange={(value) =>
                     setGrantForm((current) => ({ ...current, target_kind: value, target_id: '' }))
                   }
@@ -317,7 +334,7 @@ export function AccessTab({
                 />
               </Field>
               <Field className="md:col-span-2">
-                <FieldLabel>Server (optional)</FieldLabel>
+                <FieldLabel>{scope.platformAdmin ? 'Server (optional)' : 'Server'}</FieldLabel>
                 <EntityComboBox
                   ariaLabel="Preview server"
                   options={serverOptions}
@@ -325,7 +342,7 @@ export function AccessTab({
                   onChange={(value) =>
                     setPreviewForm((current) => ({ ...current, server_id: value }))
                   }
-                  placeholder="All servers"
+                  placeholder={scope.platformAdmin ? 'All servers' : 'Select a server'}
                   searchPlaceholder="Search servers…"
                 />
               </Field>
@@ -345,14 +362,20 @@ export function AccessTab({
         <div className="flex flex-col gap-1">
           <h3 className="font-medium">Grants</h3>
           <p className="text-subtle-foreground text-sm">
-            Explicit active grants for tools and toolsets.
+            {scope.platformAdmin
+              ? 'Explicit active grants for tools and toolsets.'
+              : "Active grants on your team's servers."}
           </p>
         </div>
         {grants.length === 0 ? (
           <Empty>
             <EmptyHeader>
               <EmptyTitle>No grants</EmptyTitle>
-              <EmptyDescription>Assign a toolset to a subject to get started.</EmptyDescription>
+              <EmptyDescription>
+                {scope.platformAdmin
+                  ? 'Assign a toolset to a subject to get started.'
+                  : 'Grant a tool from one of your servers to get started.'}
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (

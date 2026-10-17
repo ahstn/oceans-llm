@@ -48,6 +48,11 @@ const server: McpServerView = {
   created_at: '2026-05-27T08:00:00Z',
   updated_at: '2026-05-27T09:00:00Z',
   disabled_at: null,
+  owner_team_id: null,
+  owner_team_name: null,
+  owner_contact: 'platform@example.test',
+  visibility: 'organisation',
+  can_manage: true,
 }
 
 const toolset: McpToolsetView = {
@@ -144,5 +149,36 @@ describe('AccessTab', () => {
         },
       })
     })
+  })
+
+  it('limits a team admin to tools of the servers their team manages', async () => {
+    const { AccessTab } = await import('@/routes/mcp/-access-tab')
+    const teamServer = {
+      ...server,
+      id: 'server_team',
+      display_name: 'Docs',
+      owner_team_id: 'team_a',
+    }
+    const published = { ...server, can_manage: false }
+    render(
+      <AccessTab
+        grants={[]}
+        servers={[published, teamServer]}
+        toolsets={[toolset]}
+        subjects={{ apiKeys: [], users: [user], serviceAccounts: [], teams: [] }}
+        scope={{ platformAdmin: false, canPublish: false, teamId: 'team_a', teams: [] }}
+      />,
+    )
+
+    await waitFor(() => expect(getMcpServerToolsMock).toHaveBeenCalledTimes(1))
+    expect(getMcpServerToolsMock).toHaveBeenCalledWith({
+      data: { serverId: 'server_team', include_inactive: false },
+    })
+    expect(
+      screen.getByText('Grant a tool from one of your servers to get started.'),
+    ).toBeInTheDocument()
+    // Tool sets are platform-managed, so the only target kind is a tool.
+    expect(screen.queryByText('Toolset')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Tool').length).toBeGreaterThan(0)
   })
 })

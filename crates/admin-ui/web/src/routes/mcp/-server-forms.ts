@@ -16,7 +16,12 @@ export type ServerFormState = {
   auth_mode: string
   auth_config: string
   timeout_ms: string
+  visibility: ServerVisibility
+  /** Blank on create defaults to the caller's email; blank on edit clears it. */
+  owner_contact: string
 }
+
+export type ServerVisibility = 'team' | 'organisation'
 
 export type CredentialBindingFormState = {
   owner_scope_kind: 'user' | 'team' | 'service_account'
@@ -31,7 +36,8 @@ export type CredentialBindingFormState = {
   expires_at: string
 }
 
-export function emptyServerForm(): ServerFormState {
+/** Team admins register for their team, so their servers start team-only. */
+export function emptyServerForm(visibility: ServerVisibility = 'organisation'): ServerFormState {
   return {
     server_key: '',
     display_name: '',
@@ -40,14 +46,17 @@ export function emptyServerForm(): ServerFormState {
     auth_mode: 'none',
     auth_config: '{}',
     timeout_ms: '30000',
+    visibility,
+    owner_contact: '',
   }
 }
 
-export function emptyCredentialBindingForm(): CredentialBindingFormState {
+/** A team admin sets only their team's shared credential or a service account's. */
+export function emptyCredentialBindingForm(teamId?: string | null): CredentialBindingFormState {
   return {
-    owner_scope_kind: 'user',
+    owner_scope_kind: teamId ? 'team' : 'user',
     owner_user_id: '',
-    owner_team_id: '',
+    owner_team_id: teamId ?? '',
     owner_service_account_id: '',
     material_kind: 'bearer_token',
     header_name: '',
@@ -58,8 +67,13 @@ export function emptyCredentialBindingForm(): CredentialBindingFormState {
   }
 }
 
-export function formFromRecommended(server: RecommendedMcpServerView): ServerFormState {
+export function formFromRecommended(
+  server: RecommendedMcpServerView,
+  visibility: ServerVisibility = 'organisation',
+): ServerFormState {
   return {
+    visibility,
+    owner_contact: '',
     server_key: server.catalog_key,
     display_name: server.display_name,
     description: server.description ?? '',
@@ -79,6 +93,8 @@ export function formFromServer(server: McpServerView): ServerFormState {
     auth_mode: server.auth_mode,
     auth_config: JSON.stringify(server.auth_config ?? {}, null, 2),
     timeout_ms: String(server.timeout_ms),
+    visibility: server.visibility === 'team' ? 'team' : 'organisation',
+    owner_contact: server.owner_contact ?? '',
   }
 }
 
@@ -96,6 +112,8 @@ export function formToCreateInput(form: ServerFormState): CreateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    visibility: form.visibility,
+    owner_contact: optionalString(form.owner_contact),
   }
 }
 
@@ -111,6 +129,9 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    visibility: form.visibility,
+    // An empty string clears the contact.
+    owner_contact: form.owner_contact.trim(),
   }
 }
 

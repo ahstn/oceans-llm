@@ -1,7 +1,14 @@
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 
-export function McpNavigation({ current }: { current: 'servers' | 'toolsets' | 'access' }) {
+export function McpNavigation({
+  current,
+  showToolsets = true,
+}: {
+  current: 'servers' | 'toolsets' | 'access'
+  /** Tool sets are platform-managed, so team admins do not see them. */
+  showToolsets?: boolean
+}) {
   return (
     <nav aria-label="MCP sections" className="flex flex-wrap items-center gap-2 border-b pb-4">
       <Button asChild variant={current === 'servers' ? 'secondary' : 'ghost'}>
@@ -13,15 +20,17 @@ export function McpNavigation({ current }: { current: 'servers' | 'toolsets' | '
           Servers
         </Link>
       </Button>
-      <Button asChild variant={current === 'toolsets' ? 'secondary' : 'ghost'}>
-        <Link
-          to="/mcp/toolsets"
-          search={{}}
-          aria-current={current === 'toolsets' ? 'page' : undefined}
-        >
-          Tool Sets
-        </Link>
-      </Button>
+      {showToolsets ? (
+        <Button asChild variant={current === 'toolsets' ? 'secondary' : 'ghost'}>
+          <Link
+            to="/mcp/toolsets"
+            search={{}}
+            aria-current={current === 'toolsets' ? 'page' : undefined}
+          >
+            Tool Sets
+          </Link>
+        </Button>
+      ) : null}
       <Button asChild variant={current === 'access' ? 'secondary' : 'ghost'}>
         <Link
           to="/mcp"

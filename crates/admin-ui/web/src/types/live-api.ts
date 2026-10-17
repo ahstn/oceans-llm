@@ -174,6 +174,8 @@ export type McpDiscoveryRefreshPayload = components['schemas']['McpDiscoveryRefr
 export type McpOauthDiscoveryPayload = components['schemas']['McpOauthDiscoveryPayload']
 export type CreateMcpServerInput = components['schemas']['CreateMcpServerRequest']
 export type UpdateMcpServerInput = components['schemas']['UpdateMcpServerRequest']
+export type TransferMcpServerOwnershipInput =
+  components['schemas']['TransferMcpServerOwnershipRequest']
 export type McpToolsetView = components['schemas']['McpToolsetView']
 export type McpToolsetsPayload = components['schemas']['McpToolsetsPayload']
 export type McpToolsetPayload = components['schemas']['McpToolsetPayload']

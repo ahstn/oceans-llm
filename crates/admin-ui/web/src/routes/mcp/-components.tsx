@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
@@ -38,9 +38,22 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
+import { ownerLabel, visibilityLabel } from '@/components/mcp/server-ownership'
+import type {
+  AdminTeamOption,
+  McpCredentialBindingView,
+  McpServerView,
+  McpToolView,
+} from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
-import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
+import type { CredentialBindingFormState, ServerFormState, ServerVisibility } from './-server-forms'
+
+/** What the caller may set on a server's ownership in the server form. */
+export type ServerOwnershipOptions = {
+  canPublish: boolean
+  /** Platform-owned servers are always published to the organisation. */
+  platformOwned: boolean
+}
 
 const AUTH_MODES = [
   { value: 'none', label: 'None' },
@@ -62,10 +75,12 @@ export function ServerOverviewPanel({
   server,
   refreshStatus,
   refreshErrorSummary,
+  ownershipControl,
 }: {
   server: McpServerView
   refreshStatus: string | null
   refreshErrorSummary: string | null
+  ownershipControl?: ReactNode
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -100,9 +115,72 @@ export function ServerOverviewPanel({
           value={server.last_successful_discovery_at ?? 'never'}
         />
         <OverviewDetail label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
+        <OverviewDetail label="Owner" value={ownerLabel(server)} />
+        <OverviewDetail label="Visibility" value={visibilityLabel(server.visibility)} />
+        <OverviewDetail label="Contact" value={server.owner_contact ?? 'none'} />
         <OverviewDetail label="Created" value={server.created_at} />
         <OverviewDetail label="Updated" value={server.updated_at} />
       </dl>
+
+      {server.can_manage ? null : (
+        <p className="text-subtle-foreground text-sm">
+          {ownerLabel(server)} manages this server. Ask {server.owner_contact ?? 'its owners'} to
+          change it or to grant its tools.
+        </p>
+      )}
+      {ownershipControl}
+    </div>
+  )
+}
+
+/** A platform admin's control for moving a server to a team or to the platform. */
+export function ServerOwnershipTransfer({
+  server,
+  teams,
+  pending,
+  onTransfer,
+}: {
+  server: McpServerView
+  teams: AdminTeamOption[]
+  pending: boolean
+  onTransfer: (ownerTeamId: string | null) => void
+}) {
+  const current = server.owner_team_id ?? 'platform'
+  const [owner, setOwner] = useState(current)
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-md border p-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-foreground text-sm font-semibold">Ownership</h3>
+        <p className="text-subtle-foreground text-sm">
+          Move the server to a team, or take it over for the platform. Platform-owned servers are
+          published to the organisation.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Select value={owner} onValueChange={setOwner}>
+          <SelectTrigger aria-label="Owning team" className="w-full sm:w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="platform">Platform</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pending || owner === current}
+          onClick={() => onTransfer(owner === 'platform' ? null : owner)}
+        >
+          Transfer ownership
+        </Button>
+      </div>
     </div>
   )
 }
@@ -133,7 +211,8 @@ export function ServerToolsPanel({
   selectedToolIds: string[]
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
-  onAddToToolset: () => void
+  /** Omitted when the caller cannot manage tool sets. */
+  onAddToToolset?: () => void
 }) {
   const selected = new Set(selectedToolIds)
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
@@ -174,9 +253,11 @@ export function ServerToolsPanel({
             <Button type="button" variant="ghost" size="sm" onClick={onClearSelection}>
               Clear
             </Button>
-            <Button type="button" size="sm" onClick={onAddToToolset}>
-              Add to toolset
-            </Button>
+            {onAddToToolset ? (
+              <Button type="button" size="sm" onClick={onAddToToolset}>
+                Add to toolset
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -452,6 +533,7 @@ export function CredentialBindingsPanel({
   form,
   pending,
   error,
+  teamScoped = false,
   onFormChange,
   onSubmit,
   onRevoke,
@@ -460,6 +542,8 @@ export function CredentialBindingsPanel({
   form: CredentialBindingFormState
   pending: boolean
   error: string | null
+  /** Team admins set only team and service-account credentials. */
+  teamScoped?: boolean
   onFormChange: (form: CredentialBindingFormState) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onRevoke: (binding: McpCredentialBindingView) => void
@@ -498,7 +582,7 @@ export function CredentialBindingsPanel({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="user">User</SelectItem>
+                  {teamScoped ? null : <SelectItem value="user">User</SelectItem>}
                   <SelectItem value="team">Team shared</SelectItem>
                   <SelectItem value="service_account">Service account</SelectItem>
                 </SelectGroup>
@@ -715,6 +799,7 @@ export function ServerFormDialog({
   open,
   pending,
   form,
+  ownership,
   onOpenChange,
   onFormChange,
   onSubmit,
@@ -723,6 +808,7 @@ export function ServerFormDialog({
   open: boolean
   pending: boolean
   form: ServerFormState
+  ownership?: ServerOwnershipOptions
   onOpenChange: (open: boolean) => void
   onFormChange: (form: ServerFormState) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -740,7 +826,12 @@ export function ServerFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <ServerFormFields mode={mode} form={form} onFormChange={onFormChange} />
+          <ServerFormFields
+            mode={mode}
+            form={form}
+            ownership={ownership}
+            onFormChange={onFormChange}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -758,10 +849,12 @@ export function ServerFormDialog({
 export function ServerFormFields({
   mode,
   form,
+  ownership,
   onFormChange,
 }: {
   mode: 'create' | 'edit'
   form: ServerFormState
+  ownership?: ServerOwnershipOptions
   onFormChange: (form: ServerFormState) => void
 }) {
   const isCreate = mode === 'create'
@@ -819,6 +912,28 @@ export function ServerFormFields({
           }
         />
       </div>
+      <ServerAuthFields form={form} onFormChange={onFormChange} />
+      {ownership ? (
+        <ServerOwnershipFields
+          mode={mode}
+          form={form}
+          ownership={ownership}
+          onFormChange={onFormChange}
+        />
+      ) : null}
+    </FieldGroup>
+  )
+}
+
+function ServerAuthFields({
+  form,
+  onFormChange,
+}: {
+  form: ServerFormState
+  onFormChange: (form: ServerFormState) => void
+}) {
+  return (
+    <>
       <Field>
         <FieldLabel>Auth mode</FieldLabel>
         <Select
@@ -863,7 +978,65 @@ export function ServerFormFields({
           <FieldDescription>{AUTH_CONFIG_HINTS[form.auth_mode]}</FieldDescription>
         ) : null}
       </Field>
-    </FieldGroup>
+    </>
+  )
+}
+
+function ServerOwnershipFields({
+  mode,
+  form,
+  ownership,
+  onFormChange,
+}: {
+  mode: 'create' | 'edit'
+  form: ServerFormState
+  ownership: ServerOwnershipOptions
+  onFormChange: (form: ServerFormState) => void
+}) {
+  // Publishing needs a platform admin unless the platform lets teams publish.
+  const organisationDisabled = !ownership.canPublish && form.visibility !== 'organisation'
+  return (
+    <>
+      <Field>
+        <FieldLabel>Visibility</FieldLabel>
+        <Select
+          value={form.visibility}
+          disabled={ownership.platformOwned}
+          onValueChange={(value) =>
+            onFormChange({ ...form, visibility: value as ServerVisibility })
+          }
+        >
+          <SelectTrigger aria-label="Visibility">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="team">Team only</SelectItem>
+              <SelectItem value="organisation" disabled={organisationDisabled}>
+                Organisation
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>
+          {ownership.platformOwned
+            ? 'Platform-owned servers are published to the organisation.'
+            : organisationDisabled
+              ? 'Only a platform admin can publish this server to the organisation.'
+              : 'Team only servers can be granted to your team only.'}
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="mcp-owner-contact">Owner contact</FieldLabel>
+        <Input
+          id="mcp-owner-contact"
+          value={form.owner_contact}
+          maxLength={256}
+          onChange={(event) => onFormChange({ ...form, owner_contact: event.target.value })}
+          placeholder={mode === 'create' ? 'Defaults to your email' : 'Email or channel'}
+        />
+      </Field>
+    </>
   )
 }
 

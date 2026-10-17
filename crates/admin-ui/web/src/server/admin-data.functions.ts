@@ -87,6 +87,7 @@ import {
   upsertBudget,
   updateApiKey,
   updateMcpServer,
+  transferMcpServerOwnership,
   updateMcpToolset,
   updateTeam,
   updateUser,
@@ -661,6 +662,19 @@ export const saveMcpServer = createServerFn({ method: 'POST' }).handler(
     }
   }) => {
     return updateMcpServer(data.serverId, data.input)
+  },
+)
+
+export const transferExternalMcpServerOwnership = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      serverId: string
+      input: Parameters<typeof transferMcpServerOwnership>[1]
+    }
+  }) => {
+    return transferMcpServerOwnership(data.serverId, data.input)
   },
 )
 

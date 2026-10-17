@@ -45,6 +45,7 @@ import {
   removeMcpCredentialBinding,
   saveMcpCredentialBinding,
   saveMcpServer,
+  transferExternalMcpServerOwnership,
 } from '@/server/admin-data.functions'
 import type {
   McpCredentialBindingView,
@@ -58,9 +59,11 @@ import {
   ServerFormDialog,
   ServerFormFields,
   ServerOverviewPanel,
+  ServerOwnershipTransfer,
   ServerStatusBadge,
   ServerToolsPanel,
 } from './-components'
+import { platformMcpScope, type McpWorkspaceScope } from './-scope'
 import {
   emptyCredentialBindingForm,
   emptyServerForm,
@@ -82,21 +85,27 @@ const serverSections = [
   { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
+// Servers the caller cannot manage are read-only: no configuration or credentials.
+const readOnlySections = new Set<ServerSection>(['overview', 'tools'])
+
 // Server selection coordinates CRUD, discovery, tools, and credentials through one lifecycle.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function ServersTab({
   servers,
   recommended,
   selectedServerId,
+  scope = platformMcpScope,
   onSelectServer,
   onAddToToolset,
 }: {
   servers: McpServerView[]
   recommended: RecommendedMcpServerView[]
   selectedServerId: string | null
+  scope?: McpWorkspaceScope
   onSelectServer: (serverId: string | null) => void
   onAddToToolset: (toolIds: string[]) => void
 }) {
+  const newServerVisibility = scope.platformAdmin ? 'organisation' : 'team'
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [section, setSection] = useState<ServerSection>('overview')
@@ -108,7 +117,7 @@ export function ServersTab({
   const [credentialBindingsPending, setCredentialBindingsPending] = useState(false)
   const [credentialBindingsError, setCredentialBindingsError] = useState<string | null>(null)
   const [credentialForm, setCredentialForm] = useState<CredentialBindingFormState>(() =>
-    emptyCredentialBindingForm(),
+    emptyCredentialBindingForm(scope.teamId),
   )
   const [refreshingServerIds, setRefreshingServerIds] = useState<string[]>([])
   const [refreshResults, setRefreshResults] = useState<
@@ -159,7 +168,8 @@ export function ServersTab({
   }, [selectedServer, discoveryRevision])
 
   useEffect(() => {
-    if (!selectedServer) {
+    // Credentials of a server the caller cannot manage are not theirs to see.
+    if (!selectedServer?.can_manage) {
       setCredentialBindings([])
       setCredentialBindingsError(null)
       setCredentialBindingsPending(false)
@@ -216,7 +226,11 @@ export function ServersTab({
   }
 
   function openCreateDialog(server?: RecommendedMcpServerView) {
-    setFormState(server ? formFromRecommended(server) : emptyServerForm())
+    setFormState(
+      server
+        ? formFromRecommended(server, newServerVisibility)
+        : emptyServerForm(newServerVisibility),
+    )
     setCatalogOpen(false)
     setCreateDialogOpen(true)
   }
@@ -352,7 +366,7 @@ export function ServersTab({
       try {
         await saveMcpCredentialBinding({ data: input })
         toast.success('Credential binding saved')
-        setCredentialForm(emptyCredentialBindingForm())
+        setCredentialForm(emptyCredentialBindingForm(scope.teamId))
         setCredentialBindings(await loadCredentialBindings(selectedServer.id))
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to save credential binding')
@@ -370,6 +384,20 @@ export function ServersTab({
         }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to revoke credential binding')
+      }
+    })
+  }
+
+  function handleTransferOwnership(server: McpServerView, ownerTeamId: string | null) {
+    startTransition(async () => {
+      try {
+        const response = await transferExternalMcpServerOwnership({
+          data: { serverId: server.id, input: { owner_team_id: ownerTeamId } },
+        })
+        toast.success('Ownership transferred')
+        await selectServerAfterMutation(response.data.server.id)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to transfer ownership')
       }
     })
   }
@@ -421,6 +449,7 @@ export function ServersTab({
         open={createDialogOpen}
         pending={isPending}
         form={formState}
+        ownership={{ canPublish: scope.canPublish, platformOwned: scope.platformAdmin }}
         onOpenChange={setCreateDialogOpen}
         onFormChange={setFormState}
         onSubmit={handleCreateServer}
@@ -428,6 +457,7 @@ export function ServersTab({
 
       <ServerDetailDialog
         server={selectedServer}
+        scope={scope}
         section={section}
         form={formState}
         tools={tools}
@@ -457,7 +487,8 @@ export function ServersTab({
         onRefresh={handleRefreshDiscovery}
         onToggleTool={toggleToolSelection}
         onClearSelection={() => setSelectedToolIds([])}
-        onAddToToolset={handleAddToToolset}
+        onAddToToolset={scope.platformAdmin ? handleAddToToolset : undefined}
+        onTransfer={handleTransferOwnership}
         onCredentialFormChange={setCredentialForm}
         onCredentialSubmit={handleCreateCredentialBinding}
         onCredentialRevoke={handleRevokeCredentialBinding}
@@ -470,6 +501,7 @@ export function ServersTab({
 // oxlint-disable-next-line eslint/max-lines-per-function
 function ServerDetailDialog({
   server,
+  scope,
   section,
   form,
   tools,
@@ -493,11 +525,13 @@ function ServerDetailDialog({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onTransfer,
   onCredentialFormChange,
   onCredentialSubmit,
   onCredentialRevoke,
 }: {
   server: McpServerView | null
+  scope: McpWorkspaceScope
   section: ServerSection
   form: ServerFormState
   tools: McpToolView[]
@@ -520,7 +554,8 @@ function ServerDetailDialog({
   onRefresh: (server: McpServerView) => void
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
-  onAddToToolset: () => void
+  onAddToToolset?: () => void
+  onTransfer: (server: McpServerView, ownerTeamId: string | null) => void
   onCredentialFormChange: (form: CredentialBindingFormState) => void
   onCredentialSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCredentialRevoke: (binding: McpCredentialBindingView) => void
@@ -531,6 +566,10 @@ function ServerDetailDialog({
     }
     onSectionChange(nextSection)
   }
+
+  const canManage = server?.can_manage ?? false
+  const sections = serverSections.filter((entry) => canManage || readOnlySections.has(entry.value))
+  const visibleSection = canManage || readOnlySections.has(section) ? section : 'overview'
 
   return (
     <Dialog open={Boolean(server)} onOpenChange={onOpenChange}>
@@ -553,12 +592,12 @@ function ServerDetailDialog({
                 <SidebarGroup className="px-0 py-0">
                   <SidebarGroupContent>
                     <SidebarMenu className="gap-1">
-                      {serverSections.map((entry) => (
+                      {sections.map((entry) => (
                         <SidebarMenuItem key={entry.value}>
                           <SidebarMenuButton
                             type="button"
                             className="h-10 px-3 py-2"
-                            isActive={section === entry.value}
+                            isActive={visibleSection === entry.value}
                             onClick={() => setSection(entry.value)}
                           >
                             <AppIcon icon={entry.icon} stroke={1.5} aria-hidden />
@@ -591,35 +630,39 @@ function ServerDetailDialog({
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={`Refresh ${server.display_name}`}
-                      onClick={() => onRefresh(server)}
-                      disabled={actionPending || server.status !== 'active'}
-                    >
-                      <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={`Edit ${server.display_name}`}
-                      onClick={() => onEdit(server)}
-                    >
-                      <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="destructive"
-                      aria-label={`Disable ${server.display_name}`}
-                      onClick={() => onDisable(server)}
-                      disabled={actionPending || server.status !== 'active'}
-                    >
-                      <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
-                    </Button>
+                    {canManage ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`Refresh ${server.display_name}`}
+                          onClick={() => onRefresh(server)}
+                          disabled={actionPending || server.status !== 'active'}
+                        >
+                          <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`Edit ${server.display_name}`}
+                          onClick={() => onEdit(server)}
+                        >
+                          <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="destructive"
+                          aria-label={`Disable ${server.display_name}`}
+                          onClick={() => onDisable(server)}
+                          disabled={actionPending || server.status !== 'active'}
+                        >
+                          <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
+                        </Button>
+                      </>
+                    ) : null}
                     <DialogClose asChild>
                       <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
                         <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
@@ -629,12 +672,12 @@ function ServerDetailDialog({
                 </div>
 
                 <div className="flex gap-2 overflow-x-auto md:hidden">
-                  {serverSections.map((entry) => (
+                  {sections.map((entry) => (
                     <Button
                       key={entry.value}
                       type="button"
                       size="sm"
-                      variant={section === entry.value ? 'secondary' : 'ghost'}
+                      variant={visibleSection === entry.value ? 'secondary' : 'ghost'}
                       onClick={() => setSection(entry.value)}
                     >
                       <AppIcon
@@ -653,14 +696,25 @@ function ServerDetailDialog({
                 className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6"
                 data-testid="mcp-server-detail"
               >
-                {section === 'overview' ? (
+                {visibleSection === 'overview' ? (
                   <ServerOverviewPanel
                     server={server}
                     refreshStatus={refreshStatus}
                     refreshErrorSummary={refreshErrorSummary}
+                    ownershipControl={
+                      scope.platformAdmin ? (
+                        <ServerOwnershipTransfer
+                          key={server.id}
+                          server={server}
+                          teams={scope.teams}
+                          pending={actionPending}
+                          onTransfer={(ownerTeamId) => onTransfer(server, ownerTeamId)}
+                        />
+                      ) : null
+                    }
                   />
                 ) : null}
-                {section === 'configuration' ? (
+                {visibleSection === 'configuration' ? (
                   <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
                     <div className="flex flex-col gap-2">
                       <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
@@ -668,7 +722,15 @@ function ServerDetailDialog({
                         Update endpoint, auth mode, timeout, and gateway auth configuration.
                       </p>
                     </div>
-                    <ServerFormFields mode="edit" form={form} onFormChange={onFormChange} />
+                    <ServerFormFields
+                      mode="edit"
+                      form={form}
+                      ownership={{
+                        canPublish: scope.canPublish,
+                        platformOwned: !server.owner_team_id,
+                      }}
+                      onFormChange={onFormChange}
+                    />
                     <DialogFooter className="border-border mt-auto border-t pt-4">
                       <Button
                         type="button"
@@ -683,7 +745,7 @@ function ServerDetailDialog({
                     </DialogFooter>
                   </form>
                 ) : null}
-                {section === 'tools' ? (
+                {visibleSection === 'tools' ? (
                   <ServerToolsPanel
                     tools={tools}
                     toolsPending={toolsPending}
@@ -694,12 +756,13 @@ function ServerDetailDialog({
                     onAddToToolset={onAddToToolset}
                   />
                 ) : null}
-                {section === 'credentials' ? (
+                {visibleSection === 'credentials' ? (
                   <CredentialBindingsPanel
                     bindings={credentialBindings}
                     form={credentialForm}
                     pending={actionPending || credentialBindingsPending}
                     error={credentialBindingsError}
+                    teamScoped={!scope.platformAdmin}
                     onFormChange={onCredentialFormChange}
                     onSubmit={onCredentialSubmit}
                     onRevoke={onCredentialRevoke}
