@@ -164,6 +164,13 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             None
         };
         if let Some(previous) = previous {
+            // A binding stays on its server: moving one would take a credential
+            // off a server the caller was never checked against, under no lock.
+            if previous.mcp_server_id != input.mcp_server_id {
+                return Err(StoreError::Conflict(format!(
+                    "credential binding `{id}` belongs to another MCP server; revoke it and create a new one"
+                )));
+            }
             let mut rows = tx
                 .query(
                     &format!(

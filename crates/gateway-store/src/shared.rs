@@ -34,7 +34,7 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     WHEN 'team' THEN st.team_id IS NOT NULL
                     WHEN 'user' THEN su.user_id IS NOT NULL
                     WHEN 'service_account' THEN ssa.service_account_id IS NOT NULL
-                    WHEN 'api_key' THEN k.id IS NOT NULL AND CASE
+                    WHEN 'api_key' THEN k.id IS NOT NULL AND k.revoked_at IS NULL AND CASE
                         WHEN k.owner_team_id IS NOT NULL THEN TRUE
                         WHEN k.owner_service_account_id IS NOT NULL THEN ksa.service_account_id IS NOT NULL
                         WHEN k.owner_user_id IS NOT NULL THEN ku.user_id IS NOT NULL
@@ -57,6 +57,21 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
         WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
         "#
     )
+}
+
+/// SQL counting a server's active credentials that may not follow it to a new
+/// URL: user-scoped, `secret_ref`, or not the owning team's.
+pub(crate) fn foreign_credentials_sql(server: &str, team: &str) -> String {
+    format!(
+        "SELECT COUNT(*) FROM mcp_upstream_credential_bindings WHERE mcp_server_id = {server} AND revoked_at IS NULL AND (owner_scope_kind = 'user' OR secret_ref IS NOT NULL OR owner_team_id IS NULL OR owner_team_id <> {team})"
+    )
+}
+
+/// A team admin's retarget refused because `count` such credentials remain.
+pub(crate) fn foreign_credentials_conflict(count: i64) -> StoreError {
+    StoreError::Conflict(format!(
+        "{count} user or secret-reference credential binding(s) would be sent to the new URL; revoke them before changing server_url"
+    ))
 }
 
 /// A tool set write that names a tool of a team-only server. Tool sets are

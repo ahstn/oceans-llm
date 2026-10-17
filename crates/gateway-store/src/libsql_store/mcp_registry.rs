@@ -1,7 +1,7 @@
 use super::*;
 use crate::shared::{
-    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json,
-    team_only_toolset_tool, unix_to_datetime,
+    foreign_credentials_conflict, foreign_credentials_sql, grants_outside_team_sql,
+    json_object_from_str, parse_uuid, serialize_json, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
@@ -156,7 +156,10 @@ fn server_settings_match(
     existing.display_name == input.display_name
         && existing.description == input.description
         && existing.timeout_ms == input.timeout_ms
-        && existing.ownership.owner_contact == input.owner_contact
+        && input
+            .owner_contact
+            .as_ref()
+            .is_none_or(|contact| *contact == existing.ownership.owner_contact)
         && existing.ownership.visibility == input.visibility
         && !discovery_config_changed(existing, input)
 }
@@ -188,11 +191,11 @@ pub(super) async fn check_ownership_guard(
 ) -> Result<(), StoreError> {
     let (sql, id) = match tool_id {
         Some(tool_id) => (
-            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
+            "SELECT s.mcp_server_id, s.owner_team_id, s.owner_contact, s.visibility, s.server_url FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_tool_id = ?1",
             tool_id,
         ),
         None => (
-            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility FROM external_mcp_servers WHERE mcp_server_id = ?1",
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility, server_url FROM external_mcp_servers WHERE mcp_server_id = ?1",
             guard.mcp_server_id,
         ),
     };
@@ -204,10 +207,12 @@ pub(super) async fn check_ownership_guard(
         Some(row) => {
             let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
             let ownership = decode_server_ownership(&row, 1)?;
+            let server_url: String = row.get(4).map_err(to_query_error)?;
             guard.matches(
                 parse_uuid(&mcp_server_id)?,
                 ownership.owner_team_id,
                 ownership.visibility,
+                &server_url,
             )
         }
         None => false,
@@ -402,6 +407,37 @@ impl McpRegistryRepository for LibsqlStore {
             tx.commit().await.map_err(to_write_error)?;
             return Err(owner_changed(input.mcp_server_id));
         }
+        // An omitted contact keeps the one read under the write lock, so a
+        // concurrent contact change is never undone by a stale copy.
+        let owner_contact = input
+            .owner_contact
+            .clone()
+            .unwrap_or_else(|| existing.ownership.owner_contact.clone());
+        if input.retarget_owner_credentials_only && existing.server_url != input.server_url {
+            let mut rows = tx
+                .query(
+                    &foreign_credentials_sql("?1", "?2"),
+                    libsql::params![
+                        input.mcp_server_id.to_string(),
+                        existing
+                            .ownership
+                            .owner_team_id
+                            .map(|team_id| team_id.to_string())
+                            .unwrap_or_default()
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let foreign: i64 = match rows.next().await.map_err(to_query_error)? {
+                Some(row) => row.get(0).map_err(to_query_error)?,
+                None => 0,
+            };
+            drop(rows);
+            if foreign > 0 {
+                tx.commit().await.map_err(to_write_error)?;
+                return Err(foreign_credentials_conflict(foreign));
+            }
+        }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -424,7 +460,7 @@ impl McpRegistryRepository for LibsqlStore {
                 input.timeout_ms,
                 input.updated_at.unix_timestamp(),
                 input.mcp_server_id.to_string(),
-                input.owner_contact.as_deref(),
+                owner_contact.as_deref(),
                 input.visibility.as_str(),
             ],
         )

@@ -1538,10 +1538,11 @@ pub(crate) mod tests {
                 auth_mode: ExternalMcpAuthMode::None,
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
-                owner_contact: owner_contact.map(str::to_string),
+                owner_contact: Some(owner_contact.map(str::to_string)),
                 visibility,
                 expected_owner_team_id: Some(team.team_id),
                 expected_visibility,
+                retarget_owner_credentials_only: false,
                 updated_at: now + Duration::seconds(1),
             }
         };
@@ -1932,14 +1933,14 @@ pub(crate) mod tests {
         assert!(disabled);
         assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
         // Revoked grants are listed too, as the unscoped grant list does: the
-        // two above and the eight the subject-team check revoked.
+        // two above and the nine the subject-team check revoked.
         assert_eq!(
             store
                 .list_mcp_tool_grants_for_owner_team(team.team_id)
                 .await
                 .expect("team grants")
                 .len(),
-            10
+            11
         );
 
         exercise_mcp_ownership_guards(
@@ -1950,6 +1951,114 @@ pub(crate) mod tests {
             toolset.toolset_id,
         )
         .await;
+        exercise_mcp_settings_under_lock(store, server.mcp_server_id).await;
+    }
+
+    /// Settings saves resolve what they depend on under the write lock: an
+    /// omitted contact, and the credentials a team admin's retarget would carry.
+    async fn exercise_mcp_settings_under_lock<S>(store: &S, mcp_server_id: Uuid)
+    where
+        S: GatewayStore
+            + McpRegistryRepository
+            + gateway_core::McpUpstreamCredentialRepository
+            + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("load server")
+            .expect("server exists");
+        let save = |server_url: &str, owner_contact, retarget| UpdateExternalMcpServerRecord {
+            mcp_server_id,
+            display_name: server.display_name.clone(),
+            description: server.description.clone(),
+            server_url: server_url.to_string(),
+            auth_mode: server.auth_mode,
+            auth_config: server.auth_config.clone(),
+            timeout_ms: server.timeout_ms,
+            owner_contact,
+            visibility: server.ownership.visibility,
+            retarget_owner_credentials_only: retarget,
+            expected_owner_team_id: server.ownership.owner_team_id,
+            expected_visibility: server.ownership.visibility,
+            updated_at: now,
+        };
+
+        // Another request changed the contact; a save that omits it keeps that.
+        store
+            .update_external_mcp_server(&save(
+                &server.server_url,
+                Some(Some("#docs-oncall".to_string())),
+                false,
+            ))
+            .await
+            .expect("change contact");
+        let renamed = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                display_name: "Renamed docs".to_string(),
+                ..save(&server.server_url, None, false)
+            })
+            .await
+            .expect("save without a contact");
+        assert_eq!(
+            renamed.current.ownership.owner_contact.as_deref(),
+            Some("#docs-oncall")
+        );
+
+        // A user's credential would follow the server to its new URL, so a team
+        // admin's retarget is refused under the lock while it is active.
+        let user = store
+            .create_identity_user(
+                "Retarget user",
+                "mcp-retarget-user@example.com",
+                "mcp-retarget-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let (user_binding, _) = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: format!("mcp_credential:v1:user:{}", user.user_id),
+                owner_user_id: Some(user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+            })
+            .await
+            .expect("user binding");
+        let moved = "https://moved.example.com/mcp";
+        assert!(matches!(
+            store
+                .update_external_mcp_server(&save(moved, None, true))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        store
+            .revoke_mcp_upstream_credential_binding(user_binding.credential_binding_id, now)
+            .await
+            .expect("revoke user binding");
+        // The team's own encrypted credential may follow it.
+        let moved_server = store
+            .update_external_mcp_server(&save(moved, None, true))
+            .await
+            .expect("retarget");
+        assert_eq!(moved_server.current.server_url, moved);
     }
 
     /// Resolves each kind of grant subject to its team in one query, as the
@@ -2031,7 +2140,22 @@ pub(crate) mod tests {
             ))
             .await
             .expect("outsider key");
+        // A revoked key cannot authenticate, so its grant strands nothing.
+        let revoked_key = store
+            .create_api_key(&key(
+                "mcprevoked",
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            ))
+            .await
+            .expect("revoked key");
+        store
+            .revoke_api_key(revoked_key.id, now)
+            .await
+            .expect("revoke key");
         let subjects = [
+            (Kind::ApiKey, revoked_key.id),
             (Kind::User, member.user_id),
             (Kind::ServiceAccount, service_account.service_account_id),
             (Kind::ApiKey, member_key.id),
@@ -2094,12 +2218,13 @@ pub(crate) mod tests {
             mcp_server_id: server.mcp_server_id,
             owner_team_id: Some(team_id),
             visibility: McpServerVisibility::Team,
+            server_url: None,
         };
         // As a check made before a transfer to the team would have seen it.
         let stale = McpServerOwnershipGuard {
             owner_team_id: None,
             visibility: McpServerVisibility::Organisation,
-            ..current
+            ..current.clone()
         };
         let subject_id = Uuid::new_v4();
         let grant = |expected_server| gateway_core::UpsertMcpToolGrantRecord {
@@ -2122,7 +2247,7 @@ pub(crate) mod tests {
         };
 
         assert!(matches!(
-            store.upsert_mcp_tool_grant(&grant(stale)).await,
+            store.upsert_mcp_tool_grant(&grant(stale.clone())).await,
             Err(StoreError::Conflict(_))
         ));
         // A guard must name the tool's own server, or a check against one server
@@ -2131,7 +2256,7 @@ pub(crate) mod tests {
             store
                 .upsert_mcp_tool_grant(&grant(McpServerOwnershipGuard {
                     mcp_server_id: Uuid::new_v4(),
-                    ..current
+                    ..current.clone()
                 }))
                 .await,
             Err(StoreError::Conflict(_))
@@ -2142,7 +2267,7 @@ pub(crate) mod tests {
             "a refused grant writes nothing"
         );
         let (_, created) = store
-            .upsert_mcp_tool_grant(&grant(current))
+            .upsert_mcp_tool_grant(&grant(current.clone()))
             .await
             .expect("grant under the current owner");
         assert!(created);
@@ -2183,7 +2308,7 @@ pub(crate) mod tests {
         let before = bindings_for_server().await;
         assert!(matches!(
             store
-                .upsert_mcp_upstream_credential_binding(&binding(stale))
+                .upsert_mcp_upstream_credential_binding(&binding(stale.clone()))
                 .await,
             Err(StoreError::Conflict(_))
         ));
@@ -2193,10 +2318,32 @@ pub(crate) mod tests {
             "a refused binding writes nothing"
         );
         store
-            .upsert_mcp_upstream_credential_binding(&binding(current))
+            .upsert_mcp_upstream_credential_binding(&binding(
+                current
+                    .clone()
+                    .with_server_url("https://elsewhere.example.com/mcp"),
+            ))
+            .await
+            .map(|_| ())
+            .expect_err("a binding pinned to another URL is refused");
+        assert_eq!(bindings_for_server().await, before);
+        let (kept, _) = store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                current.clone().with_server_url(&server.server_url),
+            ))
             .await
             .expect("binding under the current owner");
         assert_eq!(bindings_for_server().await, before + 1);
+        // A binding stays on its server: replacing it by ID onto another one
+        // is refused, whatever guard the write carries.
+        let mut moved = binding(current.clone());
+        moved.credential_binding_id = Some(kept.credential_binding_id);
+        moved.mcp_server_id = Uuid::new_v4();
+        moved.expected_server = None;
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&moved).await,
+            Err(StoreError::Conflict(_))
+        ));
 
         // The tool set picked the tool up while the server was published. Now
         // that it is team-only, even resaving the same set is refused.
@@ -2269,6 +2416,7 @@ pub(crate) mod tests {
                 visibility: Default::default(),
                 expected_owner_team_id: None,
                 expected_visibility: Default::default(),
+                retarget_owner_credentials_only: false,
                 updated_at: now + Duration::seconds(1),
             })
             .await
@@ -2393,6 +2541,7 @@ pub(crate) mod tests {
                 visibility: Default::default(),
                 expected_owner_team_id: None,
                 expected_visibility: Default::default(),
+                retarget_owner_credentials_only: false,
                 updated_at: now + Duration::seconds(6),
             })
             .await

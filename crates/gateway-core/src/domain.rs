@@ -1691,11 +1691,15 @@ impl McpServerOwnership {
 /// against. A store write that carries one happens only while the server
 /// still has them, checked in the same transaction with the server row
 /// locked; otherwise it is a conflict and nothing is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerOwnershipGuard {
     pub mcp_server_id: Uuid,
     pub owner_team_id: Option<Uuid>,
     pub visibility: McpServerVisibility,
+    /// When set, the server must also still have this URL. Credential writes
+    /// pin it, so a credential is never stored for a destination it was not
+    /// authorized for.
+    pub server_url: Option<String>,
 }
 
 impl McpServerOwnershipGuard {
@@ -1705,7 +1709,15 @@ impl McpServerOwnershipGuard {
             mcp_server_id: server.mcp_server_id,
             owner_team_id: server.ownership.owner_team_id,
             visibility: server.ownership.visibility,
+            server_url: None,
         }
+    }
+
+    /// Also requires the server's current URL.
+    #[must_use]
+    pub fn with_server_url(mut self, server_url: &str) -> Self {
+        self.server_url = Some(server_url.to_string());
+        self
     }
 
     /// Whether a server row read under the write lock still matches.
@@ -1715,10 +1727,15 @@ impl McpServerOwnershipGuard {
         mcp_server_id: Uuid,
         owner_team_id: Option<Uuid>,
         visibility: McpServerVisibility,
+        server_url: &str,
     ) -> bool {
         self.mcp_server_id == mcp_server_id
             && self.owner_team_id == owner_team_id
             && self.visibility == visibility
+            && self
+                .server_url
+                .as_deref()
+                .is_none_or(|url| url == server_url)
     }
 
     /// The conflict a store returns when the server no longer matches.
@@ -1779,8 +1796,15 @@ pub struct UpdateExternalMcpServerRecord {
     pub auth_mode: ExternalMcpAuthMode,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
-    pub owner_contact: Option<String>,
+    /// `None` keeps the contact the server has when the write runs, read under
+    /// the write lock; `Some(None)` clears it.
+    pub owner_contact: Option<Option<String>>,
     pub visibility: McpServerVisibility,
+    /// When set and the URL changes, the save fails with a conflict while the
+    /// server holds a user-scoped, `secret_ref` or other team's credential,
+    /// counted under the write lock, since the gateway would send it to the new
+    /// URL. Set for team admins.
+    pub retarget_owner_credentials_only: bool,
     /// The owning team the caller was authorized against. The save fails with a
     /// conflict when the server has changed owner since.
     pub expected_owner_team_id: Option<Uuid>,

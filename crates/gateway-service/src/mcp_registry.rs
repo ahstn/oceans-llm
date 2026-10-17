@@ -83,6 +83,9 @@ pub struct UpdateExternalMcpServerInput {
     pub expected_owner_team_id: Option<Uuid>,
     /// The visibility the caller was authorized against.
     pub expected_visibility: McpServerVisibility,
+    /// Refuse a URL change, under the write lock, while credentials other than
+    /// the owning team's own encrypted ones remain. Set for team admins.
+    pub retarget_owner_credentials_only: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -264,10 +267,11 @@ where
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
         validate_mcp_server_auth_destination(&input.server_url, auth_mode, &input.auth_config)?;
         let timeout_ms = validate_timeout_ms(input.timeout_ms)?;
-        let owner_contact = match input.owner_contact {
-            Some(contact) => crate::normalize_owner_contact(Some(contact))?,
-            None => existing.ownership.owner_contact,
-        };
+        // An omitted contact is resolved by the store, under its write lock.
+        let owner_contact = input
+            .owner_contact
+            .map(|contact| crate::normalize_owner_contact(Some(contact)))
+            .transpose()?;
         let visibility = input.visibility.unwrap_or(existing.ownership.visibility);
         if existing.ownership.owner_team_id.is_none() && visibility == McpServerVisibility::Team {
             return Err(GatewayError::InvalidRequest(
@@ -286,6 +290,7 @@ where
                 timeout_ms,
                 owner_contact,
                 visibility,
+                retarget_owner_credentials_only: input.retarget_owner_credentials_only,
                 expected_owner_team_id: input.expected_owner_team_id,
                 expected_visibility: input.expected_visibility,
                 updated_at: OffsetDateTime::now_utc(),

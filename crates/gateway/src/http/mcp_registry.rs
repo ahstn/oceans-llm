@@ -340,6 +340,9 @@ pub async fn update_mcp_server(
                 // between cannot let the former team overwrite the server.
                 expected_owner_team_id: existing.ownership.owner_team_id,
                 expected_visibility,
+                // `authorize_retarget` checked this above; the store repeats it
+                // under the write lock, so a credential added meanwhile counts.
+                retarget_owner_credentials_only: !scope.is_platform_admin(),
             },
         )
         .await;
@@ -578,13 +581,23 @@ pub async fn list_mcp_server_tools(
         // A member sees only the tools their grants let them call, on a server
         // they can connect to; anything else does not exist for them.
         McpViewer::Member { user_id, team_id } => {
-            let servers = state.store.list_external_mcp_servers(false).await?;
-            let allowed: Vec<_> = member_access(&state, user_id, team_id, &servers)
+            // Only this server is loaded and resolved, not the whole registry.
+            let servers: Vec<_> = state
+                .store
+                .get_external_mcp_server(server_id)
                 .await?
+                .filter(|server| server.status != gateway_core::ExternalMcpServerStatus::Disabled)
                 .into_iter()
-                .filter(|tool| tool.mcp_server_id == server_id)
-                .map(|tool| tool.mcp_tool_id)
                 .collect();
+            let allowed: Vec<_> = if servers.is_empty() {
+                Vec::new()
+            } else {
+                member_access(&state, user_id, team_id, &servers, Some(server_id))
+                    .await?
+                    .into_iter()
+                    .map(|tool| tool.mcp_tool_id)
+                    .collect()
+            };
             if allowed.is_empty() {
                 return Err(AppError(GatewayError::Store(
                     gateway_core::StoreError::NotFound(format!(
@@ -1218,6 +1231,13 @@ pub async fn upsert_mcp_credential_binding(
     if let Some(binding_id) = request.credential_binding_id
         && let Some(existing) = find_credential_binding(&service, binding_id).await?
     {
+        // A binding stays on its server; the store refuses a move too.
+        if existing.mcp_server_id != request.server_id {
+            return Err(AppError(GatewayError::InvalidRequest(
+                "a credential binding cannot move to another MCP server; revoke it and create a new one"
+                    .to_string(),
+            )));
+        }
         let existing_server = ownership
             .managed_server(&scope, existing.mcp_server_id)
             .await?;
@@ -1250,7 +1270,11 @@ pub async fn upsert_mcp_credential_binding(
             metadata: request.metadata,
             // As for grants: written only while the server keeps the owner and
             // visibility the binding was authorized against.
-            expected_server: Some(McpServerOwnershipGuard::of(&server)),
+            // Pinned to the URL too, so a retarget that lands first refuses
+            // the write rather than store a credential for a new destination.
+            expected_server: Some(
+                McpServerOwnershipGuard::of(&server).with_server_url(&server.server_url),
+            ),
         })
         .await?;
     // The service returns bindings without their secrets; only those views are
@@ -1485,11 +1509,14 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
 /// they reach any of the user's MCP clients. A grant to one of their API keys
 /// counts only while that key may call MCP at all and its server list, if it
 /// has one, includes the tool's server, as runtime resolution enforces.
+/// `server_id` limits the resolution to one server's tools; `servers` must
+/// include every server the result may name.
 async fn member_access(
     state: &AppState,
     user_id: Uuid,
     team_id: Option<Uuid>,
     servers: &[gateway_core::ExternalMcpServerRecord],
+    server_id: Option<Uuid>,
 ) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
     use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
     let keys: Vec<_> = state
@@ -1524,7 +1551,7 @@ async fn member_access(
     subjects.extend(unrestricted.iter().map(|key| key_subject(key.id)));
     let mut tools = state
         .store
-        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Full)
+        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Full)
         .await?
         .allowed_tools;
     if restricted.is_empty() {
@@ -1549,7 +1576,7 @@ async fn member_access(
     let resolutions = futures_util::future::try_join_all(groups.values().map(|subjects| {
         state
             .store
-            .resolve_mcp_access_for_subjects(subjects, None, McpToolProjection::Full)
+            .resolve_mcp_access_for_subjects(subjects, server_id, McpToolProjection::Full)
     }))
     .await?;
     let mut seen: std::collections::HashSet<Uuid> =
@@ -1579,7 +1606,7 @@ async fn list_member_servers(
         .list_servers(query.include_disabled)
         .await?;
     let accessible: std::collections::HashSet<Uuid> =
-        member_access(state, user_id, team_id, &servers)
+        member_access(state, user_id, team_id, &servers, None)
             .await?
             .into_iter()
             .map(|tool| tool.mcp_server_id)
