@@ -20,7 +20,7 @@ use crate::mcp_credentials::{decrypt_binding_secret, decrypt_credential_secret, 
 use crate::mcp_oauth_discovery::{McpOauthDiscovery, discover_mcp_oauth, register_oauth_client};
 use crate::mcp_upstream_auth::{
     McpOauthClientRegistration, McpOauthServerConfig, McpOauthTokenEndpointAuthMethod,
-    McpServerOauthEndpoints, mcp_oauth_server_config, resolve_secret_ref,
+    McpServerOauthEndpoints, is_loopback_http_url, mcp_oauth_server_config, resolve_secret_ref,
 };
 use crate::outbound_fetch::{
     DEFAULT_OUTBOUND_MAX_BODY_BYTES, DEFAULT_OUTBOUND_TIMEOUT, InvalidDomainName,
@@ -170,6 +170,22 @@ impl McpOauthClient {
             _ => form.push(("client_id", self.client_id.clone())),
         }
         request.form(&form)
+    }
+}
+
+/// The token endpoint, checked where the request is sent: client secrets and
+/// codes travel only over https, or plain http to this machine for local
+/// development. Configuration and discovery check this too.
+fn secure_token_url(raw: &str) -> Result<url::Url, GatewayError> {
+    let url = url::Url::parse(raw).map_err(|error| {
+        GatewayError::InvalidRequest(format!("token endpoint is invalid: {error}"))
+    })?;
+    if url.scheme() == "https" || is_loopback_http_url(&url) {
+        Ok(url)
+    } else {
+        Err(GatewayError::InvalidRequest(
+            "token endpoint must use https".to_string(),
+        ))
     }
 }
 
@@ -357,9 +373,10 @@ impl McpOauthRuntime {
         resource: &str,
         form: Vec<(&'static str, String)>,
     ) -> Result<(reqwest::StatusCode, Vec<u8>), GatewayError> {
+        let token_url = secure_token_url(&client.token_url)?;
         if client.issuer.is_none() {
             let response = client
-                .token_request(self.client.post(&client.token_url), form)
+                .token_request(self.client.post(token_url), form)
                 .send()
                 .await
                 .map_err(oauth_transport_error)?;
@@ -367,9 +384,6 @@ impl McpOauthRuntime {
             let body = response.bytes().await.map_err(oauth_transport_error)?;
             return Ok((status, body.to_vec()));
         }
-        let token_url = url::Url::parse(&client.token_url).map_err(|error| {
-            GatewayError::InvalidRequest(format!("token_endpoint is invalid: {error}"))
-        })?;
         let fetcher = self.token_fetchers.for_trusted_url(resource);
         let request = fetcher
             .request(reqwest::Method::POST, &token_url)
@@ -1174,18 +1188,41 @@ mod tests {
             "https://169.254.169.254/latest/meta-data/token",
             "https://10.0.0.5/token",
             "https://127.0.0.1:9/token",
-            "http://auth.example.com/token",
         ] {
             let error = runtime
                 .exchange_code(&server_client(token_url), &config, "code", "verifier", &[])
                 .await
                 .expect_err("internal token endpoint must be refused");
             assert_eq!(error.error_code(), "upstream_transport", "{token_url}");
-            let message = error.to_string();
             assert!(
-                message.contains("not allowed") || message.contains("must use https"),
-                "{token_url}: {message}"
+                error.to_string().contains("not allowed"),
+                "{token_url}: {error}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn token_requests_never_send_secrets_over_plain_http() {
+        let runtime = McpOauthRuntime::new(Some("https://oceans.example.com".into()), Vec::new());
+        let config = McpOauthServerConfig {
+            provider_key: "corp".to_string(),
+            resource: "https://93.184.215.14/mcp".to_string(),
+            scopes: Vec::new(),
+            resource_indicator: false,
+            server_oauth: None,
+            discovery_tool_allowlist: None,
+        };
+        // Both a server-level client and a configured provider's client.
+        for issuer in [Some("https://auth.example.com".to_string()), None] {
+            let mut client = server_client("http://auth.example.com/token");
+            client.issuer = issuer;
+            client.client_secret = Some("secret".to_string());
+            client.token_endpoint_auth_method = McpOauthTokenEndpointAuthMethod::ClientSecretPost;
+            let error = runtime
+                .exchange_code(&client, &config, "code", "verifier", &[])
+                .await
+                .expect_err("plain http token endpoint must be refused");
+            assert!(error.to_string().contains("must use https"), "{error}");
         }
     }
 

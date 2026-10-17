@@ -156,7 +156,14 @@ Only active users can approve. A user who has no MCP grants can still approve, b
 
 `mcp.client_oauth.dynamic_client_registration` (default `true`) turns the endpoint off. When it is off, `registration_endpoint` is left out of the metadata.
 
-Dynamic Client Registration shipped first, because most deployed MCP clients still register that way. Client ID Metadata Documents followed once the gateway had an outbound fetcher that cannot be pointed at internal addresses.
+We ship Dynamic Client Registration before Client ID Metadata Documents, even though the spec now prefers the latter:
+
+- Most deployed MCP clients still register dynamically, because earlier revisions required it.
+- Client ID Metadata Documents make the gateway fetch a URL the client chooses. That needs an outbound fetcher that blocks requests to private addresses (SSRF). The gateway does not have one yet. Upstream metadata discovery in #442 needs the same guard, so we will build it once and share it rather than build two.
+
+Until then the metadata omits `client_id_metadata_document_supported`. Clients that follow the spec's priority order then fall back to registration.
+
+> **Superseded 2026-10-17.** The gateway now has the SSRF-safe outbound fetcher ([ADR](2026-10-17-ssrf-safe-outbound-fetch.md)), and it accepts Client ID Metadata Documents as section 7a describes. The metadata advertises `client_id_metadata_document_supported: true` unless they are turned off.
 
 ### 7a. Client ID Metadata Documents
 
@@ -225,7 +232,7 @@ The grant's `revoked_reason` records which path ended it: `user_revoked`, `admin
 
 Revoking a session also revokes its grants, with reason `session_ended`. The session is revoked first and its grants second. A grant is stored only while its session is unrevoked, checked in the same statement, and on Postgres that statement takes a share lock on the session row. A code exchange racing a sign-out therefore either sees the revocation and is refused, or its grant exists in time to be revoked. Each grant keeps a copy of its session's expiry, which never changes. An hourly loop runs while the feature is enabled. It first marks grants whose session has expired by the time of the run as revoked, using an index on that copy and dating each grant to its session's expiry. Together these keep dead grants out of the live-grant index that the authorized clients listing walks. The loop then deletes:
 
-- dynamically registered and metadata document clients that never received a grant, once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7)
+- clients that never received a grant: dynamically registered ones once they are older than `mcp.client_oauth.unused_client_retention_days` (default 7), and metadata document ones once their document was last fetched longer ago than that. A metadata document row is refreshed on every fetch, and the in-memory cache lasts at most 24 hours, so cleanup never removes a row that a process still caches
 - authorization requests that expired more than a day ago, unless their grant can still be used
 - tokens that expired more than a day ago, except consumed refresh tokens of a grant that can still be used
 

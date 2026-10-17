@@ -1084,12 +1084,25 @@ where
         Some(dynamic)
     );
 
-    // Unused metadata document clients are cleaned up like dynamic ones.
+    // Unused metadata document clients are cleaned up by their last fetch,
+    // not first sight, so a row a process may still cache is kept.
     let counts = store
-        .purge_gateway_oauth_records(timestamp(1), timestamp(1), timestamp(1))
+        .purge_gateway_oauth_records(timestamp(100), timestamp(1), timestamp(1))
         .await
         .expect("purge");
-    assert_eq!(counts.clients, 2);
+    assert_eq!(counts.clients, 1, "only the dynamic client is that old");
+    assert!(
+        store
+            .get_gateway_oauth_client(client_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let counts = store
+        .purge_gateway_oauth_records(timestamp(501), timestamp(1), timestamp(1))
+        .await
+        .expect("purge");
+    assert_eq!(counts.clients, 1);
     assert_eq!(
         store.get_gateway_oauth_client(client_id).await.unwrap(),
         None

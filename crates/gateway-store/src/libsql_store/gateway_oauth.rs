@@ -757,7 +757,10 @@ const PURGE_TOKENS: &str = "DELETE FROM gateway_oauth_tokens
 const PURGE_UNUSED_CLIENTS: &str = "DELETE FROM gateway_oauth_clients
      WHERE client_id IN (
          SELECT c.client_id FROM gateway_oauth_clients c
-         WHERE c.registration_kind IN ('dynamic', 'metadata_document') AND c.created_at < ?1
+         -- A metadata document row is refreshed on every fetch, so its age is
+         -- its last fetch: a row a process may still cache is never purged.
+         WHERE ((c.registration_kind = 'dynamic' AND c.created_at < ?1)
+                OR (c.registration_kind = 'metadata_document' AND c.updated_at < ?1))
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_grants g WHERE g.client_id = c.client_id)
            AND NOT EXISTS (SELECT 1 FROM gateway_oauth_authorization_requests r
                            WHERE r.client_id = c.client_id)
