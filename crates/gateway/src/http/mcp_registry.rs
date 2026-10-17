@@ -1420,8 +1420,9 @@ pub async fn preview_mcp_effective_access(
     })))
 }
 
-/// Narrows a preview to what the API key can call at runtime: nothing without
-/// an MCP scope, and with a server list only those servers' tools. Grants alone
+/// Narrows a preview to what the API key can call at runtime: nothing once it
+/// is revoked or without an MCP scope, and with a server list only those
+/// servers' tools. Grants alone
 /// would report tools the gateway refuses that key.
 async fn limit_to_api_key_access(
     state: &AppState,
@@ -1433,7 +1434,9 @@ async fn limit_to_api_key_access(
     else {
         return Ok(());
     };
-    if !(key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY)) {
+    let callable = key.revoked_at.is_none()
+        && (key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY));
+    if !callable {
         resolution.allowed_tools.clear();
     } else if key.access.mcp_server_keys.is_some() {
         let server_keys: std::collections::HashMap<Uuid, String> = state

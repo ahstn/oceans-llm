@@ -1661,4 +1661,14 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
         Some(1),
         "{body}"
     );
+
+    // Once revoked, the key authenticates nowhere, so it previews nothing.
+    context
+        .state
+        .store
+        .revoke_api_key(id, OffsetDateTime::now_utc())
+        .await
+        .unwrap();
+    let (_, body) = preview(id).await;
+    assert_eq!(body["data"]["tools"], json!([]), "{body}");
 }
