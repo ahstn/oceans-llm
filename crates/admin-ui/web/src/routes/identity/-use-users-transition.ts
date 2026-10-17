@@ -6,7 +6,8 @@ export type UsersTransition = ReturnType<typeof useUsersTransition>
 
 /**
  * Every create, save, and lifecycle action on the users page runs in one transition, so a pending
- * action disables the others until the refreshed user list arrives.
+ * action disables the others until the refreshed user list arrives. The teams page uses it the
+ * same way, and `refreshUsers` reloads its teams along with their users.
  */
 export function useUsersTransition() {
   const router = useRouter()
