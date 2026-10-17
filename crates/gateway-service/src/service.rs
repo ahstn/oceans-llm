@@ -77,7 +77,17 @@ fn pricing_override_matches_catalog(
 
 /// Enabled routes that carry a pricing or context override, paired with their model key.
 #[derive(Debug, Default)]
-pub struct OverriddenRoutes(Vec<(String, ModelRoute)>);
+pub struct OverriddenRoutes {
+    routes: Vec<(String, ModelRoute)>,
+    /// Catalog values already resolved for these routes, so later checks reuse them.
+    catalog: CatalogValues,
+}
+
+/// Catalog pricing and context per `(provider, upstream model, extra_body)` lookup target.
+type CatalogValues = std::collections::HashMap<
+    (String, String, String),
+    (Option<crate::EffectiveRoutePricing>, Option<i64>),
+>;
 
 #[derive(Debug, Default)]
 struct RouteOverrideScan {
@@ -859,8 +869,10 @@ where
     /// overrides add no catalog lookups before readiness. The returned routes feed
     /// [`Self::warn_on_redundant_route_overrides`] without reading the route table again.
     pub async fn validate_route_overrides(&self) -> Result<OverriddenRoutes, GatewayError> {
-        let routes = self.collect_overridden_routes().await?;
-        let scan = self.scan_route_overrides(&routes.0, false).await?;
+        let mut routes = self.collect_overridden_routes().await?;
+        let scan = self
+            .scan_route_overrides(&routes.routes, false, &mut routes.catalog)
+            .await?;
         let Some(conflict) = scan.context_conflicts.into_iter().next() else {
             return Ok(routes);
         };
@@ -877,12 +889,16 @@ where
 
     /// Logs route overrides that only repeat the catalog, so admins can delete them and follow
     /// catalog updates. It only warns, so the gateway runs it in the background after startup,
-    /// over the routes [`Self::validate_route_overrides`] already collected.
+    /// over the routes [`Self::validate_route_overrides`] already collected, reusing the catalog
+    /// values it resolved for context overrides.
     pub async fn warn_on_redundant_route_overrides(
         &self,
-        routes: &OverriddenRoutes,
+        mut routes: OverriddenRoutes,
     ) -> Result<(), GatewayError> {
-        for redundant in self.scan_route_overrides(&routes.0, true).await?.redundant {
+        let scan = self
+            .scan_route_overrides(&routes.routes, true, &mut routes.catalog)
+            .await?;
+        for redundant in scan.redundant {
             if redundant.pricing {
                 warn!(
                     model_key = %redundant.model_key,
@@ -905,9 +921,9 @@ where
     }
 
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
-        let routes = self.collect_overridden_routes().await?;
+        let mut routes = self.collect_overridden_routes().await?;
         for conflict in self
-            .scan_route_overrides(&routes.0, false)
+            .scan_route_overrides(&routes.routes, false, &mut routes.catalog)
             .await?
             .context_conflicts
         {
@@ -938,7 +954,10 @@ where
                 }
             }
         }
-        Ok(OverriddenRoutes(routes))
+        Ok(OverriddenRoutes {
+            routes,
+            catalog: CatalogValues::new(),
+        })
     }
 
     /// Resolves catalog values once per catalog target, looking up each provider once.
@@ -948,16 +967,14 @@ where
         &self,
         routes: &[(String, ModelRoute)],
         include_redundant: bool,
+        catalog: &mut CatalogValues,
     ) -> Result<RouteOverrideScan, GatewayError> {
         let now = OffsetDateTime::now_utc();
         let mut providers =
             std::collections::HashMap::<String, Option<gateway_core::ProviderConnection>>::new();
         // The checks read only catalog values, which depend on the provider, upstream model,
-        // and extra_body billing modifiers, so routes sharing those reuse one lookup.
-        let mut catalog = std::collections::HashMap::<
-            (String, String, String),
-            (Option<crate::EffectiveRoutePricing>, Option<i64>),
-        >::new();
+        // and extra_body billing modifiers, so routes sharing those reuse one lookup, including
+        // lookups an earlier check over the same routes already made.
         let mut scan = RouteOverrideScan::default();
         for (model_key, route) in routes {
             {
@@ -2933,7 +2950,7 @@ mod tests {
             .await
             .expect("a pricing-only override does not reach the catalog during startup");
         service
-            .warn_on_redundant_route_overrides(&routes)
+            .warn_on_redundant_route_overrides(routes)
             .await
             .expect("a pricing-only override lookup failure is only logged");
 
@@ -2957,6 +2974,9 @@ mod tests {
         });
         let mut second = first.clone();
         second.id = Uuid::new_v4();
+        // A context override below the catalog limit makes startup validation resolve this
+        // target; the warning pass must reuse that result.
+        second.context_window_tokens = Some(32_000);
         let mut other_target = first.clone();
         other_target.id = Uuid::new_v4();
         other_target.upstream_model = "gpt-5-mini".to_string();
@@ -2976,17 +2996,21 @@ mod tests {
         let routes = service
             .validate_route_overrides()
             .await
-            .expect("pricing-only overrides cannot block startup");
+            .expect("overrides within the catalog limit cannot block startup");
         assert_eq!(
             lookups.load(std::sync::atomic::Ordering::SeqCst),
-            0,
-            "startup validation skips pricing-only overrides"
+            1,
+            "startup validation resolves only the context-override target"
         );
         service
-            .warn_on_redundant_route_overrides(&routes)
+            .warn_on_redundant_route_overrides(routes)
             .await
             .expect("redundant override scan");
-        assert_eq!(lookups.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(
+            lookups.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the warning pass resolves only the target validation did not"
+        );
     }
 
     #[tokio::test]

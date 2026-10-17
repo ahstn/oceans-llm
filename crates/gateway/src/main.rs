@@ -677,7 +677,7 @@ fn spawn_redundant_route_override_check(
     routes: gateway_service::OverriddenRoutes,
 ) {
     tokio::spawn(async move {
-        if let Err(error) = service.warn_on_redundant_route_overrides(&routes).await {
+        if let Err(error) = service.warn_on_redundant_route_overrides(routes).await {
             tracing::warn!(error = %error, "checking route overrides against the catalog failed");
         }
     });
