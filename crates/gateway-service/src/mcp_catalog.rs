@@ -207,17 +207,30 @@ where
         self.authorized_tool(auth, &parsed).await
     }
 
+    /// The tools `auth` may see. An API key's MCP server list applies here,
+    /// on the credential, so grant resolution itself never changes: a filter
+    /// on an unlisted server resolves nothing, and tools on unlisted servers
+    /// are dropped from an unfiltered catalogue.
     async fn authorized_catalog(
         &self,
         auth: &AuthenticatedApiKey,
         server_key: Option<&str>,
     ) -> Result<gateway_core::McpCatalogAccessResolution, GatewayError> {
+        if server_key.is_some_and(|server_key| !auth.allows_mcp_server(server_key)) {
+            return Ok(gateway_core::McpCatalogAccessResolution::default());
+        }
         let access = McpAccess::new(self.repo.clone());
         let subjects = access.grant_subjects(auth).await?;
-        Ok(self
+        let mut resolution = self
             .repo
             .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
-            .await?)
+            .await?;
+        if server_key.is_none() && auth.access.mcp_server_keys.is_some() {
+            resolution
+                .allowed_tools
+                .retain(|record| auth.allows_mcp_server(&record.server.server_key));
+        }
+        Ok(resolution)
     }
 
     async fn authorized_tool(

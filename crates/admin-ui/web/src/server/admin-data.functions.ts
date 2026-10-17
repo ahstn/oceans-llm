@@ -86,6 +86,7 @@ import {
   transferTeamMember,
   upsertBudget,
   updateApiKey,
+  updateApiKeyScopes,
   updateMcpServer,
   updateMcpToolset,
   updateTeam,
@@ -332,6 +333,19 @@ export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
     }
   }) => {
     return updateApiKey(data.apiKeyId, data.input)
+  },
+)
+
+export const updateGatewayApiKeyScopes = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      apiKeyId: string
+      input: Parameters<typeof updateApiKeyScopes>[1]
+    }
+  }) => {
+    return updateApiKeyScopes(data.apiKeyId, data.input)
   },
 )
 

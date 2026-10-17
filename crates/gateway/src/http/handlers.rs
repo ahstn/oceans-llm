@@ -143,7 +143,10 @@ pub async fn v1_model_metadata(
 ) -> Result<Json<gateway_service::model_metadata::ModelMetadataResponse>, AppError> {
     let auth = state
         .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
+        .authenticate_for_scope(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            gateway_core::SCOPE_INFERENCE,
+        )
         .await?;
     Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
 }
@@ -154,7 +157,10 @@ pub async fn v1_models(
 ) -> Result<Json<gateway_service::model_metadata::ModelsListResponse>, AppError> {
     let auth = state
         .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
+        .authenticate_for_scope(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            gateway_core::SCOPE_INFERENCE,
+        )
         .await?;
     Ok(Json(state.service.models_list_for_api_key(&auth).await?))
 }
@@ -2718,6 +2724,7 @@ mod tests {
             owner_user_id,
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             oauth: None,
         }
     }

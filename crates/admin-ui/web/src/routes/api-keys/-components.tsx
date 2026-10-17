@@ -44,6 +44,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type {
   AdminAction,
+  ApiKeyMcpServerOptionView,
   ApiKeyModelOptionView,
   ApiKeyOwnerServiceAccountView,
   ApiKeyOwnerUserView,
@@ -59,6 +60,13 @@ import {
   formatModelGrantSummary,
   maskApiKeyPrefix,
 } from '@/lib/api-key-format'
+
+import {
+  ApiKeyScopeFields,
+  type ApiKeyScopesValue,
+  formatScopeSummary,
+  scopesOf,
+} from './-scope-fields'
 
 const apiKeyDialogContentClassName =
   'flex max-h-[calc(100dvh-2rem)] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden sm:max-h-[80vh]'
@@ -194,6 +202,10 @@ export function ApiKeyList({
                 <dd className="text-foreground">{formatModelGrantSummary(item)}</dd>
               </div>
               <div>
+                <dt className="text-muted-foreground">Scopes</dt>
+                <dd className="text-foreground">{formatScopeSummary(item)}</dd>
+              </div>
+              <div>
                 <dt className="text-muted-foreground">Created</dt>
                 <dd className="text-foreground">{formatCreatedAt(item.created_at)}</dd>
               </div>
@@ -220,6 +232,7 @@ export function ApiKeyList({
               <th className="px-3 py-2 font-semibold">Name</th>
               <th className="px-3 py-2 font-semibold">Owner</th>
               <th className="px-3 py-2 font-semibold">Granted models</th>
+              <th className="px-3 py-2 font-semibold">Scopes</th>
               <th className="px-3 py-2 font-semibold">Created</th>
               <th className="px-3 py-2 font-semibold">Last used</th>
               <th className="px-3 py-2 font-semibold">Status</th>
@@ -241,6 +254,7 @@ export function ApiKeyList({
                 <td className="text-subtle-foreground px-3 py-3">
                   {formatModelGrantSummary(item)}
                 </td>
+                <td className="text-subtle-foreground px-3 py-3">{formatScopeSummary(item)}</td>
                 <td className="text-subtle-foreground px-3 py-3">
                   {formatCreatedAt(item.created_at)}
                 </td>
@@ -273,8 +287,10 @@ export function ApiKeyList({
 // Keep the declarative fields together because they implement one create-key form contract.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function CreateApiKeyDialog({
+  availableScopes,
   form,
   isPending,
+  mcpServers,
   modelOptions,
   open,
   ownerLabel,
@@ -287,10 +303,13 @@ export function CreateApiKeyDialog({
   onOpenChange,
   onOwnerKindChange,
   onOwnerSelectionChange,
+  onScopesChange,
   onSubmit,
 }: {
+  availableScopes: string[]
   form: CreateApiKeyInput
   isPending: boolean
+  mcpServers: ApiKeyMcpServerOptionView[]
   modelOptions: ApiKeyModelOptionView[]
   open: boolean
   ownerLabel: string
@@ -303,6 +322,7 @@ export function CreateApiKeyDialog({
   onOpenChange: (open: boolean) => void
   onOwnerKindChange: (ownerKind: CreateApiKeyInput['owner_kind']) => void
   onOwnerSelectionChange: (value: string) => void
+  onScopesChange: (value: ApiKeyScopesValue) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
   return (
@@ -415,6 +435,15 @@ export function CreateApiKeyDialog({
                 </FieldDescription>
               </Field>
             )}
+
+            <ApiKeyScopeFields
+              availableScopes={availableScopes}
+              disabled={false}
+              idPrefix="create-api-key"
+              mcpServers={mcpServers}
+              value={scopesOf(form)}
+              onChange={onScopesChange}
+            />
           </div>
 
           <DialogFooter>
@@ -435,11 +464,14 @@ export function CreateApiKeyDialog({
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function ManageApiKeyDialog({
   actions,
+  availableScopes,
   form,
   isPending,
+  mcpServers,
   modelOptions,
   open,
   revealedKey,
+  scopes,
   submitDisabled,
   target,
   onModelGrantModeChange,
@@ -448,14 +480,18 @@ export function ManageApiKeyDialog({
   onReveal,
   onRevoke,
   onCopy,
+  onScopesChange,
   onSubmit,
 }: {
   actions: AdminAction[]
+  availableScopes: string[]
   form: UpdateApiKeyInput
   isPending: boolean
+  mcpServers: ApiKeyMcpServerOptionView[]
   modelOptions: ApiKeyModelOptionView[]
   open: boolean
   revealedKey: string | null
+  scopes: ApiKeyScopesValue
   submitDisabled: boolean
   target: ApiKeyView | null
   onModelGrantModeChange: (mode: UpdateApiKeyInput['model_grant_mode']) => void
@@ -464,6 +500,7 @@ export function ManageApiKeyDialog({
   onReveal: () => void | Promise<void>
   onRevoke: () => void | Promise<void>
   onCopy: (value: string, successMessage: string) => void | Promise<void>
+  onScopesChange: (value: ApiKeyScopesValue) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
   const canReveal = actions.includes('reveal_api_key')
@@ -476,8 +513,8 @@ export function ManageApiKeyDialog({
         <DialogHeader>
           <DialogTitle>Manage API key</DialogTitle>
           <DialogDescription>
-            Review model access and lifecycle state for this key. Revocation stops existing callers
-            immediately.
+            Review model access, scopes, and lifecycle state for this key. Saved changes apply to
+            the key's next request, and revocation stops existing callers immediately.
           </DialogDescription>
         </DialogHeader>
 
@@ -579,8 +616,8 @@ export function ManageApiKeyDialog({
                 <Alert>
                   <AlertTitle>Revoked keys are read-only</AlertTitle>
                   <AlertDescription>
-                    This key has already been revoked. Model access can no longer be changed in the
-                    admin UI.
+                    This key has already been revoked. Model access and scopes can no longer be
+                    changed in the admin UI.
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -618,6 +655,15 @@ export function ManageApiKeyDialog({
                   </FieldDescription>
                 </Field>
               )}
+
+              <ApiKeyScopeFields
+                availableScopes={availableScopes}
+                disabled={!canUpdate || target.status !== 'active'}
+                idPrefix="manage-api-key"
+                mcpServers={mcpServers}
+                value={scopes}
+                onChange={onScopesChange}
+              />
 
               {canRevoke ? (
                 <section className="border-border flex flex-col gap-3 rounded-lg border p-4">

@@ -23,6 +23,7 @@ const createGatewayApiKeyMock = vi.fn()
 const revealGatewayApiKeySecretMock = vi.fn()
 const revokeGatewayApiKeyMock = vi.fn()
 const updateGatewayApiKeyMock = vi.fn()
+const updateGatewayApiKeyScopesMock = vi.fn()
 const writeClipboardTextMock = vi.fn(async () => {})
 
 vi.mock('@tanstack/react-router', () => ({
@@ -43,6 +44,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   revealGatewayApiKeySecret: (...args: unknown[]) => revealGatewayApiKeySecretMock(...args),
   revokeGatewayApiKey: (...args: unknown[]) => revokeGatewayApiKeyMock(...args),
   updateGatewayApiKey: (...args: unknown[]) => updateGatewayApiKeyMock(...args),
+  updateGatewayApiKeyScopes: (...args: unknown[]) => updateGatewayApiKeyScopesMock(...args),
 }))
 
 const basePayload: ApiKeysPayload = {
@@ -105,6 +107,11 @@ const basePayload: ApiKeysPayload = {
       tags: ['reasoning'],
     },
   ],
+  available_scopes: ['inference', 'mcp:aggregate', 'mcp:proxy'],
+  mcp_servers: [
+    { key: 'notes', display_name: 'Notes' },
+    { key: 'wiki', display_name: 'Wiki' },
+  ],
 }
 
 describe('ApiKeysPage', () => {
@@ -138,6 +145,7 @@ describe('ApiKeysPage', () => {
     revealGatewayApiKeySecretMock.mockReset()
     revokeGatewayApiKeyMock.mockReset()
     updateGatewayApiKeyMock.mockReset()
+    updateGatewayApiKeyScopesMock.mockReset()
     writeClipboardTextMock.mockReset()
     Object.assign(navigator, {
       clipboard: {
@@ -224,6 +232,8 @@ describe('ApiKeysPage', () => {
         owner_service_account_id: null,
         model_grant_mode: 'all',
         model_keys: [],
+        scopes: null,
+        mcp_server_keys: null,
       },
     })
     await waitFor(() =>
@@ -287,8 +297,95 @@ describe('ApiKeysPage', () => {
         owner_service_account_id: 'service_account_1',
         model_grant_mode: 'explicit',
         model_keys: ['fast'],
+        scopes: null,
+        mcp_server_keys: null,
       },
     })
+  })
+
+  it('shows full access for keys without scopes', async () => {
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    expect(screen.getAllByText('Full access').length).toBeGreaterThan(0)
+  })
+
+  it('creates a key limited to MCP proxy on selected servers', async () => {
+    createGatewayApiKeyMock.mockResolvedValue({
+      data: { api_key: { ...basePayload.items[0], id: 'api_key_2' }, raw_key: 'gwk_x.y' },
+    })
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Create API key' })
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'MCP client' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owner user' }))
+    fireEvent.click(screen.getByRole('option', { name: /Jane Admin/ }))
+    const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+
+    // Limited with nothing ticked can't be saved.
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    expect(submitButton).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /MCP proxy/ }))
+    await waitFor(() => expect(submitButton).toBeEnabled())
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Selected servers' }))
+    expect(submitButton).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Notes/ }))
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    fireEvent.click(submitButton)
+
+    await waitFor(() => expect(createGatewayApiKeyMock).toHaveBeenCalledTimes(1))
+    expect(createGatewayApiKeyMock.mock.calls[0][0].data).toMatchObject({
+      scopes: ['mcp:proxy'],
+      mcp_server_keys: ['notes'],
+    })
+  })
+
+  it('drops the server list when the last MCP scope is unticked', async () => {
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Create API key' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /MCP proxy/ }))
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Selected servers' }))
+    expect(within(dialog).getByRole('checkbox', { name: /Wiki/ })).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /MCP proxy/ }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Inference/ }))
+    expect(within(dialog).queryByRole('radiogroup', { name: 'MCP servers' })).toBeNull()
+    expect(within(dialog).queryByRole('checkbox', { name: /Wiki/ })).toBeNull()
+  })
+
+  it('edits scopes after creation without touching model access', async () => {
+    updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: basePayload.items[0] } })
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
+    expect(saveButton).toBeDisabled()
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Inference/ }))
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledTimes(1))
+    expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledWith({
+      data: { apiKeyId: 'api_key_1', input: { scopes: ['inference'], mcp_server_keys: null } },
+    })
+    expect(updateGatewayApiKeyMock).not.toHaveBeenCalled()
+    expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
   })
 
   it('keeps create actions disabled until the mutation resolves', async () => {

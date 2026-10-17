@@ -7,6 +7,7 @@ import {
   revealGatewayApiKeySecret,
   revokeGatewayApiKey,
   updateGatewayApiKey,
+  updateGatewayApiKeyScopes,
 } from '@/server/admin-data.functions'
 import type {
   ApiKeysPayload,
@@ -15,6 +16,14 @@ import type {
   CreateApiKeyResult,
   UpdateApiKeyInput,
 } from '@/types/api'
+
+import {
+  type ApiKeyScopesValue,
+  fullAccessScopes,
+  isScopesValueIncomplete,
+  sameScopesValue,
+  scopesOf,
+} from './-scope-fields'
 
 export type ApiKeysSearch = { api_key_id?: string; create?: true }
 
@@ -39,6 +48,8 @@ const initialForm: CreateApiKeyInput = {
   owner_service_account_id: null,
   model_grant_mode: 'all',
   model_keys: [],
+  scopes: null,
+  mcp_server_keys: null,
 }
 
 const initialManageForm: UpdateApiKeyInput = {
@@ -59,23 +70,35 @@ function createFormFor(
   }
 }
 
-/** Whether the create form is missing a name, an owner, or an explicit model selection. */
+/** Whether the create form is missing a name, an owner, a model selection, or a scope. */
 function isCreateFormIncomplete(form: CreateApiKeyInput) {
   return (
     form.name.trim().length === 0 ||
+    isScopesValueIncomplete(scopesOf(form)) ||
     (form.model_grant_mode === 'explicit' && form.model_keys.length === 0) ||
     (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_service_account_id)
   )
 }
 
+function modelAccessChanged(target: ApiKeyView, manageForm: UpdateApiKeyInput) {
+  return (
+    target.model_grant_mode !== manageForm.model_grant_mode ||
+    !sameModelSelection(target.model_keys, manageForm.model_keys)
+  )
+}
+
 /** Whether saving the manage form would be invalid or change nothing. */
-function isManageFormUnsaveable(target: ApiKeyView | null, manageForm: UpdateApiKeyInput) {
+function isManageFormUnsaveable(
+  target: ApiKeyView | null,
+  manageForm: UpdateApiKeyInput,
+  manageScopes: ApiKeyScopesValue,
+) {
   return (
     !target ||
     target.status !== 'active' ||
     (manageForm.model_grant_mode === 'explicit' && manageForm.model_keys.length === 0) ||
-    (target.model_grant_mode === manageForm.model_grant_mode &&
-      sameModelSelection(target.model_keys, manageForm.model_keys))
+    isScopesValueIncomplete(manageScopes) ||
+    (!modelAccessChanged(target, manageForm) && sameScopesValue(scopesOf(target), manageScopes))
   )
 }
 
@@ -104,6 +127,7 @@ export function useApiKeysPageState({
     openCreateOnLoad ? createFormFor(users, defaultOwnerUserId) : initialForm,
   )
   const [manageForm, setManageForm] = useState<UpdateApiKeyInput>(initialManageForm)
+  const [manageScopes, setManageScopes] = useState<ApiKeyScopesValue>(fullAccessScopes)
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
   const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
   const [revealedManageKey, setRevealedManageKey] = useState<string | null>(null)
@@ -122,7 +146,8 @@ export function useApiKeysPageState({
       : null
 
   const isCreateDisabled = isMutating || isCreateFormIncomplete(form)
-  const isManageDisabled = isMutating || isManageFormUnsaveable(manageTarget, manageForm)
+  const isManageDisabled =
+    isMutating || isManageFormUnsaveable(manageTarget, manageForm, manageScopes)
 
   async function refreshApiKeys() {
     await router.invalidate()
@@ -145,6 +170,7 @@ export function useApiKeysPageState({
         model_grant_mode: target?.model_grant_mode ?? 'explicit',
         model_keys: target?.model_keys ?? [],
       })
+      setManageScopes(target ? scopesOf(target) : fullAccessScopes)
       setRevealedManageKey(null)
       setManageDialog({ mode: 'open', apiKeyId })
     },
@@ -153,6 +179,7 @@ export function useApiKeysPageState({
 
   function closeManageDialog() {
     setManageForm(initialManageForm)
+    setManageScopes(fullAccessScopes)
     setRevealedManageKey(null)
     setManageDialog({ mode: 'closed' })
   }
@@ -208,6 +235,10 @@ export function useApiKeysPageState({
       model_grant_mode: modelGrantMode,
       model_keys: modelGrantMode === 'all' ? [] : current.model_keys,
     }))
+  }
+
+  function updateScopes(value: ApiKeyScopesValue) {
+    setForm((current) => ({ ...current, ...value }))
   }
 
   function updateName(name: string) {
@@ -277,15 +308,23 @@ export function useApiKeysPageState({
 
     setIsMutating(true)
     try {
-      await updateGatewayApiKey({
-        data: {
-          apiKeyId: manageDialog.apiKeyId,
-          input: {
-            model_grant_mode: manageForm.model_grant_mode,
-            model_keys: manageForm.model_grant_mode === 'all' ? [] : manageForm.model_keys,
+      // Model access and scopes are separate routes; send only what changed.
+      if (modelAccessChanged(manageTarget, manageForm)) {
+        await updateGatewayApiKey({
+          data: {
+            apiKeyId: manageDialog.apiKeyId,
+            input: {
+              model_grant_mode: manageForm.model_grant_mode,
+              model_keys: manageForm.model_grant_mode === 'all' ? [] : manageForm.model_keys,
+            },
           },
-        },
-      })
+        })
+      }
+      if (!sameScopesValue(scopesOf(manageTarget), manageScopes)) {
+        await updateGatewayApiKeyScopes({
+          data: { apiKeyId: manageDialog.apiKeyId, input: manageScopes },
+        })
+      }
       toast.success('API key updated')
       await refreshApiKeys()
       closeManageDialog()
@@ -353,6 +392,7 @@ export function useApiKeysPageState({
     isPending: isMutating,
     manageDialog,
     manageForm,
+    manageScopes,
     manageTarget,
     revealedManageKey,
     selectedOwnerLabel,
@@ -370,7 +410,9 @@ export function useApiKeysPageState({
       toggleManageModelKey,
       toggleModelKey,
       updateManageModelGrantMode,
+      updateManageScopes: setManageScopes,
       updateModelGrantMode,
+      updateScopes,
       updateName,
       updateOwnerKind,
       updateOwnerSelection,
