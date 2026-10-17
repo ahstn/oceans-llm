@@ -2347,6 +2347,10 @@ pub enum McpToolProjection {
     /// Identity, schema and lifecycle columns. `metadata` is left empty because
     /// authorization only needs to know which tools are granted.
     Access,
+    /// As [`Self::Access`], without the counts: `exposed_tool_count` and
+    /// `filtered_tool_count` are left at zero, so no count of the whole
+    /// catalog runs. For callers that read only which tools are granted.
+    AccessUncounted,
     /// Also loads the title, annotations and output schema.
     Full,
 }

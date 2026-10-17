@@ -659,7 +659,12 @@ impl McpAccessRepository for LibsqlStore {
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
-        let exposed_tool_count = active_tool_count(&self.connection, mcp_server_id).await?;
+        let exposed_tool_count = match projection {
+            McpToolProjection::AccessUncounted => 0,
+            McpToolProjection::Access | McpToolProjection::Full => {
+                active_tool_count(&self.connection, mcp_server_id).await?
+            }
+        };
         let mut tools_by_id: HashMap<Uuid, ExternalMcpToolRecord> = HashMap::new();
 
         for subject in subjects {
@@ -693,7 +698,10 @@ impl McpAccessRepository for LibsqlStore {
             .map(|tool| tool.mcp_server_id)
             .collect::<std::collections::HashSet<_>>()
             .len() as i64;
-        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+        // Zero for an uncounted resolution, whose exposed count is not read.
+        let filtered_tool_count = exposed_tool_count
+            .saturating_sub(allowed_tools.len() as i64)
+            .max(0);
 
         Ok(McpAccessResolution {
             allowed_tools,
@@ -847,7 +855,7 @@ async fn server_grant_exists(
 
 fn tool_columns(projection: McpToolProjection) -> &'static str {
     match projection {
-        McpToolProjection::Access => ACCESS_TOOL_COLUMNS,
+        McpToolProjection::Access | McpToolProjection::AccessUncounted => ACCESS_TOOL_COLUMNS,
         McpToolProjection::Full => TOOL_COLUMNS,
     }
 }

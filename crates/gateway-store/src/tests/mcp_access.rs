@@ -217,6 +217,32 @@ where
     );
     assert_eq!(access.allowed_tools[0].metadata, McpToolMetadata::default());
     assert_eq!(full.allowed_tools[0].metadata, drive_search.metadata);
+    // Uncounted: the same tools, without a count of the catalog.
+    let uncounted = store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::AccessUncounted)
+        .await
+        .expect("uncounted projection");
+    let counted = store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Access)
+        .await
+        .expect("counted projection");
+    assert_eq!(
+        uncounted
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>(),
+        counted
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(counted.exposed_tool_count > 0);
+    assert_eq!(
+        (uncounted.exposed_tool_count, uncounted.filtered_tool_count),
+        (0, 0)
+    );
 
     store
         .disable_external_mcp_server(drive.mcp_server_id, now)

@@ -550,20 +550,40 @@ pub async fn list_mcp_server_tools(
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
     let viewer = require_mcp_viewer(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    // Who to recheck after the read: an admin, or this member in this team.
-    let read_for = match &viewer {
-        McpViewer::Admin(_) => None,
-        McpViewer::Member { user_id, team_id } => Some((*user_id, *team_id)),
+    let not_found = || {
+        AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+            format!("external MCP server `{server_id}` not found"),
+        )))
     };
-    let member_tools = match viewer {
+    let service = McpRegistryService::new(state.store.clone());
+    let tools = match viewer {
         McpViewer::Admin(scope) => {
             ownership(&state).visible_server(&scope, server_id).await?;
-            None
+            let tools = service
+                .list_tools(server_id, query.include_inactive)
+                .await?;
+            // Checked again after the read, against the viewer as they are
+            // now: a transfer, or the admin leaving the team, in between must
+            // not hand them tools they no longer see.
+            match require_mcp_viewer(&state, &headers).await? {
+                McpViewer::Admin(current) => {
+                    ownership(&state)
+                        .visible_server(&current, server_id)
+                        .await?;
+                }
+                McpViewer::Member { .. } => return Err(not_found()),
+            }
+            tools
         }
         // A member sees only the tools their grants let them call, on a server
         // they can connect to; anything else does not exist for them.
         McpViewer::Member { user_id, team_id } => {
-            // Only this server is resolved and read, not the whole registry.
+            // The tools are read first and the member's access resolved after,
+            // so a grant revoked, or the server moved or disabled, before the
+            // resolution is seen. Only this server is resolved and read.
+            let tools = service
+                .list_tools(server_id, query.include_inactive)
+                .await?;
             let access = member_access(&state, user_id, team_id, Some(server_id)).await?;
             let active = access.servers.iter().any(|server| {
                 server.mcp_server_id == server_id
@@ -575,66 +595,23 @@ pub async fn list_mcp_server_tools(
             } else {
                 std::collections::HashSet::new()
             };
-            if allowed.is_empty() {
-                return Err(AppError(GatewayError::Store(
-                    gateway_core::StoreError::NotFound(format!(
-                        "external MCP server `{server_id}` not found"
-                    )),
-                )));
+            // The access was resolved for the team read above, so the member
+            // must still be in it.
+            let same_viewer = matches!(
+                require_mcp_viewer(&state, &headers).await?,
+                McpViewer::Member { user_id: current_user, team_id: current_team }
+                    if (current_user, current_team) == (user_id, team_id)
+            );
+            if allowed.is_empty() || !same_viewer {
+                return Err(not_found());
             }
-            Some(allowed)
+            tools
+                .into_iter()
+                .filter(|tool| allowed.contains(&tool.mcp_tool_id))
+                .collect()
         }
     };
-    let service = McpRegistryService::new(state.store.clone());
-    let items = service
-        .list_tools(server_id, query.include_inactive)
-        .await?
-        .into_iter()
-        .filter(|tool| {
-            member_tools
-                .as_ref()
-                .is_none_or(|allowed| allowed.contains(&tool.mcp_tool_id))
-        })
-        .map(map_tool)
-        .collect();
-    // Checked again after the read, against the viewer as they are now: a
-    // transfer to another team, or the viewer leaving the team, in between must
-    // not hand them tools they no longer reach.
-    match (read_for, require_mcp_viewer(&state, &headers).await?) {
-        (None, McpViewer::Admin(scope)) => {
-            ownership(&state).visible_server(&scope, server_id).await?;
-        }
-        // The list was filtered by the grants of the team read above, so the
-        // member must still be in it.
-        (Some(read_for), McpViewer::Member { user_id, team_id })
-            if (user_id, team_id) == read_for =>
-        {
-            let still_reachable = state
-                .store
-                .get_external_mcp_server(server_id)
-                .await?
-                .is_some_and(|server| {
-                    server.status != gateway_core::ExternalMcpServerStatus::Disabled
-                        && server.ownership.is_reachable_from(team_id)
-                });
-            if !still_reachable {
-                return Err(AppError(GatewayError::Store(
-                    gateway_core::StoreError::NotFound(format!(
-                        "external MCP server `{server_id}` not found"
-                    )),
-                )));
-            }
-        }
-        // The viewer's role or team changed during the read; the list was
-        // filtered for one they no longer hold.
-        _ => {
-            return Err(AppError(GatewayError::Store(
-                gateway_core::StoreError::NotFound(format!(
-                    "external MCP server `{server_id}` not found"
-                )),
-            )));
-        }
-    }
+    let items = tools.into_iter().map(map_tool).collect();
     Ok(Json(envelope(McpToolsPayload { items })))
 }
 
@@ -1747,7 +1724,8 @@ async fn member_access(
     // Tool ID to server ID, for every tool the user can call.
     let mut tool_servers: std::collections::HashMap<Uuid, Uuid> = state
         .store
-        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::Access)
+        // Only the granted tools are read here, so no catalog-wide count runs.
+        .resolve_mcp_access_for_subjects(&subjects, server_id, McpToolProjection::AccessUncounted)
         .await?
         .allowed_tools
         .into_iter()
