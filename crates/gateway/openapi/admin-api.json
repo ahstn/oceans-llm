@@ -14252,7 +14252,8 @@
           "data": {
             "type": "object",
             "required": [
-              "tools"
+              "tools",
+              "truncated"
             ],
             "properties": {
               "tools": {
@@ -14260,7 +14261,11 @@
                 "items": {
                   "$ref": "#/components/schemas/McpToolView"
                 },
-                "description": "Active tools the rule would select. Only this rule is applied."
+                "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+              },
+              "truncated": {
+                "type": "boolean",
+                "description": "More tools match than the preview returns."
               }
             }
           },
@@ -16754,7 +16759,8 @@
       "McpTagRulePreviewPayload": {
         "type": "object",
         "required": [
-          "tools"
+          "tools",
+          "truncated"
         ],
         "properties": {
           "tools": {
@@ -16762,7 +16768,11 @@
             "items": {
               "$ref": "#/components/schemas/McpToolView"
             },
-            "description": "Active tools the rule would select. Only this rule is applied."
+            "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "More tools match than the preview returns."
           }
         }
       },

@@ -19,7 +19,12 @@ import {
   removeMcpTagRule,
   saveMcpTagRule,
 } from '@/server/mcp-policy-data.functions'
-import type { McpServerView, McpTagRuleView, McpToolView } from '@/types/api'
+import type {
+  McpServerView,
+  McpTagRulePreviewPayload,
+  McpTagRuleView,
+  McpToolView,
+} from '@/types/api'
 import { derivedTags } from './-tool-tags'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
 
@@ -66,7 +71,7 @@ export function TagRulesSection({
     tag: 'read_only',
     effect: 'include',
   })
-  const [preview, setPreview] = useState<McpToolView[] | null>(null)
+  const [preview, setPreview] = useState<McpTagRulePreviewPayload | null>(null)
 
   const serverNameById = useMemo(
     () => new Map(servers.map((server) => [server.id, server.display_name])),
@@ -114,7 +119,7 @@ export function TagRulesSection({
         const response = await getMcpTagRulePreview({
           data: { server_id: serverIdForRequest(), tag: form.tag, effect: form.effect },
         })
-        setPreview(response.data.tools)
+        setPreview(response.data)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to preview the rule')
       }
@@ -247,9 +252,11 @@ export function TagRulesSection({
       {preview ? (
         <div className="flex flex-col gap-2" data-testid="mcp-tag-rule-preview">
           <div className="text-subtle-foreground text-xs font-medium">
-            {preview.length} matching tool{preview.length === 1 ? '' : 's'}
+            {preview.truncated
+              ? `First ${preview.tools.length} matching tools`
+              : `${preview.tools.length} matching tool${preview.tools.length === 1 ? '' : 's'}`}
           </div>
-          {preview.map((tool) => (
+          {preview.tools.map((tool) => (
             <div
               key={tool.id}
               className="flex min-w-0 items-center justify-between gap-2 border-t pt-2"

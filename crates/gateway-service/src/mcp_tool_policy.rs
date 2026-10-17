@@ -18,6 +18,18 @@ pub struct McpToolPolicyService<R> {
     repo: Arc<R>,
 }
 
+/// Most tools a tag rule preview returns. A preview across every server stops
+/// reading servers once it has this many matches.
+pub const MAX_TAG_RULE_PREVIEW_MATCHES: usize = 200;
+
+/// The tools a tag rule would select.
+#[derive(Debug, Clone, Default)]
+pub struct McpTagRulePreview {
+    pub matches: Vec<McpTagRuleMatch>,
+    /// More tools match than `MAX_TAG_RULE_PREVIEW_MATCHES`.
+    pub truncated: bool,
+}
+
 /// One tool a tag rule would select, with the tags it was matched on.
 #[derive(Debug, Clone)]
 pub struct McpTagRuleMatch {
@@ -127,7 +139,7 @@ where
         mcp_server_id: Option<Uuid>,
         raw_tag: &str,
         effect: McpTagRuleEffect,
-    ) -> Result<Vec<McpTagRuleMatch>, GatewayError> {
+    ) -> Result<McpTagRulePreview, GatewayError> {
         let tag = normalize_rule_tag(raw_tag).map_err(GatewayError::InvalidRequest)?;
         if effect == McpTagRuleEffect::Include && mcp_server_id.is_none() {
             return Err(GatewayError::InvalidRequest(
@@ -152,18 +164,23 @@ where
                 .map(|server| server.mcp_server_id)
                 .collect(),
         };
-        let mut matches = Vec::new();
+        let mut preview = McpTagRulePreview::default();
         for server_id in server_ids {
             for tool in self.repo.list_external_mcp_tools(server_id, false).await? {
                 let tags = effective_tags(&tool);
-                if tags.contains(&tag) {
-                    matches.push(McpTagRuleMatch {
-                        tool,
-                        effective_tags: tags.into_iter().collect(),
-                    });
+                if !tags.contains(&tag) {
+                    continue;
                 }
+                if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
+                    preview.truncated = true;
+                    return Ok(preview);
+                }
+                preview.matches.push(McpTagRuleMatch {
+                    tool,
+                    effective_tags: tags.into_iter().collect(),
+                });
             }
         }
-        Ok(matches)
+        Ok(preview)
     }
 }
