@@ -307,6 +307,7 @@ export function useApiKeysPageState({
     }
 
     setIsMutating(true)
+    let modelAccessSaved = false
     try {
       // Model access and scopes are separate routes; send only what changed.
       if (modelAccessChanged(manageTarget, manageForm)) {
@@ -319,6 +320,7 @@ export function useApiKeysPageState({
             },
           },
         })
+        modelAccessSaved = true
       }
       if (!sameScopesValue(scopesOf(manageTarget), manageScopes)) {
         await updateGatewayApiKeyScopes({
@@ -329,7 +331,13 @@ export function useApiKeysPageState({
       await refreshApiKeys()
       closeManageDialog()
     } catch (error) {
-      toast.error(getErrorMessage(error))
+      if (modelAccessSaved) {
+        // Keep the dialog open on the saved model access so the scopes can be retried.
+        toast.error(`Model access saved, but scopes were not: ${getErrorMessage(error)}`)
+        await refreshApiKeys()
+      } else {
+        toast.error(getErrorMessage(error))
+      }
     } finally {
       setIsMutating(false)
     }

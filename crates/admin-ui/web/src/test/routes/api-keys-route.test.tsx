@@ -388,6 +388,34 @@ describe('ApiKeysPage', () => {
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes saved model access when the scope save then fails', async () => {
+    updateGatewayApiKeyMock.mockResolvedValue({ data: { api_key: basePayload.items[0] } })
+    updateGatewayApiKeyScopesMock.mockRejectedValue(new Error('gateway unavailable'))
+    const { toast } = await import('sonner')
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    await toggleModelSelection(dialog, 'reasoning')
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Inference/ }))
+    const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(updateGatewayApiKeyScopesMock).toHaveBeenCalledTimes(1))
+    expect(updateGatewayApiKeyMock).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Model access saved, but scopes were not: gateway unavailable',
+      ),
+    )
+    expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('dialog', { name: 'Manage API key' })).toBeInTheDocument()
+  })
+
   it('keeps create actions disabled until the mutation resolves', async () => {
     let resolveCreate: ((value: unknown) => void) | null = null
     createGatewayApiKeyMock.mockReturnValue(
