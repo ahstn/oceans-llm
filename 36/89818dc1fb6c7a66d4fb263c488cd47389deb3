@@ -1,0 +1,37 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_7a4bb25ea2fe49::t_090e7eeb5ca207 5135-5136
+crates/gateway-service/src/mcp_catalog.rs
+  s_7a4bb25ea2fe49::t_2490d943ca6f87 212-214,223-227,234,238-247
+crates/gateway/openapi/admin-api.json
+  s_e383333b16cafa::t_47fd6dc3fac80f 19565-19568
+crates/gateway/src/http/api_keys/scopes.rs
+  s_7a4bb25ea2fe49::t_863ddf1563e10b 33,36
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_e383333b16cafa::t_3455f0d0a1559f 522-552
+docs/access/identity-and-access.md
+  s_7a4bb25ea2fe49::t_119e0dc2643ebf 183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3689818dc1fb6c7a66d4fb263c488cd47389deb3",
+  "prompts": {},
+  "sessions": {
+    "s_7a4bb25ea2fe49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab2457af-0345-474d-8ba0-be4b2bb49200",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
