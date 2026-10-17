@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/test/routes/teams-hooks.test.ts
+  s_d114fbd07d53eb::t_ff137959e0ce82 1-508
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_d114fbd07d53eb::t_a5c92a20a7e266 2-3,5-10,61-117,124-130,253-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "262454314f78b65ebbc38705948086a4f2fded0e",
+  "prompts": {},
+  "sessions": {
+    "s_d114fbd07d53eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7bfd404e-9647-4e85-ba04-b57a37f6eef0",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
