@@ -102,8 +102,10 @@ anyone else returns `400`. Publish the server to the organisation first. See
 
 Visibility is checked when a grant is written, inside the same write: if the
 server changes owner or visibility while the grant is saved, it returns `409` and
-nothing is written. A user grant stays after the user leaves the team, like any
-other user grant, so revoke it when someone moves teams.
+nothing is written. Visibility is checked again on every request: a team-only
+server's tools work only for a caller whose current team owns the server, so a
+grant stops working as soon as its holder leaves the team, or the server moves to
+another team. The grant itself stays until someone revokes it.
 
 Every grant change is written to the [admin audit log](../access/admin-audit-log.md)
 with the actor's `actor_access` (`platform_admin` or `team_admin`) and, when they

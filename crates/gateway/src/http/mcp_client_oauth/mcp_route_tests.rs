@@ -121,6 +121,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
                 schema_set_hash: None,
                 error_summary: None,
                 details: Map::new(),
+                expected_server: None,
             },
             &["search", "purge"].map(|name| UpsertExternalMcpToolRecord {
                 mcp_server_id: server.mcp_server_id,

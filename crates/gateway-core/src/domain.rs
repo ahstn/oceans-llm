@@ -2068,6 +2068,11 @@ pub struct ExternalMcpDiscoveryRunRecord {
     pub schema_set_hash: Option<String>,
     pub error_summary: Option<String>,
     pub details: Map<String, Value>,
+    /// When set, the run, and for a success its tools, are stored only while
+    /// the server still matches, checked under the write lock. A refresh can
+    /// take a while, so a transfer or settings change in between makes it a
+    /// conflict rather than letting a former owner's result land.
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

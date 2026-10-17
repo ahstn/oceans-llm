@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use gateway_core::McpToolProjection;
+use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
@@ -474,6 +474,47 @@ impl McpAccessRepository for LibsqlStore {
             .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        check_ownership_guard(&tx, expected_server, Some(mcp_tool_id)).await?;
+        let mut rows = tx
+            .query(
+                r#"
+                UPDATE mcp_tool_grants
+                SET is_active = 0, revoked_at = ?1, updated_at = ?1
+                WHERE subject_kind = ?2 AND subject_id = ?3 AND target_kind = 'tool' AND target_id = ?4 AND is_active = 1
+                RETURNING grant_id
+                "#,
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    subject_kind.as_str(),
+                    subject_id.to_string(),
+                    mcp_tool_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let grant_id: Option<String> = match rows.next().await.map_err(to_write_error)? {
+            Some(row) => Some(row.get(0).map_err(to_query_error)?),
+            None => None,
+        };
+        drop(rows);
+        tx.commit().await.map_err(to_write_error)?;
+        grant_id
+            .map(|grant_id| {
+                Uuid::parse_str(&grant_id)
+                    .map_err(|error| StoreError::Unexpected(error.to_string()))
+            })
+            .transpose()
+    }
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
@@ -500,6 +541,27 @@ impl McpAccessRepository for LibsqlStore {
             grants.push(decode_grant(&row)?);
         }
         Ok(grants)
+    }
+
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        // `IS NOT NULL` for no team: every team-only server has an owner.
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id FROM external_mcp_servers WHERE visibility = 'team' AND owner_team_id IS NOT ?1",
+                libsql::params![team_id.map(|team_id| team_id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut ids = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            ids.push(parse_uuid(&id)?);
+        }
+        Ok(ids)
     }
 
     async fn resolve_mcp_access_for_subjects(

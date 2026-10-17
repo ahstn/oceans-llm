@@ -405,6 +405,7 @@ mod proxy_policy {
                     schema_set_hash: None,
                     error_summary: None,
                     details: Map::new(),
+                    expected_server: None,
                 },
                 &[UpsertExternalMcpToolRecord {
                     mcp_server_id: server.mcp_server_id,

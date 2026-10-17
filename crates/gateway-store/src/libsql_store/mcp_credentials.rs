@@ -408,6 +408,44 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         Ok(bindings)
     }
 
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let sql = format!(
+            r#"
+            SELECT {CREDENTIAL_COLUMNS}
+            FROM mcp_upstream_credential_bindings
+            WHERE mcp_server_id IN (SELECT mcp_server_id FROM external_mcp_servers WHERE owner_team_id = ?1)
+              AND (?2 IS NULL OR owner_scope_kind = ?2)
+              AND (?3 IS NULL OR owner_user_id = ?3 OR owner_team_id = ?3 OR owner_service_account_id = ?3)
+              AND (?4 = 1 OR revoked_at IS NULL)
+            ORDER BY mcp_server_id, owner_scope_key, created_at DESC
+            "#
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    owner_team_id.to_string(),
+                    owner_scope_kind.map(|value| value.as_str().to_string()),
+                    owner_scope_id.map(|value| value.to_string()),
+                    if include_revoked { 1_i64 } else { 0_i64 },
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut bindings = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            bindings.push(decode_credential(&row)?);
+        }
+        Ok(bindings)
+    }
+
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
@@ -436,6 +474,44 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             .map_err(to_write_error)?
             .map(|row| decode_credential(&row))
             .transpose()
+    }
+
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        check_ownership_guard(&tx, expected_server, None).await?;
+        let mut rows = tx
+            .query(
+                &format!(
+                    r#"
+                    UPDATE mcp_upstream_credential_bindings
+                    SET revoked_at = ?1, updated_at = ?1
+                    WHERE credential_binding_id = ?2 AND mcp_server_id = ?3 AND revoked_at IS NULL
+                    RETURNING {CREDENTIAL_COLUMNS}
+                    "#
+                ),
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    credential_binding_id.to_string(),
+                    expected_server.mcp_server_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let revoked = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_credential(&row))
+            .transpose()?;
+        finish_rows(&mut rows).await?;
+        drop(rows);
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(revoked)
     }
 
     async fn touch_mcp_upstream_credential_binding_last_used(

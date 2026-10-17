@@ -714,6 +714,9 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&mut tx, guard, None).await?;
+        }
         sqlx::query(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -838,6 +841,9 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&mut tx, guard, None).await?;
+        }
         sqlx::query(
             r#"
             INSERT INTO external_mcp_discovery_runs (

@@ -221,14 +221,16 @@ where
             return Ok(gateway_core::McpCatalogAccessResolution::default());
         }
         let access = McpAccess::new(self.repo.clone());
-        let subjects = access.grant_subjects(auth).await?;
+        let (subjects, team_id) = access.subjects_and_team(auth).await?;
         let listed = match (server_key, auth.access.mcp_server_keys.as_deref()) {
             (None, Some(listed)) => listed,
             (server_key, _) => {
-                return Ok(self
+                let mut resolution = self
                     .repo
                     .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
-                    .await?);
+                    .await?;
+                retain_reachable_catalog_tools(&mut resolution, team_id);
+                return Ok(resolution);
             }
         };
         // Listed keys are stored sorted, so the combined tools keep the
@@ -244,6 +246,7 @@ where
             combined.filtered_tool_count += resolution.filtered_tool_count;
             combined.allowed_tools.extend(resolution.allowed_tools);
         }
+        retain_reachable_catalog_tools(&mut combined, team_id);
         Ok(combined)
     }
 
@@ -428,6 +431,33 @@ fn tokenize(value: &str) -> Vec<String> {
             (!normalized.is_empty()).then_some(normalized)
         })
         .collect()
+}
+
+/// A team-only server's tools count only for a caller whose current team owns
+/// it, checked on every request, so a grant stops working when its holder
+/// leaves the team or the server moves.
+fn retain_reachable_catalog_tools(
+    resolution: &mut gateway_core::McpCatalogAccessResolution,
+    team_id: Option<Uuid>,
+) {
+    let before = resolution.allowed_tools.len();
+    resolution.allowed_tools.retain(|record| {
+        record.server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
+            || (record.server.ownership.owner_team_id.is_some()
+                && record.server.ownership.owner_team_id == team_id)
+    });
+    if resolution.allowed_tools.len() == before {
+        return;
+    }
+    resolution.referenced_server_count = resolution
+        .allowed_tools
+        .iter()
+        .map(|record| record.server.mcp_server_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len() as i64;
+    resolution.filtered_tool_count = resolution
+        .exposed_tool_count
+        .saturating_sub(resolution.allowed_tools.len() as i64);
 }
 
 #[cfg(test)]

@@ -1229,11 +1229,44 @@ pub trait McpAccessRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<Option<Uuid>, StoreError>;
 
+    /// Like [`Self::revoke_mcp_tool_grant`] for a tool target, but only while
+    /// the tool's server still matches `expected_server`, checked under the
+    /// write lock; otherwise a conflict, and nothing is revoked.
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &crate::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let _ = expected_server;
+        self.revoke_mcp_tool_grant(
+            subject_kind,
+            subject_id,
+            McpToolGrantTargetKind::Tool,
+            mcp_tool_id,
+            revoked_at,
+        )
+        .await
+    }
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
         subject_id: Option<Uuid>,
     ) -> Result<Vec<McpToolGrantRecord>, StoreError>;
+
+    /// Servers visible to their team only that `team_id` does not own (all of
+    /// them for `None`). Grants on their tools are inert for that caller, so a
+    /// grant stops working when its holder leaves the team or the server moves.
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        let _ = team_id;
+        Ok(Vec::new())
+    }
 
     async fn resolve_mcp_access_for_subjects(
         &self,
@@ -1331,6 +1364,26 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
+    /// Bindings on the servers `owner_team_id` owns, filtered in the query.
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let _ = (
+            owner_team_id,
+            owner_scope_kind,
+            owner_scope_id,
+            include_revoked,
+        );
+        Err(StoreError::Unexpected(
+            "MCP credential lookup by owning team is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+
     /// One binding by ID, revoked or not.
     async fn get_mcp_upstream_credential_binding(
         &self,
@@ -1358,6 +1411,20 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
+
+    /// Like [`Self::revoke_mcp_upstream_credential_binding`], but only for a
+    /// binding on `expected_server`'s server while it still matches, checked
+    /// under the write lock; otherwise a conflict, and nothing is revoked.
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &crate::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let _ = expected_server;
+        self.revoke_mcp_upstream_credential_binding(credential_binding_id, revoked_at)
+            .await
+    }
 
     async fn touch_mcp_upstream_credential_binding_last_used(
         &self,

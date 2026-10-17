@@ -758,6 +758,9 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -880,6 +883,9 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        if let Some(guard) = &run.expected_server {
+            check_ownership_guard(&tx, guard, None).await?;
+        }
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

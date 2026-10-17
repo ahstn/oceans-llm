@@ -378,19 +378,22 @@ where
 
     /// Checks a grant revoke. A team admin may revoke any grant on their own
     /// servers' tools, because revoking only removes access.
+    ///
+    /// For a team admin, returns the server the revoke was authorized against,
+    /// so the caller can make the store revoke conditional on it.
     pub async fn authorize_grant_revoke(
         &self,
         scope: &McpAdminScope,
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Option<ExternalMcpServerRecord>, GatewayError> {
         match (target_kind, scope.is_platform_admin()) {
-            (_, true) => Ok(()),
+            (_, true) => Ok(None),
             (McpToolGrantTargetKind::Toolset, false) => Err(forbidden()),
             (McpToolGrantTargetKind::Tool, false) => {
                 let server = self.tool_server(scope, target_id).await?;
                 if scope.can_manage(&server) {
-                    Ok(())
+                    Ok(Some(server))
                 } else {
                     Err(forbidden())
                 }

@@ -314,6 +314,28 @@ where
             .map(redact_binding))
     }
 
+    /// Bindings, without secrets, on the servers a team owns.
+    pub async fn list_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .list_mcp_upstream_credential_bindings_for_owner_team(
+                owner_team_id,
+                owner_scope_kind,
+                owner_scope_id,
+                include_revoked,
+            )
+            .await?
+            .into_iter()
+            .map(redact_binding)
+            .collect())
+    }
+
     pub async fn list_bindings(
         &self,
         mcp_server_id: Option<Uuid>,
@@ -337,6 +359,24 @@ where
 
     /// Revokes the binding and returns it, without secret material, or `None` when
     /// it was missing or already revoked.
+    /// Revokes a binding on `expected_server`'s server only while that server
+    /// still matches it; a transfer in between is a conflict.
+    pub async fn revoke_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
+        Ok(self
+            .repo
+            .revoke_mcp_upstream_credential_binding_guarded(
+                credential_binding_id,
+                expected_server,
+                OffsetDateTime::now_utc(),
+            )
+            .await?
+            .map(redact_binding))
+    }
+
     pub async fn revoke_binding(
         &self,
         credential_binding_id: Uuid,

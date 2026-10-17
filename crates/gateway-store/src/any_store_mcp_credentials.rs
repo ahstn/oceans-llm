@@ -141,6 +141,37 @@ impl McpUpstreamCredentialRepository for AnyStore {
         }
     }
 
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_upstream_credential_bindings_for_owner_team(
+                        owner_team_id,
+                        owner_scope_kind,
+                        owner_scope_id,
+                        include_revoked,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_upstream_credential_bindings_for_owner_team(
+                        owner_team_id,
+                        owner_scope_kind,
+                        owner_scope_id,
+                        include_revoked,
+                    )
+                    .await
+            }
+        }
+    }
+
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
@@ -155,6 +186,34 @@ impl McpUpstreamCredentialRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .revoke_mcp_upstream_credential_binding(credential_binding_id, revoked_at)
+                    .await
+            }
+        }
+    }
+
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .revoke_mcp_upstream_credential_binding_guarded(
+                        credential_binding_id,
+                        expected_server,
+                        revoked_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .revoke_mcp_upstream_credential_binding_guarded(
+                        credential_binding_id,
+                        expected_server,
+                        revoked_at,
+                    )
                     .await
             }
         }

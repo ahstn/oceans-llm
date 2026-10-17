@@ -1796,6 +1796,7 @@ pub(crate) mod tests {
             schema_set_hash: None,
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let tools = store
             .record_external_mcp_discovery_success(
@@ -1987,6 +1988,41 @@ pub(crate) mod tests {
             expected_visibility: server.ownership.visibility,
             updated_at: now,
         };
+
+        // A discovery result authorized against another owner is not stored.
+        let stale_owner = gateway_core::McpServerOwnershipGuard {
+            owner_team_id: Some(Uuid::new_v4()),
+            ..gateway_core::McpServerOwnershipGuard::of(&server)
+        };
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Failed,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 0,
+                    active_tool_count: 0,
+                    schema_set_hash: None,
+                    error_summary: Some("stale".to_string()),
+                    details: Map::new(),
+                    expected_server: Some(stale_owner),
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_ne!(
+            store
+                .get_external_mcp_server(mcp_server_id)
+                .await
+                .expect("reload")
+                .expect("server")
+                .last_error_summary
+                .as_deref(),
+            Some("stale"),
+            "a refused run writes nothing"
+        );
 
         // Another request changed the contact; a save that omits it keeps that.
         store
@@ -2276,6 +2312,40 @@ pub(crate) mod tests {
             .expect("grant under the current owner");
         assert!(created);
         assert_eq!(grants_for_subject().await, 1);
+        // A revoke authorized against a former owner is refused and keeps the grant.
+        assert!(matches!(
+            store
+                .revoke_mcp_tool_grant_guarded(
+                    gateway_core::McpToolGrantSubjectKind::User,
+                    subject_id,
+                    tool_id,
+                    &stale,
+                    now,
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(grants_for_subject().await, 1);
+        // Team-only servers the caller's team does not own.
+        let outside = |team| store.list_team_only_mcp_server_ids_outside(team);
+        assert!(
+            !outside(Some(team_id))
+                .await
+                .expect("outside own team")
+                .contains(&server.mcp_server_id)
+        );
+        assert!(
+            outside(None)
+                .await
+                .expect("outside any team")
+                .contains(&server.mcp_server_id)
+        );
+        assert!(
+            outside(Some(Uuid::new_v4()))
+                .await
+                .expect("outside another team")
+                .contains(&server.mcp_server_id)
+        );
 
         let binding = |expected_server| UpsertMcpUpstreamCredentialBindingRecord {
             credential_binding_id: None,
@@ -2399,6 +2469,18 @@ pub(crate) mod tests {
                 .expect("missing binding")
                 .is_none()
         );
+        // A revoke authorized against a former owner is refused and keeps it.
+        assert!(matches!(
+            store
+                .revoke_mcp_upstream_credential_binding_guarded(
+                    kept.credential_binding_id,
+                    &stale,
+                    now,
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(bindings_for_server().await, before + 1);
         // A binding stays on its server: replacing it by ID onto another one
         // is refused, whatever guard the write carries.
         let mut moved = binding(current.clone());
@@ -2501,6 +2583,7 @@ pub(crate) mod tests {
             schema_set_hash: Some("sha256:first".to_string()),
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let first_tools = store
             .record_external_mcp_discovery_success(
@@ -2553,6 +2636,7 @@ pub(crate) mod tests {
             schema_set_hash: Some("sha256:second".to_string()),
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let second_tools = store
             .record_external_mcp_discovery_success(
@@ -2634,6 +2718,7 @@ pub(crate) mod tests {
                 schema_set_hash: None,
                 error_summary: Some("timeout".to_string()),
                 details: Map::new(),
+                expected_server: None,
             })
             .await
             .expect("record discovery failure");
@@ -2697,6 +2782,7 @@ pub(crate) mod tests {
             schema_set_hash: Some(format!("set-{schema_hash}")),
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let metadata = gateway_core::McpToolMetadata {
             title: Some("Delete page".to_string()),

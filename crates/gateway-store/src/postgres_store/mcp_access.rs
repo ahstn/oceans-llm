@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use gateway_core::McpToolProjection;
+use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use super::mcp_registry::{check_no_team_only_tools, check_ownership_guard, decode_tool_metadata};
 use super::*;
@@ -437,6 +437,39 @@ impl McpAccessRepository for PostgresStore {
             .map_err(|error| StoreError::Unexpected(error.to_string()))
     }
 
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        check_ownership_guard(&mut tx, expected_server, Some(mcp_tool_id)).await?;
+        let row = sqlx::query(
+            r#"
+            UPDATE mcp_tool_grants
+            SET is_active = 0, revoked_at = $1, updated_at = $1
+            WHERE subject_kind = $2 AND subject_id = $3 AND target_kind = 'tool' AND target_id = $4 AND is_active = 1
+            RETURNING grant_id
+            "#,
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(subject_kind.as_str())
+        .bind(subject_id.to_string())
+        .bind(mcp_tool_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        row.map(|row| {
+            let grant_id: String = row.try_get("grant_id").map_err(to_query_error)?;
+            Uuid::parse_str(&grant_id).map_err(|error| StoreError::Unexpected(error.to_string()))
+        })
+        .transpose()
+    }
+
     async fn list_mcp_tool_grants(
         &self,
         subject_kind: Option<McpToolGrantSubjectKind>,
@@ -456,6 +489,20 @@ impl McpAccessRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
         rows.iter().map(decode_grant).collect()
+    }
+
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT mcp_server_id FROM external_mcp_servers WHERE visibility = 'team' AND owner_team_id IS DISTINCT FROM $1::text",
+        )
+        .bind(team_id.map(|team_id| team_id.to_string()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        ids.iter().map(|id| parse_uuid(id)).collect()
     }
 
     async fn resolve_mcp_access_for_subjects(

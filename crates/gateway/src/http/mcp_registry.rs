@@ -1115,21 +1115,39 @@ pub async fn revoke_mcp_grant(
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
     let subject_kind = parse_grant_subject_kind(&request.subject_kind)?;
     let target_kind = parse_grant_target_kind(&request.target_kind)?;
-    ownership(&state)
+    let authorized_server = ownership(&state)
         .authorize_grant_revoke(&scope, target_kind, request.target_id)
         .await?;
     // The store returns the id of the grant it revoked, so the entry targets the
     // same id as that grant's `mcp_grant.set`. Nothing active means no change.
-    let revoked = state
-        .store
-        .revoke_mcp_tool_grant(
-            subject_kind,
-            request.subject_id,
-            target_kind,
-            request.target_id,
-            OffsetDateTime::now_utc(),
-        )
-        .await?;
+    // A team admin's revoke holds only while the server keeps the owner it was
+    // authorized against, so a former team cannot revoke after a transfer.
+    let revoked = match &authorized_server {
+        Some(server) => {
+            state
+                .store
+                .revoke_mcp_tool_grant_guarded(
+                    subject_kind,
+                    request.subject_id,
+                    request.target_id,
+                    &McpServerOwnershipGuard::of(server),
+                    OffsetDateTime::now_utc(),
+                )
+                .await?
+        }
+        None => {
+            state
+                .store
+                .revoke_mcp_tool_grant(
+                    subject_kind,
+                    request.subject_id,
+                    target_kind,
+                    request.target_id,
+                    OffsetDateTime::now_utc(),
+                )
+                .await?
+        }
+    };
     if let Some(grant_id) = revoked {
         state
             .audit()
@@ -1170,29 +1188,37 @@ pub async fn list_mcp_credential_bindings(
     if let Some(server_id) = query.server_id {
         ownership(&state).managed_server(&scope, server_id).await?;
     }
-    let managed = managed_server_ids(&state, &scope).await?;
     let owner_scope_kind = query
         .owner_scope_kind
         .as_deref()
         .map(parse_credential_owner_scope_kind)
         .transpose()?;
     let service = McpCredentialService::new(state.store.clone());
-    let items = service
-        .list_bindings(
-            query.server_id,
-            owner_scope_kind,
-            query.owner_scope_id,
-            query.include_revoked,
-        )
-        .await?
-        .into_iter()
-        .filter(|binding| {
-            managed
-                .as_ref()
-                .is_none_or(|managed| managed.contains(&binding.mcp_server_id))
-        })
-        .map(map_credential_binding)
-        .collect();
+    // A named server was authorized above. Otherwise a team admin's list is
+    // limited to their team's servers in the query itself.
+    let bindings = match (query.server_id, scope.managed_team_id()) {
+        (None, Some(team_id)) => {
+            service
+                .list_bindings_for_owner_team(
+                    team_id,
+                    owner_scope_kind,
+                    query.owner_scope_id,
+                    query.include_revoked,
+                )
+                .await?
+        }
+        _ => {
+            service
+                .list_bindings(
+                    query.server_id,
+                    owner_scope_kind,
+                    query.owner_scope_id,
+                    query.include_revoked,
+                )
+                .await?
+        }
+    };
+    let items = bindings.into_iter().map(map_credential_binding).collect();
     Ok(Json(envelope(McpCredentialBindingsPayload { items })))
 }
 
@@ -1322,7 +1348,9 @@ pub async fn revoke_mcp_credential_binding(
     let service = McpCredentialService::new(state.store.clone());
     // A team admin may revoke any binding on their team's servers. A binding on
     // a server they cannot see is reported as missing.
-    if !scope.is_platform_admin() {
+    let authorized_server = if scope.is_platform_admin() {
+        None
+    } else {
         let Some(existing) = find_credential_binding(&service, credential_binding_id).await? else {
             return Err(
                 GatewayError::Store(gateway_core::StoreError::NotFound(format!(
@@ -1331,14 +1359,25 @@ pub async fn revoke_mcp_credential_binding(
                 .into(),
             );
         };
-        ownership(&state)
-            .managed_server(&scope, existing.mcp_server_id)
-            .await?;
-    }
+        Some(
+            ownership(&state)
+                .managed_server(&scope, existing.mcp_server_id)
+                .await?,
+        )
+    };
     // The revoke returns the binding it changed, so the entry names its owner and
     // keeps its redacted settings. A missing or already-revoked binding records
-    // nothing.
-    if let Some(binding) = service.revoke_binding(credential_binding_id).await? {
+    // nothing. A team admin's revoke holds only while the server keeps the owner
+    // it was authorized against.
+    let revoked = match &authorized_server {
+        Some(server) => {
+            service
+                .revoke_binding_guarded(credential_binding_id, &McpServerOwnershipGuard::of(server))
+                .await?
+        }
+        None => service.revoke_binding(credential_binding_id).await?,
+    };
+    if let Some(binding) = revoked {
         let binding = map_credential_binding(binding);
         // The returned row already carries the revocation, so `before` leaves out
         // what the revoke wrote: it matched only an active binding.
@@ -1412,6 +1451,15 @@ pub async fn preview_mcp_effective_access(
     if let Some(api_key_id) = query.api_key_id {
         limit_to_api_key_access(&state, api_key_id, &mut resolution).await?;
     }
+    // As at runtime, a team-only server's tools count only for its own team.
+    let caller_team = preview_caller_team(&state, &query).await?;
+    let hidden = state
+        .store
+        .list_team_only_mcp_server_ids_outside(caller_team)
+        .await?
+        .into_iter()
+        .collect();
+    gateway_service::mcp_access::retain_reachable_tools(&mut resolution, &hidden);
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: resolution.referenced_server_count,
         exposed_tool_count: resolution.exposed_tool_count,
@@ -1462,6 +1510,45 @@ async fn limit_to_api_key_access(
         .exposed_tool_count
         .saturating_sub(resolution.allowed_tools.len() as i64);
     Ok(())
+}
+
+/// The team the previewed caller acts for: an API key's (its own, or its
+/// owner's), a user's current team, a service account's, or the team itself.
+async fn preview_caller_team(
+    state: &AppState,
+    query: &McpEffectiveAccessQuery,
+) -> Result<Option<Uuid>, AppError> {
+    use gateway_core::AdminApiKeyRepository;
+    let user_team = |user_id| async move {
+        Ok::<_, AppError>(
+            IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
+                .await?
+                .map(|membership| membership.team_id),
+        )
+    };
+    if let Some(api_key_id) = query.api_key_id {
+        let Some(key) = AdminApiKeyRepository::get_api_key_by_id(&*state.store, api_key_id).await?
+        else {
+            return Ok(None);
+        };
+        return match (key.owner_team_id, key.owner_user_id) {
+            (Some(team_id), _) => Ok(Some(team_id)),
+            (None, Some(user_id)) => user_team(user_id).await,
+            (None, None) => Ok(None),
+        };
+    }
+    if let Some(user_id) = query.user_id {
+        return user_team(user_id).await;
+    }
+    if let Some(service_account_id) = query.service_account_id {
+        return Ok(IdentityRepository::get_service_account_by_id(
+            &*state.store,
+            service_account_id,
+        )
+        .await?
+        .map(|service_account| service_account.team_id));
+    }
+    Ok(query.team_id)
 }
 
 fn preview_subjects(query: &McpEffectiveAccessQuery) -> Vec<McpGrantSubject> {
@@ -1521,6 +1608,25 @@ const MEMBER_ACCESS_CONCURRENCY: usize = 4;
 /// `server_id` limits the resolution to one server's tools; `servers` must
 /// include every server the result may name.
 async fn member_access(
+    state: &AppState,
+    user_id: Uuid,
+    team_id: Option<Uuid>,
+    servers: &[gateway_core::ExternalMcpServerRecord],
+    server_id: Option<Uuid>,
+) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
+    // As at runtime, a team-only server counts only for its own team's members.
+    let hidden: std::collections::HashSet<Uuid> = state
+        .store
+        .list_team_only_mcp_server_ids_outside(team_id)
+        .await?
+        .into_iter()
+        .collect();
+    let mut tools = granted_member_tools(state, user_id, team_id, servers, server_id).await?;
+    tools.retain(|tool| !hidden.contains(&tool.mcp_server_id));
+    Ok(tools)
+}
+
+async fn granted_member_tools(
     state: &AppState,
     user_id: Uuid,
     team_id: Option<Uuid>,
@@ -1741,26 +1847,6 @@ async fn present_servers(
             map_server(server).for_viewer(name, can_manage)
         })
         .collect())
-}
-
-/// The servers a team admin manages; `None` for a platform admin, who manages all.
-async fn managed_server_ids(
-    state: &AppState,
-    scope: &McpAdminScope,
-) -> Result<Option<std::collections::HashSet<Uuid>>, AppError> {
-    let Some(team_id) = scope.managed_team_id() else {
-        return Ok(None);
-    };
-    Ok(Some(
-        state
-            .store
-            .list_external_mcp_servers(true)
-            .await?
-            .into_iter()
-            .filter(|server| server.ownership.owned_by(team_id))
-            .map(|server| server.mcp_server_id)
-            .collect(),
-    ))
 }
 
 async fn find_credential_binding(

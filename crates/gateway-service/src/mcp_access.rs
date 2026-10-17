@@ -21,27 +21,47 @@ where
         Self { repo }
     }
 
+    /// The tools the key may call. A team-only server's tools count only for a
+    /// caller whose current team owns it, checked here on every request, so a
+    /// grant stops working when its holder leaves the team or the server moves.
     pub async fn effective_tools_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, GatewayError> {
-        let subjects = self.grant_subjects(auth).await?;
-        Ok(self
+        let (subjects, team_id) = self.subjects_and_team(auth).await?;
+        let mut resolution = self
             .repo
             .resolve_mcp_access_for_subjects(&subjects, mcp_server_id, projection)
-            .await?)
+            .await?;
+        let hidden: HashSet<Uuid> = self
+            .repo
+            .list_team_only_mcp_server_ids_outside(team_id)
+            .await?
+            .into_iter()
+            .collect();
+        retain_reachable_tools(&mut resolution, &hidden);
+        Ok(resolution)
     }
 
     /// Whether the key may reach the server at all: it holds a grant on at
-    /// least one of the server's active tools.
+    /// least one of the server's active tools, and the server is not limited
+    /// to a team other than the caller's.
     pub async fn has_server_grant(
         &self,
         auth: &AuthenticatedApiKey,
         mcp_server_id: Uuid,
     ) -> Result<bool, GatewayError> {
-        let subjects = self.grant_subjects(auth).await?;
+        let (subjects, team_id) = self.subjects_and_team(auth).await?;
+        if self
+            .repo
+            .list_team_only_mcp_server_ids_outside(team_id)
+            .await?
+            .contains(&mcp_server_id)
+        {
+            return Ok(false);
+        }
         Ok(self
             .repo
             .has_mcp_server_grant(&subjects, mcp_server_id)
@@ -72,8 +92,18 @@ where
         &self,
         auth: &AuthenticatedApiKey,
     ) -> Result<Vec<McpGrantSubject>, GatewayError> {
+        Ok(self.subjects_and_team(auth).await?.0)
+    }
+
+    /// The key's grant subjects, and the team it acts for now: the key's own
+    /// team (a service account's), or its owner's current team.
+    pub async fn subjects_and_team(
+        &self,
+        auth: &AuthenticatedApiKey,
+    ) -> Result<(Vec<McpGrantSubject>, Option<Uuid>), GatewayError> {
         let mut subjects = grant_subjects(auth);
-        if auth.owner_team_id.is_none()
+        let mut team_id = auth.owner_team_id;
+        if team_id.is_none()
             && let Some(user_id) = auth.owner_user_id
             && let Some(membership) = self.repo.get_team_membership_for_user(user_id).await?
         {
@@ -84,8 +114,9 @@ where
                 McpToolGrantSubjectKind::Team,
                 membership.team_id,
             );
+            team_id = Some(membership.team_id);
         }
-        Ok(subjects)
+        Ok((subjects, team_id))
     }
 }
 
@@ -127,6 +158,25 @@ pub fn grant_subjects(auth: &AuthenticatedApiKey) -> Vec<McpGrantSubject> {
         );
     }
     subjects
+}
+
+/// Drops tools of servers in `hidden` and recounts what the resolution reports.
+pub fn retain_reachable_tools(resolution: &mut McpAccessResolution, hidden: &HashSet<Uuid>) {
+    if hidden.is_empty() {
+        return;
+    }
+    resolution
+        .allowed_tools
+        .retain(|tool| !hidden.contains(&tool.mcp_server_id));
+    resolution.referenced_server_count = resolution
+        .allowed_tools
+        .iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect::<HashSet<_>>()
+        .len() as i64;
+    resolution.filtered_tool_count = resolution
+        .exposed_tool_count
+        .saturating_sub(resolution.allowed_tools.len() as i64);
 }
 
 fn subjects_seen(subjects: &[McpGrantSubject]) -> HashSet<(McpToolGrantSubjectKind, Uuid)> {

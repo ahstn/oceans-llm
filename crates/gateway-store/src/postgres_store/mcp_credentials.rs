@@ -348,6 +348,35 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         rows.iter().map(decode_credential).collect()
     }
 
+    async fn list_mcp_upstream_credential_bindings_for_owner_team(
+        &self,
+        owner_team_id: Uuid,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let sql = format!(
+            r#"
+            SELECT {CREDENTIAL_COLUMNS}
+            FROM mcp_upstream_credential_bindings
+            WHERE mcp_server_id IN (SELECT mcp_server_id FROM external_mcp_servers WHERE owner_team_id = $1)
+              AND ($2 IS NULL OR owner_scope_kind = $2)
+              AND ($3 IS NULL OR owner_user_id = $3 OR owner_team_id = $3 OR owner_service_account_id = $3)
+              AND ($4 = TRUE OR revoked_at IS NULL)
+            ORDER BY mcp_server_id, owner_scope_key, created_at DESC
+            "#
+        );
+        let rows = sqlx::query(&sql)
+            .bind(owner_team_id.to_string())
+            .bind(owner_scope_kind.map(|value| value.as_str().to_string()))
+            .bind(owner_scope_id.map(|value| value.to_string()))
+            .bind(include_revoked)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_credential).collect()
+    }
+
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
@@ -367,6 +396,32 @@ impl McpUpstreamCredentialRepository for PostgresStore {
             .fetch_optional(&self.pool)
             .await
             .map_err(to_write_error)?;
+        row.as_ref().map(decode_credential).transpose()
+    }
+
+    async fn revoke_mcp_upstream_credential_binding_guarded(
+        &self,
+        credential_binding_id: Uuid,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        check_ownership_guard(&mut tx, expected_server, None).await?;
+        let row = sqlx::query(&format!(
+            r#"
+            UPDATE mcp_upstream_credential_bindings
+            SET revoked_at = $1, updated_at = $1
+            WHERE credential_binding_id = $2 AND mcp_server_id = $3 AND revoked_at IS NULL
+            RETURNING {CREDENTIAL_COLUMNS}
+            "#
+        ))
+        .bind(revoked_at.unix_timestamp())
+        .bind(credential_binding_id.to_string())
+        .bind(expected_server.mcp_server_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
         row.as_ref().map(decode_credential).transpose()
     }
 

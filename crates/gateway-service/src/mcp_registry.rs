@@ -8,9 +8,10 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
-    GatewayError, McpRegistryRepository, McpServerOwnership, McpServerVisibility, McpToolMetadata,
-    NewExternalMcpServerRecord, StoreError, TransferExternalMcpServerOwnershipRecord,
-    UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
+    GatewayError, McpRegistryRepository, McpServerOwnership, McpServerOwnershipGuard,
+    McpServerVisibility, McpToolMetadata, NewExternalMcpServerRecord, StoreError,
+    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
+    UpsertExternalMcpToolRecord,
 };
 use gateway_mcp::{McpClientError, NormalizedMcpTool, StreamableHttpClient};
 use serde::{Deserialize, Serialize};
@@ -382,6 +383,20 @@ where
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
         let server = self.server_or_not_found(mcp_server_id).await?;
+        // With an expected owner, every result is stored only while the server
+        // keeps the owner, visibility, URL and auth settings read here, checked
+        // under the store's write lock.
+        let expected_server = match expected_owner {
+            Some(owner) if owner != server.ownership.owner_team_id => {
+                return Err(owner_changed_during_discovery(mcp_server_id));
+            }
+            Some(_) => Some(McpServerOwnershipGuard::of(&server).with_auth_settings(&server)),
+            None => None,
+        };
+        let persist = DiscoveryPersist {
+            progress,
+            expected_server,
+        };
         if server.status == ExternalMcpServerStatus::Disabled {
             return self
                 .record_discovery_failure(
@@ -390,7 +405,7 @@ where
                     OffsetDateTime::now_utc(),
                     Some("external MCP server is disabled".to_string()),
                     json!({"reason": "disabled"}),
-                    progress,
+                    &persist,
                 )
                 .await;
         }
@@ -405,7 +420,7 @@ where
                         "server auth mode requires per-user credentials for discovery".to_string(),
                     ),
                     json!({"auth_mode": auth_mode}),
-                    progress,
+                    &persist,
                 )
                 .await;
         }
@@ -425,7 +440,7 @@ where
                         started_at,
                         Some(bounded_error_summary(error.to_string())),
                         json!({"reason": "invalid_discovery_auth_config"}),
-                        progress,
+                        &persist,
                     )
                     .await;
             }
@@ -473,13 +488,13 @@ where
                         "scope_compatible_tool_count".to_string(),
                         json!(upserts.len()),
                     )]),
+                    expected_server: persist.expected_server.clone(),
                 };
-                self.ensure_owner(server.mcp_server_id, expected_owner)
-                    .await?;
                 let stored_tools = self
                     .repo
                     .record_external_mcp_discovery_success(&run, &upserts)
-                    .await?;
+                    .await
+                    .map_err(discovery_conflict(mcp_server_id))?;
                 progress.landed_on(server.mcp_server_id);
                 let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
                 Ok(McpDiscoveryResult {
@@ -490,9 +505,6 @@ where
                 })
             }
             Err(error) => {
-                // The upstream call can be slow; check the owner before storing.
-                self.ensure_owner(server.mcp_server_id, expected_owner)
-                    .await?;
                 let summary = bounded_error_summary(discovery_error_summary(&error));
                 self.record_discovery_failure(
                     server,
@@ -500,7 +512,7 @@ where
                     started_at,
                     Some(summary),
                     json!({"client_error": classify_client_error(&error)}),
-                    progress,
+                    &persist,
                 )
                 .await
             }
@@ -588,24 +600,6 @@ where
     /// that started before a transfer does not write to a server another team
     /// now owns. The re-read is not in the store's write, but it narrows the
     /// window from the whole upstream call to one query.
-    async fn ensure_owner(
-        &self,
-        mcp_server_id: Uuid,
-        expected_owner: Option<Option<Uuid>>,
-    ) -> Result<(), GatewayError> {
-        let Some(expected_owner) = expected_owner else {
-            return Ok(());
-        };
-        let server = self.server_or_not_found(mcp_server_id).await?;
-        if server.ownership.owner_team_id == expected_owner {
-            Ok(())
-        } else {
-            Err(GatewayError::Store(StoreError::Conflict(format!(
-                "external MCP server `{mcp_server_id}` changed owner during discovery; refresh it again"
-            ))))
-        }
-    }
-
     async fn record_discovery_failure(
         &self,
         server: ExternalMcpServerRecord,
@@ -613,7 +607,7 @@ where
         started_at: OffsetDateTime,
         error_summary: Option<String>,
         details: Value,
-        progress: &AuditProgress,
+        persist: &DiscoveryPersist<'_>,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
@@ -627,11 +621,13 @@ where
             schema_set_hash: None,
             error_summary,
             details: value_object(details)?,
+            expected_server: persist.expected_server.clone(),
         };
         self.repo
             .record_external_mcp_discovery_failure(&run)
-            .await?;
-        progress.landed_on(server.mcp_server_id);
+            .await
+            .map_err(discovery_conflict(server.mcp_server_id))?;
+        persist.progress.landed_on(server.mcp_server_id);
         let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
         let tools = self
             .repo
@@ -643,6 +639,27 @@ where
             error_summary: run.error_summary,
             tools,
         })
+    }
+}
+
+/// Where a refresh records its result: the audit progress to mark, and the
+/// server state the result may be stored against.
+struct DiscoveryPersist<'a> {
+    progress: &'a AuditProgress,
+    expected_server: Option<McpServerOwnershipGuard>,
+}
+
+fn owner_changed_during_discovery(mcp_server_id: Uuid) -> GatewayError {
+    GatewayError::Store(StoreError::Conflict(format!(
+        "external MCP server `{mcp_server_id}` changed owner or settings during discovery; refresh it again"
+    )))
+}
+
+/// Reports a guarded write the store refused as a change during discovery.
+fn discovery_conflict(mcp_server_id: Uuid) -> impl Fn(StoreError) -> GatewayError {
+    move |error| match error {
+        StoreError::Conflict(_) => owner_changed_during_discovery(mcp_server_id),
+        other => other.into(),
     }
 }
 

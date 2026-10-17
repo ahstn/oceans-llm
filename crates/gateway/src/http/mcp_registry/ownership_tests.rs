@@ -145,6 +145,7 @@ impl TestContext {
                     schema_set_hash: None,
                     error_summary: None,
                     details: Map::new(),
+                    expected_server: None,
                 },
                 &[UpsertExternalMcpToolRecord {
                     mcp_server_id: server.mcp_server_id,
@@ -1671,4 +1672,73 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
         .unwrap();
     let (_, body) = preview(id).await;
     assert_eq!(body["data"]["tools"], json!([]), "{body}");
+}
+
+#[tokio::test]
+async fn team_only_access_ends_when_the_member_leaves_the_team() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "team-notes",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let member = context
+        .actor(
+            GlobalRole::User,
+            Some((context.team_a, MembershipRole::Member)),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    assert_eq!(
+        context
+            .grant(&admin, "user", member.user_id, "tool", server.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let auth = gateway_core::AuthenticatedApiKey {
+        id: Uuid::new_v4(),
+        public_id: "member".to_string(),
+        name: "Member".to_string(),
+        model_grant_mode: ApiKeyModelGrantMode::All,
+        owner_kind: ApiKeyOwnerKind::User,
+        owner_user_id: Some(member.user_id),
+        owner_team_id: None,
+        owner_service_account_id: None,
+        access: Default::default(),
+        oauth: None,
+    };
+    let access = gateway_service::McpAccess::new(context.state.store.clone());
+    let catalog = gateway_service::McpCatalog::new(context.state.store.clone());
+    let address = "mcp://team-notes/tools/search";
+    let reachable = || async {
+        let tools = access
+            .effective_tools_for_api_key(
+                &auth,
+                Some(server.id),
+                gateway_core::McpToolProjection::Access,
+            )
+            .await
+            .unwrap()
+            .allowed_tools
+            .len();
+        let grant = access.has_server_grant(&auth, server.id).await.unwrap();
+        let aggregate = catalog
+            .authorized_tool_by_address(&auth, address)
+            .await
+            .is_ok();
+        (tools, grant, aggregate)
+    };
+    assert_eq!(reachable().await, (1, true, true));
+
+    // The user grant stays, but it no longer reaches a server the user's team
+    // does not own, on the per-server routes or the aggregate endpoint.
+    context
+        .state
+        .store
+        .remove_team_membership(context.team_a, member.user_id)
+        .await
+        .unwrap();
+    assert_eq!(reachable().await, (0, false, false));
 }

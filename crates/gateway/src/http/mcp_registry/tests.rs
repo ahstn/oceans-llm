@@ -372,6 +372,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
         schema_set_hash: None,
         error_summary: None,
         details: Default::default(),
+        expected_server: None,
     };
     let discovered = store
         .record_external_mcp_discovery_success(&run, &tools)
