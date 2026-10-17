@@ -1009,54 +1009,61 @@ async fn auto_approve_version(
     Ok(())
 }
 
-/// Stored versions of the given tools with the given schema hashes, in one
-/// query, for discovery to reuse instead of creating duplicates.
+/// Lookups per historical version query: 500 pairs bind 1,000 variables,
+/// below SQLite's limit of 32,766.
+const HISTORICAL_LOOKUP_BATCH: usize = 500;
+
+/// Stored versions of the given tools with the given schema hashes, in a few
+/// batched queries, for discovery to reuse instead of creating duplicates.
 async fn find_versions_by_hash(
     connection: &libsql::Connection,
     lookups: &[(Uuid, &str)],
 ) -> Result<HashMap<Uuid, Vec<StoredVersion>>, StoreError> {
     let mut by_tool: HashMap<Uuid, Vec<StoredVersion>> = HashMap::new();
-    if lookups.is_empty() {
-        return Ok(by_tool);
-    }
-    let matches = (0..lookups.len())
-        .map(|index| {
-            format!(
-                "(mcp_tool_id = ?{} AND schema_hash = ?{})",
-                index * 2 + 1,
-                index * 2 + 2
+    // Two variables per lookup; batches stay well under SQLite's variable
+    // limit however many tools one discovery changes.
+    for batch in lookups.chunks(HISTORICAL_LOOKUP_BATCH) {
+        let matches = (0..batch.len())
+            .map(|index| {
+                format!(
+                    "(mcp_tool_id = ?{} AND schema_hash = ?{})",
+                    index * 2 + 1,
+                    index * 2 + 2
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let params = batch
+            .iter()
+            .flat_map(|(tool_id, hash)| [tool_id.to_string(), (*hash).to_string()])
+            .collect::<Vec<_>>();
+        let mut rows = connection
+            .query(
+                &format!(
+                    "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE {matches}"
+                ),
+                libsql::params_from_iter(params),
             )
-        })
-        .collect::<Vec<_>>()
-        .join(" OR ");
-    let params = lookups
-        .iter()
-        .flat_map(|(tool_id, hash)| [tool_id.to_string(), (*hash).to_string()])
-        .collect::<Vec<_>>();
-    let mut rows = connection
-        .query(
-            &format!(
-                "SELECT mcp_tool_id, schema_version, schema_hash, status, description, title FROM mcp_tool_versions WHERE {matches}"
-            ),
-            libsql::params_from_iter(params),
-        )
-        .await
-        .map_err(to_query_error)?;
-    while let Some(row) = rows.next().await.map_err(to_query_error)? {
-        let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
-        let status: String = row.get(3).map_err(to_query_error)?;
-        by_tool
-            .entry(parse_uuid(&mcp_tool_id)?)
-            .or_default()
-            .push(StoredVersion {
-                schema_version: row.get(1).map_err(to_query_error)?,
-                schema_hash: row.get(2).map_err(to_query_error)?,
-                description: row.get(4).map_err(to_query_error)?,
-                title: row.get(5).map_err(to_query_error)?,
-                status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
-                    StoreError::Serialization(format!("invalid MCP tool version status `{status}`"))
-                })?,
-            });
+            .await
+            .map_err(to_query_error)?;
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
+            let status: String = row.get(3).map_err(to_query_error)?;
+            by_tool
+                .entry(parse_uuid(&mcp_tool_id)?)
+                .or_default()
+                .push(StoredVersion {
+                    schema_version: row.get(1).map_err(to_query_error)?,
+                    schema_hash: row.get(2).map_err(to_query_error)?,
+                    description: row.get(4).map_err(to_query_error)?,
+                    title: row.get(5).map_err(to_query_error)?,
+                    status: McpToolVersionStatus::from_db(&status).ok_or_else(|| {
+                        StoreError::Serialization(format!(
+                            "invalid MCP tool version status `{status}`"
+                        ))
+                    })?,
+                });
+        }
     }
     Ok(by_tool)
 }

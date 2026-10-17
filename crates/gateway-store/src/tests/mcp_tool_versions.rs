@@ -822,6 +822,52 @@ where
     );
 }
 
+/// Historical lookups run in batches; reuse must hold for tools in every
+/// batch, not just the first.
+#[tokio::test]
+#[serial]
+async fn libsql_mcp_tool_historical_reuse_spans_lookup_batches() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            server_key: "bulk".to_string(),
+            display_name: "Bulk".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://bulk.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
+        })
+        .await
+        .expect("server");
+    let names = (0..1_100)
+        .map(|index| Box::leak(format!("tool_{index:04}").into_boxed_str()) as &'static str)
+        .collect::<Vec<_>>();
+    let defs = |description: &'static str| {
+        names
+            .iter()
+            .map(|name| Def(name, description, json!({"type": "object"})))
+            .collect::<Vec<_>>()
+    };
+    discover(&store, &server, &defs("A")).await;
+    discover(&store, &server, &defs("B")).await;
+    let back = discover(&store, &server, &defs("A")).await;
+    assert_eq!(back.len(), names.len());
+    assert!(
+        back.iter()
+            .all(|tool| tool.schema_version == 1 && tool.description.as_deref() == Some("A")),
+        "every tool reuses its first version"
+    );
+}
+
 #[tokio::test]
 #[serial]
 async fn libsql_mcp_tool_historical_reuse() {
