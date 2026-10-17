@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
 import { ToolPolicyEditor } from './-tool-policy'
+import { toolPolicyKey } from './-tool-tags'
 import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
 
 const AUTH_MODES = [
@@ -318,7 +319,7 @@ function ToolDisclosureRow({
                 </div>
               ) : null}
             </dl>
-            <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} />
+            <ToolPolicyEditor key={toolPolicyKey(tool)} tool={tool} onToolUpdated={onToolUpdated} />
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (

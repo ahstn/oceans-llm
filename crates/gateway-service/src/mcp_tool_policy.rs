@@ -156,11 +156,13 @@ where
                     Vec::new()
                 }
             }
+            // Match runtime resolution, which reads only active servers.
             None => self
                 .repo
                 .list_external_mcp_servers(false)
                 .await?
                 .into_iter()
+                .filter(|server| server.status == ExternalMcpServerStatus::Active)
                 .map(|server| server.mcp_server_id)
                 .collect(),
         };
