@@ -1,0 +1,19 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_1864c803a90a0e::t_6b00554b47ea27 707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf77063626d65de2491e56ca460cbe6355d01daa",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
