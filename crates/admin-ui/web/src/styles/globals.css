@@ -100,7 +100,8 @@
   --sidebar-border: transparent;
   --sidebar-ring: #bb9af7;
   /* Data: Tokyo Night. Series 1-5, the grouped "Other" series, single-series charts and ranked meters
-     (hero), and the activity heatmap from empty (0) to busiest (4). Never used for actions. */
+     (hero), and the activity heatmap from empty (0) to busiest (4). Never used for actions. Every
+     series and active heatmap level is at least 3:1 on --card (WCAG 1.4.11); a test enforces it. */
   --chart-1: #7aa2f7;
   --chart-2: #9ece6a;
   --chart-3: #41a6b5;
@@ -109,8 +110,8 @@
   --chart-other: #737aa2;
   --chart-hero: #7aa2f7;
   --heatmap-0: #172432;
-  --heatmap-1: #2c437f;
-  --heatmap-2: #5070bc;
+  --heatmap-1: #4d68a7;
+  --heatmap-2: #6183d1;
   --heatmap-3: #7aa2f7;
   --heatmap-4: #89ddff;
   /* Logo-wave colours for illustration and brand surfaces, never for actions. */

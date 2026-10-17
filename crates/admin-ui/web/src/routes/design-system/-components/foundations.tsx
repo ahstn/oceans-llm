@@ -15,22 +15,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 
+import { dataRoles, textRoles } from './color-roles'
 import { ColorPair, ShowcaseBlock, ShowcaseSection, Swatch } from './showcase'
-
-const colorRoles = [
-  { name: 'Frame', background: 'sidebar', foreground: 'sidebar-foreground' },
-  { name: 'Content panel', background: 'background', foreground: 'foreground' },
-  { name: 'Card', background: 'card', foreground: 'card-foreground' },
-  { name: 'Floating layer', background: 'popover', foreground: 'popover-foreground' },
-  { name: 'Primary action', background: 'primary', foreground: 'primary-foreground' },
-  { name: 'Secondary', background: 'secondary', foreground: 'secondary-foreground' },
-  { name: 'Hover', background: 'accent', foreground: 'accent-foreground' },
-  { name: 'Soft text on card', background: 'card', foreground: 'muted-foreground' },
-  { name: 'Link text on card', background: 'card', foreground: 'primary' },
-  { name: 'Focus ring on card', background: 'card', foreground: 'ring' },
-  { name: 'Destructive on card', background: 'card', foreground: 'destructive' },
-  { name: 'Success on card', background: 'card', foreground: 'success' },
-] as const
 
 const paletteGroups = [
   {
@@ -236,8 +222,19 @@ export function FoundationsSection() {
         description="Each surface with its foreground and the measured contrast. Pairs under 4.5:1 are not for body text."
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {colorRoles.map((role) => (
+          {textRoles.map((role) => (
             <ColorPair key={role.name} {...role} />
+          ))}
+        </div>
+      </ShowcaseBlock>
+
+      <ShowcaseBlock
+        title="Data on cards"
+        description="Chart series and heatmap levels are graphics, so each needs 3:1 against the card (WCAG 1.4.11). Empty heatmap days stay close to the card on purpose."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {dataRoles.map((role) => (
+            <ColorPair key={role.name} {...role} kind="graphic" />
           ))}
         </div>
       </ShowcaseBlock>

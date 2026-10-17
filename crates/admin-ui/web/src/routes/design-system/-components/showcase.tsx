@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
+import { GRAPHIC_CONTRAST_MIN } from './color-roles'
+
 /** Page band with an anchor, so the header nav can jump to it. */
 export function ShowcaseSection({
   id,
@@ -148,15 +150,25 @@ function wcagLevel(ratio: number) {
   return 'Fail'
 }
 
-/** A surface with its foreground, the resolved hex, and the measured contrast ratio. */
+// Non-text contrast (WCAG 1.4.11) has one threshold.
+function graphicLevel(ratio: number) {
+  return ratio >= GRAPHIC_CONTRAST_MIN ? 'Pass' : 'Fail'
+}
+
+/**
+ * A surface with its foreground, the resolved hex, and the measured contrast ratio. Text pairs are
+ * graded against WCAG's text levels; a `graphic` pair (chart series, heatmap level) passes at 3:1.
+ */
 export function ColorPair({
   name,
   background,
   foreground,
+  kind = 'text',
 }: {
   name: string
   background: string
   foreground: string
+  kind?: 'text' | 'graphic'
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [info, setInfo] = useState<{ ratio: number; bg: string } | null>(null)
@@ -184,13 +196,18 @@ export function ColorPair({
         style={tokens}
         className="flex h-24 items-end justify-between bg-(--pair-bg) p-4 text-(--pair-fg)"
       >
-        <span className="text-2xl font-medium">Aa</span>
+        {kind === 'graphic' ? (
+          <span className="h-6 w-14 rounded-sm bg-(--pair-fg)" />
+        ) : (
+          <span className="text-2xl font-medium">Aa</span>
+        )}
         {info ? (
           <span
-            data-testid="contrast-ratio"
+            data-testid={kind === 'graphic' ? 'graphic-contrast-ratio' : 'contrast-ratio'}
             className="rounded-full border border-current/20 px-2 py-0.5 font-mono text-xs"
           >
-            {info.ratio.toFixed(2)} {wcagLevel(info.ratio)}
+            {info.ratio.toFixed(2)}{' '}
+            {kind === 'graphic' ? graphicLevel(info.ratio) : wcagLevel(info.ratio)}
           </span>
         ) : null}
       </div>

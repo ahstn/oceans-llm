@@ -20,12 +20,13 @@ Preconditions: a launched stack with the local demo seed, signed in as `alice@pl
 - **Open.** Go to `/admin/design-system`. The heading reads `Design system`, the page starts at the top, and there are no console errors.
 - **Sections.** The page has sections with the IDs `foundations`, `actions`, `inputs`, `data-display`, `navigation`, `feedback`, `overlays`, `guidelines`, and `recipes`.
 - **Contrast.** There are 12 `contrast-ratio` badges and every one is at least `AA`. `Content panel` reads `16.13 AAA`, `Primary action` reads `8.50 AAA`, `Link text on card` reads `7.59 AAA`, `Destructive on card` reads `6.53 AA`, `Success on card` reads `10.55 AAA`, and the lowest, `Soft text on card`, reads `7.11 AAA`.
+- **Data contrast.** The Data on cards block has 10 `graphic-contrast-ratio` badges (five series, Other and heatmap levels 1 to 4), and every one reads `Pass`, meaning at least 3:1 on the card. `Heatmap level 1` reads `3.22 Pass` and `Other series` reads `4.21 Pass`. `mise run //ui:test src/test/design-contrast.test.ts` checks the same pairs from `globals.css`.
 - **Motion.** The Motion block lists `--duration-fast`, `--duration-base`, `--duration-slow` and `--duration-chart`, and `Replay` replays the page-entrance card and moves the fill bar.
 - **Reduced motion.** With `prefers-reduced-motion: reduce` emulated, the Data display chart shows every bar at its final shape in its first frame and settles within a frame or two, once its legend is measured. Without the preference the bars draw in over about 600ms, across dozens of distinct frames.
 - **Overlays.** `Open alert dialog` opens `Revoke ci-pipeline?` on the floating layer with the dialog shadow, and Escape closes it.
 - **Responsive.** At 375px the document is no wider than the viewport.
 - **Coverage.** `mise run //ui:test src/test/design-system-coverage.test.ts` passes. It fails when the page doesn't render a component in `src/components/ui/` (tests aside): an imported name must appear as a JSX element, so a stale or type-only import doesn't count. CI runs it with the other admin UI tests.
-- **Proof.** Capture the page, then `control-oceans-admin record design-system --check sections=pass --check contrast=pass --check reduced-motion=pass --check overlays=pass --check responsive=pass --check coverage=pass --artifact <screenshot>`.
+- **Proof.** Capture the page, then `control-oceans-admin record design-system --check sections=pass --check contrast=pass --check data-contrast=pass --check reduced-motion=pass --check overlays=pass --check responsive=pass --check coverage=pass --artifact <screenshot>`.
 
 ## Gotchas
 
