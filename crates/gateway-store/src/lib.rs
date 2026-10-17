@@ -1713,10 +1713,19 @@ pub(crate) mod tests {
             "token_endpoint".to_string(),
             json!("https://new.example.com/token"),
         )]);
-        store
+        let retarget = store
             .update_external_mcp_server(&retargeted)
             .await
             .expect("change auth settings");
+        // The revoked OAuth bindings are returned, so each revoke is audited.
+        assert_eq!(
+            retarget
+                .revoked_oauth_bindings
+                .iter()
+                .map(|binding| (binding.material_kind, binding.revoked_at.is_some()))
+                .collect::<Vec<_>>(),
+            vec![(McpUpstreamCredentialMaterialKind::OauthTokens, true)]
+        );
         assert!(
             store
                 .get_mcp_oauth_client(server.mcp_server_id)
@@ -1985,6 +1994,52 @@ pub(crate) mod tests {
             })
             .await
             .expect("move back to the team");
+        // A narrowing saved with the settings is checked in the same write: a
+        // refused one saves neither the visibility nor the other settings.
+        let published = McpServerOwnership {
+            visibility: McpServerVisibility::Organisation,
+            ..owned.clone()
+        };
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: published.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
+            })
+            .await
+            .expect("publish to the organisation");
+        let mut narrowing = settings(
+            Some("#mcp-owners"),
+            McpServerVisibility::Team,
+            McpServerVisibility::Organisation,
+        );
+        narrowing.display_name = "Narrowed Docs".to_string();
+        assert!(matches!(
+            store.update_external_mcp_server(&narrowing).await,
+            Err(StoreError::Conflict(_))
+        ));
+        let unchanged = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        assert_eq!(
+            unchanged.ownership, published,
+            "a refused save writes nothing"
+        );
+        assert_eq!(unchanged.display_name, server.display_name);
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
+            })
+            .await
+            .expect("limit to the team again");
         // A disable checked against a former owner is a conflict, and changes nothing.
         assert!(matches!(
             store
@@ -1998,6 +2053,29 @@ pub(crate) mod tests {
             .expect("disable as the owner");
         assert!(disabled);
         assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
+        // A disabled server's tool set and grants reach no one, so narrowing it
+        // strands nothing.
+        assert_eq!(
+            store
+                .first_active_mcp_toolset_key_for_server(server.mcp_server_id)
+                .await
+                .expect("tool set lookup"),
+            None
+        );
+        for (ownership, require_no_stranded_access) in
+            [(published.clone(), false), (owned.clone(), true)]
+        {
+            store
+                .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership,
+                    expected_ownership: None,
+                    updated_at: now + Duration::seconds(3),
+                    require_no_stranded_access,
+                })
+                .await
+                .expect("move the disabled server");
+        }
         // Revoked grants are listed too, as the unscoped grant list does: the
         // Subject filters run in the query: only the team's own grant.
         let team_grants = store

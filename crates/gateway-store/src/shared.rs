@@ -116,10 +116,12 @@ pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
     )
 }
 
-/// SQL for the first active tool set holding one of a server's tools.
+/// SQL for the first active tool set holding one of a server's tools. A
+/// disabled server's tools reach no one through a tool set, and the server
+/// cannot be re-enabled, so it has none to strand.
 pub(crate) fn active_toolset_for_server_sql(server: &str) -> String {
     format!(
-        "SELECT ts.toolset_key FROM mcp_toolset_tools tst JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id WHERE t.mcp_server_id = {server} AND ts.status = 'active' ORDER BY ts.toolset_key LIMIT 1"
+        "SELECT ts.toolset_key FROM mcp_toolset_tools tst JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.mcp_server_id = {server} AND ts.status = 'active' AND s.status = 'active' ORDER BY ts.toolset_key LIMIT 1"
     )
 }
 

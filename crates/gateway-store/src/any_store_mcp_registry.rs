@@ -103,7 +103,7 @@ impl McpRegistryRepository for AnyStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+    ) -> Result<gateway_core::ExternalMcpServerUpdate, StoreError> {
         match self {
             Self::Libsql(store) => store.update_external_mcp_server(input).await,
             Self::Postgres(store) => store.update_external_mcp_server(input).await,

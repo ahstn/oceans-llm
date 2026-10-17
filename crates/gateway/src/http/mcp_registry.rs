@@ -295,33 +295,10 @@ pub async fn update_mcp_server(
             .await?;
     }
     let service = McpRegistryService::new(state.store.clone());
-    // Narrowing to `team` is applied first, on its own and only while the
-    // ownership is still what was authorized above. The store checks for
-    // stranded access inside that write, with the server row locked, so a
-    // racing grant is either counted or refused by its own guard. If the
-    // settings save then fails, undoing the narrowing touches nothing else.
-    let mut expected_visibility = existing.ownership.visibility;
-    let narrowed = match (existing.ownership.owner_team_id, visibility) {
-        (Some(_), Some(gateway_core::McpServerVisibility::Team))
-            if existing.ownership.visibility == gateway_core::McpServerVisibility::Organisation =>
-        {
-            let narrowed = gateway_core::McpServerOwnership {
-                visibility: gateway_core::McpServerVisibility::Team,
-                ..existing.ownership.clone()
-            };
-            service
-                .transfer_ownership_if(
-                    server_id,
-                    narrowed.clone(),
-                    Some(existing.ownership.clone()),
-                )
-                .await?;
-            expected_visibility = gateway_core::McpServerVisibility::Team;
-            true
-        }
-        _ => false,
-    };
-    let saved = service
+    // A narrowing to `team` is saved with the settings, in one write: the store
+    // refuses it while access would be stranded, counted with the server row
+    // locked, so a racing grant is either counted or refused by its own guard.
+    let (update, revoked_oauth_bindings) = service
         .update_server(
             server_id,
             UpdateExternalMcpServerInput {
@@ -336,53 +313,24 @@ pub async fn update_mcp_server(
                 // Ties the save to the owner authorized above, so a transfer in
                 // between cannot let the former team overwrite the server.
                 expected_owner_team_id: existing.ownership.owner_team_id,
-                expected_visibility,
+                expected_visibility: existing.ownership.visibility,
                 // `authorize_retarget` checked this above; the store repeats it
                 // under the write lock, so a credential added meanwhile counts.
                 retarget_owner_credentials_only: !scope.is_platform_admin(),
                 // The auth checks above ran against these settings; a newer
                 // change makes the save a conflict rather than overwrite it.
-                expected_server: Some(McpServerOwnershipGuard {
-                    visibility: expected_visibility,
-                    ..McpServerOwnershipGuard::of(&existing).with_auth_settings(&existing)
-                }),
+                expected_server: Some(
+                    McpServerOwnershipGuard::of(&existing).with_auth_settings(&existing),
+                ),
             },
         )
-        .await;
-    let update = match saved {
-        Ok(update) => update,
-        Err(error) => {
-            // The save was rejected, so undo the narrowing written before it.
-            if narrowed {
-                let narrowed_ownership = gateway_core::McpServerOwnership {
-                    visibility: gateway_core::McpServerVisibility::Team,
-                    ..existing.ownership.clone()
-                };
-                undo_transfer(
-                    &state,
-                    &service,
-                    server_id,
-                    &existing.ownership,
-                    narrowed_ownership,
-                )
-                .await?;
-            }
-            return Err(error.into());
-        }
-    };
+        .await?;
     let current = update.current.clone();
     let server = map_server(update.current);
     // The store compares the unredacted settings under the write lock and writes
     // nothing when they match, so a resave records nothing while rotating a
     // credential inside the URL still counts even though the summary hides it.
-    // A narrowing was written before the settings save, so the save's own
-    // `previous` already has it; the entry's `before` is the server as
-    // authorized, so the visibility change shows.
-    let before = match (narrowed, update.previous) {
-        (true, _) => Some(existing),
-        (false, previous) => previous,
-    };
-    if let Some(before) = before {
+    if let Some(before) = update.previous {
         state
             .audit()
             .record(
@@ -391,6 +339,32 @@ pub async fn update_mcp_server(
                     server_event(actions::MCP_SERVER_UPDATED, &server)
                         .before(server_audit_summary(&map_server(before)))
                         .after(server_audit_summary(&server)),
+                ),
+            )
+            .await;
+    }
+    // Users' OAuth connections end with the endpoints that issued them. Each
+    // revoke is recorded, so every connection's set has a matching revoke.
+    for binding in revoked_oauth_bindings {
+        let binding = map_credential_binding(binding);
+        let mut before = credential_binding_audit_summary(&binding);
+        let revoked_at = before.get("revoked_at").cloned().unwrap_or_default();
+        if let Some(fields) = before.as_object_mut() {
+            fields.insert("revoked_at".to_string(), serde_json::Value::Null);
+            fields.remove("updated_at");
+        }
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                scope.annotate(
+                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                        .target(binding.id())
+                        .label(binding.owner_scope_key().to_string())
+                        .meta("operation", "server_settings_changed")
+                        .meta("mcp_server_id", server_id)
+                        .before(before)
+                        .after(serde_json::json!({ "revoked_at": revoked_at })),
                 ),
             )
             .await;
@@ -519,45 +493,6 @@ pub async fn transfer_mcp_server_ownership(
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
-/// Undoes a transfer or narrowing that would strand access, back to
-/// `previous`. Only the owner and visibility it wrote must still hold: a
-/// contact edit since does not stop the undo, while a newer transfer, which
-/// ran its own check, wins and is left in place. An undo that cannot land is
-/// reported rather than leaving the server moved behind a failed request.
-async fn undo_transfer(
-    state: &AppState,
-    service: &McpRegistryService<AnyStore>,
-    server_id: Uuid,
-    previous: &gateway_core::McpServerOwnership,
-    mut written: gateway_core::McpServerOwnership,
-) -> Result<(), AppError> {
-    for _ in 0..3 {
-        match service
-            .transfer_ownership_if(server_id, previous.clone(), Some(written.clone()))
-            .await
-        {
-            Ok(_) => return Ok(()),
-            Err(GatewayError::Store(gateway_core::StoreError::Conflict(_))) => {
-                let Some(current) = state.store.get_external_mcp_server(server_id).await? else {
-                    return Ok(());
-                };
-                if current.ownership.owner_team_id != written.owner_team_id
-                    || current.ownership.visibility != written.visibility
-                {
-                    return Ok(());
-                }
-                written = current.ownership;
-            }
-            Err(other) => return Err(other.into()),
-        }
-    }
-    Err(AppError(GatewayError::Store(
-        gateway_core::StoreError::Conflict(format!(
-            "external MCP server `{server_id}` kept changing while an ownership change was undone; check its owner and visibility"
-        )),
-    )))
-}
-
 fn ownership_audit_summary(ownership: &gateway_core::McpServerOwnership) -> serde_json::Value {
     serde_json::json!({
         "owner_team_id": ownership.owner_team_id,
@@ -588,10 +523,10 @@ pub async fn list_mcp_server_tools(
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
     let viewer = require_mcp_viewer(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    // Who to recheck after the read: an admin's scope, or a member's team.
-    let recheck = match &viewer {
-        McpViewer::Admin(scope) => Ok(*scope),
-        McpViewer::Member { team_id, .. } => Err(*team_id),
+    // Who to recheck after the read: an admin, or this member in this team.
+    let read_for = match &viewer {
+        McpViewer::Admin(_) => None,
+        McpViewer::Member { user_id, team_id } => Some((*user_id, *team_id)),
     };
     let member_tools = match viewer {
         McpViewer::Admin(scope) => {
@@ -635,13 +570,18 @@ pub async fn list_mcp_server_tools(
         })
         .map(map_tool)
         .collect();
-    // Checked again after the read: a transfer to another team in between must
-    // not hand a former owner or member the new owner's tools.
-    match recheck {
-        Ok(scope) => {
+    // Checked again after the read, against the viewer as they are now: a
+    // transfer to another team, or the viewer leaving the team, in between must
+    // not hand them tools they no longer reach.
+    match (read_for, require_mcp_viewer(&state, &headers).await?) {
+        (None, McpViewer::Admin(scope)) => {
             ownership(&state).visible_server(&scope, server_id).await?;
         }
-        Err(team_id) => {
+        // The list was filtered by the grants of the team read above, so the
+        // member must still be in it.
+        (Some(read_for), McpViewer::Member { user_id, team_id })
+            if (user_id, team_id) == read_for =>
+        {
             let still_reachable = state
                 .store
                 .get_external_mcp_server(server_id)
@@ -662,6 +602,15 @@ pub async fn list_mcp_server_tools(
                     )),
                 )));
             }
+        }
+        // The viewer's role or team changed during the read; the list was
+        // filtered for one they no longer hold.
+        _ => {
+            return Err(AppError(GatewayError::Store(
+                gateway_core::StoreError::NotFound(format!(
+                    "external MCP server `{server_id}` not found"
+                )),
+            )));
         }
     }
     Ok(Json(envelope(McpToolsPayload { items })))

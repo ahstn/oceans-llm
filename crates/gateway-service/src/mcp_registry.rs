@@ -271,12 +271,19 @@ where
     }
 
     /// Saves the server's settings. Nothing is written when they already match, and
-    /// the result then carries no previous record.
+    /// the result then carries no previous record. Also returns the users' OAuth
+    /// bindings the save revoked, because the endpoints that issued them changed.
     pub async fn update_server(
         &self,
         mcp_server_id: Uuid,
         input: UpdateExternalMcpServerInput,
-    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
+    ) -> Result<
+        (
+            gateway_core::Updated<ExternalMcpServerRecord>,
+            Vec<crate::RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         let existing = self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
@@ -295,7 +302,8 @@ where
             ));
         }
 
-        self.repo
+        let update = self
+            .repo
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
                 mcp_server_id,
                 display_name: validate_display_name(input.display_name)?,
@@ -312,8 +320,18 @@ where
                 expected_visibility: input.expected_visibility,
                 updated_at: OffsetDateTime::now_utc(),
             })
-            .await
-            .map_err(Into::into)
+            .await?;
+        Ok((
+            gateway_core::Updated {
+                current: update.current,
+                previous: update.previous,
+            },
+            update
+                .revoked_oauth_bindings
+                .into_iter()
+                .map(crate::mcp_credentials::redact_binding)
+                .collect(),
+        ))
     }
 
     /// Moves the server to `ownership`, which callers resolve with
@@ -973,7 +991,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+        ) -> Result<gateway_core::ExternalMcpServerUpdate, StoreError> {
             unimplemented!()
         }
 

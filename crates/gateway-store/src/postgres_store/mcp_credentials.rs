@@ -2,9 +2,11 @@ use super::mcp_registry::check_ownership_guard;
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 
-const CREDENTIAL_COLUMNS: &str = "credential_binding_id, mcp_server_id, owner_scope_kind, owner_scope_key, owner_user_id, owner_team_id, owner_service_account_id, material_kind, header_name, storage_kind, secret_ciphertext, secret_nonce, secret_key_id, secret_ref, expires_at, metadata_json::text, created_at, updated_at, last_used_at, revoked_at";
+pub(super) const CREDENTIAL_COLUMNS: &str = "credential_binding_id, mcp_server_id, owner_scope_kind, owner_scope_key, owner_user_id, owner_team_id, owner_service_account_id, material_kind, header_name, storage_kind, secret_ciphertext, secret_nonce, secret_key_id, secret_ref, expires_at, metadata_json::text, created_at, updated_at, last_used_at, revoked_at";
 
-fn decode_credential(row: &PgRow) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+pub(super) fn decode_credential(
+    row: &PgRow,
+) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
     let owner_scope_kind: String = row.try_get(2).map_err(to_query_error)?;
     let owner_user_id: Option<String> = row.try_get(4).map_err(to_query_error)?;
     let owner_team_id: Option<String> = row.try_get(5).map_err(to_query_error)?;

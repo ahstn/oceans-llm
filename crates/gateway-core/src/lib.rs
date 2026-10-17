@@ -68,7 +68,7 @@ pub use domain::{
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
     BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode,
     ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
-    ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
+    ExternalMcpServerStatus, ExternalMcpServerUpdate, ExternalMcpToolRecord, ExternalMcpTransport,
     FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,

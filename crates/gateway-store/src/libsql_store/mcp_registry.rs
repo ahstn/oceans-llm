@@ -5,8 +5,8 @@ use crate::shared::{
     stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
-    McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
-    TransferExternalMcpServerOwnershipRecord, Updated,
+    ExternalMcpServerUpdate, McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard,
+    McpServerVisibility, TransferExternalMcpServerOwnershipRecord, Updated,
 };
 
 fn decode_server(row: &libsql::Row) -> Result<ExternalMcpServerRecord, StoreError> {
@@ -185,6 +185,44 @@ async fn load_server(
 /// Checks `guard` inside a write transaction, which holds the write lock from
 /// its start, so the server cannot change before the caller commits. With
 /// `tool_id`, the tool must also belong to the guard's server.
+/// Refuses a narrowing to `team_id` while access would be stranded: one of
+/// the server's tools in an active tool set, or a grant held outside the team.
+/// Run inside the narrowing write, under its write lock.
+async fn refuse_stranded_access(
+    connection: &libsql::Connection,
+    mcp_server_id: Uuid,
+    team_id: Uuid,
+) -> Result<(), StoreError> {
+    let mut rows = connection
+        .query(
+            &active_toolset_for_server_sql("?1"),
+            [mcp_server_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    if let Some(row) = rows.next().await.map_err(to_query_error)? {
+        let toolset_key: String = row.get(0).map_err(to_query_error)?;
+        return Err(stranded_toolset(&toolset_key));
+    }
+    drop(rows);
+    let mut rows = connection
+        .query(
+            &grants_outside_team_sql("?1", "?2"),
+            [mcp_server_id.to_string(), team_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let outside: i64 = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => row.get(0).map_err(to_query_error)?,
+        None => 0,
+    };
+    drop(rows);
+    if outside > 0 {
+        return Err(stranded_grants(outside));
+    }
+    Ok(())
+}
+
 pub(super) async fn check_ownership_guard(
     connection: &libsql::Connection,
     guard: &McpServerOwnershipGuard,
@@ -457,7 +495,7 @@ impl McpRegistryRepository for LibsqlStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
+    ) -> Result<ExternalMcpServerUpdate, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
         // An immediate transaction holds the write lock, so the server read here is
         // exactly the one this update replaces.
@@ -508,9 +546,18 @@ impl McpRegistryRepository for LibsqlStore {
         }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
-            return Ok(Updated::unchanged(existing));
+            return Ok(ExternalMcpServerUpdate::unchanged(existing));
+        }
+        // Narrowing is checked here, in the same write as the settings, so a
+        // refused narrowing saves nothing and a saved one needs no undo.
+        if input.visibility == McpServerVisibility::Team
+            && existing.ownership.visibility != McpServerVisibility::Team
+            && let Some(team_id) = existing.ownership.owner_team_id
+        {
+            refuse_stranded_access(&tx, input.mcp_server_id, team_id).await?;
         }
         let invalidate_discovery = discovery_config_changed(&existing, input);
+        let mut revoked_oauth_bindings = Vec::new();
         tx.execute(
             r#"
             UPDATE external_mcp_servers
@@ -580,22 +627,32 @@ impl McpRegistryRepository for LibsqlStore {
             // Users' OAuth tokens were issued by the old endpoints. Revoke them,
             // so a refresh token is never posted to a token endpoint that did
             // not issue it; each user connects again.
-            tx.execute(
-                "UPDATE mcp_upstream_credential_bindings SET revoked_at = ?2, updated_at = ?2 WHERE mcp_server_id = ?1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL",
-                libsql::params![
-                    input.mcp_server_id.to_string(),
-                    input.updated_at.unix_timestamp()
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
+            // The revoked rows are returned so each revoke is audited.
+            let mut rows = tx
+                .query(
+                    &format!(
+                        "UPDATE mcp_upstream_credential_bindings SET revoked_at = ?2, updated_at = ?2 WHERE mcp_server_id = ?1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL RETURNING {}",
+                        super::mcp_credentials::CREDENTIAL_COLUMNS
+                    ),
+                    libsql::params![
+                        input.mcp_server_id.to_string(),
+                        input.updated_at.unix_timestamp()
+                    ],
+                )
+                .await
+                .map_err(to_write_error)?;
+            while let Some(row) = rows.next().await.map_err(to_write_error)? {
+                revoked_oauth_bindings.push(super::mcp_credentials::decode_credential(&row)?);
+            }
+            drop(rows);
         }
         // Read inside the transaction, so `current` is the row this update wrote.
         let current = load_server(&tx, input.mcp_server_id).await?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(Updated {
+        Ok(ExternalMcpServerUpdate {
             current,
             previous: Some(existing),
+            revoked_oauth_bindings,
         })
     }
 
@@ -694,33 +751,7 @@ impl McpRegistryRepository for LibsqlStore {
             && (existing.ownership.visibility != McpServerVisibility::Team
                 || existing.ownership.owner_team_id != Some(team_id))
         {
-            let mut rows = tx
-                .query(
-                    &active_toolset_for_server_sql("?1"),
-                    [input.mcp_server_id.to_string()],
-                )
-                .await
-                .map_err(to_query_error)?;
-            if let Some(row) = rows.next().await.map_err(to_query_error)? {
-                let toolset_key: String = row.get(0).map_err(to_query_error)?;
-                return Err(stranded_toolset(&toolset_key));
-            }
-            drop(rows);
-            let mut rows = tx
-                .query(
-                    &grants_outside_team_sql("?1", "?2"),
-                    [input.mcp_server_id.to_string(), team_id.to_string()],
-                )
-                .await
-                .map_err(to_query_error)?;
-            let outside: i64 = match rows.next().await.map_err(to_query_error)? {
-                Some(row) => row.get(0).map_err(to_query_error)?,
-                None => 0,
-            };
-            drop(rows);
-            if outside > 0 {
-                return Err(stranded_grants(outside));
-            }
+            refuse_stranded_access(&tx, input.mcp_server_id, team_id).await?;
         }
         tx.execute(
             r#"
@@ -753,15 +784,7 @@ impl McpRegistryRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                SELECT ts.toolset_key
-                FROM mcp_toolset_tools tst
-                JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
-                JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
-                WHERE t.mcp_server_id = ?1 AND ts.status = 'active'
-                ORDER BY ts.toolset_key
-                LIMIT 1
-                "#,
+                &active_toolset_for_server_sql("?1"),
                 [mcp_server_id.to_string()],
             )
             .await

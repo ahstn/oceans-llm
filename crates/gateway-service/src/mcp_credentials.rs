@@ -745,7 +745,9 @@ fn credential_secret_env_name(secret_ref: &str) -> Result<&str, GatewayError> {
     Ok(env_name)
 }
 
-fn redact_binding(binding: McpUpstreamCredentialBindingRecord) -> RedactedMcpCredentialBinding {
+pub(crate) fn redact_binding(
+    binding: McpUpstreamCredentialBindingRecord,
+) -> RedactedMcpCredentialBinding {
     let oauth_provider_key = binding
         .metadata
         .get("oauth_provider_key")

@@ -5,8 +5,8 @@ use crate::shared::{
     stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
-    McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard, McpServerVisibility,
-    TransferExternalMcpServerOwnershipRecord, Updated,
+    ExternalMcpServerUpdate, McpServerGuardRow, McpServerOwnership, McpServerOwnershipGuard,
+    McpServerVisibility, TransferExternalMcpServerOwnershipRecord, Updated,
 };
 
 macro_rules! server_columns {
@@ -201,6 +201,36 @@ async fn load_server(
 /// until the caller commits, so a transfer or narrowing waits for this write,
 /// and one that committed first is the row read here. With `tool_id`, the tool
 /// must also belong to the guard's server.
+/// Refuses a narrowing to `team_id` while access would be stranded: one of
+/// the server's tools in an active tool set, or a grant held outside the team.
+/// Run inside the narrowing write, with the server row locked `FOR UPDATE`: a
+/// grant write holds it `FOR SHARE` until it commits, so one in flight is
+/// counted here.
+async fn refuse_stranded_access(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    mcp_server_id: Uuid,
+    team_id: Uuid,
+) -> Result<(), StoreError> {
+    let toolset_key: Option<String> = sqlx::query_scalar(&active_toolset_for_server_sql("$1"))
+        .bind(mcp_server_id.to_string())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    if let Some(toolset_key) = toolset_key {
+        return Err(stranded_toolset(&toolset_key));
+    }
+    let outside: i64 = sqlx::query_scalar(&grants_outside_team_sql("$1", "$2"))
+        .bind(mcp_server_id.to_string())
+        .bind(team_id.to_string())
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    if outside > 0 {
+        return Err(stranded_grants(outside));
+    }
+    Ok(())
+}
+
 pub(super) async fn check_ownership_guard(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     guard: &McpServerOwnershipGuard,
@@ -418,7 +448,7 @@ impl McpRegistryRepository for PostgresStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<Updated<ExternalMcpServerRecord>, StoreError> {
+    ) -> Result<ExternalMcpServerUpdate, StoreError> {
         let auth_config_json = serialize_json(&input.auth_config)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         // Locking the row makes the server read here the one this update replaces.
@@ -474,9 +504,18 @@ impl McpRegistryRepository for PostgresStore {
         }
         if server_settings_match(&existing, input) {
             tx.commit().await.map_err(to_write_error)?;
-            return Ok(Updated::unchanged(existing));
+            return Ok(ExternalMcpServerUpdate::unchanged(existing));
+        }
+        // Narrowing is checked here, in the same write as the settings, so a
+        // refused narrowing saves nothing and a saved one needs no undo.
+        if input.visibility == McpServerVisibility::Team
+            && existing.ownership.visibility != McpServerVisibility::Team
+            && let Some(team_id) = existing.ownership.owner_team_id
+        {
+            refuse_stranded_access(&mut tx, input.mcp_server_id, team_id).await?;
         }
         let invalidate_discovery = discovery_config_changed(&existing, input);
+        let mut revoked_oauth_bindings = Vec::new();
         sqlx::query(
             r#"
             UPDATE external_mcp_servers
@@ -543,14 +582,19 @@ impl McpRegistryRepository for PostgresStore {
             // Users' OAuth tokens were issued by the old endpoints. Revoke them,
             // so a refresh token is never posted to a token endpoint that did
             // not issue it; each user connects again.
-            sqlx::query(
-                "UPDATE mcp_upstream_credential_bindings SET revoked_at = $2, updated_at = $2 WHERE mcp_server_id = $1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL",
-            )
+            // The revoked rows are returned so each revoke is audited.
+            revoked_oauth_bindings = sqlx::query(&format!(
+                "UPDATE mcp_upstream_credential_bindings SET revoked_at = $2, updated_at = $2 WHERE mcp_server_id = $1 AND material_kind = 'oauth_tokens' AND revoked_at IS NULL RETURNING {}",
+                super::mcp_credentials::CREDENTIAL_COLUMNS
+            ))
             .bind(input.mcp_server_id.to_string())
             .bind(input.updated_at.unix_timestamp())
-            .execute(&mut *tx)
+            .fetch_all(&mut *tx)
             .await
-            .map_err(to_write_error)?;
+            .map_err(to_write_error)?
+            .iter()
+            .map(super::mcp_credentials::decode_credential)
+            .collect::<Result<_, _>>()?;
         }
         // Read inside the transaction, so `current` is the row this update wrote.
         let current = sqlx::query(SERVER_SELECT_BY_ID)
@@ -560,9 +604,10 @@ impl McpRegistryRepository for PostgresStore {
             .map_err(to_query_error)
             .and_then(|row| decode_server(&row))?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(Updated {
+        Ok(ExternalMcpServerUpdate {
             current,
             previous: Some(existing),
+            revoked_oauth_bindings,
         })
     }
 
@@ -664,24 +709,7 @@ impl McpRegistryRepository for PostgresStore {
             && (existing.ownership.visibility != McpServerVisibility::Team
                 || existing.ownership.owner_team_id != Some(team_id))
         {
-            let toolset_key: Option<String> =
-                sqlx::query_scalar(&active_toolset_for_server_sql("$1"))
-                    .bind(input.mcp_server_id.to_string())
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(to_query_error)?;
-            if let Some(toolset_key) = toolset_key {
-                return Err(stranded_toolset(&toolset_key));
-            }
-            let outside: i64 = sqlx::query_scalar(&grants_outside_team_sql("$1", "$2"))
-                .bind(input.mcp_server_id.to_string())
-                .bind(team_id.to_string())
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(to_query_error)?;
-            if outside > 0 {
-                return Err(stranded_grants(outside));
-            }
+            refuse_stranded_access(&mut tx, input.mcp_server_id, team_id).await?;
         }
         let current = sqlx::query(&format!(
             r#"
@@ -711,21 +739,11 @@ impl McpRegistryRepository for PostgresStore {
         &self,
         mcp_server_id: Uuid,
     ) -> Result<Option<String>, StoreError> {
-        sqlx::query_scalar(
-            r#"
-            SELECT ts.toolset_key
-            FROM mcp_toolset_tools tst
-            JOIN mcp_toolsets ts ON ts.toolset_id = tst.toolset_id
-            JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id
-            WHERE t.mcp_server_id = $1 AND ts.status = 'active'
-            ORDER BY ts.toolset_key
-            LIMIT 1
-            "#,
-        )
-        .bind(mcp_server_id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(to_query_error)
+        sqlx::query_scalar(&active_toolset_for_server_sql("$1"))
+            .bind(mcp_server_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_query_error)
     }
 
     async fn count_mcp_tool_grants_outside_team(

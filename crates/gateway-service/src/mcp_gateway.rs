@@ -212,7 +212,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+        ) -> Result<gateway_core::ExternalMcpServerUpdate, StoreError> {
             unimplemented!()
         }
 

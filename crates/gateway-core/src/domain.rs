@@ -1839,6 +1839,9 @@ pub struct UpdateExternalMcpServerRecord {
     /// `None` keeps the contact the server has when the write runs, read under
     /// the write lock; `Some(None)` clears it.
     pub owner_contact: Option<Option<String>>,
+    /// A change to `team` is refused while access would be stranded, checked
+    /// in the same write exactly as a narrowing transfer is, so a server is
+    /// never left narrowed without the settings saved with it.
     pub visibility: McpServerVisibility,
     /// When set and the URL changes, the save fails with a conflict while the
     /// server holds a user-scoped, `secret_ref` or other team's credential,
@@ -1856,6 +1859,28 @@ pub struct UpdateExternalMcpServerRecord {
     /// same way, so a save cannot republish a server another request narrowed.
     pub expected_visibility: McpServerVisibility,
     pub updated_at: OffsetDateTime,
+}
+
+/// The outcome of [`UpdateExternalMcpServerRecord`]. `previous` is `None`
+/// when the save changed nothing.
+#[derive(Debug, Clone)]
+pub struct ExternalMcpServerUpdate {
+    pub current: ExternalMcpServerRecord,
+    pub previous: Option<ExternalMcpServerRecord>,
+    /// Users' OAuth bindings the save revoked because the endpoints that issued
+    /// them changed, as they stand after the revoke.
+    pub revoked_oauth_bindings: Vec<McpUpstreamCredentialBindingRecord>,
+}
+
+impl ExternalMcpServerUpdate {
+    #[must_use]
+    pub fn unchanged(current: ExternalMcpServerRecord) -> Self {
+        Self {
+            current,
+            previous: None,
+            revoked_oauth_bindings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

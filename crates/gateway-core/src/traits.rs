@@ -27,14 +27,15 @@ use crate::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
         BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
         CacheUsageAggregateRecord, ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord,
-        ExternalMcpToolRecord, FocusExportAggregateRecord, FocusExportDiagnosticsRecord,
-        GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
-        HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
-        McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-        McpGrantSubject, McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind,
-        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        ExternalMcpServerUpdate, ExternalMcpToolRecord, FocusExportAggregateRecord,
+        FocusExportDiagnosticsRecord, GatewayModel, GuardrailDecisionEventRecord,
+        GuardrailDecisionPage, GuardrailDecisionQuery, HarnessUsageBucketRecord,
+        HarnessUsageDailyRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject,
+        McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolProjection,
+        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
         McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
         ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
         NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
@@ -1103,7 +1104,7 @@ pub trait McpRegistryRepository: Send + Sync {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<crate::audit::Updated<ExternalMcpServerRecord>, StoreError>;
+    ) -> Result<ExternalMcpServerUpdate, StoreError>;
 
     /// Disables the server. The flag is `false` when it was already disabled,
     /// in which case nothing is written.

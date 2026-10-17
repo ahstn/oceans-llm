@@ -1920,3 +1920,83 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
     let (_, body) = direct_preview().await;
     assert_eq!(body["data"]["tools"], json!([]), "{body}");
 }
+
+#[tokio::test]
+async fn settings_changes_audit_each_oauth_connection_they_end() {
+    use gateway_core::{
+        McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+        McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind,
+        UpsertMcpUpstreamCredentialBindingRecord,
+    };
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "connected",
+            context.team_owned(context.team_a, McpServerVisibility::Organisation),
+        )
+        .await;
+    let user_id = context.member(context.team_a).await;
+    let (binding, _) = context
+        .state
+        .store
+        .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+            credential_binding_id: None,
+            mcp_server_id: server.id,
+            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+            owner_scope_key: format!("mcp_credential:v1:user:{user_id}"),
+            owner_user_id: Some(user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            material_kind: McpUpstreamCredentialMaterialKind::OauthTokens,
+            header_name: None,
+            storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+            secret_ciphertext: Some("ciphertext".to_string()),
+            secret_nonce: Some("nonce".to_string()),
+            secret_key_id: Some("key".to_string()),
+            secret_ref: None,
+            expires_at: None,
+            metadata: Map::new(),
+            updated_at: OffsetDateTime::now_utc(),
+            expected_server: None,
+            expected_replaced: None,
+        })
+        .await
+        .unwrap();
+    let admin = context.platform_admin().await;
+
+    // A grant outside the team strands a narrowing, so the save is refused and
+    // none of its settings are written.
+    let outsider = context.member(context.team_b).await;
+    let (status, body) = context
+        .grant(&admin, "user", outsider, "tool", server.tool_id)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = context
+        .update(&admin, server.id, json!({ "visibility": "team" }))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let unchanged = context
+        .state
+        .store
+        .get_external_mcp_server(server.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        unchanged.ownership.visibility,
+        McpServerVisibility::Organisation
+    );
+    assert_eq!(unchanged.display_name, "connected");
+
+    // The URL changes, so the user's tokens are revoked, and that is audited.
+    let (status, body) = context.update(&admin, server.id, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let entry = context.last_audit("mcp_credential_binding.revoked").await;
+    assert_eq!(
+        entry.target_id,
+        Some(binding.credential_binding_id.to_string())
+    );
+    assert_eq!(entry.metadata["operation"], "server_settings_changed");
+    assert!(entry.before.unwrap()["revoked_at"].is_null());
+    assert!(!entry.after.unwrap()["revoked_at"].is_null());
+}

@@ -1073,20 +1073,33 @@ mod stream_reach {
 
     use axum::body::to_bytes;
     use gateway_core::{
-        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode, ExternalMcpAuthMode,
-        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpTransport,
-        GlobalRole, McpAccessRepository, McpRegistryRepository, McpServerOwnership,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, MembershipRole,
-        NewExternalMcpServerRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-        UserStatus,
+        AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode,
+        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+        ExternalMcpTransport, GlobalRole, McpAccessRepository, McpRegistryRepository,
+        McpServerOwnership, McpServerVisibility, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        MembershipRole, NewApiKeyRecord, NewExternalMcpServerRecord, SCOPE_MCP_PROXY,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord, UserStatus,
     };
     use gateway_store::GatewayStore;
 
+    use super::super::methods::{StreamCaller, StreamCredential, end_when_reach_ends};
     use super::*;
 
-    #[tokio::test]
-    async fn team_only_streams_end_when_the_member_leaves_the_team() {
-        let (_directory, state) = crate::http::test_support::app_state().await;
+    const STREAMER_KEY: &str = "gwk_streamer.stream-secret";
+
+    struct Seeded {
+        state: AppState,
+        _directory: tempfile::TempDir,
+        team_id: Uuid,
+        user_id: Uuid,
+        api_key_id: Uuid,
+        caller: StreamCaller,
+    }
+
+    /// A team member with an API key and a grant on one tool of a server their
+    /// team owns, published with `visibility`.
+    async fn seed(visibility: McpServerVisibility) -> Seeded {
+        let (directory, state) = crate::http::test_support::app_state().await;
         let store = &state.store;
         let now = OffsetDateTime::now_utc();
         let team = store
@@ -1108,9 +1121,27 @@ mod stream_reach {
             .assign_team_membership(user.user_id, team.team_id, MembershipRole::Member)
             .await
             .unwrap();
+        let key = store
+            .create_api_key(&NewApiKeyRecord {
+                name: "Streamer".to_string(),
+                public_id: "streamer".to_string(),
+                secret_hash: gateway_core::hash_gateway_key_secret("stream-secret").unwrap(),
+                model_grant_mode: ApiKeyModelGrantMode::All,
+                owner_kind: ApiKeyOwnerKind::User,
+                owner_user_id: Some(user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                access: Default::default(),
+                created_at: now,
+            })
+            .await
+            .unwrap();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
-                ownership: McpServerOwnership::team(team.team_id, None),
+                ownership: McpServerOwnership {
+                    visibility,
+                    ..McpServerOwnership::team(team.team_id, None)
+                },
                 server_key: "team-stream".to_string(),
                 display_name: "Team stream".to_string(),
                 description: None,
@@ -1162,41 +1193,91 @@ mod stream_reach {
             })
             .await
             .unwrap();
-        let auth = AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "streamer".to_string(),
-            name: "Streamer".to_string(),
-            model_grant_mode: ApiKeyModelGrantMode::All,
-            owner_kind: ApiKeyOwnerKind::User,
-            owner_user_id: Some(user.user_id),
-            owner_team_id: None,
-            owner_service_account_id: None,
-            access: Default::default(),
-            oauth: None,
-        };
-        // An upstream event stream that never ends on its own.
+        let auth = state
+            .service
+            .authenticate_bearer_token_for_scope(STREAMER_KEY, SCOPE_MCP_PROXY)
+            .await
+            .unwrap();
+        Seeded {
+            state,
+            _directory: directory,
+            team_id: team.team_id,
+            user_id: user.user_id,
+            api_key_id: key.id,
+            caller: StreamCaller {
+                auth,
+                credential: StreamCredential::ApiKey(STREAMER_KEY.to_string()),
+                server_key: "team-stream".to_string(),
+                mcp_server_id: server.mcp_server_id,
+            },
+        }
+    }
+
+    /// Opens an upstream event stream that never ends on its own, rechecked
+    /// every 50ms, and returns the task reading it.
+    fn open(
+        state: &AppState,
+        caller: StreamCaller,
+    ) -> tokio::task::JoinHandle<Result<Bytes, axum::Error>> {
         let upstream = Response::new(Body::from_stream(futures_util::stream::pending::<
             Result<Bytes, std::io::Error>,
         >()));
-        let response = super::methods::end_when_reach_ends(
-            state.clone(),
-            auth,
-            server.mcp_server_id,
-            upstream,
-            Duration::from_millis(50),
-        );
-        let reading = tokio::spawn(to_bytes(response.into_body(), usize::MAX));
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        assert!(!reading.is_finished(), "a member's stream stays open");
+        let response =
+            end_when_reach_ends(state.clone(), caller, upstream, Duration::from_millis(50));
+        tokio::spawn(to_bytes(response.into_body(), usize::MAX))
+    }
 
-        store
-            .remove_team_membership(team.team_id, user.user_id)
-            .await
-            .unwrap();
+    async fn assert_ends(reading: tokio::task::JoinHandle<Result<Bytes, axum::Error>>) {
         let ended = tokio::time::timeout(Duration::from_secs(5), reading).await;
         assert!(
             ended.is_ok(),
-            "the stream ends once its team no longer reaches it"
+            "the stream ends once its caller is no longer reached"
         );
+    }
+
+    #[tokio::test]
+    async fn team_only_streams_end_when_the_member_leaves_the_team() {
+        let seeded = seed(McpServerVisibility::Team).await;
+        let reading = open(&seeded.state, seeded.caller);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!reading.is_finished(), "a member's stream stays open");
+
+        seeded
+            .state
+            .store
+            .remove_team_membership(seeded.team_id, seeded.user_id)
+            .await
+            .unwrap();
+        assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn organisation_streams_end_when_their_api_key_is_revoked() {
+        let seeded = seed(McpServerVisibility::Organisation).await;
+        let reading = open(&seeded.state, seeded.caller);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!reading.is_finished(), "a live key's stream stays open");
+
+        // The grant survives, so only re-authenticating the key notices.
+        seeded
+            .state
+            .store
+            .revoke_api_key(seeded.api_key_id, OffsetDateTime::now_utc())
+            .await
+            .unwrap();
+        assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn streams_without_a_known_credential_end_at_the_first_recheck() {
+        let seeded = seed(McpServerVisibility::Organisation).await;
+        let reading = open(
+            &seeded.state,
+            StreamCaller {
+                credential: StreamCredential::Unknown,
+                ..seeded.caller
+            },
+        );
+        assert_ends(reading).await;
     }
 }

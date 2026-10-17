@@ -95,7 +95,9 @@ mcp:
 A team admin can always unpublish their own server. Narrowing a server to `team`,
 or moving a team-only server to another team, fails with `409` while one of its
 tools is in an active tool set or granted to a subject outside the new owning team. Revoke
-those first. Adding a team-only server's tools to a tool set also fails with `409`.
+those first. A disabled server's tool sets and grants reach no one, so they never
+block a narrowing. An unpublish saved with other settings is one write: when it
+is refused, none of the other settings are saved either. Adding a team-only server's tools to a tool set also fails with `409`.
 A grant or credential binding saved while its server changes owner or visibility
 fails with `409` and writes nothing; reload the server and try again.
 
