@@ -1,0 +1,55 @@
+crates/gateway-core/src/domain.rs
+  s_7a5811202bdfd5::t_9f2ddf493f88a8 1842-1844,1864-1885
+crates/gateway-core/src/lib.rs
+  s_7a5811202bdfd5::t_f7e56f1051e6d3 71
+crates/gateway-core/src/traits.rs
+  s_7a5811202bdfd5::t_8cb55edfb24e27 30-38,1107
+crates/gateway-service/src/mcp_credentials.rs
+  s_7a5811202bdfd5::t_070cfd94c543f6 748-750
+crates/gateway-service/src/mcp_gateway.rs
+  s_7a5811202bdfd5::t_fe41c285d04b4d 215
+crates/gateway-service/src/mcp_registry.rs
+  s_7a5811202bdfd5::t_c69c779247cda0 274-275,280-286,305-306,323-334,994
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_7a5811202bdfd5::t_66c0ed58a2daf6 106
+crates/gateway-store/src/libsql_store/mcp_credentials.rs
+  s_7a5811202bdfd5::t_9782ab6fe6e764 5,7-9
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_4c3267ccf9dd17 8-9,188-225,498,549-557,560,630-647,652,655,754,787
+crates/gateway-store/src/postgres_store/mcp_credentials.rs
+  s_7a5811202bdfd5::t_9f92ad99be8757 5,7-9
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_22029e64b2f209 8-9,204-233,451,507-515,518,585-589,592,594-597,607,610,712,742-746
+crates/gateway-store/src/shared.rs
+  s_7a5811202bdfd5::t_1c5b0f8e20044c 119-121,124
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_7a5811202bdfd5::t_8cc011c116c402 195-208,210-215,218-219,223-279,282,293,297-298
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_7a5811202bdfd5::t_c0fc68d38c0f49 1076-1081,1085,1088-1102,1124-1138,1141-1144,1196-1221,1225-1234,1236-1241,1245-1248,1251-1279,1281
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_dc3d0411105889 298-301,316,322-324,327,333,346-371,526-529,573-577,580-584,606-614
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_2057664f4bfc7e 1923-2002
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_6f427eace623cf 44,104,109
+docs/configuration/mcp-servers.md
+  s_7a5811202bdfd5::t_bc3af76e74ace2 98-100
+docs/mcp/mcp-tool-access.md
+  s_7a5811202bdfd5::t_9b04af3f48449a 132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b1753e7e5c6407a102ddd6d1a0dfc9b9a042a9c",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
