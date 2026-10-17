@@ -703,7 +703,8 @@ mod proxy_policy {
             .expect("enable approval");
 
         // The upstream now declares metadata the gateway has not approved; the
-        // approved definition is served instead.
+        // approved definition is served instead. `_meta` is not versioned, so
+        // it passes through.
         let (status, body) = send(
             &state,
             &auth,
@@ -714,7 +715,11 @@ mod proxy_policy {
         let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
         assert_eq!(
             body["result"]["tools"],
-            json!([{"name": "search", "inputSchema": {"type": "object"}}])
+            json!([{
+                "name": "search",
+                "inputSchema": {"type": "object"},
+                "_meta": {"origin": "upstream"},
+            }])
         );
 
         let call = json!({

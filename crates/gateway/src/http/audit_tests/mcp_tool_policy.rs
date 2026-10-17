@@ -473,6 +473,43 @@ async fn previews_match_runtime_resolution() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 
+    // A key previews until it is revoked; a revoked key cannot
+    // authenticate, so it has no access to preview.
+    let (status, created) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/api-keys",
+            Some(json!({
+                "name": "admin key",
+                "owner_kind": "user",
+                "owner_user_id": harness.admin_id.to_string(),
+                "owner_team_id": null,
+                "owner_service_account_id": null,
+                "model_grant_mode": "all",
+                "model_keys": [],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let api_key_id = created["data"]["api_key"]["id"]
+        .as_str()
+        .expect("api key id")
+        .to_string();
+    let key_preview =
+        format!("/api/v1/admin/mcp/effective-access?api_key_id={api_key_id}&server_id={server_id}");
+    let (status, access) = harness.admin(Method::GET, &key_preview, None).await;
+    assert_eq!(status, StatusCode::OK, "{access}");
+    let (status, body) = harness
+        .admin(
+            Method::POST,
+            &format!("/api/v1/admin/api-keys/{api_key_id}/revoke"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = harness.admin(Method::GET, &key_preview, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
     // `read_file` declares readOnlyHint false, so it is destructive.
     let (status, body) = harness
         .admin(

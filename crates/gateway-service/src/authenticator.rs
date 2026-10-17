@@ -5,9 +5,8 @@ use argon2::{
     password_hash::{PasswordHash, PasswordVerifier},
 };
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey,
-    BudgetRepository, BudgetScope, GatewayError, ServiceAccountStatus, extract_bearer_token,
-    parse_gateway_api_key,
+    ApiKeyOwnerKind, ApiKeyRepository, AuthError, AuthenticatedApiKey, BudgetRepository,
+    BudgetScope, GatewayError, ServiceAccountStatus, extract_bearer_token, parse_gateway_api_key,
 };
 
 #[derive(Clone)]
@@ -50,7 +49,7 @@ where
             .await?
             .ok_or(AuthError::ApiKeyNotFound)?;
 
-        if record.status != ApiKeyStatus::Active || record.revoked_at.is_some() {
+        if !record.is_active() {
             return Err(AuthError::ApiKeyRevoked.into());
         }
 
@@ -104,18 +103,7 @@ where
 
         self.repo.touch_api_key_last_used(record.id).await?;
 
-        Ok(AuthenticatedApiKey {
-            id: record.id,
-            public_id: record.public_id,
-            name: record.name,
-            model_grant_mode: record.model_grant_mode,
-            owner_kind: record.owner_kind,
-            owner_user_id: record.owner_user_id,
-            owner_team_id: record.owner_team_id,
-            owner_service_account_id: record.owner_service_account_id,
-            access: record.access,
-            oauth: None,
-        })
+        Ok(AuthenticatedApiKey::from(record))
     }
 }
 

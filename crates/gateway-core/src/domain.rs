@@ -499,6 +499,14 @@ pub struct ApiKeyRecord {
     pub revoked_at: Option<OffsetDateTime>,
 }
 
+impl ApiKeyRecord {
+    /// Whether the key can still authenticate: active and not revoked.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.status == ApiKeyStatus::Active && self.revoked_at.is_none()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewApiKeyRecord {
     pub name: String,
@@ -2054,8 +2062,9 @@ pub struct UpsertMcpToolGrantRecord {
 /// Which tool columns an access resolution loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpToolProjection {
-    /// Identity, schema and lifecycle columns. `metadata` is left empty because
-    /// authorization only needs to know which tools are granted.
+    /// Identity, schema and lifecycle columns, plus the annotations and admin
+    /// policy that tag rules are evaluated from. The title and output schema
+    /// are left out, because authorization does not read them.
     Access,
     /// Also loads the title, annotations and output schema.
     Full,

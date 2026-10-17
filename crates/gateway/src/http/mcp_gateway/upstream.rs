@@ -198,6 +198,30 @@ fn apply_annotation_overrides(tool: &mut Value, overrides: &Map<String, Value>) 
     }
 }
 
+/// The tool members the gateway versions and approves. A stored definition
+/// owns them; any other member the upstream sends passes through.
+const VERSIONED_TOOL_MEMBERS: [&str; 6] = [
+    "name",
+    "title",
+    "description",
+    "inputSchema",
+    "outputSchema",
+    "annotations",
+];
+
+/// Serves the stored approved definition for the versioned members and keeps
+/// the upstream's other members, such as `icons`, `_meta` and `execution`.
+fn serve_stored_definition(tool: &mut Value, definition: &Map<String, Value>) {
+    let Some(object) = tool.as_object_mut() else {
+        *tool = Value::Object(definition.clone());
+        return;
+    };
+    for member in VERSIONED_TOOL_MEMBERS {
+        object.remove(member);
+    }
+    object.extend(definition.clone());
+}
+
 fn is_event_stream(headers: &HeaderMap) -> bool {
     headers
         .get(CONTENT_TYPE)
@@ -373,7 +397,7 @@ fn filter_tools_array(
             .and_then(|name| granted.get(name));
         if let Some(view) = view {
             match &view.definition {
-                Some(definition) => *tool = Value::Object(definition.clone()),
+                Some(definition) => serve_stored_definition(tool, definition),
                 None => apply_annotation_overrides(tool, &view.annotation_overrides),
             }
         }

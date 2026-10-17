@@ -117,7 +117,7 @@ Turning the setting off does not approve anything on its own. The next discovery
 
 **Served** means `approval_status` is `approved` or `pending_change`. Every resolution query filters on it next to `is_active`, so pending and rejected tools are excluded from explicit grants, toolset grants and tag-rule matches alike (question 2). They cannot be matched by an include rule before review.
 
-For servers with approval on, direct `tools/list` replaces each granted tool's object with the stored approved definition (with effective annotations). Discovery runs only when an admin refreshes, so the live upstream list could otherwise show a changed description before anyone reviewed it. Servers without approval keep the upstream objects, as before, except for a tool whose change still waits or was withheld: after approval is turned off, that tool keeps its stored definition until the next discovery approves what the upstream serves.
+For servers with approval on, direct `tools/list` serves each granted tool's versioned members (name, title, description, input and output schema, and effective annotations) from the stored approved definition. Members the gateway does not version, such as `icons`, `_meta` and `execution`, pass through from the upstream. Discovery runs only when an admin refreshes, so the live upstream list could otherwise show a changed description before anyone reviewed it. Servers without approval keep the upstream objects, as before, except for a tool whose change still waits or was withheld: after approval is turned off, that tool keeps its stored definition until the next discovery approves what the upstream serves.
 
 ### 7. Invocation log (#444)
 

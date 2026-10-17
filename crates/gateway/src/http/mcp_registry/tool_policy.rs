@@ -385,7 +385,8 @@ pub async fn preview_mcp_tag_rule(
     headers: HeaderMap,
     Query(query): Query<McpTagRulePreviewQuery>,
 ) -> Result<Json<Envelope<McpTagRulePreviewPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    // Whoever may save a rule for this server may preview it.
+    require_mcp_policy_admin(&state, &headers, query.server_id).await?;
     let effect = parse_effect(&query.effect)?;
     let preview = McpToolPolicyService::new(state.store.clone())
         .preview_rule(query.server_id, &query.tag, effect)

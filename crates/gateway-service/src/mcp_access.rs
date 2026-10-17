@@ -114,18 +114,14 @@ where
             match subject.subject_kind {
                 McpToolGrantSubjectKind::ApiKey => {
                     if let Some(key) = self.repo.get_api_key_by_id(subject.subject_id).await? {
-                        let auth = AuthenticatedApiKey {
-                            id: key.id,
-                            public_id: key.public_id,
-                            name: key.name,
-                            model_grant_mode: key.model_grant_mode,
-                            owner_kind: key.owner_kind,
-                            owner_user_id: key.owner_user_id,
-                            owner_team_id: key.owner_team_id,
-                            owner_service_account_id: key.owner_service_account_id,
-                            access: key.access,
-                            oauth: None,
-                        };
+                        // A revoked key cannot authenticate, so it has no
+                        // access to preview.
+                        if !key.is_active() {
+                            return Err(GatewayError::InvalidRequest(
+                                "the API key is revoked, so it has no MCP access".to_string(),
+                            ));
+                        }
+                        let auth = AuthenticatedApiKey::from(key);
                         key_access.push(auth.access.clone());
                         for owned in self.grant_subjects(&auth).await? {
                             push_subject(
