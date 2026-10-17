@@ -474,7 +474,9 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/{invite.$token,account-ready,change-password}.tsx",
-        "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts}",
+        "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts,-user-form-fields.tsx}",
+        "crates/admin-ui/web/src/routes/identity/{-create-user-dialog.tsx,-use-create-user.ts,-onboarding-result.tsx}",
+        "crates/admin-ui/web/src/routes/identity/{-use-onboarding-reset.ts,-user-auth-section.tsx}",
         "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
         "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",

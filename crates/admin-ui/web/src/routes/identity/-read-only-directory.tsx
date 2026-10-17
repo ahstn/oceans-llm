@@ -1,14 +1,8 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
+import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { IdentityDirectoryTeamView, IdentityDirectoryUserView } from '@/types/api'
-
-/** Active is success, invited is warning, anything else (disabled) is neutral. Never the action colour. */
-function statusBadgeVariant(status: string): 'success' | 'warning' | 'secondary' {
-  if (status === 'active') return 'success'
-  if (status === 'invited') return 'warning'
-  return 'secondary'
-}
 
 export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUserView[] }) {
   return (
