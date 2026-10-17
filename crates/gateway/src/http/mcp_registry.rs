@@ -1519,16 +1519,26 @@ pub async fn preview_mcp_effective_access(
             }
         }
     }
-    let mut resolution = state
-        .store
-        .resolve_mcp_access_for_subjects(&subjects, query.server_id, McpToolProjection::Full)
-        .await?;
+    // Each subject is resolved on its own, so a key's or service account's
+    // restrictions apply only to the tools that subject contributes, and a
+    // revoked key never hides what a user or team in the same preview holds.
+    let mut parts = Vec::with_capacity(subjects.len());
+    for subject in &subjects {
+        let resolution = state
+            .store
+            .resolve_mcp_access_for_subjects(
+                std::slice::from_ref(subject),
+                query.server_id,
+                McpToolProjection::Full,
+            )
+            .await?;
+        parts.push((subject.subject_kind, resolution));
+    }
     // The servers the resolved tools are on, read once by ID for both checks
     // below, rather than the whole registry.
-    let referenced: Vec<Uuid> = resolution
-        .allowed_tools
+    let referenced: Vec<Uuid> = parts
         .iter()
-        .map(|tool| tool.mcp_server_id)
+        .flat_map(|(_, part)| part.allowed_tools.iter().map(|tool| tool.mcp_server_id))
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -1539,17 +1549,46 @@ pub async fn preview_mcp_effective_access(
         .into_iter()
         .map(|server| (server.mcp_server_id, server))
         .collect();
-    if let Some(api_key_id) = query.api_key_id {
-        limit_to_api_key_access(&state, api_key_id, &servers, &mut resolution).await?;
-    } else if let Some(service_account_id) = query.service_account_id
-        && !service_account_can_authenticate(&state, service_account_id, None).await?
-    {
-        // A service account acts only through its keys, which runtime refuses
-        // while it is disabled or has no active budget.
-        resolution.allowed_tools.clear();
-        resolution.referenced_server_count = 0;
-        resolution.filtered_tool_count = resolution.exposed_tool_count;
+    for (kind, part) in &mut parts {
+        match kind {
+            McpToolGrantSubjectKind::ApiKey => {
+                if let Some(api_key_id) = query.api_key_id {
+                    limit_to_api_key_access(&state, api_key_id, &servers, part).await?;
+                }
+            }
+            McpToolGrantSubjectKind::ServiceAccount => {
+                // A service account acts only through its keys, which runtime
+                // refuses while it is disabled or has no active budget.
+                if let Some(service_account_id) = query.service_account_id
+                    && !service_account_can_authenticate(&state, service_account_id, None).await?
+                {
+                    part.allowed_tools.clear();
+                }
+            }
+            McpToolGrantSubjectKind::User | McpToolGrantSubjectKind::Team => {}
+        }
     }
+    let exposed_tool_count = parts.first().map_or(0, |(_, part)| part.exposed_tool_count);
+    let mut tools: std::collections::BTreeMap<(Uuid, String), gateway_core::ExternalMcpToolRecord> =
+        std::collections::BTreeMap::new();
+    for (_, part) in parts {
+        for tool in part.allowed_tools {
+            tools
+                .entry((tool.mcp_server_id, tool.upstream_name.clone()))
+                .or_insert(tool);
+        }
+    }
+    let allowed_tools: Vec<_> = tools.into_values().collect();
+    let mut resolution = gateway_core::McpAccessResolution {
+        referenced_server_count: allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64,
+        filtered_tool_count: exposed_tool_count.saturating_sub(allowed_tools.len() as i64),
+        exposed_tool_count,
+        allowed_tools,
+    };
     // As at runtime, a team-only server's tools count only for its own team.
     let caller_team = preview_caller_team(&state, &query).await?;
     let hidden = servers
@@ -1869,8 +1908,21 @@ async fn list_member_servers(
     } else {
         std::collections::HashMap::new()
     };
+    // Checked again after the last read, against each server as it is now: a
+    // server narrowed or moved away from the member's team in between must not
+    // be listed.
+    let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
+    let still_reached: std::collections::HashSet<Uuid> = state
+        .store
+        .list_external_mcp_servers_by_ids(&ids)
+        .await?
+        .into_iter()
+        .filter(|server| server.ownership.is_reachable_from(team_id))
+        .map(|server| server.mcp_server_id)
+        .collect();
     let items = servers
         .into_iter()
+        .filter(|server| still_reached.contains(&server.mcp_server_id))
         .map(|server| {
             let name = server
                 .ownership

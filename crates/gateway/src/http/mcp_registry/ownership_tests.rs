@@ -2120,3 +2120,58 @@ async fn a_caller_chosen_credential_id_is_created_once() {
     let entry = context.last_audit("mcp_credential_binding.set").await;
     assert_eq!(entry.metadata["operation"], "replace");
 }
+
+#[tokio::test]
+async fn a_revoked_key_hides_only_its_own_tools_in_a_combined_preview() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "combined",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let member = context.member(context.team_a).await;
+    let key = context.user_api_key(member).await;
+    for (kind, subject) in [("user", member), ("api_key", key)] {
+        let (status, body) = context
+            .grant(&admin, kind, subject, "tool", server.tool_id)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    gateway_core::AdminApiKeyRepository::revoke_api_key(
+        &*context.state.store,
+        key,
+        OffsetDateTime::now_utc(),
+    )
+    .await
+    .unwrap();
+    let preview = |query: Value| {
+        let headers = admin.headers.clone();
+        let state = context.state.clone();
+        async move {
+            read(
+                preview_mcp_effective_access(
+                    State(state),
+                    headers,
+                    Query(serde_json::from_value(query).unwrap()),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    let tools = |body: &Value| body["data"]["tools"].as_array().map(Vec::len);
+    let (status, body) = preview(json!({ "api_key_id": key, "server_id": server.id })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(tools(&body), Some(0), "a revoked key reaches nothing");
+    // The member's own grant still counts beside the revoked key.
+    let (status, body) = preview(json!({
+        "api_key_id": key,
+        "user_id": member,
+        "server_id": server.id,
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(tools(&body), Some(1), "{body}");
+}
