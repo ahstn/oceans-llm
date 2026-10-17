@@ -70,6 +70,16 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn list_mcp_server_ownerships(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, gateway_core::McpServerOwnership)>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_mcp_server_ownerships(mcp_server_ids).await,
+            Self::Postgres(store) => store.list_mcp_server_ownerships(mcp_server_ids).await,
+        }
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,

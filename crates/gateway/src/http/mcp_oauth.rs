@@ -217,11 +217,11 @@ pub async fn list_mcp_oauth_connections(
         let ids: Vec<Uuid> = listed_for_reach.iter().copied().collect();
         let still_reached: std::collections::HashSet<Uuid> = state
             .store
-            .list_external_mcp_servers_by_ids(&ids)
+            .list_mcp_server_ownerships(&ids)
             .await?
             .into_iter()
-            .filter(|server| user_can_reach(current_team, server))
-            .map(|server| server.mcp_server_id)
+            .filter(|(_, ownership)| ownership.is_reachable_from(current_team))
+            .map(|(mcp_server_id, _)| mcp_server_id)
             .collect();
         items.retain(|item: &McpOauthConnectionView| {
             !listed_for_reach.contains(&item.server_id) || still_reached.contains(&item.server_id)

@@ -423,6 +423,38 @@ impl McpRegistryRepository for LibsqlStore {
         Ok(servers)
     }
 
+    async fn list_mcp_server_ownerships(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, McpServerOwnership)>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serialize_json(
+            &mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )?;
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id, owner_team_id, owner_contact, visibility FROM external_mcp_servers WHERE mcp_server_id IN (SELECT value FROM json_each(?1))",
+                [ids],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut ownerships = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let mcp_server_id: String = row.get(0).map_err(to_query_error)?;
+            ownerships.push((
+                parse_uuid(&mcp_server_id)?,
+                decode_server_ownership(&row, 1)?,
+            ));
+        }
+        Ok(ownerships)
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,

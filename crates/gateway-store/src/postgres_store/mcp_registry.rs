@@ -382,6 +382,36 @@ impl McpRegistryRepository for PostgresStore {
         rows.iter().map(decode_server).collect()
     }
 
+    async fn list_mcp_server_ownerships(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, McpServerOwnership)>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            "SELECT mcp_server_id, owner_team_id, owner_contact, visibility FROM external_mcp_servers WHERE mcp_server_id = ANY($1)",
+        )
+        .bind(
+            mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter()
+            .map(|row| {
+                let mcp_server_id: String = row.try_get(0).map_err(to_query_error)?;
+                Ok((
+                    parse_uuid(&mcp_server_id)?,
+                    decode_server_ownership(row, 1)?,
+                ))
+            })
+            .collect()
+    }
+
     async fn get_external_mcp_server(
         &self,
         mcp_server_id: Uuid,

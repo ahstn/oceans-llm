@@ -2191,6 +2191,26 @@ pub(crate) mod tests {
                 .expect("server");
             servers.push(server);
         }
+        // The ownership-only read matches the full records.
+        let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
+        let mut ownerships = store
+            .list_mcp_server_ownerships(&ids)
+            .await
+            .expect("ownerships");
+        ownerships.sort_by_key(|(mcp_server_id, _)| *mcp_server_id);
+        let mut expected: Vec<_> = servers
+            .iter()
+            .map(|server| (server.mcp_server_id, server.ownership.clone()))
+            .collect();
+        expected.sort_by_key(|(mcp_server_id, _)| *mcp_server_id);
+        assert_eq!(ownerships, expected);
+        assert!(
+            store
+                .list_mcp_server_ownerships(&[])
+                .await
+                .expect("no IDs")
+                .is_empty()
+        );
         // A team admin's registry lists each server it reaches exactly once,
         // in key order: the team's own published server is in both branches
         // of the query.

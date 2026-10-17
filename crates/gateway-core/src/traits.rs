@@ -1090,6 +1090,20 @@ pub trait McpRegistryRepository: Send + Sync {
         Ok(servers)
     }
 
+    /// The current ownership of the servers with these IDs, reading only those
+    /// columns: for a recheck that compares it with an earlier, full read.
+    async fn list_mcp_server_ownerships(
+        &self,
+        mcp_server_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, crate::domain::McpServerOwnership)>, StoreError> {
+        Ok(self
+            .list_external_mcp_servers_by_ids(mcp_server_ids)
+            .await?
+            .into_iter()
+            .map(|server| (server.mcp_server_id, server.ownership))
+            .collect())
+    }
+
     async fn get_external_mcp_server_by_key(
         &self,
         server_key: &str,

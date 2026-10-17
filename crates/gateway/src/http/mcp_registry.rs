@@ -140,13 +140,14 @@ pub async fn list_mcp_servers(
         }
         // The view of each server follows its owner as read, so a transfer in
         // between must not leave its former team's admin the full settings.
+        // Only the ownership columns are read again.
         let ids: Vec<Uuid> = owners.keys().copied().collect();
         let unchanged = state
             .store
-            .list_external_mcp_servers_by_ids(&ids)
+            .list_mcp_server_ownerships(&ids)
             .await?
             .iter()
-            .all(|server| owners.get(&server.mcp_server_id) == Some(&server.ownership));
+            .all(|(mcp_server_id, ownership)| owners.get(mcp_server_id) == Some(ownership));
         if unchanged {
             return Ok(listed);
         }
@@ -1915,11 +1916,11 @@ async fn list_member_servers(
     let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
     let still_reached: std::collections::HashSet<Uuid> = state
         .store
-        .list_external_mcp_servers_by_ids(&ids)
+        .list_mcp_server_ownerships(&ids)
         .await?
         .into_iter()
-        .filter(|server| server.ownership.is_reachable_from(team_id))
-        .map(|server| server.mcp_server_id)
+        .filter(|(_, ownership)| ownership.is_reachable_from(team_id))
+        .map(|(mcp_server_id, _)| mcp_server_id)
         .collect();
     let items = servers
         .into_iter()
