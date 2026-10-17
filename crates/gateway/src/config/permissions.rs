@@ -241,6 +241,9 @@ const ADMIN_PAGE_ORDER: &[AdminPage] = &[
 const SHARED_PAGES: &[AdminPage] = &[
     AdminPage::ApiKeys,
     AdminPage::Models,
+    // Every user sees the MCP servers they can connect to; team owners and
+    // admins also manage their team's servers.
+    AdminPage::Mcp,
     AdminPage::UsageCosts,
     AdminPage::Leaderboard,
     AdminPage::AgentHarnesses,
@@ -269,12 +272,9 @@ const TEAM_ADMIN_PAGES: &[AdminPage] = &[
 
 const DEFAULT_USER_PAGES: &[AdminPage] = SHARED_PAGES;
 // Team admins see Spend Controls limited to their own team's users and service
-// accounts, and MCP limited to their team's servers and the published catalog.
-const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] = &[
-    AdminPage::Mcp,
-    AdminPage::SpendControls,
-    AdminPage::AgentSessions,
-];
+// accounts. They inherit MCP from the user pages, scoped to their team.
+const DEFAULT_TEAM_ADMIN_PAGES: &[AdminPage] =
+    &[AdminPage::SpendControls, AdminPage::AgentSessions];
 const DEFAULT_PLATFORM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::Mcp,
     AdminPage::ReviewAgent,

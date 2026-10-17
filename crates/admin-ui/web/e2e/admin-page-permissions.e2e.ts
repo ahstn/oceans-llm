@@ -7,6 +7,7 @@ import { type ActiveRegularUser, createActiveRegularUser } from './identity-fixt
 const sharedPages = [
   'api_keys',
   'models',
+  'mcp',
   'usage_costs',
   'leaderboard',
   'agent_harnesses',
@@ -17,7 +18,8 @@ const sharedPages = [
   'service_accounts',
 ]
 
-// Team admins also get MCP and Spend Controls by default, both scoped to their own
+// Every user sees the MCP servers they can connect to; team admins also manage
+// their team's. Team admins get Spend Controls by default, scoped to their own
 // team. The stack leaves agent analysis off for team admins, so `agent_sessions`
 // is filtered out.
 const teamAdminPages = [

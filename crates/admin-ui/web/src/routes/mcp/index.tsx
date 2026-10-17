@@ -34,6 +34,24 @@ export const Route = createFileRoute('/mcp/')({
   },
   loader: async ({ context }) => {
     const platformAdmin = isPlatformAdminSession(context.session)
+    // Users who are not admins see, read-only, the servers they can connect to.
+    if (!platformAdmin && context.session?.permissions.group !== 'team_admins') {
+      const servers = await getMcpServers({ data: { include_disabled: false } })
+      return {
+        platformAdmin,
+        readOnly: true,
+        canPublish: false,
+        teamId: context.session?.team_id ?? null,
+        servers: servers.data.items,
+        recommended: [],
+        toolsets: [],
+        grants: [],
+        apiKeys: [],
+        users: [],
+        serviceAccounts: [],
+        teams: [],
+      }
+    }
     const [servers, recommended, toolsets, grants, apiKeys, directory] = await Promise.all([
       getMcpServers({ data: { include_disabled: true } }),
       getRecommendedMcpServers(),
@@ -45,6 +63,7 @@ export const Route = createFileRoute('/mcp/')({
     ])
     return {
       platformAdmin,
+      readOnly: false,
       canPublish: servers.data.can_publish_to_organisation,
       teamId: platformAdmin ? null : (context.session?.team_id ?? null),
       servers: servers.data.items,
@@ -71,7 +90,10 @@ export function McpWorkspacePage() {
     canPublish: data.canPublish,
     teamId: data.teamId,
     teams: data.platformAdmin ? data.teams : [],
+    readOnly: data.readOnly,
   }
+  // Access rules are for admins.
+  const tab = data.readOnly ? 'servers' : search.tab
 
   function applySearch(next: Partial<McpSearch>) {
     void router.navigate({ to: '/mcp', search: normalizeMcpSearch({ ...search, ...next }) })
@@ -82,7 +104,7 @@ export function McpWorkspacePage() {
   }
 
   const workspaceContent =
-    search.tab === 'servers' ? (
+    tab === 'servers' ? (
       <ServersTab
         servers={data.servers}
         recommended={data.recommended}
@@ -100,7 +122,7 @@ export function McpWorkspacePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="min-w-0">
-          {search.tab === 'access' ? (
+          {tab === 'access' ? (
             <AccessTab
               grants={data.grants}
               servers={data.servers}
@@ -121,10 +143,11 @@ export function McpWorkspacePage() {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
       <McpNavigation
-        current={search.tab === 'access' ? 'access' : 'servers'}
+        current={tab === 'access' ? 'access' : 'servers'}
         showToolsets={data.platformAdmin}
+        showAccess={!data.readOnly}
       />
-      {search.tab === 'access' ? (
+      {tab === 'access' ? (
         <header className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">Access</h1>
           <p className="text-muted-foreground text-sm">

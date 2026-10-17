@@ -400,8 +400,15 @@ fn create_body(key: &str) -> Value {
 }
 
 #[tokio::test]
-async fn members_and_users_without_a_team_cannot_reach_mcp_admin() {
+async fn members_see_only_the_servers_they_can_connect_to_read_only() {
     let context = TestContext::new().await;
+    let granted = context
+        .server(
+            "granted",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let other = context.server("other", McpServerOwnership::default()).await;
     let member = context
         .actor(
             GlobalRole::User,
@@ -409,13 +416,69 @@ async fn members_and_users_without_a_team_cannot_reach_mcp_admin() {
         )
         .await;
     let loner = context.actor(GlobalRole::User, None).await;
+
+    // Without a grant, the list is empty rather than forbidden.
     for actor in [&member, &loner] {
-        assert_eq!(context.list(actor, None).await.0, StatusCode::FORBIDDEN);
-        assert_eq!(
-            context.create(actor, create_body("docs")).await.0,
-            StatusCode::FORBIDDEN
-        );
+        let (status, body) = context.list(actor, None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["data"]["items"], json!([]));
     }
+
+    // A grant to the member's team makes that server visible to them.
+    let admin = context.team_admin(context.team_a).await;
+    assert_eq!(
+        context
+            .grant(&admin, "team", context.team_a, "tool", granted.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let (_, body) = context.list(&member, None).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], granted.id.to_string());
+    assert_eq!(items[0]["can_manage"], false);
+    assert_eq!(items[0]["server_url"], "https://granted.example.test");
+    assert_eq!(body["data"]["can_publish_to_organisation"], false);
+
+    // Tools follow the same access; another server does not exist for them.
+    let tools = |server_id: Uuid| {
+        list_mcp_server_tools(
+            State(context.state.clone()),
+            member.headers.clone(),
+            Path(server_id.to_string()),
+            Query(McpToolsQuery {
+                include_inactive: false,
+            }),
+        )
+    };
+    let (status, body) = read(tools(granted.id).await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["items"][0]["id"], granted.tool_id.to_string());
+    assert_eq!(read(tools(other.id).await).await.0, StatusCode::NOT_FOUND);
+
+    // Members still cannot change anything.
+    assert_eq!(
+        context.create(&member, create_body("docs")).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        context
+            .grant(&member, "user", member.user_id, "tool", granted.tool_id)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, _) = read(
+        list_mcp_grants(
+            State(context.state.clone()),
+            member.headers.clone(),
+            Query(serde_json::from_value(json!({})).unwrap()),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

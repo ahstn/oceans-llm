@@ -156,6 +156,7 @@ const teamAdminScope: McpWorkspaceScope = {
   canPublish: false,
   teamId: 'team_a',
   teams: [],
+  readOnly: false,
 }
 
 async function renderServersTab(
@@ -855,6 +856,7 @@ describe('ServersTab', () => {
       canPublish: true,
       teamId: null,
       teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
     })
 
     fireEvent.click(await screen.findByRole('combobox', { name: 'Owning team' }))
@@ -874,6 +876,7 @@ describe('ServersTab', () => {
       canPublish: true,
       teamId: null,
       teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
     })
     fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
@@ -892,5 +895,18 @@ describe('ServersTab', () => {
         data: expect.objectContaining({ owner_team_id: 'team_a', visibility: 'team' }),
       })
     })
+  })
+
+  it('shows members the servers they can connect to without admin controls', async () => {
+    await renderServersTab(null, [{ ...server, can_manage: false }], {
+      ...teamAdminScope,
+      readOnly: true,
+    })
+
+    expect(screen.getByText('The MCP servers your access lets you connect to.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add server' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Browse catalog' })).not.toBeInTheDocument()
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
   })
 })

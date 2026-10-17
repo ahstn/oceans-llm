@@ -51,8 +51,9 @@ interface RegistryProps {
   refreshingServerIds: string[]
   onManage: (serverId: string) => void
   onRefresh: (server: McpServerView) => void
-  onAdd: () => void
-  onCatalog: () => void
+  /** Omitted for a read-only viewer, who cannot register servers. */
+  onAdd?: () => void
+  onCatalog?: () => void
 }
 
 type RegistryRowsProps = Omit<RegistryProps, 'refreshingServerIds'> & {
@@ -89,18 +90,22 @@ export function ServerRegistry(props: RegistryProps) {
             <Badge variant="secondary">{props.servers.length}</Badge>
           </div>
           <p className="text-muted-foreground text-sm">
-            Manage the connections that bring tools into your gateway.
+            {props.onAdd
+              ? 'Manage the connections that bring tools into your gateway.'
+              : 'The MCP servers your access lets you connect to.'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={props.onCatalog}>
-            Browse catalog
-          </Button>
-          <Button type="button" onClick={props.onAdd}>
-            <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
-            Add server
-          </Button>
-        </div>
+        {props.onAdd ? (
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={props.onCatalog}>
+              Browse catalog
+            </Button>
+            <Button type="button" onClick={props.onAdd}>
+              <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
+              Add server
+            </Button>
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <span>
@@ -171,7 +176,7 @@ function RegistryEmpty({
   onClear,
 }: {
   hasServers: boolean
-  onCatalog: () => void
+  onCatalog?: () => void
   onClear: () => void
 }) {
   return (
@@ -181,7 +186,9 @@ function RegistryEmpty({
         <EmptyDescription>
           {hasServers
             ? 'Try another search or clear the filters.'
-            : 'Add a catalog server or configure your own endpoint.'}
+            : onCatalog
+              ? 'Add a catalog server or configure your own endpoint.'
+              : 'You cannot connect to any MCP server yet. Ask your team admins for access.'}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
@@ -189,11 +196,11 @@ function RegistryEmpty({
           <Button type="button" variant="outline" onClick={onClear}>
             Clear filters
           </Button>
-        ) : (
+        ) : onCatalog ? (
           <Button type="button" variant="outline" onClick={onCatalog}>
             Find a server
           </Button>
-        )}
+        ) : null}
       </EmptyContent>
     </Empty>
   )

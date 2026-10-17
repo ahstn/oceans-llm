@@ -32,7 +32,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::{require_mcp_admin_scope, require_mcp_platform_scope},
+    admin_auth::{
+        McpViewer, require_mcp_admin_scope, require_mcp_platform_scope, require_mcp_viewer,
+    },
     admin_contract::{Envelope, OpenAiErrorEnvelopeView, envelope},
     audit::AuditRequestMeta,
     error::AppError,
@@ -54,7 +56,7 @@ pub async fn get_mcp_connection_info(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<McpConnectionInfoPayload>>, AppError> {
-    require_mcp_admin_scope(&state, &headers).await?;
+    require_mcp_viewer(&state, &headers).await?;
     let gateway_base_url = state
         .client_config_gateway_base_url
         .as_ref()
@@ -119,7 +121,12 @@ pub async fn list_mcp_servers(
     headers: HeaderMap,
     Query(query): Query<McpServersQuery>,
 ) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
-    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let scope = match require_mcp_viewer(&state, &headers).await? {
+        McpViewer::Admin(scope) => scope,
+        McpViewer::Member { user_id, team_id } => {
+            return list_member_servers(&state, user_id, team_id, &query).await;
+        }
+    };
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
     let service = McpRegistryService::new(state.store.clone());
     let servers = service
@@ -493,14 +500,42 @@ pub async fn list_mcp_server_tools(
     Path(server_id): Path<String>,
     Query(query): Query<McpToolsQuery>,
 ) -> Result<Json<Envelope<McpToolsPayload>>, AppError> {
-    let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let viewer = require_mcp_viewer(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
-    ownership(&state).visible_server(&scope, server_id).await?;
+    let member_tools = match viewer {
+        McpViewer::Admin(scope) => {
+            ownership(&state).visible_server(&scope, server_id).await?;
+            None
+        }
+        // A member sees only the tools their grants let them call, on a server
+        // they can connect to; anything else does not exist for them.
+        McpViewer::Member { user_id, team_id } => {
+            let allowed: Vec<_> = member_access(&state, user_id, team_id)
+                .await?
+                .into_iter()
+                .filter(|tool| tool.mcp_server_id == server_id)
+                .map(|tool| tool.mcp_tool_id)
+                .collect();
+            if allowed.is_empty() {
+                return Err(AppError(GatewayError::Store(
+                    gateway_core::StoreError::NotFound(format!(
+                        "external MCP server `{server_id}` not found"
+                    )),
+                )));
+            }
+            Some(allowed)
+        }
+    };
     let service = McpRegistryService::new(state.store.clone());
     let items = service
         .list_tools(server_id, query.include_inactive)
         .await?
         .into_iter()
+        .filter(|tool| {
+            member_tools
+                .as_ref()
+                .is_none_or(|allowed| allowed.contains(&tool.mcp_tool_id))
+        })
         .map(map_tool)
         .collect();
     Ok(Json(envelope(McpToolsPayload { items })))
@@ -1344,6 +1379,75 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
     AuditEvent::new(action)
         .target(toolset.id())
         .label(toolset.toolset_key().to_string())
+}
+
+/// The active tools a user can call: those granted to them, their team, or one
+/// of their own API keys. This is the access a member's MCP client gets.
+async fn member_access(
+    state: &AppState,
+    user_id: Uuid,
+    team_id: Option<Uuid>,
+) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, AppError> {
+    use gateway_core::AdminApiKeyRepository;
+    let mut subjects = vec![McpGrantSubject {
+        subject_kind: McpToolGrantSubjectKind::User,
+        subject_id: user_id,
+    }];
+    if let Some(team_id) = team_id {
+        subjects.push(McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: team_id,
+        });
+    }
+    subjects.extend(
+        state
+            .store
+            .list_api_keys_for_user_scope(user_id, None)
+            .await?
+            .into_iter()
+            .filter(|key| key.owner_user_id == Some(user_id) && key.revoked_at.is_none())
+            .map(|key| McpGrantSubject {
+                subject_kind: McpToolGrantSubjectKind::ApiKey,
+                subject_id: key.id,
+            }),
+    );
+    Ok(state
+        .store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Full)
+        .await?
+        .allowed_tools)
+}
+
+/// A member's read-only server list: the servers they can connect to.
+async fn list_member_servers(
+    state: &AppState,
+    user_id: Uuid,
+    team_id: Option<Uuid>,
+    query: &McpServersQuery,
+) -> Result<Json<Envelope<McpServersPayload>>, AppError> {
+    let accessible: std::collections::HashSet<Uuid> = member_access(state, user_id, team_id)
+        .await?
+        .into_iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect();
+    let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
+    let mut items = Vec::new();
+    for server in McpRegistryService::new(state.store.clone())
+        .list_servers(query.include_disabled)
+        .await?
+    {
+        if !accessible.contains(&server.mcp_server_id)
+            || !owner.is_none_or(|owner| owner.matches(&server))
+        {
+            continue;
+        }
+        let name = owner_team_name(state, server.ownership.owner_team_id).await?;
+        items.push(map_server(server).for_viewer(name, false));
+    }
+    Ok(Json(envelope(McpServersPayload {
+        items,
+        can_publish_to_organisation: false,
+    })))
 }
 
 fn ownership_changed(mcp_server_id: Uuid) -> AppError {

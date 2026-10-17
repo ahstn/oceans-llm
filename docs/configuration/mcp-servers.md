@@ -100,7 +100,9 @@ those first.
 ### What team owners and admins can do
 
 Team owners and admins reach the MCP area when the `team_admins` permission group
-includes the `mcp` page, which it does by default. Team members do not.
+includes the `mcp` page, which it inherits from the `users` group by default.
+
+Every other signed-in user also gets the `mcp` page by default, through the `users` group. They see, read-only, only the servers they can connect to: those where a grant to them, their team, or one of their own API keys reaches an active tool. Each server shows its owner, its URL's origin and the tools they can call. Every write and the grant, credential and tool set routes stay admin-only. See [MCP Tool Access](../mcp/mcp-tool-access.md) for how grants decide that access.
 
 | Action | Team owner or admin |
 |---|---|

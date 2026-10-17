@@ -4,10 +4,13 @@ import { Button } from '@/components/ui/button'
 export function McpNavigation({
   current,
   showToolsets = true,
+  showAccess = true,
 }: {
   current: 'servers' | 'toolsets' | 'access'
   /** Tool sets are platform-managed, so team admins do not see them. */
   showToolsets?: boolean
+  /** Access rules are for admins; other users see only the servers. */
+  showAccess?: boolean
 }) {
   return (
     <nav aria-label="MCP sections" className="flex flex-wrap items-center gap-2 border-b pb-4">
@@ -31,15 +34,17 @@ export function McpNavigation({
           </Link>
         </Button>
       ) : null}
-      <Button asChild variant={current === 'access' ? 'secondary' : 'ghost'}>
-        <Link
-          to="/mcp"
-          search={{ tab: 'access' }}
-          aria-current={current === 'access' ? 'page' : undefined}
-        >
-          Access
-        </Link>
-      </Button>
+      {showAccess ? (
+        <Button asChild variant={current === 'access' ? 'secondary' : 'ghost'}>
+          <Link
+            to="/mcp"
+            search={{ tab: 'access' }}
+            aria-current={current === 'access' ? 'page' : undefined}
+          >
+            Access
+          </Link>
+        </Button>
+      ) : null}
     </nav>
   )
 }

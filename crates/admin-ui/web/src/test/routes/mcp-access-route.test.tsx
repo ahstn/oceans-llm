@@ -166,7 +166,13 @@ describe('AccessTab', () => {
         servers={[published, teamServer]}
         toolsets={[toolset]}
         subjects={{ apiKeys: [], users: [user], serviceAccounts: [], teams: [] }}
-        scope={{ platformAdmin: false, canPublish: false, teamId: 'team_a', teams: [] }}
+        scope={{
+          platformAdmin: false,
+          canPublish: false,
+          teamId: 'team_a',
+          teams: [],
+          readOnly: false,
+        }}
       />,
     )
 

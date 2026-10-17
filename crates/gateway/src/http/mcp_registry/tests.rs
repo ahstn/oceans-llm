@@ -199,16 +199,17 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
 }
 
 #[tokio::test]
-async fn connection_info_requires_a_platform_admin_session() {
+async fn connection_info_requires_a_signed_in_session() {
     let context = TestContext::new().await;
     let (status, body) = context.connection_info(HeaderMap::new()).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(body.get("data").is_none());
 
+    // Every user with the MCP page can read how to connect their client.
     let headers = context.session_headers(GlobalRole::User).await;
     let (status, body) = context.connection_info(headers).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(body.get("data").is_none());
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["data"]["endpoint"].is_string());
 }
 
 #[tokio::test]

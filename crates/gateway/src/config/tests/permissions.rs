@@ -17,7 +17,7 @@ fn defaults_resolve_in_stable_order() {
             .contains(&AdminPage::SpendControls)
     );
     assert!(resolved.team_admins.pages.contains(&AdminPage::Mcp));
-    assert!(!resolved.users.pages.contains(&AdminPage::Mcp));
+    assert!(resolved.users.pages.contains(&AdminPage::Mcp));
     assert_eq!(resolved.platform_admins.pages, ADMIN_PAGE_ORDER);
     assert_eq!(resolved.users.actions, USER_ACTIONS);
     assert_eq!(resolved.team_admins.actions, ADMIN_ACTION_ORDER);

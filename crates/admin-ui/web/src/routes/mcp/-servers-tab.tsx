@@ -424,8 +424,8 @@ export function ServersTab({
         refreshingServerIds={refreshingServerIds}
         onManage={handleSelectServer}
         onRefresh={handleRefreshDiscovery}
-        onAdd={() => openCreateDialog()}
-        onCatalog={() => setCatalogOpen(true)}
+        onAdd={scope.readOnly ? undefined : () => openCreateDialog()}
+        onCatalog={scope.readOnly ? undefined : () => setCatalogOpen(true)}
       />
 
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>

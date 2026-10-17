@@ -60,7 +60,7 @@ mcp:
 
 The checks live in one place, `gateway_service::McpOwnership` (`crates/gateway-service/src/mcp_ownership.rs`). Handlers resolve the caller to an `McpAdminScope` (platform, or team with role) with `require_mcp_admin_scope` and ask it. `authorize_grant` checks one grant write; `authorize_server_grant` checks a subject against one server, so tag-based grants (#443) can call it for each server a tag reaches, and tool approval (#444) can gate on `managed_server`. Grant resolution itself is unchanged.
 
-Team owners and admins reach a scoped MCP area when the `team_admins` permission group includes the `mcp` page, which it does by default. Members do not.
+Team owners and admins reach a scoped MCP area when they have the `mcp` page, which every group gets by default. Every other signed-in user also gets the `mcp` page by default, through the `users` group. They see, read-only, only the servers they can connect to: those where a grant to them, their team, or one of their own API keys reaches an active tool. Each server shows its owner, its URL's origin and the tools they can call. Every write and the grant, credential and tool set routes stay admin-only.
 
 | Action | Team owner or admin |
 |---|---|

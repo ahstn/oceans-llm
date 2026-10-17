@@ -13,6 +13,8 @@ export type McpWorkspaceScope = {
   teamId: string | null
   /** Teams a platform admin can move a server to. */
   teams: AdminTeamOption[]
+  /** A user who is not an admin: they see the servers they can connect to. */
+  readOnly: boolean
 }
 
 export const platformMcpScope: McpWorkspaceScope = {
@@ -20,4 +22,5 @@ export const platformMcpScope: McpWorkspaceScope = {
   canPublish: true,
   teamId: null,
   teams: [],
+  readOnly: false,
 }
