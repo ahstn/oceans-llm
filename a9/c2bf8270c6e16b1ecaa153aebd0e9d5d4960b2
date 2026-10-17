@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_557be878e02adb 1012-1017,1023-1045,1047-1066
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_e88dc7cf2999d1::t_7ff81be7cda379 825-870
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9c2bf8270c6e16b1ecaa153aebd0e9d5d4960b2",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
