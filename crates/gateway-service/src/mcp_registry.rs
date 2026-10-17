@@ -803,6 +803,13 @@ mod tests {
             unimplemented!()
         }
 
+        async fn get_external_mcp_tools(
+            &self,
+            _mcp_tool_ids: &[Uuid],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn set_mcp_tool_tags(
             &self,
             _mcp_tool_id: Uuid,

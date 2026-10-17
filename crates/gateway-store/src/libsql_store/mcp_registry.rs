@@ -558,6 +558,34 @@ impl McpRegistryRepository for LibsqlStore {
         find_tool(&self.connection, mcp_tool_id).await
     }
 
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        let mut tools = Vec::with_capacity(mcp_tool_ids.len());
+        // Batches stay well under SQLite's bound-variable limit.
+        for batch in mcp_tool_ids.chunks(500) {
+            let placeholders = (1..=batch.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id IN ({placeholders})"
+                    ),
+                    libsql::params_from_iter(batch.iter().map(Uuid::to_string)),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                tools.push(decode_tool(&row)?);
+            }
+        }
+        Ok(tools)
+    }
+
     async fn set_mcp_tool_tags(
         &self,
         mcp_tool_id: Uuid,

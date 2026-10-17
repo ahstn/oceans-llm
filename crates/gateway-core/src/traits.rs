@@ -1079,6 +1079,13 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_tool_id: Uuid,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
 
+    /// Loads several tools with every column, including inactive ones, in no
+    /// particular order. Unknown ids are skipped.
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
     /// Replaces the tool's admin tags. Nothing is written when they already match.
     async fn set_mcp_tool_tags(
         &self,
@@ -1221,7 +1228,8 @@ pub trait McpAccessRepository: Send + Sync {
     /// change waiting) on active servers, on one server or every server,
     /// ordered by server id then upstream name. `after` is the last
     /// `(mcp_server_id, upstream_name)` of the previous page. Tag rule
-    /// previews read their candidates from it.
+    /// previews read their candidates from it, so rows carry only the columns
+    /// tag rules read: no description, title or schemas.
     async fn list_active_mcp_tools(
         &self,
         mcp_server_id: Option<Uuid>,

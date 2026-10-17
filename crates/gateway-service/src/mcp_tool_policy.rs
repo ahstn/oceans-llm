@@ -10,7 +10,9 @@ use gateway_core::{
     McpAnnotationOverrides, McpRegistryRepository, McpTagRuleEffect, McpToolReviewDecision,
     McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionQuery, McpToolVersionRecord, StoreError,
     Updated,
-    mcp_tool_policy::{effective_tags, normalize_admin_tags, normalize_rule_tag},
+    mcp_tool_policy::{
+        effective_tags, has_effective_tag, normalize_admin_tags, normalize_rule_tag,
+    },
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -198,10 +200,10 @@ where
         // Active tools on active servers, the same candidates runtime
         // resolution reads, read a page at a time until the cap is passed.
         // A disabled server yields nothing.
-        let mut preview = McpTagRulePreview::default();
+        let mut matched = Vec::new();
         let mut after: Option<(Uuid, String)> = None;
         let mut scanned = 0;
-        loop {
+        let truncated = loop {
             let page = self
                 .repo
                 .list_active_mcp_tools(
@@ -217,27 +219,51 @@ where
             after = page
                 .last()
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
+            let mut full = false;
             for tool in page {
-                let tags = effective_tags(&tool);
-                if !tags.contains(&tag) {
+                if !has_effective_tag(&tool, &tag) {
                     continue;
                 }
-                if preview.matches.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
-                    preview.truncated = true;
-                    return Ok(preview);
+                if matched.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
+                    full = true;
+                    break;
                 }
-                preview.matches.push(McpTagRuleMatch {
-                    tool,
-                    effective_tags: tags.into_iter().collect(),
-                });
+                matched.push(tool);
+            }
+            if full {
+                break true;
             }
             if last_page {
-                return Ok(preview);
+                break false;
             }
             if scanned >= MAX_TAG_RULE_PREVIEW_SCAN {
-                preview.truncated = true;
-                return Ok(preview);
+                break true;
             }
-        }
+        };
+        // The scan reads only the columns tag rules need; the matches are
+        // loaded in full, in one query, for the response.
+        let ids = matched
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>();
+        let mut full_rows = self
+            .repo
+            .get_external_mcp_tools(&ids)
+            .await?
+            .into_iter()
+            .map(|tool| (tool.mcp_tool_id, tool))
+            .collect::<std::collections::HashMap<_, _>>();
+        let matches = matched
+            .into_iter()
+            .map(|tool| {
+                let tool = full_rows.remove(&tool.mcp_tool_id).unwrap_or(tool);
+                let effective_tags = effective_tags(&tool).into_iter().collect();
+                McpTagRuleMatch {
+                    tool,
+                    effective_tags,
+                }
+            })
+            .collect();
+        Ok(McpTagRulePreview { matches, truncated })
     }
 }

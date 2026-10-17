@@ -561,6 +561,25 @@ impl McpRegistryRepository for PostgresStore {
         .transpose()
     }
 
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        if mcp_tool_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        sqlx::query(&format!(
+            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools WHERE mcp_tool_id = ANY($1)"
+        ))
+        .bind(mcp_tool_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .iter()
+        .map(decode_tool)
+        .collect()
+    }
+
     async fn set_mcp_tool_tags(
         &self,
         mcp_tool_id: Uuid,

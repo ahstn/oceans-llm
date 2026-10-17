@@ -175,6 +175,11 @@ async fn tool_policy_and_tag_rule_changes_are_audited() {
         .await;
     assert_eq!(status, StatusCode::OK, "{preview}");
     assert_eq!(preview["data"]["tools"][0]["id"], tool_id);
+    // The scan reads light rows; matches come back with their full definition.
+    assert_eq!(
+        preview["data"]["tools"][0]["input_schema"],
+        json!({"type": "object"})
+    );
     let mut rule_id = String::new();
     for _ in 0..2 {
         let (status, body) = harness

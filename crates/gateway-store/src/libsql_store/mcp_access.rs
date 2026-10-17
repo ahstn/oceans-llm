@@ -669,7 +669,7 @@ impl McpAccessRepository for LibsqlStore {
         limit: u32,
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let sql = format!(
-            "SELECT {TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1) AND (?2 IS NULL OR (t.mcp_server_id, t.upstream_name) > (?2, ?3)) ORDER BY t.mcp_server_id, t.upstream_name LIMIT ?4"
+            "SELECT {RULE_TOOL_COLUMNS} FROM external_mcp_tools t JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?1 IS NULL OR t.mcp_server_id = ?1) AND (?2 IS NULL OR (t.mcp_server_id, t.upstream_name) > (?2, ?3)) ORDER BY t.mcp_server_id, t.upstream_name LIMIT ?4"
         );
         let (after_server, after_name) = after.unzip();
         let mut rows = self

@@ -138,6 +138,16 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tools(mcp_tool_ids).await,
+            Self::Postgres(store) => store.get_external_mcp_tools(mcp_tool_ids).await,
+        }
+    }
+
     async fn set_mcp_tool_tags(
         &self,
         mcp_tool_id: Uuid,
