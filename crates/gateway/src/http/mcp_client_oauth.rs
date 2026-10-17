@@ -137,7 +137,7 @@ pub(crate) fn bearer_challenge(
 ) -> Option<HeaderValue> {
     let metadata_url = settings.protected_resource_metadata_url(resource);
     let challenge = match error {
-        GatewayError::Auth(AuthError::OauthInsufficientScope { required }) => format!(
+        GatewayError::Auth(AuthError::InsufficientScope { required }) => format!(
             r#"Bearer error="insufficient_scope", scope="{required}", resource_metadata="{metadata_url}""#
         ),
         error if error.http_status_code() == 401 => {

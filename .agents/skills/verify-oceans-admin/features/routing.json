@@ -268,7 +268,10 @@
         "crates/admin-ui/web/src/routes/api-keys.tsx",
         "crates/admin-ui/web/src/routes/api-keys/**",
         "crates/gateway/src/http/api_keys.rs",
+        "crates/gateway/src/http/api_keys/**",
         "crates/gateway-service/src/admin_api_keys.rs",
+        "crates/gateway-service/src/admin_api_keys/**",
+        "crates/gateway-core/src/credential_scopes.rs",
         "crates/gateway-service/src/model_access.rs",
         "crates/gateway-service/src/secret_storage.rs",
         "crates/gateway-store/src/libsql_store/api_keys.rs",
@@ -428,6 +431,7 @@
         "crates/gateway/src/http/identity_audit.rs",
         "crates/gateway/src/http/{api_keys,identity,mcp_oauth,mcp_registry,models,provider_credentials,rate_limit_policies,review_agent,spend,spend_budget_increases,client_ip}.rs",
         "crates/gateway/src/http/mcp_registry/views.rs",
+        "crates/gateway/src/http/api_keys/scopes.rs",
         "crates/gateway-service/src/admin_api_keys.rs",
         "crates/admin-ui/src/proxy.rs",
         "crates/gateway-client-ip/**",
@@ -592,7 +596,7 @@
         "crates/gateway-store/src/any_store_gateway_oauth.rs",
         "crates/gateway-store/src/libsql_store/gateway_oauth.rs",
         "crates/gateway-store/src/postgres_store/gateway_oauth.rs",
-        "crates/gateway-store/migrations/**/V65__gateway_oauth_metadata_document_clients.sql",
+        "crates/gateway-store/migrations/**/V66__gateway_oauth_metadata_document_clients.sql",
         "crates/gateway-service/src/outbound_fetch.rs",
         "crates/gateway-service/src/outbound_fetch/**"
       ]

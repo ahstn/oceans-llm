@@ -10,7 +10,7 @@ pub(crate) struct MigrationManifest {
 /// libsql migrations that rebuild a table other tables reference, with that
 /// table. They run with foreign keys off, as SQLite's table-rebuild
 /// procedure requires, and then check the rebuilt table's children.
-const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(65, "gateway_oauth_clients")];
+const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(66, "gateway_oauth_clients")];
 
 impl MigrationManifest {
     pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
@@ -393,11 +393,18 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 65,
+        name: "api_key_scopes",
+        checksum: "V65__api_key_scopes.sql",
+        libsql_sql: include_str!("../migrations/V65__api_key_scopes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V65__api_key_scopes.sql"),
+    },
+    MigrationManifest {
+        version: 66,
         name: "gateway_oauth_metadata_document_clients",
-        checksum: "V65__gateway_oauth_metadata_document_clients.sql",
-        libsql_sql: include_str!("../migrations/V65__gateway_oauth_metadata_document_clients.sql"),
+        checksum: "V66__gateway_oauth_metadata_document_clients.sql",
+        libsql_sql: include_str!("../migrations/V66__gateway_oauth_metadata_document_clients.sql"),
         postgres_sql: include_str!(
-            "../migrations/postgres/V65__gateway_oauth_metadata_document_clients.sql"
+            "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
         ),
     },
 ];

@@ -126,6 +126,7 @@ impl TestContext {
                 owner_user_id: user_id,
                 owner_team_id: service.map(|value| value.0),
                 owner_service_account_id: service.map(|value| value.1),
+                access: Default::default(),
                 created_at: OffsetDateTime::now_utc(),
             })
             .await

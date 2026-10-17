@@ -117,6 +117,7 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
         owner_user_id: None,
         owner_team_id: Some(team_id),
         owner_service_account_id: Some(service_account_id),
+        access: Default::default(),
         oauth: None,
     };
     let mut headers = BTreeMap::new();
@@ -773,6 +774,7 @@ async fn records_stream_failures_with_payload() {
         owner_user_id: None,
         owner_team_id: Some(Uuid::new_v4()),
         owner_service_account_id: Some(Uuid::new_v4()),
+        access: Default::default(),
         oauth: None,
     };
     let context = logging.begin_chat_request(

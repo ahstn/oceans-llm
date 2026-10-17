@@ -24,7 +24,7 @@ This document is schema-oriented. It describes the persistent relationships that
 2. `users` 0..1 `team_memberships`
 3. `teams` 0..N `service_accounts`
 4. `api_keys` belongs to exactly one principal owner: user or service account
-5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`
+5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`, and may be narrowed to capability scopes and MCP servers
 6. Optional principal-centric restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
@@ -122,9 +122,9 @@ Model-centric overlays:
 ### Ownership, Accounting, and Logging Tables
 
 - `api_keys`
-  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
+  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`, `scopes`, `mcp_server_keys`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. Direct team-owned runtime keys and `system-legacy` ownership are not supported
+  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. `scopes` and `mcp_server_keys` are space-delimited lists; `NULL` means full access and every granted MCP server ([ADR](../../adr/2026-10-17-scoped-api-keys.md)). Server keys are stored by key, with no foreign key, because server keys never change and servers are never deleted. Direct team-owned runtime keys and `system-legacy` ownership are not supported
 - `budgets`
   - Key columns: `budget_id`, `scope_kind`, `scope_key`, `user_id`, `service_account_id`, `model_id`, `upstream_model`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active budget per canonical `scope_key`

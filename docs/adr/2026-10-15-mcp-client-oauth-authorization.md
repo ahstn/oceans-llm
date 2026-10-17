@@ -272,4 +272,4 @@ The policy grants no credentials, and these endpoints read no cookies. Clients a
 - An admin UI view of a user's authorized clients. The admin API exists; the user management sheet does not show it yet.
 - Pre-registered clients that admins manage, with an option to skip consent for trusted clients.
 - Show `auth_method` in the invocation-log UI and filters (#448).
-- Capability scopes on API keys (#446), using the same names.
+- Capability scopes on API keys (#446), using the same names. Done in [ADR: Capability Scopes and MCP Server Lists for Gateway API Keys](2026-10-17-scoped-api-keys.md), which also renamed `AuthError::OauthInsufficientScope` to `InsufficientScope` and moved the scope check onto `AuthenticatedApiKey::require_scope` for both credential types.

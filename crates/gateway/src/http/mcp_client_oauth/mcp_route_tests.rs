@@ -88,6 +88,7 @@ async fn seed_notes(harness: &Harness, server_url: &str) {
             owner_user_id: Some(harness.user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             created_at: now,
         })
         .await

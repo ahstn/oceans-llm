@@ -1134,7 +1134,7 @@ async fn libsql_metadata_document_migration_keeps_client_children() {
     )
     .await
     .expect("schema history");
-    for migration in MIGRATION_REGISTRY.iter().filter(|m| m.version < 65) {
+    for migration in MIGRATION_REGISTRY.iter().filter(|m| m.version < 66) {
         conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
             .await
             .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));

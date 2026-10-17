@@ -11,7 +11,7 @@ use axum::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpAggregateSessionRepository,
-    McpOauthResource, NewMcpAggregateSessionRecord,
+    McpOauthResource, NewMcpAggregateSessionRecord, SCOPE_MCP_AGGREGATE,
 };
 use gateway_mcp::{
     DEFAULT_PROTOCOL_VERSION, JsonRpcId, MCP_PROTOCOL_VERSION_HEADER, MCP_SESSION_ID_HEADER,
@@ -60,7 +60,8 @@ pub async fn mcp_aggregate_streamable_http(
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
     let resource = Some(&McpOauthResource::Aggregate);
-    let auth = match authenticate_mcp_request(&state, &headers, resource).await {
+    let auth = match authenticate_mcp_request(&state, &headers, resource, SCOPE_MCP_AGGREGATE).await
+    {
         Ok(auth) => auth,
         Err(error) => return mcp_auth_error_response(&state, resource, error),
     };

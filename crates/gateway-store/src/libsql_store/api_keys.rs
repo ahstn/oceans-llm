@@ -1,6 +1,11 @@
 use super::*;
 use crate::shared::{ensure_active_for_update, parse_uuid, same_model_access};
-use gateway_core::ApiKeyModelAccess;
+use gateway_core::{ApiKeyAccess, ApiKeyModelAccess};
+
+/// Column order read by `decode_api_key`.
+const API_KEY_COLUMNS: &str = "id, public_id, secret_hash, name, status, model_grant_mode, \
+     owner_kind, owner_user_id, owner_team_id, owner_service_account_id, \
+     created_at, last_used_at, revoked_at, scopes, mcp_server_keys";
 
 #[async_trait]
 impl AdminApiKeyRepository for LibsqlStore {
@@ -8,13 +13,13 @@ impl AdminApiKeyRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                       created_at, last_used_at, revoked_at
+                &format!(
+                    r#"
+                SELECT {API_KEY_COLUMNS}
                 FROM api_keys
                 ORDER BY created_at DESC, public_id ASC
-                "#,
+                "#
+                ),
                 (),
             )
             .await
@@ -40,15 +45,15 @@ impl AdminApiKeyRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                       created_at, last_used_at, revoked_at
+                &format!(
+                    r#"
+                SELECT {API_KEY_COLUMNS}
                 FROM api_keys
                 WHERE (owner_kind = 'user' AND owner_user_id = ?1)
                    OR (?2 IS NOT NULL AND owner_kind = 'service_account' AND owner_team_id = ?2)
                 ORDER BY created_at DESC, public_id ASC
-                "#,
+                "#
+                ),
                 libsql::params![user_id.to_string(), team_id.map(|value| value.to_string())],
             )
             .await
@@ -72,14 +77,14 @@ impl AdminApiKeyRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                       created_at, last_used_at, revoked_at
+                &format!(
+                    r#"
+                SELECT {API_KEY_COLUMNS}
                 FROM api_keys
                 WHERE id = ?1
                 LIMIT 1
-                "#,
+                "#
+                ),
                 [api_key_id.to_string()],
             )
             .await
@@ -104,16 +109,18 @@ impl AdminApiKeyRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                INSERT INTO api_keys (
-                    id, public_id, secret_hash, name, status, model_grant_mode,
-                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                    created_at, last_used_at, revoked_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL)
-                RETURNING id, public_id, secret_hash, name, status, model_grant_mode,
-                          owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                          created_at, last_used_at, revoked_at
-                "#,
+                &format!(
+                    r#"
+                    INSERT INTO api_keys (
+                        id, public_id, secret_hash, name, status, model_grant_mode,
+                        owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
+                        created_at, last_used_at, revoked_at, scopes, mcp_server_keys
+                    ) VALUES (
+                        ?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL, ?11, ?12
+                    )
+                    RETURNING {API_KEY_COLUMNS}
+                    "#
+                ),
                 libsql::params![
                     api_key_id.to_string(),
                     api_key.public_id.as_str(),
@@ -127,6 +134,8 @@ impl AdminApiKeyRepository for LibsqlStore {
                         .owner_service_account_id
                         .map(|value| value.to_string()),
                     api_key.created_at.unix_timestamp(),
+                    api_key.access.scopes_column(),
+                    api_key.access.mcp_server_keys_column(),
                 ],
             )
             .await
@@ -316,6 +325,48 @@ impl AdminApiKeyRepository for LibsqlStore {
         Ok(Some(previous))
     }
 
+    async fn replace_api_key_access(
+        &self,
+        api_key_id: Uuid,
+        access: &ApiKeyAccess,
+    ) -> Result<Option<ApiKeyAccess>, StoreError> {
+        // An immediate transaction holds the write lock, so the access read here is
+        // exactly the access this replacement overwrites.
+        let tx = self.begin_transaction().await?;
+        let mut rows = tx
+            .query(
+                "SELECT status, scopes, mcp_server_keys FROM api_keys WHERE id = ?1 LIMIT 1",
+                [api_key_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Err(StoreError::NotFound(format!("api key `{api_key_id}`")));
+        };
+        let status: String = row.get(0).map_err(to_query_error)?;
+        let scopes: Option<String> = row.get(1).map_err(to_query_error)?;
+        let mcp_server_keys: Option<String> = row.get(2).map_err(to_query_error)?;
+        drop(rows);
+        ensure_active_for_update(&status)?;
+        let previous = ApiKeyAccess::from_columns(scopes.as_deref(), mcp_server_keys.as_deref());
+        if previous == *access {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
+        }
+        tx.execute(
+            "UPDATE api_keys SET scopes = ?1, mcp_server_keys = ?2 WHERE id = ?3",
+            libsql::params![
+                access.scopes_column(),
+                access.mcp_server_keys_column(),
+                api_key_id.to_string()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(previous))
+    }
+
     async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
@@ -349,14 +400,14 @@ impl ApiKeyRepository for LibsqlStore {
         let mut rows = self
             .connection
             .query(
-                r#"
-                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
-                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
-                       created_at, last_used_at, revoked_at
+                &format!(
+                    r#"
+                SELECT {API_KEY_COLUMNS}
                 FROM api_keys
                 WHERE public_id = ?1
                 LIMIT 1
-                "#,
+                "#
+                ),
                 [public_id],
             )
             .await

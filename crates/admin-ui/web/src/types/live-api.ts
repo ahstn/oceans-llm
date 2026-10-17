@@ -12,12 +12,15 @@ export type ApiKeyOwnerUserView = components['schemas']['AdminApiKeyUserOwnerVie
 export type ApiKeyOwnerServiceAccountView =
   components['schemas']['AdminApiKeyServiceAccountOwnerView']
 export type ApiKeyModelOptionView = components['schemas']['AdminApiKeyModelView']
+export type ApiKeyMcpServerOptionView = components['schemas']['AdminApiKeyMcpServerView']
 export type ApiKeyView = components['schemas']['AdminApiKeyView']
 export type ApiKeysPayload = components['schemas']['AdminApiKeysPayload']
 export type CreateApiKeyInput = components['schemas']['CreateApiKeyRequest']
 export type CreateApiKeyResult = components['schemas']['CreateApiKeyResponse']
 export type UpdateApiKeyInput = components['schemas']['UpdateApiKeyRequest']
 export type UpdateApiKeyResult = components['schemas']['UpdateApiKeyResponse']
+export type UpdateApiKeyScopesInput = components['schemas']['UpdateApiKeyScopesRequest']
+export type UpdateApiKeyScopesResult = components['schemas']['UpdateApiKeyScopesResponse']
 export type RevokeApiKeyResult = components['schemas']['RevokeApiKeyResponse']
 
 export type SpendOwnerKind = 'all' | 'user' | 'service_account'

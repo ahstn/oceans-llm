@@ -143,7 +143,10 @@ pub async fn v1_model_metadata(
 ) -> Result<Json<gateway_service::model_metadata::ModelMetadataResponse>, AppError> {
     let auth = state
         .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
+        .authenticate_for_scope(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            gateway_core::SCOPE_INFERENCE,
+        )
         .await?;
     Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
 }
@@ -154,7 +157,10 @@ pub async fn v1_models(
 ) -> Result<Json<gateway_service::model_metadata::ModelsListResponse>, AppError> {
     let auth = state
         .service
-        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
+        .authenticate_for_scope(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            gateway_core::SCOPE_INFERENCE,
+        )
         .await?;
     Ok(Json(state.service.models_list_for_api_key(&auth).await?))
 }
@@ -1879,6 +1885,12 @@ async fn best_effort_record_mcp_request_telemetry(
     route: &gateway_core::ModelRoute,
     provider: Option<&ResolvedProviderConnection>,
 ) {
+    // A key without an MCP scope can reach no tools, so there is nothing to record.
+    if !auth.has_scope(gateway_core::SCOPE_MCP_AGGREGATE)
+        && !auth.has_scope(gateway_core::SCOPE_MCP_PROXY)
+    {
+        return;
+    }
     let access = McpAccess::new(state.store.clone());
     let resolution = match access
         .effective_tools_for_api_key(auth, None, McpToolProjection::Full)
@@ -1890,6 +1902,17 @@ async fn best_effort_record_mcp_request_telemetry(
                 request_id = %context.request_id,
                 error = %error,
                 "failed resolving MCP access for request telemetry"
+            );
+            return;
+        }
+    };
+    let resolution = match restrict_to_listed_servers(state, auth, resolution).await {
+        Ok(resolution) => resolution,
+        Err(error) => {
+            tracing::warn!(
+                request_id = %context.request_id,
+                error = %error,
+                "failed applying the key's MCP server list for request telemetry"
             );
             return;
         }
@@ -1940,6 +1963,42 @@ async fn best_effort_record_mcp_request_telemetry(
             "failed recording MCP token-overhead telemetry"
         );
     }
+}
+
+/// Drops tools on servers outside the key's MCP server list, so telemetry
+/// describes only what the key can reach, and recomputes the derived counts.
+pub(crate) async fn restrict_to_listed_servers(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    mut resolution: gateway_core::McpAccessResolution,
+) -> Result<gateway_core::McpAccessResolution, GatewayError> {
+    let Some(server_keys) = auth.access.mcp_server_keys.as_deref() else {
+        return Ok(resolution);
+    };
+    let mut listed = std::collections::HashSet::new();
+    for server_key in server_keys {
+        if let Some(server) = gateway_core::McpRegistryRepository::get_external_mcp_server_by_key(
+            state.store.as_ref(),
+            server_key,
+        )
+        .await?
+        {
+            listed.insert(server.mcp_server_id);
+        }
+    }
+    resolution
+        .allowed_tools
+        .retain(|tool| listed.contains(&tool.mcp_server_id));
+    resolution.referenced_server_count = resolution
+        .allowed_tools
+        .iter()
+        .map(|tool| tool.mcp_server_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len() as i64;
+    resolution.filtered_tool_count = resolution
+        .exposed_tool_count
+        .saturating_sub(resolution.allowed_tools.len() as i64);
+    Ok(resolution)
 }
 
 fn tool_cardinality_with_invoked(
@@ -2718,6 +2777,7 @@ mod tests {
             owner_user_id,
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             oauth: None,
         }
     }

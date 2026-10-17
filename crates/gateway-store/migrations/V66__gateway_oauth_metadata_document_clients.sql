@@ -9,7 +9,7 @@
 -- table does not cascade into the requests and grants that reference it.
 -- See docs/adr/2026-10-15-mcp-client-oauth-authorization.md.
 
-CREATE TABLE gateway_oauth_clients_v65 (
+CREATE TABLE gateway_oauth_clients_v66 (
   client_id TEXT PRIMARY KEY,
   registration_kind TEXT NOT NULL
     CHECK (registration_kind IN ('dynamic', 'metadata_document')),
@@ -30,7 +30,7 @@ CREATE TABLE gateway_oauth_clients_v65 (
   CHECK (registration_kind <> 'metadata_document' OR token_endpoint_auth_method = 'none')
 );
 
-INSERT INTO gateway_oauth_clients_v65 (
+INSERT INTO gateway_oauth_clients_v66 (
   client_id, registration_kind, client_name, client_uri, logo_uri, redirect_uris_json,
   grant_types_json, token_endpoint_auth_method, client_secret_hash, software_id,
   software_version, created_at, updated_at
@@ -42,7 +42,7 @@ SELECT
 FROM gateway_oauth_clients;
 
 DROP TABLE gateway_oauth_clients;
-ALTER TABLE gateway_oauth_clients_v65 RENAME TO gateway_oauth_clients;
+ALTER TABLE gateway_oauth_clients_v66 RENAME TO gateway_oauth_clients;
 
 CREATE INDEX IF NOT EXISTS gateway_oauth_clients_registration_idx
   ON gateway_oauth_clients (registration_kind, created_at);
