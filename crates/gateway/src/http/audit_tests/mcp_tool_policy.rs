@@ -478,6 +478,35 @@ async fn previews_match_runtime_resolution() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 
+    // A service account previews until it is disabled; its keys cannot
+    // authenticate after that.
+    let (status, account) = harness
+        .admin(
+            Method::POST,
+            "/api/v1/admin/identity/service-accounts",
+            Some(json!({ "team_id": team_id, "name": "previewer" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{account}");
+    let account_id = account["data"]["id"]
+        .as_str()
+        .expect("service account id")
+        .to_string();
+    let account_preview =
+        format!("/api/v1/admin/mcp/effective-access?service_account_id={account_id}");
+    let (status, body) = harness.admin(Method::GET, &account_preview, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = harness
+        .admin(
+            Method::DELETE,
+            &format!("/api/v1/admin/identity/service-accounts/{account_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = harness.admin(Method::GET, &account_preview, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
     // A key previews until it is revoked; a revoked key cannot
     // authenticate, so it has no access to preview.
     let (status, created) = harness

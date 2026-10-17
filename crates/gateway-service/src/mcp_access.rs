@@ -1,9 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
-    AdminApiKeyRepository, ApiKeyAccess, AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError,
-    IdentityRepository, McpAccessRepository, McpAccessResolution, McpGrantSubject,
-    McpToolGrantSubjectKind, McpToolProjection, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
+    AdminApiKeyRepository, ApiKeyAccess, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository,
+    ExternalMcpToolRecord, GatewayError, IdentityRepository, McpAccessRepository,
+    McpAccessResolution, McpGrantSubject, McpToolGrantSubjectKind, McpToolProjection,
+    SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, ServiceAccountStatus,
 };
 use uuid::Uuid;
 
@@ -89,7 +90,7 @@ where
 
 impl<R> McpAccess<R>
 where
-    R: IdentityRepository + AdminApiKeyRepository,
+    R: IdentityRepository + AdminApiKeyRepository + ApiKeyRepository + BudgetRepository,
 {
     /// Expands previewed subjects the way runtime resolution would for a
     /// caller: a key brings its owner and team, a user its current team, and a
@@ -112,13 +113,15 @@ where
             match subject.subject_kind {
                 McpToolGrantSubjectKind::ApiKey => {
                     if let Some(key) = self.repo.get_api_key_by_id(subject.subject_id).await? {
-                        // A revoked key cannot authenticate, so it has no
-                        // access to preview.
-                        if !key.is_active() {
-                            return Err(GatewayError::InvalidRequest(
-                                "the API key is revoked, so it has no MCP access".to_string(),
-                            ));
-                        }
+                        // A key that cannot authenticate has no access to
+                        // preview: the same checks as authentication apply.
+                        crate::authenticator::ensure_api_key_usable(self.repo.as_ref(), &key)
+                            .await
+                            .map_err(|error| {
+                                GatewayError::InvalidRequest(format!(
+                                    "the API key cannot authenticate, so it has no MCP access: {error}"
+                                ))
+                            })?;
                         let auth = AuthenticatedApiKey::from(key);
                         key_access.push(auth.access.clone());
                         for owned in self.grant_subjects(&auth).await? {
@@ -146,11 +149,19 @@ where
                     }
                 }
                 McpToolGrantSubjectKind::ServiceAccount => {
-                    if let Some(account) = self
-                        .repo
-                        .get_service_account_by_id(subject.subject_id)
-                        .await?
+                    if let Some(account) = IdentityRepository::get_service_account_by_id(
+                        self.repo.as_ref(),
+                        subject.subject_id,
+                    )
+                    .await?
                     {
+                        // A disabled account's keys cannot authenticate.
+                        if account.status != ServiceAccountStatus::Active {
+                            return Err(GatewayError::InvalidRequest(
+                                "the service account is disabled, so it has no MCP access"
+                                    .to_string(),
+                            ));
+                        }
                         push_subject(
                             &mut subjects,
                             &mut seen,

@@ -196,11 +196,13 @@ once as before. When it is on:
 
 Waiting and rejected tools are excluded from every grant: explicit tool and
 toolset grants as well as [tag rules](#tag-rules). On approval servers, direct
-`tools/list` returns the approved definition stored by the gateway, with
-effective annotations, instead of the live upstream object. Members the gateway
-does not store, such as `_meta`, are not returned. A tool whose change still
-waits keeps its stored definition after approval is turned off, until the next
-discovery approves what the upstream serves.
+`tools/list` serves the members the gateway versions (`name`, `title`,
+`description`, `inputSchema`, `outputSchema` and effective `annotations`) from
+the approved definition it stored, instead of the live upstream object. Members
+it does not version, such as `_meta`, `icons` and `execution`, pass through from
+the live upstream without review. A tool whose change still waits keeps its
+stored definition after approval is turned off, until the next discovery
+approves what the upstream serves.
 
 Review changes from the server dialog's **Reviews** section. Each waiting tool
 is a collapsed row. Expanding it loads its versions and shows a line diff of

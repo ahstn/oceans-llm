@@ -5,8 +5,9 @@ use argon2::{
     password_hash::{PasswordHash, PasswordVerifier},
 };
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRepository, AuthError, AuthenticatedApiKey, BudgetRepository,
-    BudgetScope, GatewayError, ServiceAccountStatus, extract_bearer_token, parse_gateway_api_key,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthError, AuthenticatedApiKey,
+    BudgetRepository, BudgetScope, GatewayError, ServiceAccountStatus, extract_bearer_token,
+    parse_gateway_api_key,
 };
 
 #[derive(Clone)]
@@ -49,50 +50,7 @@ where
             .await?
             .ok_or(AuthError::ApiKeyNotFound)?;
 
-        if !record.is_active() {
-            return Err(AuthError::ApiKeyRevoked.into());
-        }
-
-        let owner_is_valid = match record.owner_kind {
-            ApiKeyOwnerKind::User => {
-                record.owner_user_id.is_some()
-                    && record.owner_team_id.is_none()
-                    && record.owner_service_account_id.is_none()
-            }
-            ApiKeyOwnerKind::ServiceAccount => {
-                record.owner_user_id.is_none()
-                    && record.owner_team_id.is_some()
-                    && record.owner_service_account_id.is_some()
-            }
-        };
-        if !owner_is_valid {
-            return Err(AuthError::ApiKeyOwnerInvalid.into());
-        }
-
-        if let ApiKeyOwnerKind::ServiceAccount = record.owner_kind {
-            let service_account_id = record
-                .owner_service_account_id
-                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            let service_account = self
-                .repo
-                .get_service_account_by_id(service_account_id)
-                .await?
-                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            if service_account.status != ServiceAccountStatus::Active
-                || Some(service_account.team_id) != record.owner_team_id
-            {
-                return Err(AuthError::ApiKeyOwnerInvalid.into());
-            }
-            let scope = BudgetScope::ServiceAccount { service_account_id };
-            if self
-                .repo
-                .get_active_budget_by_scope(&scope)
-                .await?
-                .is_none()
-            {
-                return Err(AuthError::ServiceAccountBudgetRequired.into());
-            }
-        }
+        ensure_api_key_usable(self.repo.as_ref(), &record).await?;
 
         let password_hash = PasswordHash::new(&record.secret_hash)
             .map_err(|error| AuthError::HashVerification(error.to_string()))?;
@@ -105,6 +63,55 @@ where
 
         Ok(AuthenticatedApiKey::from(record))
     }
+}
+
+/// Checks everything that lets an API key authenticate apart from its
+/// secret: the key is active, its owner is well formed, and a service-account
+/// key's account is active, in the key's team, and has an active budget.
+/// Authentication and the MCP access preview both use it, so the preview
+/// never shows access that authentication would refuse.
+pub async fn ensure_api_key_usable<R>(repo: &R, record: &ApiKeyRecord) -> Result<(), GatewayError>
+where
+    R: ApiKeyRepository + BudgetRepository + ?Sized,
+{
+    if !record.is_active() {
+        return Err(AuthError::ApiKeyRevoked.into());
+    }
+
+    let owner_is_valid = match record.owner_kind {
+        ApiKeyOwnerKind::User => {
+            record.owner_user_id.is_some()
+                && record.owner_team_id.is_none()
+                && record.owner_service_account_id.is_none()
+        }
+        ApiKeyOwnerKind::ServiceAccount => {
+            record.owner_user_id.is_none()
+                && record.owner_team_id.is_some()
+                && record.owner_service_account_id.is_some()
+        }
+    };
+    if !owner_is_valid {
+        return Err(AuthError::ApiKeyOwnerInvalid.into());
+    }
+
+    if let ApiKeyOwnerKind::ServiceAccount = record.owner_kind {
+        let service_account_id = record
+            .owner_service_account_id
+            .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+        let service_account = ApiKeyRepository::get_service_account_by_id(repo, service_account_id)
+            .await?
+            .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+        if service_account.status != ServiceAccountStatus::Active
+            || Some(service_account.team_id) != record.owner_team_id
+        {
+            return Err(AuthError::ApiKeyOwnerInvalid.into());
+        }
+        let scope = BudgetScope::ServiceAccount { service_account_id };
+        if repo.get_active_budget_by_scope(&scope).await?.is_none() {
+            return Err(AuthError::ServiceAccountBudgetRequired.into());
+        }
+    }
+    Ok(())
 }
 
 pub fn verify_gateway_key_secret(secret: &str, expected_hash: &str) -> anyhow::Result<bool> {
