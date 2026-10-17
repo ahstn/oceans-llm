@@ -1,0 +1,19 @@
+mise.lock
+  s_8378144fcf7abb::t_701466375efb42 71-104,129-152,361-384,449-455
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "631f20ca036d9cf1f2481bbc72d80062bf1c39ef",
+  "prompts": {},
+  "sessions": {
+    "s_8378144fcf7abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bc33843-0f12-492f-9887-85f13a43d9f1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
