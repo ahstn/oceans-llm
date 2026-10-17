@@ -472,38 +472,7 @@ export function ServersTab({
   )
 }
 
-// Keep responsive navigation, header actions, and section routing in one dialog shell.
-// oxlint-disable-next-line eslint/max-lines-per-function
-function ServerDetailDialog({
-  server,
-  section,
-  form,
-  tools,
-  toolsPending,
-  toolsError,
-  selectedToolIds,
-  credentialBindings,
-  credentialBindingsPending,
-  credentialBindingsError,
-  credentialForm,
-  refreshStatus,
-  refreshErrorSummary,
-  actionPending,
-  onOpenChange,
-  onSectionChange,
-  onFormChange,
-  onSubmit,
-  onEdit,
-  onDisable,
-  onRefresh,
-  onToggleTool,
-  onClearSelection,
-  onAddToToolset,
-  onToolUpdated,
-  onCredentialFormChange,
-  onCredentialSubmit,
-  onCredentialRevoke,
-}: {
+type ServerDetailDialogProps = {
   server: McpServerView | null
   section: ServerSection
   form: ServerFormState
@@ -532,7 +501,22 @@ function ServerDetailDialog({
   onCredentialFormChange: (form: CredentialBindingFormState) => void
   onCredentialSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCredentialRevoke: (binding: McpCredentialBindingView) => void
-}) {
+}
+
+// Keep responsive navigation and header actions in one dialog shell.
+// oxlint-disable-next-line eslint/max-lines-per-function
+function ServerDetailDialog(props: ServerDetailDialogProps) {
+  const {
+    server,
+    section,
+    actionPending,
+    onOpenChange,
+    onSectionChange,
+    onFormChange,
+    onEdit,
+    onDisable,
+    onRefresh,
+  } = props
   function setSection(nextSection: ServerSection) {
     if (nextSection === 'configuration' && server) {
       onFormChange(formFromServer(server))
@@ -661,62 +645,7 @@ function ServerDetailDialog({
                 className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6"
                 data-testid="mcp-server-detail"
               >
-                {section === 'overview' ? (
-                  <ServerOverviewPanel
-                    server={server}
-                    refreshStatus={refreshStatus}
-                    refreshErrorSummary={refreshErrorSummary}
-                  />
-                ) : null}
-                {section === 'configuration' ? (
-                  <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
-                    <div className="flex flex-col gap-2">
-                      <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
-                      <p className="text-subtle-foreground text-sm">
-                        Update endpoint, auth mode, timeout, and gateway auth configuration.
-                      </p>
-                    </div>
-                    <ServerFormFields mode="edit" form={form} onFormChange={onFormChange} />
-                    <DialogFooter className="border-border mt-auto border-t pt-4">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setSection('overview')}
-                      >
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={actionPending}>
-                        {actionPending ? 'Saving...' : 'Save changes'}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                ) : null}
-                {section === 'tools' ? (
-                  <ServerToolsPanel
-                    tools={tools}
-                    toolsPending={toolsPending}
-                    toolsError={toolsError}
-                    selectedToolIds={selectedToolIds}
-                    onToggleTool={onToggleTool}
-                    onClearSelection={onClearSelection}
-                    onAddToToolset={onAddToToolset}
-                    onToolUpdated={onToolUpdated}
-                  />
-                ) : null}
-                {section === 'reviews' ? (
-                  <ToolReviewsPanel server={server} tools={tools} onToolUpdated={onToolUpdated} />
-                ) : null}
-                {section === 'credentials' ? (
-                  <CredentialBindingsPanel
-                    bindings={credentialBindings}
-                    form={credentialForm}
-                    pending={actionPending || credentialBindingsPending}
-                    error={credentialBindingsError}
-                    onFormChange={onCredentialFormChange}
-                    onSubmit={onCredentialSubmit}
-                    onRevoke={onCredentialRevoke}
-                  />
-                ) : null}
+                <ServerSectionBody {...props} server={server} onSetSection={setSection} />
               </div>
             </main>
           </SidebarProvider>
@@ -724,6 +653,95 @@ function ServerDetailDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/** The open section of the server dialog. */
+function ServerSectionBody({
+  server,
+  section,
+  form,
+  tools,
+  toolsPending,
+  toolsError,
+  selectedToolIds,
+  credentialBindings,
+  credentialBindingsPending,
+  credentialBindingsError,
+  credentialForm,
+  refreshStatus,
+  refreshErrorSummary,
+  actionPending,
+  onFormChange,
+  onSubmit,
+  onToggleTool,
+  onClearSelection,
+  onAddToToolset,
+  onToolUpdated,
+  onCredentialFormChange,
+  onCredentialSubmit,
+  onCredentialRevoke,
+  onSetSection,
+}: ServerDetailDialogProps & {
+  server: McpServerView
+  onSetSection: (section: ServerSection) => void
+}) {
+  switch (section) {
+    case 'overview':
+      return (
+        <ServerOverviewPanel
+          server={server}
+          refreshStatus={refreshStatus}
+          refreshErrorSummary={refreshErrorSummary}
+        />
+      )
+    case 'configuration':
+      return (
+        <form className="flex min-h-full flex-col gap-6" onSubmit={onSubmit}>
+          <div className="flex flex-col gap-2">
+            <h3 className="text-foreground text-sm font-semibold">Configuration</h3>
+            <p className="text-subtle-foreground text-sm">
+              Update endpoint, auth mode, timeout, and gateway auth configuration.
+            </p>
+          </div>
+          <ServerFormFields mode="edit" form={form} onFormChange={onFormChange} />
+          <DialogFooter className="border-border mt-auto border-t pt-4">
+            <Button type="button" variant="secondary" onClick={() => onSetSection('overview')}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={actionPending}>
+              {actionPending ? 'Saving...' : 'Save changes'}
+            </Button>
+          </DialogFooter>
+        </form>
+      )
+    case 'tools':
+      return (
+        <ServerToolsPanel
+          tools={tools}
+          toolsPending={toolsPending}
+          toolsError={toolsError}
+          selectedToolIds={selectedToolIds}
+          onToggleTool={onToggleTool}
+          onClearSelection={onClearSelection}
+          onAddToToolset={onAddToToolset}
+          onToolUpdated={onToolUpdated}
+        />
+      )
+    case 'reviews':
+      return <ToolReviewsPanel server={server} tools={tools} onToolUpdated={onToolUpdated} />
+    case 'credentials':
+      return (
+        <CredentialBindingsPanel
+          bindings={credentialBindings}
+          form={credentialForm}
+          pending={actionPending || credentialBindingsPending}
+          error={credentialBindingsError}
+          onFormChange={onCredentialFormChange}
+          onSubmit={onCredentialSubmit}
+          onRevoke={onCredentialRevoke}
+        />
+      )
+  }
 }
 
 export function RecommendedCatalog({

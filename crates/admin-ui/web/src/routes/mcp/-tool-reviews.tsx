@@ -12,7 +12,7 @@ import type { McpServerView, McpToolVersionView, McpToolView } from '@/types/api
 import { diffText, lineDiff } from './-tool-diff'
 
 /** Tools with a version waiting for review. */
-export function pendingReviewTools(tools: McpToolView[]) {
+function pendingReviewTools(tools: McpToolView[]) {
   return tools.filter((tool) => tool.is_active && tool.pending_schema_version != null)
 }
 
