@@ -160,6 +160,69 @@ fn rule(
     }
 }
 
+/// Every derived tag, on both stores, with the same matrix: an upstream's
+/// own claim of the tag's hint selects nothing for an include rule on a
+/// server without approval, and an admin override of that hint selects the
+/// tool. Behavioural parity with `gateway_core::mcp_tool_policy`, so a tag the
+/// store SQL misses fails here rather than only in the SQL text check.
+async fn exercise_derived_tag_trust<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    use gateway_core::mcp_tool_policy::{DERIVED_TAGS, derived_tag_hint};
+
+    let now = OffsetDateTime::now_utc();
+    let server = create_server(store, "derived").await;
+    let claims = DERIVED_TAGS
+        .iter()
+        .map(|tag| {
+            let hint = derived_tag_hint(tag).expect("hint");
+            (*tag, json!({ hint: true }))
+        })
+        .collect::<Vec<_>>();
+    let tools = discover(store, &server, &claims).await;
+    for tag in DERIVED_TAGS {
+        let subjects = [McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: Uuid::new_v4(),
+        }];
+        store
+            .upsert_mcp_tool_tag_rule(
+                &rule(&subjects[0], Some(&server), tag, McpTagRuleEffect::Include),
+                now,
+            )
+            .await
+            .expect("include rule");
+        assert!(
+            allowed_names(store, &subjects, server.mcp_server_id)
+                .await
+                .is_empty(),
+            "an upstream claim alone selects nothing for {tag}"
+        );
+        let mut overrides = McpAnnotationOverrides::default();
+        *match tag {
+            "read_only" => &mut overrides.read_only,
+            "destructive" => &mut overrides.destructive,
+            "idempotent" => &mut overrides.idempotent,
+            _ => &mut overrides.open_world,
+        } = Some(true);
+        let target = tool(&tools, tag).mcp_tool_id;
+        store
+            .set_mcp_tool_annotation_overrides(target, &overrides)
+            .await
+            .expect("override");
+        assert_eq!(
+            allowed_names(store, &subjects, server.mcp_server_id).await,
+            [tag],
+            "an admin override selects the tool for {tag}"
+        );
+        store
+            .set_mcp_tool_annotation_overrides(target, &McpAnnotationOverrides::default())
+            .await
+            .expect("clear override");
+    }
+}
+
 async fn exercise_tag_rules<S>(store: &S)
 where
     S: McpAccessRepository + McpRegistryRepository + Sync,
@@ -574,6 +637,7 @@ async fn libsql_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+    exercise_derived_tag_trust(&store).await;
 
     // The index the writes maintain, and the migration's backfill run again
     // from scratch, both hold exactly `effective_tags` for every tool.
@@ -648,6 +712,7 @@ async fn postgres_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+    exercise_derived_tag_trust(&store).await;
 
     let expected = expected_effective_tags(&store).await;
     let read = || async {

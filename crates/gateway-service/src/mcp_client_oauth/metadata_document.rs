@@ -261,7 +261,7 @@ impl ClientMetadataDocuments {
             return Err(ResolveFailure {
                 error: OauthError::rate_limited(
                     "too many client metadata documents requested; try again later",
-                    limited.retry_after.as_secs(),
+                    limited.retry_after_seconds(),
                 ),
                 transient: true,
                 document_refused: false,

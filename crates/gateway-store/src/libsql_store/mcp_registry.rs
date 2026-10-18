@@ -351,7 +351,9 @@ macro_rules! server_columns {
 /// committed. Reads `external_mcp_discovery_runs_server_status_ms_idx`. A
 /// gateway older than V72, still serving during a rolling upgrade, records
 /// runs without `started_at_ms`; those compare by their whole-second start.
-const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND (started_at_ms > ?3 OR (started_at_ms IS NULL AND started_at * 1000 > ?3)))";
+/// Runs that start in the same millisecond are ordered by run id (`?4`), so
+/// of two concurrent refreshes exactly one is the newer.
+const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND (started_at_ms > ?3 OR (started_at_ms = ?3 AND discovery_run_id > ?4) OR (started_at_ms IS NULL AND started_at * 1000 > ?3)))";
 
 const SERVER_COLUMNS: &str = server_columns!();
 
@@ -1012,6 +1014,7 @@ impl McpRegistryRepository for LibsqlStore {
                         run.mcp_server_id.to_string(),
                         ExternalMcpDiscoveryStatus::Success.as_str(),
                         unix_millis(run.started_at),
+                        run.discovery_run_id.to_string(),
                     ],
                 )
                 .await
@@ -1137,7 +1140,8 @@ impl McpRegistryRepository for LibsqlStore {
               AND NOT EXISTS (
                 SELECT 1 FROM external_mcp_discovery_runs
                 WHERE mcp_server_id = ?4 AND status = ?5
-                  AND (started_at_ms > ?6 OR (started_at_ms IS NULL AND started_at * 1000 > ?6))
+                  AND (started_at_ms > ?6 OR (started_at_ms = ?6 AND discovery_run_id > ?7)
+                       OR (started_at_ms IS NULL AND started_at * 1000 > ?6))
               )
             "#,
             libsql::params![
@@ -1147,6 +1151,7 @@ impl McpRegistryRepository for LibsqlStore {
                 run.mcp_server_id.to_string(),
                 ExternalMcpDiscoveryStatus::Success.as_str(),
                 unix_millis(run.started_at),
+                run.discovery_run_id.to_string(),
             ],
         )
         .await
@@ -1439,7 +1444,7 @@ mod tests {
         let mut rows = connection
             .query(
                 NEWER_DISCOVERY_COMMITTED_SQL,
-                libsql::params!["server", "success", 1_699_999_999_500_i64],
+                libsql::params!["server", "success", 1_699_999_999_500_i64, "run"],
             )
             .await
             .expect("stale check");
@@ -1465,7 +1470,7 @@ mod tests {
         let mut rows = connection
             .query(
                 NEWER_DISCOVERY_COMMITTED_SQL,
-                libsql::params!["server", "success", 1_700_000_050_000_i64],
+                libsql::params!["server", "success", 1_700_000_050_000_i64, "run"],
             )
             .await
             .expect("stale check");
@@ -1481,7 +1486,7 @@ mod tests {
         let mut rows = connection
             .query(
                 &format!("EXPLAIN QUERY PLAN {NEWER_DISCOVERY_COMMITTED_SQL}"),
-                libsql::params!["server", "success", 0_i64],
+                libsql::params!["server", "success", 0_i64, "run"],
             )
             .await
             .expect("query plan");

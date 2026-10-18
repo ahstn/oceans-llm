@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    body::Bytes,
+    body::{Body, to_bytes},
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -17,11 +17,13 @@ use crate::http::state::AppState;
 /// Registration bodies are small JSON documents.
 pub(crate) const MAX_REGISTRATION_BODY_BYTES: usize = 16 * 1024;
 
-/// `POST /oauth/register`: RFC 7591 Dynamic Client Registration.
+/// `POST /oauth/register`: RFC 7591 Dynamic Client Registration. The body
+/// is read only after the registration limit admits the request, so a source
+/// over its limit cannot make the gateway buffer more bodies.
 pub async fn oauth_register(
     State(state): State<AppState>,
     source: ClientSource,
-    body: Bytes,
+    body: Body,
 ) -> Response {
     let Some(service) = oauth_service_for(&state, source)
         .filter(|service| service.settings().dynamic_client_registration())
@@ -31,6 +33,9 @@ pub async fn oauth_register(
     if let Err(error) = service.check_registration_limit() {
         return oauth_error_response(&error, false);
     }
+    let Ok(body) = to_bytes(body, MAX_REGISTRATION_BODY_BYTES).await else {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    };
     let request: ClientRegistrationRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(_) => {

@@ -213,6 +213,29 @@ where
         );
     }
 
+    // Two refreshes that start in the same millisecond are ordered by run id:
+    // once the later one committed, the earlier one is refused.
+    let same_instant = t0 + time::Duration::minutes(7);
+    let tied = |id: u128| ExternalMcpDiscoveryRunRecord {
+        discovery_run_id: Uuid::from_u128(id),
+        ..guarded_run(&server, same_instant)
+    };
+    store
+        .record_external_mcp_discovery_success(&tied(2), &[tool(&server, "tied-later")])
+        .await
+        .expect("later tied run");
+    let tied_earlier = store
+        .record_external_mcp_discovery_success(&tied(1), &[tool(&server, "tied-earlier")])
+        .await;
+    assert!(
+        matches!(tied_earlier, Err(StoreError::Conflict(_))),
+        "{tied_earlier:?}"
+    );
+    assert_eq!(
+        read_tool(store, &server).await,
+        ("tied-later".to_string(), true)
+    );
+
     // An admin disables the server while a discovery is in flight.
     store
         .disable_external_mcp_server(server.mcp_server_id, OffsetDateTime::now_utc())
