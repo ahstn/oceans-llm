@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { ComponentProps, ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
 import type { AgentSessionDetailView, AgentSessionSummaryView } from '@/types/api'
 
@@ -449,6 +450,45 @@ describe('AgentSessionsPage', () => {
     expect(sessionRow).toHaveTextContent('2')
   })
 
+  it('keeps Enter on a compact count tooltip from opening the session', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [{ ...session, request_count: 150_000 }], page: 1, page_size: 50, total: 1 },
+    })
+    render(
+      <TooltipProvider>
+        <AgentSessionsPage />
+      </TooltipProvider>,
+    )
+
+    const sessionRow = screen.getByRole('row', { name: /Opencode/ })
+    const count = within(sessionRow).getByTestId('compact-count')
+    expect(count).toHaveTextContent('150K')
+    fireEvent.keyDown(count, { key: 'Enter' })
+    fireEvent.keyDown(count, { key: ' ' })
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(sessionRow, { key: 'Enter' })
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('right-aligns numeric columns in both the header and the cells', () => {
+    render(<AgentSessionsPage />)
+
+    const headers = screen.getAllByRole('columnheader')
+    const cells = within(screen.getByRole('row', { name: /Opencode/ })).getAllByRole('cell')
+    const rightAligned = (element: HTMLElement) => element.classList.contains('text-right')
+
+    expect(headers.filter(rightAligned).map((header) => header.textContent)).toEqual([
+      'Score',
+      'Cost',
+      'Active time',
+      'Requests',
+      'Tool calls',
+      'MCP calls',
+    ])
+    expect(cells.map(rightAligned)).toEqual(headers.map(rightAligned))
+  })
+
   it('explains missing call metrics from an outdated gateway contract', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
@@ -559,7 +599,7 @@ describe('AgentSessionsPage', () => {
     expect(within(sessionSummary).getByText('Session score')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Normalised cost')).toBeInTheDocument()
     expect(within(sessionSummary).getByText('Total time')).toBeInTheDocument()
-    expect(within(sessionSummary).getByText('1.0 min')).toBeInTheDocument()
+    expect(within(sessionSummary).getByText('1 min')).toBeInTheDocument()
     expect(within(sessionSummary).queryByText('Outcome')).not.toBeInTheDocument()
     expect(within(sessionSummary).queryByText('Active time')).not.toBeInTheDocument()
     const eventStreamTrigger = screen.getByRole('button', { name: /Event stream/ })

@@ -9,7 +9,7 @@ import {
   TimelineTitle,
 } from '@/components/reui/timeline'
 import { Badge } from '@/components/ui/badge'
-import { formatUsd10000 } from '@/lib/format'
+import { formatTimestamp, formatUsd10000 } from '@/lib/format'
 import type { BudgetAlertHistoryItemView } from '@/types/api'
 
 const DELIVERY_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'destructive'> = {
@@ -50,8 +50,8 @@ export function AlertTimeline({ items }: { items: BudgetAlertHistoryItemView[] }
         <TimelineItem key={alert.budget_alert_id} step={index + 1}>
           <TimelineHeader>
             <TimelineSeparator />
-            <TimelineDate dateTime={alert.created_at}>
-              {new Date(alert.created_at).toLocaleString()}
+            <TimelineDate dateTime={alert.created_at} className="whitespace-nowrap">
+              {formatTimestamp(alert.created_at)}
             </TimelineDate>
             <TimelineTitle className="flex flex-wrap items-center gap-2">
               <span className="truncate">{alert.owner_name}</span>

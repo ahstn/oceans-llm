@@ -1,19 +1,12 @@
-import { useState, useTransition } from 'react'
+import { lazy, Suspense, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
+import { CompactCount } from '@/components/data/compact-count'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
+import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -26,7 +19,7 @@ import {
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
-import { formatUtcTimestamp } from '@/lib/format'
+import { EMPTY_VALUE, formatTimestamp, formatUsd10000, formatUsdTotal } from '@/lib/format'
 import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
@@ -39,15 +32,6 @@ export const Route = createFileRoute('/observability/leaderboard')({
   loader: () => getObservabilityLeaderboard({ data: { range: '7d' } }),
   component: ObservabilityLeaderboardPage,
 })
-
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
 
 // Keep chart and ranking projections with their shared range and leaderboard data derivation.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -157,68 +141,14 @@ export function ObservabilityLeaderboardPage() {
           ) : chartSeries.length === 0 ? (
             <LeaderboardEmptyState />
           ) : (
-            <ChartContainer config={chartConfig} className="h-[24rem] w-full">
-              <AreaChart accessibilityLayer data={chartData} margin={{ left: 12, right: 12 }}>
-                <defs>
-                  {chartSeries.map((user) => (
-                    <linearGradient
-                      key={user.gradientId}
-                      id={user.gradientId}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="5%" stopColor={user.color} stopOpacity={0.35} />
-                      <stop offset="95%" stopColor={user.color} stopOpacity={0.04} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="bucket_start"
-                  ticks={dayTicks}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                  tickFormatter={formatBucketDay}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) =>
-                        formatUtcTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
-                      }
-                      formatter={(value, name) => (
-                        <>
-                          <span className="text-muted-foreground">
-                            {chartConfig[String(name)]?.label ?? String(name)}
-                          </span>
-                          <span className="font-mono font-medium tabular-nums">
-                            {CURRENCY_FORMATTER.format(Number(value))}
-                          </span>
-                        </>
-                      )}
-                    />
-                  }
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-                {chartSeries.map((user) => (
-                  <Area
-                    {...chartAnimation}
-                    key={user.user_id}
-                    dataKey={user.key}
-                    type="monotone"
-                    stroke={user.color}
-                    fill={`url(#${user.gradientId})`}
-                    fillOpacity={1}
-                    strokeWidth={2}
-                    stackId={undefined}
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
+            <Suspense fallback={<LeaderboardChartSkeleton />}>
+              <LeaderboardChart
+                series={chartSeries}
+                config={chartConfig}
+                data={chartData}
+                dayTicks={dayTicks}
+              />
+            </Suspense>
           )}
         </CardContent>
       </Card>
@@ -262,7 +192,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
                 <p className="text-foreground truncate font-semibold">{leader.user_name}</p>
               </div>
               <p className="text-foreground shrink-0 font-medium tabular-nums">
-                {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
+                {formatUsd10000(leader.total_spend_usd_10000)}
               </p>
             </div>
 
@@ -271,7 +201,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
                 <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
                   Most used model
                 </dt>
-                <dd className="mt-1">{leader.most_used_model ?? '—'}</dd>
+                <dd className="mt-1">{leader.most_used_model ?? EMPTY_VALUE}</dd>
               </div>
               <div>
                 <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
@@ -286,7 +216,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
                   Total requests
                 </dt>
                 <dd className="mt-1 tabular-nums">
-                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                  <CompactCount value={leader.total_requests} unit="requests" />
                 </dd>
               </div>
               <div className="col-span-2">
@@ -303,14 +233,14 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
       </div>
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
-        <Table data-testid="leaderboard-table" className="min-w-[80rem] text-left">
+        <Table data-testid="leaderboard-table" className="min-w-[60rem] text-left">
           <TableHeader className="bg-surface-muted">
             <TableRow>
               <TableHead className="text-muted-foreground w-16 px-3 py-2 font-semibold">
                 Rank
               </TableHead>
               <TableHead className="text-muted-foreground px-3 py-2 font-semibold">User</TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Total spend
               </TableHead>
               <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
@@ -319,7 +249,7 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
               <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
                 Most used harness
               </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
+              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
                 Total requests
               </TableHead>
               <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
@@ -330,19 +260,19 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
           <TableBody>
             {leaders.map((leader) => (
               <TableRow key={leader.user_id}>
-                <TableCell className="text-muted-foreground px-3 py-3 font-medium">
+                <TableCell className="text-muted-foreground px-3 py-3 font-medium tabular-nums">
                   {leader.rank}
                 </TableCell>
                 <TableCell className="px-3 py-3 font-medium">{leader.user_name}</TableCell>
-                <TableCell className="px-3 py-3 tabular-nums">
-                  {CURRENCY_FORMATTER.format(leader.total_spend_usd_10000 / 10_000)}
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  {formatUsd10000(leader.total_spend_usd_10000)}
                 </TableCell>
-                <TableCell className="px-3 py-3">{leader.most_used_model ?? '—'}</TableCell>
+                <TableCell className="px-3 py-3">{leader.most_used_model ?? EMPTY_VALUE}</TableCell>
                 <TableCell className="px-3 py-3">
                   <MostUsedHarness leader={leader} />
                 </TableCell>
-                <TableCell className="px-3 py-3 tabular-nums">
-                  {NUMBER_FORMATTER.format(leader.total_requests)}
+                <TableCell className="px-3 py-3 text-right tabular-nums">
+                  <CompactCount value={leader.total_requests} unit="requests" />
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   <ToolAverages leader={leader} />
@@ -356,9 +286,103 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
   )
 }
 
+type LeaderboardChartSeries = {
+  user_id: string
+  key: string
+  color: string
+  gradientId: string
+}
+
+// Recharts stays out of the route chunk and loads on first render, like the usage cost charts.
+const LeaderboardChart = lazy(async () => {
+  const [
+    { Area, AreaChart, CartesianGrid, XAxis },
+    { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent },
+  ] = await Promise.all([import('recharts'), import('@/components/ui/chart')])
+
+  function LeaderboardChartComponent({
+    series,
+    config,
+    data,
+    dayTicks,
+  }: {
+    series: LeaderboardChartSeries[]
+    config: ChartConfig
+    data: Record<string, number | string>[]
+    dayTicks: string[]
+  }) {
+    return (
+      <ChartContainer config={config} className="h-[24rem] w-full">
+        <AreaChart accessibilityLayer data={data} margin={{ left: 12, right: 12 }}>
+          <defs>
+            {series.map((user) => (
+              <linearGradient
+                key={user.gradientId}
+                id={user.gradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop offset="5%" stopColor={user.color} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={user.color} stopOpacity={0.04} />
+              </linearGradient>
+            ))}
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="bucket_start"
+            ticks={dayTicks}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+            tickFormatter={formatBucketDay}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, payload) =>
+                  formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                }
+                formatter={(value, name) => (
+                  <>
+                    <span className="text-muted-foreground">
+                      {config[String(name)]?.label ?? String(name)}
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      {formatUsdTotal(Number(value))}
+                    </span>
+                  </>
+                )}
+              />
+            }
+          />
+          <ChartLegend content={<ChartLegendContent />} />
+          {series.map((user) => (
+            <Area
+              {...chartAnimation}
+              key={user.user_id}
+              dataKey={user.key}
+              type="monotone"
+              stroke={user.color}
+              fill={`url(#${user.gradientId})`}
+              fillOpacity={1}
+              strokeWidth={2}
+              stackId={undefined}
+            />
+          ))}
+        </AreaChart>
+      </ChartContainer>
+    )
+  }
+
+  return { default: LeaderboardChartComponent }
+})
+
 function MostUsedHarness({ leader }: { leader: LeaderboardLeaderView }) {
   if (!leader.most_used_harness) {
-    return <span className="text-muted-foreground">—</span>
+    return <span className="text-muted-foreground">{EMPTY_VALUE}</span>
   }
 
   return (
@@ -427,7 +451,7 @@ function ToolAverages({ leader }: { leader: LeaderboardLeaderView }) {
 
 function formatAverageCount(value: number | null | undefined) {
   if (value == null) {
-    return 'n/a'
+    return EMPTY_VALUE
   }
 
   return Number.isInteger(value) ? String(value) : value.toFixed(1)

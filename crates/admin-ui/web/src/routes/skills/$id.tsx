@@ -31,19 +31,10 @@ import type {
   SkillSummary,
   SkillVersionDetail,
 } from '@/types/skills-api'
+import { formatTimestamp } from '@/lib/format'
 import { SkillFiles } from './-files'
 import { SkillUploadDialog } from './-upload-dialog'
 import { SkillsErrorPage } from './-error'
-
-const uploadedAtFormatter = new Intl.DateTimeFormat('en-GB', {
-  day: '2-digit',
-  month: '2-digit',
-  year: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-  timeZone: 'UTC',
-})
 
 export const Route = createFileRoute('/skills/$id')({
   validateSearch: (search: Record<string, unknown>): { version?: number } => ({
@@ -244,8 +235,8 @@ export function VersionMetadata({ detail }: { detail: SkillVersionDetail }) {
       <div>
         <dt className="text-muted-foreground">Uploaded</dt>
         <dd>
-          <time dateTime={detail.version.created_at} title="UTC">
-            {uploadedAtFormatter.format(new Date(detail.version.created_at)).replace(',', '')}
+          <time dateTime={detail.version.created_at} className="whitespace-nowrap">
+            {formatTimestamp(detail.version.created_at)}
           </time>
         </dd>
       </div>

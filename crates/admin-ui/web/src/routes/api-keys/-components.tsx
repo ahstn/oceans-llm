@@ -222,62 +222,80 @@ export function ApiKeyList({
         ))}
       </div>
 
-      <div className="border-border hidden overflow-hidden rounded-md border md:block">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-surface-muted text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-semibold">Name</th>
-              <th className="px-3 py-2 font-semibold">Owner</th>
-              <th className="px-3 py-2 font-semibold">Granted models</th>
-              <th className="px-3 py-2 font-semibold">Scopes</th>
-              <th className="px-3 py-2 font-semibold">Created</th>
-              <th className="px-3 py-2 font-semibold">Last used</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              {onManage ? <th className="px-3 py-2 font-semibold">Actions</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-border border-t align-top">
-                <td className="px-3 py-3">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-foreground font-semibold">{item.name}</span>
-                    <span className="text-muted-foreground font-mono text-xs">
-                      {maskApiKeyPrefix(item.prefix)}
-                    </span>
+      <ApiKeyTable items={items} onManage={onManage} />
+    </>
+  )
+}
+
+function ApiKeyTable({
+  items,
+  onManage,
+}: {
+  items: ApiKeyView[]
+  onManage?: (apiKeyId: string) => void
+}) {
+  return (
+    // Scrolls sideways when the timestamps outgrow the card; Actions stays pinned right.
+    <div
+      className="border-border hidden overflow-x-auto rounded-md border md:block"
+      data-testid="api-key-table"
+    >
+      <table className="w-full text-left text-sm">
+        <thead className="bg-surface-muted text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 font-semibold">Name</th>
+            <th className="px-3 py-2 font-semibold">Owner</th>
+            <th className="px-3 py-2 font-semibold">Granted models</th>
+            <th className="px-3 py-2 font-semibold">Scopes</th>
+            <th className="px-3 py-2 font-semibold">Created</th>
+            <th className="px-3 py-2 font-semibold">Last used</th>
+            <th className="px-3 py-2 font-semibold">Status</th>
+            {onManage ? (
+              <th className="bg-surface-muted shadow-sticky-edge-end sticky right-0 z-10 px-3 py-2 font-semibold">
+                Actions
+              </th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id} className="border-border border-t align-top">
+              <td className="px-3 py-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-foreground font-semibold">{item.name}</span>
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {maskApiKeyPrefix(item.prefix)}
+                  </span>
+                </div>
+              </td>
+              <td className="text-foreground px-3 py-3">{formatOwner(item)}</td>
+              <td className="text-subtle-foreground px-3 py-3">{formatModelGrantSummary(item)}</td>
+              <td className="text-subtle-foreground px-3 py-3">{formatScopeSummary(item)}</td>
+              <td className="text-subtle-foreground px-3 py-3 whitespace-nowrap tabular-nums">
+                {formatCreatedAt(item.created_at)}
+              </td>
+              <td className="text-subtle-foreground px-3 py-3 whitespace-nowrap tabular-nums">
+                {formatLastUsedAt(item.last_used_at)}
+              </td>
+              <td className="px-3 py-3">
+                <Badge variant={item.status === 'active' ? 'success' : 'warning'}>
+                  {item.status}
+                </Badge>
+              </td>
+              {onManage ? (
+                <td className="bg-card shadow-sticky-edge-end sticky right-0 z-10 px-3 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
+                      Manage
+                    </Button>
                   </div>
                 </td>
-                <td className="text-foreground px-3 py-3">{formatOwner(item)}</td>
-                <td className="text-subtle-foreground px-3 py-3">
-                  {formatModelGrantSummary(item)}
-                </td>
-                <td className="text-subtle-foreground px-3 py-3">{formatScopeSummary(item)}</td>
-                <td className="text-subtle-foreground px-3 py-3">
-                  {formatCreatedAt(item.created_at)}
-                </td>
-                <td className="text-subtle-foreground px-3 py-3">
-                  {formatLastUsedAt(item.last_used_at)}
-                </td>
-                <td className="px-3 py-3">
-                  <Badge variant={item.status === 'active' ? 'success' : 'warning'}>
-                    {item.status}
-                  </Badge>
-                </td>
-                {onManage ? (
-                  <td className="px-3 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="secondary" onClick={() => onManage(item.id)}>
-                        Manage
-                      </Button>
-                    </div>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

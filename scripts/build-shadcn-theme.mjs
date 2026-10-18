@@ -68,7 +68,7 @@ for (const [name, value] of rootTokens) {
 
 // The CLI writes `theme` into the consumer's `@theme inline`, so it mirrors ours: a Tailwind mapping
 // for every colour, the radius scale, and the admin-only utilities (text-subtle-foreground,
-// tracking-label, text-2xs, text-display, shadow-sticky-edge). The fonts are literal because ours
+// tracking-label, text-2xs, text-display, shadow-sticky-edge, shadow-sticky-edge-end). The fonts are literal because ours
 // point at --font-display, which isn't exported.
 const theme = {
   'font-sans': "'Geist Variable', ui-sans-serif, sans-serif",

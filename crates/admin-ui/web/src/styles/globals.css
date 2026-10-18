@@ -268,8 +268,9 @@ a {
   --text-display: clamp(2.8rem, 5vw, 4.6rem);
   --text-display--line-height: 0.94;
   --text-display-sm: clamp(1.9rem, 2vw, 2.6rem);
-  /* Edge of a horizontally sticky table column. */
+  /* Edge of a horizontally sticky table column: pinned left, and pinned right (the action column). */
   --shadow-sticky-edge: 8px 0 12px -12px rgb(0 0 0 / 0.8);
+  --shadow-sticky-edge-end: -8px 0 12px -12px rgb(0 0 0 / 0.8);
 }
 
 /* Elevation and motion, as Tailwind theme scales: shadow-panel, shadow-popover, shadow-dialog,

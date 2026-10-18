@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
-import { formatUtcTimestamp } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
@@ -186,7 +186,7 @@ export function AgentHarnessesPage() {
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) =>
-                        formatUtcTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                        formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
                       }
                       formatter={(value, name) => (
                         <>
