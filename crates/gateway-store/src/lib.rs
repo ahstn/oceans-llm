@@ -602,6 +602,37 @@ pub(crate) mod tests {
             route_state(&routes, route_a).expect("batch history keeps route a's row");
         assert!(!parked_enabled, "the removed route stays disabled");
         assert!(parked_priority < 20, "the removed route's row moved aside");
+
+        // A new route listed first takes `b`'s current priority while `b` moves on. `b` must
+        // keep its own row instead of losing it to the new route's tuple match.
+        seed(vec![model_with(vec![route("n", 20), route("b", 40)])])
+            .await
+            .expect("reseed with a new route ahead of a moving one");
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after the new route");
+        assert_eq!(
+            route_state(&routes, route_b),
+            Some((40, true)),
+            "route b keeps its row"
+        );
+        let enabled = routes
+            .iter()
+            .filter(|route| route.enabled)
+            .map(|route| (route.id, route.priority))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            enabled.len(),
+            2,
+            "both configured routes have their own row"
+        );
+        assert!(
+            enabled
+                .iter()
+                .any(|(id, priority)| *id != route_b && *priority == 20),
+            "the new route gets its own row at priority 20"
+        );
     }
 
     async fn exercise_managed_service_account_seed<S>(store: &S)

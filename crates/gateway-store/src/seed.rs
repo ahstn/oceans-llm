@@ -100,33 +100,35 @@ impl RouteSurvivors {
             .collect()
     }
 
-    /// The row id a configured route should upsert. A route whose own deterministic id
-    /// survived keeps it, even when its priority changed. Otherwise a survivor with the same
-    /// `(provider, upstream, priority)` is reused, which covers a renamed route. Each survivor is
+    /// The row each configured route should upsert, given each route's own deterministic id and
+    /// target `(provider, upstream, priority)`, in config order. Claims run in two passes so the
+    /// result does not depend on route order: first every route whose own id survived keeps it,
+    /// even when its priority changed; then each remaining route may reuse a survivor with the
+    /// same `(provider, upstream, priority)`, which covers a renamed route. Each survivor is
     /// claimed once, so two configured routes never share a row.
-    pub(crate) fn claim(
-        &mut self,
-        own_id: Uuid,
-        provider_key: &str,
-        upstream_model: &str,
-        priority: i64,
-    ) -> Uuid {
-        if let Some(key) = self.by_id.remove(&own_id) {
-            self.by_key.remove(&key);
-            return own_id;
-        }
-        let key = (
-            provider_key.to_string(),
-            upstream_model.to_string(),
-            priority,
-        );
-        match self.by_key.remove(&key) {
-            Some(id) => {
-                self.by_id.remove(&id);
-                id
+    pub(crate) fn claim_all(&mut self, routes: &[(Uuid, (String, String, i64))]) -> Vec<Uuid> {
+        let mut claimed = routes
+            .iter()
+            .map(|(own_id, _)| {
+                self.by_id.remove(own_id).map(|key| {
+                    self.by_key.remove(&key);
+                    *own_id
+                })
+            })
+            .collect::<Vec<_>>();
+        for ((own_id, key), slot) in routes.iter().zip(&mut claimed) {
+            if slot.is_none() {
+                let id = match self.by_key.remove(key) {
+                    Some(id) => {
+                        self.by_id.remove(&id);
+                        id
+                    }
+                    None => *own_id,
+                };
+                *slot = Some(id);
             }
-            None => own_id,
         }
+        claimed.into_iter().flatten().collect()
     }
 }
 

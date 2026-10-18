@@ -399,7 +399,7 @@ impl LibsqlStore {
 
             // Claim a row for every configured route first, then move rows that would block
             // another route's upsert out of the way, so reordered or swapped priorities apply.
-            let claimed = model
+            let targets = model
                 .routes
                 .iter()
                 .enumerate()
@@ -412,14 +412,8 @@ impl LibsqlStore {
                         route.priority,
                         route_index,
                     );
-                    let id = survivors.claim(
-                        own_id,
-                        &route.provider_key,
-                        &route.upstream_model,
-                        i64::from(route.priority),
-                    );
                     (
-                        id,
+                        own_id,
                         (
                             route.provider_key.clone(),
                             route.upstream_model.clone(),
@@ -427,6 +421,11 @@ impl LibsqlStore {
                         ),
                     )
                 })
+                .collect::<Vec<_>>();
+            let claimed = survivors
+                .claim_all(&targets)
+                .into_iter()
+                .zip(targets.into_iter().map(|(_, key)| key))
                 .collect::<Vec<_>>();
             for (route_id, parked) in survivors.parking_plan(&claimed) {
                 let parked = i32::try_from(parked).map_err(|_| {
