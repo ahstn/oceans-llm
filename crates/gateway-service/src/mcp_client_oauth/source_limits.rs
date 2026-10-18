@@ -31,6 +31,15 @@ pub struct RateLimited {
     pub retry_after: Duration,
 }
 
+impl RateLimited {
+    /// Whole seconds until the window resets, rounded up so a client that
+    /// waits that long is admitted.
+    #[must_use]
+    pub fn retry_after_seconds(&self) -> u64 {
+        self.retry_after.as_secs() + u64::from(self.retry_after.subsec_nanos() > 0)
+    }
+}
+
 #[derive(Debug)]
 pub struct SourceRateLimiter {
     limits: SourceRateLimits,
@@ -138,6 +147,10 @@ mod tests {
             .check(a, start + WINDOW / 2)
             .expect_err("per source");
         assert_eq!(refused.retry_after, WINDOW / 2);
+        let fraction = RateLimited {
+            retry_after: Duration::from_millis(30_900),
+        };
+        assert_eq!(fraction.retry_after_seconds(), 31);
         assert!(limiter.check(b, start).is_ok());
         assert!(limiter.check(None, start).is_err(), "gateway-wide");
         assert!(limiter.check(a, start + WINDOW).is_ok(), "next window");

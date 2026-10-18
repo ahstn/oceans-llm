@@ -74,7 +74,7 @@ impl<R> McpClientOauthService<R> {
                 tracing::warn!(source = ?self.source, "MCP OAuth client registration rate limited");
                 OauthError::rate_limited(
                     "too many client registrations; try again later",
-                    limited.retry_after.as_secs(),
+                    limited.retry_after_seconds(),
                 )
             })
     }
