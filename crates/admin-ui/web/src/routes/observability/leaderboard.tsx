@@ -102,7 +102,7 @@ export function ObservabilityLeaderboardPage() {
           },
         })
         setLeaderboard(response.data)
-        setRange(response.data.range)
+        setRange(response.data.range === '31d' ? '31d' : '7d')
       } catch (error) {
         toast.error(getErrorMessage(error))
       } finally {

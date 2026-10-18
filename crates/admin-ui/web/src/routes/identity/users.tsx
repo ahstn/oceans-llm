@@ -766,7 +766,7 @@ export function UsersPage() {
 
                     <EntityTagsField
                       label="Tags"
-                      tags={form.tags}
+                      tags={form.tags ?? []}
                       onChange={(tags) => setForm((current) => ({ ...current, tags }))}
                     />
                   </FieldGroup>
@@ -1184,7 +1184,7 @@ export function UsersPage() {
 
                         <EntityTagsField
                           label="Tags"
-                          tags={updateForm.tags}
+                          tags={updateForm.tags ?? []}
                           onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
                         />
                       </div>
@@ -1209,7 +1209,7 @@ export function UsersPage() {
                           <Field>
                             <FieldLabel htmlFor="manage-auth-mode">Auth method</FieldLabel>
                             <Select
-                              value={updateForm.auth_mode}
+                              value={updateForm.auth_mode ?? undefined}
                               onValueChange={setUpdateAuthMode}
                               disabled={selectedUser.status !== 'invited'}
                             >
@@ -1576,11 +1576,13 @@ function onboardingAuthChanged(user: UserView, form: UpdateUserInput) {
   if (form.auth_mode !== user.auth_mode) {
     return true
   }
+  const onboardingProviderKey =
+    user.onboarding && 'provider_key' in user.onboarding ? user.onboarding.provider_key : undefined
   if (form.auth_mode === 'oidc') {
-    return form.oidc_provider_key !== user.onboarding?.provider_key
+    return form.oidc_provider_key !== onboardingProviderKey
   }
   if (form.auth_mode === 'oauth') {
-    return form.oauth_provider_key !== user.onboarding?.provider_key
+    return form.oauth_provider_key !== onboardingProviderKey
   }
   return false
 }

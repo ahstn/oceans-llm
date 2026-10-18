@@ -36,8 +36,8 @@ export function ApiKeysPage() {
     service_accounts,
     // Links from the profile page create a personal key, so default the owner to the viewer.
     defaultOwnerUserId:
-      search.create || session.permissions.group !== 'platform_admins'
-        ? session.user.id
+      search.create || session?.permissions.group !== 'platform_admins'
+        ? session?.user.id
         : undefined,
     focusedApiKeyId: canManage ? search.api_key_id : undefined,
     openCreateOnLoad: canCreate && search.create === true,
@@ -94,7 +94,7 @@ export function ApiKeysPage() {
 
       {canManage ? (
         <ManageApiKeyDialog
-          actions={session.permissions.actions}
+          actions={session?.permissions.actions ?? []}
           availableScopes={available_scopes}
           form={state.manageForm}
           isPending={state.isPending}

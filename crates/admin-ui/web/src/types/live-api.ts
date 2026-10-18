@@ -43,6 +43,7 @@ export type UpdateApiKeyResult = components['schemas']['UpdateApiKeyResponse']
 export type UpdateApiKeyScopesInput = components['schemas']['UpdateApiKeyScopesRequest']
 export type UpdateApiKeyScopesResult = components['schemas']['UpdateApiKeyScopesResponse']
 export type RevokeApiKeyResult = components['schemas']['RevokeApiKeyResponse']
+export type RevealApiKeySecretResponse = components['schemas']['RevealApiKeySecretResponse']
 
 export type SpendOwnerKind = 'all' | 'user' | 'service_account'
 
@@ -98,12 +99,8 @@ export type CreateBudgetIncreaseInput = components['schemas']['CreateBudgetIncre
 export type CreateBudgetIncreaseResultView = components['schemas']['CreateBudgetIncreaseResultView']
 
 export type ModelAllowlistView = NonNullable<components['schemas']['AdminModelView']['allowlist']>
-export type ModelView = components['schemas']['AdminModelView'] & {
-  allowlist: ModelAllowlistView | null
-}
-export type ModelPageView = Omit<components['schemas']['AdminModelPageView'], 'items'> & {
-  items: ModelView[]
-}
+export type ModelView = components['schemas']['AdminModelView']
+export type ModelPageView = components['schemas']['AdminModelPageView']
 export type ModelListQuery = NonNullable<operations['list_models']['parameters']['query']>
 export type GenerateModelClientConfigsInput =
   components['schemas']['GenerateModelClientConfigsRequest']
@@ -152,6 +149,7 @@ export type AgentSessionFiltersInput = NonNullable<
   operations['list_agent_sessions']['parameters']['query']
 >
 export type RequestLogDetailView = components['schemas']['RequestLogDetailView']
+export type RequestAttemptView = components['schemas']['RequestAttemptView']
 export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<
   operations['list_request_logs']['parameters']['query']
