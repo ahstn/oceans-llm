@@ -50,6 +50,8 @@ Streamable HTTP-only support excludes stdio and SSE servers in this phase, but i
 
 Soft disable/archive semantics preserve discovery history and future audit relationships at the cost of no hard delete endpoint.
 
+Update (2026-10-17): soft disable is now reversible. `POST /api/v1/admin/mcp/servers/{server_id}/enable` sets the server active and clears `disabled_at`. Disabling never touches tools, toolset memberships, or grants, which are filtered by server status at resolution time, so enabling restores the access the server had. It also resets the discovery status, time, and error to "not run", because disabling had overwritten them with `disabled`; admins refresh discovery to pick up upstream changes made while the server was off.
+
 ## Follow-ups
 
 - Add grant/toolset data models that reference stable registry ids.

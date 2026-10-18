@@ -388,6 +388,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             post(disable_mcp_server),
         )
         .route(
+            "/api/v1/admin/mcp/servers/{server_id}/enable",
+            post(enable_mcp_server),
+        )
+        .route(
             "/api/v1/admin/mcp/servers/{server_id}/tools",
             get(list_mcp_server_tools),
         )

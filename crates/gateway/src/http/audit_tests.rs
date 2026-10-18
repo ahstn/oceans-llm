@@ -594,6 +594,22 @@ async fn mcp_changes_are_audited_and_credential_secrets_are_not() {
     }
     let disabled = harness.entry("mcp_server.disabled").await;
     assert_eq!(disabled["before"]["status"], "active");
+
+    // Enabling it again records one transition back, however often it is requested.
+    for _ in 0..2 {
+        let (status, body) = harness
+            .admin(
+                Method::POST,
+                &format!("/api/v1/admin/mcp/servers/{server_id}/enable"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["data"]["server"]["status"], "active");
+    }
+    let enabled = harness.entry("mcp_server.enabled").await;
+    assert_eq!(enabled["before"]["status"], "disabled");
+    assert_eq!(enabled["after"]["status"], "active");
 }
 
 #[tokio::test]

@@ -160,8 +160,8 @@ Model-centric overlays:
 ### External MCP Registry Tables
 
 - `external_mcp_servers`
-  - Key columns: `mcp_server_id`, `server_key`, `display_name`, `transport`, `server_url`, `auth_mode`, `auth_config_json`, `timeout_ms`, `status`, `last_discovery_status`, `last_discovery_at`, `last_successful_discovery_at`, `last_error_summary`, `last_tool_count`, `created_at`, `updated_at`, `disabled_at`
-  - Notes: rows are user-added registry records. Recommended catalog entries are not seeded into this table. Disabling a server is the archive/delete path; hard delete is not exposed.
+  - Key columns: `mcp_server_id`, `server_key`, `display_name`, `transport`, `server_url`, `auth_mode`, `auth_config_json`, `timeout_ms`, `status`, `last_discovery_status`, `last_discovery_at`, `last_successful_discovery_at`, `last_error_summary`, `last_tool_count`, `created_at`, `updated_at`, `disabled_at`, `status_revision`
+  - Notes: rows are user-added registry records. Recommended catalog entries are not seeded into this table. Disabling a server is the archive/delete path and can be reversed by enabling it; hard delete is not exposed. `status_revision` counts disable and enable transitions: discovery reads it before loading the server and refuses to record a result once it has moved, so a result that started before a transition on any replica never overwrites it.
 - `external_mcp_tools`
   - Key columns: `mcp_tool_id`, `mcp_server_id`, `upstream_name`, `display_name`, `description`, `input_schema_json`, `schema_hash`, `schema_version`, `is_active`, `first_discovered_at`, `last_discovered_at`, `deactivated_at`
   - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes. `admin_tags_json` and `annotation_overrides_json` are admin-owned policy that discovery never writes; overrides do not change `schema_hash`.

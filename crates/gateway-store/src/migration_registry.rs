@@ -428,6 +428,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V69__mcp_tool_effective_tags.sql"),
         postgres_sql: include_str!("../migrations/postgres/V69__mcp_tool_effective_tags.sql"),
     },
+    MigrationManifest {
+        version: 70,
+        name: "external_mcp_server_status_revision",
+        checksum: "V70__external_mcp_server_status_revision.sql",
+        libsql_sql: include_str!("../migrations/V70__external_mcp_server_status_revision.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V70__external_mcp_server_status_revision.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]
