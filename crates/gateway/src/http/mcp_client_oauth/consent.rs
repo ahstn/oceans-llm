@@ -247,15 +247,17 @@ async fn require_reachable_resource(
     let McpOauthResource::Server(server_key) = resource else {
         return Ok(());
     };
+    // The team is read first and the server last, so a transfer while the
+    // membership loads is seen.
+    let team_id =
+        gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
+            .await?
+            .map(|membership| membership.team_id);
     let server = gateway_core::McpRegistryRepository::get_external_mcp_server_by_key(
         &*state.store,
         server_key,
     )
     .await?;
-    let team_id =
-        gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
-            .await?
-            .map(|membership| membership.team_id);
     let reachable = server.is_some_and(|server| {
         server.status == gateway_core::ExternalMcpServerStatus::Active
             && server.ownership.is_reachable_from(team_id)

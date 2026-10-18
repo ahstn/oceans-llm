@@ -543,6 +543,61 @@ mod proxy_policy {
     }
 
     #[tokio::test]
+    async fn another_teams_team_only_server_does_not_exist_for_lifecycle_methods() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let team = state
+            .store
+            .create_team("lifecycle", "Lifecycle")
+            .await
+            .unwrap();
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .unwrap()
+            .unwrap();
+        state
+            .store
+            .transfer_external_mcp_server_ownership(
+                &gateway_core::TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
+                    expected_ownership: None,
+                    updated_at: OffsetDateTime::now_utc(),
+                    require_no_stranded_access: false,
+                },
+            )
+            .await
+            .unwrap();
+        let initialize = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}},
+        });
+
+        // Outside the owning team, the server answers like a missing one and
+        // its upstream is never contacted.
+        let (status, body) = send(&state, &auth, initialize.clone()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+
+        // A member of the owning team reaches it without any grant.
+        state
+            .store
+            .assign_team_membership(
+                auth.owner_user_id.unwrap(),
+                team.team_id,
+                gateway_core::MembershipRole::Member,
+            )
+            .await
+            .unwrap();
+        let (status, body) = send(&state, &auth, initialize).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(upstream.requests.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
     async fn tools_list_keeps_declared_metadata_for_granted_tools() {
         let (_directory, state) = crate::http::test_support::app_state().await;
         let upstream = spawn_upstream().await;

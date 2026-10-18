@@ -2288,3 +2288,54 @@ async fn api_key_server_options_follow_the_viewers_team() {
     );
     assert_eq!(options(member_b).await, vec!["team-a-published"]);
 }
+
+#[tokio::test]
+async fn api_key_server_lists_refuse_hidden_servers_like_missing_ones() {
+    let context = TestContext::new().await;
+    context
+        .server(
+            "team-a-secret",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let service = gateway_service::AdminApiKeyService::new(context.state.store.clone());
+    let set_servers = |api_key_id: Uuid, server_key: &str, viewer_team: Uuid| {
+        let service = service.clone();
+        let server_key = server_key.to_string();
+        async move {
+            service
+                .update_api_key_scopes(
+                    api_key_id,
+                    gateway_service::UpdateAdminApiKeyScopesInput {
+                        scopes: Some(vec!["mcp:proxy".to_string()]),
+                        mcp_server_keys: Some(vec![server_key]),
+                        viewer_team: Some(Some(viewer_team)),
+                    },
+                    &gateway_service::AuditProgress::default(),
+                )
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }
+    };
+    let member_b = context.member(context.team_b).await;
+    let key_b = context.user_api_key(member_b).await;
+    let hidden = set_servers(key_b, "team-a-secret", context.team_b).await;
+    let missing = set_servers(key_b, "team-a-absent", context.team_b).await;
+    let Err(hidden) = hidden else {
+        panic!("another team's team-only server must be refused");
+    };
+    let Err(missing) = missing else {
+        panic!("a missing server must be refused");
+    };
+    assert_eq!(
+        hidden.replace("team-a-secret", "KEY"),
+        missing.replace("team-a-absent", "KEY")
+    );
+    let member_a = context.member(context.team_a).await;
+    let key_a = context.user_api_key(member_a).await;
+    assert_eq!(
+        set_servers(key_a, "team-a-secret", context.team_a).await,
+        Ok(())
+    );
+}

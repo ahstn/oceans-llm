@@ -101,6 +101,10 @@ pub struct CreateAdminApiKeyInput {
     pub scopes: Option<Vec<String>>,
     /// `None` lets the key reach every server its owner's grants reach.
     pub mcp_server_keys: Option<Vec<String>>,
+    /// The caller's current team, or `None` for a platform admin. Listed
+    /// servers must be ones that team reaches, so a hidden server's key is
+    /// refused exactly like an unknown one.
+    pub viewer_team: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone)]
@@ -402,7 +406,12 @@ where
         }
         let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
         let access = self
-            .validated_access(request.scopes, request.mcp_server_keys)
+            .validated_access(
+                request.scopes,
+                request.mcp_server_keys,
+                request.viewer_team,
+                &[],
+            )
             .await?;
 
         let public_id = Uuid::new_v4().simple().to_string();

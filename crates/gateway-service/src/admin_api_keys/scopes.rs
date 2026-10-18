@@ -22,6 +22,9 @@ pub struct UpdateAdminApiKeyScopesInput {
     pub scopes: Option<Vec<String>>,
     /// `None` restores every server the owner's grants reach.
     pub mcp_server_keys: Option<Vec<String>>,
+    /// The caller's current team, or `None` for a platform admin, as for a
+    /// new key.
+    pub viewer_team: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,8 +64,16 @@ where
                 "revoked api keys cannot be updated".to_string(),
             ));
         }
+        // Servers the key already lists stay allowed, so an edit never fails
+        // on a server that became hidden from the caller after it was listed.
+        let already_listed = api_key.access.mcp_server_keys.clone().unwrap_or_default();
         let access = self
-            .validated_access(request.scopes, request.mcp_server_keys)
+            .validated_access(
+                request.scopes,
+                request.mcp_server_keys,
+                request.viewer_team,
+                &already_listed,
+            )
             .await?;
         let replaced_access = self
             .repo
@@ -91,20 +102,30 @@ where
         })
     }
 
-    /// Validates requested access. Every listed server must be registered.
+    /// Validates requested access. Every listed server must be registered and,
+    /// for a caller other than a platform admin, reachable by `viewer_team`, or
+    /// already listed on the key: another team's team-only server is refused
+    /// with the same error as an unknown key, so the reply never confirms it.
     pub(super) async fn validated_access(
         &self,
         scopes: Option<Vec<String>>,
         mcp_server_keys: Option<Vec<String>>,
+        viewer_team: Option<Option<Uuid>>,
+        already_listed: &[String],
     ) -> Result<ApiKeyAccess, GatewayError> {
         let access =
             ApiKeyAccess::new(scopes, mcp_server_keys).map_err(GatewayError::InvalidRequest)?;
         if let Some(keys) = &access.mcp_server_keys {
             let servers = self.repo.list_external_mcp_servers(true).await?;
-            if let Some(unknown) = keys
-                .iter()
-                .find(|key| !servers.iter().any(|server| &server.server_key == *key))
-            {
+            let listable = |key: &String| {
+                already_listed.contains(key)
+                    || servers.iter().any(|server| {
+                        &server.server_key == key
+                            && viewer_team
+                                .is_none_or(|team_id| server.ownership.is_reachable_from(team_id))
+                    })
+            };
+            if let Some(unknown) = keys.iter().find(|key| !listable(key)) {
                 return Err(GatewayError::InvalidRequest(format!(
                     "MCP server `{unknown}` is not registered"
                 )));

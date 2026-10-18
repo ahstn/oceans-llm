@@ -162,11 +162,26 @@ async fn dispatch_mcp_request(
         Ok(server) => server,
         Err(error) => return mcp_error_response(error),
     };
+    let access = McpAccess::new(state.store.clone());
+    // A team-only server another team's caller cannot reach does not exist for
+    // them, on every method, including the grant-free lifecycle ones that
+    // never resolve grants: they get the same not-found as a missing server,
+    // and its upstream is never contacted.
+    if server.ownership.visibility == gateway_core::McpServerVisibility::Team {
+        let reachable = match access.subjects_and_team(auth).await {
+            Ok((_, team_id)) => server.ownership.is_reachable_from(team_id),
+            Err(error) => return mcp_error_response(error),
+        };
+        if !reachable {
+            return mcp_error_response(GatewayError::Store(gateway_core::StoreError::NotFound(
+                format!("external MCP server `{}` not found", server.server_key),
+            )));
+        }
+    }
     tracing::Span::current().record("mcp_server_id", server.mcp_server_id.to_string());
     tracing::Span::current().record("upstream_auth_mode", server.auth_mode.as_str());
 
     let rpc_request = parse_mcp_rpc_request(method, &body);
-    let access = McpAccess::new(state.store.clone());
 
     match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {

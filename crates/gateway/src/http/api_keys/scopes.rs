@@ -73,6 +73,7 @@ pub async fn update_api_key_scopes(
         UpdateAdminApiKeyScopesInput {
             scopes: request.scopes,
             mcp_server_keys: request.mcp_server_keys,
+            viewer_team: super::api_key_viewer_team(&state, &scope).await?,
         },
         &progress,
     );
