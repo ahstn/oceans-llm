@@ -3,12 +3,14 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthSessionView } from '@/types/api'
+import { ProfileOverviewPage } from '@/routes/profile/index'
 import { apiKey, profileView } from '@/test/profile-fixtures'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-}
+}))
 
 class ResizeObserverMock {
   observe() {}
@@ -67,8 +69,6 @@ function session(overrides: Partial<AuthSessionView['permissions']> = {}): AuthS
 
 const FIVE_KEYS = ['a', 'b', 'c', 'd', 'e'].map((id) => apiKey(id))
 
-const load = async () => (await import('@/routes/profile/index')).ProfileOverviewPage
-
 // Unmount after each test so no React work is still scheduled when the environment tears down.
 function resetPage() {
   cleanup()
@@ -85,8 +85,8 @@ describe('profile page', () => {
   afterEach(resetPage)
   beforeEach(setUpPage)
 
-  it('shows budget used against the limit and the headline figures', async () => {
-    const Page = await load()
+  it('shows budget used against the limit and the headline figures', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     const meter = screen.getByTestId('budget-meter')
@@ -100,8 +100,8 @@ describe('profile page', () => {
     expect(screen.getByTestId('profile-headlines-period')).toHaveTextContent('Last 30 days')
   })
 
-  it('pads the heatmap before the history window so days keep their weekday rows', async () => {
-    const Page = await load()
+  it('pads the heatmap before the history window so days keep their weekday rows', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     // History starts on Friday 2025-09-26, so Sunday to Thursday of the first column are padding.
@@ -110,8 +110,8 @@ describe('profile page', () => {
     expect(slots[5]).toHaveAttribute('data-day', '2025-09-26')
   })
 
-  it('shows requests, tokens and cost for a hovered heatmap day', async () => {
-    const Page = await load()
+  it('shows requests, tokens and cost for a hovered heatmap day', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     const heatmap = screen.getByTestId('usage-heatmap')
@@ -129,11 +129,11 @@ describe('profile page', () => {
     expect(screen.queryByTestId('heatmap-tooltip')).toBeNull()
   })
 
-  it('explains a missing budget instead of showing an empty meter', async () => {
+  it('explains a missing budget instead of showing an empty meter', () => {
     routeMock.useLoaderData.mockReturnValue({
       profile: profileView({ budget: null, api_keys: FIVE_KEYS }),
     })
-    const Page = await load()
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.queryByTestId('budget-meter')).toBeNull()
@@ -145,8 +145,8 @@ describe('profile page API keys', () => {
   afterEach(resetPage)
   beforeEach(setUpPage)
 
-  it('links to the API keys page from the page header', async () => {
-    const Page = await load()
+  it('links to the API keys page from the page header', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     const header = screen.getByRole('heading', { name: 'Welcome back, Jane' }).closest('header')
@@ -157,8 +157,8 @@ describe('profile page API keys', () => {
     )
   })
 
-  it('links each key to its manage dialog when the viewer can manage keys', async () => {
-    const Page = await load()
+  it('links each key to its manage dialog when the viewer can manage keys', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.getByRole('link', { name: 'Key a' })).toHaveAttribute(
@@ -167,11 +167,11 @@ describe('profile page API keys', () => {
     )
   })
 
-  it('omits per-key links when the viewer can only create keys', async () => {
+  it('omits per-key links when the viewer can only create keys', () => {
     routeMock.useRouteContext.mockReturnValue({
       session: session({ actions: ['create_api_key'] }),
     })
-    const Page = await load()
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.queryByRole('link', { name: 'Key a' })).toBeNull()
@@ -181,9 +181,9 @@ describe('profile page API keys', () => {
     }
   })
 
-  it('offers only a view link to viewers without key actions', async () => {
+  it('offers only a view link to viewers without key actions', () => {
     routeMock.useRouteContext.mockReturnValue({ session: session({ actions: [] }) })
-    const Page = await load()
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.queryByRole('link', { name: 'Key a' })).toBeNull()
@@ -193,8 +193,8 @@ describe('profile page API keys', () => {
     }
   })
 
-  it('limits the key table to three rows until expanded', async () => {
-    const Page = await load()
+  it('limits the key table to three rows until expanded', () => {
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.getByText('Key a')).toBeInTheDocument()
@@ -211,9 +211,9 @@ describe('profile page API keys', () => {
     )
   })
 
-  it('links the empty state to the create key dialog', async () => {
+  it('links the empty state to the create key dialog', () => {
     routeMock.useLoaderData.mockReturnValue({ profile: profileView() })
-    const Page = await load()
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.getByText('No personal API keys yet')).toBeInTheDocument()
@@ -223,10 +223,10 @@ describe('profile page API keys', () => {
     )
   })
 
-  it('hides the create link from users who cannot create keys', async () => {
+  it('hides the create link from users who cannot create keys', () => {
     routeMock.useLoaderData.mockReturnValue({ profile: profileView() })
     routeMock.useRouteContext.mockReturnValue({ session: session({ actions: [] }) })
-    const Page = await load()
+    const Page = ProfileOverviewPage
     render(<Page />)
 
     expect(screen.queryByRole('link', { name: 'Create your first key' })).toBeNull()

@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AgentHarnessesPage } from '@/routes/observability/agent-harnesses'
 
 const refreshObservabilityHarnessUsageMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -94,10 +96,8 @@ describe('AgentHarnessesPage', () => {
     refreshObservabilityHarnessUsageMock.mockReset()
   })
 
-  it('renders the chart card, range selector, and ranked harness table', async () => {
+  it('renders the chart card, range selector, and ranked harness table', () => {
     routeMock.useLoaderData.mockReturnValue({ data: harnessUsageData })
-
-    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
 
     const view = render(<AgentHarnessesPage />)
     const scope = within(view.container)
@@ -133,8 +133,6 @@ describe('AgentHarnessesPage', () => {
       },
     })
 
-    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
-
     const view = render(<AgentHarnessesPage />)
     const scope = within(view.container)
     fireEvent.click(scope.getByRole('radio', { name: 'Last 31 days' }))
@@ -153,8 +151,6 @@ describe('AgentHarnessesPage', () => {
     routeMock.useLoaderData.mockReturnValue({ data: harnessUsageData })
     refreshObservabilityHarnessUsageMock.mockRejectedValue(new Error('refresh failed'))
 
-    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
-
     const view = render(<AgentHarnessesPage />)
     const scope = within(view.container)
     fireEvent.click(scope.getByRole('radio', { name: 'Last 31 days' }))
@@ -169,7 +165,7 @@ describe('AgentHarnessesPage', () => {
     })
   })
 
-  it('renders an explicit empty state when no harness data exists', async () => {
+  it('renders an explicit empty state when no harness data exists', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...harnessUsageData,
@@ -179,8 +175,6 @@ describe('AgentHarnessesPage', () => {
       },
     })
 
-    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
-
     const view = render(<AgentHarnessesPage />)
 
     expect(within(view.container).getAllByText('No harness data yet')).toHaveLength(2)
@@ -189,8 +183,6 @@ describe('AgentHarnessesPage', () => {
   it('shows loading skeletons while a range refresh is in flight', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: harnessUsageData })
     refreshObservabilityHarnessUsageMock.mockImplementation(() => new Promise(() => undefined))
-
-    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
 
     const view = render(<AgentHarnessesPage />)
     const scope = within(view.container)

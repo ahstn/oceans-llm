@@ -2,12 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApiKeysPayload } from '@/types/api'
+import { ApiKeysPage } from '@/routes/api-keys'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 class ResizeObserverMock {
   observe() {}
@@ -147,9 +149,7 @@ describe('ApiKeysPage', () => {
     })
   })
 
-  it('renders masked prefixes and normalized owner and timestamp metadata', async () => {
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
+  it('renders masked prefixes and normalized owner and timestamp metadata', () => {
     render(<ApiKeysPage />)
 
     expect(screen.getAllByText('gwk_prod_liv****').length).toBeGreaterThan(0)
@@ -160,9 +160,7 @@ describe('ApiKeysPage', () => {
     expect(screen.queryByRole('button', { name: 'Copy prefix' })).not.toBeInTheDocument()
   })
 
-  it('keeps create submission disabled until required fields are populated', async () => {
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
+  it('keeps create submission disabled until required fields are populated', () => {
     render(<ApiKeysPage />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
@@ -200,8 +198,6 @@ describe('ApiKeysPage', () => {
         raw_key: 'gwk_prod_2.secret-value',
       },
     })
-
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -263,8 +259,6 @@ describe('ApiKeysPage', () => {
       },
     })
 
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
     render(<ApiKeysPage />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
@@ -296,9 +290,7 @@ describe('ApiKeysPage', () => {
     })
   })
 
-  it('shows full access for keys without scopes', async () => {
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
+  it('shows full access for keys without scopes', () => {
     render(<ApiKeysPage />)
 
     expect(screen.getAllByText('Full access').length).toBeGreaterThan(0)
@@ -308,7 +300,6 @@ describe('ApiKeysPage', () => {
     createGatewayApiKeyMock.mockResolvedValue({
       data: { api_key: { ...basePayload.items[0], id: 'api_key_2' }, raw_key: 'gwk_x.y' },
     })
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -339,9 +330,7 @@ describe('ApiKeysPage', () => {
     })
   })
 
-  it('drops the server list when the last MCP scope is unticked', async () => {
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
+  it('drops the server list when the last MCP scope is unticked', () => {
     render(<ApiKeysPage />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
@@ -361,7 +350,6 @@ describe('ApiKeysPage', () => {
     const serverOnly = { ...basePayload.items[0], scopes: null, mcp_server_keys: ['notes'] }
     routeMock.useLoaderData.mockReturnValue({ data: { ...basePayload, items: [serverOnly] } })
     updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: serverOnly } })
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -386,7 +374,6 @@ describe('ApiKeysPage', () => {
     const serverOnly = { ...basePayload.items[0], scopes: null, mcp_server_keys: ['notes'] }
     routeMock.useLoaderData.mockReturnValue({ data: { ...basePayload, items: [serverOnly] } })
     updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: serverOnly } })
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -405,7 +392,6 @@ describe('ApiKeysPage', () => {
 
   it('edits scopes after creation without touching model access', async () => {
     updateGatewayApiKeyScopesMock.mockResolvedValue({ data: { api_key: basePayload.items[0] } })
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -431,7 +417,6 @@ describe('ApiKeysPage', () => {
     updateGatewayApiKeyMock.mockResolvedValue({ data: { api_key: basePayload.items[0] } })
     updateGatewayApiKeyScopesMock.mockRejectedValue(new Error('gateway unavailable'))
     const { toast } = await import('sonner')
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -462,8 +447,6 @@ describe('ApiKeysPage', () => {
         resolveCreate = resolve
       }),
     )
-
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -515,8 +498,6 @@ describe('ApiKeysPage', () => {
   it('opens the targeted manage dialog from the api_key_id search param', async () => {
     routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
 
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
     render(<ApiKeysPage />)
 
     const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
@@ -531,8 +512,6 @@ describe('ApiKeysPage', () => {
     })
     routeMock.useSearch.mockReturnValue({ api_key_id: undefined, create: true })
 
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
     render(<ApiKeysPage />)
 
     const dialog = await screen.findByRole('dialog', { name: 'Create API key' })
@@ -544,8 +523,6 @@ describe('ApiKeysPage', () => {
 
   it('does not reopen an already dismissed api_key_id deeplink after items refresh', async () => {
     routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
-
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     const { rerender } = render(<ApiKeysPage />)
 
@@ -575,8 +552,6 @@ describe('ApiKeysPage', () => {
         },
       },
     })
-
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 
@@ -645,8 +620,6 @@ describe('ApiKeysPage', () => {
       },
     })
 
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
     render(<ApiKeysPage />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
@@ -682,8 +655,6 @@ describe('ApiKeysPage', () => {
       },
     })
 
-    const { ApiKeysPage } = await import('@/routes/api-keys')
-
     render(<ApiKeysPage />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
@@ -702,7 +673,7 @@ describe('ApiKeysPage', () => {
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
   })
 
-  it('lets regular users create and manage their own keys', async () => {
+  it('lets regular users create and manage their own keys', () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
@@ -720,7 +691,6 @@ describe('ApiKeysPage', () => {
         },
       },
     })
-    const { ApiKeysPage } = await import('@/routes/api-keys')
 
     render(<ApiKeysPage />)
 

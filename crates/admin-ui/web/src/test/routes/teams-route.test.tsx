@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { IdentityDirectoryTeamsPayload, IdentityTeamsPayload } from '@/types/api'
+import { TeamsPage } from '@/routes/identity/teams'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-}
+}))
 
 const routerMock = {
   invalidate: vi.fn(async () => {}),
@@ -62,7 +64,7 @@ describe('TeamsPage', () => {
     routerMock.invalidate.mockClear()
   })
 
-  it('shows all team membership without mutation controls to regular users', async () => {
+  it('shows all team membership without mutation controls to regular users', () => {
     routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
     routeMock.useLoaderData.mockReturnValue({
       data: {
@@ -87,7 +89,6 @@ describe('TeamsPage', () => {
       } satisfies IdentityDirectoryTeamsPayload,
     })
 
-    const { TeamsPage } = await import('@/routes/identity/teams')
     render(<TeamsPage />)
 
     expect(screen.getByText('Research')).toBeInTheDocument()
@@ -101,10 +102,8 @@ describe('TeamsPage', () => {
     expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
-  it('teaches the next step when no teams exist', async () => {
+  it('teaches the next step when no teams exist', () => {
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
-
-    const { TeamsPage } = await import('@/routes/identity/teams')
 
     render(<TeamsPage />)
 
@@ -117,7 +116,7 @@ describe('TeamsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps member rosters collapsed until a team is expanded', async () => {
+  it('keeps member rosters collapsed until a team is expanded', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         teams: [
@@ -154,8 +153,6 @@ describe('TeamsPage', () => {
         oauth_providers: [],
       } satisfies IdentityTeamsPayload,
     })
-
-    const { TeamsPage } = await import('@/routes/identity/teams')
 
     render(<TeamsPage />)
 

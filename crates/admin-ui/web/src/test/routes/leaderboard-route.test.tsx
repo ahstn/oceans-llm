@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ObservabilityLeaderboardPage } from '@/routes/observability/leaderboard'
 
 const refreshObservabilityLeaderboardMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -109,10 +111,8 @@ describe('ObservabilityLeaderboardPage', () => {
     refreshObservabilityLeaderboardMock.mockReset()
   })
 
-  it('renders the chart card, range selector, and ranked leaderboard table', async () => {
+  it('renders the chart card, range selector, and ranked leaderboard table', () => {
     routeMock.useLoaderData.mockReturnValue({ data: leaderboardData })
-
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
 
     const view = render(<ObservabilityLeaderboardPage />)
     const scope = within(view.container)
@@ -144,8 +144,6 @@ describe('ObservabilityLeaderboardPage', () => {
       },
     })
 
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
-
     const view = render(<ObservabilityLeaderboardPage />)
     fireEvent.click(within(view.container).getByRole('radio', { name: 'Last 31 days' }))
 
@@ -162,7 +160,7 @@ describe('ObservabilityLeaderboardPage', () => {
     })
   })
 
-  it('renders an explicit empty state when no leaderboard data exists', async () => {
+  it('renders an explicit empty state when no leaderboard data exists', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...leaderboardData,
@@ -172,8 +170,6 @@ describe('ObservabilityLeaderboardPage', () => {
       },
     })
 
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
-
     const view = render(<ObservabilityLeaderboardPage />)
 
     expect(within(view.container).getAllByText('No leaderboard data yet')).toHaveLength(2)
@@ -182,8 +178,6 @@ describe('ObservabilityLeaderboardPage', () => {
   it('shows loading skeletons while a range refresh is in flight', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: leaderboardData })
     refreshObservabilityLeaderboardMock.mockImplementation(() => new Promise(() => undefined))
-
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
 
     const view = render(<ObservabilityLeaderboardPage />)
     const scope = within(view.container)
