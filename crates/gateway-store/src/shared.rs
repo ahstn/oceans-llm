@@ -48,7 +48,7 @@ pub(crate) fn trusted_include_tag_sql(
 ///
 /// Runs are ordered by their start in milliseconds, and runs that start in
 /// the same millisecond by run id, so of two concurrent refreshes exactly one
-/// is the newer. A gateway older than V72, still serving during a rolling
+/// is the newer. A gateway older than V73, still serving during a rolling
 /// upgrade, records runs without `started_at_ms`; such a run counts as newer
 /// when it started in the same second or later, since its milliseconds are
 /// unknown. The run itself never counts: its start is not after its own, and

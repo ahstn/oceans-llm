@@ -1432,6 +1432,9 @@ pub struct RequestToolCardinalityView {
     /// Distinct tool names the model called; `invoked_tool_count` counts every call. Null for
     /// requests logged before this was recorded.
     pub invoked_distinct_tool_count: Option<i64>,
+    /// Calls among `invoked_tool_count` that target MCP tools: provider-run MCP calls and client
+    /// tools named `mcp__<server>__<tool>`. Null for requests logged before this was recorded.
+    pub invoked_mcp_tool_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

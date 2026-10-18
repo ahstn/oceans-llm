@@ -437,17 +437,26 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 71,
-        name: "mcp_oauth_state_issuer",
-        checksum: "V71__mcp_oauth_state_issuer.sql",
-        libsql_sql: include_str!("../migrations/V71__mcp_oauth_state_issuer.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V71__mcp_oauth_state_issuer.sql"),
+        name: "request_log_invoked_mcp_tool_count",
+        checksum: "V71__request_log_invoked_mcp_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V71__request_log_invoked_mcp_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V71__request_log_invoked_mcp_tool_count.sql"
+        ),
     },
     MigrationManifest {
         version: 72,
+        name: "mcp_oauth_state_issuer",
+        checksum: "V72__mcp_oauth_state_issuer.sql",
+        libsql_sql: include_str!("../migrations/V72__mcp_oauth_state_issuer.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V72__mcp_oauth_state_issuer.sql"),
+    },
+    MigrationManifest {
+        version: 73,
         name: "mcp_discovery_run_started_ms",
-        checksum: "V72__mcp_discovery_run_started_ms.sql",
-        libsql_sql: include_str!("../migrations/V72__mcp_discovery_run_started_ms.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V72__mcp_discovery_run_started_ms.sql"),
+        checksum: "V73__mcp_discovery_run_started_ms.sql",
+        libsql_sql: include_str!("../migrations/V73__mcp_discovery_run_started_ms.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V73__mcp_discovery_run_started_ms.sql"),
     },
 ];
 
