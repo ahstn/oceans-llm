@@ -118,9 +118,18 @@ pub trait McpDiscoveryClient: Send + Sync {
 /// Lists tools over HTTP, through the client [`McpUpstreamClients`] picks for
 /// the server, so a team-owned server's discovery reaches only the addresses
 /// its URL allows.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HttpMcpDiscoveryClient {
     clients: McpUpstreamClients,
+}
+
+/// Without configured private network hosts. Built once and shared, since
+/// many handlers make a registry service per request without discovering.
+impl Default for HttpMcpDiscoveryClient {
+    fn default() -> Self {
+        static CLIENTS: OnceLock<McpUpstreamClients> = OnceLock::new();
+        Self::new(CLIENTS.get_or_init(McpUpstreamClients::default).clone())
+    }
 }
 
 impl HttpMcpDiscoveryClient {

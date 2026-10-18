@@ -2348,6 +2348,38 @@ pub(crate) mod tests {
             "a refused run writes nothing"
         );
 
+        // Guarded discoveries of one server can land together: each locks the
+        // server before checking its guard, so neither waits on the other's
+        // share lock, and both are stored.
+        let run = |status, error: Option<&str>| ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id,
+            status,
+            started_at: now,
+            finished_at: now,
+            discovered_tool_count: 0,
+            active_tool_count: 0,
+            schema_set_hash: None,
+            error_summary: error.map(str::to_string),
+            details: Map::new(),
+            expected_server: Some(gateway_core::McpServerOwnershipGuard::of(&server)),
+        };
+        for _ in 0..4 {
+            let (first, second, failed) = (
+                run(ExternalMcpDiscoveryStatus::Success, None),
+                run(ExternalMcpDiscoveryStatus::Success, None),
+                run(ExternalMcpDiscoveryStatus::Failed, Some("overlapping")),
+            );
+            let (first, second, failure) = tokio::join!(
+                store.record_external_mcp_discovery_success(&first, &[]),
+                store.record_external_mcp_discovery_success(&second, &[]),
+                store.record_external_mcp_discovery_failure(&failed),
+            );
+            first.expect("first concurrent discovery");
+            second.expect("second concurrent discovery");
+            failure.expect("concurrent failed discovery");
+        }
+
         // Another request changed the contact; a save that omits it keeps that.
         store
             .update_external_mcp_server(&save(
@@ -2518,6 +2550,19 @@ pub(crate) mod tests {
             consumed_at: None,
             created_at: now,
         };
+        // A guard read for another server does not cover this one.
+        assert!(matches!(
+            store
+                .create_mcp_oauth_state_guarded(
+                    &flow_state("other-server-state-hash"),
+                    &gateway_core::McpServerOwnershipGuard {
+                        mcp_server_id: Uuid::new_v4(),
+                        ..gateway_core::McpServerOwnershipGuard::of(&current)
+                    },
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
         assert!(matches!(
             store
                 .create_mcp_oauth_state_guarded(

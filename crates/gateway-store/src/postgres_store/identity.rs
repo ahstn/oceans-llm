@@ -731,6 +731,10 @@ impl PostgresStore {
         state: &McpOauthStateRecord,
         expected_server: &gateway_core::McpServerOwnershipGuard,
     ) -> Result<(), StoreError> {
+        // A guard read for another server says nothing about this one.
+        if expected_server.mcp_server_id != state.mcp_server_id {
+            return Err(expected_server.conflict());
+        }
         let scopes_json = crate::shared::serialize_json(&state.scopes)?;
         // `FOR SHARE` on the server row waits for, or blocks, a settings change,
         // which deletes the server's states in its own write.

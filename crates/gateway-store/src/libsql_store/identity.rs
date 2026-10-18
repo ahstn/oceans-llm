@@ -852,6 +852,10 @@ impl LibsqlStore {
         state: &McpOauthStateRecord,
         expected_server: &gateway_core::McpServerOwnershipGuard,
     ) -> Result<(), StoreError> {
+        // A guard read for another server says nothing about this one.
+        if expected_server.mcp_server_id != state.mcp_server_id {
+            return Err(expected_server.conflict());
+        }
         let scopes_json = crate::shared::serialize_json(&state.scopes)?;
         // The immediate transaction holds the write lock a settings change
         // takes, so the guard is checked against the settings this state sees.

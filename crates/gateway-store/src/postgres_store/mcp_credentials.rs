@@ -524,6 +524,12 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         record: &McpOauthClientRecord,
         expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
+        // A guard read for another server says nothing about this one.
+        if let Some(guard) = expected_server
+            && guard.mcp_server_id != record.mcp_server_id
+        {
+            return Err(guard.conflict());
+        }
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
         // `FOR SHARE` on the server row waits for, or blocks, a settings change,
         // so the guard is checked against the settings this insert commits with.

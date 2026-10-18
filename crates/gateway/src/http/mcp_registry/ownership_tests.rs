@@ -2150,6 +2150,7 @@ async fn the_member_catalog_follows_the_team_the_member_is_in_now() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn a_caller_chosen_credential_id_is_created_once() {
     let _key = CredentialKeyGuard::new();
     let context = TestContext::new().await;

@@ -621,6 +621,12 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         record: &McpOauthClientRecord,
         expected_server: Option<&gateway_core::McpServerOwnershipGuard>,
     ) -> Result<McpOauthClientRecord, StoreError> {
+        // A guard read for another server says nothing about this one.
+        if let Some(guard) = expected_server
+            && guard.mcp_server_id != record.mcp_server_id
+        {
+            return Err(guard.conflict());
+        }
         // An immediate transaction holds the write lock a settings change also
         // takes, so the guard is checked against the settings this insert sees.
         let tx = self.begin_transaction().await?;

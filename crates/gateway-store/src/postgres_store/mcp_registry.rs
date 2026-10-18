@@ -885,6 +885,20 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // Lock the server, then its tools, so concurrent discoveries of one
+        // server run one at a time and a review cannot change a tool between
+        // the snapshot below and the writes planned from it. The server is
+        // locked `FOR UPDATE` before the guard's `FOR SHARE` read: taking the
+        // share lock first and upgrading it later deadlocks two discoveries.
+        let approve_tool_changes = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
+            .bind(run.mcp_server_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .as_ref()
+            .map(decode_server)
+            .transpose()?
+            .is_some_and(|server| server.approve_tool_changes);
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
         }
@@ -910,18 +924,6 @@ impl McpRegistryRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
 
-        // Lock the server, then its tools, so concurrent discoveries of one
-        // server run one at a time and a review cannot change a tool between
-        // the snapshot below and the writes planned from it.
-        let approve_tool_changes = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
-            .bind(run.mcp_server_id.to_string())
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(to_query_error)?
-            .as_ref()
-            .map(decode_server)
-            .transpose()?
-            .is_some_and(|server| server.approve_tool_changes);
         let stored = load_stored_tools(&mut tx, run.mcp_server_id).await?;
         sqlx::query(
             "UPDATE external_mcp_tools SET is_active = 0, deactivated_at = $1 WHERE mcp_server_id = $2",
@@ -974,6 +976,14 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        // `FOR UPDATE` before the guard's `FOR SHARE` read, as on success: the
+        // update below would otherwise upgrade a share lock and deadlock with a
+        // concurrent discovery of this server.
+        sqlx::query("SELECT 1 FROM external_mcp_servers WHERE mcp_server_id = $1 FOR UPDATE")
+            .bind(run.mcp_server_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
         }

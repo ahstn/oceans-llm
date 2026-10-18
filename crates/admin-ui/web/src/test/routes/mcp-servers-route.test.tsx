@@ -903,7 +903,9 @@ describe('ServersTab', () => {
     expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
-    expect(await screen.findByText(/Platform admins manages this server/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/This server is managed by Platform admins\./),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit GitHub' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Disable GitHub' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()

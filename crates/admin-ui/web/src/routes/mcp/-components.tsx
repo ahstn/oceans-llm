@@ -137,8 +137,8 @@ export function ServerOverviewPanel({
 
       {server.can_manage ? null : (
         <p className="text-subtle-foreground text-sm">
-          {ownerLabel(server)} manages this server. Ask {server.owner_contact ?? 'its owners'} to
-          change it or to grant its tools.
+          This server is managed by {ownerLabel(server)}. Ask {server.owner_contact ?? 'its owners'}{' '}
+          to change it or to grant its tools.
         </p>
       )}
       {ownershipControl}
