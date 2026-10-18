@@ -1,0 +1,21 @@
+crates/gateway-service/src/rate_limits.rs
+  s_b8e52ffc321bb1::t_86e71579432dad 457,459-469,478-480,484,495-502
+crates/gateway-service/src/rate_limits/tests.rs
+  s_b8e52ffc321bb1::t_20b6ac26ab77e3 1506-1543
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f2e0445d335ab043a6d3940c424236a7ffa879a",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
