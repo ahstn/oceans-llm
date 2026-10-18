@@ -218,6 +218,81 @@ async fn direct_tools_call_returns_a_tool_error_with_the_connect_url() {
 }
 
 #[tokio::test]
+async fn a_tools_call_notification_gets_the_guidance_as_a_json_rpc_error() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure_oauth(&mut state, Some("https://gateway.example"));
+    let (auth, _) = seed_drive(&state, ExternalMcpAuthMode::OauthObo, oauth_config()).await;
+
+    let (status, body) = send(
+        &state,
+        &auth,
+        json!({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search", "arguments": {}}}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["jsonrpc"], "2.0");
+    assert!(body.get("id").is_none(), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!(
+                "Connect your account at {CONNECT_URL}, then retry the call."
+            ))
+    );
+    assert_eq!(
+        body["error"]["data"],
+        json!({"server_key": "drive", "connect_url": CONNECT_URL, "error_code": "credential_required"})
+    );
+}
+
+#[tokio::test]
+async fn a_governed_notification_gets_the_guidance_as_a_json_rpc_error() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure_oauth(&mut state, Some("https://gateway.example"));
+    let (auth, _) = seed_drive(&state, ExternalMcpAuthMode::OauthObo, oauth_config()).await;
+
+    let (status, body) = send(
+        &state,
+        &auth,
+        json!({"jsonrpc": "2.0", "method": "resources/read", "params": {"uri": "file:///a"}}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["jsonrpc"], "2.0");
+    assert!(body.get("id").is_none(), "{body}");
+    assert_eq!(body["error"]["data"]["connect_url"], CONNECT_URL);
+    assert_eq!(body["error"]["data"]["error_code"], "credential_required");
+}
+
+/// Preparing the upstream can fail for reasons other than a credential; on
+/// `tools/call` that is still a JSON-RPC error naming the request.
+#[tokio::test]
+async fn a_tools_call_preparation_failure_is_a_json_rpc_error() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let (auth, server) = seed_drive(&state, ExternalMcpAuthMode::OauthObo, oauth_config()).await;
+    let response = super::tool_call_auth_error_response(
+        &state,
+        &auth,
+        &server,
+        Some(&json!(7)),
+        GatewayError::from(gateway_core::StoreError::Unavailable(
+            "store down".to_string(),
+        )),
+    );
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 65_536).await.expect("body");
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON body");
+
+    assert!(status.is_server_error(), "{status}");
+    assert_eq!(body["jsonrpc"], "2.0");
+    assert_eq!(body["id"], 7);
+    assert_eq!(body["error"]["code"], -32603);
+}
+
+#[tokio::test]
 async fn direct_non_tool_requests_return_the_connect_url_in_the_error() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure_oauth(&mut state, Some("https://gateway.example"));

@@ -34,8 +34,7 @@ use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 use super::{
     MAX_MCP_REQUEST_BODY_BYTES, authenticate_mcp_request, body_read_exceeded_limit,
-    evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, mcp_auth_error_response,
-    mcp_error_response,
+    evaluate_mcp_result, guardrail_decision_metadata, mcp_auth_error_response, mcp_error_response,
 };
 
 const AGGREGATE_SERVER_NAME: &str = "oceans-mcp-gateway";

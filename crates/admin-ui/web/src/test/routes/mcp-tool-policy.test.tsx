@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpToolView } from '@/types/api'
+import { ServerToolsPanel } from '@/routes/mcp/-components'
+import { ToolPolicyEditor } from '@/routes/mcp/-tool-policy'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -47,8 +49,7 @@ const tool: McpToolView = {
 describe('ToolPolicyEditor drafts', () => {
   afterEach(() => cleanup())
 
-  it('keeps each draft until its own stored value changes', async () => {
-    const { ServerToolsPanel } = await import('@/routes/mcp/-components')
+  it('keeps each draft until its own stored value changes', () => {
     const panel = (current: McpToolView) => (
       <ServerToolsPanel
         tools={[current]}
@@ -88,7 +89,6 @@ describe('ToolPolicyEditor drafts', () => {
   })
 
   it('locks an editor while its save is pending', async () => {
-    const { ToolPolicyEditor } = await import('@/routes/mcp/-tool-policy')
     let finish: (value: unknown) => void = () => {}
     saveMcpToolTagsMock.mockReturnValue(new Promise((resolve) => (finish = resolve)))
     const onToolUpdated = vi.fn()

@@ -10,7 +10,7 @@ A policy counts one kind of traffic for one scope over one window.
 
 | Field | Values | Notes |
 |---|---|---|
-| `operation` | `inference`, `count_tokens`, `mcp_tool_call` | `inference` covers `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, and their unversioned aliases. `count_tokens` covers `/v1/messages/count_tokens`. `mcp_tool_call` covers `tools/call` on `/mcp/{server_key}` and aggregate `call_tool` on `/mcp`. The aggregate `search_tools` and `describe_tool` read the gateway's own catalog and call no MCP server, so they are not counted. |
+| `operation` | `inference`, `count_tokens`, `mcp_tool_call` | `inference` covers `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, and their unversioned aliases. `count_tokens` covers `/v1/messages/count_tokens`. `mcp_tool_call` covers `tools/call` on `/mcp/{server_key}` and aggregate `call_tool` on `/mcp`, and also the resources, prompts and completion methods on `/mcp/{server_key}`, which read server data through the same upstream access; they share one counter per policy. The aggregate `search_tools` and `describe_tool` read the gateway's own catalog and call no MCP server, so they are not counted. |
 | scope | `global`, `api_key`, `user`, `team` | `global` is one counter for everyone. The other kinds give each key, user, or team its own counter. Admin policies can also target one specific key, user, or team. |
 | `model` | gateway model key | Optional, for `inference` and `count_tokens`. Matches the requested model or the model it resolves to, so a policy on a model also covers its aliases. |
 | `mcp_server` | MCP server key | Optional, for `mcp_tool_call`. |
@@ -99,7 +99,7 @@ A rejected request returns `429` before route selection, guardrails, budget chec
 |---|---|
 | OpenAI-compatible routes | `{"error": {"type": "rate_limit_error", "code": "rate_limited", "message": "..."}}` |
 | `/v1/messages`, `/v1/messages/count_tokens` | `{"type": "error", "error": {"type": "rate_limit_error", "code": "rate_limited", "message": "..."}}` |
-| MCP `tools/call` and aggregate `call_tool` | a JSON-RPC error with code `-32029` and `data: {"error_code": "rate_limited", "retry_after_seconds": N}` |
+| MCP `tools/call`, the governed resources, prompts and completion methods on `/mcp/{server_key}`, and aggregate `call_tool` | a JSON-RPC error with code `-32029` and `data: {"error_code": "rate_limited", "retry_after_seconds": N}`; a notification's error has no `id` |
 
 The message names the scope kind, the limit, the window, and the retry delay, for example `rate limited: API key rate limit exceeded: 60 inference requests per minute. Retry after 12 seconds`. The JSON-RPC error message has no `rate limited: ` prefix. It never includes ids.
 
@@ -136,7 +136,7 @@ Counter rows expire one window after the window ends. Each replica deletes expir
 `rate_limits.failure_mode` controls what happens if a counter check fails:
 
 - `open` (default): the request is admitted without rate-limit headers, and the gateway logs a warning.
-- `closed`: the request is rejected with `503`. MCP `tools/call` and aggregate `call_tool` return HTTP `503` with a JSON-RPC error (code `-32603`). After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
+- `closed`: the request is rejected with `503`. MCP `tools/call`, the governed resources, prompts and completion methods, and aggregate `call_tool` return HTTP `503` with a JSON-RPC error (code `-32603`). After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
 
 Both modes treat a replica that has never loaded the admin policies, and cannot, as a store failure: it cannot tell which policies a request would match. A replica that loaded them before keeps enforcing that set.
 

@@ -8,11 +8,13 @@ import {
   ownerCacheRows,
 } from '@/routes/observability/-usage-costs/token-series'
 import type { SpendReportView } from '@/types/api'
+import { UsageCostsPage } from '@/routes/observability/usage-costs'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-}
+}))
 const getSpendUsageReportMock = vi.fn()
 const toastErrorMock = vi.fn()
 
@@ -96,7 +98,7 @@ afterEach(() => {
 })
 
 describe('UsageCostsPage reports', () => {
-  it('renders live ledger totals and owner/model breakdowns', async () => {
+  it('renders live ledger totals and owner/model breakdowns', () => {
     routeMock.useLoaderData.mockReturnValue({
       exportOrigin: '',
       data: {
@@ -163,7 +165,6 @@ describe('UsageCostsPage reports', () => {
       },
     })
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'Usage costs' })).toBeInTheDocument()
@@ -200,10 +201,9 @@ describe('UsageCostsPage reports', () => {
     expect(screen.getAllByText('3 gaps')).toHaveLength(2)
   })
 
-  it('treats a zero-filled window as no spend', async () => {
+  it('treats a zero-filled window as no spend', () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     expect(screen.getByText('No priced spend yet')).toBeInTheDocument()
@@ -218,7 +218,6 @@ describe('UsageCostsPage filters', () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
     getSpendUsageReportMock.mockResolvedValue({ data: emptyReport(30, 'service_account') })
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     fireEvent.click(screen.getByRole('radio', { name: 'Last 30 days' }))
@@ -235,11 +234,10 @@ describe('UsageCostsPage filters', () => {
     })
   })
 
-  it('labels the refresh control like the other toolbar buttons', async () => {
+  it('labels the refresh control like the other toolbar buttons', () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
     getSpendUsageReportMock.mockResolvedValue({ data: emptyReport(7, 'all') })
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     const refresh = screen.getByRole('button', { name: 'Refresh' })
@@ -251,7 +249,6 @@ describe('UsageCostsPage filters', () => {
     routeMock.useLoaderData.mockReturnValue({ exportOrigin: '', data: emptyReport(7, 'all') })
     getSpendUsageReportMock.mockRejectedValue(new Error('gateway unavailable'))
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     fireEvent.click(screen.getByRole('radio', { name: 'Last 30 days' }))
@@ -268,7 +265,7 @@ describe('UsageCostsPage filters', () => {
     )
   })
 
-  it('shows a self-service view without cross-owner controls to regular users', async () => {
+  it('shows a self-service view without cross-owner controls to regular users', () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
@@ -304,7 +301,6 @@ describe('UsageCostsPage filters', () => {
       },
     })
 
-    const { UsageCostsPage } = await import('@/routes/observability/usage-costs')
     render(<UsageCostsPage />)
 
     expect(

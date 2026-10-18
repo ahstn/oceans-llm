@@ -8,6 +8,7 @@ import {
   lineDiff,
 } from '@/routes/mcp/-tool-diff'
 import type { McpServerView, McpToolVersionView, McpToolView } from '@/types/api'
+import { ToolReviewsPanel } from '@/routes/mcp/-tool-reviews'
 
 const getMcpToolVersionsMock = vi.fn()
 const saveMcpToolReviewMock = vi.fn()
@@ -128,7 +129,6 @@ describe('ToolReviewsPanel', () => {
     const onToolUpdated = vi.fn()
     const approved = { ...tool, approval_status: 'approved', pending_schema_version: null }
     saveMcpToolReviewMock.mockResolvedValueOnce({ data: { tool: approved } })
-    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
     render(
       <ToolReviewsPanel
         server={server}
@@ -166,8 +166,7 @@ describe('ToolReviewsPanel', () => {
     await waitFor(() => expect(onToolUpdated).toHaveBeenCalledWith(approved))
   })
 
-  it('lists nothing when no tool waits for review', async () => {
-    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
+  it('lists nothing when no tool waits for review', () => {
     render(
       <ToolReviewsPanel
         server={server}
@@ -181,8 +180,7 @@ describe('ToolReviewsPanel', () => {
     expect(getMcpToolVersionsMock).not.toHaveBeenCalled()
   })
 
-  it('lists no stale tools while loading or from another server', async () => {
-    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
+  it('lists no stale tools while loading or from another server', () => {
     const { rerender } = render(
       <ToolReviewsPanel
         server={server}
@@ -216,7 +214,6 @@ describe('ToolReviewsPanel', () => {
         ],
       },
     })
-    const { ToolReviewsPanel } = await import('@/routes/mcp/-tool-reviews')
     render(
       <ToolReviewsPanel
         server={server}

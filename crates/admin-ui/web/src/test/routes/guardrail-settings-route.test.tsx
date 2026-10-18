@@ -1,8 +1,16 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { GuardrailSettingsPage } from '@/routes/guardrails'
+import {
+  SecretRedactionEditor,
+  IntegrationsEditor,
+  DestructiveActionsEditor,
+} from '@/components/guardrails/settings/editors'
+import { draftFrom } from '@/components/guardrails/config-yaml'
 
 const navigateMock = vi.fn()
-const routeMock = { useLoaderData: vi.fn() }
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({ useLoaderData: vi.fn() }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -50,8 +58,7 @@ const policies = {
   ],
 }
 
-async function renderPage() {
-  const { GuardrailSettingsPage } = await import('@/routes/guardrails')
+function renderPage() {
   render(<GuardrailSettingsPage />)
 }
 
@@ -62,8 +69,8 @@ describe('GuardrailSettingsPage', () => {
     routeMock.useLoaderData.mockReturnValue({ policies })
   })
 
-  it('shows one card per area and links back to activity, with nothing to save', async () => {
-    await renderPage()
+  it('shows one card per area and links back to activity, with nothing to save', () => {
+    renderPage()
 
     for (const label of ['Destructive actions', 'Secret redaction', 'Integrations']) {
       expect(screen.getByRole('button', { name: `Manage ${label.toLowerCase()}` })).toBeVisible()
@@ -78,7 +85,7 @@ describe('GuardrailSettingsPage', () => {
   })
 
   it('lets inherited override fields follow the default while keeping explicit ones', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage destructive actions' }))
     const dialog = await screen.findByRole('dialog')
@@ -95,7 +102,7 @@ describe('GuardrailSettingsPage', () => {
   })
 
   it('opens the integrations dialog on the chosen scope', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage integrations' }))
 
@@ -116,7 +123,7 @@ describe('GuardrailSettingsPage', () => {
         },
       },
     })
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage secret redaction' }))
     const dialog = await screen.findByRole('dialog')
@@ -128,9 +135,7 @@ describe('GuardrailSettingsPage', () => {
     )
   })
 
-  it('says MCP redaction covers request logs only', async () => {
-    const { SecretRedactionEditor } = await import('@/components/guardrails/settings/editors')
-    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+  it('says MCP redaction covers request logs only', () => {
     render(
       <SecretRedactionEditor
         draft={draftFrom(base as never)}
@@ -143,9 +148,7 @@ describe('GuardrailSettingsPage', () => {
     expect(screen.getByText(/forwarded to this MCP server unchanged/)).toBeInTheDocument()
   })
 
-  it('keeps the configured check order when a check is switched off and on', async () => {
-    const { IntegrationsEditor } = await import('@/components/guardrails/settings/editors')
-    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+  it('keeps the configured check order when a check is switched off and on', () => {
     const check = policies.managed_checks[0]
     const catalog = {
       ...policies,
@@ -176,9 +179,7 @@ describe('GuardrailSettingsPage', () => {
     expect(draft.managed_checks).toEqual(['check-b', 'check-a'])
   })
 
-  it('keeps the configured pack order when a pack is switched off and on', async () => {
-    const { DestructiveActionsEditor } = await import('@/components/guardrails/settings/editors')
-    const { draftFrom } = await import('@/components/guardrails/config-yaml')
+  it('keeps the configured pack order when a pack is switched off and on', () => {
     // Configured in the reverse of catalog order.
     const order = ['core.git', 'core.shell']
     let draft = draftFrom({ ...base, packs: order } as never)

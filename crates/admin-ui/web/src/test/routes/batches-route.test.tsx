@@ -1,6 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// A static import: `vi.mock` is hoisted above it, and loading the route here,
+// at collection, keeps the cold module transform out of the first test's
+// timeout, which it overran under parallel CI load.
+import { BatchesPage } from '@/routes/batches'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { BatchResultsView, BatchView } from '@/types/api'
 
@@ -9,11 +13,12 @@ const getBatchResultPageMock = vi.fn()
 const invalidateMock = vi.fn()
 const navigateMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module calls `createFileRoute` as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -152,8 +157,6 @@ describe('BatchesPage', () => {
   })
 
   it('renders mobile and desktop batch operations with gateway-backed filters', async () => {
-    const { BatchesPage } = await import('@/routes/batches')
-
     render(<BatchesPage />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'Batch requests' })).toBeInTheDocument()
@@ -186,9 +189,8 @@ describe('BatchesPage', () => {
     })
   })
 
-  it('does not offer cross-user filters to a non-platform session', async () => {
+  it('does not offer cross-user filters to a non-platform session', () => {
     routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
-    const { BatchesPage } = await import('@/routes/batches')
 
     render(<BatchesPage />)
 
@@ -200,7 +202,6 @@ describe('BatchesPage', () => {
 
   it('loads normalized response details in the batch sheet', async () => {
     getBatchResultPageMock.mockResolvedValue(completedDetail)
-    const { BatchesPage } = await import('@/routes/batches')
 
     render(<BatchesPage />)
     fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0])
@@ -229,7 +230,6 @@ describe('BatchesPage', () => {
         page_size: 100,
         total: 201,
       })
-    const { BatchesPage } = await import('@/routes/batches')
 
     render(<BatchesPage />)
     fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0])
@@ -249,7 +249,6 @@ describe('BatchesPage', () => {
     getBatchResultPageMock
       .mockReturnValueOnce(firstRequest.promise)
       .mockReturnValueOnce(secondRequest.promise)
-    const { BatchesPage } = await import('@/routes/batches')
 
     render(<BatchesPage />)
     const viewButtons = screen.getAllByRole('button', { name: 'View' })
@@ -278,7 +277,6 @@ describe('BatchesPage', () => {
   it('confirms cancellation before invalidating the list', async () => {
     cancelGatewayBatchMock.mockResolvedValue({ ...queuedBatch, status: 'cancelled' })
     invalidateMock.mockResolvedValue(undefined)
-    const { BatchesPage } = await import('@/routes/batches')
 
     render(<BatchesPage />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' })[0])

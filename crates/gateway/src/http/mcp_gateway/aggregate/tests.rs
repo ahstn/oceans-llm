@@ -230,33 +230,7 @@ async fn tag_rules_govern_aggregate_search_describe_and_call() {
 #[tokio::test]
 async fn missing_oauth_credential_returns_the_connect_url() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
-    state.mcp_oauth_runtime = Arc::new(gateway_service::McpOauthRuntime::new(
-        Some("https://gateway.example".to_string()),
-        vec![gateway_service::McpOauthProvider {
-            key: "google".to_string(),
-            provider_type: gateway_service::McpOauthProviderType::Google,
-            client_id: "provider-client".to_string(),
-            client_secret: Some("provider-client-secret".to_string()),
-            authorization_url: "https://accounts.example/authorize".to_string(),
-            token_url: "https://accounts.example/token".to_string(),
-            token_endpoint_auth_method:
-                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
-            scopes: Vec::new(),
-        }],
-    ));
-    let auth_config = serde_json::from_value(json!({
-        "provider_key": "google",
-        "resource": "https://drive.example/mcp",
-        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
-    }))
-    .expect("auth config");
-    let auth = seed_authorized_tool_with_config(
-        &state,
-        "https://drive.example/mcp",
-        ExternalMcpAuthMode::OauthObo,
-        auth_config,
-    )
-    .await;
+    let auth = seed_oauth_tool(&mut state).await;
     let connect_url = "https://gateway.example/admin/account/connections?connect=repository";
 
     let response = call_catalog_tool(
@@ -295,6 +269,91 @@ async fn missing_oauth_credential_returns_the_connect_url() {
             "error_code": "credential_required",
         })
     );
+}
+
+/// A credential refusal after a request guardrail rewrote the arguments logs
+/// the rewritten arguments, as the per-server route does, so a redaction is
+/// not undone in the invocation log.
+#[tokio::test]
+async fn a_credential_refusal_logs_the_guarded_arguments() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure_guardrail(
+        &mut state,
+        GuardPhase::McpCall,
+        ManagedOutcome::Transformed {
+            transformation: ContentTransformation::new(json!({"query": "[REDACTED]"}).to_string()),
+            reason_code: ReasonCode::new("test.redacted").unwrap(),
+            metadata: Default::default(),
+        },
+    );
+    let auth = seed_oauth_tool(&mut state).await;
+
+    call_catalog_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(10),
+        CallMcpToolInput {
+            address: "mcp://repository/tools/search".to_string(),
+            arguments: json!({"query": "private-call-argument"}),
+            schema_hash: None,
+        },
+    )
+    .await;
+
+    let page = state
+        .store
+        .list_mcp_tool_invocations(&McpToolInvocationQuery {
+            page: 1,
+            page_size: 10,
+            ..Default::default()
+        })
+        .await
+        .expect("invocation log");
+    let invocation = &page.items[0];
+    assert_eq!(
+        invocation.error_code.as_deref(),
+        Some("credential_required")
+    );
+    let payload = state
+        .store
+        .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)
+        .await
+        .expect("invocation detail")
+        .payload
+        .expect("captured payload");
+    assert_eq!(payload.arguments_json, json!({"query": "[REDACTED]"}));
+}
+
+/// A tool on an OAuth server the caller has not connected to.
+async fn seed_oauth_tool(state: &mut AppState) -> gateway_core::AuthenticatedApiKey {
+    state.mcp_oauth_runtime = Arc::new(gateway_service::McpOauthRuntime::new(
+        Some("https://gateway.example".to_string()),
+        vec![gateway_service::McpOauthProvider {
+            key: "google".to_string(),
+            provider_type: gateway_service::McpOauthProviderType::Google,
+            client_id: "provider-client".to_string(),
+            client_secret: Some("provider-client-secret".to_string()),
+            authorization_url: "https://accounts.example/authorize".to_string(),
+            token_url: "https://accounts.example/token".to_string(),
+            token_endpoint_auth_method:
+                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+            scopes: Vec::new(),
+        }],
+    ));
+    let auth_config = serde_json::from_value(json!({
+        "provider_key": "google",
+        "resource": "https://drive.example/mcp",
+        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+    }))
+    .expect("auth config");
+    seed_authorized_tool_with_config(
+        state,
+        "https://drive.example/mcp",
+        ExternalMcpAuthMode::OauthObo,
+        auth_config,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -565,6 +624,10 @@ async fn malformed_upstream_result_does_not_expose_decoder_details() {
 }
 
 fn configure_result_guardrail(state: &mut AppState, outcome: ManagedOutcome) {
+    configure_guardrail(state, GuardPhase::McpResult, outcome);
+}
+
+fn configure_guardrail(state: &mut AppState, phase: GuardPhase, outcome: ManagedOutcome) {
     let config = Arc::make_mut(&mut state.guardrail_config);
     config.default.enabled = true;
     config.default.mode = PolicyMode::Deny;
@@ -573,7 +636,7 @@ fn configure_result_guardrail(state: &mut AppState, outcome: ManagedOutcome) {
         "result-policy".to_string(),
         ManagedCheckConfig {
             kind: ManagedCheckKind::GoogleModelArmor,
-            phases: BTreeSet::from([GuardPhase::McpResult]),
+            phases: BTreeSet::from([phase]),
             timeout_ms: 1_000,
             failure_disposition: FailureDisposition::FailClosed,
             max_content_bytes: 4_096,

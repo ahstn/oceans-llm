@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OauthAuthorizationRequestView } from '@/types/api'
+import { OauthConsentPage } from '@/routes/oauth/consent'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-}
+}))
 const decideMock = vi.fn()
 const toastMock = vi.hoisted(() => ({ error: vi.fn() }))
 
@@ -59,9 +61,8 @@ describe('OauthConsentPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the client, redirect host, access, and signed-in user', async () => {
+  it('shows the client, redirect host, access, and signed-in user', () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'ready', request: request() })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
 
@@ -74,7 +75,7 @@ describe('OauthConsentPage', () => {
     expect(screen.queryByTestId('unverified-client-note')).not.toBeInTheDocument()
   })
 
-  it('names the host that published a client metadata document', async () => {
+  it('names the host that published a client metadata document', () => {
     routeMock.useLoaderData.mockReturnValue({
       status: 'ready',
       request: request({
@@ -82,7 +83,6 @@ describe('OauthConsentPage', () => {
         client_metadata_host: 'editor.example.com',
       }),
     })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
 
@@ -93,7 +93,7 @@ describe('OauthConsentPage', () => {
     )
   })
 
-  it('warns when the client only redirects to this device', async () => {
+  it('warns when the client only redirects to this device', () => {
     routeMock.useLoaderData.mockReturnValue({
       status: 'ready',
       request: request({
@@ -104,7 +104,6 @@ describe('OauthConsentPage', () => {
         server_display_name: 'GitHub',
       }),
     })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
 
@@ -116,7 +115,6 @@ describe('OauthConsentPage', () => {
   it('returns to the client with the decision redirect', async () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'ready', request: request() })
     decideMock.mockResolvedValue({ redirect_to: 'https://editor.example.com/callback?code=x' })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
@@ -132,7 +130,6 @@ describe('OauthConsentPage', () => {
   it('sends a denial and reports failures', async () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'ready', request: request() })
     decideMock.mockRejectedValue(new Error('authorization request was already decided'))
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
@@ -146,11 +143,10 @@ describe('OauthConsentPage', () => {
     expect(assignMock).not.toHaveBeenCalled()
   })
 
-  it('offers a retry when the request could not be loaded', async () => {
+  it('offers a retry when the request could not be loaded', () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'error' })
     const reloadMock = vi.fn()
     vi.stubGlobal('location', { assign: assignMock, reload: reloadMock })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
 
@@ -162,9 +158,8 @@ describe('OauthConsentPage', () => {
     expect(reloadMock).toHaveBeenCalled()
   })
 
-  it('explains an expired or used request', async () => {
+  it('explains an expired or used request', () => {
     routeMock.useLoaderData.mockReturnValue({ status: 'unavailable' })
-    const { OauthConsentPage } = await import('@/routes/oauth/consent')
 
     render(<OauthConsentPage />)
 

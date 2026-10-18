@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpWorkspaceScope } from '@/routes/mcp/-scope'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
+import { ServersTab } from '@/routes/mcp/-servers-tab'
 
 const navigateMock = vi.fn()
 const invalidateMock = vi.fn()
@@ -189,12 +190,11 @@ const teamAdminScope: McpWorkspaceScope = {
   readOnly: false,
 }
 
-async function renderServersTab(
+function renderServersTab(
   initialSelectedServerId: string | null = null,
   servers: McpServerView[] = [server],
   scope?: McpWorkspaceScope,
 ) {
-  const { ServersTab } = await import('@/routes/mcp/-servers-tab')
   const onAddToToolset = vi.fn()
 
   function ServersTabHarness() {
@@ -220,9 +220,7 @@ describe('ServersTab', () => {
   // The first import compiles the tab and every MCP module it uses, which can
   // take longer than one test's timeout on a busy runner. Load it once here so
   // no test pays for it.
-  beforeAll(async () => {
-    await import('@/routes/mcp/-servers-tab')
-  }, 30_000)
+  beforeAll(async () => {}, 30_000)
 
   afterEach(() => {
     cleanup()
@@ -274,7 +272,7 @@ describe('ServersTab', () => {
   })
 
   it('renders server diagnostics and discovered tools', async () => {
-    await renderServersTab()
+    renderServersTab()
 
     expect(screen.getByText('active registrations')).toBeInTheDocument()
     const registry = within(screen.getByTestId('mcp-server-list'))
@@ -303,7 +301,7 @@ describe('ServersTab', () => {
 
   it('keeps selected tool actions visible without hiding the tool rows', async () => {
     getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool, tool] } })
-    const { onAddToToolset } = await renderServersTab()
+    const { onAddToToolset } = renderServersTab()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
@@ -365,7 +363,7 @@ describe('ServersTab', () => {
       { ...tool, id: 'tool_plain', upstream_name: 'plain', display_name: 'plain' },
     ]
     getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: annotatedTools } })
-    await renderServersTab()
+    renderServersTab()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
@@ -412,7 +410,7 @@ describe('ServersTab', () => {
       },
     })
     saveMcpToolAnnotationOverridesMock.mockResolvedValueOnce({ data: { tool: readTool } })
-    await renderServersTab()
+    renderServersTab()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
@@ -460,7 +458,7 @@ describe('ServersTab', () => {
 
   it('contains expanded JSON schema overflow inside the tools panel', async () => {
     getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool] } })
-    await renderServersTab()
+    renderServersTab()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
@@ -493,7 +491,7 @@ describe('ServersTab', () => {
   })
 
   it('refreshes discovery and reports the result in the overview without a toast', async () => {
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     await waitFor(() => {
@@ -517,7 +515,7 @@ describe('ServersTab', () => {
         tools: [],
       },
     })
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     await waitFor(() => expect(screen.getByText('Discovery failed')).toBeInTheDocument())
@@ -543,7 +541,7 @@ describe('ServersTab', () => {
     }
     const explanation = "Couldn't reach unreachable.invalid. Check the endpoint, then Retry."
     refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce(failure)
-    await renderServersTab('server_1', [unreachable])
+    renderServersTab('server_1', [unreachable])
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     const alert = await screen.findByRole('alert')
@@ -580,7 +578,7 @@ describe('ServersTab', () => {
       new Error('external MCP server was disabled during discovery; refresh it again'),
     )
     invalidateMock.mockRejectedValueOnce(new Error('gateway unreachable'))
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     const alert = await screen.findByRole('alert')
@@ -601,7 +599,7 @@ describe('ServersTab', () => {
         tools: [],
       },
     })
-    await renderServersTab()
+    renderServersTab()
     const registry = within(screen.getByTestId('mcp-server-list'))
     fireEvent.click(registry.getByRole('button', { name: 'Refresh GitHub' }))
 
@@ -624,7 +622,7 @@ describe('ServersTab', () => {
   })
 
   it('gives every header icon action a tooltip', async () => {
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
 
     for (const [name, label] of [
       ['Refresh GitHub', 'Refresh tools'],
@@ -644,7 +642,7 @@ describe('ServersTab', () => {
     refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce({
       data: { server, status: 'failed', error_summary: 'Previous endpoint failed', tools: [] },
     })
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
     await waitFor(() => expect(screen.getByText('Previous endpoint failed')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Edit GitHub' }))
@@ -660,7 +658,7 @@ describe('ServersTab', () => {
   })
 
   it('imports recommended servers through the server function', async () => {
-    await renderServersTab()
+    renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Browse catalog' }))
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
@@ -672,7 +670,7 @@ describe('ServersTab', () => {
   })
 
   it('submits custom add and edit flows', async () => {
-    await renderServersTab()
+    renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'slack' } })
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Slack' } })
@@ -738,7 +736,7 @@ describe('ServersTab', () => {
         },
       },
     })
-    await renderServersTab()
+    renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'linear' } })
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Linear' } })
@@ -784,7 +782,7 @@ describe('ServersTab', () => {
   })
 
   it('disables active servers from the more actions menu', async () => {
-    await renderServersTab()
+    renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     expect(screen.queryByRole('button', { name: 'Disable GitHub' })).not.toBeInTheDocument()
 
@@ -800,7 +798,7 @@ describe('ServersTab', () => {
   })
 
   it('does not reopen the more actions tooltip when the menu hands focus back', async () => {
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     const trigger = screen.getByRole('button', { name: 'More actions for GitHub' })
     fireEvent.pointerDown(trigger)
     fireEvent.pointerUp(trigger)
@@ -813,7 +811,7 @@ describe('ServersTab', () => {
   })
 
   it('enables a disabled server from the more actions menu', async () => {
-    await renderServersTab('server_1', [{ ...server, status: 'disabled' }])
+    renderServersTab('server_1', [{ ...server, status: 'disabled' }])
     expect(screen.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for GitHub' }))
@@ -863,7 +861,7 @@ describe('ServersTab', () => {
       last_discovery_at: null,
       last_tool_count: 0,
     }
-    await renderServersTab(null, [server, failed, authRequired, disabled, unrun])
+    renderServersTab(null, [server, failed, authRequired, disabled, unrun])
 
     expect(screen.getByRole('button', { name: '2 need attention' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('radio', { name: 'Needs attention' }))
@@ -974,14 +972,14 @@ describe('ServersTab', () => {
       // A successful discovery adds nothing beside the registration badge.
       ['server_1', 'GitHub', [['Active', 'success']]],
     ] as const) {
-      await renderServersTab(selected, servers)
+      renderServersTab(selected, servers)
       expect(headerBadges(name)).toEqual(badges)
       cleanup()
     }
   })
 
   it('retains discovery, count, endpoint, and authentication details in mobile rows', async () => {
-    await renderServersTab()
+    renderServersTab()
     const mobile = within(screen.getByTestId('mcp-server-list-mobile'))
     expect(mobile.getByText('api.githubcopilot.com')).toBeInTheDocument()
     expect(mobile.getByText('Gateway bearer token')).toBeInTheDocument()
@@ -992,8 +990,8 @@ describe('ServersTab', () => {
     expect(screen.getByRole('dialog', { name: 'Manage MCP server' })).toBeInTheDocument()
   })
 
-  it('uses deterministic UTC discovery timestamps with unknown and missing date fallbacks', async () => {
-    await renderServersTab(null, [
+  it('uses deterministic UTC discovery timestamps with unknown and missing date fallbacks', () => {
+    renderServersTab(null, [
       { ...server, last_discovery_at: '2026-09-05T17:09:00+01:00' },
       { ...server, id: 'invalid', display_name: 'Invalid date', last_discovery_at: 'invalid' },
       { ...server, id: 'unrun', display_name: 'Not discovered', last_discovery_at: null },
@@ -1007,9 +1005,9 @@ describe('ServersTab', () => {
     expect(registry.getByText('No discovery yet')).toBeInTheDocument()
   })
 
-  it('preserves sorting when a search has no matching rows', async () => {
+  it('preserves sorting when a search has no matching rows', () => {
     const second = { ...server, id: 'second', display_name: 'Alpha', server_key: 'alpha' }
-    await renderServersTab(null, [server, second])
+    renderServersTab(null, [server, second])
     const registry = within(screen.getByTestId('mcp-server-list'))
     fireEvent.click(registry.getByRole('button', { name: 'Server' }))
     expect(registry.getAllByRole('button', { name: /^Open / })[0]).toHaveAccessibleName(
@@ -1041,7 +1039,7 @@ describe('ServersTab', () => {
         }),
     )
     const second = { ...server, id: 'second', display_name: 'Notion', server_key: 'notion' }
-    await renderServersTab(null, [server, second])
+    renderServersTab(null, [server, second])
     const registry = within(screen.getByTestId('mcp-server-list'))
     fireEvent.click(registry.getByRole('button', { name: 'Refresh GitHub' }))
     expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
@@ -1072,7 +1070,7 @@ describe('ServersTab', () => {
     getMcpServerToolsMock.mockResolvedValue({
       data: { items: [{ ...activeTool, server_id: 'second' }] },
     })
-    await renderServersTab(null, [server, second])
+    renderServersTab(null, [server, second])
     const registry = within(screen.getByTestId('mcp-server-list'))
     fireEvent.click(registry.getByRole('button', { name: 'Refresh GitHub' }))
     fireEvent.click(registry.getByRole('button', { name: 'Manage Notion' }))
@@ -1096,7 +1094,7 @@ describe('ServersTab', () => {
     refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce({
       data: { server, status: 'success', error_summary: null, tools: [activeTool] },
     })
-    await renderServersTab('server_1')
+    renderServersTab('server_1')
     await waitFor(() => expect(getMcpServerToolsMock).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
     await waitFor(() => expect(getMcpServerToolsMock).toHaveBeenCalledTimes(2))
@@ -1108,8 +1106,8 @@ describe('ServersTab', () => {
     expect(screen.getByRole('checkbox', { name: 'Select create_issue' })).toBeDisabled()
   })
 
-  it('opens catalog customization with prefilled values and prevents duplicate direct imports', async () => {
-    await renderServersTab(null, [{ ...server, server_key: 'linear', status: 'disabled' }])
+  it('opens catalog customization with prefilled values and prevents duplicate direct imports', () => {
+    renderServersTab(null, [{ ...server, server_key: 'linear', status: 'disabled' }])
     expect(screen.queryByText('Recommended catalog')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Browse catalog' }))
     expect(screen.getByRole('button', { name: 'Registered' })).toBeDisabled()
@@ -1121,7 +1119,7 @@ describe('ServersTab', () => {
   })
 
   it('shows each server owner and visibility, and filters by owner', async () => {
-    await renderServersTab(null, [server, teamServer])
+    renderServersTab(null, [server, teamServer])
 
     const registry = within(screen.getByTestId('mcp-server-list'))
     expect(registry.getByText('Platform admins')).toBeInTheDocument()
@@ -1139,7 +1137,7 @@ describe('ServersTab', () => {
 
   it('keeps servers a team admin does not manage read-only', async () => {
     const published = { ...server, can_manage: false }
-    await renderServersTab(null, [published, teamServer], teamAdminScope)
+    renderServersTab(null, [published, teamServer], teamAdminScope)
 
     const registry = within(screen.getByTestId('mcp-server-list'))
     expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
@@ -1162,11 +1160,7 @@ describe('ServersTab', () => {
   })
 
   it('lets a team admin re-enable a server their team owns', async () => {
-    await renderServersTab(
-      'server_team',
-      [{ ...teamServer, status: 'disabled' }, server],
-      teamAdminScope,
-    )
+    renderServersTab('server_team', [{ ...teamServer, status: 'disabled' }, server], teamAdminScope)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for Docs' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Enable server' }))
@@ -1179,7 +1173,7 @@ describe('ServersTab', () => {
   })
 
   it('registers a team admin server as team only', async () => {
-    await renderServersTab(null, [teamServer], teamAdminScope)
+    renderServersTab(null, [teamServer], teamAdminScope)
     fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     expect(
       screen.getByText('Only a platform admin can publish this server to the organisation.'),
@@ -1208,7 +1202,7 @@ describe('ServersTab', () => {
     transferExternalMcpServerOwnershipMock.mockResolvedValue({
       data: { server: { ...server, owner_team_id: 'team_a', owner_team_name: 'Team A' } },
     })
-    await renderServersTab('server_1', [server], {
+    renderServersTab('server_1', [server], {
       platformAdmin: true,
       canPublish: true,
       teamId: null,
@@ -1228,7 +1222,7 @@ describe('ServersTab', () => {
   })
 
   it('lets a platform admin register a server for a team', async () => {
-    await renderServersTab(null, [server], {
+    renderServersTab(null, [server], {
       platformAdmin: true,
       canPublish: true,
       teamId: null,
@@ -1255,7 +1249,7 @@ describe('ServersTab', () => {
   })
 
   it('publishes a server again when a platform admin switches the owner back to the platform', async () => {
-    await renderServersTab(null, [server], {
+    renderServersTab(null, [server], {
       platformAdmin: true,
       canPublish: true,
       teamId: null,
@@ -1284,8 +1278,8 @@ describe('ServersTab', () => {
     })
   })
 
-  it('shows members the servers they can connect to without admin controls', async () => {
-    await renderServersTab(null, [{ ...server, can_manage: false }], {
+  it('shows members the servers they can connect to without admin controls', () => {
+    renderServersTab(null, [{ ...server, can_manage: false }], {
       ...teamAdminScope,
       readOnly: true,
     })
@@ -1299,7 +1293,7 @@ describe('ServersTab', () => {
 
   it('offers no tool set action on a team-only server', async () => {
     getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool] } })
-    await renderServersTab(null, [teamServer])
+    renderServersTab(null, [teamServer])
     fireEvent.click(
       within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Open Docs' }),
     )
@@ -1311,7 +1305,7 @@ describe('ServersTab', () => {
   })
 
   it('offers no tool selection without a tool set action', async () => {
-    await renderServersTab(null, [{ ...server, can_manage: false }], {
+    renderServersTab(null, [{ ...server, can_manage: false }], {
       ...teamAdminScope,
       readOnly: true,
     })

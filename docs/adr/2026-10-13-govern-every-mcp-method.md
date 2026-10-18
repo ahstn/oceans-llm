@@ -64,6 +64,16 @@ Governing replays would mean tracking which request each upstream event id belon
 
 Upstream `Mcp-Session-Id` values were also passed through unchanged. On a server with a shared credential, any caller who learned a session id could open its event stream or `DELETE` it; `DELETE` needs no grant. The gateway now issues its own session id: the upstream id in base64url, a `.`, and an HMAC-SHA256 tag (128 bits, keyed with the identity token secret, or with a random per-process key when that secret is unset or the public development fallback) over the server id, the API key id or OAuth grant id, and the owner. Inbound session ids are checked against the current caller before anything is forwarded. A missing tag, a tag for another caller or server, or the raw upstream id gets HTTP 404 with JSON-RPC code `-32001`, which MCP clients treat as an expired session. The signed format needs no session table, so it works across replicas that share a configured identity token secret.
 
+### 6. One governance pipeline for every call
+
+_Added 2026-10-18 after a review of the MCP gateway epic._
+
+Direct `tools/call`, aggregate `call_tool`, and the governed methods each wrote out the same steps between authorization and the upstream request. Steps added later reached some routes and not others: governed resources, prompts and completions were never rate-limited. `mcp_gateway::governance::GovernedCall::admit` now runs those steps for all three, in one order: the server's `mcp_tool_call` rate limits, request guardrails on tool arguments (for `tools/call`), then the caller's upstream credential. Each route still authorizes its own way, sends the upstream request its own way and writes its own response format, and a refusal maps onto each format through one `Refusal` type that also gives the invocation-log fields. Governed methods are therefore now counted by `mcp_tool_call` policies, sharing the counter with tool calls on the same server, and a rate-limited one gets the same JSON-RPC `-32029` error and `rate_limited` log entry.
+
+The JSON-RPC error bodies the routes send are built on `gateway_mcp::server::json_rpc_error_with_id`, with the codes from `gateway_mcp::server` (`JSON_RPC_POLICY_DENIED`, `JSON_RPC_RATE_LIMITED`, `JSON_RPC_INTERNAL_ERROR`, and the standard ones) instead of codes redeclared per module.
+
+_Superseded 2026-10-18:_ section 5 records HTTP 404 with JSON-RPC code `-32001` for an unknown or foreign session id. With this pipeline the per-server proxy answers it with `-32602` (`JSON_RPC_INVALID_PARAMS`), the code the aggregate route already used for an unknown session, so both routes agree. The HTTP 404, which is what MCP clients treat as an expired session, is unchanged.
+
 ## Trade-offs
 
 - A grant on one tool gives access to all resources and prompts on that server. Finer control would need a resource and prompt grant model, which is a larger change.

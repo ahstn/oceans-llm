@@ -1761,6 +1761,72 @@ mod proxy_policy {
         assert_eq!(body["error"]["code"], -32029);
     }
 
+    /// Resources and prompts read server data through the same upstream
+    /// access as tools, so the server's MCP call limits count them too.
+    #[tokio::test]
+    async fn governed_methods_share_the_servers_call_limits() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 7);
+        assert_eq!(body["error"]["code"], -32029);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 1);
+        let logged = invocations(&state).await;
+        let limited = logged
+            .iter()
+            .find(|invocation| invocation.error_code.as_deref() == Some("rate_limited"))
+            .expect("rate-limited invocation");
+        assert_eq!(limited.mcp_method, "resources/read");
+        assert_eq!(limited.status, McpToolInvocationStatus::PolicyDenied);
+        // Tool calls share the counter.
+        let (status, _) = send(&state, &auth, search_call(8)).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn refused_notifications_get_errors_without_an_id() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let mut notification = read_resource();
+        notification
+            .as_object_mut()
+            .expect("request object")
+            .remove("id");
+
+        send(&state, &auth, read_resource()).await;
+        let (status, body) = send(&state, &auth, notification.clone()).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+        assert_eq!(body["error"]["code"], -32029);
+
+        crate::http::test_support::install_down_rate_limiter(&mut state);
+        let (status, body) = send(&state, &auth, notification).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+
+        // So is a tools/call notification for a tool that is not granted.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "not-granted", "arguments": {}}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+    }
+
     #[tokio::test]
     async fn closed_rate_limit_failures_return_a_json_rpc_503() {
         let (_directory, mut state) = crate::http::test_support::app_state().await;
