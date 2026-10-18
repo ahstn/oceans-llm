@@ -83,7 +83,7 @@ Oceans now implements RFC 9207:
 
 - Discovery records `authorization_response_iss_parameter_supported` from the authorization server metadata into the suggested `auth_config`.
 - `mcp_oauth_states` stores the expected issuer and whether `iss` is required (migration `V71__mcp_oauth_state_issuer`).
-- The callback compares a present `iss` with the expected issuer, ignoring a trailing `/`, and requires `iss` when the server's config says the authorization server sends it. A mismatch redirects with `oauth_error=issuer_mismatch` before any token request.
+- The callback compares a present `iss` with the expected issuer as an exact string, as RFC 9207 requires, and requires `iss` when the server's config says the authorization server sends it. Discovery records the issuer exactly as the authorization server's metadata states it, so the two match byte for byte; a server configured by hand must use that exact string. A mismatch redirects with `oauth_error=issuer_mismatch` before any token request.
 - The code exchange also fails when the server's issuer changed during the flow, as it already did for the provider key and resource.
 
 Configured providers are not checked: their endpoints are gateway configuration and each has its own callback path.
