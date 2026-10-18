@@ -84,7 +84,7 @@ impl McpRegistryRepository for AnyStore {
         &self,
         mcp_server_id: Uuid,
         enabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => {
                 store

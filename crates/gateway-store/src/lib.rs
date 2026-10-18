@@ -1671,10 +1671,11 @@ pub(crate) mod tests {
                 .is_empty()
         );
 
-        let enabled = store
+        let (enabled, transitioned) = store
             .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
             .await
             .expect("enable server");
+        assert!(transitioned);
         assert_eq!(enabled.status, ExternalMcpServerStatus::Active);
         assert_eq!(enabled.disabled_at, None);
         assert_eq!(enabled.last_discovery_status, None);
@@ -1688,6 +1689,33 @@ pub(crate) mod tests {
                 .len(),
             1
         );
+
+        // Enabling an active server, as a stale admin page might, keeps its discovery result.
+        store
+            .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                discovery_run_id: Uuid::new_v4(),
+                mcp_server_id: server.mcp_server_id,
+                status: ExternalMcpDiscoveryStatus::Failed,
+                started_at: now + Duration::seconds(11),
+                finished_at: now + Duration::seconds(12),
+                discovered_tool_count: 0,
+                active_tool_count: 0,
+                schema_set_hash: None,
+                error_summary: Some("unreachable".to_string()),
+                details: Map::new(),
+            })
+            .await
+            .expect("record discovery after enable");
+        let (unchanged, transitioned) = store
+            .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(13))
+            .await
+            .expect("enable active server");
+        assert!(!transitioned);
+        assert_eq!(
+            unchanged.last_discovery_status,
+            Some(ExternalMcpDiscoveryStatus::Failed)
+        );
+        assert_eq!(unchanged.last_error_summary.as_deref(), Some("unreachable"));
         assert!(matches!(
             store.enable_external_mcp_server(Uuid::new_v4(), now).await,
             Err(StoreError::NotFound(_))

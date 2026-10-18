@@ -29,7 +29,7 @@ Each entry shows:
 | Service accounts | `service_account.created`, `service_account.updated`, `service_account.disabled` |
 | Budgets | `budget.set`, `budget.deactivated`, `budget.increase_created` |
 | Sessions | `session.created` (password, OIDC or OAuth sign-in), `session.revoked` (logout) |
-| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.discovery_refreshed` |
+| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.enabled`, `mcp_server.discovery_refreshed` |
 | MCP tool sets | `mcp_toolset.created`, `mcp_toolset.updated`, `mcp_toolset.disabled`, `mcp_toolset.tools_replaced` |
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
 | MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tool.version_approved`, `mcp_tool.version_rejected` |

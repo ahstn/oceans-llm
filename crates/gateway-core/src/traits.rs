@@ -1057,12 +1057,13 @@ pub trait McpRegistryRepository: Send + Sync {
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
     /// Reactivates a disabled server. Its tools and grants apply again as they were; discovery
-    /// reads as not run, because disabling overwrote the last result.
+    /// reads as not run, because disabling overwrote the last result. The flag says whether this
+    /// call made the transition; an already-active server comes back unchanged.
     async fn enable_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
         enabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError>;
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
     async fn list_external_mcp_tools(
         &self,

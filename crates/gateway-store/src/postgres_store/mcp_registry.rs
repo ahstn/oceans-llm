@@ -399,27 +399,27 @@ impl McpRegistryRepository for PostgresStore {
         &self,
         mcp_server_id: Uuid,
         enabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
-        let changed = sqlx::query(
-            r#"
-            UPDATE external_mcp_servers
-            SET status = 'active', disabled_at = NULL, updated_at = $1,
-                last_discovery_status = NULL, last_discovery_at = NULL,
-                last_error_summary = NULL
-            WHERE mcp_server_id = $2
-            "#,
-        )
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only a disabled server changes, so a stale request can't wipe an active server's
+        // discovery result. With no row, the server was already active or is missing.
+        let enabled = sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET status = 'active', disabled_at = NULL, updated_at = $1,
+                 last_discovery_status = NULL, last_discovery_at = NULL,
+                 last_error_summary = NULL
+             WHERE mcp_server_id = $2
+               AND status = 'disabled'
+             RETURNING {SERVER_COLUMNS}"
+        ))
         .bind(enabled_at.unix_timestamp())
         .bind(mcp_server_id.to_string())
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(to_write_error)?;
-        if changed.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{mcp_server_id}` not found"
-            )));
+        match enabled {
+            Some(row) => Ok((decode_server(&row)?, true)),
+            None => Ok((load_server(&self.pool, mcp_server_id).await?, false)),
         }
-        load_server(&self.pool, mcp_server_id).await
     }
 
     async fn list_external_mcp_tools(

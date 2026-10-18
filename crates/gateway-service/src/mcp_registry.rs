@@ -250,7 +250,7 @@ where
     pub async fn enable_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<ExternalMcpServerRecord, GatewayError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
         self.repo
             .enable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -883,7 +883,7 @@ mod tests {
             &self,
             _mcp_server_id: Uuid,
             _enabled_at: OffsetDateTime,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             unimplemented!()
         }
 

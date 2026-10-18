@@ -278,15 +278,28 @@ pub async fn disable_mcp_server(
 pub async fn enable_mcp_server(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<String>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
     let service = McpRegistryService::new(state.store.clone());
-    let server = service.enable_server(server_id).await?;
-    Ok(Json(envelope(McpServerPayload {
-        server: map_server(server),
-    })))
+    let (server, enabled) = service.enable_server(server_id).await?;
+    let server = map_server(server);
+    // Enabling an active server is not a transition. As with disable, the store decides this
+    // in its update, so concurrent requests record one entry.
+    if enabled {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                server_event(actions::MCP_SERVER_ENABLED, &server)
+                    .before(serde_json::json!({ "status": "disabled" }))
+                    .after(serde_json::json!({ "status": "active" })),
+            )
+            .await;
+    }
+    Ok(Json(envelope(McpServerPayload { server })))
 }
 
 #[utoipa::path(
