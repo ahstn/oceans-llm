@@ -1,0 +1,93 @@
+crates/admin-ui/web/src/routes/review-agent.tsx
+  s_c1dcef61d5dc95::t_0f3fc534f196a5 1-2,7-8,41-43,45-56,82,84,100,107-113,115-151,153-221,224,226-227,231-232,242,246-248,255-275,277-282,284-299,301-362,364-380,386-390,392-400,402-419,421-429,431,434-461,463-468,470-507,511-545,550-551,554,557-560,563-569,572-650
+DESIGN.md
+  s_b8e52ffc321bb1::t_96084d3c8a03e3 321-322
+crates/admin-ui/web/AGENTS.md
+  s_b8e52ffc321bb1::t_96642ddd1622c2 19,33
+crates/admin-ui/web/src/components/shared/admin-table-header.tsx
+  s_ed66ec77873ef1::t_1f6c2d30371f33 1-67
+crates/admin-ui/web/src/components/shared/section-nav.tsx
+  s_ed66ec77873ef1::t_34bad49d047657 1-84
+crates/admin-ui/web/src/routes/-review-agent/repo-details-dialog.tsx
+  s_b8e52ffc321bb1::t_6463566453b175 1-709
+crates/admin-ui/web/src/routes/-review-agent/review-agent-meta.ts
+  s_10a82e9e623548::t_b8e5f91161040e 1-138
+crates/admin-ui/web/src/routes/-review-agent/service-account-select.tsx
+  s_ed66ec77873ef1::t_ef846143dd2804 1-41
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  s_b8e52ffc321bb1::t_d0b450a6806102 7-8,93
+crates/admin-ui/web/src/routes/batches/-components.tsx
+  s_b8e52ffc321bb1::t_bdf3d293e6579d 17-18,109-120
+crates/admin-ui/web/src/routes/design-system/-components/data-display.tsx
+  s_eaf7116ccea134::t_c167b81d094356 5,38,43,101,106-115,119-120,123-124,127-128,288-294
+crates/admin-ui/web/src/routes/design-system/-components/showcase-section-nav.tsx
+  s_10a82e9e623548::t_91b6deb8b02d64 1-47
+crates/admin-ui/web/src/routes/identity/-teams/teams-list.tsx
+  s_ed66ec77873ef1::t_fca6e81d2d5158 9-10,86
+crates/admin-ui/web/src/routes/identity/-users/user-details-dialog.tsx
+  s_ed66ec77873ef1::t_c709059423f3ef 5,17,75-79,150-154
+crates/admin-ui/web/src/routes/identity/-users/users-list.tsx
+  s_ed66ec77873ef1::t_74667c72fbfe2c 4-5,70
+crates/admin-ui/web/src/routes/identity/service-accounts.tsx
+  s_ed66ec77873ef1::t_de5a35e78c4597 14-15,158-168
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_10a82e9e623548::t_5f6749770af3f5 19,37,84-88,645-649,683-687,773
+crates/admin-ui/web/src/routes/models.tsx
+  s_b8e52ffc321bb1::t_3f8db94677fec8 36-37,599-620
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_ed66ec77873ef1::t_c2e32eeb031f83 19-20,298-308
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  s_ed66ec77873ef1::t_4be81a29839c40 12-13,231-241
+crates/admin-ui/web/src/routes/profile/-components/profile-api-keys.tsx
+  s_b8e52ffc321bb1::t_d29c3011253027 16-17,55-57
+crates/admin-ui/web/src/routes/rate-limits.tsx
+  s_b8e52ffc321bb1::t_a773b874ab4cef 29-30,168-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7daa33be2d877366c90cc6f20047c4a4d2350bba",
+  "prompts": {},
+  "sessions": {
+    "s_10a82e9e623548": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f37a6951-df40-4639-9d01-c99da63e8d84",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_c1dcef61d5dc95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14231-3fa6-72b3-9cea-07f2dbb0a11d",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ed66ec77873ef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5677dbea-fe6a-4c7e-8813-6d123638daa1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
