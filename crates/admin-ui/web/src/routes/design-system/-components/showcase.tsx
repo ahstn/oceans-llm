@@ -110,14 +110,28 @@ export function StateMatrix<Row extends string>({
   )
 }
 
+// One 1x1 canvas serves every ColorPair on the page. It is created on first use, which is always in
+// an effect in the browser, rather than one canvas and context per conversion.
+let pixel: CanvasRenderingContext2D | null | undefined
+
+function pixelContext() {
+  if (pixel === undefined) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    pixel = canvas.getContext('2d', { willReadFrequently: true })
+  }
+  return pixel
+}
+
 // Resolves any CSS color (hex, rgb, oklch, color-mix) to sRGB by painting one pixel.
 // Translucent colors are composited over the backdrop, as the browser would.
 function toRgb(color: string, backdrop: string) {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1
-  canvas.height = 1
-  const context = canvas.getContext('2d', { willReadFrequently: true })
+  const context = pixelContext()
   if (!context) return null
+  // Start from a fresh canvas's state, so an unparsable colour can't reuse the last fill.
+  context.clearRect(0, 0, 1, 1)
+  context.fillStyle = '#000000'
   context.fillStyle = backdrop
   context.fillRect(0, 0, 1, 1)
   context.fillStyle = color
