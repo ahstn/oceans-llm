@@ -5,7 +5,8 @@ use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
     HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
-    reuse_historical_versions, review_ops, reviewable_version, tool_write_ops,
+    reuse_historical_versions, review_ops, reviewable_version, stale_discovery_check,
+    tool_write_ops,
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
@@ -974,6 +975,29 @@ impl McpRegistryRepository for LibsqlStore {
         let tx = self.begin_transaction().await?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&tx, guard, None).await?;
+            let server = load_server(&tx, run.mcp_server_id).await?;
+            let mut rows = tx
+                .query(
+                    "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND started_at > ?3)",
+                    libsql::params![
+                        run.mcp_server_id.to_string(),
+                        ExternalMcpDiscoveryStatus::Success.as_str(),
+                        run.started_at.unix_timestamp(),
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let newer_run_committed: i64 = rows
+                .next()
+                .await
+                .map_err(to_query_error)?
+                .ok_or_else(|| StoreError::Unexpected("EXISTS returned no row".to_string()))?
+                .get(0)
+                .map_err(to_query_error)?;
+            stale_discovery_check(
+                server.status == ExternalMcpServerStatus::Active,
+                newer_run_committed != 0,
+            )?;
         }
         tx.execute(
             r#"

@@ -85,6 +85,29 @@ pub(crate) enum ToolWrite {
     },
 }
 
+/// Refuses a guarded discovery commit whose results are stale: the server was
+/// disabled while discovery ran, or a discovery that started later has
+/// already committed. Committing either would serve tools for a server an
+/// admin turned off, or roll versions back. The ownership guard covers owner,
+/// URL and auth changes.
+pub(crate) fn stale_discovery_check(
+    server_active: bool,
+    newer_run_committed: bool,
+) -> Result<(), StoreError> {
+    if !server_active {
+        return Err(StoreError::Conflict(
+            "the MCP server was disabled while discovery ran; its results were discarded"
+                .to_string(),
+        ));
+    }
+    if newer_run_committed {
+        return Err(StoreError::Conflict(
+            "a newer discovery of this MCP server has already been recorded".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn definition_of(tool: &ExternalMcpToolRecord) -> McpToolDefinition {
     McpToolDefinition {
         description: tool.description.clone(),

@@ -111,6 +111,8 @@ A row discovered before tool metadata was stored (V58) is marked captured the fi
 
 Discovery plans each tool's writes from a snapshot of its versions, so it is serialized with reviews and with other discoveries of the same server. On libSQL, discovery runs in an immediate transaction that holds the write lock. On Postgres, it locks the server row and then the server's tool rows before taking the snapshot, and a review locks the tool row it changes.
 
+_Changed 2026-10-18 after a review of the MCP gateway epic:_ a discovery run carries an ownership guard (added with delegated ownership, #445), which pins the server's owner, visibility, URL and auth settings, and on Postgres the server row is locked `FOR UPDATE` before the run is inserted, so two replicas refreshing one server no longer deadlock. Every refresh now pins that guard, including callers that pass none. With it, the store also refuses the commit when the server was disabled while discovery ran, or when a discovery that started later has already committed. Otherwise a refresh that raced an admin's disable could reactivate tools, and an older refresh finishing last could move `approved_schema_version` back. Run start times have one-second resolution, so two refreshes that start in the same second are not ordered.
+
 Statuses are `approved`, `pending`, `rejected` and `superseded` (a pending version replaced by a newer discovery, or by the upstream going back to the approved definition).
 
 ### 6. Approval of changed tools (#444)

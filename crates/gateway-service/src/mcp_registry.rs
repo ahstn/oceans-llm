@@ -449,6 +449,14 @@ where
         {
             return Err(owner_changed_during_discovery(mcp_server_id));
         }
+        // A caller that authorized nothing in particular still gets results
+        // only for the settings discovery fetched with: the guard also makes
+        // the store refuse them if the server was disabled meanwhile, or a
+        // refresh that started later already committed.
+        let expected_server =
+            Some(expected_server.unwrap_or_else(|| {
+                McpServerOwnershipGuard::of(&server).with_auth_settings(&server)
+            }));
         let persist = DiscoveryPersist {
             progress,
             expected_server,

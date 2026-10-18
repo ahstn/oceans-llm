@@ -74,6 +74,7 @@ mod skills_tests;
 #[cfg(test)]
 pub(crate) mod tests {
     mod mcp_access;
+    mod mcp_discovery_commits;
     mod mcp_tag_rules;
     mod mcp_token_overhead;
     mod mcp_tool_versions;
@@ -2349,9 +2350,12 @@ pub(crate) mod tests {
             "a refused run writes nothing"
         );
 
-        // Guarded discoveries of one server can land together: each locks the
+        // Guarded discoveries of one server can run together: each locks the
         // server before checking its guard, so neither waits on the other's
-        // share lock, and both are stored.
+        // share lock and none deadlocks. This server is disabled, so the
+        // successful runs are refused as stale and only the failures land;
+        // `tests::mcp_discovery_commits` lands concurrent successes on an
+        // active server.
         let run = |status, error: Option<&str>| ExternalMcpDiscoveryRunRecord {
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id,
@@ -2376,8 +2380,8 @@ pub(crate) mod tests {
                 store.record_external_mcp_discovery_success(&second, &[]),
                 store.record_external_mcp_discovery_failure(&failed),
             );
-            first.expect("first concurrent discovery");
-            second.expect("second concurrent discovery");
+            assert!(matches!(first, Err(StoreError::Conflict(_))), "{first:?}");
+            assert!(matches!(second, Err(StoreError::Conflict(_))), "{second:?}");
             failure.expect("concurrent failed discovery");
         }
 
