@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_eaf7116ccea134::t_194d1490821727 6777-6785
+crates/gateway/openapi/admin-api.json
+  s_eaf7116ccea134::t_4fa17c63d572aa 2085-2094
+crates/gateway/src/http/mcp_registry.rs
+  s_eaf7116ccea134::t_48e6e1db410306 399-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf4c07a4348ed85eac26effcd10bf5f55a8d373c",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
