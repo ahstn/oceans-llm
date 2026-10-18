@@ -1,0 +1,95 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_4394d7bb181c63::t_09dc1b902e8941 102,203-204
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_4394d7bb181c63::t_8baf8d16db2198 8,56,61,71
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_4394d7bb181c63::t_6253ae4eb6eb73 7,55-62,155-168
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_4394d7bb181c63::t_70fa6c20a05559 5-106,131
+crates/admin-ui/web/src/components/mcp/server-discovery.test.ts
+  s_4394d7bb181c63::t_42b09ab8273cff 1-101
+crates/admin-ui/web/src/components/mcp/server-discovery.ts
+  s_e383333b16cafa::t_bfa779e8e3f0ac 28-168
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_e383333b16cafa::t_2b26edab6e5e84 6
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_e383333b16cafa::t_38b397ffc73006 487-506,5631-5668
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_e383333b16cafa::t_f278277f322424 1-13,17-22,28,35-40,54,64,77-207,210-213,216-219,223-230,260-309
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_e383333b16cafa::t_68c33937f3d493 2-9,15-19,44,63,119,128-130,133-138,312-324,330-334,337,339,342-346,349,351,357-370,470-472,484,511-512,520,540-541,549,626-633,664-667
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_e383333b16cafa::t_71a34df519ea7a 19,569-577
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_e383333b16cafa::t_e5cd243be8c91b 511-519
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_e88dc7cf2999d1::t_94cfe5c9537e17 3,16,43,178,182-183,192-194,285,294-298,314-318,323-414,481,484-488,497-526,784
+crates/gateway-core/src/traits.rs
+  s_e383333b16cafa::t_6ff3545973fcad 1009-1016
+crates/gateway-service/src/mcp_gateway.rs
+  s_e383333b16cafa::t_3cfa40d81f0310 213-220
+crates/gateway-service/src/mcp_registry.rs
+  s_e383333b16cafa::t_a3bd2763cd433d 233-242,788-795
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_e383333b16cafa::t_13b9f6a04afbe6 83-101
+crates/gateway-store/src/lib.rs
+  s_33d90a19d63897::t_e63ef3d5dc1946 1595-1616
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e383333b16cafa::t_95fa22c7c738f4 291-317
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e383333b16cafa::t_3cc5e77cebc0d8 285-311
+crates/gateway/openapi/admin-api.json
+  s_4394d7bb181c63::t_75f8f4fc0634e6 1729-1785
+crates/gateway/src/http/admin_contract.rs
+  s_e383333b16cafa::t_3f7a2d6ce47e81 2079,2254
+crates/gateway/src/http/mcp_registry.rs
+  s_e383333b16cafa::t_8455803c97f36a 221-247
+crates/gateway/src/http/mod.rs
+  s_e383333b16cafa::t_870be02e70e957 307-310
+docs/adr/2026-05-26-external-mcp-registry-and-discovery.md
+  s_4394d7bb181c63::t_1c4561995992a1 53-54
+docs/configuration/mcp-servers.md
+  s_4394d7bb181c63::t_f5f5cbe5f21904 49-50,55-59
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_4394d7bb181c63::t_6686c4a75ef6b1 20,49,62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "505cfabf97dffe3aec376de3c9b4defd5cfac56c",
+  "prompts": {},
+  "sessions": {
+    "s_33d90a19d63897": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed06c798-8802-41c0-9291-c5fd2a3c7dfa",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
