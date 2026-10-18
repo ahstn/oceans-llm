@@ -1056,6 +1056,14 @@ pub trait McpRegistryRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// Reactivates a disabled server. Its tools and grants apply again as they were; discovery
+    /// reads as not run, because disabling overwrote the last result.
+    async fn enable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        enabled_at: OffsetDateTime,
+    ) -> Result<ExternalMcpServerRecord, StoreError>;
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,

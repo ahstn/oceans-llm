@@ -247,6 +247,16 @@ where
             .map_err(Into::into)
     }
 
+    pub async fn enable_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<ExternalMcpServerRecord, GatewayError> {
+        self.repo
+            .enable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn list_tools(
         &self,
         mcp_server_id: Uuid,
@@ -866,6 +876,14 @@ mod tests {
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
         ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+            unimplemented!()
+        }
+
+        async fn enable_external_mcp_server(
+            &self,
+            _mcp_server_id: Uuid,
+            _enabled_at: OffsetDateTime,
+        ) -> Result<ExternalMcpServerRecord, StoreError> {
             unimplemented!()
         }
 

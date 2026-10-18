@@ -2091,6 +2091,63 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Reactivates a disabled server. Its tools and grants apply again as they were before it was\ndisabled, and its discovery status resets to not run until discovery is refreshed.",
+        "operationId": "enable_mcp_server",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/servers/{server_id}/tools": {
       "get": {
         "tags": [

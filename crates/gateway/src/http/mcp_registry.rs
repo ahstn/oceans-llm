@@ -262,6 +262,33 @@ pub async fn disable_mcp_server(
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
+/// Reactivates a disabled server. Its tools and grants apply again as they were before it was
+/// disabled, and its discovery status resets to not run until discovery is refreshed.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/mcp/servers/{server_id}/enable",
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn enable_mcp_server(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let server_id = parse_uuid(&server_id, "server_id")?;
+    let service = McpRegistryService::new(state.store.clone());
+    let server = service.enable_server(server_id).await?;
+    Ok(Json(envelope(McpServerPayload {
+        server: map_server(server),
+    })))
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/admin/mcp/servers/{server_id}/tools",

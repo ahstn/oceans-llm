@@ -585,6 +585,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivates a disabled server. Its tools and grants apply again as they were before it was
+         *     disabled, and its discovery status resets to not run until discovery is refreshed.
+         */
+        post: operations["enable_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/servers/{server_id}/tools": {
         parameters: {
             query?: never;
@@ -6712,6 +6732,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpDiscoveryRefreshPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    enable_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
                 };
             };
             400: {

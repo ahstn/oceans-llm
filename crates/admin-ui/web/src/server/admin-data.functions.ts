@@ -20,6 +20,7 @@ import {
   createBudgetIncrease,
   deactivateBudget,
   disableMcpServer,
+  enableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
   getAgentSessionDetail,
@@ -702,6 +703,15 @@ export const disableExternalMcpServer = createServerFn({ method: 'POST' }).handl
     return disableMcpServer(data.serverId)
   },
 )
+
+export const enableExternalMcpServer = createServerFn({ method: 'POST' })
+  .validator((data: { serverId: string }) => {
+    if (typeof data?.serverId !== 'string' || !data.serverId) {
+      throw new Error('serverId is required')
+    }
+    return data
+  })
+  .handler(async ({ data }: { data: { serverId: string } }) => enableMcpServer(data.serverId))
 
 export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
   async ({

@@ -1670,6 +1670,28 @@ pub(crate) mod tests {
                 .expect("list active")
                 .is_empty()
         );
+
+        let enabled = store
+            .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
+            .await
+            .expect("enable server");
+        assert_eq!(enabled.status, ExternalMcpServerStatus::Active);
+        assert_eq!(enabled.disabled_at, None);
+        assert_eq!(enabled.last_discovery_status, None);
+        assert_eq!(enabled.last_discovery_at, None);
+        assert_eq!(enabled.last_error_summary, None);
+        assert_eq!(
+            store
+                .list_external_mcp_servers(false)
+                .await
+                .expect("list active after enable")
+                .len(),
+            1
+        );
+        assert!(matches!(
+            store.enable_external_mcp_server(Uuid::new_v4(), now).await,
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     /// Discovers one tool with the given hash and annotations and returns the

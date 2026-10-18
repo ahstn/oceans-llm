@@ -407,6 +407,33 @@ impl McpRegistryRepository for LibsqlStore {
         Ok((load_server(&self.connection, mcp_server_id).await?, false))
     }
 
+    async fn enable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        enabled_at: OffsetDateTime,
+    ) -> Result<ExternalMcpServerRecord, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                r#"
+                UPDATE external_mcp_servers
+                SET status = 'active', disabled_at = NULL, updated_at = ?1,
+                    last_discovery_status = NULL, last_discovery_at = NULL,
+                    last_error_summary = NULL
+                WHERE mcp_server_id = ?2
+                "#,
+                libsql::params![enabled_at.unix_timestamp(), mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!(
+                "external MCP server `{mcp_server_id}` not found"
+            )));
+        }
+        load_server(&self.connection, mcp_server_id).await
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,

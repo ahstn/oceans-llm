@@ -2090,6 +2090,7 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::create_mcp_server,
         crate::http::mcp_registry::update_mcp_server,
         crate::http::mcp_registry::disable_mcp_server,
+        crate::http::mcp_registry::enable_mcp_server,
         crate::http::mcp_registry::list_mcp_server_tools,
         crate::http::mcp_registry::refresh_mcp_server_discovery,
         crate::http::mcp_registry::discover_mcp_server_oauth,
@@ -2282,6 +2283,7 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/mcp/servers"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/disable"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/enable"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/discovery-refresh"));
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets"));
