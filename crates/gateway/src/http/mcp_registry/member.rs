@@ -3,7 +3,8 @@
 
 use super::*;
 
-/// How many of a member's API keys `member_access` resolves at once.
+/// How many of a member's API keys `member_access` resolves on their own at
+/// once.
 const MEMBER_KEY_RESOLUTIONS_AT_ONCE: usize = 4;
 
 /// The active tools a user can call, by ID, and the servers they are on, read
@@ -15,9 +16,9 @@ const MEMBER_KEY_RESOLUTIONS_AT_ONCE: usize = 4;
 ///
 /// `server_id` limits the result to one server. Each MCP-capable key is
 /// resolved with its owner and team, as a request made with it would be, so
-/// tag rules on any of them apply. At most `MEMBER_KEY_RESOLUTIONS_AT_ONCE`
-/// keys resolve at a time, and each resolution skips rule loading when none of
-/// its subjects has a rule.
+/// tag rules on any of them apply. Only keys a tag rule could change are
+/// resolved on their own, at most `MEMBER_KEY_RESOLUTIONS_AT_ONCE` at a time;
+/// every other key's grants are read together in one query.
 pub(super) struct MemberAccess {
     pub(super) tool_ids: Vec<Uuid>,
     pub(super) servers: Vec<gateway_core::ExternalMcpServerRecord>,
@@ -61,14 +62,54 @@ pub(super) async fn member_access(
         .into_iter()
         .map(|tool| (tool.mcp_tool_id, tool.mcp_server_id))
         .collect();
-    // Each key is resolved as runtime resolves a request made with it: the key,
-    // its owner and their team together, so tag rules on any of them, include
-    // and exclude alike, apply to what the key reaches.
-    // A few keys resolve at a time: faster than one by one, and a user with
-    // many keys still holds only a few store connections.
-    use futures_util::{StreamExt, TryStreamExt};
+    // A key reaches what its owner and team do, plus its own grants. Its tools
+    // are what runtime resolves for the key, its owner and their team
+    // together, so tag rules on any of them, include and exclude alike, apply.
+    // Most keys need no resolution of their own: one with no tag rules adds
+    // exactly its grants, read for every key in one query, unless its owner or
+    // team has rules that could exclude some of them. Only the other keys are
+    // resolved one by one, a few at a time.
     let key_ids: Vec<Uuid> = keys.keys().copied().collect();
-    let key_tools: Vec<(Uuid, Uuid, Uuid)> = futures_util::stream::iter(key_ids)
+    let key_grants = state
+        .store
+        .list_mcp_tool_access_for_api_keys(&key_ids, server_id)
+        .await?;
+    let keys_with_rules: std::collections::HashSet<Uuid> = state
+        .store
+        .list_mcp_tag_rule_subject_ids(McpToolGrantSubjectKind::ApiKey, &key_ids)
+        .await?
+        .into_iter()
+        .collect();
+    let owner_has_rules = !state
+        .store
+        .list_mcp_tag_rule_subject_ids(McpToolGrantSubjectKind::User, &[user_id])
+        .await?
+        .is_empty()
+        || match team_id {
+            Some(team_id) => !state
+                .store
+                .list_mcp_tag_rule_subject_ids(McpToolGrantSubjectKind::Team, &[team_id])
+                .await?
+                .is_empty(),
+            None => false,
+        };
+    let keys_with_grants: std::collections::HashSet<Uuid> =
+        key_grants.iter().map(|grant| grant.api_key_id).collect();
+    let resolve_each: std::collections::HashSet<Uuid> = key_ids
+        .iter()
+        .copied()
+        .filter(|key_id| {
+            keys_with_rules.contains(key_id)
+                || (owner_has_rules && keys_with_grants.contains(key_id))
+        })
+        .collect();
+    let mut key_tools: Vec<(Uuid, Uuid, Uuid)> = key_grants
+        .into_iter()
+        .filter(|grant| !resolve_each.contains(&grant.api_key_id))
+        .map(|grant| (grant.api_key_id, grant.mcp_tool_id, grant.mcp_server_id))
+        .collect();
+    use futures_util::{StreamExt, TryStreamExt};
+    let resolved: Vec<Vec<(Uuid, Uuid, Uuid)>> = futures_util::stream::iter(resolve_each)
         .map(|key_id| {
             let mut key_subjects = subjects.clone();
             key_subjects.push(McpGrantSubject {
@@ -94,11 +135,9 @@ pub(super) async fn member_access(
             }
         })
         .buffer_unordered(MEMBER_KEY_RESOLUTIONS_AT_ONCE)
-        .try_collect::<Vec<_>>()
-        .await?
-        .into_iter()
-        .flatten()
-        .collect();
+        .try_collect()
+        .await?;
+    key_tools.extend(resolved.into_iter().flatten());
     let referenced: Vec<Uuid> = tool_servers
         .values()
         .copied()

@@ -1371,6 +1371,28 @@ pub trait McpAccessRepository: Send + Sync {
         team_id: Option<Uuid>,
     ) -> Result<bool, StoreError>;
 
+    /// Which of these subjects, all of one kind, hold an active tag rule, in
+    /// one read: lets a caller resolving several subjects skip those whose
+    /// access no rule can change.
+    async fn list_mcp_tag_rule_subject_ids(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        let mut with_rules = Vec::new();
+        for subject_id in subject_ids {
+            if self
+                .list_mcp_tool_tag_rules(Some(subject_kind), Some(*subject_id))
+                .await?
+                .iter()
+                .any(|rule| rule.is_active)
+            {
+                with_rules.push(*subject_id);
+            }
+        }
+        Ok(with_rules)
+    }
+
     /// Which of these servers are visible to their team only and not owned by
     /// `team_id`, in one read: for requests that resolved tools on several
     /// servers.

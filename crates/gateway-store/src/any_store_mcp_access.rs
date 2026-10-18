@@ -212,6 +212,25 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn list_mcp_tag_rule_subject_ids(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tag_rule_subject_ids(subject_kind, subject_ids)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tag_rule_subject_ids(subject_kind, subject_ids)
+                    .await
+            }
+        }
+    }
+
     async fn list_mcp_server_ids_hidden_from(
         &self,
         mcp_server_ids: &[Uuid],

@@ -3130,6 +3130,30 @@ pub(crate) mod tests {
             .await
             .expect("revoke include rule");
         assert_eq!(outside().await.expect("count"), 0, "revoked include rule");
+        // Only subjects with an active rule are listed: the exclude rule keeps
+        // the team listed, and once it is revoked too, nothing does.
+        let with_rules = |ids: Vec<Uuid>| async move {
+            store
+                .list_mcp_tag_rule_subject_ids(Kind::Team, &ids)
+                .await
+                .expect("rule subjects")
+        };
+        assert_eq!(
+            with_rules(vec![other_team.team_id, Uuid::new_v4()]).await,
+            vec![other_team.team_id]
+        );
+        let exclude = store
+            .list_mcp_tool_tag_rules(Some(Kind::Team), Some(other_team.team_id))
+            .await
+            .expect("rules")
+            .into_iter()
+            .find(|rule| rule.is_active)
+            .expect("active exclude rule");
+        store
+            .revoke_mcp_tool_tag_rule(exclude.rule_id, now)
+            .await
+            .expect("revoke exclude rule");
+        assert!(with_rules(vec![other_team.team_id]).await.is_empty());
         // A disabled server exposes nothing and cannot be enabled again, so its
         // grants strand nothing.
         store

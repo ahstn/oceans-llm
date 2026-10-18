@@ -683,6 +683,33 @@ impl McpAccessRepository for LibsqlStore {
         Ok(rows.next().await.map_err(to_query_error)?.is_some())
     }
 
+    async fn list_mcp_tag_rule_subject_ids(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if subject_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids =
+            serde_json::to_string(&subject_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT DISTINCT subject_id FROM mcp_tool_tag_rules WHERE is_active = 1 AND subject_kind = ?1 AND subject_id IN (SELECT value FROM json_each(?2))",
+                libsql::params![subject_kind.as_str(), ids],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut with_rules = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            with_rules.push(parse_uuid(&id)?);
+        }
+        Ok(with_rules)
+    }
+
     async fn list_mcp_server_ids_hidden_from(
         &self,
         mcp_server_ids: &[Uuid],

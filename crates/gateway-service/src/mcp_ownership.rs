@@ -640,38 +640,17 @@ pub async fn authorize_destination(
 /// not resolve at all: an unresolved name could resolve to an internal address
 /// by the time the gateway connects.
 pub async fn require_public_destination(url: &Url) -> Result<(), GatewayError> {
-    let blocked = || {
-        GatewayError::InvalidRequest(format!(
+    use crate::outbound_fetch::{OutboundAddressScope, OutboundFetchError, check_destination};
+    // The same check the public scope makes when the gateway connects.
+    match check_destination(url, OutboundAddressScope::Public).await {
+        Ok(()) => Ok(()),
+        Err(OutboundFetchError::Unresolved { host }) => Err(GatewayError::InvalidRequest(format!(
+            "`{host}` does not resolve; a server must reach a public address"
+        ))),
+        Err(_) => Err(GatewayError::InvalidRequest(format!(
             "`{}` must reach a public address; ask a platform admin to register servers on internal networks",
             url.host_str().unwrap_or_default()
-        ))
-    };
-    let port = url.port_or_known_default().unwrap_or(443);
-    let addresses: Vec<IpAddr> = match url.host() {
-        Some(url::Host::Ipv4(address)) => vec![IpAddr::V4(address)],
-        Some(url::Host::Ipv6(address)) => vec![IpAddr::V6(address)],
-        Some(url::Host::Domain(domain)) => {
-            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
-            if domain == "localhost" || domain.ends_with(".localhost") {
-                return Err(blocked());
-            }
-            let resolved: Vec<IpAddr> = tokio::net::lookup_host((domain.as_str(), port))
-                .await
-                .map(|resolved| resolved.map(|address| address.ip()).collect())
-                .unwrap_or_default();
-            if resolved.is_empty() {
-                return Err(GatewayError::InvalidRequest(format!(
-                    "`{domain}` does not resolve; a server must reach a public address"
-                )));
-            }
-            resolved
-        }
-        None => return Err(blocked()),
-    };
-    if addresses.into_iter().all(is_public_address) {
-        Ok(())
-    } else {
-        Err(blocked())
+        ))),
     }
 }
 

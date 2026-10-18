@@ -2560,3 +2560,53 @@ async fn the_member_catalog_applies_tag_rules_on_their_keys() {
     let (_, body) = read(listed().await).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0, "{body}");
 }
+
+#[tokio::test]
+async fn the_member_catalog_applies_owner_rules_to_their_key_grants() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "owner-ruled",
+            context.team_owned(context.team_a, McpServerVisibility::Organisation),
+        )
+        .await;
+    let member = context.member(context.team_a).await;
+    let key = context.user_api_key(member).await;
+    let platform = context.platform_admin().await;
+    assert_eq!(
+        context
+            .grant(&platform, "api_key", key, "tool", server.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let query: McpServersQuery = serde_json::from_value(json!({})).unwrap();
+    let listed = || list_member_servers(&context.state, member, Some(context.team_a), &query);
+    // The key has no rules of its own, so its grant is listed as read.
+    let (_, body) = read(listed().await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1, "{body}");
+    // An exclude rule on the key's owner removes the tool from the key, as at
+    // runtime, so the key is resolved with its owner's rules.
+    let (status, body) = read(
+        create_mcp_tag_rule(
+            State(context.state.clone()),
+            platform.headers.clone(),
+            AuditRequestMeta::default(),
+            Json(
+                serde_json::from_value(json!({
+                    "subject_kind": "user",
+                    "subject_id": member,
+                    "server_id": server.id,
+                    "tag": "destructive",
+                    "effect": "exclude",
+                }))
+                .unwrap(),
+            ),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, body) = read(listed().await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0, "{body}");
+}

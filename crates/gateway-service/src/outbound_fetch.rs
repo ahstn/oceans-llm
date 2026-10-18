@@ -317,6 +317,47 @@ fn answers_allowed(scope: OutboundAddressScope, host: &str, answers: &[IpAddr]) 
     })
 }
 
+/// Checks, before a URL is saved, that it reaches only addresses in `scope` as
+/// it resolves now, by the rules [`GuardedResolver`] applies at connect time:
+/// an IP-literal host by its own class, and a name by every DNS answer. A
+/// `localhost` name is refused outside the loopback scope, and a name that does
+/// not resolve is refused too, since it could resolve to anything later. This
+/// pins nothing, so the connection is still checked when it is made.
+pub async fn check_destination(
+    url: &Url,
+    scope: OutboundAddressScope,
+) -> Result<(), OutboundFetchError> {
+    let host = url
+        .host()
+        .ok_or_else(|| OutboundFetchError::UnsupportedUrl("the URL has no host".to_string()))?;
+    let (host, answers) = match host {
+        Host::Ipv4(address) => (address.to_string(), vec![IpAddr::V4(address)]),
+        Host::Ipv6(address) => (address.to_string(), vec![IpAddr::V6(address)]),
+        Host::Domain(domain) => {
+            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+            if scope < OutboundAddressScope::Loopback
+                && (domain == "localhost" || domain.ends_with(".localhost"))
+            {
+                return Err(OutboundFetchError::BlockedAddress { host: domain });
+            }
+            let port = url.port_or_known_default().unwrap_or(443);
+            let answers: Vec<IpAddr> = tokio::net::lookup_host((domain.as_str(), port))
+                .await
+                .map(|resolved| resolved.map(|address| address.ip()).collect())
+                .unwrap_or_default();
+            if answers.is_empty() {
+                return Err(OutboundFetchError::Unresolved { host: domain });
+            }
+            (domain, answers)
+        }
+    };
+    if answers_allowed(scope, &host, &answers) {
+        Ok(())
+    } else {
+        Err(OutboundFetchError::BlockedAddress { host })
+    }
+}
+
 /// A client builder whose connections reach only addresses in `scope`: names
 /// resolve through the guard, which the client then connects to exactly, and
 /// redirects and proxies are off. An IP-literal host skips the resolver, so a

@@ -632,6 +632,25 @@ impl McpAccessRepository for PostgresStore {
         .is_some())
     }
 
+    async fn list_mcp_tag_rule_subject_ids(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if subject_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT subject_id FROM mcp_tool_tag_rules WHERE is_active = 1 AND subject_kind = $1 AND subject_id = ANY($2)",
+        )
+        .bind(subject_kind.as_str())
+        .bind(subject_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        ids.iter().map(|id| parse_uuid(id)).collect()
+    }
+
     async fn list_mcp_server_ids_hidden_from(
         &self,
         mcp_server_ids: &[Uuid],
