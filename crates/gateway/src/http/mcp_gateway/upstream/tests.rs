@@ -618,48 +618,54 @@ async fn a_get_stream_answered_without_an_event_stream_is_refused() {
 
 #[tokio::test]
 async fn a_get_answered_202_loses_its_body() {
-    let router = Router::new().fallback(any(|| async {
-        (
-            StatusCode::ACCEPTED,
-            [(axum::http::header::CONTENT_TYPE, "text/plain")],
-            "data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"content\":[]}}\n\n",
+    // Labelling the body an event stream must not keep it either.
+    for content_type in ["text/plain", "text/event-stream"] {
+        let router = Router::new().fallback(any(move || async move {
+            (
+                StatusCode::ACCEPTED,
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                "data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"content\":[]}}\n\n",
+            )
+        }));
+        let server = TestUpstream::start(router).await;
+        let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("HTTP client"),
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        let streamed = proxy_upstream(
+            &client,
+            &Method::GET,
+            &headers,
+            Bytes::new(),
+            &server.upstream,
         )
-    }));
-    let server = TestUpstream::start(router).await;
-    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
-        reqwest::Client::builder()
-            .no_proxy()
-            .build()
-            .expect("HTTP client"),
-    );
-    let mut headers = HeaderMap::new();
-    headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
-    let streamed = proxy_upstream(
-        &client,
-        &Method::GET,
-        &headers,
-        Bytes::new(),
-        &server.upstream,
-    )
-    .await
-    .expect("GET 202");
-    assert_eq!(streamed.status(), StatusCode::ACCEPTED);
-    let content_type = streamed.headers().get(CONTENT_TYPE).cloned();
-    let body = to_bytes(streamed.into_body(), usize::MAX)
         .await
-        .expect("body");
-    assert!(body.is_empty(), "{body:?}");
-    assert!(content_type.is_none(), "{content_type:?}");
-    let buffered = proxy_buffered(
-        &client,
-        &Method::GET,
-        &headers,
-        Bytes::new(),
-        &server.upstream,
-    )
-    .await
-    .expect("buffered GET 202");
-    assert_eq!(buffered.status, StatusCode::ACCEPTED);
-    assert!(buffered.headers.get(CONTENT_TYPE).is_none());
-    assert!(buffered.body.is_empty());
+        .expect("GET 202");
+        assert_eq!(streamed.status(), StatusCode::ACCEPTED);
+        let returned_type = streamed.headers().get(CONTENT_TYPE).cloned();
+        let body = to_bytes(streamed.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert!(body.is_empty(), "{content_type}: {body:?}");
+        assert!(returned_type.is_none(), "{content_type}: {returned_type:?}");
+        let buffered = proxy_buffered(
+            &client,
+            &Method::GET,
+            &headers,
+            Bytes::new(),
+            &server.upstream,
+        )
+        .await
+        .expect("buffered GET 202");
+        assert_eq!(buffered.status, StatusCode::ACCEPTED);
+        assert!(
+            buffered.headers.get(CONTENT_TYPE).is_none(),
+            "{content_type}"
+        );
+        assert!(buffered.body.is_empty(), "{content_type}");
+    }
 }

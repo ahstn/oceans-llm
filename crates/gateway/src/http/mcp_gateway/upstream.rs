@@ -56,7 +56,7 @@ pub(super) async fn proxy_upstream(
     let status = response.status();
     let mut headers = response.headers().clone();
     refuse_get_without_event_stream(method, status, &headers)?;
-    if is_get_answer_without_stream(method, status, &headers) {
+    if is_bodyless_get_answer(method, status) {
         headers.remove(CONTENT_TYPE);
         return Ok(response_from_parts(status, &headers, Body::empty()));
     }
@@ -76,15 +76,16 @@ pub(super) async fn proxy_upstream(
 /// responses the sanitizer drops. A successful answer in any other format is
 /// refused rather than passed through, since a client could read a response
 /// from it outside the governed `POST`. A `202` or `204` opens no stream and
-/// passes, but without its body (see [`is_get_answer_without_stream`]).
+/// passes, but without its body (see [`is_bodyless_get_answer`]).
 fn refuse_get_without_event_stream(
     method: &Method,
     status: StatusCode,
     headers: &HeaderMap,
 ) -> Result<(), GatewayError> {
-    if is_get_answer_without_stream(method, status, headers)
-        && status != StatusCode::ACCEPTED
-        && status != StatusCode::NO_CONTENT
+    if method == Method::GET
+        && status.is_success()
+        && !is_bodyless_get_answer(method, status)
+        && !is_event_stream(headers)
     {
         return Err(ProviderError::UpstreamHttp {
             status: StatusCode::BAD_GATEWAY.as_u16(),
@@ -95,11 +96,12 @@ fn refuse_get_without_event_stream(
     Ok(())
 }
 
-/// A successful `GET` answer that is not an event stream. Its body is
+/// A `GET` answered `202` or `204`, whatever its content type. Its body is
 /// discarded: the transport gives it none, and clients read any successful
-/// `GET` body as an event stream, so a body could carry an unfiltered response.
-fn is_get_answer_without_stream(method: &Method, status: StatusCode, headers: &HeaderMap) -> bool {
-    method == Method::GET && status.is_success() && !is_event_stream(headers)
+/// `GET` body as an event stream, so a body could carry an unfiltered response
+/// or hold the request open.
+fn is_bodyless_get_answer(method: &Method, status: StatusCode) -> bool {
+    method == Method::GET && (status == StatusCode::ACCEPTED || status == StatusCode::NO_CONTENT)
 }
 
 pub(super) async fn proxy_buffered(
@@ -117,7 +119,7 @@ pub(super) async fn proxy_buffered(
     let status = response.status();
     let mut headers = response.headers().clone();
     refuse_get_without_event_stream(method, status, &headers)?;
-    if is_get_answer_without_stream(method, status, &headers) {
+    if is_bodyless_get_answer(method, status) {
         headers.remove(CONTENT_TYPE);
         return Ok(BufferedMcpResponse {
             status,
