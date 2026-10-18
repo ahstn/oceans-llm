@@ -201,6 +201,37 @@ async fn load_server(
     decode_server(&row)
 }
 
+/// Refuses a discovery result once the server's status has moved on since discovery read it.
+/// `FOR UPDATE` holds the row until commit, so a disable or enable on another replica waits.
+async fn ensure_discovery_status_unchanged(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    run: &ExternalMcpDiscoveryRunRecord,
+) -> Result<(), StoreError> {
+    let Some(expected) = run.expected_server_status else {
+        return Ok(());
+    };
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM external_mcp_servers WHERE mcp_server_id = $1 FOR UPDATE",
+    )
+    .bind(run.mcp_server_id.to_string())
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    let Some(status) = status else {
+        return Err(StoreError::NotFound(format!(
+            "external MCP server `{}` not found",
+            run.mcp_server_id
+        )));
+    };
+    if status == expected.as_str() {
+        return Ok(());
+    }
+    Err(StoreError::Conflict(format!(
+        "external MCP server `{}` became {status} while discovery ran; refresh discovery again",
+        run.mcp_server_id
+    )))
+}
+
 #[async_trait]
 impl McpRegistryRepository for PostgresStore {
     async fn list_external_mcp_servers(
@@ -446,6 +477,7 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        ensure_discovery_status_unchanged(&mut tx, run).await?;
         sqlx::query(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -532,6 +564,7 @@ impl McpRegistryRepository for PostgresStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        ensure_discovery_status_unchanged(&mut tx, run).await?;
         sqlx::query(
             r#"
             INSERT INTO external_mcp_discovery_runs (

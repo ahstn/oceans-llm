@@ -251,8 +251,8 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
-        // Status changes wait for an in-flight discovery, whose result would otherwise land
-        // on top of them and contradict the new status.
+        // Status changes wait for an in-flight discovery in this process. Across replicas, the
+        // store refuses a discovery result recorded against a status that has since changed.
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
         self.repo
@@ -393,6 +393,7 @@ where
                     .collect::<Vec<_>>();
                 let schema_set_hash = schema_set_hash(&upserts);
                 let run = ExternalMcpDiscoveryRunRecord {
+                    expected_server_status: Some(server.status),
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -537,6 +538,7 @@ where
         } = failure;
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
+            expected_server_status: Some(server.status),
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status,

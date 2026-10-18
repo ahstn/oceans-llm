@@ -206,6 +206,25 @@ const SERVER_SELECT_BY_ID: &str = concat!(
 );
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json, admin_tags_json, annotation_overrides_json, approval_status, approved_schema_version, pending_schema_version";
 
+/// Refuses a discovery result once the server's status has moved on since discovery read it.
+async fn ensure_discovery_status_unchanged(
+    tx: &libsql::Transaction,
+    run: &ExternalMcpDiscoveryRunRecord,
+) -> Result<(), StoreError> {
+    let Some(expected) = run.expected_server_status else {
+        return Ok(());
+    };
+    let current = load_server(tx, run.mcp_server_id).await?.status;
+    if current == expected {
+        return Ok(());
+    }
+    Err(StoreError::Conflict(format!(
+        "external MCP server `{}` became {} while discovery ran; refresh discovery again",
+        run.mcp_server_id,
+        current.as_str()
+    )))
+}
+
 #[async_trait]
 impl McpRegistryRepository for LibsqlStore {
     async fn list_external_mcp_servers(
@@ -470,6 +489,8 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        // The transaction holds SQLite's write lock, so the status can't change after this check.
+        ensure_discovery_status_unchanged(&tx, run).await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -539,6 +560,8 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        // The transaction holds SQLite's write lock, so the status can't change after this check.
+        ensure_discovery_status_unchanged(&tx, run).await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

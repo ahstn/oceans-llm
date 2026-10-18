@@ -1494,6 +1494,7 @@ pub(crate) mod tests {
         assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
 
         let first_run = ExternalMcpDiscoveryRunRecord {
+            expected_server_status: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,
@@ -1546,6 +1547,7 @@ pub(crate) mod tests {
         let issue_tool_id = issue_tool.mcp_tool_id;
 
         let second_run = ExternalMcpDiscoveryRunRecord {
+            expected_server_status: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,
@@ -1623,6 +1625,7 @@ pub(crate) mod tests {
 
         store
             .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_server_status: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Failed,
@@ -1671,6 +1674,51 @@ pub(crate) mod tests {
                 .is_empty()
         );
 
+        // A discovery that read the server as active, then lost a race with the disable (on any
+        // replica), can't overwrite it: neither result is recorded.
+        let stale_run = ExternalMcpDiscoveryRunRecord {
+            expected_server_status: Some(ExternalMcpServerStatus::Active),
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Failed,
+            started_at: now + Duration::seconds(8),
+            finished_at: now + Duration::seconds(9),
+            discovered_tool_count: 0,
+            active_tool_count: 0,
+            schema_set_hash: None,
+            error_summary: Some("stale".to_string()),
+            details: Map::new(),
+        };
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_failure(&stale_run)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_success(
+                    &ExternalMcpDiscoveryRunRecord {
+                        discovery_run_id: Uuid::new_v4(),
+                        status: ExternalMcpDiscoveryStatus::Success,
+                        error_summary: None,
+                        ..stale_run.clone()
+                    },
+                    &[],
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let still_disabled = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("load disabled server")
+            .expect("server");
+        assert_eq!(
+            still_disabled.last_discovery_status,
+            Some(ExternalMcpDiscoveryStatus::Disabled)
+        );
+
         let (enabled, transitioned) = store
             .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
             .await
@@ -1693,6 +1741,7 @@ pub(crate) mod tests {
         // Enabling an active server, as a stale admin page might, keeps its discovery result.
         store
             .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_server_status: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Failed,
@@ -1770,6 +1819,7 @@ pub(crate) mod tests {
         S: McpRegistryRepository + Sync,
     {
         let run = ExternalMcpDiscoveryRunRecord {
+            expected_server_status: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,

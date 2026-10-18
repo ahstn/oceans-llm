@@ -328,6 +328,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
     let tools = store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_server_status: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Success,
