@@ -156,11 +156,6 @@
   --scrollbar-thumb-hover: color-mix(in oklch, var(--border) 46%, var(--foreground) 54%);
 }
 
-* {
-  box-sizing: border-box;
-  letter-spacing: 0;
-}
-
 html,
 body {
   margin: 0;
@@ -297,8 +292,9 @@ a {
   }
 }
 
+/* Resets belong in this layer. An unlayered rule outranks every Tailwind utility whatever its
+   specificity, so a reset outside it would stop text-size, weight and tracking utilities applying. */
 @layer base {
-  /* Layered so component text-size and weight utilities still win. */
   button,
   input,
   select,
