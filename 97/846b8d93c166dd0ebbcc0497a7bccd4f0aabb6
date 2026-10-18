@@ -1,0 +1,41 @@
+crates/gateway-mcp/src/server.rs
+  s_b8e52ffc321bb1::t_0d80b17226348e 13-14,16-17,228-239,246
+crates/gateway/src/http/mcp_gateway.rs
+  s_b8e52ffc321bb1::t_cf698d095c6d84 3,24,32-33,56-58,320,379,409-410,414-443,446-465,469,471-474,478,480,483-488,492,494,503,510-540,542,544,549,859-865
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_b8e52ffc321bb1::t_fdedf300f6e4d6 37
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_b8e52ffc321bb1::t_929d2b657ea84e 11,18,26,28,36,134-135,137-140,142-144,147-153,156-164,201-246
+crates/gateway/src/http/mcp_gateway/governance.rs
+  s_b8e52ffc321bb1::t_751bdf142f626f 1-224
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_b8e52ffc321bb1::t_14b1aac0362625 8,239-253,260,270-277
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_b8e52ffc321bb1::t_f820d4ba178fdf 4-6,23-29,33,35-38,76,87,93,125-137,156,164
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  s_b8e52ffc321bb1::t_e8c1403a6a53a2 7,12,16,22,40-48,52-61,69
+crates/gateway/src/http/mcp_gateway/session.rs
+  s_b8e52ffc321bb1::t_2cc10f83a03278 25-26
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_b8e52ffc321bb1::t_61a445ed148f26 1508-1536
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_b8e52ffc321bb1::t_5bb58667001ba8 67-74
+docs/configuration/rate-limits.md
+  s_b8e52ffc321bb1::t_ae00486513e4fd 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97846b8d93c166dd0ebbcc0497a7bccd4f0aabb6",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
