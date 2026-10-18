@@ -186,7 +186,8 @@ async fn dispatch_mcp_request(
 
     // Upstream sessions are only usable by the caller that started them.
     let server_for_binding = server.clone();
-    let binding = SessionBinding::new(&state.identity_token_secret, auth, &server_for_binding);
+    let signing_key = state.mcp_session_signing_key();
+    let binding = SessionBinding::new(&signing_key, auth, &server_for_binding);
     let headers = &match binding.inbound_headers(headers) {
         Ok(headers) => headers,
         Err(response) => return *response,

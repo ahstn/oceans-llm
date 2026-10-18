@@ -62,14 +62,14 @@ The gateway now refuses resumption instead of governing replays:
 
 Governing replays would mean tracking which request each upstream event id belongs to, across replicas, and re-running the original request's grant check and guardrails on delivery. Resumption is optional in the transport, and a client that loses a stream can repeat the request.
 
-Upstream `Mcp-Session-Id` values were also passed through unchanged. On a server with a shared credential, any caller who learned a session id could open its event stream or `DELETE` it; `DELETE` needs no grant. The gateway now issues its own session id: the upstream id in base64url, a `.`, and an HMAC-SHA256 tag (128 bits, keyed with the identity token secret) over the server id, the API key id or OAuth grant id, and the owner. Inbound session ids are checked against the current caller before anything is forwarded. A missing tag, a tag for another caller or server, or the raw upstream id gets HTTP 404 with JSON-RPC code `-32001`, which MCP clients treat as an expired session. The signed format needs no session table, so it works across replicas.
+Upstream `Mcp-Session-Id` values were also passed through unchanged. On a server with a shared credential, any caller who learned a session id could open its event stream or `DELETE` it; `DELETE` needs no grant. The gateway now issues its own session id: the upstream id in base64url, a `.`, and an HMAC-SHA256 tag (128 bits, keyed with the identity token secret, or with a random per-process key when that secret is unset or the public development fallback) over the server id, the API key id or OAuth grant id, and the owner. Inbound session ids are checked against the current caller before anything is forwarded. A missing tag, a tag for another caller or server, or the raw upstream id gets HTTP 404 with JSON-RPC code `-32001`, which MCP clients treat as an expired session. The signed format needs no session table, so it works across replicas.
 
 ## Trade-offs
 
 - A grant on one tool gives access to all resources and prompts on that server. Finer control would need a resource and prompt grant model, which is a larger change.
 - Clients that used another method through the proxy will now get 403 until the method is classified.
 - A client whose stream drops mid-response cannot resume it through the gateway and must repeat the request. For `tools/call`, that runs the tool again.
-- Rotating the identity token secret ends every proxied session; clients re-initialize after the `404`.
+- Rotating the identity token secret ends every proxied session; clients re-initialize after the `404`. Without a configured secret, each process has its own key, so a session id only works on the replica that issued it.
 - An `initialize` call still needs a working upstream credential, but it does not need a grant. A caller with no grants can learn that a server exists and see its declared capabilities. Server keys are already visible to anyone who has the client configuration.
 
 ## Follow-up

@@ -2020,3 +2020,19 @@ fn stored_definitions_are_served_while_approval_is_on_or_a_change_waits() {
     server.approve_tool_changes = true;
     assert!(serves_stored_definition(&server, &tool));
 }
+
+/// Session ids signed with the public development secret could be forged for
+/// any credential, so that secret is never the key.
+#[tokio::test]
+async fn sessions_are_never_signed_with_the_public_development_secret() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    state.identity_token_secret =
+        std::sync::Arc::new(crate::http::audit::DEV_IDENTITY_TOKEN_SECRET.to_string());
+    let key = state.mcp_session_signing_key();
+    assert_ne!(
+        &*key,
+        crate::http::audit::DEV_IDENTITY_TOKEN_SECRET.as_bytes()
+    );
+    state.identity_token_secret = std::sync::Arc::new("a-configured-secret".to_string());
+    assert_eq!(&*state.mcp_session_signing_key(), b"a-configured-secret");
+}
