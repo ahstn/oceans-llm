@@ -2865,9 +2865,7 @@ pub fn route_capability_defaults(
     upstream_model: &str,
     compatibility: &RouteCompatibility,
 ) -> ProviderCapabilities {
-    if provider_type == "typesafe" || compatibility.selects_decisions_api() {
-        return ProviderCapabilities::decisions_only();
-    }
+    // TypeSafe's baseline is already decisions-only; Decisions profiles narrow below.
     narrow_for_route_profile(
         provider_type,
         ProviderCapabilities::for_provider_type(provider_type),
@@ -2887,13 +2885,12 @@ fn narrow_for_route_profile(
         "github_copilot" => github_copilot_route_capabilities(
             compatibility.and_then(|compatibility| compatibility.github_copilot.as_ref()),
         ),
+        // A Decisions profile (OpenRouter `api: decisions` or `openai_compat.decisions_api`)
+        // serves only Decisions, whatever the provider's baseline.
         "openai_compat" | "gcp_cloud_run_openai_compat"
             if compatibility.is_some_and(RouteCompatibility::selects_decisions_api) =>
         {
-            ProviderCapabilities {
-                decisions: true,
-                ..base
-            }
+            ProviderCapabilities::decisions_only()
         }
         // Only Bedrock providers use api_style; other providers ignore the block.
         "aws_bedrock" => {
@@ -3839,6 +3836,53 @@ mod tests {
             },
         );
         assert!(!invoke.stream && !invoke.responses && !invoke.json_schema && !invoke.embeddings);
+    }
+
+    #[test]
+    fn runtime_and_seeded_decisions_profiles_are_decisions_only() {
+        use super::{
+            ModelRoute, ProviderCapabilities, RouteCompatibility, route_capability_defaults,
+            route_provider_capabilities,
+        };
+
+        let profile = |value: serde_json::Value| {
+            serde_json::from_value::<RouteCompatibility>(value).expect("compatibility profile")
+        };
+        let openai_decisions = profile(serde_json::json!({
+            "openai_compat": { "decisions_api": "openai" }
+        }));
+        let openrouter_decisions = profile(serde_json::json!({
+            "openrouter": { "api": "decisions" }
+        }));
+        for compatibility in [openai_decisions, openrouter_decisions] {
+            let seeded = route_capability_defaults("openai_compat", "model", &compatibility);
+            let route = ModelRoute {
+                id: uuid::Uuid::nil(),
+                model_id: uuid::Uuid::nil(),
+                provider_key: "openai".to_string(),
+                upstream_model: "model".to_string(),
+                priority: 100,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: serde_json::Map::new(),
+                extra_body: serde_json::Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility,
+            };
+            let runtime = route_provider_capabilities(
+                "openai_compat",
+                ProviderCapabilities::openai_compat_baseline(),
+                Some(&route),
+            );
+            assert_eq!(seeded, ProviderCapabilities::decisions_only());
+            assert_eq!(runtime, seeded);
+        }
+        assert_eq!(
+            route_capability_defaults("typesafe", "jev", &RouteCompatibility::default()),
+            ProviderCapabilities::decisions_only()
+        );
     }
 
     #[test]
