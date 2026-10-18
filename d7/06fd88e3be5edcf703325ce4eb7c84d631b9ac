@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  s_eaf7116ccea134::t_e2194d9bcd36d4 19,24-26,35
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_eaf7116ccea134::t_14faa44a473600 347,355-357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d706fd88e3be5edcf703325ce4eb7c84d631b9ac",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
