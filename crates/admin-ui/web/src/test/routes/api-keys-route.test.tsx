@@ -164,6 +164,13 @@ describe('ApiKeysPage', () => {
     expect(screen.queryByText('jane@example.com')).not.toBeInTheDocument()
     expect(screen.getAllByText('14 Mar 2026, 12:00 UTC').length).toBeGreaterThan(0)
     expect(screen.getAllByText('18 Mar 2026, 09:15 UTC').length).toBeGreaterThan(0)
+    // Timestamps never wrap, so the table scrolls sideways and keeps Manage pinned right.
+    const table = screen.getByTestId('api-key-table')
+    expect(table).toHaveClass('overflow-x-auto')
+    expect(table).not.toHaveClass('overflow-hidden')
+    for (const manage of within(table).getAllByRole('button', { name: 'Manage' })) {
+      expect(manage.closest('td')).toHaveClass('sticky', 'right-0', 'shadow-sticky-edge-end')
+    }
     expect(screen.queryByRole('button', { name: 'Copy prefix' })).not.toBeInTheDocument()
   })
 
