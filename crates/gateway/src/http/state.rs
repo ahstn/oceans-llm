@@ -2,11 +2,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
-use gateway_service::{GatewayService, McpOauthRuntime, SkillService, WeightedRoutePlanner};
+use gateway_service::{
+    GatewayService, McpClientOauthSettings, McpOauthRuntime, SkillService, WeightedRoutePlanner,
+};
 use gateway_store::AnyStore;
 
 use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
+    client_ip::TrustedProxies,
+    handlers::CountTokensLimiter,
+    mcp_client_oauth::OauthStreamWatcher,
     response_cache::ResponseCache,
 };
 use crate::{
@@ -29,6 +34,10 @@ pub struct AppState {
     pub metrics: Arc<GatewayMetrics>,
     pub mcp_http_client: reqwest::Client,
     pub mcp_oauth_runtime: Arc<McpOauthRuntime>,
+    /// The gateway as an OAuth authorization server for MCP clients; `None` when disabled.
+    pub mcp_client_oauth: Option<Arc<McpClientOauthSettings>>,
+    /// Ends OAuth callers' MCP event streams when their access stops.
+    pub oauth_streams: Arc<OauthStreamWatcher>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,
@@ -39,4 +48,6 @@ pub struct AppState {
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
+    pub count_tokens_limiter: Arc<CountTokensLimiter>,
+    pub trusted_proxies: TrustedProxies,
 }

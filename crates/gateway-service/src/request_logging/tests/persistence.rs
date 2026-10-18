@@ -117,6 +117,8 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
         owner_user_id: None,
         owner_team_id: Some(team_id),
         owner_service_account_id: Some(service_account_id),
+        access: Default::default(),
+        oauth: None,
     };
     let mut headers = BTreeMap::new();
     headers.insert("authorization".to_string(), "secret".to_string());
@@ -300,11 +302,12 @@ async fn embeddings_provider_error_log_records_failure_payload_and_attempt() {
         GatewayError::Provider(ProviderError::Transport("connection reset".to_string()));
 
     let wrote = logging
-        .log_non_stream_failure(
+        .log_failure(
             &auth,
             &context,
             "vertex-prod",
             sample_icon_metadata(),
+            false,
             90,
             &gateway_error,
             vec![attempt],
@@ -771,6 +774,8 @@ async fn records_stream_failures_with_payload() {
         owner_user_id: None,
         owner_team_id: Some(Uuid::new_v4()),
         owner_service_account_id: Some(Uuid::new_v4()),
+        access: Default::default(),
+        oauth: None,
     };
     let context = logging.begin_chat_request(
         "req_1",

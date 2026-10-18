@@ -422,3 +422,128 @@ models:
         "unexpected error: {error:#}"
     );
 }
+
+const OPENAI_DECISIONS_CAPABILITIES: &str = r#"
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          decisions: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false"#;
+
+#[test]
+fn parses_openai_decisions_route_with_input_only_pricing() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna{OPENAI_DECISIONS_CAPABILITIES}
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+        pricing_override:
+          input_usd_per_million_tokens: "0.5000"
+          output_usd_per_million_tokens: "0"
+          cache_read_usd_per_million_tokens: "0.0500"
+"#
+        ),
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    assert_eq!(
+        route
+            .compatibility
+            .openai_compat
+            .as_ref()
+            .and_then(|profile| profile.decisions_api),
+        Some(OpenAiCompatDecisionsApi::OpenAi)
+    );
+    assert!(route.compatibility.selects_decisions_api());
+    assert!(route.capabilities.decisions);
+    assert!(route.pricing_override.is_some());
+}
+
+#[test]
+fn rejects_openai_decisions_api_without_decisions_capability() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error_text = format!("{error:#}");
+    assert!(
+        error_text.contains(
+            "uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled"
+        ),
+        "unexpected error: {error_text}"
+    );
+}
+
+#[test]
+fn rejects_openai_decisions_api_on_non_openai_compat_providers() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+providers:
+  - id: typesafe
+    type: typesafe
+    pricing_provider_id: openai
+models:
+  - id: jev
+    routes:
+      - provider: typesafe
+        upstream_model: jev{OPENAI_DECISIONS_CAPABILITIES}
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#
+        ),
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    let error_text = format!("{error:#}");
+    assert!(
+        error_text.contains("decisions_api but requires an openai_compat provider"),
+        "unexpected error: {error_text}"
+    );
+}

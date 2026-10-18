@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 
 use crate::pricing_catalog::{
     catalog_metadata_target_for_route, catalog_pricing_supported_for_route,
+    resolve_catalog_pricing_record,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,21 +87,25 @@ pub async fn resolve_effective_route_metadata<R>(
 where
     R: PricingCatalogRepository + Send + Sync + 'static,
 {
-    let (catalog_record, catalog_pricing_supported) = match provider
-        .and_then(|provider| catalog_metadata_target_for_route(provider, route))
-    {
-        Some((pricing_provider_id, pricing_model_id)) => {
-            let pricing_supported = provider.is_some_and(|provider| {
-                catalog_pricing_supported_for_route(provider, route, &pricing_provider_id)
-            });
-            (
-                repo.resolve_model_pricing_at(&pricing_provider_id, &pricing_model_id, occurred_at)
+    let (catalog_record, catalog_pricing_supported) =
+        match provider.and_then(|provider| catalog_metadata_target_for_route(provider, route)) {
+            Some((pricing_provider_id, pricing_model_id)) => {
+                let pricing_supported = provider.is_some_and(|provider| {
+                    catalog_pricing_supported_for_route(provider, route, &pricing_provider_id)
+                });
+                (
+                    resolve_catalog_pricing_record(
+                        repo,
+                        &pricing_provider_id,
+                        &pricing_model_id,
+                        occurred_at,
+                    )
                     .await?,
-                pricing_supported,
-            )
-        }
-        None => (None, false),
-    };
+                    pricing_supported,
+                )
+            }
+            None => (None, false),
+        };
 
     let catalog_source = catalog_record
         .as_ref()
@@ -203,13 +208,7 @@ pub(crate) fn provider_capabilities(
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             let mut capabilities = ProviderCapabilities::openai_compat_baseline();
-            if route.is_some_and(|route| {
-                route
-                    .compatibility
-                    .openrouter
-                    .as_ref()
-                    .is_some_and(|openrouter| openrouter.api.is_decisions())
-            }) {
+            if route.is_some_and(|route| route.compatibility.selects_decisions_api()) {
                 capabilities.decisions = true;
             }
             capabilities

@@ -4,8 +4,8 @@ use tokio::sync::Semaphore;
 
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
-    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetRecord, BudgetRepository,
-    ChatCompletionsRequest, DecisionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
+    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
@@ -20,10 +20,11 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
-    RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
-    ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
+    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RateLimiter,
+    RequestLogContext, RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging,
+    ResolvedGatewayRequest, ResolvedProviderConnection, StreamFailureSummary, StreamLogResultInput,
     StreamResponseCollector,
+    admin_audit::AuditProgress,
     agent_analysis::{
         PassiveRequestRecord, REPORT_RETENTION, desired_versions_for_policy,
         finalize_idle_sessions, process_next_analysis, record_prepared_passive_request,
@@ -104,6 +105,7 @@ pub struct GatewayService<S, P> {
     request_logging: RequestLogging<S>,
     mcp_invocation_logging: McpInvocationLogging<S>,
     planner: Arc<P>,
+    rate_limiter: Arc<RateLimiter>,
     agent_analysis_enabled: bool,
     agent_analysis_ingestion_limit: Arc<Semaphore>,
     agent_analysis_report_retention: Duration,
@@ -181,6 +183,7 @@ where
             request_logging,
             mcp_invocation_logging,
             planner,
+            rate_limiter: Arc::new(RateLimiter::disabled()),
             agent_analysis_enabled: false,
             agent_analysis_ingestion_limit: Arc::new(Semaphore::new(
                 AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS,
@@ -190,6 +193,25 @@ where
             agent_analysis_policy,
             agent_analysis_desired_versions,
         }
+    }
+
+    /// Sets the HTTP status that hard-budget rejections carry.
+    #[must_use]
+    pub fn with_budget_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
+        self.budget_guard = self.budget_guard.with_exceeded_status(status);
+        self
+    }
+
+    /// Enforces rate limits and quotas on the request path.
+    #[must_use]
+    pub fn with_rate_limiter(mut self, rate_limiter: Arc<RateLimiter>) -> Self {
+        self.rate_limiter = rate_limiter;
+        self
+    }
+
+    #[must_use]
+    pub fn rate_limiter(&self) -> &Arc<RateLimiter> {
+        &self.rate_limiter
     }
 
     #[must_use]
@@ -226,22 +248,56 @@ where
         &self.store
     }
 
+    /// Authenticates a key for a route outside the scope catalogue, which only
+    /// a key with full access may call. Routes that belong to a scope use
+    /// [`Self::authenticate_for_scope`].
     pub async fn authenticate(
         &self,
         authorization_header: Option<&str>,
     ) -> Result<AuthenticatedApiKey, GatewayError> {
-        self.authenticator
+        let key = self
+            .authenticator
             .authenticate_authorization_header(authorization_header)
-            .await
+            .await?;
+        require_access(key, None)
     }
 
+    /// Authenticates a key that must carry `scope`.
+    pub async fn authenticate_for_scope(
+        &self,
+        authorization_header: Option<&str>,
+        scope: &str,
+    ) -> Result<AuthenticatedApiKey, GatewayError> {
+        let key = self
+            .authenticator
+            .authenticate_authorization_header(authorization_header)
+            .await?;
+        require_access(key, Some(scope))
+    }
+
+    /// Like [`Self::authenticate`], for a raw token: requires full access.
     pub async fn authenticate_bearer_token(
         &self,
         bearer_token: &str,
     ) -> Result<AuthenticatedApiKey, GatewayError> {
-        self.authenticator
+        let key = self
+            .authenticator
             .authenticate_bearer_token(bearer_token)
-            .await
+            .await?;
+        require_access(key, None)
+    }
+
+    /// Like [`Self::authenticate_for_scope`], for a raw token.
+    pub async fn authenticate_bearer_token_for_scope(
+        &self,
+        bearer_token: &str,
+        scope: &str,
+    ) -> Result<AuthenticatedApiKey, GatewayError> {
+        let key = self
+            .authenticator
+            .authenticate_bearer_token(bearer_token)
+            .await?;
+        require_access(key, Some(scope))
     }
 
     pub async fn model_metadata_for_api_key(
@@ -395,7 +451,7 @@ where
         request_id: &str,
         requested_model_key: &str,
         resolved_model_key: &str,
-        request: &DecisionsRequest,
+        request: &Value,
         request_headers: &std::collections::BTreeMap<String, String>,
         request_tags: RequestTags,
     ) -> RequestLogContext {
@@ -461,12 +517,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn log_non_stream_failure(
+    pub async fn log_failure(
         &self,
         auth: &AuthenticatedApiKey,
         context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
+        stream: bool,
         latency_ms: i64,
         gateway_error: &GatewayError,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
@@ -477,11 +534,12 @@ where
         let completed_at = OffsetDateTime::now_utc();
         let logged = self
             .request_logging
-            .log_non_stream_failure(
+            .log_failure(
                 auth,
                 context,
                 provider_key,
                 icon_metadata,
+                stream,
                 latency_ms,
                 gateway_error,
                 attempts,
@@ -746,7 +804,19 @@ where
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_now_and_sync().await?;
+        self.refresh_pricing_catalog_now_tracked(&AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_pricing_catalog_now`], marking `progress` once the
+    /// catalog cache is written.
+    pub async fn refresh_pricing_catalog_now_tracked(
+        &self,
+        progress: &AuditProgress,
+    ) -> Result<(), GatewayError> {
+        self.pricing_catalog
+            .refresh_now_and_sync_tracked(progress)
+            .await?;
         self.warn_on_route_context_override_conflicts().await
     }
 
@@ -1159,6 +1229,19 @@ where
         }
         Ok(())
     }
+}
+
+/// The access check shared by the `authenticate*` methods: `scope` for a
+/// route in the scope catalogue, or full access when it is `None`.
+fn require_access(
+    key: AuthenticatedApiKey,
+    scope: Option<&str>,
+) -> Result<AuthenticatedApiKey, GatewayError> {
+    match scope {
+        Some(scope) => key.require_scope(scope)?,
+        None => key.require_full_access()?,
+    }
+    Ok(key)
 }
 
 fn warn_budget_overruns(overruns: &[BudgetOverrun], request_id: &str, ownership_scope_key: &str) {
@@ -1769,13 +1852,14 @@ mod tests {
         GatewayError, GatewayModel, IdentityRepository, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderBatchResult, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError,
-        RoutePlanner, RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord,
-        TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, OpenAiCompatDecisionsApi,
+        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
+        PricingLimits, PricingModalities, PricingProvenance, ProviderBatchResult,
+        ProviderCapabilities, ProviderConnection, ProviderRepository, ProviderRequestContext,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+        RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -2188,6 +2272,15 @@ mod tests {
             ))
         }
 
+        async fn set_manual_budget(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
+            unimplemented!()
+        }
+
         async fn upsert_active_budget_with_source(
             &self,
             _scope: &BudgetScope,
@@ -2218,6 +2311,14 @@ mod tests {
             _updated_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
             Ok(false)
+        }
+
+        async fn deactivate_active_budget_returning(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
         }
 
         async fn deactivate_active_budget_by_source(
@@ -2531,6 +2632,8 @@ mod tests {
             owner_user_id: Some(Uuid::new_v4()),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         }
     }
 
@@ -3033,6 +3136,63 @@ mod tests {
             gateway_core::PricingResolution::ConfiguredOverride { pricing }
                 if pricing == route.pricing_override.expect("pricing override")
         ));
+    }
+
+    #[tokio::test]
+    async fn openai_decisions_usage_is_priced_input_only_with_cached_tokens() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.provider_key = "openai-prod".to_string();
+        route.upstream_model = "gpt-6-luna".to_string();
+        route.compatibility.openai_compat = Some(OpenAiCompatRouteCompatibility {
+            decisions_api: Some(OpenAiCompatDecisionsApi::OpenAi),
+            ..Default::default()
+        });
+        // Decisions bill input only, so the route override zeroes output.
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::ZERO,
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: None,
+        });
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_openai_decisions_usage",
+                Some(json!({
+                    "input_tokens": 120_000,
+                    "input_tokens_details": {"cached_tokens": 100_000, "cache_write_tokens": 0},
+                    "output_tokens": 2_000,
+                    "output_tokens_details": {"reasoning_tokens": 1_500},
+                    "total_tokens": 122_000
+                })),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("decisions usage should be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(recorded.uncached_input_tokens, Some(20_000));
+        assert_eq!(recorded.cache_read_tokens, Some(100_000));
+        assert_eq!(recorded.cache_write_tokens, Some(0));
+        // 20k uncached at $1/M plus 100k cached at $0.10/M; output is free.
+        assert_eq!(recorded.cost_usd, Some(0.03));
+
+        let events = repo.events.lock().expect("events lock");
+        let event = events.first().expect("usage event");
+        assert_eq!(event.completion_tokens, Some(2_000));
+        assert_eq!(
+            event.provider_usage["output_tokens_details"]["reasoning_tokens"],
+            1_500
+        );
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(300));
     }
 
     #[tokio::test]

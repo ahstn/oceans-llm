@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use gateway_core::{
-    McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
+    McpOauthClientRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
     McpUpstreamCredentialRepository, RefreshMcpOauthCredentialBindingRecord, StoreError,
     UpsertMcpUpstreamCredentialBindingRecord,
 };
@@ -14,7 +14,13 @@ impl McpUpstreamCredentialRepository for AnyStore {
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        StoreError,
+    > {
         match self {
             Self::Libsql(store) => store.upsert_mcp_upstream_credential_binding(input).await,
             Self::Postgres(store) => store.upsert_mcp_upstream_credential_binding(input).await,
@@ -121,7 +127,7 @@ impl McpUpstreamCredentialRepository for AnyStore {
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
@@ -206,6 +212,45 @@ impl McpUpstreamCredentialRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .release_mcp_oauth_refresh_lease(credential_binding_id, lease_token)
+                    .await
+            }
+        }
+    }
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_oauth_client(mcp_server_id).await,
+            Self::Postgres(store) => store.get_mcp_oauth_client(mcp_server_id).await,
+        }
+    }
+
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError> {
+        match self {
+            Self::Libsql(store) => store.insert_mcp_oauth_client_if_absent(record).await,
+            Self::Postgres(store) => store.insert_mcp_oauth_client_if_absent(record).await,
+        }
+    }
+
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .delete_mcp_oauth_client(mcp_server_id, client_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .delete_mcp_oauth_client(mcp_server_id, client_id)
                     .await
             }
         }

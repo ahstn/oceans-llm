@@ -1313,6 +1313,8 @@ pub struct McpToolInvocationListQuery {
     pub policy_result: Option<String>,
     pub occurred_at_start: Option<String>,
     pub occurred_at_end: Option<String>,
+    /// MCP JSON-RPC method, such as `tools/call` or `resources/read`.
+    pub mcp_method: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1338,6 +1340,11 @@ pub struct McpToolInvocationSummaryView {
     pub tool_id: Option<String>,
     pub tool_display_key: String,
     pub tool_display_name: String,
+    /// MCP JSON-RPC method this row records, such as `tools/call`,
+    /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+    pub mcp_method: String,
+    /// Served schema version of the tool a `tools/call` used; null otherwise.
+    pub tool_schema_version: Option<i64>,
     pub status: String,
     pub policy_result: String,
     pub latency_ms: Option<i64>,
@@ -1979,6 +1986,7 @@ pub struct AgentSessionDetailView {
         crate::http::api_keys::list_api_keys,
         crate::http::api_keys::create_api_key,
         crate::http::api_keys::update_api_key,
+        crate::http::api_keys::update_api_key_scopes,
         crate::http::api_keys::revoke_api_key,
         crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,
@@ -2041,6 +2049,10 @@ pub struct AgentSessionDetailView {
         crate::http::spend::upsert_budget,
         crate::http::spend::deactivate_budget,
         crate::http::spend_budget_increases::create_budget_increase,
+        crate::http::rate_limit_policies::list_rate_limit_policies,
+        crate::http::rate_limit_policies::create_rate_limit_policy,
+        crate::http::rate_limit_policies::update_rate_limit_policy,
+        crate::http::rate_limit_policies::delete_rate_limit_policy,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
         crate::http::observability::agent_sessions::list_agent_sessions,
@@ -2070,6 +2082,8 @@ pub struct AgentSessionDetailView {
         crate::http::guardrails::evaluate_guardrail,
         crate::http::guardrails::get_guardrail_policies,
         crate::http::guardrails::list_guardrail_decisions,
+        crate::http::audit::list_audit_logs,
+        crate::http::audit::get_audit_log,
         crate::http::mcp_registry::get_mcp_connection_info,
         crate::http::mcp_registry::list_recommended_mcp_servers,
         crate::http::mcp_registry::list_mcp_servers,
@@ -2078,6 +2092,7 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::disable_mcp_server,
         crate::http::mcp_registry::list_mcp_server_tools,
         crate::http::mcp_registry::refresh_mcp_server_discovery,
+        crate::http::mcp_registry::discover_mcp_server_oauth,
         crate::http::mcp_registry::list_mcp_toolsets,
         crate::http::mcp_registry::create_mcp_toolset,
         crate::http::mcp_registry::update_mcp_toolset,
@@ -2091,10 +2106,27 @@ pub struct AgentSessionDetailView {
         crate::http::mcp_registry::upsert_mcp_credential_binding,
         crate::http::mcp_registry::revoke_mcp_credential_binding,
         crate::http::mcp_registry::preview_mcp_effective_access,
+        crate::http::mcp_registry::set_mcp_tool_tags,
+        crate::http::mcp_registry::set_mcp_tool_annotation_overrides,
+        crate::http::mcp_registry::list_mcp_tag_rules,
+        crate::http::mcp_registry::create_mcp_tag_rule,
+        crate::http::mcp_registry::revoke_mcp_tag_rule,
+        crate::http::mcp_registry::preview_mcp_tag_rule,
+        crate::http::mcp_registry::list_mcp_tool_versions,
+        crate::http::mcp_registry::approve_mcp_tool_version,
+        crate::http::mcp_registry::reject_mcp_tool_version,
         crate::http::mcp_oauth::list_mcp_oauth_connections,
         crate::http::mcp_oauth::start_mcp_oauth_connection,
         crate::http::mcp_oauth::revoke_mcp_oauth_connection,
-        crate::http::mcp_oauth::mcp_oauth_callback
+        crate::http::mcp_oauth::mcp_oauth_callback,
+        crate::http::mcp_oauth::mcp_oauth_server_callback,
+        crate::http::mcp_oauth::mcp_oauth_client_metadata_document,
+        crate::http::mcp_client_oauth::get_oauth_authorization_request,
+        crate::http::mcp_client_oauth::decide_oauth_authorization_request,
+        crate::http::mcp_client_oauth::list_my_authorized_mcp_clients,
+        crate::http::mcp_client_oauth::revoke_my_authorized_mcp_client,
+        crate::http::mcp_client_oauth::admin_list_authorized_mcp_clients,
+        crate::http::mcp_client_oauth::admin_revoke_authorized_mcp_clients
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -2266,6 +2298,19 @@ mod tests {
             paths.contains_key("/api/v1/admin/mcp/credential-bindings/{credential_binding_id}")
         );
         assert!(paths.contains_key("/api/v1/admin/mcp/effective-access"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags"));
+        assert!(paths.contains_key(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides"
+        ));
+        assert!(paths.contains_key("/api/v1/admin/mcp/tag-rules"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/tag-rules/{rule_id}"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/tag-rules/preview"));
+        assert!(
+            paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions")
+        );
+        assert!(paths.contains_key(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve"
+        ));
         assert!(paths.contains_key("/api/v1/mcp/oauth/connections"));
         assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/start"));
         assert!(paths.contains_key("/api/v1/mcp/servers/{server_id}/oauth/connection"));

@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/api-keys/{api_key_id}/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_api_key_scopes"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
         parameters: {
             query?: never;
@@ -62,6 +78,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["reveal_api_key_secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_audit_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-logs/{audit_log_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_audit_log"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -324,6 +372,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/authorized-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_authorized_mcp_clients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/authorized-clients/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_revoke_authorized_mcp_clients"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/connection-info": {
         parameters: {
             query?: never;
@@ -399,6 +479,27 @@ export interface paths {
         put: operations["upsert_mcp_grant"];
         post?: never;
         delete: operations["revoke_mcp_grant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/oauth-discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reads an MCP server's OAuth metadata so an admin can register it by URL.
+         *     Nothing is stored; the admin saves the suggested auth config, or an
+         *     edited copy, with the server.
+         */
+        post: operations["discover_mcp_server_oauth"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -495,6 +596,144 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces the tool's annotation overrides. Overrides never change the
+         *     schema hash or version, and the upstream values stay visible.
+         */
+        put: operations["set_mcp_tool_annotation_overrides"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_mcp_tool_tags"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tool_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approves a pending version, which becomes the served definition. */
+        post: operations["approve_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rejects a pending version. A text-only change keeps serving the previous
+         *     version; a new tool or a contract change stays withheld.
+         */
+        post: operations["reject_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tag_rules"];
+        put?: never;
+        post: operations["create_mcp_tag_rule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists the active tools a rule would select, before it is saved. */
+        get: operations["preview_mcp_tag_rule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_mcp_tag_rule"];
         options?: never;
         head?: never;
         patch?: never;
@@ -738,6 +977,38 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_rate_limit_policies"];
+        put?: never;
+        post: operations["create_rate_limit_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rate-limits/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_rate_limit_policy"];
+        options?: never;
+        head?: never;
+        patch: operations["update_rate_limit_policy"];
         trace?: never;
     };
     "/api/v1/admin/review-agent/repositories": {
@@ -1236,6 +1507,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The callback for servers whose authorization server is configured on the
+         *     server row, including dynamically registered clients.
+         */
+        get: operations["mcp_oauth_server_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/oauth/client-metadata.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Client ID Metadata Document whose URL is Oceans' client ID at
+         *     authorization servers that accept metadata documents instead of dynamic
+         *     client registration. It is public by design.
+         */
+        get: operations["mcp_oauth_client_metadata_document"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/oauth/connections": {
         parameters: {
             query?: never;
@@ -1300,6 +1612,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/authorized-mcp-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_my_authorized_mcp_clients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/authorized-mcp-clients/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_my_authorized_mcp_client"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/profile": {
         parameters: {
             query?: never;
@@ -1358,6 +1702,38 @@ export interface paths {
         get: operations["get_my_focus_export"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/authorization-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_oauth_authorization_request"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/authorization-requests/{request_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["decide_oauth_authorization_request"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1714,6 +2090,10 @@ export interface components {
         };
         /** @enum {string} */
         AdminAction: "create_api_key" | "update_api_key" | "revoke_api_key" | "reveal_api_key";
+        AdminApiKeyMcpServerView: {
+            display_name: string;
+            key: string;
+        };
         AdminApiKeyModelView: {
             description?: string | null;
             id: string;
@@ -1737,6 +2117,8 @@ export interface components {
             created_at: string;
             id: string;
             last_used_at?: string | null;
+            /** @description `null`: every MCP server the owner's grants reach. */
+            mcp_server_keys?: string[] | null;
             model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
@@ -1750,10 +2132,16 @@ export interface components {
             owner_team_key?: string | null;
             prefix: string;
             revoked_at?: string | null;
+            /** @description `null`: full access, as for keys created before scopes existed. */
+            scopes?: string[] | null;
             status: string;
         };
         AdminApiKeysPayload: {
+            /** @description Scopes a key may carry, in display order. */
+            available_scopes: string[];
             items: components["schemas"]["AdminApiKeyView"][];
+            /** @description Active MCP servers, the options for a key's server list. */
+            mcp_servers: components["schemas"]["AdminApiKeyMcpServerView"][];
             models: components["schemas"]["AdminApiKeyModelView"][];
             service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
@@ -1933,13 +2321,22 @@ export interface components {
             sign_in_url: string;
         };
         /** @enum {string} */
-        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
+        AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "rate_limits" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
         /** @enum {string} */
         AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
         AdminProviderCredentialStatusView: {
             configured: boolean;
             last_used_at?: string | null;
             updated_at?: string | null;
+            user_id: string;
+        };
+        AdminRevokeAuthorizedMcpClientsRequest: {
+            /**
+             * Format: uuid
+             * @description Revoke only this grant; omit to revoke every client the user authorized.
+             */
+            grant_id?: string | null;
+            /** Format: uuid */
             user_id: string;
         };
         AdminServiceAccountView: {
@@ -2511,6 +2908,55 @@ export interface components {
         };
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";
+        AuditActorView: {
+            api_key_id?: string | null;
+            /** @description `user`, `api_key` or `system`. */
+            kind: string;
+            label?: string | null;
+            user_id?: string | null;
+        };
+        AuditLogPageView: {
+            /** @description Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`. */
+            items: components["schemas"]["AuditLogSummaryView"][];
+            /** Format: int32 */
+            limit: number;
+            /** @description Pass as `cursor` to fetch the next page. Absent on the last page. */
+            next_cursor?: string | null;
+            /** @description Known target types, for filter controls. */
+            target_types: string[];
+        };
+        AuditLogSummaryView: {
+            action: string;
+            actor: components["schemas"]["AuditActorView"];
+            id: string;
+            occurred_at: string;
+            request_ip?: string | null;
+            target_id?: string | null;
+            target_label?: string | null;
+            target_type: string;
+            user_agent?: string | null;
+        };
+        /** @description One entry with its redacted summaries. */
+        AuditLogView: {
+            action: string;
+            actor: components["schemas"]["AuditActorView"];
+            after?: {
+                [key: string]: unknown;
+            } | null;
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            id: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            occurred_at: string;
+            request_ip?: string | null;
+            target_id?: string | null;
+            target_label?: string | null;
+            target_type: string;
+            user_agent?: string | null;
+        };
         AuthSessionCapabilitiesView: {
             agent_analysis: boolean;
             calibrated_score_visible: boolean;
@@ -2538,6 +2984,38 @@ export interface components {
             team_id?: string | null;
             team_role?: string | null;
             user: components["schemas"]["AuthSessionUserView"];
+        };
+        /** @description One MCP client that can still get tokens on the user's behalf. */
+        AuthorizedMcpClientView: {
+            authorized_at: string;
+            client_id: string;
+            /** @description Self-asserted by the client at registration. */
+            client_name?: string | null;
+            client_uri?: string | null;
+            /**
+             * @description When the client's last usable token expires; never later than the
+             *     admin session that approved it.
+             */
+            expires_at: string;
+            grant_id: string;
+            /** @description When the client last received a token, at sign-in or refresh. */
+            last_token_issued_at: string;
+            resource: string;
+            resource_kind: components["schemas"]["OauthResourceKind"];
+            scopes: components["schemas"]["OauthScopeView"][];
+            server_key?: string | null;
+        };
+        AuthorizedMcpClientsView: {
+            /**
+             * @description Whether OAuth sign-in for MCP clients is enabled on this gateway.
+             *     While it is disabled, `items` still lists clients that would work
+             *     again if it were re-enabled.
+             */
+            enabled: boolean;
+            /** @description More clients are authorized than `items` lists. */
+            has_more: boolean;
+            /** @description The newest authorized clients, at most 100. */
+            items: components["schemas"]["AuthorizedMcpClientView"][];
         };
         BatchCallerResponse: {
             /** Format: uuid */
@@ -2757,6 +3235,8 @@ export interface components {
             status: string;
         };
         CreateApiKeyRequest: {
+            /** @description Omit or `null` to reach every server the owner's grants reach. */
+            mcp_server_keys?: string[] | null;
             model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
@@ -2764,6 +3244,8 @@ export interface components {
             owner_service_account_id?: string | null;
             owner_team_id?: string | null;
             owner_user_id?: string | null;
+            /** @description Omit or `null` for full access. */
+            scopes?: string[] | null;
         };
         CreateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
@@ -2795,6 +3277,8 @@ export interface components {
             user_id: string;
         };
         CreateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Off when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -2807,6 +3291,18 @@ export interface components {
             /** Format: int64 */
             timeout_ms?: number | null;
             transport?: string | null;
+        };
+        CreateMcpTagRuleRequest: {
+            effect: string;
+            /**
+             * Format: uuid
+             * @description Required for `include`. Omit for an `exclude` rule on every server.
+             */
+            server_id?: string | null;
+            /** Format: uuid */
+            subject_id: string;
+            subject_kind: string;
+            tag: string;
         };
         CreateMcpToolsetRequest: {
             description?: string | null;
@@ -2915,7 +3411,11 @@ export interface components {
         };
         Envelope_AdminApiKeysPayload: {
             data: {
+                /** @description Scopes a key may carry, in display order. */
+                available_scopes: string[];
                 items: components["schemas"]["AdminApiKeyView"][];
+                /** @description Active MCP servers, the options for a key's server list. */
+                mcp_servers: components["schemas"]["AdminApiKeyMcpServerView"][];
                 models: components["schemas"]["AdminApiKeyModelView"][];
                 service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
                 users: components["schemas"]["AdminApiKeyUserOwnerView"][];
@@ -3018,6 +3518,43 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AuditLogPageView: {
+            data: {
+                /** @description Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`. */
+                items: components["schemas"]["AuditLogSummaryView"][];
+                /** Format: int32 */
+                limit: number;
+                /** @description Pass as `cursor` to fetch the next page. Absent on the last page. */
+                next_cursor?: string | null;
+                /** @description Known target types, for filter controls. */
+                target_types: string[];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AuditLogView: {
+            /** @description One entry with its redacted summaries. */
+            data: {
+                action: string;
+                actor: components["schemas"]["AuditActorView"];
+                after?: {
+                    [key: string]: unknown;
+                } | null;
+                before?: {
+                    [key: string]: unknown;
+                } | null;
+                id: string;
+                metadata: {
+                    [key: string]: unknown;
+                };
+                occurred_at: string;
+                request_ip?: string | null;
+                target_id?: string | null;
+                target_label?: string | null;
+                target_type: string;
+                user_agent?: string | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3237,6 +3774,35 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpOauthDiscoveryPayload: {
+            /** @description What OAuth metadata discovery found for an MCP server URL. */
+            data: {
+                authorization_endpoint: string;
+                authorization_server_metadata_url: string;
+                authorization_servers: string[];
+                callback_url?: string | null;
+                client_id_metadata_document_supported: boolean;
+                client_metadata_document_url?: string | null;
+                code_challenge_methods_supported: string[];
+                default_scopes: string[];
+                issuer: string;
+                /** @description `dynamic`, `metadata_document`, or `manual`. */
+                recommended_client_registration: string;
+                registration_endpoint?: string | null;
+                resource: string;
+                resource_indicator: boolean;
+                resource_metadata_url?: string | null;
+                scopes_supported: string[];
+                /** @description An `oauth_obo` auth config to save with the server. */
+                suggested_auth_config: {
+                    [key: string]: unknown;
+                };
+                token_endpoint: string;
+                token_endpoint_auth_methods_supported: string[];
+                warnings: string[];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpServerPayload: {
             data: {
                 server: components["schemas"]["McpServerView"];
@@ -3246,6 +3812,33 @@ export interface components {
         Envelope_McpServersPayload: {
             data: {
                 items: components["schemas"]["McpServerView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpTagRulePayload: {
+            data: {
+                rule: components["schemas"]["McpTagRuleView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpTagRulePreviewPayload: {
+            data: {
+                /**
+                 * @description Active tools the rule would select, at most 200. Only this rule is
+                 *     applied.
+                 */
+                tools: components["schemas"]["McpToolView"][];
+                /**
+                 * @description The preview stopped early, after 200 matches or after checking 5,120
+                 *     tools, so more tools may match than it lists.
+                 */
+                truncated: boolean;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpTagRulesPayload: {
+            data: {
+                items: components["schemas"]["McpTagRuleView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3265,6 +3858,25 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolPayload: {
+            data: {
+                tool: components["schemas"]["McpToolView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolVersionsPayload: {
+            data: {
+                /** @description Newest first. */
+                items: components["schemas"]["McpToolVersionView"][];
+                /**
+                 * Format: int64
+                 * @description Pass as `before` for the next page of history. Empty on the last page
+                 *     and when `schema_versions` is given.
+                 */
+                next_before?: number | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3333,6 +3945,35 @@ export interface components {
         Envelope_PublicOidcProvidersPayload: {
             data: {
                 providers: components["schemas"]["PublicOidcProviderView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_RateLimitPoliciesView: {
+            data: {
+                policies: components["schemas"]["RateLimitPolicyView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_RateLimitPolicyView: {
+            data: {
+                enabled: boolean;
+                /** @description `None` for config policies. */
+                id?: string | null;
+                /** Format: int64 */
+                limit: number;
+                mcp_server_id?: string | null;
+                mcp_server_key?: string | null;
+                metric: components["schemas"]["RateLimitMetricView"];
+                model_key?: string | null;
+                name: string;
+                operation: components["schemas"]["RateLimitOperationView"];
+                period: components["schemas"]["RateLimitPeriodView"];
+                scope_id?: string | null;
+                scope_kind: components["schemas"]["RateLimitScopeKindView"];
+                /** @description The targeted user's email, team name or API key name. */
+                scope_label?: string | null;
+                source: components["schemas"]["RateLimitPolicySourceView"];
+                updated_at?: string | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -3437,6 +4078,12 @@ export interface components {
             meta: components["schemas"]["ResponseMeta"];
         };
         Envelope_UpdateApiKeyResponse: {
+            data: {
+                api_key: components["schemas"]["AdminApiKeyView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_UpdateApiKeyScopesResponse: {
             data: {
                 api_key: components["schemas"]["AdminApiKeyView"];
             };
@@ -3721,11 +4368,45 @@ export interface components {
             expires_at?: string | null;
             granted_scopes: string[];
             provider_key: string;
+            /**
+             * @description The configured provider key, or the authorization server's host for a
+             *     server-level OAuth client.
+             */
+            provider_label: string;
             required_scopes: string[];
             /** Format: uuid */
             server_id: string;
             server_key: string;
             status: components["schemas"]["McpOauthConnectionStatus"];
+        };
+        /** @description What OAuth metadata discovery found for an MCP server URL. */
+        McpOauthDiscoveryPayload: {
+            authorization_endpoint: string;
+            authorization_server_metadata_url: string;
+            authorization_servers: string[];
+            callback_url?: string | null;
+            client_id_metadata_document_supported: boolean;
+            client_metadata_document_url?: string | null;
+            code_challenge_methods_supported: string[];
+            default_scopes: string[];
+            issuer: string;
+            /** @description `dynamic`, `metadata_document`, or `manual`. */
+            recommended_client_registration: string;
+            registration_endpoint?: string | null;
+            resource: string;
+            resource_indicator: boolean;
+            resource_metadata_url?: string | null;
+            scopes_supported: string[];
+            /** @description An `oauth_obo` auth config to save with the server. */
+            suggested_auth_config: {
+                [key: string]: unknown;
+            };
+            token_endpoint: string;
+            token_endpoint_auth_methods_supported: string[];
+            warnings: string[];
+        };
+        McpOauthDiscoveryRequest: {
+            server_url: string;
         };
         McpOauthRevokeResponse: {
             revoked: boolean;
@@ -3740,6 +4421,8 @@ export interface components {
             server: components["schemas"]["McpServerView"];
         };
         McpServerView: {
+            /** @description New and changed tools wait for an admin to approve them. */
+            approve_tool_changes: boolean;
             auth_config: {
                 [key: string]: unknown;
             };
@@ -3766,6 +4449,48 @@ export interface components {
         McpServersPayload: {
             items: components["schemas"]["McpServerView"][];
         };
+        McpTagRulePayload: {
+            rule: components["schemas"]["McpTagRuleView"];
+        };
+        McpTagRulePreviewPayload: {
+            /**
+             * @description Active tools the rule would select, at most 200. Only this rule is
+             *     applied.
+             */
+            tools: components["schemas"]["McpToolView"][];
+            /**
+             * @description The preview stopped early, after 200 matches or after checking 5,120
+             *     tools, so more tools may match than it lists.
+             */
+            truncated: boolean;
+        };
+        McpTagRuleView: {
+            created_at: string;
+            /** @description `include` grants matching tools; `exclude` removes them and wins. */
+            effect: string;
+            id: string;
+            is_active: boolean;
+            revoked_at?: string | null;
+            /** @description The server the rule applies to; null for every server (exclude only). */
+            server_id?: string | null;
+            subject_id: string;
+            subject_kind: string;
+            tag: string;
+            updated_at: string;
+        };
+        McpTagRulesPayload: {
+            items: components["schemas"]["McpTagRuleView"][];
+        };
+        /**
+         * @description The four behaviour hints. A missing value means the hint is not declared
+         *     at this level. Upstream hints are not verified by the gateway.
+         */
+        McpToolAnnotationsView: {
+            destructive_hint?: boolean | null;
+            idempotent_hint?: boolean | null;
+            open_world_hint?: boolean | null;
+            read_only_hint?: boolean | null;
+        };
         McpToolInvocationDetailView: {
             invocation: components["schemas"]["McpToolInvocationSummaryView"];
             payload?: null | components["schemas"]["McpToolInvocationPayloadView"];
@@ -3791,6 +4516,11 @@ export interface components {
             has_payload: boolean;
             /** Format: int64 */
             latency_ms?: number | null;
+            /**
+             * @description MCP JSON-RPC method this row records, such as `tools/call`,
+             *     `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+             */
+            mcp_method: string;
             mcp_tool_invocation_id: string;
             metadata: {
                 [key: string]: unknown;
@@ -3810,21 +4540,91 @@ export interface components {
             tool_display_key: string;
             tool_display_name: string;
             tool_id?: string | null;
+            /**
+             * Format: int64
+             * @description Served schema version of the tool a `tools/call` used; null otherwise.
+             */
+            tool_schema_version?: number | null;
             user_id?: string | null;
         };
+        McpToolPayload: {
+            tool: components["schemas"]["McpToolView"];
+        };
+        /** @description One definition the upstream served for a tool. */
+        McpToolVersionView: {
+            /** @description Annotations as the upstream declared them, without admin overrides. */
+            annotations?: {
+                [key: string]: unknown;
+            } | null;
+            description?: string | null;
+            discovered_at: string;
+            input_schema: unknown;
+            output_schema?: unknown;
+            reviewed_at?: string | null;
+            /** @description Empty for a version approved automatically by discovery. */
+            reviewed_by_user_id?: string | null;
+            schema_hash: string;
+            /** Format: int64 */
+            schema_version: number;
+            /** @description `approved`, `pending`, `rejected` or `superseded`. */
+            status: string;
+            title?: string | null;
+        };
+        McpToolVersionsPayload: {
+            /** @description Newest first. */
+            items: components["schemas"]["McpToolVersionView"][];
+            /**
+             * Format: int64
+             * @description Pass as `before` for the next page of history. Empty on the last page
+             *     and when `schema_versions` is given.
+             */
+            next_before?: number | null;
+        };
         McpToolView: {
+            /** @description Tags an admin attached to the tool. */
+            admin_tags: string[];
+            /** @description Hints an admin set. A missing value keeps the upstream's. */
+            annotation_overrides: components["schemas"]["McpToolAnnotationsView"];
+            /** @description Hints as the upstream server declared them. */
+            annotations: components["schemas"]["McpToolAnnotationsView"];
+            /**
+             * @description `approved`, `pending_change` (served as the approved version while a
+             *     text change waits), `pending_review` or `rejected` (both withheld).
+             */
+            approval_status: string;
+            /**
+             * Format: int64
+             * @description The served version; null until the tool is first approved.
+             */
+            approved_schema_version?: number | null;
             deactivated_at?: string | null;
             description?: string | null;
             display_name: string;
+            /** @description Hints the gateway uses and serves: each override, else the upstream value. */
+            effective_annotations: components["schemas"]["McpToolAnnotationsView"];
+            /**
+             * @description Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)
+             *     plus admin tags. Tag rules match these.
+             */
+            effective_tags: string[];
             first_discovered_at: string;
             id: string;
             input_schema: unknown;
             is_active: boolean;
             last_discovered_at: string;
+            /** @description Schema of the tool's structured result, when the upstream declares one. */
+            output_schema?: unknown;
+            /**
+             * Format: int64
+             * @description The version waiting for review.
+             */
+            pending_schema_version?: number | null;
             schema_hash: string;
             /** Format: int64 */
             schema_version: number;
             server_id: string;
+            /** @description Human-readable title declared by the upstream server. */
+            title?: string | null;
             upstream_name: string;
         };
         McpToolsPayload: {
@@ -3943,6 +4743,48 @@ export interface components {
             window_end: string;
             window_start: string;
         };
+        OauthAuthorizationDecisionRequest: {
+            approve: boolean;
+        };
+        OauthAuthorizationDecisionResponse: {
+            /** @description The client redirect carrying the code, or the `access_denied` error. */
+            redirect_to: string;
+        };
+        /** @description What the consent screen shows for a pending authorization request. */
+        OauthAuthorizationRequestView: {
+            client_id: string;
+            /**
+             * @description Set when the client identifies itself with a Client ID Metadata
+             *     Document: the host that published it. The gateway checked only that
+             *     this host serves the document, not who the client is, so the consent
+             *     screen shows the host and marks the client unverified.
+             */
+            client_metadata_host?: string | null;
+            /** @description Self-asserted by the client at registration. */
+            client_name?: string | null;
+            client_uri?: string | null;
+            expires_at: string;
+            /** @description The host the browser returns to; the consent screen must show it. */
+            redirect_host: string;
+            /**
+             * @description The code goes to a URI on this device, so the client's identity
+             *     cannot be verified.
+             */
+            redirect_is_loopback: boolean;
+            redirect_uri: string;
+            request_id: string;
+            resource: string;
+            resource_kind: components["schemas"]["OauthResourceKind"];
+            scopes: components["schemas"]["OauthScopeView"][];
+            server_display_name?: string | null;
+            server_key?: string | null;
+        };
+        /** @enum {string} */
+        OauthResourceKind: "aggregate" | "server";
+        OauthScopeView: {
+            description: string;
+            scope: string;
+        };
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {
@@ -3979,6 +4821,66 @@ export interface components {
         PublicOidcProvidersPayload: {
             providers: components["schemas"]["PublicOidcProviderView"][];
         };
+        /**
+         * @description `tokens` is only valid for `inference`.
+         * @enum {string}
+         */
+        RateLimitMetricView: "requests" | "tokens";
+        /**
+         * @description `inference` covers chat, responses, messages, embeddings and decisions.
+         * @enum {string}
+         */
+        RateLimitOperationView: "inference" | "count_tokens" | "mcp_tool_call";
+        /**
+         * @description `minute` and `hour` slide; `day` and `month` are UTC calendar quotas.
+         * @enum {string}
+         */
+        RateLimitPeriodView: "minute" | "hour" | "day" | "month";
+        RateLimitPoliciesView: {
+            policies: components["schemas"]["RateLimitPolicyView"][];
+        };
+        /** @description The whole policy; `PATCH` replaces every field. */
+        RateLimitPolicyRequest: {
+            enabled?: boolean;
+            /** Format: int64 */
+            limit: number;
+            mcp_server_id?: string | null;
+            metric: components["schemas"]["RateLimitMetricView"];
+            model_key?: string | null;
+            name: string;
+            operation: components["schemas"]["RateLimitOperationView"];
+            period: components["schemas"]["RateLimitPeriodView"];
+            scope_id?: string | null;
+            scope_kind: components["schemas"]["RateLimitScopeKindView"];
+        };
+        /** @enum {string} */
+        RateLimitPolicySourceView: "config" | "admin";
+        RateLimitPolicyView: {
+            enabled: boolean;
+            /** @description `None` for config policies. */
+            id?: string | null;
+            /** Format: int64 */
+            limit: number;
+            mcp_server_id?: string | null;
+            mcp_server_key?: string | null;
+            metric: components["schemas"]["RateLimitMetricView"];
+            model_key?: string | null;
+            name: string;
+            operation: components["schemas"]["RateLimitOperationView"];
+            period: components["schemas"]["RateLimitPeriodView"];
+            scope_id?: string | null;
+            scope_kind: components["schemas"]["RateLimitScopeKindView"];
+            /** @description The targeted user's email, team name or API key name. */
+            scope_label?: string | null;
+            source: components["schemas"]["RateLimitPolicySourceView"];
+            updated_at?: string | null;
+        };
+        /**
+         * @description Who shares a counter. Without `scope_id`, each principal of the kind
+         *     gets its own counter.
+         * @enum {string}
+         */
+        RateLimitScopeKindView: "global" | "api_key" | "user" | "team";
         RecommendedMcpServerView: {
             auth_config: {
                 [key: string]: unknown;
@@ -4276,6 +5178,10 @@ export interface components {
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        RevokeAuthorizedMcpClientsResponse: {
+            /** Format: int64 */
+            revoked_count: number;
+        };
         SecretRedactionView: {
             disabled_rules: string[];
             enabled: boolean;
@@ -4290,6 +5196,14 @@ export interface components {
         SetDefaultVersionRequest: {
             /** Format: int32 */
             version: number;
+        };
+        SetMcpToolAnnotationOverridesRequest: {
+            /** @description Hints to override. A missing or null hint keeps the upstream's value. */
+            annotation_overrides: components["schemas"]["McpToolAnnotationsView"];
+        };
+        SetMcpToolTagsRequest: {
+            /** @description Admin tags. They are lowercased, deduplicated and sorted. */
+            tags: string[];
         };
         SetMyProviderCredentialRequest: {
             token: string;
@@ -4525,7 +5439,20 @@ export interface components {
         UpdateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        /**
+         * @description Both fields are required, so leaving one out can't widen a key by
+         *     accident. `null` restores full access or every server.
+         */
+        UpdateApiKeyScopesRequest: {
+            mcp_server_keys: string[] | null;
+            scopes: string[] | null;
+        };
+        UpdateApiKeyScopesResponse: {
+            api_key: components["schemas"]["AdminApiKeyView"];
+        };
         UpdateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Kept as it is when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -4721,6 +5648,32 @@ export interface operations {
             };
         };
     };
+    update_api_key_scopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateApiKeyScopesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_UpdateApiKeyScopesResponse"];
+                };
+            };
+        };
+    };
     reveal_api_key_secret: {
         parameters: {
             query?: never;
@@ -4739,6 +5692,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevealApiKeySecretResponse"];
+                };
+            };
+        };
+    };
+    list_audit_logs: {
+        parameters: {
+            query?: {
+                /** @description Only entries made by this user. */
+                actor_user_id?: string | null;
+                /** @description Exact action name, such as `api_key.created`. */
+                action?: string | null;
+                target_type?: string | null;
+                target_id?: string | null;
+                /** @description RFC 3339 lower bound, inclusive. */
+                occurred_at_start?: string | null;
+                /** @description RFC 3339 upper bound, inclusive. */
+                occurred_at_end?: string | null;
+                /** @description `next_cursor` from the previous page. */
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AuditLogPageView"];
+                };
+            };
+        };
+    };
+    get_audit_log: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audit log entry identifier */
+                audit_log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AuditLogView"];
                 };
             };
         };
@@ -5230,6 +6238,83 @@ export interface operations {
             };
         };
     };
+    admin_list_authorized_mcp_clients: {
+        parameters: {
+            query: {
+                /** @description User whose authorized clients to list. */
+                user_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizedMcpClientsView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    admin_revoke_authorized_mcp_clients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRevokeAuthorizedMcpClientsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAuthorizedMcpClientsResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
     get_mcp_connection_info: {
         parameters: {
             query?: never;
@@ -5431,6 +6516,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpGrantsPayload"];
+                };
+            };
+        };
+    };
+    discover_mcp_server_oauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpOauthDiscoveryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpOauthDiscoveryPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };
@@ -5647,6 +6763,350 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    set_mcp_tool_annotation_overrides: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMcpToolAnnotationOverridesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    set_mcp_tool_tags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMcpToolTagsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_tool_versions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Comma-separated version numbers to read, at most 10. A review diff asks
+                 *     for the approved and pending versions. Paging is ignored when set.
+                 */
+                schema_versions?: string | null;
+                /** @description Read versions older than this one. */
+                before?: number | null;
+                /** @description Page size, 1 to 100. Defaults to 20. */
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolVersionsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    approve_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to approve */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    reject_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to reject */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_tag_rules: {
+        parameters: {
+            query?: {
+                subject_kind?: string | null;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulesPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    create_mcp_tag_rule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpTagRuleRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulePayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    preview_mcp_tag_rule: {
+        parameters: {
+            query: {
+                server_id?: string | null;
+                tag: string;
+                effect: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulePreviewPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    revoke_mcp_tag_rule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP tag rule identifier */
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulesPayload"];
+                };
+            };
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6046,6 +7506,8 @@ export interface operations {
                 policy_result?: string | null;
                 occurred_at_start?: string | null;
                 occurred_at_end?: string | null;
+                /** @description MCP JSON-RPC method, such as `tools/call` or `resources/read`. */
+                mcp_method?: string | null;
             };
             header?: never;
             path?: never;
@@ -6160,6 +7622,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_rate_limit_policies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPoliciesView"];
+                };
+            };
+        };
+    };
+    create_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitPolicyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
+                };
+            };
+        };
+    };
+    delete_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rate-limit policy id */
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
+                };
+            };
+        };
+    };
+    update_rate_limit_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rate-limit policy id */
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitPolicyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RateLimitPolicyView"];
                 };
             };
         };
@@ -6985,6 +8537,64 @@ export interface operations {
             };
         };
     };
+    mcp_oauth_server_callback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the connection page */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    mcp_oauth_client_metadata_document: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth Client ID Metadata Document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
     list_mcp_oauth_connections: {
         parameters: {
             query?: never;
@@ -7141,6 +8751,71 @@ export interface operations {
             };
         };
     };
+    list_my_authorized_mcp_clients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizedMcpClientsView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    revoke_my_authorized_mcp_client: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Grant identifier */
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAuthorizedMcpClientsResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
     get_my_profile: {
         parameters: {
             query?: never;
@@ -7270,6 +8945,102 @@ export interface operations {
                 };
                 content: {
                     "text/csv": string;
+                };
+            };
+        };
+    };
+    get_oauth_authorization_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Authorization request identifier */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OauthAuthorizationRequestView"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    decide_oauth_authorization_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Authorization request identifier */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OauthAuthorizationDecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OauthAuthorizationDecisionResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

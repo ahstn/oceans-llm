@@ -1,6 +1,6 @@
 [package]
 name = "gateway"
-version = "0.38.0"
+version = "0.40.0"
 edition = "2024"
 
 [dependencies]
@@ -13,6 +13,7 @@ axum.workspace = true
 futures-util.workspace = true
 gateway-core.workspace = true
 gateway-client-config.workspace = true
+gateway-client-ip.workspace = true
 gateway-guardrails.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true
@@ -25,6 +26,7 @@ cron.workspace = true
 http.workspace = true
 http-body.workspace = true
 http-body-util.workspace = true
+ipnet.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
 opentelemetry.workspace = true

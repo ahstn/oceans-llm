@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Agent Session Analysis](../operations/agent-session-analysis.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Admin Audit Log](admin-audit-log.md), [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Agent Session Analysis](../operations/agent-session-analysis.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what platform admins can do and which self-service views regular users can open in the browser UI today.
 
@@ -167,6 +167,7 @@ Additional platform-admin capabilities:
 - refresh MCP discovery and see bounded failure feedback
 - inspect discovered MCP tools, active state, stable tool ids, schema versions, and JSON schemas
 - manage MCP toolsets, grants, upstream credential bindings, and effective-access previews from the MCP workspace
+- review who changed keys, identities, budgets, sessions and MCP access in the [Admin Audit Log](admin-audit-log.md)
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
@@ -175,7 +176,6 @@ Agent session calibration data is disabled by default and requires an explicit g
 Current limits:
 
 - spend reporting still lacks provider breakdown
-- admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
 - OAuth browser setup and token refresh for MCP upstream credentials remain future work

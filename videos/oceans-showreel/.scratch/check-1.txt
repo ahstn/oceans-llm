@@ -1,0 +1,193 @@
+
+> check
+> npx --yes hyperframes@0.8.144 check
+
+◆  Checking oceans-showreel
+[HyperFrames] Not inlining "assets/fonts/jetbrains-mono-nl-regular.ttf" (2.4 MB exceeds the 2 MB inline limit). The bundle may not be self-contained.
+[HyperFrames] Not inlining "assets/fonts/jetbrains-mono-nl-regular.ttf" (2.4 MB exceeds the 2 MB inline limit). The bundle may not be self-contained.
+[hyperframes] browserGpuMode probe → hardware (WebGL renderer vendor="Google Inc. (Apple)" renderer="ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)")
+
+Lint
+  ⚠ composition_file_too_large: This HTML composition file has 652 lines. Smaller sub-compositions are easier to read, iterate on, and diff.
+    /Users/ahstn/git/oceans-llm/videos/oceans-showreel/compositions/frames/f2-flight.html [data-composition-id] t=0s
+    Fix: Split this sub-composition further into smaller .html files, then mount them from the parent with data-composition-src so each file stays small enough to inspect, revise, and validate independently.
+  0 error(s), 1 warning(s), 0 info(s)
+
+Runtime
+  ◇ 0 errors, 0 warnings
+
+Layout
+  ✗ t=4.167, 7.5, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(2) inside #f2-scrim "Spend controls" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 7.5, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(2) > span:nth-of-type(1) inside #f2-scrim "02" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(3) inside #f2-scrim "Guardrails" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(3) > span:nth-of-type(1) inside #f2-scrim "03" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 7.5s text_occluded #f2-kick-strip > div:nth-of-type(4) inside #f2-scrim "MCP tool sets" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 7.5s text_occluded #f2-kick-strip > div:nth-of-type(4) > span:nth-of-type(1) inside #f2-scrim "04" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 7.5, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(2) inside #f2-scrim "Cap dollar." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 7.5, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(2) > span:nth-of-type(1) inside #f2-scrim "every" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(3) inside #f2-scrim "Redact secret." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(3) > span:nth-of-type(1) inside #f2-scrim "every" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 7.5s text_occluded #f2-rail-strip > div:nth-of-type(4) inside #f2-scrim "Govern tool." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=4.167, 5.833, 7.5s text_occluded #f2-rail-strip > div:nth-of-type(4) > span:nth-of-type(1) inside #f2-scrim "every" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=5.833, 7.5, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(1) inside #f2-scrim "Model routing" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=5.833, 7.5, 9.167, 10.833s text_occluded #f2-kick-strip > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "01" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=5.833, 7.5, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(1) inside #f2-scrim "Route model." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=5.833, 7.5, 9.167, 10.833s text_occluded #f2-rail-strip > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "every" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-card-3 > div:nth-of-type(2) inside #f2-scrim "Tool set" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded div.f2-abs.f2-c4-name inside #f2-scrim "triage" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-c4-n > span:nth-of-type(1) inside #f2-scrim "0" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-c4-n > span:nth-of-type(2) inside #f2-scrim "1" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-c4-n > span:nth-of-type(3) inside #f2-scrim "2" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-c4-n > span:nth-of-type(4) inside #f2-scrim "3" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-c4-n > span:nth-of-type(5) inside #f2-scrim "4" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded div.f2-abs.f2-c4-count > span:nth-of-type(2) inside #f2-scrim "of 38 tools" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-card-3 > div:nth-of-type(11) > span:nth-of-type(1) inside #f2-scrim "outside the set is rejected before upstream." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded span.f2-mono.f2-fgc inside #f2-scrim "tools/call" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-0 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "github." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-0 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "search_code" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-1 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "sentry." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-1 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "get_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-2 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "github." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-2 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "create_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-3 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "linear." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-3 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "create_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=9.167, 10.833s text_occluded #f2-chip-4 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "delete_repository" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=12.5, 14.167s text_occluded #f3-rail-strip > div:nth-of-type(1) inside #f3-scrim "Govern tool." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ✗ t=12.5, 14.167s text_occluded #f3-rail-strip > div:nth-of-type(1) > span:nth-of-type(1) inside #f3-scrim "every" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ⚠ t=4.167, 5.833, 7.5, 9.167, 10.833s container_overflow #f2-kick-rise inside #f2-kicker overflowed bottom 78px — Element extends outside a clipping layout container.
+        Fix: Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.
+  ⚠ t=4.167, 5.833, 7.5, 9.167, 10.833s container_overflow #f2-rail-rise inside #f2-rail overflowed bottom 240px — Element extends outside a clipping layout container.
+        Fix: Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.
+  ⚠ t=12.5, 14.167s container_overflow #f3-rail-strip inside #f3-rail overflowed top 80px — Element extends outside a clipping layout container.
+        Fix: Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.
+  ⚠ t=12.5, 14.167s container_overflow #f3-word inside #f3-word-mask overflowed bottom 22.91px — Element extends outside a clipping layout container.
+        Fix: Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.
+  ℹ t=4.167s canvas_overflow #f2-rail-strip > div:nth-of-type(4) inside #root overflowed bottom 31px "Govern tool." — Text extends outside the composition canvas.
+        Fix: Move the text inward, reduce its size, or mark intentional off-canvas animation with data-layout-allow-overflow.
+  ℹ t=4.167s canvas_overflow #f2-rail-strip > div:nth-of-type(4) > span:nth-of-type(1) inside #root overflowed bottom 31px "every" — Text extends outside the composition canvas.
+        Fix: Move the text inward, reduce its size, or mark intentional off-canvas animation with data-layout-allow-overflow.
+  ℹ t=9.167s text_occluded #f2-chip-4 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "github." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-5 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "slack." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-5 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "post_message" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-6 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "github." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-6 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "merge_pull_request" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-7 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "notion." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-7 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "search" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-8 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "jira." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-8 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "transition_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-9 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "linear." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-9 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "update_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-10 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "sentry." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-10 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "resolve_issue" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-11 > div:nth-of-type(1) > span:nth-of-type(1) inside #f2-scrim "postgres." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_occluded #f2-chip-11 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-scrim "query" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=9.167s text_box_overflow #f2-rail-strip > div:nth-of-type(4) inside #f2-rail overflowed top 6.09px "Govern tool." — Text extends outside its nearest visual/container box.
+        Fix: Text is 507px x 80px inside 575px x 80px and overflows by up to 6px; increase the container height to at least ~86px, or allow wrapping with max-width/fitTextFontSize.
+  ℹ t=9.167s text_box_overflow #f2-rail-strip > div:nth-of-type(4) > span:nth-of-type(1) inside #f2-rail overflowed top 6.09px "every" — Text extends outside its nearest visual/container box.
+        Fix: Text is 155px x 80px inside 575px x 80px and overflows by up to 6px; increase the container height to at least ~86px, or allow wrapping with max-width/fitTextFontSize.
+  ℹ t=9.375s content_overlap div.f2-abs.f2-c4-name inside #f2-chip-0 > div:nth-of-type(1) > span:nth-of-type(2) "triage" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=9.5s content_overlap span.f2-mono.f2-fgc inside #f2-chip-2 > div:nth-of-type(1) > span:nth-of-type(2) "tools/call" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=10.833s text_occluded #f2-deny inside #f2-scrim "Deny" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=10.833s text_occluded #f2-pack inside #f2-scrim "saas.github" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=10.833s content_overlap #f2-chip-4 > div:nth-of-type(1) > span:nth-of-type(2) inside #f2-pack "delete_repository" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(1) inside #f3-scrim "O" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(2) inside #f3-scrim "c" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(3) inside #f3-scrim "e" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(4) inside #f3-scrim "a" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(5) inside #f3-scrim "n" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(6) inside #f3-scrim "s" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(7) inside #f3-scrim "L" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(8) inside #f3-scrim "L" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=12.5s text_occluded #f3-word > span:nth-of-type(9) inside #f3-scrim "M" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=13s content_overlap #f3-rail-strip > div:nth-of-type(1) > span:nth-of-type(1) inside #f3-fly "every" — Two text blocks overlap and may render unreadable.
+        Fix: Give each block its own zone, or mark intentional layering with data-layout-allow-overlap.
+  ℹ t=14.167s text_occluded #f3-rail-v inside #f3-scrim "See" — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=14.167s text_occluded #f3-rail-n inside #f3-scrim "request." — Text is hidden beneath an opaque element.
+        Fix: Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.
+  ℹ t=14.167s text_box_overflow #f3-word > span:nth-of-type(1) inside #f3-word-mask overflowed bottom 22.91px "O" — Text extends outside its nearest visual/container box.
+        Fix: Text is 75px x 132px inside 604px x 123px and overflows by up to 23px; increase the container height to at least ~146px or shrink font-size from 104px to ~97px, or allow wrapping with max-width/fitTextFontSize.
+  ℹ t=14.167s text_box_overflow #f3-word > span:nth-of-type(2) inside #f3-word-mask overflowed bottom 22.91px "c" — Text extends outside its nearest visual/container box.
+        Fix: Text is 55px x 132px inside 604px x 123px and overflows by up to 23px; increase the container height to at least ~146px or shrink font-size from 104px to ~97px, or allow wrapping with max-width/fitTextFontSize.
+  ℹ t=14.167s text_box_overflow #f3-word > span:nth-of-type(3) inside #f3-word-mask overflowed bottom 22.91px "e" — Text extends outside its nearest visual/container box.
+        Fix: Text is 57px x 132px inside 604px x 123px and overflows by up to 23px; increase the container height to at least ~146px or shrink font-size from 104px to ~97px, or allow wrapping with max-width/fitTextFontSize.
+  37 error(s), 4 warning(s), 39 info(s)
+
+Motion
+  ◇ 0 errors, 0 warnings
+
+Contrast
+  ✗ div > div:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(2) > div > div > div:nth-of-type(3) > span 1.86:1 (need 4.5:1, t=4.167s)
+    Try rgb(150,202,220); source compositions/frames/f2-flight.html
+  0 error(s), 1 warning(s), 0 info(s)
+
+Snapshots
+  ◇ disabled
+
+◇  Check failed

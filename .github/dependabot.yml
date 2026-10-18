@@ -75,7 +75,7 @@ updates:
 
   - package-ecosystem: bun
     # A zero version-update limit leaves security updates enabled.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     # tests/harness-integration/ is intentionally omitted.
     directories:
       - docs/
@@ -106,11 +106,67 @@ updates:
           - 'typescript'
           - '@typescript/typescript-*'
           - 'eslint*'
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+      tanstack:
+        patterns:
+          - '@tanstack/*'
+      ui-components-and-assets:
+        patterns:
+          - '@fontsource-variable/*'
+          - '@hugeicons/*'
+          - '@lobehub/icons-*'
+          - '@radix-ui/*'
+          - 'boring-avatars'
+          - 'cmdk'
+          - 'radix-ui'
+          - 'recharts'
+          - 'shadcn'
+          - 'sonner'
+      styling:
+        patterns:
+          - '@tailwindcss/*'
+          - 'autoprefixer'
+          - 'class-variance-authority'
+          - 'clsx'
+          - 'postcss'
+          - 'tailwind*'
+          - 'tw-animate-css'
+      content-and-formatting:
+        patterns:
+          - 'date-fns'
+          - 'react-markdown'
+          - 'shiki'
+      api-client:
+        patterns:
+          - 'openapi-*'
+      build-tools:
+        patterns:
+          - '@types/node'
+          - '@vitejs/*'
+          - 'typescript'
+          - 'vite'
+          - 'vite-*'
+      testing:
+        patterns:
+          - '@playwright/*'
+          - '@testing-library/*'
+          - 'jsdom'
+          - 'playwright'
+          - 'vitest*'
+      code-quality:
+        patterns:
+          - '@shadcn/lint'
+          - 'oxfmt*'
+          - 'oxlint*'
 
   # The review agent pins exact versions. Pi and its extensions release
   # together and share peer dependencies, so they update as one PR.
   - package-ecosystem: bun
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 3
     directory: /actions/review-agent
     schedule:
       interval: cron
@@ -131,7 +187,7 @@ updates:
           - '*'
 
   - package-ecosystem: docker
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 2
     directories:
       - /crates/gateway
       - /crates/admin-ui/web
@@ -146,6 +202,11 @@ updates:
       - "/"
       - "/.github/actions/*"
       - "/actions/review-agent"
+    # cargo-dist generates release.yml from the pins in dist-workspace.toml,
+    # and `dist plan` fails when the two differ. Update those pins and run
+    # `mise run dist-generate` instead.
+    exclude-paths:
+      - ".github/workflows/release.yml"
     schedule:
       interval: "weekly"
     groups:

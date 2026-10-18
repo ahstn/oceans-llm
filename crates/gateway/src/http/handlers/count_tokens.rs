@@ -1,0 +1,399 @@
+//! Messages token counting.
+//!
+//! Requests authenticate, resolve and route exactly like `/v1/messages`, so a
+//! count reflects the route the next Messages call would use. Counting generates
+//! nothing, so it writes no usage-ledger row, charges no budget and creates no
+//! request log. It is visible in traces as the `count_tokens` provider operation.
+//! Because counts are free to the caller, each API key may have only
+//! [`MAX_IN_FLIGHT_COUNTS_PER_KEY`] counts in flight; further counts get a 429.
+use super::*;
+use axum::extract::rejection::JsonRejection;
+use std::{collections::HashMap, sync::Mutex};
+use uuid::Uuid;
+
+use crate::http::request_body::DEFAULT_MAX_BYTES;
+
+const COUNT_TOKENS_ROUTE: &str = "/v1/messages/count_tokens";
+/// Controls that never change the count. The inference mappers reject some of
+/// them (Bedrock rejects every OpenAI-only control), so they are dropped before
+/// mapping. This includes `parallel_tool_calls`, which only sets
+/// `disable_parallel_tool_use`, and `response_format`, which no Messages route
+/// maps.
+const GENERATION_FIELDS: &[&str] = &[
+    "temperature",
+    "top_p",
+    "top_k",
+    "stop",
+    "stop_sequences",
+    "store",
+    "stream_options",
+    "metadata",
+    "service_tier",
+    "user",
+    "seed",
+    "n",
+    "frequency_penalty",
+    "presence_penalty",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
+    "parallel_tool_calls",
+    "response_format",
+];
+/// Baseline `max_tokens` sent with every count. Upstream count APIs ignore it, but
+/// Bedrock wraps a full InvokeModel body, which requires a valid one.
+const COUNT_MAX_TOKENS: u64 = 4096;
+/// Counts one API key may have in flight on one gateway instance. Counting is not
+/// charged, so this bound is what stops a single key from driving upstream count
+/// APIs without limit.
+pub(crate) const MAX_IN_FLIGHT_COUNTS_PER_KEY: usize = 8;
+
+/// Per-key in-flight count tracking. Entries are removed when a key's last count
+/// finishes, so the map only holds keys with counts in progress.
+#[derive(Default)]
+pub struct CountTokensLimiter {
+    in_flight: Mutex<HashMap<Uuid, usize>>,
+}
+
+impl CountTokensLimiter {
+    pub(crate) fn try_acquire(self: &Arc<Self>, api_key_id: Uuid) -> Option<CountPermit> {
+        let mut in_flight = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        let count = in_flight.entry(api_key_id).or_default();
+        if *count >= MAX_IN_FLIGHT_COUNTS_PER_KEY {
+            return None;
+        }
+        *count += 1;
+        Some(CountPermit {
+            limiter: Arc::clone(self),
+            api_key_id,
+        })
+    }
+}
+
+/// Releases one in-flight count for its key when dropped.
+pub(crate) struct CountPermit {
+    limiter: Arc<CountTokensLimiter>,
+    api_key_id: Uuid,
+}
+
+impl Drop for CountPermit {
+    fn drop(&mut self) {
+        let mut in_flight = self
+            .limiter
+            .in_flight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = in_flight.get_mut(&self.api_key_id) {
+            *count -= 1;
+            if *count == 0 {
+                in_flight.remove(&self.api_key_id);
+            }
+        }
+    }
+}
+
+pub async fn v1_messages_count_tokens(
+    State(state): State<AppState>,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    policy: RequestPolicyContext,
+    InferenceAuth(auth): InferenceAuth,
+    request: Result<Json<AnthropicMessagesRequest>, JsonRejection>,
+) -> Response {
+    // Anthropic clients parse every failure as an error envelope, including a body
+    // that is not valid JSON or has the wrong shape.
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return anthropic_error_response(json_rejection_error(&rejection)),
+    };
+    match count_tokens_inner(state, request_id, headers, policy, auth, request).await {
+        Ok(response) => response,
+        Err(error) => anthropic_error_response(error.0),
+    }
+}
+
+fn json_rejection_error(rejection: &JsonRejection) -> GatewayError {
+    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        GatewayError::PayloadTooLarge {
+            limit_bytes: DEFAULT_MAX_BYTES,
+        }
+    } else {
+        GatewayError::InvalidRequest(rejection.body_text())
+    }
+}
+
+async fn count_tokens_inner(
+    state: AppState,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    policy: RequestPolicyContext,
+    auth: AuthenticatedApiKey,
+    request: AnthropicMessagesRequest,
+) -> Result<Response, AppError> {
+    let request_id = canonical_request_id(request_id)?;
+    // Held until the response is built, so it covers the guard and upstream calls.
+    let _permit = state
+        .count_tokens_limiter
+        .try_acquire(auth.id)
+        .ok_or_else(|| {
+            AppError(GatewayError::RateLimited(format!(
+                "this API key already has {MAX_IN_FLIGHT_COUNTS_PER_KEY} token counts in flight; retry after one completes"
+            )))
+        })?;
+    let mut core_request = anthropic_messages_request_to_core(&request);
+    prepare_count_request(&mut core_request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
+    enforce_inference_rate_limits(
+        &state,
+        &policy,
+        &auth,
+        &resolved,
+        RateLimitOperation::CountTokens,
+    )
+    .await?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+
+    let request_headers = extract_request_headers(&headers);
+    let request_span = Span::current();
+    record_request_span_fields(&request_span, &auth, &resolved, false, COUNT_TOKENS_ROUTE);
+    let (eligible_route_count, selected) = select_provider_route(
+        &state,
+        &resolved,
+        requirements,
+        &headers,
+        &request.extra,
+        &request_headers,
+        RoutingEndpoint::Messages,
+    )
+    .await?;
+    // The receipt is dropped: a count is not a completed response, so it must not
+    // refresh session affinity or record a response origin.
+    let Some(SelectedProviderRoute {
+        route,
+        provider,
+        expected_provider_credential_id,
+        ..
+    }) = selected
+    else {
+        return Err(AppError(no_compatible_route_error(requirements)));
+    };
+    record_provider_execution_span_fields(
+        &request_span,
+        &route.provider_key,
+        provider.provider_type(),
+    );
+
+    // The prompt guard runs exactly as for `/v1/messages`, so a count cannot send
+    // upstream a prompt that Messages would deny. Its decisions carry this request
+    // ID; the response-guard context is unused because a count generates nothing.
+    let route_key = model_route_key(
+        &resolved.selection.execution_model.model_key,
+        &route.provider_key,
+        &route.upstream_model,
+    );
+    let guard_context =
+        guard_typed_request(&state, &request_id, route_key, &mut core_request).await?;
+
+    let mut context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        &auth,
+        request_headers,
+    );
+    context.expected_provider_credential_id = expected_provider_credential_id;
+    let span = provider_operation_span(
+        &request_id,
+        "count_tokens",
+        &auth,
+        &resolved,
+        &route,
+        provider.as_ref(),
+        false,
+    );
+    let value = trace_provider_operation(span, provider.count_tokens(&core_request, &context))
+        .await
+        .map_err(|error| AppError(count_tokens_error(error, &route, provider.provider_type())))?;
+
+    let input_tokens = value
+        .get("input_tokens")
+        .and_then(serde_json::Value::as_u64);
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider_key = %route.provider_key,
+        eligible_route_count,
+        guardrails_enabled = guard_context.enabled,
+        input_tokens,
+        "anthropic count_tokens request completed"
+    );
+
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
+}
+
+/// Shapes a Messages request so every count mapper accepts it.
+///
+/// A count never streams, so a stray `stream: true` must not narrow eligibility.
+/// Generation controls are dropped, and the caller's output limit is replaced: a
+/// limit cannot change the count, but Bedrock validates it, so `0` or a value below
+/// a manual thinking budget would fail. The replacement leaves room for that budget.
+fn prepare_count_request(request: &mut CoreChatRequest) {
+    request.stream = false;
+    for field in GENERATION_FIELDS
+        .iter()
+        .chain(&["max_tokens", "max_completion_tokens"])
+    {
+        request.extra.remove(*field);
+    }
+    // Every manual budget spelling the Claude mappers accept, so the limit stays
+    // above the budget whichever one they normalize into `thinking.budget_tokens`.
+    let extra = &request.extra;
+    let thinking_budget = [
+        extra
+            .get("thinking")
+            .and_then(|thinking| thinking.get("budget_tokens")),
+        extra.get("thinking_budget_tokens"),
+        extra.get("reasoning_budget_tokens"),
+        extra
+            .get("reasoning")
+            .and_then(|reasoning| reasoning.get("budget_tokens")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(serde_json::Value::as_u64)
+    .max()
+    .unwrap_or(0);
+    let max_tokens = COUNT_MAX_TOKENS.max(thinking_budget.saturating_add(1));
+    request
+        .extra
+        .insert("max_tokens".to_string(), json!(max_tokens));
+}
+
+/// A route without an upstream count API returns a typed 501 naming the route,
+/// never a guessed number.
+fn count_tokens_error(
+    error: ProviderError,
+    route: &gateway_core::ModelRoute,
+    provider_type: &str,
+) -> GatewayError {
+    match error {
+        ProviderError::NotImplemented(reason) => GatewayError::NotImplemented(format!(
+            "token counting is not available for route `{}` ({provider_type}, upstream model `{}`): {reason}",
+            route.provider_key, route.upstream_model
+        )),
+        other => GatewayError::Provider(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(extra: serde_json::Value) -> CoreChatRequest {
+        CoreChatRequest {
+            model: "fast".to_string(),
+            messages: Vec::new(),
+            stream: true,
+            extra: serde_json::from_value(extra).unwrap(),
+        }
+    }
+
+    #[test]
+    fn limiter_bounds_each_key_and_releases_on_drop() {
+        let limiter = Arc::new(CountTokensLimiter::default());
+        let (key, other_key) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut permits: Vec<_> = (0..MAX_IN_FLIGHT_COUNTS_PER_KEY)
+            .map(|_| limiter.try_acquire(key).expect("under the bound"))
+            .collect();
+
+        assert!(limiter.try_acquire(key).is_none(), "bound reached");
+        let other = limiter
+            .try_acquire(other_key)
+            .expect("keys are independent");
+
+        permits.pop();
+        assert!(
+            limiter.try_acquire(key).is_some(),
+            "a dropped permit frees a slot"
+        );
+
+        drop(permits);
+        drop(other);
+        assert!(limiter.in_flight.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn prepare_sets_max_tokens_above_a_thinking_budget() {
+        let mut without = request(json!({"temperature": 0.2}));
+        prepare_count_request(&mut without);
+        assert!(!without.stream);
+        assert_eq!(
+            serde_json::to_value(&without.extra).unwrap(),
+            json!({"max_tokens": COUNT_MAX_TOKENS})
+        );
+
+        let mut thinking = request(json!({
+            "max_tokens": 2048,
+            "thinking": {"type": "enabled", "budget_tokens": 10_000},
+        }));
+        prepare_count_request(&mut thinking);
+        assert_eq!(thinking.extra["max_tokens"], 10_001);
+
+        for extra in [
+            json!({"thinking_budget_tokens": 8_000}),
+            json!({"reasoning_budget_tokens": 8_000}),
+            json!({"reasoning": {"effort": "high", "budget_tokens": 8_000}}),
+            json!({"thinking": {"budget_tokens": 2_000}, "reasoning_budget_tokens": 8_000}),
+        ] {
+            let mut aliased = request(extra.clone());
+            prepare_count_request(&mut aliased);
+            assert_eq!(aliased.extra["max_tokens"], 8_001, "{extra}");
+        }
+    }
+
+    #[test]
+    fn prepare_drops_every_control_that_cannot_change_the_count() {
+        let mut request = request(json!({
+            "seed": 7,
+            "n": 2,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.5,
+            "logit_bias": {"50256": -100},
+            "logprobs": true,
+            "top_logprobs": 3,
+            "parallel_tool_calls": false,
+            "response_format": {"type": "json_object"},
+        }));
+        prepare_count_request(&mut request);
+        assert_eq!(
+            serde_json::to_value(&request.extra).unwrap(),
+            json!({"max_tokens": COUNT_MAX_TOKENS})
+        );
+    }
+
+    #[test]
+    fn prepare_replaces_unusable_caller_limits() {
+        for extra in [
+            json!({"max_tokens": 0}),
+            json!({"max_completion_tokens": 0}),
+            json!({"max_tokens": 64, "max_completion_tokens": 512}),
+        ] {
+            let mut request = request(extra);
+            prepare_count_request(&mut request);
+            assert_eq!(
+                serde_json::to_value(&request.extra).unwrap(),
+                json!({"max_tokens": COUNT_MAX_TOKENS})
+            );
+        }
+    }
+}

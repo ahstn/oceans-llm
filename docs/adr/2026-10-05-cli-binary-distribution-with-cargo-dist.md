@@ -29,6 +29,8 @@ The initial targets are Linux x86-64 and ARM64, macOS Intel and Apple Silicon, a
 
 Pull requests only run `dist plan`; artifacts are built and checked for release tags. Until 2026-10-13 every pull request push also built and checked all five targets. That added ten native-runner jobs per push and contributed to GitHub API rate limiting, so release builds are now exercised only by tags. The release check also stopped compiling `cli-test` on every target: tag runs cannot restore a cache, which made it the slowest step of a release. Cross-platform CLI tests now run before merge instead. The generated workflow remains unedited. Build setup installs the repository Rust toolchain through `mise`, and reusable job commands run through `mise`.
 
+On 2026-10-15 a Dependabot update changed the artifact action commits in `release.yml` without changing `dist-workspace.toml`. `dist plan` then failed on every pull request because the workflow no longer matched its generated form. The new commits now live in `[dist.github-action-commits]`, and Dependabot's GitHub Actions update skips `release.yml` through `exclude-paths`. Maintainers update the dist pins by hand when Dependabot bumps the same actions in other workflows.
+
 ## Reasons and tradeoffs
 
 cargo-dist supplies archive generation, installer generation, manifests, and distribution CI as one maintained tool. This reduces repository-owned packaging code and allows future distribution changes through configuration.

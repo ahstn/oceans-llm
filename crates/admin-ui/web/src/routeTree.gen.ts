@@ -19,6 +19,7 @@ import { Route as GuardrailsRouteImport } from './routes/guardrails'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as NoAccessRouteImport } from './routes/no-access'
+import { Route as RateLimitsRouteImport } from './routes/rate-limits'
 import { Route as ReviewAgentRouteImport } from './routes/review-agent'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as AccountConnectionsRouteImport } from './routes/account/connections'
@@ -31,8 +32,10 @@ import { Route as McpIndexRouteImport } from './routes/mcp/index'
 import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
+import { Route as ObservabilityAuditLogRouteImport } from './routes/observability/audit-log'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
@@ -90,6 +93,11 @@ const ModelsRoute = ModelsRouteImport.update({
 const NoAccessRoute = NoAccessRouteImport.update({
   id: '/no-access',
   path: '/no-access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RateLimitsRoute = RateLimitsRouteImport.update({
+  id: '/rate-limits',
+  path: '/rate-limits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReviewAgentRoute = ReviewAgentRouteImport.update({
@@ -152,6 +160,11 @@ const McpToolsetsRoute = McpToolsetsRouteImport.update({
   path: '/mcp/toolsets',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ObservabilityAgentHarnessesRoute =
   ObservabilityAgentHarnessesRouteImport.update({
     id: '/observability/agent-harnesses',
@@ -164,6 +177,11 @@ const ObservabilityAgentSessionsRoute =
     path: '/observability/agent-sessions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityAuditLogRoute = ObservabilityAuditLogRouteImport.update({
+  id: '/observability/audit-log',
+  path: '/observability/audit-log',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ObservabilityGuardrailsRoute = ObservabilityGuardrailsRouteImport.update({
   id: '/observability/guardrails',
   path: '/observability/guardrails',
@@ -219,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -229,8 +248,10 @@ export interface FileRoutesByFullPath {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -253,6 +274,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -263,8 +285,10 @@ export interface FileRoutesByTo {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -288,6 +312,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/no-access': typeof NoAccessRoute
+  '/rate-limits': typeof RateLimitsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
   '/account/connections': typeof AccountConnectionsRoute
@@ -298,8 +323,10 @@ export interface FileRoutesById {
   '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/mcp/toolsets': typeof McpToolsetsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -324,6 +351,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -334,8 +362,10 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -358,6 +388,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -368,8 +399,10 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -392,6 +425,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/models'
     | '/no-access'
+    | '/rate-limits'
     | '/review-agent'
     | '/spend-controls'
     | '/account/connections'
@@ -402,8 +436,10 @@ export interface FileRouteTypes {
     | '/mcp/access'
     | '/mcp/servers'
     | '/mcp/toolsets'
+    | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -427,6 +463,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
   NoAccessRoute: typeof NoAccessRoute
+  RateLimitsRoute: typeof RateLimitsRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
   AccountConnectionsRoute: typeof AccountConnectionsRoute
@@ -437,8 +474,10 @@ export interface RootRouteChildren {
   McpAccessRoute: typeof McpAccessRoute
   McpServersRoute: typeof McpServersRoute
   McpToolsetsRoute: typeof McpToolsetsRoute
+  OauthConsentRoute: typeof OauthConsentRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
+  ObservabilityAuditLogRoute: typeof ObservabilityAuditLogRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
@@ -521,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/no-access'
       fullPath: '/no-access'
       preLoaderRoute: typeof NoAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rate-limits': {
+      id: '/rate-limits'
+      path: '/rate-limits'
+      fullPath: '/rate-limits'
+      preLoaderRoute: typeof RateLimitsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/review-agent': {
@@ -607,6 +653,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpToolsetsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/agent-harnesses': {
       id: '/observability/agent-harnesses'
       path: '/observability/agent-harnesses'
@@ -619,6 +672,13 @@ declare module '@tanstack/react-router' {
       path: '/observability/agent-sessions'
       fullPath: '/observability/agent-sessions'
       preLoaderRoute: typeof ObservabilityAgentSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability/audit-log': {
+      id: '/observability/audit-log'
+      path: '/observability/audit-log'
+      fullPath: '/observability/audit-log'
+      preLoaderRoute: typeof ObservabilityAuditLogRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/observability/guardrails': {
@@ -691,6 +751,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
   NoAccessRoute: NoAccessRoute,
+  RateLimitsRoute: RateLimitsRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
   AccountConnectionsRoute: AccountConnectionsRoute,
@@ -701,8 +762,10 @@ const rootRouteChildren: RootRouteChildren = {
   McpAccessRoute: McpAccessRoute,
   McpServersRoute: McpServersRoute,
   McpToolsetsRoute: McpToolsetsRoute,
+  OauthConsentRoute: OauthConsentRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
+  ObservabilityAuditLogRoute: ObservabilityAuditLogRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,

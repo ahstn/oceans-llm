@@ -24,7 +24,7 @@ This document is schema-oriented. It describes the persistent relationships that
 2. `users` 0..1 `team_memberships`
 3. `teams` 0..N `service_accounts`
 4. `api_keys` belongs to exactly one principal owner: user or service account
-5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`
+5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`, and may be narrowed to capability scopes and MCP servers
 6. Optional principal-centric restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
@@ -55,7 +55,7 @@ This document is schema-oriented. It describes the persistent relationships that
 - `gateway_models`: gateway model registry; rows can be provider-backed or alias-backed
 - `model_routes`: execution targets for provider-backed models only
 - `api_key_model_grants`: explicit model grants attached to an API key
-- `audit_logs`: control-plane audit baseline
+- `audit_logs`: admin audit trail. One row per successful control-plane mutation, written only through `gateway_service::AdminAudit`. It stores the actor (`actor_kind`, `actor_user_id`, `actor_api_key_id`, `actor_label`), the `action`, the target (`object_type`, `object_id`, `target_label`), redacted `before_json` and `after_json` summaries, redacted metadata in `details_json`, and `request_ip` and `user_agent`. `ts` is unix milliseconds. Labels are snapshots, `actor_user_id` has no foreign key, and request-log retention never purges these rows. See [ADR: Admin Audit Log](../../adr/2026-10-15-admin-audit-log.md).
 
 `model_routes` stores two distinct route execution metadata documents:
 
@@ -122,9 +122,9 @@ Model-centric overlays:
 ### Ownership, Accounting, and Logging Tables
 
 - `api_keys`
-  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
+  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`, `scopes`, `mcp_server_keys`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. Direct team-owned runtime keys and `system-legacy` ownership are not supported
+  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. `scopes` and `mcp_server_keys` are space-delimited lists; `NULL` means full access and every granted MCP server ([ADR](../../adr/2026-10-17-scoped-api-keys.md)). Server keys are stored by key, with no foreign key, because server keys never change and servers are never deleted. Direct team-owned runtime keys and `system-legacy` ownership are not supported
 - `budgets`
   - Key columns: `budget_id`, `scope_kind`, `scope_key`, `user_id`, `service_account_id`, `model_id`, `upstream_model`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active budget per canonical `scope_key`
@@ -164,7 +164,16 @@ Model-centric overlays:
   - Notes: rows are user-added registry records. Recommended catalog entries are not seeded into this table. Disabling a server is the archive/delete path; hard delete is not exposed.
 - `external_mcp_tools`
   - Key columns: `mcp_tool_id`, `mcp_server_id`, `upstream_name`, `display_name`, `description`, `input_schema_json`, `schema_hash`, `schema_version`, `is_active`, `first_discovered_at`, `last_discovered_at`, `deactivated_at`
-  - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes.
+  - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes. `admin_tags_json` and `annotation_overrides_json` are admin-owned policy that discovery never writes; overrides do not change `schema_hash`.
+- `mcp_tool_versions`
+  - Key columns: `mcp_tool_id`, `schema_version`, `schema_hash`, `description`, `input_schema_json`, `title`, `annotations_json`, `output_schema_json`, `status`, `discovered_at`, `reviewed_at`, `reviewed_by_user_id`
+  - Notes: one row per definition the upstream served (a new schema hash or a new description), keyed by `(mcp_tool_id, schema_version)`. `status` is `approved`, `pending`, `rejected` or `superseded`. An empty `reviewed_by_user_id` on an approved row means discovery approved it because the server does not require approval. `external_mcp_tools.approval_status`, `approved_schema_version` and `pending_schema_version` hold the tool's review state, and the tool row's definition columns hold the served version. `external_mcp_servers.approve_tool_changes` turns review on. `mcp_tool_invocations.tool_schema_version` records the version a `tools/call` used.
+- `mcp_tool_tag_rules`
+  - Key columns: `rule_id`, `subject_kind`, `subject_id`, `server_scope`, `tag`, `effect`, `is_active`, `created_at`, `updated_at`, `revoked_at`
+  - Notes: `effect` is `include` or `exclude`. `server_scope` is a server ID, or `*` for every server, which only exclude rules may use. One active rule exists per subject, scope, tag and effect. Rules are revoked, not deleted. See [ADR: MCP Tag Grants, Annotation Overrides, and Tool Versioning](../../adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
+- `mcp_tool_effective_tags`
+  - Key columns: `mcp_tool_id`, `tag`
+  - Notes: each tool's effective tags (derived from its served annotations and admin overrides, plus admin tags), indexed by `(tag, mcp_tool_id)` so include tag rules select tools without scanning a server. The store rewrites a tool's rows whenever its definition or policy changes.
 - `external_mcp_discovery_runs`
   - Key columns: `discovery_run_id`, `mcp_server_id`, `status`, `started_at`, `finished_at`, `discovered_tool_count`, `active_tool_count`, `schema_set_hash`, `error_summary`, `details_json`
   - Notes: diagnostics are bounded and must not contain raw tokens or user credentials.

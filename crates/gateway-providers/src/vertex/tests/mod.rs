@@ -34,6 +34,7 @@ use super::{
 };
 
 mod anthropic_request;
+mod count_tokens;
 mod embeddings;
 mod gemini;
 mod google_request;

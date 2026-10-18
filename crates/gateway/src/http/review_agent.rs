@@ -6,13 +6,15 @@ use axum::{
 use gateway_core::{
     AuthError, GatewayError, GlobalRole, IdentityRepository, MembershipRole, ReviewAgentProvider,
     ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings, StoreError, UserStatus,
+    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings, StoreError, UserRecord,
+    UserStatus,
 };
 use gateway_service::{
     ActionConfigResolveInput, ActionPullRequestInput, ActionRepositoryIdentity,
     ActionRunCompleteInput, ActionRunFailInput, ActionRunHeartbeatInput, ActionRunStartInput,
-    CreateReviewAgentRepositoryInput, ReviewAgentConfigOverrides, ReviewAgentService,
-    UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
+    AuditAction, AuditEvent, CreateReviewAgentRepositoryInput, ReviewAgentConfigOverrides,
+    ReviewAgentService, UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
+    admin_audit::actions,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -22,6 +24,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_authenticated_session,
     admin_contract::{Envelope, envelope, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -293,7 +296,7 @@ pub async fn list_review_agent_repositories(
     headers: HeaderMap,
     Query(query): Query<ReviewAgentListQuery>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoriesPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (_, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let service = review_agent_service(&state);
     let status = query
         .status
@@ -332,9 +335,10 @@ pub async fn list_review_agent_repositories(
 pub async fn create_review_agent_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateReviewAgentRepositoryRequest>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (actor, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let service_account_id = parse_uuid(&request.service_account_id, "service_account_id")?;
     authorize_service_account_scope(&state, &scope, service_account_id).await?;
     let settings = request
@@ -354,9 +358,16 @@ pub async fn create_review_agent_repository(
             settings_json: validate_settings_json(request.settings_json)?,
         })
         .await?;
-    Ok(Json(envelope(ReviewAgentRepositoryPayload {
-        repository: map_repository(repository),
-    })))
+    let repository = map_repository(repository);
+    state
+        .audit()
+        .record(
+            &meta.user_context(&actor),
+            repository_event(actions::REVIEW_AGENT_REPOSITORY_CREATED, &repository)
+                .after(repository_summary(&repository)),
+        )
+        .await;
+    Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
 }
 
 #[utoipa::path(
@@ -371,7 +382,7 @@ pub async fn get_review_agent_repository(
     headers: HeaderMap,
     Path(repository_id): Path<String>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (_, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository =
         require_visible_repository(&state, &scope, parse_uuid(&repository_id, "repository_id")?)
             .await?;
@@ -391,16 +402,17 @@ pub async fn get_review_agent_repository(
 pub async fn update_review_agent_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(repository_id): Path<String>,
     Json(request): Json<UpdateReviewAgentRepositoryRequest>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (actor, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
     require_visible_repository(&state, &scope, repository_id).await?;
     let service_account_id = parse_uuid(&request.service_account_id, "service_account_id")?;
     authorize_service_account_scope(&state, &scope, service_account_id).await?;
     let settings = settings_from_view(request.settings)?;
-    let repository = review_agent_service(&state)
+    let update = review_agent_service(&state)
         .update_repository(UpdateReviewAgentRepositoryInput {
             repository_id,
             external_repository_id: request.external_repository_id,
@@ -413,9 +425,22 @@ pub async fn update_review_agent_repository(
             settings_json: validate_settings_json(request.settings_json)?,
         })
         .await?;
-    Ok(Json(envelope(ReviewAgentRepositoryPayload {
-        repository: map_repository(repository),
-    })))
+    let repository = map_repository(update.current);
+    // The store writes nothing when the repository already matches, so a resave
+    // records nothing. The previous record is read under the write lock.
+    if let Some(before) = update.previous.map(map_repository) {
+        let action = patch_action(&before.status, &repository.status);
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                repository_event(action, &repository)
+                    .before(repository_summary(&before))
+                    .after(repository_summary(&repository)),
+            )
+            .await;
+    }
+    Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
 }
 
 #[utoipa::path(
@@ -428,11 +453,13 @@ pub async fn update_review_agent_repository(
 pub async fn disable_review_agent_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(repository_id): Path<String>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
     set_repository_status_handler(
         state,
         headers,
+        meta,
         repository_id,
         ReviewAgentRepositoryStatus::Disabled,
     )
@@ -449,11 +476,13 @@ pub async fn disable_review_agent_repository(
 pub async fn reactivate_review_agent_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(repository_id): Path<String>,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
     set_repository_status_handler(
         state,
         headers,
+        meta,
         repository_id,
         ReviewAgentRepositoryStatus::Active,
     )
@@ -473,7 +502,7 @@ pub async fn list_review_agent_runs(
     Path(repository_id): Path<String>,
     Query(query): Query<ReviewAgentRunsQuery>,
 ) -> Result<Json<Envelope<ReviewAgentRunsPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (_, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
     require_visible_repository(&state, &scope, repository_id).await?;
     let runs = review_agent_service(&state)
@@ -503,7 +532,7 @@ pub async fn render_review_agent_workflow(
     Path(repository_id): Path<String>,
     Json(request): Json<WorkflowRenderRequest>,
 ) -> Result<Json<Envelope<ReviewAgentWorkflowPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (_, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
     require_visible_repository(&state, &scope, repository_id).await?;
     let rendered = review_agent_service(&state)
@@ -671,18 +700,75 @@ pub async fn fail_review_agent_action_run(
 async fn set_repository_status_handler(
     state: AppState,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     repository_id: String,
     status: ReviewAgentRepositoryStatus,
 ) -> Result<Json<Envelope<ReviewAgentRepositoryPayload>>, AppError> {
-    let scope = require_review_agent_admin_scope(&state, &headers).await?;
+    let (actor, scope) = require_review_agent_admin_scope(&state, &headers).await?;
     let repository_id = parse_uuid(&repository_id, "repository_id")?;
     require_visible_repository(&state, &scope, repository_id).await?;
-    let repository = review_agent_service(&state)
+    let (repository, replaced) = review_agent_service(&state)
         .set_repository_status(repository_id, status)
         .await?;
-    Ok(Json(envelope(ReviewAgentRepositoryPayload {
-        repository: map_repository(repository),
-    })))
+    let repository = map_repository(repository);
+    // The store writes only a different status, so a retry, or a request that
+    // loses a race to the same status, is not a transition.
+    let Some(replaced) = replaced else {
+        return Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })));
+    };
+    let action = match status {
+        ReviewAgentRepositoryStatus::Disabled => actions::REVIEW_AGENT_REPOSITORY_DISABLED,
+        _ => actions::REVIEW_AGENT_REPOSITORY_REACTIVATED,
+    };
+    // The store reads the replaced status under its write lock, so `before` is the
+    // status this request actually changed.
+    let event = repository_event(action, &repository)
+        .before(json!({ "status": replaced.as_str() }))
+        .after(json!({ "status": status.as_str() }));
+    state
+        .audit()
+        .record(&meta.user_context(&actor), event)
+        .await;
+    Ok(Json(envelope(ReviewAgentRepositoryPayload { repository })))
+}
+
+/// The action for a PATCH. Moving to disabled or back to active is the same
+/// transition the disable and reactivate endpoints record, so it gets their action.
+/// Anything else, archiving included, is an update whose summaries show the status.
+fn patch_action(before_status: &str, after_status: &str) -> AuditAction {
+    if before_status == after_status {
+        actions::REVIEW_AGENT_REPOSITORY_UPDATED
+    } else if after_status == ReviewAgentRepositoryStatus::Disabled.as_str() {
+        actions::REVIEW_AGENT_REPOSITORY_DISABLED
+    } else if after_status == ReviewAgentRepositoryStatus::Active.as_str() {
+        actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+    } else {
+        actions::REVIEW_AGENT_REPOSITORY_UPDATED
+    }
+}
+
+fn repository_event(action: AuditAction, repository: &ReviewAgentRepositoryView) -> AuditEvent {
+    AuditEvent::new(action)
+        .target(&repository.id)
+        .label(repository.full_name.clone())
+}
+
+/// Audit summary of a repository. `settings_json` is free-form extension data
+/// that can hold credentials, so only its key names are recorded.
+fn repository_summary(repository: &ReviewAgentRepositoryView) -> Value {
+    let mut summary = serde_json::to_value(repository).unwrap_or(Value::Null);
+    if let Some(object) = summary.as_object_mut() {
+        object.remove("created_at");
+        object.remove("updated_at");
+        let settings_json_keys: Vec<String> = repository
+            .settings_json
+            .as_object()
+            .map(|settings| settings.keys().cloned().collect())
+            .unwrap_or_default();
+        object.remove("settings_json");
+        object.insert("settings_json_keys".to_string(), json!(settings_json_keys));
+    }
+    summary
 }
 
 fn review_agent_service(state: &AppState) -> ReviewAgentService<gateway_store::AnyStore> {
@@ -711,16 +797,17 @@ enum ReviewAgentAdminScope {
     Team(Uuid),
 }
 
+/// Returns the acting user with the scope, so mutations can attribute audit entries.
 async fn require_review_agent_admin_scope(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<ReviewAgentAdminScope, AppError> {
+) -> Result<(UserRecord, ReviewAgentAdminScope), AppError> {
     let actor = require_authenticated_session(state, headers).await?;
     if actor.status != UserStatus::Active {
         return Err(insufficient_privileges());
     }
     if actor.global_role == GlobalRole::PlatformAdmin {
-        return Ok(ReviewAgentAdminScope::Platform);
+        return Ok((actor, ReviewAgentAdminScope::Platform));
     }
     let membership = state
         .store
@@ -733,7 +820,7 @@ async fn require_review_agent_admin_scope(
     ) {
         return Err(insufficient_privileges());
     }
-    Ok(ReviewAgentAdminScope::Team(membership.team_id))
+    Ok((actor, ReviewAgentAdminScope::Team(membership.team_id)))
 }
 
 async fn authorize_service_account_scope(
@@ -1114,6 +1201,56 @@ fn insufficient_privileges() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn patch_actions_name_each_status_transition() {
+        assert_eq!(
+            patch_action("active", "disabled"),
+            actions::REVIEW_AGENT_REPOSITORY_DISABLED
+        );
+        assert_eq!(
+            patch_action("disabled", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+        );
+        // Archiving is neither: it is recorded as an update showing the status.
+        assert_eq!(
+            patch_action("active", "archived"),
+            actions::REVIEW_AGENT_REPOSITORY_UPDATED
+        );
+        assert_eq!(
+            patch_action("archived", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_REACTIVATED
+        );
+        assert_eq!(
+            patch_action("active", "active"),
+            actions::REVIEW_AGENT_REPOSITORY_UPDATED
+        );
+    }
+
+    #[test]
+    fn repository_audit_summary_keeps_only_settings_json_keys() {
+        let repository = map_repository(ReviewAgentRepositoryRecord {
+            repository_id: Uuid::nil(),
+            provider: ReviewAgentProvider::Github,
+            external_repository_id: None,
+            owner: "octo".to_string(),
+            name: "repo".to_string(),
+            full_name: "octo/repo".to_string(),
+            service_account_id: Uuid::nil(),
+            status: ReviewAgentRepositoryStatus::Active,
+            settings: ReviewAgentSettings::default(),
+            settings_json: json!({ "github_pat": "ghp_secret_value", "labels": ["a"] }),
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+        });
+        let summary = repository_summary(&repository);
+        assert!(!summary.to_string().contains("ghp_secret_value"));
+        assert_eq!(
+            summary["settings_json_keys"],
+            json!(["github_pat", "labels"])
+        );
+        assert_eq!(summary["full_name"], "octo/repo");
+    }
 
     #[test]
     fn action_config_request_rejects_unknown_raw_fields() {

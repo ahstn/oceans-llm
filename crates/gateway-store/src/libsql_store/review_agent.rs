@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::Updated;
 
 const REPOSITORY_COLUMNS: &str = "repository_id, provider, external_repository_id, owner, name, full_name, service_account_id, status, inline_review_enabled, pr_summary_enabled, diagrams_enabled, linked_issue_detection_enabled, linked_issue_assessment_enabled, default_model_key, max_inline_comments, request_changes_on_high_severity, settings_json, created_at, updated_at";
 const ALIASED_REPOSITORY_COLUMNS: &str = "r.repository_id, r.provider, r.external_repository_id, r.owner, r.name, r.full_name, r.service_account_id, r.status, r.inline_review_enabled, r.pr_summary_enabled, r.diagrams_enabled, r.linked_issue_detection_enabled, r.linked_issue_assessment_enabled, r.default_model_key, r.max_inline_comments, r.request_changes_on_high_severity, r.settings_json, r.created_at, r.updated_at";
@@ -296,8 +297,11 @@ impl ReviewAgentRepository for LibsqlStore {
     ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
         let repository_id = Uuid::new_v4();
         let settings_json = serialize_json(&input.settings_json)?;
-        self.connection
-            .execute(
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
                 r#"
                 INSERT INTO review_agent_repositories (
                     repository_id, provider, external_repository_id, owner, name, full_name,
@@ -306,7 +310,9 @@ impl ReviewAgentRepository for LibsqlStore {
                     linked_issue_assessment_enabled, default_model_key, max_inline_comments,
                     request_changes_on_high_severity, settings_json, created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)
-                "#,
+                RETURNING {REPOSITORY_COLUMNS}
+                "#
+                ),
                 libsql::params![
                     repository_id.to_string(),
                     input.provider.as_str(),
@@ -329,18 +335,27 @@ impl ReviewAgentRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        load_repository(&self.connection, repository_id).await
+        let row = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .ok_or_else(|| StoreError::Unexpected("insert returned no row".to_string()))?;
+        decode_repository(&row)
     }
 
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
+    ) -> Result<Updated<ReviewAgentRepositoryRecord>, StoreError> {
         let settings_json = serialize_json(&input.settings_json)?;
-        let rows = self
-            .connection
-            .execute(
-                r#"
+        let tx = self.begin_transaction().await?;
+        let existing = load_repository(&tx, input.repository_id).await?;
+        if crate::shared::review_agent_repository_matches(&existing, input) {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(Updated::unchanged(existing));
+        }
+        tx.execute(
+            r#"
                 UPDATE review_agent_repositories
                 SET external_repository_id = ?1, owner = ?2, name = ?3, full_name = ?4,
                     service_account_id = ?5, status = ?6, inline_review_enabled = ?7,
@@ -351,35 +366,35 @@ impl ReviewAgentRepository for LibsqlStore {
                     settings_json = ?15, updated_at = ?16
                 WHERE repository_id = ?17
                 "#,
-                libsql::params![
-                    input.external_repository_id.as_deref(),
-                    input.owner.as_str(),
-                    input.name.as_str(),
-                    input.full_name.as_str(),
-                    input.service_account_id.to_string(),
-                    input.status.as_str(),
-                    bool_to_i64(input.settings.inline_review_enabled),
-                    bool_to_i64(input.settings.pr_summary_enabled),
-                    bool_to_i64(input.settings.diagrams_enabled),
-                    bool_to_i64(input.settings.linked_issue_detection_enabled),
-                    bool_to_i64(input.settings.linked_issue_assessment_enabled),
-                    input.settings.default_model_key.as_deref(),
-                    input.settings.max_inline_comments,
-                    bool_to_i64(input.settings.request_changes_on_high_severity),
-                    settings_json,
-                    input.updated_at.unix_timestamp(),
-                    input.repository_id.to_string(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        if rows == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{}` was not found",
-                input.repository_id
-            )));
-        }
-        load_repository(&self.connection, input.repository_id).await
+            libsql::params![
+                input.external_repository_id.as_deref(),
+                input.owner.as_str(),
+                input.name.as_str(),
+                input.full_name.as_str(),
+                input.service_account_id.to_string(),
+                input.status.as_str(),
+                bool_to_i64(input.settings.inline_review_enabled),
+                bool_to_i64(input.settings.pr_summary_enabled),
+                bool_to_i64(input.settings.diagrams_enabled),
+                bool_to_i64(input.settings.linked_issue_detection_enabled),
+                bool_to_i64(input.settings.linked_issue_assessment_enabled),
+                input.settings.default_model_key.as_deref(),
+                input.settings.max_inline_comments,
+                bool_to_i64(input.settings.request_changes_on_high_severity),
+                settings_json,
+                input.updated_at.unix_timestamp(),
+                input.repository_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        // Read inside the transaction, so `current` is the row this update wrote.
+        let current = load_repository(&tx, input.repository_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Updated {
+            current,
+            previous: Some(existing),
+        })
     }
 
     async fn set_review_agent_repository_status(
@@ -387,21 +402,30 @@ impl ReviewAgentRepository for LibsqlStore {
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError> {
-        let rows = self
-            .connection
-            .execute(
-                "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3",
-                libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
-            )
-            .await
-            .map_err(to_write_error)?;
-        if rows == 0 {
-            return Err(StoreError::NotFound(format!(
-                "review agent repository `{repository_id}` was not found"
-            )));
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    > {
+        // An immediate transaction holds the write lock, so the status read here is
+        // the one this call replaces. Only a different status is written.
+        let tx = self.begin_transaction().await?;
+        let existing = load_repository(&tx, repository_id).await?;
+        if existing.status == status {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok((existing, None));
         }
-        load_repository(&self.connection, repository_id).await
+        tx.execute(
+            "UPDATE review_agent_repositories SET status = ?1, updated_at = ?2 WHERE repository_id = ?3",
+            libsql::params![status.as_str(), updated_at.unix_timestamp(), repository_id.to_string()],
+        )
+        .await
+        .map_err(to_write_error)?;
+        let current = load_repository(&tx, repository_id).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok((current, Some(existing.status)))
     }
 
     async fn upsert_review_agent_pull_request(

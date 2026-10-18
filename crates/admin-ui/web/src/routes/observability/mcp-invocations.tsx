@@ -1,4 +1,11 @@
-import { useEffect, useState, useTransition, type ReactNode } from 'react'
+import {
+  useEffect,
+  useState,
+  useTransition,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -48,6 +55,7 @@ const initialFilters: McpInvocationFiltersInput = {
   request_id: '',
   server_display_key: '',
   tool_display_key: '',
+  mcp_method: '',
   api_key_id: '',
   user_id: '',
   team_id: '',
@@ -58,7 +66,6 @@ const initialFilters: McpInvocationFiltersInput = {
 }
 
 // Filters, selection, and detail loading share one MCP invocation explorer state.
-// oxlint-disable-next-line eslint/max-lines-per-function
 export function McpInvocationsPage() {
   const { data: invocationPage } = Route.useLoaderData()
   const search = Route.useSearch()
@@ -113,10 +120,6 @@ export function McpInvocationsPage() {
     }
   }, [selectedInvocationId])
 
-  function updateFilter(key: keyof McpInvocationFiltersInput, value: string) {
-    setFilters((current) => ({ ...current, [key]: value }))
-  }
-
   function applyFilters(nextFilters: McpInvocationFiltersInput) {
     startListTransition(async () => {
       await router.navigate({
@@ -125,8 +128,6 @@ export function McpInvocationsPage() {
       })
     })
   }
-
-  const normalizedFilters = normalizeFilterSearch(filters)
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -144,243 +145,22 @@ export function McpInvocationsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <FieldGroup className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-request-id">Request ID</FieldLabel>
-              <Input
-                id="mcp-filter-request-id"
-                data-testid="mcp-filter-request-id"
-                placeholder="req_..."
-                value={filters.request_id ?? ''}
-                onChange={(event) => updateFilter('request_id', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-server">Server</FieldLabel>
-              <Input
-                id="mcp-filter-server"
-                data-testid="mcp-filter-server"
-                placeholder="github"
-                value={filters.server_display_key ?? ''}
-                onChange={(event) => updateFilter('server_display_key', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-tool">Tool</FieldLabel>
-              <Input
-                id="mcp-filter-tool"
-                data-testid="mcp-filter-tool"
-                placeholder="create_issue"
-                value={filters.tool_display_key ?? ''}
-                onChange={(event) => updateFilter('tool_display_key', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-api-key">API Key</FieldLabel>
-              <Input
-                id="mcp-filter-api-key"
-                data-testid="mcp-filter-api-key"
-                placeholder="api_key_..."
-                value={filters.api_key_id ?? ''}
-                onChange={(event) => updateFilter('api_key_id', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-user">User</FieldLabel>
-              <Input
-                id="mcp-filter-user"
-                data-testid="mcp-filter-user"
-                placeholder="user_..."
-                value={filters.user_id ?? ''}
-                onChange={(event) => updateFilter('user_id', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-team">Team</FieldLabel>
-              <Input
-                id="mcp-filter-team"
-                data-testid="mcp-filter-team"
-                placeholder="team_..."
-                value={filters.team_id ?? ''}
-                onChange={(event) => updateFilter('team_id', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Status</FieldLabel>
-              <Select
-                value={filters.status ?? 'all'}
-                onValueChange={(value) =>
-                  setFilters((current) => ({
-                    ...current,
-                    status: value === 'all' ? undefined : (value as McpInvocationStatus),
-                  }))
-                }
-              >
-                <SelectTrigger data-testid="mcp-filter-status" className="w-full">
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="success">Success</SelectItem>
-                    <SelectItem value="unauthorized">Unauthorized</SelectItem>
-                    <SelectItem value="policy_denied">Policy denied</SelectItem>
-                    <SelectItem value="upstream_error">Upstream error</SelectItem>
-                    <SelectItem value="gateway_error">Gateway error</SelectItem>
-                    <SelectItem value="timeout">Timeout</SelectItem>
-                    <SelectItem value="invalid_request">Invalid request</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel>Policy</FieldLabel>
-              <Select
-                value={filters.policy_result ?? 'all'}
-                onValueChange={(value) =>
-                  setFilters((current) => ({
-                    ...current,
-                    policy_result: value === 'all' ? undefined : value,
-                  }))
-                }
-              >
-                <SelectTrigger data-testid="mcp-filter-policy" className="w-full">
-                  <SelectValue placeholder="All policy results" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All policies</SelectItem>
-                    <SelectItem value="allowed">Allowed</SelectItem>
-                    <SelectItem value="denied">Denied</SelectItem>
-                    <SelectItem value="not_evaluated">Not evaluated</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-from">From</FieldLabel>
-              <Input
-                id="mcp-filter-from"
-                data-testid="mcp-filter-from"
-                placeholder="2026-05-10T00:00:00Z"
-                value={filters.occurred_at_start ?? ''}
-                onChange={(event) => updateFilter('occurred_at_start', event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-filter-to">To</FieldLabel>
-              <Input
-                id="mcp-filter-to"
-                data-testid="mcp-filter-to"
-                placeholder="2026-05-11T00:00:00Z"
-                value={filters.occurred_at_end ?? ''}
-                onChange={(event) => updateFilter('occurred_at_end', event.target.value)}
-              />
-            </Field>
-          </FieldGroup>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => applyFilters(normalizedFilters)}
-              disabled={isListPending}
-            >
-              {isListPending ? 'Filtering...' : 'Apply Filters'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setFilters(initialFilters)
-                applyFilters(initialFilters)
-              }}
-              disabled={isListPending}
-            >
-              Clear
-            </Button>
-          </div>
+          <InvocationFilters
+            filters={filters}
+            setFilters={setFilters}
+            pending={isListPending}
+            onApply={() => applyFilters(normalizeFilterSearch(filters))}
+            onClear={() => {
+              setFilters(initialFilters)
+              applyFilters(initialFilters)
+            }}
+          />
 
           <div className="text-muted-foreground text-sm">
             {invocationPage.total} MCP invocation records loaded from gateway observability APIs.
           </div>
 
-          {invocationPage.items.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>No MCP invocations found</EmptyTitle>
-                <EmptyDescription>
-                  No tool calls match the current filters or the gateway has not recorded MCP
-                  invocation rows yet.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="border-border overflow-x-auto rounded-md border">
-              <Table data-testid="mcp-invocations-table" className="min-w-[78rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Request</TableHead>
-                    <TableHead>Owner Context</TableHead>
-                    <TableHead>Server</TableHead>
-                    <TableHead>Tool</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Policy</TableHead>
-                    <TableHead>Latency</TableHead>
-                    <TableHead>Payload</TableHead>
-                    <TableHead>Inspect</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invocationPage.items.map((item) => (
-                    <TableRow key={item.mcp_tool_invocation_id}>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <span className="font-mono text-xs">{item.request_id ?? 'n/a'}</span>
-                          <span className="text-muted-foreground font-mono text-xs">
-                            {item.mcp_tool_invocation_id}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <OwnerLabel item={item} />
-                      </TableCell>
-                      <TableCell className="font-mono">{item.server_display_key}</TableCell>
-                      <TableCell className="font-mono">{item.tool_display_key}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <Badge variant={statusBadgeVariant(item.status)}>
-                            {formatStatus(item.status)}
-                          </Badge>
-                          {item.error_code ? (
-                            <span className="text-muted-foreground text-xs">{item.error_code}</span>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={policyBadgeVariant(item.policy_result)}>
-                          {formatPolicyResult(item.policy_result)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{formatLatency(item.latency_ms)}</TableCell>
-                      <TableCell>
-                        <PayloadBadges item={item} />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => setSelectedInvocationId(item.mcp_tool_invocation_id)}
-                        >
-                          Inspect
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <InvocationTable items={invocationPage.items} onInspect={setSelectedInvocationId} />
         </CardContent>
       </Card>
 
@@ -418,6 +198,225 @@ export function McpInvocationsPage() {
   )
 }
 
+type TextFilter = {
+  key: Exclude<keyof McpInvocationFiltersInput, 'status' | 'policy_result'>
+  id: string
+  label: string
+  placeholder: string
+}
+
+const identityFilters: TextFilter[] = [
+  { key: 'request_id', id: 'mcp-filter-request-id', label: 'Request ID', placeholder: 'req_...' },
+  { key: 'server_display_key', id: 'mcp-filter-server', label: 'Server', placeholder: 'github' },
+  { key: 'tool_display_key', id: 'mcp-filter-tool', label: 'Target', placeholder: 'create_issue' },
+  { key: 'mcp_method', id: 'mcp-filter-method', label: 'Method', placeholder: 'resources/read' },
+  { key: 'api_key_id', id: 'mcp-filter-api-key', label: 'API Key', placeholder: 'api_key_...' },
+  { key: 'user_id', id: 'mcp-filter-user', label: 'User', placeholder: 'user_...' },
+  { key: 'team_id', id: 'mcp-filter-team', label: 'Team', placeholder: 'team_...' },
+]
+
+const timeFilters: TextFilter[] = [
+  {
+    key: 'occurred_at_start',
+    id: 'mcp-filter-from',
+    label: 'From',
+    placeholder: '2026-05-10T00:00:00Z',
+  },
+  { key: 'occurred_at_end', id: 'mcp-filter-to', label: 'To', placeholder: '2026-05-11T00:00:00Z' },
+]
+
+function InvocationFilters({
+  filters,
+  setFilters,
+  pending,
+  onApply,
+  onClear,
+}: {
+  filters: McpInvocationFiltersInput
+  setFilters: Dispatch<SetStateAction<McpInvocationFiltersInput>>
+  pending: boolean
+  onApply: () => void
+  onClear: () => void
+}) {
+  function renderTextFilter(filter: TextFilter) {
+    return (
+      <Field key={filter.id}>
+        <FieldLabel htmlFor={filter.id}>{filter.label}</FieldLabel>
+        <Input
+          id={filter.id}
+          data-testid={filter.id}
+          placeholder={filter.placeholder}
+          value={filters[filter.key] ?? ''}
+          onChange={(event) =>
+            setFilters((current) => ({ ...current, [filter.key]: event.target.value }))
+          }
+        />
+      </Field>
+    )
+  }
+
+  return (
+    <>
+      <FieldGroup className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {identityFilters.map(renderTextFilter)}
+        <Field>
+          <FieldLabel>Status</FieldLabel>
+          <Select
+            value={filters.status ?? 'all'}
+            onValueChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                status: value === 'all' ? undefined : (value as McpInvocationStatus),
+              }))
+            }
+          >
+            <SelectTrigger data-testid="mcp-filter-status" className="w-full">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="unauthorized">Unauthorized</SelectItem>
+                <SelectItem value="policy_denied">Policy denied</SelectItem>
+                <SelectItem value="upstream_error">Upstream error</SelectItem>
+                <SelectItem value="gateway_error">Gateway error</SelectItem>
+                <SelectItem value="timeout">Timeout</SelectItem>
+                <SelectItem value="invalid_request">Invalid request</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field>
+          <FieldLabel>Policy</FieldLabel>
+          <Select
+            value={filters.policy_result ?? 'all'}
+            onValueChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                policy_result: value === 'all' ? undefined : value,
+              }))
+            }
+          >
+            <SelectTrigger data-testid="mcp-filter-policy" className="w-full">
+              <SelectValue placeholder="All policy results" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All policies</SelectItem>
+                <SelectItem value="allowed">Allowed</SelectItem>
+                <SelectItem value="denied">Denied</SelectItem>
+                <SelectItem value="not_evaluated">Not evaluated</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        {timeFilters.map(renderTextFilter)}
+      </FieldGroup>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="secondary" onClick={onApply} disabled={pending}>
+          {pending ? 'Filtering...' : 'Apply Filters'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onClear} disabled={pending}>
+          Clear
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function InvocationTable({
+  items,
+  onInspect,
+}: {
+  items: McpInvocationView[]
+  onInspect: (invocationId: string) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No MCP invocations found</EmptyTitle>
+          <EmptyDescription>
+            No MCP calls match the current filters or the gateway has not recorded MCP invocation
+            rows yet.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
+  }
+
+  return (
+    <div className="border-border overflow-x-auto rounded-md border">
+      <Table data-testid="mcp-invocations-table" className="min-w-[84rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Request</TableHead>
+            <TableHead>Owner Context</TableHead>
+            <TableHead>Server</TableHead>
+            <TableHead>Method</TableHead>
+            <TableHead>Target</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Policy</TableHead>
+            <TableHead>Latency</TableHead>
+            <TableHead>Payload</TableHead>
+            <TableHead>Inspect</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.mcp_tool_invocation_id}>
+              <TableCell>
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-xs">{item.request_id ?? 'n/a'}</span>
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {item.mcp_tool_invocation_id}
+                  </span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <OwnerLabel item={item} />
+              </TableCell>
+              <TableCell className="font-mono">{item.server_display_key}</TableCell>
+              <TableCell className="font-mono">{item.mcp_method}</TableCell>
+              <TableCell className="font-mono">{item.tool_display_key}</TableCell>
+              <TableCell>
+                <div className="flex flex-col gap-1">
+                  <Badge variant={statusBadgeVariant(item.status)}>
+                    {formatStatus(item.status)}
+                  </Badge>
+                  {item.error_code ? (
+                    <span className="text-muted-foreground text-xs">{item.error_code}</span>
+                  ) : null}
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge variant={policyBadgeVariant(item.policy_result)}>
+                  {formatPolicyResult(item.policy_result)}
+                </Badge>
+              </TableCell>
+              <TableCell>{formatLatency(item.latency_ms)}</TableCell>
+              <TableCell>
+                <PayloadBadges item={item} />
+              </TableCell>
+              <TableCell>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => onInspect(item.mcp_tool_invocation_id)}
+                >
+                  Inspect
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
 function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
   const { invocation } = detail
 
@@ -431,7 +430,15 @@ function InvocationDetail({ detail }: { detail: McpInvocationDetailView }) {
         <DetailRow label="User" value={invocation.user_id ?? 'n/a'} mono />
         <DetailRow label="Team" value={invocation.team_id ?? 'n/a'} mono />
         <DetailRow label="Server" value={invocation.server_display_key} mono />
-        <DetailRow label="Tool" value={invocation.tool_display_key} mono />
+        <DetailRow label="Method" value={invocation.mcp_method} mono />
+        <DetailRow label="Target" value={invocation.tool_display_key} mono />
+        <DetailRow
+          label="Tool version"
+          value={
+            invocation.tool_schema_version == null ? 'n/a' : String(invocation.tool_schema_version)
+          }
+          mono
+        />
         <DetailRow label="Occurred At" value={invocation.occurred_at} />
         <DetailRow label="Latency" value={formatLatency(invocation.latency_ms)} />
         <DetailRow
@@ -645,6 +652,7 @@ function normalizeFilterSearch(search: Record<string, unknown>): McpInvocationFi
     request_id: searchParamValue(search.request_id),
     server_display_key: searchParamValue(search.server_display_key),
     tool_display_key: searchParamValue(search.tool_display_key),
+    mcp_method: searchParamValue(search.mcp_method),
     api_key_id: searchParamValue(search.api_key_id),
     user_id: searchParamValue(search.user_id),
     team_id: searchParamValue(search.team_id),

@@ -418,6 +418,47 @@ mod tests {
         assert!(matches!(error, StoreError::PricingSyncConflict));
     }
 
+    async fn assert_fallback_lookup_prefers_exact_id(store: &impl PricingCatalogRepository) {
+        let occurred_at = pricing_record(Uuid::new_v4()).effective_start_at;
+        let resolve = |model_id| {
+            store.resolve_model_pricing_with_fallback_at(
+                "openai",
+                model_id,
+                "fallback-model@default",
+                occurred_at,
+            )
+        };
+
+        assert!(
+            resolve("fallback-model")
+                .await
+                .expect("resolve without rows")
+                .is_none()
+        );
+
+        let fallback = pricing_record_for_model(Uuid::new_v4(), "fallback-model@default");
+        store
+            .insert_model_pricing(&fallback)
+            .await
+            .expect("insert fallback pricing");
+        let resolved = resolve("fallback-model")
+            .await
+            .expect("resolve fallback")
+            .expect("fallback row");
+        assert_eq!(resolved.pricing_model_id, "fallback-model@default");
+
+        let exact = pricing_record_for_model(Uuid::new_v4(), "fallback-model");
+        store
+            .insert_model_pricing(&exact)
+            .await
+            .expect("insert exact pricing");
+        let resolved = resolve("fallback-model")
+            .await
+            .expect("resolve exact")
+            .expect("exact row");
+        assert_eq!(resolved.pricing_model_id, "fallback-model");
+    }
+
     #[tokio::test]
     #[serial]
     async fn libsql_rejects_stale_reconciliation_and_catalog_rollback() {
@@ -438,6 +479,7 @@ mod tests {
         .await;
         assert_concurrent_syncs_serialize(store.clone(), second_store).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
+        assert_fallback_lookup_prefers_exact_id(&store).await;
     }
 
     #[tokio::test]
@@ -478,6 +520,7 @@ mod tests {
             .await;
         assert_concurrent_syncs_serialize(store.clone(), store.clone()).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
+        assert_fallback_lookup_prefers_exact_id(&store).await;
 
         drop(store);
         let admin_pool = sqlx::postgres::PgPoolOptions::new()

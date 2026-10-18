@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
-    GatewayError, McpRegistryRepository, NewExternalMcpServerRecord, StoreError,
+    GatewayError, McpRegistryRepository, McpToolMetadata, NewExternalMcpServerRecord, StoreError,
     UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
 };
 use gateway_mcp::{McpClientError, NormalizedMcpTool, StreamableHttpClient};
@@ -20,9 +20,11 @@ use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 use uuid::Uuid;
 
+use crate::admin_audit::AuditProgress;
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, mcp_oauth_server_config, normalize_mcp_server_key,
-    supports_public_discovery, validate_mcp_auth_config, validate_mcp_server_auth_destination,
+    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, mcp_oauth_server_config,
+    normalize_mcp_server_key, supports_public_discovery, validate_mcp_auth_config,
+    validate_mcp_server_auth_destination,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -57,6 +59,8 @@ pub struct CreateExternalMcpServerInput {
     pub auth_mode: Option<String>,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Off when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +71,8 @@ pub struct UpdateExternalMcpServerInput {
     pub auth_mode: String,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Kept as it is when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +103,10 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
         let timeout = Duration::from_millis(server.timeout_ms.max(1) as u64);
+        let query_credential = gateway_mcp_upstream_query(server)
+            .map_err(|error| McpClientError::InvalidHeader(error.to_string()))?;
         StreamableHttpClient::new(&server.server_url, timeout)?
+            .with_query_credential(query_credential)
             .list_tools(headers)
             .await
     }
@@ -152,6 +161,7 @@ where
         &self,
         input: CreateExternalMcpServerInput,
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
+        let approve_tool_changes = input.approve_tool_changes.unwrap_or(false);
         let resolved = self.resolve_create_input(input)?;
         let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
@@ -188,17 +198,20 @@ where
                 auth_config: resolved.auth_config,
                 timeout_ms,
                 created_at: now,
+                approve_tool_changes,
             })
             .await
             .map_err(Into::into)
     }
 
+    /// Saves the server's settings. Nothing is written when they already match, and
+    /// the result then carries no previous record.
     pub async fn update_server(
         &self,
         mcp_server_id: Uuid,
         input: UpdateExternalMcpServerInput,
-    ) -> Result<ExternalMcpServerRecord, GatewayError> {
-        self.server_or_not_found(mcp_server_id).await?;
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, GatewayError> {
+        let existing = self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
@@ -215,15 +228,19 @@ where
                 auth_config: input.auth_config,
                 timeout_ms,
                 updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: input
+                    .approve_tool_changes
+                    .unwrap_or(existing.approve_tool_changes),
             })
             .await
             .map_err(Into::into)
     }
 
+    /// Disables the server; the flag is `false` when it was already disabled.
     pub async fn disable_server(
         &self,
         mcp_server_id: Uuid,
-    ) -> Result<ExternalMcpServerRecord, GatewayError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
         self.repo
             .disable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -246,6 +263,17 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<McpDiscoveryResult, GatewayError> {
+        self.refresh_discovery_tracked(mcp_server_id, &AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_discovery`]; `progress` is marked once the discovery run
+    /// is stored, so an audit entry can record a refresh whose reload fails afterwards.
+    pub async fn refresh_discovery_tracked(
+        &self,
+        mcp_server_id: Uuid,
+        progress: &AuditProgress,
+    ) -> Result<McpDiscoveryResult, GatewayError> {
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
         let server = self.server_or_not_found(mcp_server_id).await?;
@@ -257,6 +285,7 @@ where
                     OffsetDateTime::now_utc(),
                     Some("external MCP server is disabled".to_string()),
                     json!({"reason": "disabled"}),
+                    progress,
                 )
                 .await;
         }
@@ -271,12 +300,17 @@ where
                         "server auth mode requires per-user credentials for discovery".to_string(),
                     ),
                     json!({"auth_mode": auth_mode}),
+                    progress,
                 )
                 .await;
         }
 
         let started_at = OffsetDateTime::now_utc();
-        let headers = match gateway_mcp_upstream_headers(&server) {
+        // The query credential is resolved again by the client; checking it here
+        // records a missing secret as a configuration failure.
+        let headers = match gateway_mcp_upstream_headers(&server)
+            .and_then(|headers| gateway_mcp_upstream_query(&server).map(|_| headers))
+        {
             Ok(headers) => headers,
             Err(error) => {
                 return self
@@ -286,6 +320,7 @@ where
                         started_at,
                         Some(bounded_error_summary(error.to_string())),
                         json!({"reason": "invalid_discovery_auth_config"}),
+                        progress,
                     )
                     .await;
             }
@@ -310,6 +345,11 @@ where
                         display_name: tool.name.clone(),
                         description: tool.description.clone(),
                         input_schema: tool.input_schema.clone(),
+                        metadata: McpToolMetadata {
+                            title: tool.title.clone(),
+                            annotations: tool.annotations.clone(),
+                            output_schema: tool.output_schema.clone(),
+                        },
                         schema_hash: tool.schema_hash.clone(),
                     })
                     .collect::<Vec<_>>();
@@ -333,6 +373,7 @@ where
                     .repo
                     .record_external_mcp_discovery_success(&run, &upserts)
                     .await?;
+                progress.landed_on(server.mcp_server_id);
                 let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
                 Ok(McpDiscoveryResult {
                     server: refreshed_server,
@@ -349,6 +390,7 @@ where
                     started_at,
                     Some(summary),
                     json!({"client_error": classify_client_error(&error)}),
+                    progress,
                 )
                 .await
             }
@@ -439,6 +481,7 @@ where
         started_at: OffsetDateTime,
         error_summary: Option<String>,
         details: Value,
+        progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
@@ -456,6 +499,7 @@ where
         self.repo
             .record_external_mcp_discovery_failure(&run)
             .await?;
+        progress.landed_on(server.mcp_server_id);
         let refreshed_server = self.server_or_not_found(server.mcp_server_id).await?;
         let tools = self
             .repo
@@ -708,6 +752,7 @@ mod tests {
                 auth_mode: Some(ExternalMcpAuthMode::None.as_str().to_string()),
                 auth_config: Map::new(),
                 timeout_ms: None,
+                approve_tool_changes: None,
             })
             .expect("resolve input");
 
@@ -732,6 +777,55 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for NoopMcpRegistryRepository {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tool(
+            &self,
+            _mcp_tool_id: Uuid,
+        ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tools(
+            &self,
+            _mcp_tool_ids: &[Uuid],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_tags(
+            &self,
+            _mcp_tool_id: Uuid,
+            _tags: &[String],
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_annotation_overrides(
+            &self,
+            _mcp_tool_id: Uuid,
+            _overrides: &gateway_core::McpAnnotationOverrides,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_external_mcp_servers(
             &self,
             _include_disabled: bool,
@@ -763,7 +857,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
             unimplemented!()
         }
 
@@ -771,7 +865,7 @@ mod tests {
             &self,
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             unimplemented!()
         }
 

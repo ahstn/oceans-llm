@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, IdentityRepository, McpAccessRepository,
-    McpCatalogToolRecord,
+    McpCatalogToolRecord, mcp_tool_policy::effective_annotations,
 };
 use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use url::Url;
 use uuid::Uuid;
 
@@ -82,7 +82,11 @@ pub struct McpCatalogToolSummary {
     pub mcp_tool_id: Uuid,
     pub upstream_name: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
     pub schema_version: i64,
 }
@@ -92,8 +96,14 @@ pub struct McpCatalogToolDescription {
     pub mcp_tool_id: Uuid,
     pub upstream_name: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: Option<String>,
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Map<String, Value>>,
     pub schema_hash: String,
     pub schema_version: i64,
 }
@@ -170,6 +180,7 @@ where
     ) -> Result<DescribeMcpToolOutput, GatewayError> {
         let parsed = parse_tool_address(&input.address)?;
         let record = self.authorized_tool(auth, &parsed).await?;
+        let annotations = effective_annotations(&record.tool);
         Ok(DescribeMcpToolOutput {
             address: tool_address(&record.server.server_key, &record.tool.upstream_name)?,
             server: server_view(&record),
@@ -177,8 +188,11 @@ where
                 mcp_tool_id: record.tool.mcp_tool_id,
                 upstream_name: record.tool.upstream_name,
                 display_name: record.tool.display_name,
+                title: record.tool.metadata.title,
                 description: record.tool.description,
                 input_schema: record.tool.input_schema,
+                output_schema: record.tool.metadata.output_schema,
+                annotations,
                 schema_hash: record.tool.schema_hash,
                 schema_version: record.tool.schema_version,
             },
@@ -194,17 +208,44 @@ where
         self.authorized_tool(auth, &parsed).await
     }
 
+    /// The tools `auth` may see. An API key's MCP server list applies here,
+    /// on the credential, so grant resolution itself never changes: a filter
+    /// on an unlisted server resolves nothing, and without a filter each
+    /// listed server is resolved on its own, so tools on unlisted servers are
+    /// never loaded.
     async fn authorized_catalog(
         &self,
         auth: &AuthenticatedApiKey,
         server_key: Option<&str>,
     ) -> Result<gateway_core::McpCatalogAccessResolution, GatewayError> {
+        if server_key.is_some_and(|server_key| !auth.allows_mcp_server(server_key)) {
+            return Ok(gateway_core::McpCatalogAccessResolution::default());
+        }
         let access = McpAccess::new(self.repo.clone());
         let subjects = access.grant_subjects(auth).await?;
-        Ok(self
-            .repo
-            .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
-            .await?)
+        let listed = match (server_key, auth.access.mcp_server_keys.as_deref()) {
+            (None, Some(listed)) => listed,
+            (server_key, _) => {
+                return Ok(self
+                    .repo
+                    .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
+                    .await?);
+            }
+        };
+        // Listed keys are stored sorted, so the combined tools keep the
+        // store's server-then-tool order.
+        let mut combined = gateway_core::McpCatalogAccessResolution::default();
+        for server_key in listed {
+            let resolution = self
+                .repo
+                .resolve_mcp_catalog_access_for_subjects(&subjects, Some(server_key))
+                .await?;
+            combined.referenced_server_count += resolution.referenced_server_count;
+            combined.exposed_tool_count += resolution.exposed_tool_count;
+            combined.filtered_tool_count += resolution.filtered_tool_count;
+            combined.allowed_tools.extend(resolution.allowed_tools);
+        }
+        Ok(combined)
     }
 
     async fn authorized_tool(
@@ -293,6 +334,7 @@ fn search_item(
     record: McpCatalogToolRecord,
     score: i64,
 ) -> Result<McpCatalogSearchItem, GatewayError> {
+    let annotations = effective_annotations(&record.tool);
     Ok(McpCatalogSearchItem {
         address: tool_address(&record.server.server_key, &record.tool.upstream_name)?,
         score,
@@ -301,7 +343,9 @@ fn search_item(
             mcp_tool_id: record.tool.mcp_tool_id,
             upstream_name: record.tool.upstream_name,
             display_name: record.tool.display_name,
+            title: record.tool.metadata.title,
             description: record.tool.description,
+            annotations,
             schema_hash: record.tool.schema_hash,
             schema_version: record.tool.schema_version,
         },
@@ -324,6 +368,7 @@ fn score_record(record: &McpCatalogToolRecord, query_tokens: &[String]) -> i64 {
     let name_fields = [
         record.tool.upstream_name.as_str(),
         record.tool.display_name.as_str(),
+        record.tool.metadata.title.as_deref().unwrap_or_default(),
     ];
     let description_fields = [
         record.tool.description.as_deref().unwrap_or_default(),

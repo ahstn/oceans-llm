@@ -16,6 +16,7 @@ pub enum AdminPage {
     ReviewAgent,
     UsageCosts,
     SpendControls,
+    RateLimits,
     Leaderboard,
     AgentHarnesses,
     AgentSessions,
@@ -57,6 +58,7 @@ impl fmt::Display for AdminPage {
             Self::ReviewAgent => "review_agent",
             Self::UsageCosts => "usage_costs",
             Self::SpendControls => "spend_controls",
+            Self::RateLimits => "rate_limits",
             Self::Leaderboard => "leaderboard",
             Self::AgentHarnesses => "agent_harnesses",
             Self::AgentSessions => "agent_sessions",
@@ -225,6 +227,7 @@ const ADMIN_PAGE_ORDER: &[AdminPage] = &[
     AdminPage::ReviewAgent,
     AdminPage::UsageCosts,
     AdminPage::SpendControls,
+    AdminPage::RateLimits,
     AdminPage::Leaderboard,
     AdminPage::AgentHarnesses,
     AdminPage::AgentSessions,
@@ -271,6 +274,7 @@ const DEFAULT_PLATFORM_ADMIN_PAGES: &[AdminPage] = &[
     AdminPage::Mcp,
     AdminPage::ReviewAgent,
     AdminPage::SpendControls,
+    AdminPage::RateLimits,
 ];
 
 const ADMIN_ACTION_ORDER: &[AdminAction] = &[

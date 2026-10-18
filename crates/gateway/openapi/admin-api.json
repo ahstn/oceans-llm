@@ -149,6 +149,52 @@
         ]
       }
     },
+    "/api/v1/admin/api-keys/{api_key_id}/scopes": {
+      "put": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "update_api_key_scopes",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "description": "API key identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyScopesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpdateApiKeyScopesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
       "post": {
         "tags": [
@@ -173,6 +219,164 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_RevealApiKeySecretResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "list_audit_logs",
+        "parameters": [
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "description": "Only entries made by this user.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Exact action name, such as `api_key.created`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "occurred_at_start",
+            "in": "query",
+            "description": "RFC 3339 lower bound, inclusive.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "occurred_at_end",
+            "in": "query",
+            "description": "RFC 3339 upper bound, inclusive.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "`next_cursor` from the previous page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AuditLogPageView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs/{audit_log_id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "get_audit_log",
+        "parameters": [
+          {
+            "name": "audit_log_id",
+            "in": "path",
+            "description": "Audit log entry identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AuditLogView"
                 }
               }
             }
@@ -1061,6 +1265,118 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/authorized-clients": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "admin_list_authorized_mcp_clients",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "description": "User whose authorized clients to list.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedMcpClientsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/authorized-clients/revoke": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "admin_revoke_authorized_mcp_clients",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRevokeAuthorizedMcpClientsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthorizedMcpClientsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/connection-info": {
       "get": {
         "tags": [
@@ -1458,6 +1774,52 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/oauth-discovery": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Reads an MCP server's OAuth metadata so an admin can register it by URL.\nNothing is stored; the admin saves the suggested auth config, or an\nedited copy, with the server.",
+        "operationId": "discover_mcp_server_oauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpOauthDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpOauthDiscoveryPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/recommended-servers": {
       "get": {
         "tags": [
@@ -1776,6 +2138,639 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Replaces the tool's annotation overrides. Overrides never change the\nschema hash or version, and the upstream values stay visible.",
+        "operationId": "set_mcp_tool_annotation_overrides",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMcpToolAnnotationOverridesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "set_mcp_tool_tags",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMcpToolTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_tool_versions",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_versions",
+            "in": "query",
+            "description": "Comma-separated version numbers to read, at most 10. A review diff asks\nfor the approved and pending versions. Paging is ignored when set.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Read versions older than this one.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100. Defaults to 20.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolVersionsPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Approves a pending version, which becomes the served definition.",
+        "operationId": "approve_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to approve",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Rejects a pending version. A text-only change keeps serving the previous\nversion; a new tool or a contract change stays withheld.",
+        "operationId": "reject_mcp_tool_version",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tool_id",
+            "in": "path",
+            "description": "MCP tool identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "path",
+            "description": "Pending version to reject",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_tag_rules",
+        "parameters": [
+          {
+            "name": "subject_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulesPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "create_mcp_tag_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpTagRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulePayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules/preview": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Lists the active tools a rule would select, before it is saved.",
+        "operationId": "preview_mcp_tag_rule",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "effect",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulePreviewPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/tag-rules/{rule_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "revoke_mcp_tag_rule",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "description": "MCP tag rule identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpTagRulesPayload"
+                }
+              }
+            }
+          },
+          "400": {
             "description": "",
             "content": {
               "application/json": {
@@ -2705,6 +3700,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "mcp_method",
+            "in": "query",
+            "description": "MCP JSON-RPC method, such as `tools/call` or `resources/read`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -3004,6 +4011,144 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/rate-limits": {
+      "get": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "list_rate_limit_policies",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPoliciesView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "create_rate_limit_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimitPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/rate-limits/{policy_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "delete_rate_limit_policy",
+        "parameters": [
+          {
+            "name": "policy_id",
+            "in": "path",
+            "description": "Rate-limit policy id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "crate::http::rate_limit_policies"
+        ],
+        "operationId": "update_rate_limit_policy",
+        "parameters": [
+          {
+            "name": "policy_id",
+            "in": "path",
+            "description": "Rate-limit policy id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimitPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RateLimitPolicyView"
                 }
               }
             }
@@ -4545,6 +5690,92 @@
         ]
       }
     },
+    "/api/v1/mcp/oauth/callback": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "summary": "The callback for servers whose authorization server is configured on the\nserver row, including dynamically registered clients.",
+        "operationId": "mcp_oauth_server_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to the connection page"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mcp/oauth/client-metadata.json": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_oauth"
+        ],
+        "summary": "The Client ID Metadata Document whose URL is Oceans' client ID at\nauthorization servers that accept metadata documents instead of dynamic\nclient registration. It is public by design.",
+        "operationId": "mcp_oauth_client_metadata_document",
+        "responses": {
+          "200": {
+            "description": "OAuth Client ID Metadata Document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mcp/oauth/connections": {
       "get": {
         "tags": [
@@ -4788,6 +6019,97 @@
         ]
       }
     },
+    "/api/v1/me/authorized-mcp-clients": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "list_my_authorized_mcp_clients",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedMcpClientsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/authorized-mcp-clients/{grant_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "revoke_my_authorized_mcp_client",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthorizedMcpClientsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/profile": {
       "get": {
         "tags": [
@@ -4967,6 +6289,148 @@
               "text/csv": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/oauth/authorization-requests/{request_id}": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "get_oauth_authorization_request",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Authorization request identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthAuthorizationRequestView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/oauth/authorization-requests/{request_id}/decision": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_client_oauth"
+        ],
+        "operationId": "decide_oauth_authorization_request",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Authorization request identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OauthAuthorizationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthAuthorizationDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
                 }
               }
             }
@@ -6224,6 +7688,21 @@
           "reveal_api_key"
         ]
       },
+      "AdminApiKeyMcpServerView": {
+        "type": "object",
+        "required": [
+          "key",
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
       "AdminApiKeyModelView": {
         "type": "object",
         "required": [
@@ -6329,6 +7808,16 @@
               "null"
             ]
           },
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`null`: every MCP server the owner's grants reach."
+          },
           "model_grant_mode": {
             "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
@@ -6389,6 +7878,16 @@
               "null"
             ]
           },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`null`: full access, as for keys created before scopes existed."
+          },
           "status": {
             "type": "string"
           }
@@ -6400,14 +7899,30 @@
           "items",
           "users",
           "service_accounts",
-          "models"
+          "models",
+          "available_scopes",
+          "mcp_servers"
         ],
         "properties": {
+          "available_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scopes a key may carry, in display order."
+          },
           "items": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminApiKeyView"
             }
+          },
+          "mcp_servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyMcpServerView"
+            },
+            "description": "Active MCP servers, the options for a key's server list."
           },
           "models": {
             "type": "array",
@@ -7234,6 +8749,7 @@
           "review_agent",
           "usage_costs",
           "spend_controls",
+          "rate_limits",
           "leaderboard",
           "agent_harnesses",
           "agent_sessions",
@@ -7276,6 +8792,26 @@
           },
           "user_id": {
             "type": "string"
+          }
+        }
+      },
+      "AdminRevokeAuthorizedMcpClientsRequest": {
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "grant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Revoke only this grant; omit to revoke every client the user authorized."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -9506,6 +11042,194 @@
           "explicit"
         ]
       },
+      "AuditActorView": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "api_key_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "`user`, `api_key` or `system`."
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuditLogPageView": {
+        "type": "object",
+        "required": [
+          "items",
+          "limit",
+          "target_types"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditLogSummaryView"
+            },
+            "description": "Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`."
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to fetch the next page. Absent on the last page."
+          },
+          "target_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Known target types, for filter controls."
+          }
+        }
+      },
+      "AuditLogSummaryView": {
+        "type": "object",
+        "required": [
+          "id",
+          "occurred_at",
+          "actor",
+          "action",
+          "target_type"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActorView"
+          },
+          "id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "request_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuditLogView": {
+        "type": "object",
+        "description": "One entry with its redacted summaries.",
+        "required": [
+          "id",
+          "occurred_at",
+          "actor",
+          "action",
+          "target_type",
+          "metadata"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActorView"
+          },
+          "after": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "before": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "request_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AuthSessionCapabilitiesView": {
         "type": "object",
         "required": [
@@ -9627,6 +11351,95 @@
           },
           "user": {
             "$ref": "#/components/schemas/AuthSessionUserView"
+          }
+        }
+      },
+      "AuthorizedMcpClientView": {
+        "type": "object",
+        "description": "One MCP client that can still get tokens on the user's behalf.",
+        "required": [
+          "grant_id",
+          "client_id",
+          "resource",
+          "resource_kind",
+          "scopes",
+          "authorized_at",
+          "last_token_issued_at",
+          "expires_at"
+        ],
+        "properties": {
+          "authorized_at": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Self-asserted by the client at registration."
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "When the client's last usable token expires; never later than the\nadmin session that approved it."
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "last_token_issued_at": {
+            "type": "string",
+            "description": "When the client last received a token, at sign-in or refresh."
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_kind": {
+            "$ref": "#/components/schemas/OauthResourceKind"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OauthScopeView"
+            }
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuthorizedMcpClientsView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether OAuth sign-in for MCP clients is enabled on this gateway.\nWhile it is disabled, `items` still lists clients that would work\nagain if it were re-enabled."
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "More clients are authorized than `items` lists."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedMcpClientView"
+            },
+            "description": "The newest authorized clients, at most 100."
           }
         }
       },
@@ -10418,6 +12231,16 @@
           "model_keys"
         ],
         "properties": {
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Omit or `null` to reach every server the owner's grants reach."
+          },
           "model_grant_mode": {
             "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
@@ -10450,6 +12273,16 @@
               "string",
               "null"
             ]
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Omit or `null` for full access."
           }
         }
       },
@@ -10559,6 +12392,13 @@
       "CreateMcpServerRequest": {
         "type": "object",
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Off when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -10613,6 +12453,39 @@
             ]
           }
         }
+      },
+      "CreateMcpTagRuleRequest": {
+        "type": "object",
+        "required": [
+          "subject_kind",
+          "subject_id",
+          "tag",
+          "effect"
+        ],
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Required for `include`. Omit for an `exclude` rule on every server."
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "CreateMcpToolsetRequest": {
         "type": "object",
@@ -11053,14 +12926,30 @@
               "items",
               "users",
               "service_accounts",
-              "models"
+              "models",
+              "available_scopes",
+              "mcp_servers"
             ],
             "properties": {
+              "available_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Scopes a key may carry, in display order."
+              },
               "items": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AdminApiKeyView"
                 }
+              },
+              "mcp_servers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyMcpServerView"
+                },
+                "description": "Active MCP servers, the options for a key's server list."
               },
               "models": {
                 "type": "array",
@@ -11540,6 +13429,137 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AuditLogPageView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "limit",
+              "target_types"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLogSummaryView"
+                },
+                "description": "Entries without their summaries; fetch one with `GET /api/v1/admin/audit-logs/{id}`."
+              },
+              "limit": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Pass as `cursor` to fetch the next page. Absent on the last page."
+              },
+              "target_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Known target types, for filter controls."
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AuditLogView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "One entry with its redacted summaries.",
+            "required": [
+              "id",
+              "occurred_at",
+              "actor",
+              "action",
+              "target_type",
+              "metadata"
+            ],
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "actor": {
+                "$ref": "#/components/schemas/AuditActorView"
+              },
+              "after": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "before": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "occurred_at": {
+                "type": "string"
+              },
+              "request_ip": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "target_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "target_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "target_type": {
+                "type": "string"
+              },
+              "user_agent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },
@@ -12427,6 +14447,131 @@
           }
         }
       },
+      "Envelope_McpOauthDiscoveryPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "What OAuth metadata discovery found for an MCP server URL.",
+            "required": [
+              "resource",
+              "authorization_servers",
+              "issuer",
+              "authorization_server_metadata_url",
+              "authorization_endpoint",
+              "token_endpoint",
+              "scopes_supported",
+              "default_scopes",
+              "token_endpoint_auth_methods_supported",
+              "code_challenge_methods_supported",
+              "client_id_metadata_document_supported",
+              "recommended_client_registration",
+              "resource_indicator",
+              "warnings",
+              "suggested_auth_config"
+            ],
+            "properties": {
+              "authorization_endpoint": {
+                "type": "string"
+              },
+              "authorization_server_metadata_url": {
+                "type": "string"
+              },
+              "authorization_servers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "callback_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "client_id_metadata_document_supported": {
+                "type": "boolean"
+              },
+              "client_metadata_document_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "code_challenge_methods_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "recommended_client_registration": {
+                "type": "string",
+                "description": "`dynamic`, `metadata_document`, or `manual`."
+              },
+              "registration_endpoint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "resource": {
+                "type": "string"
+              },
+              "resource_indicator": {
+                "type": "boolean"
+              },
+              "resource_metadata_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scopes_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "suggested_auth_config": {
+                "type": "object",
+                "description": "An `oauth_obo` auth config to save with the server.",
+                "additionalProperties": true
+              },
+              "token_endpoint": {
+                "type": "string"
+              },
+              "token_endpoint_auth_methods_supported": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpServerPayload": {
         "type": "object",
         "required": [
@@ -12467,6 +14612,87 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpTagRulePayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "rule"
+            ],
+            "properties": {
+              "rule": {
+                "$ref": "#/components/schemas/McpTagRuleView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpTagRulePreviewPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tools",
+              "truncated"
+            ],
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolView"
+                },
+                "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+              },
+              "truncated": {
+                "type": "boolean",
+                "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpTagRulesPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpTagRuleView"
                 }
               }
             }
@@ -12545,6 +14771,64 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tool"
+            ],
+            "properties": {
+              "tool": {
+                "$ref": "#/components/schemas/McpToolView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolVersionView"
+                },
+                "description": "Newest first."
+              },
+              "next_before": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
               }
             }
           },
@@ -12849,6 +15133,128 @@
                 "items": {
                   "$ref": "#/components/schemas/PublicOidcProviderView"
                 }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_RateLimitPoliciesView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "policies"
+            ],
+            "properties": {
+              "policies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RateLimitPolicyView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_RateLimitPolicyView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "name",
+              "source",
+              "operation",
+              "scope_kind",
+              "metric",
+              "period",
+              "limit",
+              "enabled"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`None` for config policies."
+              },
+              "limit": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "mcp_server_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "mcp_server_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "metric": {
+                "$ref": "#/components/schemas/RateLimitMetricView"
+              },
+              "model_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "operation": {
+                "$ref": "#/components/schemas/RateLimitOperationView"
+              },
+              "period": {
+                "$ref": "#/components/schemas/RateLimitPeriodView"
+              },
+              "scope_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope_kind": {
+                "$ref": "#/components/schemas/RateLimitScopeKindView"
+              },
+              "scope_label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The targeted user's email, team name or API key name."
+              },
+              "source": {
+                "$ref": "#/components/schemas/RateLimitPolicySourceView"
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },
@@ -13285,6 +15691,29 @@
         }
       },
       "Envelope_UpdateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "api_key"
+            ],
+            "properties": {
+              "api_key": {
+                "$ref": "#/components/schemas/AdminApiKeyView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_UpdateApiKeyScopesResponse": {
         "type": "object",
         "required": [
           "data",
@@ -14446,6 +16875,7 @@
           "server_key",
           "display_name",
           "provider_key",
+          "provider_label",
           "required_scopes",
           "granted_scopes",
           "status"
@@ -14475,6 +16905,10 @@
           "provider_key": {
             "type": "string"
           },
+          "provider_label": {
+            "type": "string",
+            "description": "The configured provider key, or the authorization server's host for a\nserver-level OAuth client."
+          },
           "required_scopes": {
             "type": "array",
             "items": {
@@ -14490,6 +16924,130 @@
           },
           "status": {
             "$ref": "#/components/schemas/McpOauthConnectionStatus"
+          }
+        }
+      },
+      "McpOauthDiscoveryPayload": {
+        "type": "object",
+        "description": "What OAuth metadata discovery found for an MCP server URL.",
+        "required": [
+          "resource",
+          "authorization_servers",
+          "issuer",
+          "authorization_server_metadata_url",
+          "authorization_endpoint",
+          "token_endpoint",
+          "scopes_supported",
+          "default_scopes",
+          "token_endpoint_auth_methods_supported",
+          "code_challenge_methods_supported",
+          "client_id_metadata_document_supported",
+          "recommended_client_registration",
+          "resource_indicator",
+          "warnings",
+          "suggested_auth_config"
+        ],
+        "properties": {
+          "authorization_endpoint": {
+            "type": "string"
+          },
+          "authorization_server_metadata_url": {
+            "type": "string"
+          },
+          "authorization_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "callback_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id_metadata_document_supported": {
+            "type": "boolean"
+          },
+          "client_metadata_document_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code_challenge_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "recommended_client_registration": {
+            "type": "string",
+            "description": "`dynamic`, `metadata_document`, or `manual`."
+          },
+          "registration_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_indicator": {
+            "type": "boolean"
+          },
+          "resource_metadata_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "suggested_auth_config": {
+            "type": "object",
+            "description": "An `oauth_obo` auth config to save with the server.",
+            "additionalProperties": true
+          },
+          "token_endpoint": {
+            "type": "string"
+          },
+          "token_endpoint_auth_methods_supported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "McpOauthDiscoveryRequest": {
+        "type": "object",
+        "required": [
+          "server_url"
+        ],
+        "properties": {
+          "server_url": {
+            "type": "string"
           }
         }
       },
@@ -14548,11 +17106,16 @@
           "auth_mode",
           "auth_config",
           "timeout_ms",
+          "approve_tool_changes",
           "status",
           "created_at",
           "updated_at"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": "boolean",
+            "description": "New and changed tools wait for an admin to approve them."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true
@@ -14647,6 +17210,135 @@
           }
         }
       },
+      "McpTagRulePayload": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/McpTagRuleView"
+          }
+        }
+      },
+      "McpTagRulePreviewPayload": {
+        "type": "object",
+        "required": [
+          "tools",
+          "truncated"
+        ],
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            },
+            "description": "Active tools the rule would select, at most 200. Only this rule is\napplied."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "The preview stopped early, after 200 matches or after checking 5,120\ntools, so more tools may match than it lists."
+          }
+        }
+      },
+      "McpTagRuleView": {
+        "type": "object",
+        "required": [
+          "id",
+          "subject_kind",
+          "subject_id",
+          "tag",
+          "effect",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "description": "`include` grants matching tools; `exclude` removes them and wins."
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The server the rule applies to; null for every server (exclude only)."
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpTagRulesPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTagRuleView"
+            }
+          }
+        }
+      },
+      "McpToolAnnotationsView": {
+        "type": "object",
+        "description": "The four behaviour hints. A missing value means the hint is not declared\nat this level. Upstream hints are not verified by the gateway.",
+        "properties": {
+          "destructive_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "idempotent_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "open_world_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "read_only_hint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -14721,6 +17413,7 @@
           "server_display_name",
           "tool_display_key",
           "tool_display_name",
+          "mcp_method",
           "status",
           "policy_result",
           "has_payload",
@@ -14759,6 +17452,10 @@
               "null"
             ],
             "format": "int64"
+          },
+          "mcp_method": {
+            "type": "string",
+            "description": "MCP JSON-RPC method this row records, such as `tools/call`,\n`resources/read`, or `prompts/get`. Unparseable requests use `invalid`."
           },
           "mcp_tool_invocation_id": {
             "type": "string"
@@ -14824,11 +17521,115 @@
               "null"
             ]
           },
+          "tool_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Served schema version of the tool a `tools/call` used; null otherwise."
+          },
           "user_id": {
             "type": [
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "McpToolPayload": {
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/McpToolView"
+          }
+        }
+      },
+      "McpToolVersionView": {
+        "type": "object",
+        "description": "One definition the upstream served for a tool.",
+        "required": [
+          "schema_version",
+          "schema_hash",
+          "status",
+          "input_schema",
+          "discovered_at"
+        ],
+        "properties": {
+          "annotations": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Annotations as the upstream declared them, without admin overrides.",
+            "additionalProperties": true
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discovered_at": {
+            "type": "string"
+          },
+          "input_schema": {},
+          "output_schema": {},
+          "reviewed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Empty for a version approved automatically by discovery."
+          },
+          "schema_hash": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "description": "`approved`, `pending`, `rejected` or `superseded`."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "McpToolVersionsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolVersionView"
+            },
+            "description": "Newest first."
+          },
+          "next_before": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Pass as `before` for the next page of history. Empty on the last page\nand when `schema_versions` is given."
           }
         }
       },
@@ -14840,6 +17641,12 @@
           "upstream_name",
           "display_name",
           "input_schema",
+          "annotations",
+          "annotation_overrides",
+          "effective_annotations",
+          "admin_tags",
+          "effective_tags",
+          "approval_status",
           "schema_hash",
           "schema_version",
           "is_active",
@@ -14847,6 +17654,33 @@
           "last_discovered_at"
         ],
         "properties": {
+          "admin_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags an admin attached to the tool."
+          },
+          "annotation_overrides": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints an admin set. A missing value keeps the upstream's."
+          },
+          "annotations": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints as the upstream server declared them."
+          },
+          "approval_status": {
+            "type": "string",
+            "description": "`approved`, `pending_change` (served as the approved version while a\ntext change waits), `pending_review` or `rejected` (both withheld)."
+          },
+          "approved_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The served version; null until the tool is first approved."
+          },
           "deactivated_at": {
             "type": [
               "string",
@@ -14862,6 +17696,17 @@
           "display_name": {
             "type": "string"
           },
+          "effective_annotations": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints the gateway uses and serves: each override, else the upstream value."
+          },
+          "effective_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)\nplus admin tags. Tag rules match these."
+          },
           "first_discovered_at": {
             "type": "string"
           },
@@ -14875,6 +17720,17 @@
           "last_discovered_at": {
             "type": "string"
           },
+          "output_schema": {
+            "description": "Schema of the tool's structured result, when the upstream declares one."
+          },
+          "pending_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The version waiting for review."
+          },
           "schema_hash": {
             "type": "string"
           },
@@ -14884,6 +17740,13 @@
           },
           "server_id": {
             "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable title declared by the upstream server."
           },
           "upstream_name": {
             "type": "string"
@@ -15266,6 +18129,132 @@
           }
         }
       },
+      "OauthAuthorizationDecisionRequest": {
+        "type": "object",
+        "required": [
+          "approve"
+        ],
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OauthAuthorizationDecisionResponse": {
+        "type": "object",
+        "required": [
+          "redirect_to"
+        ],
+        "properties": {
+          "redirect_to": {
+            "type": "string",
+            "description": "The client redirect carrying the code, or the `access_denied` error."
+          }
+        }
+      },
+      "OauthAuthorizationRequestView": {
+        "type": "object",
+        "description": "What the consent screen shows for a pending authorization request.",
+        "required": [
+          "request_id",
+          "client_id",
+          "redirect_uri",
+          "redirect_host",
+          "redirect_is_loopback",
+          "resource",
+          "resource_kind",
+          "scopes",
+          "expires_at"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "client_metadata_host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the client identifies itself with a Client ID Metadata\nDocument: the host that published it. The gateway checked only that\nthis host serves the document, not who the client is, so the consent\nscreen shows the host and marks the client unverified."
+          },
+          "client_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Self-asserted by the client at registration."
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "redirect_host": {
+            "type": "string",
+            "description": "The host the browser returns to; the consent screen must show it."
+          },
+          "redirect_is_loopback": {
+            "type": "boolean",
+            "description": "The code goes to a URI on this device, so the client's identity\ncannot be verified."
+          },
+          "redirect_uri": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resource_kind": {
+            "$ref": "#/components/schemas/OauthResourceKind"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OauthScopeView"
+            }
+          },
+          "server_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OauthResourceKind": {
+        "type": "string",
+        "enum": [
+          "aggregate",
+          "server"
+        ]
+      },
+      "OauthScopeView": {
+        "type": "object",
+        "required": [
+          "scope",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      },
       "ObservabilityRangeQueryValue": {
         "type": "string",
         "enum": [
@@ -15413,6 +18402,202 @@
             }
           }
         }
+      },
+      "RateLimitMetricView": {
+        "type": "string",
+        "description": "`tokens` is only valid for `inference`.",
+        "enum": [
+          "requests",
+          "tokens"
+        ]
+      },
+      "RateLimitOperationView": {
+        "type": "string",
+        "description": "`inference` covers chat, responses, messages, embeddings and decisions.",
+        "enum": [
+          "inference",
+          "count_tokens",
+          "mcp_tool_call"
+        ]
+      },
+      "RateLimitPeriodView": {
+        "type": "string",
+        "description": "`minute` and `hour` slide; `day` and `month` are UTC calendar quotas.",
+        "enum": [
+          "minute",
+          "hour",
+          "day",
+          "month"
+        ]
+      },
+      "RateLimitPoliciesView": {
+        "type": "object",
+        "required": [
+          "policies"
+        ],
+        "properties": {
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateLimitPolicyView"
+            }
+          }
+        }
+      },
+      "RateLimitPolicyRequest": {
+        "type": "object",
+        "description": "The whole policy; `PATCH` replaces every field.",
+        "required": [
+          "name",
+          "operation",
+          "scope_kind",
+          "metric",
+          "period",
+          "limit"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mcp_server_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric": {
+            "$ref": "#/components/schemas/RateLimitMetricView"
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/RateLimitOperationView"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RateLimitPeriodView"
+          },
+          "scope_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_kind": {
+            "$ref": "#/components/schemas/RateLimitScopeKindView"
+          }
+        }
+      },
+      "RateLimitPolicySourceView": {
+        "type": "string",
+        "enum": [
+          "config",
+          "admin"
+        ]
+      },
+      "RateLimitPolicyView": {
+        "type": "object",
+        "required": [
+          "name",
+          "source",
+          "operation",
+          "scope_kind",
+          "metric",
+          "period",
+          "limit",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` for config policies."
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mcp_server_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mcp_server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric": {
+            "$ref": "#/components/schemas/RateLimitMetricView"
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/RateLimitOperationView"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RateLimitPeriodView"
+          },
+          "scope_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_kind": {
+            "$ref": "#/components/schemas/RateLimitScopeKindView"
+          },
+          "scope_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The targeted user's email, team name or API key name."
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateLimitPolicySourceView"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RateLimitScopeKindView": {
+        "type": "string",
+        "description": "Who shares a counter. Without `scope_id`, each principal of the kind\ngets its own counter.",
+        "enum": [
+          "global",
+          "api_key",
+          "user",
+          "team"
+        ]
       },
       "RecommendedMcpServerView": {
         "type": "object",
@@ -16537,6 +19722,19 @@
           }
         }
       },
+      "RevokeAuthorizedMcpClientsResponse": {
+        "type": "object",
+        "required": [
+          "revoked_count"
+        ],
+        "properties": {
+          "revoked_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "SecretRedactionView": {
         "type": "object",
         "required": [
@@ -16601,6 +19799,35 @@
             "minimum": 0
           }
         }
+      },
+      "SetMcpToolAnnotationOverridesRequest": {
+        "type": "object",
+        "required": [
+          "annotation_overrides"
+        ],
+        "properties": {
+          "annotation_overrides": {
+            "$ref": "#/components/schemas/McpToolAnnotationsView",
+            "description": "Hints to override. A missing or null hint keeps the upstream's value."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetMcpToolTagsRequest": {
+        "type": "object",
+        "required": [
+          "tags"
+        ],
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Admin tags. They are lowercased, deduplicated and sorted."
+          }
+        },
+        "additionalProperties": false
       },
       "SetMyProviderCredentialRequest": {
         "type": "object",
@@ -17436,6 +20663,45 @@
           }
         }
       },
+      "UpdateApiKeyScopesRequest": {
+        "type": "object",
+        "description": "Both fields are required, so leaving one out can't widen a key by\naccident. `null` restores full access or every server.",
+        "required": [
+          "scopes",
+          "mcp_server_keys"
+        ],
+        "properties": {
+          "mcp_server_keys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateApiKeyScopesResponse": {
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "properties": {
+          "api_key": {
+            "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
       "UpdateMcpServerRequest": {
         "type": "object",
         "required": [
@@ -17444,6 +20710,13 @@
           "auth_mode"
         ],
         "properties": {
+          "approve_tool_changes": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hold new and changed tools for review. Kept as it is when omitted."
+          },
           "auth_config": {
             "type": "object",
             "additionalProperties": true

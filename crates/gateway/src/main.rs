@@ -9,6 +9,8 @@ use gateway::{
     email::build_budget_alert_sender,
     http::{
         build_router,
+        client_ip::TrustedProxies,
+        mcp_client_oauth::{OAUTH_STREAM_RECHECK_INTERVAL, OauthStreamWatcher},
         response_cache::ResponseCache,
         state::{AppSkillService, AppState},
     },
@@ -24,7 +26,8 @@ use gateway_providers::{
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, SkillService, WeightedRoutePlanner, hash_gateway_key_secret,
+    ProviderCredentialService, RateLimiter, SkillService, WeightedRoutePlanner,
+    hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
@@ -230,6 +233,11 @@ async fn run_serve_with_store(
         .validate_route_context_overrides()
         .await
         .context("invalid route context-window override")?;
+    service
+        .rate_limiter()
+        .validate_policy_set()
+        .await
+        .context("invalid rate limit policy set")?;
     let known_mcp_servers = service
         .store()
         .list_external_mcp_servers(true)
@@ -241,6 +249,14 @@ async fn run_serve_with_store(
     config
         .validate_guardrail_mcp_server_keys(&known_mcp_servers)
         .context("invalid guardrail MCP-server override")?;
+    for server_key in config.rate_limits.mcp_server_keys() {
+        if !known_mcp_servers.contains(server_key) {
+            tracing::warn!(
+                mcp_server = server_key,
+                "rate limit policy names an MCP server that is not registered; it applies once a server with this key exists"
+            );
+        }
+    }
     let guardrail_engine = Arc::new(
         config
             .guardrail_engine()
@@ -293,6 +309,14 @@ async fn run_serve_with_store(
                 .runtime()
                 .context("failed resolving MCP OAuth configuration")?,
         ),
+        mcp_client_oauth: config
+            .mcp_client_oauth_settings()
+            .context("failed resolving MCP client OAuth configuration")?
+            .map(Arc::new),
+        oauth_streams: OauthStreamWatcher::new(
+            service.store().clone(),
+            OAUTH_STREAM_RECHECK_INTERVAL,
+        ),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config
@@ -318,8 +342,11 @@ async fn run_serve_with_store(
         admin_permissions,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+        count_tokens_limiter: Arc::default(),
+        trusted_proxies: TrustedProxies::new(config.server.trusted_proxy_networks()?),
     };
     gateway::batch_worker::spawn(state.clone());
+    spawn_mcp_client_oauth_cleanup_loop(state.store.clone(), state.mcp_client_oauth.clone());
     let app = build_router(state, load_admin_ui_config(args.admin_ui_upstream));
 
     let listener = TcpListener::bind(bind_address)
@@ -328,9 +355,13 @@ async fn run_serve_with_store(
 
     tracing::info!(address = %bind_address, "gateway started");
 
-    axum::serve(listener, app)
-        .await
-        .context("gateway server stopped unexpectedly")?;
+    // Peer addresses feed request policy and the request IP on admin audit entries.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .context("gateway server stopped unexpectedly")?;
 
     Ok(())
 }
@@ -660,6 +691,38 @@ fn spawn_agent_analysis_retention_loop(
         }
     });
 }
+/// Hourly: removes registered MCP OAuth clients that never received a grant,
+/// and long-expired authorization codes and tokens.
+fn spawn_mcp_client_oauth_cleanup_loop(
+    store: Arc<AnyStore>,
+    settings: Option<Arc<gateway_service::McpClientOauthSettings>>,
+) {
+    let Some(settings) = settings else {
+        return;
+    };
+    let service = gateway_service::McpClientOauthService::new(store, settings);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match service
+                .purge_stale_records(time::OffsetDateTime::now_utc())
+                .await
+            {
+                Ok(counts) if counts != Default::default() => tracing::info!(
+                    retired_grants = counts.retired_grants,
+                    clients = counts.clients,
+                    authorization_requests = counts.authorization_requests,
+                    tokens = counts.tokens,
+                    "purged stale MCP client OAuth records"
+                ),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(error = %error, "MCP client OAuth cleanup failed"),
+            }
+        }
+    });
+}
+
 fn spawn_budget_alert_delivery_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
     config: &BudgetAlertEmailConfig,
@@ -697,6 +760,10 @@ fn build_gateway_service(
     let payload_policy = config
         .request_log_payload_policy()
         .context("failed to build request log payload policy")?;
+    let rate_limiter = Arc::new(RateLimiter::new(
+        store.clone(),
+        config.rate_limits.settings(),
+    ));
     Ok(Arc::new(
         GatewayService::new_with_budget_alert_sender_and_payload_policy(
             store,
@@ -704,6 +771,8 @@ fn build_gateway_service(
             budget_alert_sender,
             payload_policy,
         )
+        .with_budget_exceeded_status(config.budgets.exceeded_status_code)
+        .with_rate_limiter(rate_limiter)
         .with_agent_analysis_enabled(agent_analysis_enabled)
         .with_agent_analysis_retention(analysis_report_retention, analysis_queue_retention)
         .with_agent_analysis_policy(analysis_policy),
@@ -723,7 +792,7 @@ fn env_u64(key: &str, default: u64) -> u64 {
 
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
-        .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+        .unwrap_or_else(|_| gateway::http::audit::DEV_IDENTITY_TOKEN_SECRET.to_string())
 }
 
 #[cfg(test)]

@@ -174,6 +174,32 @@ For service accounts, the team allowlist applies through the owning team and the
 
 In v1, service-account-owned API keys are denied for models that have a model-level allowlist. Use a human user-owned key for allowlisted model traffic, or leave the model without a model-level allowlist when service-account automation must call it.
 
+## API Key Scopes
+
+An API key can be limited to the capabilities it was created for. A key without scopes has full access, the same as every key created before scopes existed. Admins set scopes when they create a key and can change them later in the key's **Manage** dialog. The change applies to the key's next request, so callers don't need a new key.
+
+| Scope | Routes |
+| --- | --- |
+| `inference` | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, their unversioned aliases, `/v1/models`, `/models`, `/v1/model-metadata`, `/api/v1/batches*`, and `/api/v1/guardrails/evaluate` |
+| `mcp:aggregate` | `/mcp` |
+| `mcp:proxy` | `/mcp/{server_key}` |
+
+Other routes that accept a key need full access: the Skills API, `/api/v1/me/provider-credentials`, and the review agent action routes. A scoped key gets `insufficient_scope` there.
+
+A key can also carry a list of MCP servers. It then reaches only those servers, on `/mcp/{server_key}` and through the aggregate tools, even when its owner holds grants elsewhere. The list needs `mcp:aggregate`, `mcp:proxy`, or full access.
+
+Scopes and server lists only narrow access. Grants, model access, budgets, and rate limits still apply. A scoped key keeps its key ID, so `api_key` rate-limit policies match it as before. A request refused for scope is refused before rate limiting and doesn't count against a limit.
+
+A refused request gets `403` with code `insufficient_scope`. Inference routes return the OpenAI-compatible error envelope, and Anthropic routes return the Anthropic error shape. MCP routes return a JSON-RPC error; see [MCP Client Setup: scoped API keys](../mcp/mcp-client-setup.md#scoped-api-keys).
+
+Admin API:
+
+- `POST /api/v1/admin/api-keys` accepts optional `scopes` and `mcp_server_keys`. Leave them out, or send `null`, for full access and every server.
+- `PUT /api/v1/admin/api-keys/{api_key_id}/scopes` replaces both. The body must name both fields; `null` restores full access or every server. It needs the `update_api_key` action.
+- `GET /api/v1/admin/api-keys` returns each key's `scopes` and `mcp_server_keys`, plus `available_scopes` and the active `mcp_servers`.
+
+Each change is recorded in the [admin audit log](admin-audit-log.md) as `api_key.scopes_updated`. See [ADR: Capability Scopes and MCP Server Lists for Gateway API Keys](../adr/2026-10-17-scoped-api-keys.md).
+
 ## MCP Gateway API-Key Contract
 
 MCP gateway data-plane routes use the same Oceans API-key identity model as `/v1/*`, with a narrower header contract:

@@ -543,6 +543,8 @@ async fn record_batch_usage(
         owner_user_id: key.owner_user_id,
         owner_team_id: key.owner_team_id,
         owner_service_account_id: key.owner_service_account_id,
+        access: key.access,
+        oauth: None,
     };
     service
         .record_batch_usage(

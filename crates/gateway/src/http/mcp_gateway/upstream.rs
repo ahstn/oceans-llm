@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io, time::Duration};
+use std::{collections::HashMap, io, time::Duration};
 
 use axum::{
     body::{Body, Bytes},
@@ -10,10 +10,23 @@ use axum::{
 use futures_util::TryStreamExt;
 use gateway_core::{GatewayError, ProviderError};
 use gateway_service::McpGatewayUpstream;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use url::Url;
 
 use super::{LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID};
+
+/// How direct `tools/list` presents one granted tool.
+#[derive(Debug, Default)]
+pub(super) struct GrantedToolView {
+    /// Admin hint overrides merged into the upstream `annotations`.
+    pub(super) annotation_overrides: Map<String, Value>,
+    /// The approved definition to serve instead of the upstream's object, on
+    /// servers that hold changed tools for review.
+    pub(super) definition: Option<Map<String, Value>>,
+}
+
+/// Granted tools by upstream name. Tools not in the map are removed.
+pub(super) type GrantedTools<'a> = HashMap<&'a str, GrantedToolView>;
 
 pub(super) struct BufferedMcpResponse {
     pub(super) status: StatusCode,
@@ -82,26 +95,138 @@ pub(super) async fn proxy_tools_list(
     inbound_headers: &HeaderMap,
     body: Bytes,
     upstream: &McpGatewayUpstream,
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<Response<Body>, GatewayError> {
     let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
-    let content_type = response
-        .headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let filtered_body = if content_type.contains("text/event-stream") {
-        filter_tools_list_sse(&response.body, allowed_tool_names)?
+    let filtered_body = if is_event_stream(&response.headers) {
+        filter_tools_list_sse(&response.body, granted)?
     } else {
-        filter_tools_list_json(&response.body, allowed_tool_names, id)?
+        filter_tools_list_json(&response.body, granted, id)?
     };
     Ok(response_from_parts(
         response.status,
         &response.headers,
         Body::from(filtered_body),
     ))
+}
+
+/// Forwards `initialize` and removes the server's `tasks` capability from the
+/// result.
+///
+/// The gateway does not proxy MCP tasks: `tasks/result` returns a tool result
+/// with no tool to check grants or guardrails against. A client that saw the
+/// capability could start a task and never be able to read its result.
+pub(super) async fn proxy_initialize(
+    client: &reqwest::Client,
+    method: &Method,
+    inbound_headers: &HeaderMap,
+    body: Bytes,
+    upstream: &McpGatewayUpstream,
+) -> Result<Response<Body>, GatewayError> {
+    let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
+    let body = if !response.status.is_success() {
+        response.body.to_vec()
+    } else if is_event_stream(&response.headers) {
+        rewrite_sse_messages(&response.body, "initialize", |value| {
+            remove_task_capability(value);
+            Ok(())
+        })?
+    } else {
+        match serde_json::from_slice::<Value>(&response.body) {
+            Ok(mut value) => {
+                remove_task_capability(&mut value);
+                serde_json::to_vec(&value).map_err(|error| {
+                    GatewayError::Internal(format!("failed encoding MCP initialize: {error}"))
+                })?
+            }
+            // A body the client cannot parse cannot advertise anything either.
+            Err(_) => response.body.to_vec(),
+        }
+    };
+    Ok(response_from_parts(
+        response.status,
+        &response.headers,
+        Body::from(body),
+    ))
+}
+
+fn remove_task_capability(value: &mut Value) {
+    if let Some(capabilities) = value
+        .pointer_mut("/result/capabilities")
+        .and_then(Value::as_object_mut)
+    {
+        capabilities.remove("tasks");
+    }
+}
+
+/// Without `execution.taskSupport` a client must call the tool directly, which
+/// is the only way the gateway can return its result.
+fn remove_task_support(tool: &mut Value) {
+    let Some(tool) = tool.as_object_mut() else {
+        return;
+    };
+    let execution_emptied = match tool.get_mut("execution").and_then(Value::as_object_mut) {
+        Some(execution) => {
+            execution.remove("taskSupport");
+            execution.is_empty()
+        }
+        None => false,
+    };
+    if execution_emptied {
+        tool.remove("execution");
+    }
+}
+
+/// Admin-set hints take precedence over the upstream's. Other annotation
+/// members and the rest of the tool object pass through unchanged.
+fn apply_annotation_overrides(tool: &mut Value, overrides: &Map<String, Value>) {
+    if overrides.is_empty() {
+        return;
+    }
+    let Some(tool) = tool.as_object_mut() else {
+        return;
+    };
+    let annotations = tool
+        .entry("annotations")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !annotations.is_object() {
+        *annotations = Value::Object(Map::new());
+    }
+    if let Some(annotations) = annotations.as_object_mut() {
+        annotations.extend(overrides.clone());
+    }
+}
+
+/// The tool members the gateway versions and approves. A stored definition
+/// owns them; any other member the upstream sends passes through.
+const VERSIONED_TOOL_MEMBERS: [&str; 6] = [
+    "name",
+    "title",
+    "description",
+    "inputSchema",
+    "outputSchema",
+    "annotations",
+];
+
+/// Serves the stored approved definition for the versioned members and keeps
+/// the upstream's other members, such as `icons`, `_meta` and `execution`.
+fn serve_stored_definition(tool: &mut Value, definition: &Map<String, Value>) {
+    let Some(object) = tool.as_object_mut() else {
+        *tool = Value::Object(definition.clone());
+        return;
+    };
+    for member in VERSIONED_TOOL_MEMBERS {
+        object.remove(member);
+    }
+    object.extend(definition.clone());
+}
+
+fn is_event_stream(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }
 
 fn upstream_request(
@@ -111,8 +236,11 @@ fn upstream_request(
     body: Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<reqwest::RequestBuilder, GatewayError> {
-    let url = Url::parse(&upstream.server.server_url)
+    let mut url = Url::parse(&upstream.server.server_url)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
+    if let Some(credential) = &upstream.query_credential {
+        url = credential.apply(&url);
+    }
     let request = client.request(method.clone(), url).body(body);
     let request = apply_forwarded_request_headers(request, inbound_headers)?;
     match &upstream.headers {
@@ -123,7 +251,7 @@ fn upstream_request(
 
 fn filter_tools_list_json(
     body: &[u8],
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<Vec<u8>, GatewayError> {
     let mut value: Value = serde_json::from_slice(body).map_err(|error| {
@@ -132,18 +260,32 @@ fn filter_tools_list_json(
         ))
     })?;
     if value.get("error").is_none() || value.get("result").is_some() {
-        filter_tools_array(&mut value, allowed_tool_names, id)?;
+        filter_tools_array(&mut value, granted, id)?;
     }
     serde_json::to_vec(&value)
         .map_err(|error| GatewayError::Internal(format!("failed encoding MCP tools/list: {error}")))
 }
 
-fn filter_tools_list_sse(
+fn filter_tools_list_sse(body: &[u8], granted: &GrantedTools<'_>) -> Result<Vec<u8>, GatewayError> {
+    rewrite_sse_messages(body, "tools/list", |value| {
+        // Notifications and RPC errors can precede the tools result in an SSE response.
+        // Any result must still pass the tool allowlist, even in a malformed envelope.
+        if value.get("result").is_some() || !is_rpc_error_or_notification(value) {
+            filter_tools_array(value, granted, None)?;
+        }
+        Ok(())
+    })
+}
+
+/// Applies `rewrite` to the JSON data of every SSE event, keeping the other
+/// event fields as they were.
+fn rewrite_sse_messages(
     body: &[u8],
-    allowed_tool_names: &HashSet<&str>,
+    mcp_method: &str,
+    mut rewrite: impl FnMut(&mut Value) -> Result<(), GatewayError>,
 ) -> Result<Vec<u8>, GatewayError> {
     let text = std::str::from_utf8(body).map_err(|error| {
-        GatewayError::InvalidRequest(format!("MCP tools/list SSE was not UTF-8: {error}"))
+        GatewayError::InvalidRequest(format!("MCP {mcp_method} SSE was not UTF-8: {error}"))
     })?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -177,14 +319,10 @@ fn filter_tools_list_sse(
         }
         let mut value: Value = serde_json::from_str(&data).map_err(|error| {
             GatewayError::InvalidRequest(format!(
-                "MCP tools/list SSE data was invalid JSON: {error}"
+                "MCP {mcp_method} SSE data was invalid JSON: {error}"
             ))
         })?;
-        // Notifications and RPC errors can precede the tools result in an SSE response.
-        // Any result must still pass the tool allowlist, even in a malformed envelope.
-        if value.get("result").is_some() || !is_rpc_error_or_notification(&value) {
-            filter_tools_array(&mut value, allowed_tool_names, None)?;
-        }
+        rewrite(&mut value)?;
         for line in passthrough_lines {
             out.push_str(line);
             out.push('\n');
@@ -233,7 +371,7 @@ async fn read_limited_response_body(response: reqwest::Response) -> Result<Bytes
 
 fn filter_tools_array(
     value: &mut Value,
-    allowed_tool_names: &HashSet<&str>,
+    granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<(), GatewayError> {
     let tools = value
@@ -249,8 +387,21 @@ fn filter_tools_array(
     tools.retain(|tool| {
         tool.get("name")
             .and_then(Value::as_str)
-            .is_some_and(|name| allowed_tool_names.contains(name))
+            .is_some_and(|name| granted.contains_key(name))
     });
+    for tool in tools.iter_mut() {
+        remove_task_support(tool);
+        let view = tool
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(|name| granted.get(name));
+        if let Some(view) = view {
+            match &view.definition {
+                Some(definition) => serve_stored_definition(tool, definition),
+                None => apply_annotation_overrides(tool, &view.annotation_overrides),
+            }
+        }
+    }
     if let (Some(id), Some(object)) = (id, value.as_object_mut()) {
         object.insert("id".to_string(), id.clone());
     }

@@ -12,7 +12,10 @@ use gateway_core::{
     McpRegistryRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
 };
-use gateway_service::{McpCredentialService, credential_owner_scope_key, mcp_oauth_server_config};
+use gateway_service::{
+    AuditEvent, MCP_SERVER_OAUTH_PROVIDER_KEY, McpCredentialService, McpOauthServerConfig,
+    admin_audit::actions, credential_owner_scope_key, mcp_oauth_server_config,
+};
 use gateway_store::GatewayStore;
 use openidconnect::{CsrfToken, PkceCodeChallenge};
 use serde::{Deserialize, Serialize};
@@ -23,6 +26,7 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_contract::{OpenAiErrorEnvelopeView, format_timestamp},
+    audit::AuditRequestMeta,
     error::AppError,
     identity::resolve_session_user,
     state::AppState,
@@ -64,6 +68,9 @@ pub struct McpOauthConnectionView {
     pub server_key: String,
     pub display_name: String,
     pub provider_key: String,
+    /// The configured provider key, or the authorization server's host for a
+    /// server-level OAuth client.
+    pub provider_label: String,
     pub required_scopes: Vec<String>,
     pub granted_scopes: Vec<String>,
     pub status: McpOauthConnectionStatus,
@@ -136,7 +143,7 @@ pub async fn list_mcp_oauth_connections(
             |config| {
                 state
                     .mcp_oauth_runtime
-                    .connection_unavailable_reason(&config.provider_key)
+                    .connection_unavailable_reason_for(config)
                     .map(ToOwned::to_owned)
             },
         );
@@ -145,6 +152,14 @@ pub async fn list_mcp_oauth_connections(
             None if availability_error.is_some() => McpOauthConnectionStatus::Unavailable,
             None => McpOauthConnectionStatus::Disconnected,
             Some(_) if config.is_none() => McpOauthConnectionStatus::Connected,
+            // The gateway refuses this binding, so the user must consent again.
+            Some(binding)
+                if config
+                    .as_ref()
+                    .is_some_and(|config| binding_mismatches_server(&binding.metadata, config)) =>
+            {
+                McpOauthConnectionStatus::Expired
+            }
             Some(binding) if has_refreshable_oauth_metadata(&binding.metadata) => {
                 McpOauthConnectionStatus::Connected
             }
@@ -164,11 +179,18 @@ pub async fn list_mcp_oauth_connections(
                     .collect()
             })
             .unwrap_or_default();
+        let provider_label = config
+            .as_ref()
+            .and_then(|config| config.server_oauth.as_ref())
+            .and_then(|endpoints| url::Url::parse(&endpoints.issuer).ok())
+            .and_then(|issuer| issuer.host_str().map(ToOwned::to_owned))
+            .unwrap_or_else(|| provider_key.clone());
         items.push(McpOauthConnectionView {
             server_id: server.mcp_server_id,
             server_key: server.server_key,
             display_name: server.display_name,
             provider_key,
+            provider_label,
             required_scopes: config.map(|config| config.scopes).unwrap_or_default(),
             granted_scopes,
             status,
@@ -201,27 +223,16 @@ pub async fn start_mcp_oauth_connection(
     let user = require_session_user(&state, &headers).await?;
     let server = load_oauth_server(&state, server_id).await?;
     let config = mcp_oauth_server_config(&server.auth_config)?;
-    let provider = state.mcp_oauth_runtime.provider(&config.provider_key)?;
-    let redirect_uri = state.mcp_oauth_runtime.callback_url(&config.provider_key)?;
+    // A dynamic-registration server registers its client here, on first use.
+    let client = state
+        .mcp_oauth_runtime
+        .resolve_client(state.store.as_ref(), &server, &config, true)
+        .await?;
     let redirect_to = normalize_connection_redirect(request.redirect_to.as_deref());
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let csrf_state = CsrfToken::new_random();
-    let mut authorization_url = url::Url::parse(&provider.authorization_url)
-        .map_err(|error| GatewayError::Internal(error.to_string()))?;
-    {
-        let mut pairs = authorization_url.query_pairs_mut();
-        pairs.append_pair("response_type", "code");
-        pairs.append_pair("client_id", &provider.client_id);
-        pairs.append_pair("redirect_uri", &redirect_uri);
-        pairs.append_pair("scope", &config.scopes.join(" "));
-        pairs.append_pair("state", csrf_state.secret());
-        pairs.append_pair("code_challenge", pkce_challenge.as_str());
-        pairs.append_pair("code_challenge_method", "S256");
-        pairs.append_pair("access_type", "offline");
-        pairs.append_pair("prompt", "consent");
-        pairs.append_pair("include_granted_scopes", "true");
-        pairs.append_pair("resource", &config.resource);
-    }
+    let authorization_url =
+        client.authorization_url(&config, csrf_state.secret(), pkce_challenge.as_str())?;
     let now = OffsetDateTime::now_utc();
     state
         .store
@@ -239,9 +250,7 @@ pub async fn start_mcp_oauth_connection(
             created_at: now,
         })
         .await?;
-    Ok(Json(McpOauthStartResponse {
-        authorization_url: authorization_url.to_string(),
-    }))
+    Ok(Json(McpOauthStartResponse { authorization_url }))
 }
 
 #[utoipa::path(
@@ -260,23 +269,61 @@ pub async fn start_mcp_oauth_connection(
 pub async fn mcp_oauth_callback(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(provider_key): Path<String>,
     Query(query): Query<McpOauthCallbackQuery>,
 ) -> Result<Response, AppError> {
-    let user = require_session_user(&state, &headers).await?;
+    complete_oauth_callback(&state, &headers, &meta, &provider_key, query).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/mcp/oauth/callback",
+    params(McpOauthCallbackQuery),
+    responses(
+        (status = 307, description = "Redirect to the connection page"),
+        (status = 401, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+/// The callback for servers whose authorization server is configured on the
+/// server row, including dynamically registered clients.
+pub async fn mcp_oauth_server_callback(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    meta: AuditRequestMeta,
+    Query(query): Query<McpOauthCallbackQuery>,
+) -> Result<Response, AppError> {
+    complete_oauth_callback(
+        &state,
+        &headers,
+        &meta,
+        MCP_SERVER_OAUTH_PROVIDER_KEY,
+        query,
+    )
+    .await
+}
+
+async fn complete_oauth_callback(
+    state: &AppState,
+    headers: &HeaderMap,
+    meta: &AuditRequestMeta,
+    provider_key: &str,
+    query: McpOauthCallbackQuery,
+) -> Result<Response, AppError> {
+    let user = require_session_user(state, headers).await?;
     let Some(state_token) = query.state.as_deref() else {
         return Ok(connection_error_redirect("state_invalid"));
     };
     let now = OffsetDateTime::now_utc();
     let Some(transaction) = state
         .store
-        .consume_mcp_oauth_state(&token_hash(state_token), user.user_id, &provider_key, now)
+        .consume_mcp_oauth_state(&token_hash(state_token), user.user_id, provider_key, now)
         .await?
     else {
         return Ok(connection_error_redirect("state_invalid"));
     };
-    if let Some(error) = callback_transaction_error(&transaction, &provider_key, user.user_id, now)
-    {
+    if let Some(error) = callback_transaction_error(&transaction, provider_key, user.user_id, now) {
         return Ok(connection_error_redirect(error));
     }
     if query.error.is_some() {
@@ -285,29 +332,102 @@ pub async fn mcp_oauth_callback(
     let Some(code) = query.code.as_deref() else {
         return Ok(connection_error_redirect("provider_failure"));
     };
-    let redirect_uri = state.mcp_oauth_runtime.callback_url(&provider_key)?;
-    let grant = match state
-        .mcp_oauth_runtime
-        .exchange_code(
-            &provider_key,
-            code,
-            &redirect_uri,
-            &transaction.pkce_verifier,
-            &transaction.resource,
-            &transaction.scopes,
-        )
-        .await
-    {
+    let grant = match exchange_callback_code(state, &transaction, code).await {
         Ok(grant) => grant,
         Err(error) => {
             tracing::warn!(error = %error, "MCP OAuth token exchange failed");
             return Ok(connection_error_redirect("provider_failure"));
         }
     };
-    McpCredentialService::new(state.store.clone())
-        .upsert_oauth_user_binding(transaction.mcp_server_id, transaction.user_id, grant)
+    let credentials = McpCredentialService::new(state.store.clone());
+    let connect = credentials.upsert_oauth_user_binding(
+        transaction.mcp_server_id,
+        transaction.user_id,
+        grant,
+    );
+    // Token values never leave the service; the entry keeps binding metadata only.
+    // A reconnect replaces the user's binding, so it also records what it replaced.
+    state
+        .audit()
+        .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
+            let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+                .target(binding.credential_binding_id)
+                .label(binding.owner_scope_key.clone())
+                .meta(
+                    "operation",
+                    if replaced.is_some() {
+                        "oauth_reconnect"
+                    } else {
+                        "oauth_connect"
+                    },
+                )
+                .meta("mcp_server_id", binding.mcp_server_id)
+                .after(oauth_binding_summary(binding));
+            match replaced {
+                Some(replaced) => event.before(oauth_binding_summary(replaced)),
+                None => event,
+            }
+        })
         .await?;
     Ok(connection_success_redirect(&transaction.redirect_to))
+}
+
+/// Exchanges the code with the client the flow started with. A server whose
+/// OAuth settings changed during the flow fails instead of binding a token
+/// for the old settings.
+async fn exchange_callback_code(
+    state: &AppState,
+    transaction: &McpOauthStateRecord,
+    code: &str,
+) -> Result<gateway_service::McpOauthTokenGrant, GatewayError> {
+    let server = load_oauth_server(state, transaction.mcp_server_id)
+        .await
+        .map_err(|error| error.0)?;
+    let config = mcp_oauth_server_config(&server.auth_config)?;
+    if config.provider_key != transaction.provider_key || config.resource != transaction.resource {
+        return Err(GatewayError::InvalidRequest(
+            "MCP server OAuth settings changed during the connection".to_string(),
+        ));
+    }
+    let client = state
+        .mcp_oauth_runtime
+        .resolve_client(state.store.as_ref(), &server, &config, false)
+        .await?;
+    state
+        .mcp_oauth_runtime
+        .exchange_code(
+            &client,
+            &config,
+            code,
+            &transaction.pkce_verifier,
+            &transaction.scopes,
+        )
+        .await
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/mcp/oauth/client-metadata.json",
+    responses(
+        (status = 200, description = "OAuth Client ID Metadata Document", body = Object),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    )
+)]
+/// The Client ID Metadata Document whose URL is Oceans' client ID at
+/// authorization servers that accept metadata documents instead of dynamic
+/// client registration. It is public by design.
+pub async fn mcp_oauth_client_metadata_document(
+    State(state): State<AppState>,
+) -> Result<Response, AppError> {
+    let document = state
+        .mcp_oauth_runtime
+        .client_metadata_document()
+        .ok_or_else(|| {
+            GatewayError::Store(gateway_core::StoreError::NotFound(
+                "mcp.oauth.public_base_url is not configured".to_string(),
+            ))
+        })?;
+    Ok(([(CACHE_CONTROL, "public, max-age=3600")], Json(document)).into_response())
 }
 
 #[utoipa::path(
@@ -325,6 +445,7 @@ pub async fn mcp_oauth_callback(
 pub async fn revoke_mcp_oauth_connection(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(server_id): Path<Uuid>,
 ) -> Result<Json<McpOauthRevokeResponse>, AppError> {
     let user = require_session_user(&state, &headers).await?;
@@ -339,11 +460,40 @@ pub async fn revoke_mcp_oauth_connection(
         .get_active_mcp_upstream_credential_binding(server_id, &owner_scope_key)
         .await?
     {
-        McpCredentialService::new(state.store.clone())
+        let credentials = McpCredentialService::new(state.store.clone());
+        // The revoke returns the binding it removed, so the entry records that
+        // access, not just its id. An already-revoked binding records nothing.
+        if let Some(revoked) = credentials
             .revoke_binding(binding.credential_binding_id)
-            .await?;
+            .await?
+        {
+            state
+                .audit()
+                .record(
+                    &meta.user_context(&user),
+                    AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                        .target(revoked.credential_binding_id)
+                        .label(revoked.owner_scope_key.clone())
+                        .meta("operation", "oauth_disconnect")
+                        .meta("mcp_server_id", server_id)
+                        .before(oauth_binding_summary(&revoked)),
+                )
+                .await;
+        }
     }
     Ok(Json(McpOauthRevokeResponse { revoked: true }))
+}
+
+/// The OAuth binding fields an entry keeps: never the token values.
+fn oauth_binding_summary(
+    binding: &gateway_service::RedactedMcpCredentialBinding,
+) -> serde_json::Value {
+    serde_json::json!({
+        "material_kind": binding.material_kind.as_str(),
+        "oauth_provider_key": binding.oauth_provider_key,
+        "granted_scopes": binding.granted_scopes,
+        "expires_at": binding.expires_at.map(format_timestamp),
+    })
 }
 
 async fn require_session_user(
@@ -398,6 +548,34 @@ fn normalize_connection_redirect(value: Option<&str>) -> String {
         .to_string()
 }
 
+/// Absolute URL of the workspace connections page that starts the OAuth flow
+/// for `server_key`. Returns `None` unless the caller can connect the server
+/// themselves: it must use user OAuth, its provider must be configured, and a
+/// public base URL must be set.
+pub(crate) fn connection_page_url(
+    state: &AppState,
+    server: &gateway_core::ExternalMcpServerRecord,
+) -> Option<String> {
+    if server.status != ExternalMcpServerStatus::Active
+        || server.auth_mode != ExternalMcpAuthMode::OauthObo
+    {
+        return None;
+    }
+    let config = mcp_oauth_server_config(&server.auth_config).ok()?;
+    let runtime = &state.mcp_oauth_runtime;
+    if runtime.connection_unavailable_reason_for(&config).is_some() {
+        return None;
+    }
+    let mut url = url::Url::parse(&format!(
+        "{}{DEFAULT_CONNECTION_REDIRECT}",
+        runtime.public_base_url()?
+    ))
+    .ok()?;
+    url.query_pairs_mut()
+        .append_pair("connect", &server.server_key);
+    Some(url.to_string())
+}
+
 fn connection_success_redirect(redirect_to: &str) -> Response {
     let separator = if redirect_to.contains('?') { '&' } else { '?' };
     Redirect::temporary(&format!("{redirect_to}{separator}oauth=connected")).into_response()
@@ -427,11 +605,47 @@ fn callback_transaction_error(
     }
 }
 
+/// Whether a binding was granted for a different provider or resource, or lacks a
+/// scope the server now requires. Missing metadata is not judged here; the gateway
+/// checks the stored bundle when the binding is used.
+fn binding_mismatches_server(
+    metadata: &serde_json::Map<String, serde_json::Value>,
+    config: &McpOauthServerConfig,
+) -> bool {
+    let text = |key: &str| metadata.get(key).and_then(serde_json::Value::as_str);
+    let issuer = config
+        .server_oauth
+        .as_ref()
+        .map(|endpoints| endpoints.issuer.as_str());
+    if text("oauth_provider_key").is_some_and(|provider| provider != config.provider_key)
+        || text("resource").is_some_and(|resource| resource != config.resource)
+        || (issuer.is_some() && text("oauth_issuer") != issuer)
+    {
+        return true;
+    }
+    let Some(granted) = metadata
+        .get("granted_scopes")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    config
+        .scopes
+        .iter()
+        .any(|scope| !granted.iter().any(|item| item.as_str() == Some(scope)))
+}
+
 fn has_refreshable_oauth_metadata(metadata: &serde_json::Map<String, serde_json::Value>) -> bool {
+    // Bundles without a refresh token record `refreshable: false`; earlier
+    // bundles always had one and omit the flag.
     metadata
-        .get("oauth_bundle_version")
-        .and_then(serde_json::Value::as_u64)
-        == Some(1)
+        .get("refreshable")
+        .and_then(serde_json::Value::as_bool)
+        != Some(false)
+        && metadata
+            .get("oauth_bundle_version")
+            .and_then(serde_json::Value::as_u64)
+            == Some(1)
         && metadata
             .get("oauth_provider_key")
             .and_then(serde_json::Value::as_str)

@@ -1,5 +1,8 @@
 use anyhow::{Context, bail};
-use gateway_service::{McpOauthProvider, McpOauthRuntime};
+use gateway_service::{
+    MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthProvider, McpOauthProviderType, McpOauthRuntime,
+    McpOauthTokenEndpointAuthMethod,
+};
 use serde::Deserialize;
 
 use super::auth::normalize_config_auth_provider_key;
@@ -10,6 +13,8 @@ use super::references::{resolve_path_reference, resolve_secret_reference};
 pub struct McpConfig {
     #[serde(default)]
     pub oauth: McpOauthConfig,
+    #[serde(default)]
+    pub client_oauth: super::McpClientOauthConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -19,20 +24,37 @@ pub struct McpOauthConfig {
     pub public_base_url: Option<String>,
     #[serde(default)]
     pub providers: Vec<McpOauthProviderConfig>,
+    /// Hosts of MCP servers on a private network. Their OAuth discovery,
+    /// registration, and token requests may reach private-network addresses;
+    /// every other hostname reaches public addresses only. Each entry also
+    /// covers its subdomains.
+    #[serde(default)]
+    pub private_network_hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpOauthProviderConfig {
     pub key: String,
+    /// `google`, or `oauth2` for any authorization server with explicit endpoints.
     #[serde(default = "default_google_mcp_oauth_provider_type")]
     pub provider_type: String,
     pub client_id: String,
-    pub client_secret: String,
-    #[serde(default = "default_google_authorization_url")]
-    pub authorization_url: String,
-    #[serde(default = "default_google_token_url")]
-    pub token_url: String,
+    /// A secret reference. Required for `google`; optional for a public `oauth2` client.
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    /// Defaults to Google's endpoint for `google`; required for `oauth2`.
+    #[serde(default)]
+    pub authorization_url: Option<String>,
+    /// Defaults to Google's endpoint for `google`; required for `oauth2`.
+    #[serde(default)]
+    pub token_url: Option<String>,
+    /// Requested when an MCP server using this provider sets no scopes.
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// `client_secret_basic`, `client_secret_post`, or `none` (`oauth2` only).
+    #[serde(default)]
+    pub token_endpoint_auth_method: Option<String>,
 }
 
 impl McpOauthConfig {
@@ -48,35 +70,12 @@ impl McpOauthConfig {
             if !keys.insert(key.clone()) {
                 bail!("duplicate MCP OAuth provider key `{key}`");
             }
-            if provider.provider_type.trim() != "google" {
-                bail!(
-                    "MCP OAuth provider `{key}` has unsupported provider_type `{}`",
-                    provider.provider_type
-                );
-            }
-            if resolve_secret_reference(&provider.client_id)?
-                .trim()
-                .is_empty()
-            {
-                bail!("MCP OAuth provider `{key}` client_id cannot be empty");
-            }
-            if resolve_secret_reference(&provider.client_secret)?
-                .trim()
-                .is_empty()
-            {
-                bail!("MCP OAuth provider `{key}` client_secret cannot be empty");
-            }
-            validate_google_oauth_endpoint(
-                &provider.authorization_url,
-                &format!("MCP OAuth provider `{key}` authorization_url"),
-                &default_google_authorization_url(),
-            )?;
-            validate_google_oauth_endpoint(
-                &provider.token_url,
-                &format!("MCP OAuth provider `{key}` token_url"),
-                &default_google_token_url(),
-            )?;
+            provider
+                .resolved(&key)
+                .map_err(|error| anyhow::anyhow!("MCP OAuth provider `{key}` {error:#}"))?;
         }
+        gateway_service::outbound_fetch::normalize_domains(self.private_network_hosts.clone())
+            .context("mcp.oauth.private_network_hosts")?;
         Ok(())
     }
 
@@ -92,24 +91,123 @@ impl McpOauthConfig {
         let providers = self
             .providers
             .iter()
-            .map(|provider| {
-                Ok(McpOauthProvider {
-                    key: normalize_config_auth_provider_key(&provider.key)?,
-                    client_id: resolve_secret_reference(&provider.client_id)?
-                        .trim()
-                        .to_string(),
-                    client_secret: resolve_secret_reference(&provider.client_secret)?
-                        .trim()
-                        .to_string(),
-                    authorization_url: provider.authorization_url.trim().to_string(),
-                    token_url: provider.token_url.trim().to_string(),
-                })
-            })
+            .map(|provider| provider.resolved(&normalize_config_auth_provider_key(&provider.key)?))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        Ok(McpOauthRuntime::new(
-            self.resolved_public_base_url()?,
-            providers,
-        ))
+        McpOauthRuntime::new(self.resolved_public_base_url()?, providers)
+            .with_private_network_hosts(self.private_network_hosts.clone())
+            .context("mcp.oauth.private_network_hosts")
+    }
+}
+
+impl McpOauthProviderConfig {
+    fn resolved(&self, key: &str) -> anyhow::Result<McpOauthProvider> {
+        let client_id = resolve_secret_reference(&self.client_id)?
+            .trim()
+            .to_string();
+        if client_id.is_empty() {
+            bail!("client_id cannot be empty");
+        }
+        let client_secret = self
+            .client_secret
+            .as_deref()
+            .map(|value| resolve_secret_reference(value).map(|secret| secret.trim().to_string()))
+            .transpose()?;
+        if client_secret.as_deref().is_some_and(str::is_empty) {
+            bail!("client_secret cannot be empty");
+        }
+        for scope in &self.scopes {
+            if scope.trim().is_empty() || scope.chars().any(char::is_whitespace) {
+                bail!("scopes must contain non-empty scope strings");
+            }
+        }
+        match self.provider_type.trim() {
+            "google" => {
+                let client_secret = client_secret
+                    .ok_or_else(|| anyhow::anyhow!("client_secret cannot be empty"))?;
+                if self.token_endpoint_auth_method.is_some() {
+                    bail!("token_endpoint_auth_method is only supported for `oauth2` providers");
+                }
+                let authorization_url = self
+                    .authorization_url
+                    .clone()
+                    .unwrap_or_else(default_google_authorization_url);
+                let token_url = self
+                    .token_url
+                    .clone()
+                    .unwrap_or_else(default_google_token_url);
+                validate_google_oauth_endpoint(
+                    &authorization_url,
+                    "authorization_url",
+                    &default_google_authorization_url(),
+                )?;
+                validate_google_oauth_endpoint(
+                    &token_url,
+                    "token_url",
+                    &default_google_token_url(),
+                )?;
+                Ok(McpOauthProvider {
+                    key: key.to_string(),
+                    provider_type: McpOauthProviderType::Google,
+                    client_id,
+                    client_secret: Some(client_secret),
+                    authorization_url,
+                    token_url,
+                    token_endpoint_auth_method: McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+                    scopes: self.scopes.clone(),
+                })
+            }
+            "oauth2" => {
+                if key == MCP_SERVER_OAUTH_PROVIDER_KEY
+                    || !key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                {
+                    bail!(
+                        "key must contain only letters, digits, '-', or '_', and cannot be `{MCP_SERVER_OAUTH_PROVIDER_KEY}`"
+                    );
+                }
+                let authorization_url = self
+                    .authorization_url
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("authorization_url is required"))?;
+                let token_url = self
+                    .token_url
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("token_url is required"))?;
+                validate_https_url(&authorization_url, "authorization_url")?;
+                validate_https_url(&token_url, "token_url")?;
+                let token_endpoint_auth_method = match self.token_endpoint_auth_method.as_deref() {
+                    Some(value) => McpOauthTokenEndpointAuthMethod::parse(value).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "token_endpoint_auth_method must be client_secret_basic, client_secret_post, or none"
+                        )
+                    })?,
+                    None if client_secret.is_some() => {
+                        McpOauthTokenEndpointAuthMethod::ClientSecretBasic
+                    }
+                    None => McpOauthTokenEndpointAuthMethod::None,
+                };
+                if (token_endpoint_auth_method == McpOauthTokenEndpointAuthMethod::None)
+                    != client_secret.is_none()
+                {
+                    bail!(
+                        "client_secret is required for `{}` and not allowed for `none`",
+                        token_endpoint_auth_method.as_str()
+                    );
+                }
+                Ok(McpOauthProvider {
+                    key: key.to_string(),
+                    provider_type: McpOauthProviderType::Oauth2,
+                    client_id,
+                    client_secret,
+                    authorization_url,
+                    token_url,
+                    token_endpoint_auth_method,
+                    scopes: self.scopes.clone(),
+                })
+            }
+            other => bail!("unsupported provider_type `{other}`; expected google or oauth2"),
+        }
     }
 }
 

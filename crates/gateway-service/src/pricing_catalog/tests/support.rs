@@ -33,8 +33,9 @@ pub(super) use super::super::{
     PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
     PricingCatalogProviderDocument, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
     PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, build_model_pricing_record,
-    next_catalog_generation_at, normalize_bedrock_pricing_model_id, normalize_models_dev_money,
-    normalize_vertex_pricing_model_id, pricing_target_for_route, snapshot_is_already_synced,
+    catalog_model_id_fallback, load_vendored_fallback_snapshot, next_catalog_generation_at,
+    normalize_bedrock_pricing_model_id, normalize_models_dev_money, pricing_target_for_route,
+    snapshot_is_already_synced,
 };
 
 #[derive(Clone, Default)]
@@ -70,7 +71,7 @@ impl PricingCatalogRepository for InMemoryRepo {
     ) -> Result<bool, StoreError> {
         if self
             .cache_write_rejections_remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()
@@ -137,7 +138,7 @@ impl PricingCatalogRepository for InMemoryRepo {
             .fetch_add(1, Ordering::Relaxed);
         if self
             .pricing_sync_conflicts_remaining
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
                 remaining.checked_sub(1)
             })
             .is_ok()

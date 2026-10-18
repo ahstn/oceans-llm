@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, bail};
-use gateway_core::{BudgetCadence, Money4, SeedBudget};
+use gateway_core::{BudgetCadence, BudgetExceededStatus, Money4, SeedBudget};
 use serde::Deserialize;
 
 use super::models::ModelConfig;
@@ -20,6 +20,9 @@ fn default_budget_timezone() -> String {
 pub struct BudgetsConfig {
     #[serde(default)]
     pub users: UserBudgetDefaultsConfig,
+    /// HTTP status for hard-budget rejections: 402, 422 (default) or 429.
+    #[serde(default)]
+    pub exceeded_status_code: BudgetExceededStatus,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

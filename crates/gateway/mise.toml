@@ -16,10 +16,12 @@ run = 'OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_E
 
 [tasks.migrate]
 description = "Run `gateway migrate --apply` against gateway.yaml"
+extends = "gateway-local"
 run = "cargo run -p gateway --bin gateway -- migrate --apply"
 
 [tasks.bootstrap-admin]
 description = "Run `gateway bootstrap-admin` against gateway.yaml"
+extends = "gateway-local"
 run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 
 [tasks.seed-config]
@@ -43,6 +45,7 @@ run = [
 
 [tasks.purge-request-logs]
 description = "Purge request logs older than the retention window from gateway.yaml's database"
+extends = "gateway-local"
 usage = '''
 flag "--retention <window>" env="RETENTION" default="7d" help="1d, 3d, or 7d"
 flag "--dry-run" help="Report what would be purged without deleting"
@@ -51,6 +54,7 @@ run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "$us
 
 [tasks.recompute-agent-analysis]
 description = "Queue retained agent sessions for analysis against gateway.yaml"
+extends = "gateway-local"
 usage = 'flag "--limit <count>" env="LIMIT" default="100" help="Sessions per run, 1 through 1000"'
 run = 'cargo run -p gateway --bin gateway -- recompute-agent-analysis --limit "$usage_limit"'
 

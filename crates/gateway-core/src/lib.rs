@@ -1,11 +1,17 @@
 pub mod agent_analysis;
+pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
+pub mod credential_scopes;
 pub mod domain;
 pub mod error;
 pub mod gateway_keys;
+pub mod mcp_client_oauth;
+pub mod mcp_tool_policy;
+pub mod mcp_tool_review;
 pub mod protocol;
+pub mod rate_limits;
 pub mod reasoning_policy;
 pub mod routing;
 pub mod skills;
@@ -31,8 +37,14 @@ pub use agent_session_analysis::{
     SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
     ToolInvocationFact, ToolServerDiagnostics,
 };
+pub use audit::{
+    AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
+    AuditLogRepository, DEFAULT_AUDIT_LOG_PAGE_SIZE, MAX_AUDIT_LOG_PAGE_SIZE, NewAuditLogRecord,
+    Updated,
+};
 pub use auth::{
-    AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
+    AuthenticatedApiKey, OauthAccessContext, ParsedGatewayApiKey, extract_bearer_token,
+    is_oauth_access_token, parse_gateway_api_key,
 };
 pub use batch::{
     BatchAccessScope, BatchCapabilities, BatchEndpoint, BatchItemPage, BatchItemQuery,
@@ -43,46 +55,49 @@ pub use batch::{
     ProviderBatchSubmission,
 };
 pub use budgets::{
-    BudgetContact, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord,
-    BudgetScope, BudgetScopeKind, BudgetScopeWindow, BudgetSettings, BudgetSource,
-    BudgetSourceKind, BudgetUpsert,
+    BudgetContact, BudgetExceededStatus, BudgetIncreaseBasis, BudgetIncreaseRecord,
+    BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetScopeWindow,
+    BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
+};
+pub use credential_scopes::{
+    API_KEY_SCOPES, ApiKeyAccess, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
 };
 pub use domain::{
-    ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,
-    ApiKeySecretStorageKind, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
-    AwsBedrockRouteCompatibility, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
-    BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+    AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
+    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
+    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode,
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
+    ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
     IdentityUserRecord, MAX_ENTITY_TAGS, MAX_GUARDRAIL_DECISION_PAGE_SIZE,
     MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE, MAX_TAG_KEY_LEN,
     MAX_TAG_VALUE_LEN, ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
-    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthStateRecord,
-    McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpOauthClientRecord,
+    McpOauthStateRecord, McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
     McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
-    McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
-    McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolMetadata, McpToolPolicyResult,
+    McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
+    McpToolsetToolRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,
     ModelAccessMode, ModelAllowlistPolicy, ModelPricingProvenanceUpdate, ModelPricingRecord,
     ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
     NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
     NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
     OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
-    OidcProviderRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteApi, OpenRouterRouteCompatibility,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
-    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-    ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
+    OidcProviderRecord, OpenAiCompatDecisionsApi, OpenAiCompatDeveloperRole,
+    OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteApi,
+    OpenRouterRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    PricingLimits, PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderCapabilities, ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
     ProviderUserCredentialStatusRecord, ReasoningEffort, RefreshMcpOauthCredentialBindingRecord,
     RequestAttemptRecord, RequestAttemptStatus, RequestLogDetail, RequestLogPage,
     RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -117,26 +132,66 @@ pub use gateway_keys::{
     encrypt_gateway_api_key_secret, encrypt_secret_with_key, encrypt_secret_with_key_and_aad,
     generate_gateway_api_key_value, hash_gateway_key_secret, validate_secret_key_env,
 };
+pub use mcp_client_oauth::{
+    GatewayAuthMethod, GatewayOauthAuthorizationDecision, GatewayOauthAuthorizationRequestRecord,
+    GatewayOauthAuthorizationStatus, GatewayOauthClientAuthMethod, GatewayOauthClientRecord,
+    GatewayOauthGrantRecord, GatewayOauthGrantSummary, GatewayOauthPurgeCounts,
+    GatewayOauthRepository, GatewayOauthSessionState, GatewayOauthTokenContext,
+    GatewayOauthTokenKind, GatewayOauthTokenRecord, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX,
+    OAUTH_REFRESH_TOKEN_PREFIX, SUPPORTED_SCOPES, parse_scope_list,
+};
+pub use mcp_tool_policy::{
+    McpAnnotationOverrides, McpTagRuleEffect, McpTagRuleSet, McpToolPolicy, McpToolTagRuleKey,
+    McpToolTagRuleRecord,
+};
+pub use mcp_tool_review::{
+    McpToolApprovalStatus, McpToolDefinition, McpToolDefinitionKey, McpToolReviewDecision,
+    McpToolReviewState, McpToolVersionQuery, McpToolVersionRecord, McpToolVersionStatus,
+};
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
-    ContentPartType as CoreContentPartType, DECISIONS_CHOICE_MAX_OPTIONS,
-    DECISIONS_SCORE_MAX_LEVELS, DECISIONS_SCORE_MIN_LEVELS,
-    DecisionQuestion as CoreDecisionQuestion, DecisionsRequest as CoreDecisionsRequest,
-    EmbeddingsRequest as CoreEmbeddingsRequest, NoulCriteria as CoreNoulCriteria,
+    ContentPartType as CoreContentPartType, EmbeddingsRequest as CoreEmbeddingsRequest,
     RequestRequirements as CoreRequestRequirements, ResponsesRequest as CoreResponsesRequest,
 };
+pub use protocol::decisions::{
+    DECISIONS_CHOICE_MAX_OPTIONS, DECISIONS_SCORE_MAX_LEVELS, DECISIONS_SCORE_MIN_LEVELS,
+    DecisionAnswer as CoreDecisionAnswer, DecisionChoiceOption as CoreDecisionChoiceOption,
+    DecisionChoiceValue, DecisionOutcome as CoreDecisionOutcome,
+    DecisionQuestion as CoreDecisionQuestion, DecisionQuestionKind as CoreDecisionQuestionKind,
+    DecisionScoreLevel as CoreDecisionScoreLevel, DecisionsInput as CoreDecisionsInput,
+    DecisionsInputMessage, DecisionsInputPart, DecisionsMessageContent,
+    DecisionsRequest as CoreDecisionsRequest, DecisionsResponse as CoreDecisionsResponse,
+    DecisionsUsage as CoreDecisionsUsage, DecisionsWireFormat, NoulCriteria as CoreNoulCriteria,
+    ProviderDecisionsResponse,
+    openai::{
+        OPENAI_DECISIONS_MAX_QUESTIONS, OpenAiDecisionAnswer, OpenAiDecisionQuestion,
+        OpenAiDecisionsInput, OpenAiDecisionsRequest, OpenAiDecisionsResponse,
+        OpenAiDecisionsUsage, core_decisions_request_to_openai, core_decisions_response_to_openai,
+        openai_decisions_request_to_core, openai_decisions_response_to_core,
+    },
+    system_one::{
+        SystemOneDecisionAnswer, SystemOneDecisionQuestion, SystemOneDecisionsRequest,
+        SystemOneDecisionsResponse, SystemOneDecisionsUsage, core_decisions_request_to_system_one,
+        core_decisions_response_to_system_one, system_one_decisions_request_to_core,
+        system_one_decisions_response_to_core,
+    },
+};
 pub use protocol::openai::{
-    ChatCompletionsRequest, DecisionAnswer, DecisionQuestion, DecisionsRequest, DecisionsResponse,
-    DecisionsUsage, EmbeddingsRequest, NoulCriteria, OpenAiErrorBody, OpenAiErrorEnvelope,
+    ChatCompletionsRequest, EmbeddingsRequest, OpenAiErrorBody, OpenAiErrorEnvelope,
     ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse, ResponsesStreamEvent,
 };
 pub use protocol::translate::{
     anthropic_messages_request_to_core, core_chat_request_to_openai,
-    core_decisions_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai, openai_chat_request_to_core,
-    openai_decisions_request_to_core, openai_embeddings_request_to_core,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
+    openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core,
+};
+pub use rate_limits::{
+    MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION, MAX_RATE_LIMIT_POLICY_NAME_LEN,
+    RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
+    RateLimitCounterObservation, RateLimitMetric, RateLimitOperation, RateLimitPeriod,
+    RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind, RateLimitWindow,
 };
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
@@ -160,6 +215,6 @@ pub use traits::{
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
     ProviderRepository, ProviderStream, ProviderUserCredentialRepository,
-    ProviderUserTokenResolver, RequestAttemptRepository, RequestLogRepository,
+    ProviderUserTokenResolver, RateLimitRepository, RequestAttemptRepository, RequestLogRepository,
     ReviewAgentRepository, RoutePlanner, StoreHealth,
 };

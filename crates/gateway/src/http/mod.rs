@@ -2,16 +2,24 @@ pub mod admin_auth;
 pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
+pub mod audit;
+#[cfg(test)]
+mod audit_tests;
 pub mod batches;
+#[cfg(test)]
+mod budget_status_tests;
+pub mod client_ip;
 pub mod error;
 mod focus_export;
 pub mod guardrail_events;
 pub mod guardrails;
 pub mod handlers;
 pub mod identity;
+mod identity_audit;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod inference_guardrails;
+pub mod mcp_client_oauth;
 pub mod mcp_gateway;
 pub mod mcp_oauth;
 pub mod mcp_registry;
@@ -19,11 +27,17 @@ pub mod models;
 pub mod observability;
 pub mod profile;
 pub mod provider_credentials;
+pub mod rate_limit_policies;
+#[cfg(test)]
+mod rate_limit_tests;
 mod request_body;
+pub mod request_policy;
 pub mod request_tags;
 mod request_tracing;
 pub mod response_cache;
 pub mod review_agent;
+#[cfg(test)]
+mod scoped_api_key_tests;
 pub mod skills;
 pub mod spend;
 pub mod spend_budget_increases;
@@ -37,7 +51,7 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     middleware,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 use http::HeaderName;
 use tower_http::{
@@ -46,9 +60,24 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, batches::*, guardrails::*, handlers::*, identity::*, mcp_gateway::*, mcp_oauth::*,
-    mcp_registry::*, models::*, observability::*, profile::*, provider_credentials::*,
-    review_agent::*, spend::*, spend_budget_increases::*, state::AppState,
+    api_keys::*,
+    audit::{get_audit_log, list_audit_logs},
+    batches::*,
+    guardrails::*,
+    handlers::*,
+    identity::*,
+    mcp_client_oauth::*,
+    mcp_gateway::*,
+    mcp_oauth::*,
+    mcp_registry::*,
+    models::*,
+    observability::*,
+    profile::*,
+    provider_credentials::*,
+    review_agent::*,
+    spend::*,
+    spend_budget_increases::*,
+    state::AppState,
 };
 
 pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
@@ -57,18 +86,53 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             .expect("configured archive limit fits usize")
             .saturating_add(64 * 1024);
     }
+    // The admin UI proxy resolves the browser through trusted proxies and signs its
+    // address for audit entries.
+    admin_ui.client_ip_signing_key = Some(state.client_ip_signing_key());
+    admin_ui.trusted_proxies = state.trusted_proxies.clone();
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
 
     let inference_router = Router::new()
         .route("/v1/messages", post(v1_messages))
         .route("/messages", post(v1_messages))
+        .route("/v1/messages/count_tokens", post(v1_messages_count_tokens))
+        .route("/messages/count_tokens", post(v1_messages_count_tokens))
+        // Unversioned aliases for clients whose base URL already ends at the gateway root.
+        .route("/chat/completions", post(v1_chat_completions))
+        .route("/responses", post(v1_responses))
+        .route("/embeddings", post(v1_embeddings))
+        .route("/decisions", post(v1_decisions))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
         .route("/v1/decisions", post(v1_decisions))
+        .route("/v1/systemone", post(v1_systemone))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
-        .layer(middleware::from_fn(request_body::observe_request_body));
+        .layer(middleware::from_fn(request_body::observe_request_body))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            request_policy::request_policy,
+        ));
+
+    let mcp_router = Router::new()
+        .route(
+            "/mcp",
+            post(mcp_aggregate_streamable_http)
+                .get(mcp_aggregate_streamable_http)
+                .delete(mcp_aggregate_streamable_http),
+        )
+        .route(
+            "/mcp/{server_key}",
+            post(mcp_streamable_http_proxy)
+                .get(mcp_streamable_http_proxy)
+                .delete(mcp_streamable_http_proxy),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            request_policy::request_policy,
+        ))
+        .layer(mcp_client_oauth::mcp_transport_cors());
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -89,6 +153,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(list_api_keys).post(create_api_key),
         )
         .route("/api/v1/admin/api-keys/{api_key_id}", patch(update_api_key))
+        .route(
+            "/api/v1/admin/api-keys/{api_key_id}/scopes",
+            put(update_api_key_scopes),
+        )
         .route(
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),
@@ -241,6 +309,16 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             post(create_budget_increase),
         )
         .route(
+            "/api/v1/admin/rate-limits",
+            get(rate_limit_policies::list_rate_limit_policies)
+                .post(rate_limit_policies::create_rate_limit_policy),
+        )
+        .route(
+            "/api/v1/admin/rate-limits/{policy_id}",
+            patch(rate_limit_policies::update_rate_limit_policy)
+                .delete(rate_limit_policies::delete_rate_limit_policy),
+        )
+        .route(
             "/api/v1/admin/spend/budget-alerts",
             get(list_budget_alert_history),
         )
@@ -276,6 +354,11 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
             get(get_mcp_tool_invocation_detail),
         )
+        .route("/api/v1/admin/audit-logs", get(list_audit_logs))
+        .route(
+            "/api/v1/admin/audit-logs/{audit_log_id}",
+            get(get_audit_log),
+        )
         .route(
             "/api/v1/admin/guardrails/policies",
             get(get_guardrail_policies),
@@ -309,8 +392,44 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(list_mcp_server_tools),
         )
         .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags",
+            put(set_mcp_tool_tags),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides",
+            put(set_mcp_tool_annotation_overrides),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions",
+            get(list_mcp_tool_versions),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve",
+            post(approve_mcp_tool_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject",
+            post(reject_mcp_tool_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules",
+            get(list_mcp_tag_rules).post(create_mcp_tag_rule),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules/preview",
+            get(preview_mcp_tag_rule),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules/{rule_id}",
+            delete(revoke_mcp_tag_rule),
+        )
+        .route(
             "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh",
             post(refresh_mcp_server_discovery),
+        )
+        .route(
+            "/api/v1/admin/mcp/oauth-discovery",
+            post(discover_mcp_server_oauth),
         )
         .route(
             "/api/v1/admin/mcp/toolsets",
@@ -362,6 +481,11 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/mcp/oauth/{provider_key}/callback",
             get(mcp_oauth_callback),
         )
+        .route("/api/v1/mcp/oauth/callback", get(mcp_oauth_server_callback))
+        .route(
+            "/api/v1/mcp/oauth/client-metadata.json",
+            get(mcp_oauth_client_metadata_document),
+        )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
         .route("/api/v1/auth/logout", post(logout_current_session))
@@ -390,21 +514,37 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(oauth_callback_github),
         )
         .route("/v1/models", get(v1_models))
+        .route("/models", get(v1_models))
         .route("/v1/model-metadata", get(v1_model_metadata))
         .merge(inference_router)
         .merge(skills::router())
+        .merge(mcp_client_oauth::public_router())
+        .route("/oauth/authorize", get(oauth_authorize))
         .route(
-            "/mcp",
-            post(mcp_aggregate_streamable_http)
-                .get(mcp_aggregate_streamable_http)
-                .delete(mcp_aggregate_streamable_http),
+            "/api/v1/oauth/authorization-requests/{request_id}",
+            get(get_oauth_authorization_request),
         )
         .route(
-            "/mcp/{server_key}",
-            post(mcp_streamable_http_proxy)
-                .get(mcp_streamable_http_proxy)
-                .delete(mcp_streamable_http_proxy),
+            "/api/v1/oauth/authorization-requests/{request_id}/decision",
+            post(decide_oauth_authorization_request),
         )
+        .route(
+            "/api/v1/me/authorized-mcp-clients",
+            get(list_my_authorized_mcp_clients),
+        )
+        .route(
+            "/api/v1/me/authorized-mcp-clients/{grant_id}",
+            delete(revoke_my_authorized_mcp_client),
+        )
+        .route(
+            "/api/v1/admin/mcp/authorized-clients",
+            get(admin_list_authorized_mcp_clients),
+        )
+        .route(
+            "/api/v1/admin/mcp/authorized-clients/revoke",
+            post(admin_revoke_authorized_mcp_clients),
+        )
+        .merge(mcp_router)
         .with_state(state)
         .layer(middleware::from_fn_with_state(
             identity_guard_state,

@@ -1,4 +1,5 @@
 pub mod admin_api_keys;
+pub mod admin_audit;
 pub mod admin_models;
 mod agent_analysis;
 pub mod authenticator;
@@ -12,19 +13,24 @@ pub mod effective_route_metadata;
 pub mod icon_identity;
 pub mod mcp_access;
 pub mod mcp_catalog;
+pub mod mcp_client_oauth;
 pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_oauth;
+pub mod mcp_oauth_discovery;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
+pub mod mcp_tool_policy;
 pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
+pub mod outbound_fetch;
 mod payload_bounding;
 pub mod pricing_catalog;
 pub mod provider_credentials;
+pub mod rate_limits;
 pub mod redaction;
 pub mod request_logging;
 pub mod review_agent;
@@ -35,9 +41,15 @@ pub mod service;
 pub mod skills;
 
 pub use admin_api_keys::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    PersonalApiKey, RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput, api_key_display_prefix,
+    AdminApiKeyMcpServerOption, AdminApiKeyModelOption, AdminApiKeyService,
+    AdminApiKeyServiceAccountOwner, AdminApiKeySummary, AdminApiKeyUserOwner, AdminApiKeysPayload,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, PersonalApiKey, RevealAdminApiKeySecretResult,
+    RevokeAdminApiKeyResult, UpdateAdminApiKeyInput, UpdateAdminApiKeyResult,
+    UpdateAdminApiKeyScopesInput, UpdateAdminApiKeyScopesResult, api_key_display_prefix,
+};
+pub use admin_audit::{
+    AdminAudit, AuditAction, AuditContext, AuditEvent, AuditProgress, is_secret_path_segment,
+    redact_audit_value,
 };
 pub use admin_models::{
     AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,
@@ -73,12 +85,18 @@ pub use icon_identity::{
     provider_icon_key_from_metadata, resolve_model_icon_key, resolve_provider_display,
     resolve_provider_display_from_parts,
 };
-pub use mcp_access::{McpAccess, grant_subjects};
+pub use mcp_access::{McpAccess, McpAccessPreview, grant_subjects};
 pub use mcp_catalog::{
     CallMcpToolInput, DescribeMcpToolInput, DescribeMcpToolOutput, MAX_SEARCH_LIMIT,
     MCP_CATALOG_RANKER, McpCatalog, McpCatalogSearchItem, McpCatalogServerView,
     McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput, SearchMcpToolsOutput,
     parse_tool_address, tool_address,
+};
+pub use mcp_client_oauth::{
+    AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
+    ClientMetadataDocumentSource, ClientMetadataDocuments, ClientRegistrationRequest,
+    ClientRegistrationResponse, FetchedDocument, McpClientOauthService, McpClientOauthSettings,
+    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
@@ -89,14 +107,26 @@ pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,
 };
-pub use mcp_oauth::{McpOauthProvider, McpOauthRuntime, McpOauthTokenBundle, McpOauthTokenGrant};
+pub use mcp_oauth::{
+    McpOauthClient, McpOauthProvider, McpOauthProviderType, McpOauthRuntime, McpOauthTokenBundle,
+    McpOauthTokenGrant,
+};
+pub use mcp_oauth_discovery::{
+    BearerChallenge, McpOauthDiscovery, RegisteredOauthClient, choose_token_endpoint_auth_method,
+    parse_bearer_challenge, register_oauth_client,
+};
 pub use mcp_registry::{
     CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
+pub use mcp_tool_policy::{
+    MAX_TAG_RULE_PREVIEW_MATCHES, McpTagRuleMatch, McpTagRulePreview, McpToolPolicyService,
+};
 pub use mcp_upstream_auth::{
-    McpOauthServerConfig, mcp_oauth_server_config, supports_public_discovery,
+    API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
+    McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,
+    gateway_mcp_upstream_query, mcp_oauth_server_config, supports_public_discovery,
 };
 pub use model_access::ModelAccess;
 pub use model_resolution::{
@@ -110,6 +140,10 @@ pub use pricing_catalog::{
 pub use provider_credentials::{
     PROVIDER_CREDENTIAL_KEY_ENV, PROVIDER_CREDENTIAL_KEY_ID, ProviderCredentialService,
     ProviderCredentialStatus,
+};
+pub use rate_limits::{
+    ConfiguredRateLimitPolicy, RateLimitDecision, RateLimitFailureMode, RateLimitPolicySource,
+    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimiter,
 };
 pub use redaction::{
     MAX_INLINE_REQUEST_BYTES, PayloadPath, PayloadSecretRedactor, RequestLogPayloadCaptureMode,

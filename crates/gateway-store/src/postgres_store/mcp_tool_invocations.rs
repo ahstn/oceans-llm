@@ -26,6 +26,7 @@ fn decode_mcp_tool_invocation_row(row: &PgRow) -> Result<McpToolInvocationRecord
     let result_payload_redacted: i64 = row.try_get(21).map_err(to_query_error)?;
     let metadata_json: String = row.try_get(22).map_err(to_query_error)?;
     let occurred_at: i64 = row.try_get(23).map_err(to_query_error)?;
+    let mcp_method: String = row.try_get(24).map_err(to_query_error)?;
 
     Ok(McpToolInvocationRecord {
         mcp_tool_invocation_id: parse_uuid(&mcp_tool_invocation_id)?,
@@ -58,7 +59,9 @@ fn decode_mcp_tool_invocation_row(row: &PgRow) -> Result<McpToolInvocationRecord
         result_payload_redacted: result_payload_redacted == 1,
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        mcp_method,
         occurred_at: unix_to_datetime(occurred_at)?,
+        tool_schema_version: row.try_get(25).map_err(to_query_error)?,
     })
 }
 
@@ -79,8 +82,9 @@ impl McpToolInvocationRepository for PostgresStore {
                 owner_kind, server_id, server_display_key, server_display_name, tool_id,
                 tool_display_key, tool_display_name, status, policy_result, latency_ms,
                 error_code, has_payload, arguments_payload_truncated, result_payload_truncated,
-                arguments_payload_redacted, result_payload_redacted, metadata_json, occurred_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+                arguments_payload_redacted, result_payload_redacted, metadata_json, occurred_at, mcp_method,
+                tool_schema_version
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
             "#,
         )
         .bind(invocation.mcp_tool_invocation_id.to_string())
@@ -123,6 +127,8 @@ impl McpToolInvocationRepository for PostgresStore {
         })
         .bind(metadata_json)
         .bind(invocation.occurred_at.unix_timestamp())
+        .bind(invocation.mcp_method.as_str())
+        .bind(invocation.tool_schema_version)
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -177,6 +183,7 @@ impl McpToolInvocationRepository for PostgresStore {
               AND ($10::text IS NULL OR policy_result = $10)
               AND ($11::bigint IS NULL OR occurred_at >= $11)
               AND ($12::bigint IS NULL OR occurred_at <= $12)
+              AND ($13::text IS NULL OR mcp_method = $13)
             "#,
         )
         .bind(query.request_id.as_deref())
@@ -191,6 +198,7 @@ impl McpToolInvocationRepository for PostgresStore {
         .bind(policy_result)
         .bind(occurred_at_start)
         .bind(occurred_at_end)
+        .bind(query.mcp_method.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -203,7 +211,7 @@ impl McpToolInvocationRepository for PostgresStore {
                    tool_id, tool_display_key, tool_display_name, status, policy_result,
                    latency_ms, error_code, has_payload, arguments_payload_truncated,
                    result_payload_truncated, arguments_payload_redacted,
-                   result_payload_redacted, metadata_json, occurred_at
+                   result_payload_redacted, metadata_json, occurred_at, mcp_method, tool_schema_version
             FROM mcp_tool_invocations
             WHERE ($1::text IS NULL OR request_id = $1)
               AND ($2::text IS NULL OR server_display_key = $2)
@@ -217,8 +225,9 @@ impl McpToolInvocationRepository for PostgresStore {
               AND ($10::text IS NULL OR policy_result = $10)
               AND ($11::bigint IS NULL OR occurred_at >= $11)
               AND ($12::bigint IS NULL OR occurred_at <= $12)
+              AND ($13::text IS NULL OR mcp_method = $13)
             ORDER BY occurred_at DESC, mcp_tool_invocation_id DESC
-            LIMIT $13 OFFSET $14
+            LIMIT $14 OFFSET $15
             "#,
         )
         .bind(query.request_id.as_deref())
@@ -233,6 +242,7 @@ impl McpToolInvocationRepository for PostgresStore {
         .bind(policy_result)
         .bind(occurred_at_start)
         .bind(occurred_at_end)
+        .bind(query.mcp_method.as_deref())
         .bind(page_size)
         .bind(offset)
         .fetch_all(&self.pool)
@@ -263,7 +273,7 @@ impl McpToolInvocationRepository for PostgresStore {
                    mti.policy_result, mti.latency_ms, mti.error_code, mti.has_payload,
                    mti.arguments_payload_truncated, mti.result_payload_truncated,
                    mti.arguments_payload_redacted, mti.result_payload_redacted,
-                   mti.metadata_json, mti.occurred_at, mtip.arguments_json, mtip.result_json
+                   mti.metadata_json, mti.occurred_at, mti.mcp_method, mti.tool_schema_version, mtip.arguments_json, mtip.result_json
             FROM mcp_tool_invocations mti
             LEFT JOIN mcp_tool_invocation_payloads mtip
               ON mtip.mcp_tool_invocation_id = mti.mcp_tool_invocation_id
@@ -282,8 +292,8 @@ impl McpToolInvocationRepository for PostgresStore {
         };
 
         let invocation = decode_mcp_tool_invocation_row(&row)?;
-        let arguments_json: Option<serde_json::Value> = row.try_get(24).map_err(to_query_error)?;
-        let result_json: Option<serde_json::Value> = row.try_get(25).map_err(to_query_error)?;
+        let arguments_json: Option<serde_json::Value> = row.try_get(26).map_err(to_query_error)?;
+        let result_json: Option<serde_json::Value> = row.try_get(27).map_err(to_query_error)?;
         let payload = match (arguments_json, result_json) {
             (Some(arguments_json), Some(result_json)) => Some(McpToolInvocationPayloadRecord {
                 mcp_tool_invocation_id,

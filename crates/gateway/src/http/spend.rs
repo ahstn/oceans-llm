@@ -11,6 +11,7 @@ use gateway_core::{
     ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
     TokenUsageBuckets, UserStatus, budget_window_utc,
 };
+use gateway_service::{AuditEvent, admin_audit::actions};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
@@ -30,6 +31,7 @@ use crate::http::{
         SpendReportQuery, SpendReportView, SpendTokenPointView, SpendTotalsView,
         UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
     state::AppState,
@@ -444,9 +446,10 @@ pub async fn list_spend_budgets(
 pub async fn upsert_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<UpsertBudgetRequest>,
 ) -> Result<Json<Envelope<UpsertBudgetResultView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let scope = parse_budget_scope(&request.scope)?;
     validate_budget_scope_exists(&state, &scope).await?;
     let cadence = parse_budget_cadence(&request.cadence)?;
@@ -460,10 +463,27 @@ pub async fn upsert_budget(
     };
     let now = OffsetDateTime::now_utc();
 
-    let budget = state
+    // The store decides under one write lock whether the save changed anything and
+    // which budget it replaced, so a concurrent edit cannot skew either. Saving over
+    // a config budget changes its owner to manual, which counts as a change.
+    let save = state
         .store
-        .upsert_active_budget(&scope, &settings, now)
+        .set_manual_budget(&scope, &settings, now)
         .await?;
+    let budget = save.budget;
+    if save.changed {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                AuditEvent::new(actions::BUDGET_SET)
+                    .target(&budget.scope_key)
+                    .meta("budget_id", budget.budget_id)
+                    .before(save.replaced.as_ref().map(budget_audit_summary))
+                    .after(budget_audit_summary(&budget)),
+            )
+            .await;
+    }
     let current_window_spend = current_window_spend(&state, &budget, now).await?;
     state
         .service
@@ -490,9 +510,10 @@ pub async fn upsert_budget(
 pub async fn deactivate_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<DeactivateBudgetRequest>,
 ) -> Result<Json<Envelope<DeactivateBudgetResultView>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
     let scope = parse_budget_scope(&request.scope)?;
     if let BudgetScope::ServiceAccount { service_account_id } = scope
         && state
@@ -508,10 +529,24 @@ pub async fn deactivate_budget(
     }
     let scope_key = scope.scope_key();
 
+    // The store returns the budget it deactivated as it was just before, read under
+    // the write lock, so `before` holds the settings and owner actually turned off.
     let deactivated = state
         .store
-        .deactivate_active_budget(&scope, OffsetDateTime::now_utc())
+        .deactivate_active_budget_returning(&scope, OffsetDateTime::now_utc())
         .await?;
+    if let Some(budget) = &deactivated {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                AuditEvent::new(actions::BUDGET_DEACTIVATED)
+                    .target(&scope_key)
+                    .before(budget_audit_summary(budget)),
+            )
+            .await;
+    }
+    let deactivated = deactivated.is_some();
     Ok(Json(envelope(DeactivateBudgetResultView {
         scope: scope_to_view(&scope),
         scope_key,
@@ -573,6 +608,15 @@ pub async fn list_budget_alert_history(
         page_size: history.page_size,
         total: history.total,
     })))
+}
+
+/// Settings plus owner, so a save that only takes ownership of a config budget
+/// shows what changed.
+fn budget_audit_summary(record: &BudgetRecord) -> serde_json::Value {
+    serde_json::json!({
+        "settings": budget_to_settings_view(record),
+        "source": budget_source_to_view(&record.source),
+    })
 }
 
 pub(super) fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {

@@ -11,6 +11,10 @@ import {
   completeInvitation,
   createApiKey,
   createMcpServer,
+  createRateLimitPolicy,
+  deleteRateLimitPolicy,
+  listRateLimitPolicies,
+  updateRateLimitPolicy,
   createTeam,
   createUser,
   createBudgetIncrease,
@@ -36,6 +40,8 @@ import {
   getGatewayVersion,
   listRequestLogs,
   listBatches,
+  getAuditLog,
+  listAuditLogs,
   listGuardrailDecisions,
   listMcpInvocations,
   listMcpOauthConnections,
@@ -67,14 +73,20 @@ import {
   revokeApiKey,
   refreshModelPricingCatalog,
   refreshMcpServerDiscovery,
+  discoverMcpServerOauth,
   revokeMcpCredentialBinding,
   revokeMcpOauthConnection,
+  decideOauthAuthorizationRequest,
+  getOauthAuthorizationRequest,
+  listAuthorizedMcpClients,
+  revokeAuthorizedMcpClient,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
   transferTeamMember,
   upsertBudget,
   updateApiKey,
+  updateApiKeyScopes,
   updateMcpServer,
   updateMcpToolset,
   updateTeam,
@@ -175,6 +187,23 @@ function optionalRfc3339(value: unknown, label: string): string | undefined {
     throw new Error(`${label} must be an RFC 3339 timestamp`)
   }
   return timestamp
+}
+
+type AuditLogFilters = NonNullable<Parameters<typeof listAuditLogs>[0]>
+
+function validateAuditLogFilters(data: unknown): AuditLogFilters {
+  if (data === undefined) return {}
+  const input = requireObject(data, 'Audit log filters')
+  return {
+    actor_user_id: optionalString(input.actor_user_id, 'actor_user_id'),
+    action: optionalString(input.action, 'action'),
+    target_type: optionalString(input.target_type, 'target_type'),
+    target_id: optionalString(input.target_id, 'target_id'),
+    occurred_at_start: optionalRfc3339(input.occurred_at_start, 'occurred_at_start'),
+    occurred_at_end: optionalRfc3339(input.occurred_at_end, 'occurred_at_end'),
+    cursor: optionalString(input.cursor, 'cursor'),
+    limit: optionalPositiveInteger(input.limit, 'limit'),
+  }
 }
 
 type GuardrailDecisionFilters = NonNullable<Parameters<typeof listGuardrailDecisions>[0]>
@@ -306,6 +335,38 @@ export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
     return updateApiKey(data.apiKeyId, data.input)
   },
 )
+
+/** `null` restores full access or every server; otherwise a list of names. */
+function nullableStringList(value: unknown, label: string): string[] | null {
+  if (value === null) return null
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`${label} must be null or a list of strings`)
+  }
+  return value
+}
+
+function validateApiKeyScopesInput(data: unknown): {
+  apiKeyId: string
+  input: { scopes: string[] | null; mcp_server_keys: string[] | null }
+} {
+  const input = requireObject(data, 'API key scopes input')
+  const apiKeyId = optionalString(input.apiKeyId, 'apiKeyId')
+  if (!apiKeyId?.trim()) throw new Error('apiKeyId is required')
+  const scopes = requireObject(input.input, 'API key scopes')
+  return {
+    apiKeyId,
+    input: {
+      scopes: nullableStringList(scopes.scopes, 'scopes'),
+      mcp_server_keys: nullableStringList(scopes.mcp_server_keys, 'mcp_server_keys'),
+    },
+  }
+}
+
+export const updateGatewayApiKeyScopes = createServerFn({ method: 'POST' })
+  .validator(validateApiKeyScopesInput)
+  .handler(async ({ data }) => {
+    return updateApiKeyScopes(data.apiKeyId, data.input)
+  })
 
 export const getModels = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {
@@ -485,6 +546,23 @@ export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(
   return getGuardrailPolicies()
 })
 
+export const getAuditLogPage = createServerFn({ method: 'POST' })
+  .validator(validateAuditLogFilters)
+  .handler(async ({ data }) => {
+    return listAuditLogs(data)
+  })
+
+export const getAuditLogEntry = createServerFn({ method: 'GET' })
+  .validator((data: unknown) => {
+    const input = requireObject(data, 'Audit log entry')
+    const id = optionalString(input.id, 'id')
+    if (!id || !/^\d+$/.test(id)) throw new Error('id must be an audit log entry ID')
+    return { id }
+  })
+  .handler(async ({ data }) => {
+    return getAuditLog(data.id)
+  })
+
 export const getGuardrailDecisionPage = createServerFn({ method: 'POST' })
   .validator(validateGuardrailDecisionFilters)
   .handler(async ({ data }) => {
@@ -518,6 +596,66 @@ export const disconnectMcpOauthServer = createServerFn({ method: 'POST' })
   .validator(validateMcpOauthServerInput)
   .handler(async ({ data }) => {
     return revokeMcpOauthConnection(data.serverId)
+  })
+
+export const getAuthorizedMcpClients = createServerFn({ method: 'GET' }).handler(async () => {
+  return listAuthorizedMcpClients()
+})
+
+function validateGrantInput(input: unknown): { grantId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'grantId' in input &&
+    typeof input.grantId === 'string' &&
+    input.grantId.length > 0
+  ) {
+    return { grantId: input.grantId }
+  }
+  throw new Error('A valid authorized client ID is required')
+}
+
+export const disconnectAuthorizedMcpClient = createServerFn({ method: 'POST' })
+  .validator(validateGrantInput)
+  .handler(async ({ data }) => {
+    return revokeAuthorizedMcpClient(data.grantId)
+  })
+
+function validateOauthAuthorizationRequestInput(input: unknown): { requestId: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'requestId' in input &&
+    typeof input.requestId === 'string' &&
+    input.requestId.length > 0
+  ) {
+    return { requestId: input.requestId }
+  }
+  throw new Error('A valid authorization request ID is required')
+}
+
+function validateOauthAuthorizationDecisionInput(input: unknown): {
+  requestId: string
+  approve: boolean
+} {
+  const { requestId } = validateOauthAuthorizationRequestInput(input)
+  if (typeof input === 'object' && input !== null && 'approve' in input) {
+    const { approve } = input as { approve: unknown }
+    if (typeof approve === 'boolean') return { requestId, approve }
+  }
+  throw new Error('An authorization decision is required')
+}
+
+export const getOauthAuthorization = createServerFn({ method: 'GET' })
+  .validator(validateOauthAuthorizationRequestInput)
+  .handler(async ({ data }) => {
+    return getOauthAuthorizationRequest(data.requestId)
+  })
+
+export const decideOauthAuthorization = createServerFn({ method: 'POST' })
+  .validator(validateOauthAuthorizationDecisionInput)
+  .handler(async ({ data }) => {
+    return decideOauthAuthorizationRequest(data.requestId, data.approve)
   })
 
 export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
@@ -583,6 +721,25 @@ export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST'
     return refreshMcpServerDiscovery(data.serverId)
   },
 )
+
+function validateMcpOauthDiscoveryInput(input: unknown): { serverUrl: string } {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'serverUrl' in input &&
+    typeof input.serverUrl === 'string' &&
+    URL.canParse(input.serverUrl.trim())
+  ) {
+    return { serverUrl: input.serverUrl.trim() }
+  }
+  throw new Error('A valid MCP server URL is required')
+}
+
+export const discoverExternalMcpServerOauth = createServerFn({ method: 'POST' })
+  .validator(validateMcpOauthDiscoveryInput)
+  .handler(async ({ data }) => {
+    return discoverMcpServerOauth(data.serverUrl)
+  })
 
 export const getMcpCredentialBindings = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listMcpCredentialBindings>[0] }) => {
@@ -907,3 +1064,86 @@ export const completeInvitePassword = createServerFn({ method: 'POST' }).handler
     return completeInvitation(data.token, data.password)
   },
 )
+
+export const getRateLimitPolicies = createServerFn({ method: 'GET' }).handler(async () => {
+  return listRateLimitPolicies()
+})
+
+type RateLimitPolicyInput = Parameters<typeof createRateLimitPolicy>[0]
+
+const rateLimitEnums = {
+  operation: ['inference', 'count_tokens', 'mcp_tool_call'],
+  scope_kind: ['global', 'api_key', 'user', 'team'],
+  metric: ['requests', 'tokens'],
+  period: ['minute', 'hour', 'day', 'month'],
+} as const
+
+function requiredEnum<K extends keyof typeof rateLimitEnums>(
+  input: Record<string, unknown>,
+  key: K,
+): (typeof rateLimitEnums)[K][number] {
+  const value = requiredString(input, key)
+  const allowed: readonly string[] = rateLimitEnums[key]
+  if (!allowed.includes(value)) throw new Error(`${key} must be one of ${allowed.join(', ')}`)
+  return value as (typeof rateLimitEnums)[K][number]
+}
+
+function optionalId(input: Record<string, unknown>, key: string): string | null {
+  const value = input[key]
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${key} must be a string`)
+  return value.trim() || null
+}
+
+// Shape checks only; the gateway owns the scope, filter, and name rules.
+function validateRateLimitPolicyInput(data: unknown): RateLimitPolicyInput {
+  const input = requireObject(data, 'Rate limit policy')
+  const limit = input.limit
+  if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error('limit must be a positive integer')
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new Error('enabled must be a boolean')
+  }
+  return {
+    name: requiredString(input, 'name').trim(),
+    operation: requiredEnum(input, 'operation'),
+    scope_kind: requiredEnum(input, 'scope_kind'),
+    scope_id: optionalId(input, 'scope_id'),
+    model_key: optionalId(input, 'model_key'),
+    mcp_server_id: optionalId(input, 'mcp_server_id'),
+    metric: requiredEnum(input, 'metric'),
+    period: requiredEnum(input, 'period'),
+    limit,
+    enabled: input.enabled ?? true,
+  }
+}
+
+function validateRateLimitPolicyId(data: unknown): { policyId: string } {
+  const input = requireObject(data, 'Rate limit policy reference')
+  return { policyId: requiredString(input, 'policyId').trim() }
+}
+
+export const addRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator(validateRateLimitPolicyInput)
+  .handler(async ({ data }) => {
+    return createRateLimitPolicy(data)
+  })
+
+export const saveRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator((data: unknown) => {
+    const input = requireObject(data, 'Rate limit policy update')
+    return {
+      ...validateRateLimitPolicyId(input),
+      input: validateRateLimitPolicyInput(input.input),
+    }
+  })
+  .handler(async ({ data }) => {
+    return updateRateLimitPolicy(data.policyId, data.input)
+  })
+
+export const removeRateLimitPolicy = createServerFn({ method: 'POST' })
+  .validator(validateRateLimitPolicyId)
+  .handler(async ({ data }) => {
+    return deleteRateLimitPolicy(data.policyId)
+  })

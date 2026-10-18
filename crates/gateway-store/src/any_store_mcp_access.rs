@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use gateway_core::{
     ExternalMcpToolRecord, McpAccessRepository, McpAccessResolution, McpCatalogAccessResolution,
     McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-    McpToolsetRecord, McpToolsetToolRecord, NewMcpToolsetRecord, StoreError,
-    UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
+    McpToolProjection, McpToolTagRuleKey, McpToolTagRuleRecord, McpToolsetRecord,
+    McpToolsetToolRecord, NewMcpToolsetRecord, StoreError, UpdateMcpToolsetRecord,
+    UpsertMcpToolGrantRecord,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -22,6 +23,16 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_toolset(toolset_id).await,
+            Self::Postgres(store) => store.get_mcp_toolset(toolset_id).await,
+        }
+    }
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,
@@ -35,7 +46,7 @@ impl McpAccessRepository for AnyStore {
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError> {
+    ) -> Result<gateway_core::Updated<McpToolsetRecord>, StoreError> {
         match self {
             Self::Libsql(store) => store.update_mcp_toolset(input).await,
             Self::Postgres(store) => store.update_mcp_toolset(input).await,
@@ -58,7 +69,7 @@ impl McpAccessRepository for AnyStore {
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError> {
+    ) -> Result<gateway_core::Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
@@ -86,7 +97,7 @@ impl McpAccessRepository for AnyStore {
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError> {
+    ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => store.upsert_mcp_tool_grant(grant).await,
             Self::Postgres(store) => store.upsert_mcp_tool_grant(grant).await,
@@ -100,7 +111,7 @@ impl McpAccessRepository for AnyStore {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<Uuid>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
@@ -138,22 +149,54 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
-    async fn resolve_mcp_access_for_subjects(
+    async fn resolve_mcp_tool_for_subjects(
         &self,
         subjects: &[McpGrantSubject],
-        mcp_server_id: Option<Uuid>,
-    ) -> Result<McpAccessResolution, StoreError> {
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .resolve_mcp_access_for_subjects(subjects, mcp_server_id)
+                    .resolve_mcp_tool_for_subjects(subjects, mcp_server_id, upstream_name)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .resolve_mcp_access_for_subjects(subjects, mcp_server_id)
+                    .resolve_mcp_tool_for_subjects(subjects, mcp_server_id, upstream_name)
                     .await
             }
+        }
+    }
+
+    async fn resolve_mcp_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
+    ) -> Result<McpAccessResolution, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .resolve_mcp_access_for_subjects(subjects, mcp_server_id, projection)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .resolve_mcp_access_for_subjects(subjects, mcp_server_id, projection)
+                    .await
+            }
+        }
+    }
+
+    async fn has_mcp_server_grant(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => store.has_mcp_server_grant(subjects, mcp_server_id).await,
+            Self::Postgres(store) => store.has_mcp_server_grant(subjects, mcp_server_id).await,
         }
     }
 
@@ -192,6 +235,77 @@ impl McpAccessRepository for AnyStore {
                     .get_active_mcp_tool_by_name(mcp_server_id, upstream_name)
                     .await
             }
+        }
+    }
+
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_active_mcp_tools(mcp_server_id, after, limit)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_active_mcp_tools(mcp_server_id, after, limit)
+                    .await
+            }
+        }
+    }
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_tool_tag_rules(subject_kind, subject_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_tool_tag_rules(subject_kind, subject_id)
+                    .await
+            }
+        }
+    }
+
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        match self {
+            Self::Libsql(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
+            Self::Postgres(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
+        }
+    }
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_mcp_tool_tag_rule(rule_id).await,
+            Self::Postgres(store) => store.get_mcp_tool_tag_rule(rule_id).await,
+        }
+    }
+
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<McpToolTagRuleRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.revoke_mcp_tool_tag_rule(rule_id, revoked_at).await,
+            Self::Postgres(store) => store.revoke_mcp_tool_tag_rule(rule_id, revoked_at).await,
         }
     }
 }

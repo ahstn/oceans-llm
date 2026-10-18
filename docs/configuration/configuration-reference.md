@@ -29,6 +29,7 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `skills`
 - `budgets`
 - `budget_alerts`
+- `rate_limits`
 - `request_logging`
 - `agent_analysis`
 - `providers`
@@ -94,7 +95,7 @@ models:
     benchmark_model_id: anthropic/claude-sonnet-4.6
     routes:
       - provider: bedrock
-        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+        upstream_model: us.anthropic.claude-sonnet-4-6
 ```
 
 `benchmark_model_id` must look like `publisher/model`, with no whitespace and no `:variant` suffix. An explicit binding takes priority over the derived match, and an alias uses the nearest binding along its alias chain. If the ID is not in the snapshot, the model shows no scores.
@@ -313,6 +314,7 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.payloads.stream_max_events` defaults to `128`
 - `request_logging.purge.enabled` defaults to `false`
 - `request_logging.purge.retention` defaults to `7d`
+- `budgets.exceeded_status_code` defaults to `422`
 - `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
 - `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 - `permissions.users.pages` defaults to the 10 shared console pages
@@ -359,6 +361,7 @@ permissions:
       - mcp
       - review_agent
       - spend_controls
+      - rate_limits
     actions: []
     default_page: api_keys
 ```
@@ -377,11 +380,11 @@ Each `actions` list uses the same direct-grant and inheritance rules:
 
 Repeated page or action names are valid and appear once in the effective set. An explicit empty list removes that group's direct grants, but inherited grants still apply. If a group, `pages`, or `actions` field is absent, the gateway uses the direct defaults shown above.
 
-The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `leaderboard`, `agent_harnesses`, `agent_sessions`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
+The valid page names are `api_keys`, `models`, `mcp`, `review_agent`, `usage_costs`, `spend_controls`, `rate_limits`, `leaderboard`, `agent_harnesses`, `agent_sessions`, `request_logs`, `mcp_invocations`, `teams`, `users`, and `service_accounts`.
 
 The first action catalog contains `create_api_key`, `update_api_key`, `revoke_api_key`, and `reveal_api_key`. Users can receive the first three actions. Team admins and platform admins can receive all four. Other admin operations keep their existing authorization rules until they have a typed action and resource-scope policy.
 
-The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. Only `platform_admins` can receive `mcp` or `review_agent`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
+The `users` group can receive only the 10 shared page names in the example. The `team_admins` group can also receive `spend_controls` and `agent_sessions`. Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. Only `platform_admins` can receive `mcp`, `review_agent`, or `rate_limits`. Users cannot receive `reveal_api_key` because personal key secrets are shown only at creation. Startup fails for an unknown field, unknown page or action, unsupported group grant, or `default_page` that is not in the final effective page set.
 
 If `default_page` is absent, the gateway uses the normal group default when that page is available. Otherwise, it uses the first effective page in a stable order. The session returns this value, but the admin UI no longer uses it for landing: users with any effective page land on their personal `/admin/profile` page. A group with no effective pages uses the signed-in `/admin/no-access` page. See the [profile landing page ADR](../adr/2026-09-26-profile-landing-page.md).
 
@@ -399,6 +402,7 @@ Important fields:
 - `otel_metrics_endpoint`
 - `otel_trace_sample_ratio` (`0.0` through `1.0`, default `1.0`)
 - `otel_export_interval_secs`
+- `trusted_proxies` (list of IP addresses or CIDR ranges, default empty): proxies whose `X-Forwarded-For` header the gateway trusts when it resolves a client IP for request policy and admin audit entries. See [Rate Limits](rate-limits.md#client-ip-and-trusted-proxies)
 
 For collector and Datadog setup, see [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md). For request-log storage, see [Observability and Request Logs](../operations/observability-and-request-logs.md).
 
@@ -625,9 +629,38 @@ mcp:
         client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
 ```
 
+`private_network_hosts` lists the hosts of MCP servers on a private network, such as `mcp.corp.internal` or a tailnet name. Each entry also covers its subdomains. OAuth discovery, registration, and token requests for those servers may reach private-network addresses. Every other hostname reaches public addresses only, whatever it resolves to; a server entered by IP address or as `localhost` uses that address's own kind. Entries are bare domains, without a scheme, port, or wildcard.
+
 `public_base_url` is required when an MCP OAuth provider is configured. It must be the external HTTPS origin used for callbacks, without a path, query, fragment, or user information. Google is the first supported provider type. Its authorization and token endpoints are fixed to the official Google endpoints. The optional endpoint fields accept only those fixed values. The server registry, not provider configuration, owns each server's OAuth resource and scopes.
 
 `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
+
+OAuth sign-in for MCP clients connecting to the gateway is the opposite direction: Oceans is the authorization server. Configure it under `mcp.client_oauth`:
+
+```yaml
+mcp:
+  client_oauth:
+    enabled: true
+    public_base_url: https://gateway.example.com
+    access_token_ttl_seconds: 3600
+    refresh_token_ttl_seconds: 2592000
+    dynamic_client_registration: true
+    unused_client_retention_days: 7
+    client_id_metadata_documents:
+      enabled: true
+      allowed_domains: []
+```
+
+- `enabled` defaults to `false`. When it is `false`, the metadata, authorization, token, registration, and revocation endpoints return `404`, and MCP routes accept only `gwk_` keys.
+- `public_base_url` is the issuer and the origin of every MCP resource URI that tokens are bound to. It accepts `env.*` and `literal.*` references. When it is unset, the issuer falls back to `mcp.oauth.public_base_url`, then `auth.oidc.public_base_url`, then `auth.oauth.public_base_url`. Startup fails when the feature is enabled and none is set. The issuer must be an HTTPS origin; plain `http` is accepted only for `localhost`, `127.0.0.1`, and `[::1]`.
+- `access_token_ttl_seconds` defaults to 3600 and must be between 60 and 86400.
+- `refresh_token_ttl_seconds` defaults to 2592000 (30 days), must be at least the access-token lifetime, and at most 7776000 (90 days). Every token also expires when the admin session that approved it ends.
+- `dynamic_client_registration` defaults to `true`. When it is `false`, `/oauth/register` returns `404` and is left out of the metadata.
+- `unused_client_retention_days` defaults to 7 and must be between 1 and 365. An hourly cleanup deletes clients that never received a grant: dynamically registered ones older than this, and metadata document clients whose document was last fetched longer ago than this. It also deletes authorization requests and tokens that expired more than a day ago.
+- `client_id_metadata_documents.enabled` defaults to `true`. Clients may then use the https URL of a Client ID Metadata Document as their `client_id`, and the metadata advertises `client_id_metadata_document_supported: true`. Oceans fetches those documents from public addresses only. When it is `false`, such clients are refused.
+- `client_id_metadata_documents.allowed_domains` defaults to `[]`, which allows any public host. Otherwise only the listed hosts and their subdomains may publish documents. Each entry is a bare domain, such as `example.com`, without a scheme, port, or wildcard.
+
+For client setup, see [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
 
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
@@ -655,10 +688,11 @@ Important `users` fields:
 
 ## `budgets`
 
-`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts.
+`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts. `budgets.exceeded_status_code` sets the HTTP status for every hard-budget rejection, including service-account budgets.
 
 ```yaml
 budgets:
+  exceeded_status_code: 422
   users:
     default:
       cadence: daily
@@ -676,12 +710,14 @@ budgets:
 
 Important fields:
 
+- `exceeded_status_code`: HTTP status for hard-budget rejections. One of `402`, `422` (default) or `429`. The body always has `type: budget_error` and `code: budget_exceeded`. Set `429` only for clients that back off on budget errors; the OpenAI and Anthropic Python SDKs retry it. See [ADR: Budget Exhaustion Returns 422 Instead of 429](../adr/2026-10-14-budget-exceeded-status-code.md)
 - `users.default`: optional default user budget for all human users
 - `users.model_defaults[].model`: gateway model id from `models[*].id`
 - `users.model_defaults[].budget`: default user model budget applied per human user for that model
 
 Validation rules:
 
+- `exceeded_status_code` must be the number `402`, `422` or `429`; other values fail startup
 - default budget amounts must be non-negative
 - model-default entries must reference an existing configured gateway model
 - duplicate model-default entries are rejected after model id normalization
@@ -724,6 +760,57 @@ Seed semantics that matter:
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
 
 For OIDC and OAuth users, config seeding creates the invited identity and its provider association. It does not generate an onboarding URL. Config-seeded OIDC and OAuth users can sign in through the shared `/admin/login` page after deployment. A per-user SSO link from the control plane is optional. Config-seeded password users still require a unique password invite URL from the control plane. See [OIDC and SSO](../access/oidc-and-sso-status.md#start-sso-sign-in) for the complete sign-in contract.
+
+## `rate_limits`
+
+`rate_limits` sets platform-wide rate-limit defaults and how enforcement behaves. Platform admins add policies for specific keys, users, teams, and MCP servers on the Rate Limits page. See [Rate Limits](rate-limits.md) for windows, precedence, and responses.
+
+```yaml
+rate_limits:
+  failure_mode: open
+  policy_refresh_seconds: 10
+  policies:
+    - name: inference per key
+      operation: inference
+      scope: api_key
+      period: minute
+      limit: 600
+    - name: tokens per team
+      operation: inference
+      scope: team
+      model: fable-5
+      metric: tokens
+      period: hour
+      limit: 5000000
+    - name: tool calls per key
+      operation: mcp_tool_call
+      scope: api_key
+      mcp_server: notes
+      period: day
+      limit: 5000
+```
+
+Important fields:
+
+- `failure_mode`: `open` (default) admits requests when the counter store fails; `closed` rejects them with `503`
+- `policy_refresh_seconds`: how often each replica reloads admin policies, `1` to `3600`, default `10`
+- `policies[].name`: unique, 1 to 100 characters
+- `policies[].operation`: `inference`, `count_tokens`, or `mcp_tool_call`
+- `policies[].scope`: `global`, `api_key`, `user`, or `team`; non-global scopes give each principal its own counter
+- `policies[].model`: optional gateway model id, for `inference` and `count_tokens`
+- `policies[].mcp_server`: optional MCP server key, for `mcp_tool_call`
+- `policies[].metric`: `requests` (default) or `tokens`
+- `policies[].period`: `minute` or `hour` (sliding), `day` or `month` (UTC calendar quotas)
+- `policies[].limit`: positive integer
+
+Validation rules:
+
+- unknown fields, operations, scopes, metrics, periods, and failure modes fail startup
+- `limit` must be greater than `0`, and names must be unique after trimming
+- at most 100 policies per operation; admin policies count against the same limit when enabled
+- `tokens` is only valid with `operation: inference`
+- `model` must reference a configured gateway model and cannot be set for `mcp_tool_call`
+- `mcp_server` can only be set for `mcp_tool_call`; an unregistered key logs a warning at startup
 
 ## `budget_alerts`
 
@@ -1104,7 +1191,6 @@ models:
     routes:
       - provider: vertex-global
         upstream_model: anthropic/claude-fable-5-1
-        context_window_tokens: 1000000
 ```
 
 The accepted values, from least to greatest effort, are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. The gateway compares values using this order; it does not clamp or rewrite a request. Omitting the field or setting it to `null` leaves the model without a categorical ceiling.
@@ -1171,7 +1257,7 @@ Compatibility metadata is separate from capabilities. Capabilities decide whethe
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
-`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe` and an OpenRouter route with `compatibility.openrouter.api: decisions`.
+`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`.
 
 Vertex embedding-only route:
 
@@ -1309,6 +1395,7 @@ OpenAI-compatible profile defaults:
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+| `decisions_api` | unset | `openai` |
 
 `empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. When an empty array is omitted, neutral `tool_choice` values (`auto`, `none`, or `null`) are omitted with it; `required` and named choices are rejected locally because no tool can satisfy them. `preserve_with_tool_history` omits an otherwise empty array but retains it and `tool_choice` when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
@@ -1326,7 +1413,9 @@ OpenRouter policy fields:
 
 `compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. `api: decisions` can omit all provider policy fields. Other OpenRouter profiles must set at least one provider policy field. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
 
-The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
+`decisions_api: openai` makes the route send the OpenAI Decisions format to `{base_url}/decisions`. It requires an `openai_compat` provider and `capabilities.decisions: true`, and it cannot be combined with `compatibility.openrouter`. See [Model Routing and APIs](model-routing-and-api-behavior.md#decisions) for an example route.
+
+The other `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 

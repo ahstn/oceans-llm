@@ -4,9 +4,10 @@ version = 4
 
 [[package]]
 name = "admin-ui"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "axum 0.8.9",
+ "gateway-client-ip",
  "http-body-util",
  "reqwest 0.13.5",
  "serde",
@@ -53,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "agent-session-analysis"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1840,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "admin-ui",
  "anyhow",
@@ -1853,6 +1854,7 @@ dependencies = [
  "cron",
  "futures-util",
  "gateway-client-config",
+ "gateway-client-ip",
  "gateway-core",
  "gateway-guardrails",
  "gateway-mcp",
@@ -1863,6 +1865,7 @@ dependencies = [
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
+ "ipnet",
  "lettre",
  "openidconnect",
  "opentelemetry",
@@ -1890,7 +1893,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1898,8 +1901,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-client-ip"
+version = "0.40.0"
+dependencies = [
+ "hmac 0.12.1",
+ "http 1.5.0",
+ "ipnet",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "gateway-core"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "aes-gcm",
  "agent-session-analysis",
@@ -1918,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-guardrails"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "aho-corasick",
  "async-trait",
@@ -1939,7 +1952,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-mcp"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "axum 0.8.9",
  "futures-util",
@@ -1954,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1985,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -1995,8 +2008,10 @@ dependencies = [
  "base64 0.23.1",
  "gateway-client-config",
  "gateway-core",
+ "gateway-guardrails",
  "gateway-mcp",
  "gateway-skills",
+ "httpdate",
  "itertools 0.14.0",
  "percent-encoding",
  "rand 0.10.3",
@@ -2005,6 +2020,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha2 0.10.9",
+ "thiserror 2.0.21",
  "time",
  "tokio",
  "tracing",
@@ -2014,7 +2030,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-skills"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -2033,7 +2049,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -2702,9 +2718,9 @@ checksum = "2f0fb0570afe1fed943c5c3d4102d5358592d8625fda6a0007fdbe65a92fba96"
 
 [[package]]
 name = "ipnet"
-version = "2.12.1"
+version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
+checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -3344,7 +3360,7 @@ dependencies = [
 
 [[package]]
 name = "oceans-cli"
-version = "0.38.0"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -4609,9 +4625,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
  "itoa",
  "memchr",
@@ -5118,7 +5134,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -5230,9 +5246,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.53.2"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -5803,9 +5819,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.27.0"
+version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
+checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",

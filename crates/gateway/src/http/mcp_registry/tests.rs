@@ -140,6 +140,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
             auth_config: stored_auth,
             timeout_ms: 30_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("seed OAuth server");
@@ -164,6 +165,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
     let response = update_mcp_server(
         State(context.state.clone()),
         headers,
+        crate::http::audit::AuditRequestMeta::default(),
         Path(server.mcp_server_id.to_string()),
         Json(request),
     )
@@ -341,6 +343,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
             auth_config: Default::default(),
             timeout_ms: 5_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("create server");
@@ -352,6 +355,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
             display_name: name.to_string(),
             description: None,
             input_schema: json!({"type": "object"}),
+            metadata: gateway_core::McpToolMetadata::default(),
             schema_hash: "schema-hash".to_string(),
         })
         .collect();

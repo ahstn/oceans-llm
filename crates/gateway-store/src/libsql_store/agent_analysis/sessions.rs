@@ -161,11 +161,7 @@ impl AgentSessionTraceRepository for LibsqlStore {
     ) -> Result<bool, StoreError> {
         let limitations_json = crate::shared::serialize_json(&link.limitation_codes)?;
         let activity_at = link.completed_at.unwrap_or(link.occurred_at);
-        let transaction = self
-            .connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(to_query_error)?;
+        let transaction = self.begin_transaction().await?;
         let mut lifecycle_rows = transaction
             .query(
                 "SELECT lifecycle FROM agent_sessions WHERE agent_session_id = ?1",
@@ -339,11 +335,7 @@ impl AgentSessionTraceRepository for LibsqlStore {
                 "bounded observation sets must share their IDs".to_string(),
             ));
         }
-        let transaction = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+        let transaction = self.begin_transaction().await?;
         let locked = transaction
             .execute(
                 "UPDATE agent_sessions SET updated_at = updated_at WHERE agent_session_id = ?1",

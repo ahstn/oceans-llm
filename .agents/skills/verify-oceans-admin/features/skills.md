@@ -5,7 +5,7 @@ Skills verification follows the real browser path from namespace selection and Z
 ## Sub-features
 
 - `skills-bundled` imports the reviewed `bundled-skills/` copies into the demo admin namespace, skips an identical second import, verifies attribution and license content, and revokes the temporary user key.
-- `skills-entry` redirects anonymous users to sign-in and exposes Skills to a signed-in regular user.
+- `skills-entry` redirects anonymous users to sign-in and exposes the `Agent Skills` page to a signed-in regular user.
 - `skills-search` searches names, descriptions, and owner namespaces as text is entered, matches rows to the filtered API, and verifies no-match and cleared states.
 - `skills-namespace` claims a permanent unique namespace and rejects changes or reuse by another user.
 - `skills-upload` uploads a ZIP through the UI and confirms the owner, name, initial version, and digest through the API.
@@ -18,7 +18,7 @@ Skills verification follows the real browser path from namespace selection and Z
 
 ## How to get to it (user POV)
 
-- Open `/admin/skills` and sign in, or follow the `Skills` sidebar link.
+- Open `/admin/skills` and sign in, or follow the `Agent Skills` sidebar link under `Agent Extensions`. The page heading is `Agent Skills`.
 - Type into `Search skills` to search the full catalog by name, description, or owner namespace. Clear the input to restore the catalog; no submit button is required.
 - Choose `Upload skill` to claim a namespace on first use and select a ZIP archive.
 - Open the skill-name link in the matching Owner row to view instructions, versions, files, and download controls. The detail heading shows `namespace/skill-name`.
@@ -48,7 +48,7 @@ export OCEANS_VERIFY_SKILLS=true
 ```
 
 - **Check the curated copy.** After bootstrap admin sign-in, the driver creates a temporary ordinary admin identity and its user-owned key and uses the same importer as `mise run skills:import-bundled`. It claims `demo-admin`, imports `grill-me` twice, and requires one stored version. The browser shows Matt Pocock attribution, the pinned GitHub link, the MIT license, file count, and `DD/MM/YY HH:MM` upload time. SHA-256 and archive byte counts stay out of the UI; API digest checks remain active. The driver revokes the key, retains the last ordinary admin for private-database cleanup, and captures `01b-skills-bundled.*`.
-- **Enter and upload.** The driver opens the protected Skills route, captures the sign-in state, then creates two synthetic regular users through the production invitation API. It signs in through the browser, follows `Skills`, enters the unused owner namespace in `Search skills`, and confirms `No skills found`. `Upload skill` opens `Choose your skill namespace`; the `Namespace` input and `Claim namespace` button persist the namespace. `Upload a skill` accepts the tracked `review-code-v1.zip` fixture through `ZIP archive`.
+- **Enter and upload.** The driver opens the protected Skills route, waits for the `Agent Skills` heading, captures the sign-in state, then creates two synthetic regular users through the production invitation API. It signs in through the browser, follows the `Agent Skills` sidebar link, enters the unused owner namespace in `Search skills`, and confirms `No skills found`. `Upload skill` opens `Choose your skill namespace`; the `Namespace` input and `Claim namespace` button persist the namespace. `Upload a skill` accepts the tracked `review-code-v1.zip` fixture through `ZIP archive`.
 - **Read and version.** The detail heading must contain the owner's `namespace/review-code`. `skill-instructions` must contain version 1 instructions. The `Skill files` navigation opens `references/checklist.md`; `skill-file-text` must exactly match the production API. The driver uploads version 2, confirms that default version 1 remains selected in saved metadata, and checks `Version 1 (default)` and `Version 2 (latest)` in the picker. No separate `Status` field is shown. It uses `Set as default` to save version 2. `Download ZIP` must return bytes with the API's digest. Version 1 instructions and archive digest must remain unchanged.
 - **Check ownership.** A second user fails to claim the first namespace, then uploads the same skill name in a different namespace. That user can view the first skill, while `Upload new version` and `Set as default` are absent. The production API must deny append and default changes from both this user and the platform administrator with HTTP 403.
 - **Search the catalog.** The driver searches `review-code`, the description phrase `repeatable checklist`, and the owner's namespace. It verifies both duplicate names by their Owner cells and skill-ID link destinations. Each search updates the `q` URL parameter and matches `GET /api/v1/skills?q=...&limit=50&offset=0`. An unmatched query shows no results; clearing it restores the bundled and uploaded skills. The query and result IDs are saved under `details.catalog.search` in `skills-proof.json`.

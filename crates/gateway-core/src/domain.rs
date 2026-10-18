@@ -5,6 +5,8 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
+use crate::credential_scopes::ApiKeyAccess;
+use crate::protocol::decisions::DecisionsWireFormat;
 use crate::routing::ModelRoutingPolicy;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -453,6 +455,13 @@ pub enum ApiKeyModelGrantMode {
     Explicit,
 }
 
+/// An API key's grant mode and the models it is granted, in id order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiKeyModelAccess {
+    pub model_grant_mode: ApiKeyModelGrantMode,
+    pub model_ids: Vec<Uuid>,
+}
+
 impl ApiKeyModelGrantMode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -484,9 +493,18 @@ pub struct ApiKeyRecord {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
+}
+
+impl ApiKeyRecord {
+    /// Whether the key can still authenticate: active and not revoked.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.status == ApiKeyStatus::Active && self.revoked_at.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,6 +517,7 @@ pub struct NewApiKeyRecord {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
 }
 
@@ -698,6 +717,24 @@ pub struct McpOauthStateRecord {
     pub expires_at: OffsetDateTime,
     pub consumed_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
+}
+
+/// An OAuth client that Oceans registered with an upstream MCP authorization
+/// server through RFC 7591 dynamic client registration. The client secret and
+/// registration access token stay in the encrypted blob.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOauthClientRecord {
+    pub mcp_server_id: Uuid,
+    pub issuer: String,
+    pub redirect_uri: String,
+    pub client_id: String,
+    pub token_endpoint_auth_method: String,
+    pub secret_ciphertext: Option<String>,
+    pub secret_nonce: Option<String>,
+    pub secret_key_id: Option<String>,
+    pub client_secret_expires_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1620,6 +1657,9 @@ pub struct ExternalMcpServerRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
+    /// Hold new and changed tools until an admin approves them.
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1633,6 +1673,8 @@ pub struct NewExternalMcpServerRecord {
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
     pub created_at: OffsetDateTime,
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1645,6 +1687,7 @@ pub struct UpdateExternalMcpServerRecord {
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
     pub updated_at: OffsetDateTime,
+    pub approve_tool_changes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1655,12 +1698,38 @@ pub struct ExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    #[serde(default)]
+    pub metadata: McpToolMetadata,
+    /// Admin tags and annotation overrides. Discovery never writes them.
+    #[serde(default)]
+    pub policy: crate::mcp_tool_policy::McpToolPolicy,
+    /// Approval state. The definition fields hold the served version.
+    #[serde(default)]
+    pub review: crate::mcp_tool_review::McpToolReviewState,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,
     pub first_discovered_at: OffsetDateTime,
     pub last_discovered_at: OffsetDateTime,
     pub deactivated_at: Option<OffsetDateTime>,
+}
+
+/// Optional members of an upstream MCP tool definition, stored as declared.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct McpToolMetadata {
+    pub title: Option<String>,
+    /// Behaviour hints such as `readOnlyHint`, kept with their upstream names.
+    pub annotations: Option<Map<String, Value>>,
+    pub output_schema: Option<Value>,
+}
+
+impl McpToolMetadata {
+    /// Reads a boolean hint such as `readOnlyHint`. Absent or non-boolean
+    /// values return `None`, so callers can apply the protocol defaults.
+    #[must_use]
+    pub fn hint(&self, name: &str) -> Option<bool> {
+        self.annotations.as_ref()?.get(name)?.as_bool()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1825,6 +1894,7 @@ pub struct UpsertExternalMcpToolRecord {
     pub display_name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub metadata: McpToolMetadata,
     pub schema_hash: String,
 }
 
@@ -1989,6 +2059,17 @@ pub struct UpsertMcpToolGrantRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// Which tool columns an access resolution loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpToolProjection {
+    /// Identity, schema and lifecycle columns, plus the annotations and admin
+    /// policy that tag rules are evaluated from. The title and output schema
+    /// are left out, because authorization does not read them.
+    Access,
+    /// Also loads the title, annotations and output schema.
+    Full,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpAccessResolution {
     pub allowed_tools: Vec<ExternalMcpToolRecord>,
@@ -2001,7 +2082,10 @@ pub struct McpAccessResolution {
 pub struct McpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
-    pub api_key_id: Uuid,
+    /// Set for API-key sessions; exactly one of this and the grant is set.
+    pub api_key_id: Option<Uuid>,
+    /// Set for sessions opened with an MCP client OAuth token.
+    pub gateway_oauth_grant_id: Option<Uuid>,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -2018,7 +2102,10 @@ pub struct McpAggregateSessionRecord {
 pub struct NewMcpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
-    pub api_key_id: Uuid,
+    /// Set for API-key sessions; exactly one of this and the grant is set.
+    pub api_key_id: Option<Uuid>,
+    /// Set for sessions opened with an MCP client OAuth token.
+    pub gateway_oauth_grant_id: Option<Uuid>,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -2146,7 +2233,18 @@ pub struct McpToolInvocationRecord {
     pub arguments_payload_redacted: bool,
     pub result_payload_redacted: bool,
     pub metadata: Map<String, Value>,
+    /// MCP JSON-RPC method this row records, such as `tools/call`, `tools/list`,
+    /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
+    #[serde(default = "default_mcp_invocation_method")]
+    pub mcp_method: String,
+    /// Served schema version of the tool a `tools/call` used.
+    #[serde(default)]
+    pub tool_schema_version: Option<i64>,
     pub occurred_at: OffsetDateTime,
+}
+
+fn default_mcp_invocation_method() -> String {
+    "tools/call".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2174,6 +2272,7 @@ pub struct McpToolInvocationQuery {
     pub policy_result: Option<McpToolPolicyResult>,
     pub occurred_at_start: Option<OffsetDateTime>,
     pub occurred_at_end: Option<OffsetDateTime>,
+    pub mcp_method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2723,6 +2822,38 @@ pub struct RouteCompatibility {
     pub github_copilot: Option<GitHubCopilotRouteCompatibility>,
 }
 
+impl RouteCompatibility {
+    /// True when an `openai_compat` route targets a Decisions upstream: the
+    /// OpenAI Decisions API (`openai_compat.decisions_api`) or the System One
+    /// alpha route (`openrouter.api: decisions`).
+    #[must_use]
+    pub fn selects_decisions_api(&self) -> bool {
+        self.openai_compat
+            .as_ref()
+            .is_some_and(|compat| compat.decisions_api.is_some())
+            || self
+                .openrouter
+                .as_ref()
+                .is_some_and(|routing| routing.api.is_decisions())
+    }
+
+    /// Wire format this route's Decisions upstream speaks: OpenAI when
+    /// `openai_compat.decisions_api` is set, System One otherwise (TypeSafe
+    /// and the alpha route).
+    #[must_use]
+    pub fn decisions_wire_format(&self) -> DecisionsWireFormat {
+        if self
+            .openai_compat
+            .as_ref()
+            .is_some_and(|compat| compat.decisions_api == Some(OpenAiCompatDecisionsApi::OpenAi))
+        {
+            DecisionsWireFormat::OpenAi
+        } else {
+            DecisionsWireFormat::SystemOne
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GitHubCopilotRouteCompatibility {
@@ -2905,6 +3036,10 @@ pub struct OpenAiCompatRouteCompatibility {
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,
+    /// Decisions wire format the upstream speaks. `openai` sends OpenAI
+    /// Decisions requests to `<base_url>/decisions`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decisions_api: Option<OpenAiCompatDecisionsApi>,
 }
 
 impl Default for OpenAiCompatRouteCompatibility {
@@ -2916,8 +3051,15 @@ impl Default for OpenAiCompatRouteCompatibility {
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
             supports_stream_usage: false,
             empty_tools: OpenAiCompatEmptyTools::default(),
+            decisions_api: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OpenAiCompatDecisionsApi {
+    #[serde(rename = "openai")]
+    OpenAi,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

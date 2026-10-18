@@ -83,6 +83,24 @@ For production service workloads:
 - keep gateway API-key ownership and budgets in Oceans LLM; keep AWS permission boundaries in IAM
 - rotate static credentials outside the gateway and restart or reload the affected runtime path when they change
 
+### Token counting permissions
+
+`POST /v1/messages/count_tokens` on a `runtime_anthropic_invoke` or `runtime_converse` route calls Bedrock Runtime `CountTokens`. That API needs its own IAM action, `bedrock:CountTokens`. A role that can run `InvokeModel` still gets `AccessDenied` on every count without it.
+
+Runtime `CountTokens` supports only some models and Regions; the model card in the Bedrock console lists whether a model supports token counting. Some Anthropic Claude models, including ones offered only through cross-Region inference, do not support Runtime `CountTokens`. AWS counts those through the Bedrock Mantle Anthropic `count_tokens` endpoint, which this gateway does not call. For such a model, Bedrock rejects the count with a validation error, and the gateway returns it as an upstream 400 `upstream_error`. The gateway does not fall back to another endpoint or estimate a count.
+
+`CountTokens` accepts foundation model IDs only. The gateway strips a geo or global profile prefix before counting, so `us.anthropic.claude-sonnet-4-6` is counted as `anthropic.claude-sonnet-4-6`. A system-defined inference profile ARN such as `arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6` is counted the same way. Foundation-model ARNs are sent unchanged. Application inference profile ARNs are also sent unchanged, because their IDs do not name the model; Bedrock rejects those counts. Stripping the prefix does not make a model countable: if the foundation model has no Runtime count support in the route's Region, the count still fails upstream. Grant the action on the foundation-model resource, not the inference profile:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "bedrock:CountTokens",
+  "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6"
+}
+```
+
+Use the provider's `region` in the ARN. Leave the action out if clients do not count tokens. The gateway then returns the Bedrock error for each count, and inference is unaffected.
+
 ## Model Identity
 
 Use Bedrock Runtime model identities as `upstream_model` values. The value can be a base model ID, a geo or global inference profile ID, or a Bedrock ARN accepted by the Bedrock Runtime operation.

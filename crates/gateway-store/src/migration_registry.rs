@@ -7,7 +7,19 @@ pub(crate) struct MigrationManifest {
     pub postgres_sql: &'static str,
 }
 
+/// libsql migrations that rebuild a table other tables reference, with that
+/// table. They run with foreign keys off, as SQLite's table-rebuild
+/// procedure requires, and then check the rebuilt table's children.
+const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(66, "gateway_oauth_clients")];
+
 impl MigrationManifest {
+    pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
+        LIBSQL_REBUILT_PARENTS
+            .iter()
+            .find(|(version, _)| *version == self.version)
+            .map(|(_, table)| *table)
+    }
+
     pub(crate) fn sql_for(&self, backend: MigrationBackend) -> &'static str {
         match backend {
             MigrationBackend::Libsql => self.libsql_sql,
@@ -320,6 +332,101 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V56__budget_increases.sql",
         libsql_sql: include_str!("../migrations/V56__budget_increases.sql"),
         postgres_sql: include_str!("../migrations/postgres/V56__budget_increases.sql"),
+    },
+    MigrationManifest {
+        version: 57,
+        name: "mcp_invocation_method",
+        checksum: "V57__mcp_invocation_method.sql",
+        libsql_sql: include_str!("../migrations/V57__mcp_invocation_method.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V57__mcp_invocation_method.sql"),
+    },
+    MigrationManifest {
+        version: 58,
+        name: "mcp_tool_metadata",
+        checksum: "V58__mcp_tool_metadata.sql",
+        libsql_sql: include_str!("../migrations/V58__mcp_tool_metadata.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V58__mcp_tool_metadata.sql"),
+    },
+    MigrationManifest {
+        version: 59,
+        name: "mcp_oauth_clients",
+        checksum: "V59__mcp_oauth_clients.sql",
+        libsql_sql: include_str!("../migrations/V59__mcp_oauth_clients.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V59__mcp_oauth_clients.sql"),
+    },
+    MigrationManifest {
+        version: 60,
+        name: "rate_limits",
+        checksum: "V60__rate_limits.sql",
+        libsql_sql: include_str!("../migrations/V60__rate_limits.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V60__rate_limits.sql"),
+    },
+    MigrationManifest {
+        version: 61,
+        name: "admin_audit_log",
+        checksum: "V61__admin_audit_log.sql",
+        libsql_sql: include_str!("../migrations/V61__admin_audit_log.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V61__admin_audit_log.sql"),
+    },
+    MigrationManifest {
+        version: 62,
+        name: "gateway_oauth_authorization",
+        checksum: "V62__gateway_oauth_authorization.sql",
+        libsql_sql: include_str!("../migrations/V62__gateway_oauth_authorization.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V62__gateway_oauth_authorization.sql"),
+    },
+    MigrationManifest {
+        version: 63,
+        name: "mcp_aggregate_session_oauth_grants",
+        checksum: "V63__mcp_aggregate_session_oauth_grants.sql",
+        libsql_sql: include_str!("../migrations/V63__mcp_aggregate_session_oauth_grants.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V63__mcp_aggregate_session_oauth_grants.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 64,
+        name: "gateway_oauth_cleanup_indexes",
+        checksum: "V64__gateway_oauth_cleanup_indexes.sql",
+        libsql_sql: include_str!("../migrations/V64__gateway_oauth_cleanup_indexes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 65,
+        name: "api_key_scopes",
+        checksum: "V65__api_key_scopes.sql",
+        libsql_sql: include_str!("../migrations/V65__api_key_scopes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V65__api_key_scopes.sql"),
+    },
+    MigrationManifest {
+        version: 66,
+        name: "gateway_oauth_metadata_document_clients",
+        checksum: "V66__gateway_oauth_metadata_document_clients.sql",
+        libsql_sql: include_str!("../migrations/V66__gateway_oauth_metadata_document_clients.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 67,
+        name: "mcp_tool_tag_rules",
+        checksum: "V67__mcp_tool_tag_rules.sql",
+        libsql_sql: include_str!("../migrations/V67__mcp_tool_tag_rules.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__mcp_tool_tag_rules.sql"),
+    },
+    MigrationManifest {
+        version: 68,
+        name: "mcp_tool_versions",
+        checksum: "V68__mcp_tool_versions.sql",
+        libsql_sql: include_str!("../migrations/V68__mcp_tool_versions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V68__mcp_tool_versions.sql"),
+    },
+    MigrationManifest {
+        version: 69,
+        name: "mcp_tool_effective_tags",
+        checksum: "V69__mcp_tool_effective_tags.sql",
+        libsql_sql: include_str!("../migrations/V69__mcp_tool_effective_tags.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V69__mcp_tool_effective_tags.sql"),
     },
 ];
 

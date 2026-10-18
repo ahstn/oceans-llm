@@ -1,7 +1,10 @@
+use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
+use crate::credential_scopes::ApiKeyAccess;
+use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord};
 use crate::error::AuthError;
+use crate::mcp_client_oauth::{GatewayAuthMethod, McpOauthResource, OAUTH_ACCESS_TOKEN_PREFIX};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedGatewayApiKey {
@@ -9,8 +12,28 @@ pub struct ParsedGatewayApiKey {
     pub secret: String,
 }
 
+/// The OAuth grant behind an MCP client `oat_` access token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OauthAccessContext {
+    pub grant_id: Uuid,
+    pub client_id: String,
+    pub resource: McpOauthResource,
+    pub scopes: Vec<String>,
+    /// Lookup key of the presented access token, to recheck it later.
+    pub token_hash: String,
+    /// When the presented access token expires.
+    pub expires_at: OffsetDateTime,
+}
+
+/// The caller of a gateway request.
+///
+/// Usually a `gwk_` API key. On MCP routes it may instead be an OAuth access
+/// token, which acts as its user: `oauth` is then set, `owner_kind` is `User`,
+/// and `id` is the grant ID rather than an `api_keys` row.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedApiKey {
+    /// The `api_keys` row, or the OAuth grant ID. Use [`Self::api_key_id`]
+    /// wherever an `api_keys` foreign key is needed.
     pub id: Uuid,
     pub public_id: String,
     pub name: String,
@@ -19,9 +42,99 @@ pub struct AuthenticatedApiKey {
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub owner_service_account_id: Option<Uuid>,
+    /// The API key's scopes and MCP server list. Unused for OAuth tokens,
+    /// whose scopes and resource are in `oauth`.
+    pub access: ApiKeyAccess,
+    pub oauth: Option<OauthAccessContext>,
+}
+
+impl From<ApiKeyRecord> for AuthenticatedApiKey {
+    /// The caller an API key row stands for. Checking that the key may be used
+    /// is the caller's job; see [`ApiKeyRecord::is_active`].
+    fn from(record: ApiKeyRecord) -> Self {
+        Self {
+            id: record.id,
+            public_id: record.public_id,
+            name: record.name,
+            model_grant_mode: record.model_grant_mode,
+            owner_kind: record.owner_kind,
+            owner_user_id: record.owner_user_id,
+            owner_team_id: record.owner_team_id,
+            owner_service_account_id: record.owner_service_account_id,
+            access: record.access,
+            oauth: None,
+        }
+    }
 }
 
 impl AuthenticatedApiKey {
+    #[must_use]
+    pub fn auth_method(&self) -> GatewayAuthMethod {
+        if self.oauth.is_some() {
+            GatewayAuthMethod::Oauth
+        } else {
+            GatewayAuthMethod::ApiKey
+        }
+    }
+
+    /// The `api_keys` row, or `None` for an OAuth access token.
+    #[must_use]
+    pub fn api_key_id(&self) -> Option<Uuid> {
+        self.oauth.is_none().then_some(self.id)
+    }
+
+    #[must_use]
+    pub fn oauth_grant_id(&self) -> Option<Uuid> {
+        self.oauth.as_ref().map(|oauth| oauth.grant_id)
+    }
+
+    /// Whether this credential carries `scope`. An API key without a scope
+    /// list carries every scope; an OAuth token carries the scopes it was issued.
+    #[must_use]
+    pub fn has_scope(&self, scope: &str) -> bool {
+        match &self.oauth {
+            Some(oauth) => oauth.scopes.iter().any(|granted| granted == scope),
+            None => self.access.has_scope(scope),
+        }
+    }
+
+    /// The one scope check for every credential type and route.
+    pub fn require_scope(&self, scope: &str) -> Result<(), AuthError> {
+        if self.has_scope(scope) {
+            Ok(())
+        } else {
+            Err(AuthError::InsufficientScope {
+                required: scope.to_string(),
+            })
+        }
+    }
+
+    /// For key-accepting routes outside the scope catalogue, which only an
+    /// API key without a scope list may call.
+    pub fn require_full_access(&self) -> Result<(), AuthError> {
+        if self.oauth.is_none() && self.access.is_full_access() {
+            Ok(())
+        } else {
+            Err(AuthError::FullAccessRequired)
+        }
+    }
+
+    /// Whether the credential may reach the MCP server `server_key`. An OAuth
+    /// token's resource is checked when it is validated, so only API keys
+    /// carry a server list.
+    #[must_use]
+    pub fn allows_mcp_server(&self, server_key: &str) -> bool {
+        self.oauth.is_some() || self.access.allows_mcp_server(server_key)
+    }
+
+    pub fn require_mcp_server(&self, server_key: &str) -> Result<(), AuthError> {
+        if self.allows_mcp_server(server_key) {
+            Ok(())
+        } else {
+            Err(AuthError::McpServerNotInScope)
+        }
+    }
+
     #[must_use]
     pub fn is_user_owned(&self) -> bool {
         self.owner_kind == ApiKeyOwnerKind::User
@@ -48,8 +161,17 @@ pub fn extract_bearer_token(header: &str) -> Result<&str, AuthError> {
     Ok(token)
 }
 
+/// Whether `raw` is an MCP client OAuth access token, which only MCP routes accept.
+#[must_use]
+pub fn is_oauth_access_token(raw: &str) -> bool {
+    raw.trim().starts_with(OAUTH_ACCESS_TOKEN_PREFIX)
+}
+
 pub fn parse_gateway_api_key(raw: &str) -> Result<ParsedGatewayApiKey, AuthError> {
     let trimmed = raw.trim();
+    if is_oauth_access_token(trimmed) {
+        return Err(AuthError::OauthTokenNotAccepted);
+    }
     if !trimmed.starts_with("gwk_") {
         return Err(AuthError::InvalidApiKeyFormat);
     }
@@ -90,6 +212,16 @@ mod tests {
         assert!(parse_gateway_api_key("gwk_foo").is_err());
         assert!(parse_gateway_api_key("gwk_.bar").is_err());
         assert!(parse_gateway_api_key("gwk_foo.").is_err());
+    }
+
+    #[test]
+    fn oauth_access_tokens_are_not_api_keys() {
+        assert!(matches!(
+            parse_gateway_api_key("oat_abc"),
+            Err(crate::error::AuthError::OauthTokenNotAccepted)
+        ));
+        assert!(super::is_oauth_access_token(" oat_abc"));
+        assert!(!super::is_oauth_access_token("gwk_abc.def"));
     }
 
     #[test]

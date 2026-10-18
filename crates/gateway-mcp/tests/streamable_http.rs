@@ -1,4 +1,8 @@
-use std::{convert::Infallible, time::Duration};
+use std::{
+    convert::Infallible,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use axum::{
     Json, Router,
@@ -7,7 +11,9 @@ use axum::{
     routing::post,
 };
 use futures_util::{StreamExt, stream};
-use gateway_mcp::{MCP_PROTOCOL_VERSION_HEADER, McpClientError, StreamableHttpClient};
+use gateway_mcp::{
+    CLIENT_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION_HEADER, McpClientError, StreamableHttpClient,
+};
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, task::JoinHandle};
 
@@ -169,4 +175,61 @@ async fn protocol_override_matches_the_initialize_body_and_header() {
 
     server.abort();
     assert_eq!(result.expect("initialized").protocol_version, "2025-11-25");
+}
+
+#[tokio::test]
+async fn discovery_follows_an_older_version_the_server_chooses() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let recorded = seen.clone();
+    let router = Router::new().route(
+        "/mcp",
+        post(move |headers: HeaderMap, Json(request): Json<Value>| {
+            let recorded = recorded.clone();
+            async move {
+                let method = request["method"].as_str().unwrap_or_default().to_string();
+                let version = headers[MCP_PROTOCOL_VERSION_HEADER]
+                    .to_str()
+                    .expect("version header")
+                    .to_string();
+                recorded.lock().expect("lock").push((
+                    method.clone(),
+                    version,
+                    request["params"]["protocolVersion"].clone(),
+                ));
+                let result = match method.as_str() {
+                    "initialize" => json!({"protocolVersion": "2025-03-26", "capabilities": {}}),
+                    "tools/list" => json!({"tools": [{
+                        "name": "search",
+                        "inputSchema": {"type": "object"},
+                        "annotations": {"title": "Search issues"}
+                    }]}),
+                    _ => json!({}),
+                };
+                Json(json!({"jsonrpc": "2.0", "id": request["id"], "result": result}))
+            }
+        }),
+    );
+    let (endpoint, server) = serve(router).await;
+    let client = StreamableHttpClient::new(&endpoint, Duration::from_secs(5)).expect("client");
+
+    let tools = client.list_tools(None).await;
+
+    server.abort();
+    assert_eq!(
+        tools.expect("tools")[0].title.as_deref(),
+        Some("Search issues")
+    );
+    let seen = seen.lock().expect("lock");
+    assert_eq!(
+        seen[0],
+        (
+            "initialize".to_string(),
+            CLIENT_PROTOCOL_VERSION.to_string(),
+            json!(CLIENT_PROTOCOL_VERSION)
+        )
+    );
+    for (method, version, _) in &seen[1..] {
+        assert_eq!(version, "2025-03-26", "{method}");
+    }
+    assert_eq!(seen.len(), 3);
 }

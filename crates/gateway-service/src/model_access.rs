@@ -660,6 +660,8 @@ mod tests {
             owner_user_id: None,
             owner_team_id: Some(team_id),
             owner_service_account_id: Some(service_account_id),
+            access: Default::default(),
+            oauth: None,
         };
 
         let error = access
@@ -1079,6 +1081,8 @@ mod tests {
             owner_user_id: user_id,
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         }
     }
 
@@ -1096,6 +1100,8 @@ mod tests {
             owner_user_id: None,
             owner_team_id: Some(team_id),
             owner_service_account_id: Some(service_account_id),
+            access: Default::default(),
+            oauth: None,
         }
     }
 

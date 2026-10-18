@@ -67,15 +67,18 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
-- [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4-flash-0731`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
+- [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4.1-flash`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
-- [Guardrails](./guardrails.md) covers effective policy cards, decision filters, and a free evaluate-endpoint decision.
+- [Rate limits](./rate-limits.md) covers the policy list, creating a per-key limit, enforcement headers and the `429` contract, pausing, deletion, and optional MCP tool-call limits.
+- [Guardrails](./guardrails.md) covers the decision view's tiles, filters, and detail sheet, the policy as the `Guardrail Settings` YAML preview, and a free evaluate-endpoint decision.
+- [Audit Log](./audit-log.md) covers admin audit entries from UI changes, redaction, filters, cursor paging, and API parity.
 - [Batch requests](./batch-requests.md) covers the seeded batch list, filters, the responses sheet, and the cancel dialog without cancelling.
 - [Identity](./identity.md) covers the Users, Teams, and Service Accounts lists, user management, team membership transfer, and read-only directories.
 - [Account onboarding](./account-onboarding.md) covers password-user creation, the invite URL, `Account ready`, and voluntary password change.
 - [Review agent](./review-agent.md) covers repository registration, review settings, workflow generation, run listing, and disable cleanup.
 - [Workspace connections](./workspace-connections.md) covers the personal OAuth MCP connections page and its default empty state.
+- [MCP client OAuth](./mcp-client-oauth.md) covers the `401` challenge, discovery metadata, client registration, the consent page, token exchange, `oat_` MCP calls, refresh rotation, and revocation.
 - [MCP](./mcp.md) covers registry discovery, Tool Sets, generated client configuration, explicit grants, direct and aggregate tool calls, upstream authentication failure, invocation records, and cleanup.
 - [Skills](./skills.md) covers namespace claims, ZIP uploads, previews, immutable versions, browser downloads, shared reads, owner-only updates, service-account access, and scoped RustFS cleanup.
 - [Profile](./profile.md) covers the post-sign-in landing page, budget meter API parity, usage heatmap, personal keys, and the prefilled create-key link.

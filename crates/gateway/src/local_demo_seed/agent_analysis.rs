@@ -278,7 +278,9 @@ async fn seed_demo_mcp_invocation(
                     "fixture".to_string(),
                     json!("jira-release-coordination"),
                 )]),
+                mcp_method: "tools/call".to_string(),
                 occurred_at: request_completed_at - time::Duration::milliseconds(100),
+                tool_schema_version: None,
             },
             None,
         )

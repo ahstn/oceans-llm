@@ -1,4 +1,5 @@
 mod controls;
+pub mod count_tokens;
 pub mod error;
 mod model;
 pub mod request;
@@ -10,6 +11,9 @@ pub mod streaming;
 mod tests;
 pub mod thinking;
 
+pub use count_tokens::{
+    COUNT_TOKENS_FIELDS, normalize_count_tokens_response, retain_count_tokens_fields,
+};
 pub use error::AnthropicAdapterError;
 pub use request::{AnthropicRequestOptions, map_anthropic_request};
 pub use response::{
