@@ -117,6 +117,7 @@ async fn seed_request_logs<S: GatewayStore + Sync>(store: &S) -> SeededLogs {
             filtered_tool_count: Some(0),
             request_tool_count: Some(7),
             invoked_distinct_tool_count: Some(1),
+            invoked_mcp_tool_count: Some(1),
         },
         user_agent_raw: None,
         agent_harness_key: "unknown".to_string(),
@@ -243,6 +244,7 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
         detail.log.tool_cardinality.invoked_distinct_tool_count,
         Some(1)
     );
+    assert_eq!(detail.log.tool_cardinality.invoked_mcp_tool_count, Some(1));
     let detail = store
         .get_request_log_detail(logs.grace_log.request_log_id)
         .await

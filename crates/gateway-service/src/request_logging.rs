@@ -42,7 +42,7 @@ pub use tool_cardinality::{
 };
 
 use harness::{normalized_user_agent, request_user_agent};
-use tool_cardinality::shallow_tool_count_from_request_body;
+use tool_cardinality::{InvokedToolCounts, shallow_tool_count_from_request_body};
 
 #[cfg(test)]
 use attempts::truncate_attempt_error_detail;
@@ -91,8 +91,7 @@ struct RequestLogSummary {
     error_code: Option<String>,
     latency_ms: i64,
     usage: UsageSummary,
-    invoked_tool_count: i64,
-    invoked_distinct_tool_count: i64,
+    invoked_tools: InvokedToolCounts,
 }
 
 impl RequestLogSummary {
@@ -102,8 +101,7 @@ impl RequestLogSummary {
         stream: bool,
         latency_ms: i64,
         usage: UsageSummary,
-        invoked_tool_count: i64,
-        invoked_distinct_tool_count: i64,
+        invoked_tools: InvokedToolCounts,
     ) -> Self {
         Self {
             provider_key,
@@ -113,8 +111,7 @@ impl RequestLogSummary {
             error_code: None,
             latency_ms,
             usage,
-            invoked_tool_count,
-            invoked_distinct_tool_count,
+            invoked_tools,
         }
     }
 
@@ -125,6 +122,7 @@ impl RequestLogSummary {
         latency_ms: i64,
         status_code: i64,
         error_code: String,
+        invoked_tools: InvokedToolCounts,
     ) -> Self {
         Self {
             provider_key,
@@ -134,8 +132,7 @@ impl RequestLogSummary {
             error_code: Some(error_code),
             latency_ms,
             usage: UsageSummary::default(),
-            invoked_tool_count: 0,
-            invoked_distinct_tool_count: 0,
+            invoked_tools,
         }
     }
 }
@@ -312,6 +309,7 @@ where
                 filtered_tool_count: None,
                 request_tool_count,
                 invoked_distinct_tool_count: Some(0),
+                invoked_mcp_tool_count: Some(0),
             },
             request_json: prepared.request_json,
             request_payload_truncated: prepared.request_payload_truncated,
@@ -442,8 +440,10 @@ where
                 false,
                 latency_ms,
                 usage,
-                invoked_tool_count,
-                invoked_distinct_tool_count_from_response_body(response_body),
+                InvokedToolCounts {
+                    calls: invoked_tool_count,
+                    ..InvokedToolCounts::from_response_body(response_body)
+                },
             ),
             response_json,
             response_payload_truncated,
@@ -494,6 +494,7 @@ where
                 latency_ms,
                 gateway_error.http_status_code().into(),
                 gateway_error.error_code().to_string(),
+                InvokedToolCounts::default(),
             ),
             response_json,
             response_payload_truncated,
@@ -519,8 +520,7 @@ where
         collector.finish();
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
-        let invoked_tool_count = collector.invoked_tool_count();
-        let invoked_distinct_tool_count = collector.invoked_distinct_tool_count();
+        let invoked_tools = collector.invoked_tool_counts();
         let (response_json, response_payload_truncated) =
             if self.payload_policy.should_capture_payloads() {
                 let (response_json, response_payload_truncated) =
@@ -537,6 +537,8 @@ where
                 latency_ms,
                 failure.status_code,
                 failure.error_code,
+                // Calls streamed before the failure still happened.
+                invoked_tools,
             ),
             None => RequestLogSummary::success(
                 provider_key,
@@ -544,8 +546,7 @@ where
                 true,
                 latency_ms,
                 usage,
-                invoked_tool_count,
-                invoked_distinct_tool_count,
+                invoked_tools,
             ),
         };
         self.persist_chat_log(
@@ -650,8 +651,9 @@ where
             response_payload_truncated: has_payload && response_payload_truncated,
             request_tags: context.request_tags.clone(),
             tool_cardinality: RequestToolCardinality {
-                invoked_tool_count: Some(summary.invoked_tool_count),
-                invoked_distinct_tool_count: Some(summary.invoked_distinct_tool_count),
+                invoked_tool_count: Some(summary.invoked_tools.calls),
+                invoked_distinct_tool_count: Some(summary.invoked_tools.distinct_tools),
+                invoked_mcp_tool_count: Some(summary.invoked_tools.mcp_calls),
                 ..context.tool_cardinality
             },
             user_agent_raw: context.user_agent_raw.clone(),

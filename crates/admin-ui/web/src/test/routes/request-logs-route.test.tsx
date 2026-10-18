@@ -84,6 +84,7 @@ const items: RequestLogView[] = [
       request_tool_count: 5,
       invoked_tool_count: 0,
       invoked_distinct_tool_count: 0,
+      invoked_mcp_tool_count: 0,
       filtered_tool_count: null,
     },
     agent_harness_key: 'opencode',
@@ -351,6 +352,7 @@ describe('RequestLogsPage detail', () => {
     expect(screen.getByText('opencode/1.2.3')).toBeInTheDocument()
     expect(screen.getByText('Tool Calls')).toBeInTheDocument()
     expect(screen.getByText('Distinct Tools Called')).toBeInTheDocument()
+    expect(screen.getByText('MCP Tool Calls')).toBeInTheDocument()
     expect(within(dialog).getByText('Request Tools')).toBeInTheDocument()
     expect(within(dialog).getByText('req_1')).toBeInTheDocument()
     expect(within(dialog).getByText('300 of 400 prompt tokens cached (75%)')).toBeInTheDocument()

@@ -437,11 +437,20 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 71,
-        name: "external_mcp_server_status_revision",
-        checksum: "V71__external_mcp_server_status_revision.sql",
-        libsql_sql: include_str!("../migrations/V71__external_mcp_server_status_revision.sql"),
+        name: "request_log_invoked_mcp_tool_count",
+        checksum: "V71__request_log_invoked_mcp_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V71__request_log_invoked_mcp_tool_count.sql"),
         postgres_sql: include_str!(
-            "../migrations/postgres/V71__external_mcp_server_status_revision.sql"
+            "../migrations/postgres/V71__request_log_invoked_mcp_tool_count.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 72,
+        name: "external_mcp_server_status_revision",
+        checksum: "V72__external_mcp_server_status_revision.sql",
+        libsql_sql: include_str!("../migrations/V72__external_mcp_server_status_revision.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V72__external_mcp_server_status_revision.sql"
         ),
     },
 ];
