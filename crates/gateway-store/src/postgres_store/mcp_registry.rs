@@ -1056,12 +1056,18 @@ impl McpRegistryRepository for PostgresStore {
             SET last_discovery_status = $1, last_discovery_at = $2,
                 last_error_summary = $3, updated_at = $2
             WHERE mcp_server_id = $4
+              AND NOT EXISTS (
+                SELECT 1 FROM external_mcp_discovery_runs
+                WHERE mcp_server_id = $4 AND status = $5 AND started_at_ms > $6
+              )
             "#,
         )
         .bind(run.status.as_str())
         .bind(run.finished_at.unix_timestamp())
         .bind(run.error_summary.as_deref())
         .bind(run.mcp_server_id.to_string())
+        .bind(ExternalMcpDiscoveryStatus::Success.as_str())
+        .bind(unix_millis(run.started_at))
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;

@@ -1124,18 +1124,26 @@ impl McpRegistryRepository for LibsqlStore {
         )
         .await
         .map_err(to_query_error)?;
+        // The run stays in the history, but a success that started later
+        // remains the server's last discovery.
         tx.execute(
             r#"
             UPDATE external_mcp_servers
             SET last_discovery_status = ?1, last_discovery_at = ?2,
                 last_error_summary = ?3, updated_at = ?2
             WHERE mcp_server_id = ?4
+              AND NOT EXISTS (
+                SELECT 1 FROM external_mcp_discovery_runs
+                WHERE mcp_server_id = ?4 AND status = ?5 AND started_at_ms > ?6
+              )
             "#,
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.error_summary.as_deref(),
                 run.mcp_server_id.to_string(),
+                ExternalMcpDiscoveryStatus::Success.as_str(),
+                unix_millis(run.started_at),
             ],
         )
         .await
