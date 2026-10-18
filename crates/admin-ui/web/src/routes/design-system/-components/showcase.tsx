@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
-import { GRAPHIC_CONTRAST_MIN } from './color-roles'
+import { GRAPHIC_CONTRAST_MIN, contrastRatio } from './color-roles'
 
 /** Page band with an anchor, so the header nav can jump to it. */
 export function ShowcaseSection({
@@ -110,14 +110,28 @@ export function StateMatrix<Row extends string>({
   )
 }
 
+// One 1x1 canvas serves every ColorPair on the page. It is created on first use, which is always in
+// an effect in the browser, rather than one canvas and context per conversion.
+let pixel: CanvasRenderingContext2D | null | undefined
+
+function pixelContext() {
+  if (pixel === undefined) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    pixel = canvas.getContext('2d', { willReadFrequently: true })
+  }
+  return pixel
+}
+
 // Resolves any CSS color (hex, rgb, oklch, color-mix) to sRGB by painting one pixel.
 // Translucent colors are composited over the backdrop, as the browser would.
 function toRgb(color: string, backdrop: string) {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1
-  canvas.height = 1
-  const context = canvas.getContext('2d', { willReadFrequently: true })
+  const context = pixelContext()
   if (!context) return null
+  // Start from a fresh canvas's state, so an unparsable colour can't reuse the last fill.
+  context.clearRect(0, 0, 1, 1)
+  context.fillStyle = '#000000'
   context.fillStyle = backdrop
   context.fillRect(0, 0, 1, 1)
   context.fillStyle = color
@@ -128,19 +142,6 @@ function toRgb(color: string, backdrop: string) {
 
 function toHex(rgb: number[]) {
   return `#${rgb.map((value) => value.toString(16).padStart(2, '0')).join('')}`
-}
-
-function luminance(rgb: number[]) {
-  const [r, g, b] = rgb.map((value) => {
-    const channel = value / 255
-    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrastRatio(a: number[], b: number[]) {
-  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (light + 0.05) / (dark + 0.05)
 }
 
 function wcagLevel(ratio: number) {

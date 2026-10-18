@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 
 import { removeIdentityTeamMember, transferIdentityTeamMember } from '@/server/admin-data.functions'
-import { initialTransferForm, sanitizeTransferForm } from '@/routes/identity/-team-form'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { initialTransferForm, sanitizeTransferForm } from '@/routes/identity/-teams/team-form'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type {
   TeamAssignableUserView,
   TeamManagementView,
@@ -28,7 +28,7 @@ export function useMembershipChange({
 }: {
   teams: TeamManagementView[]
   users: TeamAssignableUserView[]
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [target, setTarget] = useState<MembershipChangeTarget>({ mode: 'closed' })
   const [transferForm, setTransferForm] = useState<TransferTeamMemberInput>(initialTransferForm)
@@ -64,7 +64,7 @@ export function useMembershipChange({
     transition.run(async () => {
       await removeIdentityTeamMember({ data: { teamId, userId } })
       toast.success('Member removed')
-      await transition.refreshUsers()
+      await transition.refresh()
       close()
     })
   }
@@ -85,7 +85,7 @@ export function useMembershipChange({
         },
       })
       toast.success('Member transferred')
-      await transition.refreshUsers()
+      await transition.refresh()
       close()
     })
   }

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   GRAPHIC_CONTRAST_MIN,
   TEXT_CONTRAST_MIN,
+  contrastRatio,
   dataRoles,
   textRoles,
 } from '@/routes/design-system/-components/color-roles'
@@ -19,18 +20,15 @@ const tokens = new Map(
   [...rootBlock.matchAll(/--([\w-]+):\s*(#[\da-f]{6});/gi)].map(([, name, hex]) => [name, hex]),
 )
 
-function luminance(name: string) {
+function rgb(name: string) {
   const hex = tokens.get(name)
   if (!hex) throw new Error(`--${name} is not a hex token on :root`)
-  const [r, g, b] = [1, 3, 5]
-    .map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255)
-    .map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16))
 }
 
+// The same maths the design-system page uses to grade these pairs in the browser.
 function contrast(background: string, foreground: string) {
-  const [light, dark] = [luminance(background), luminance(foreground)].sort((a, b) => b - a)
-  return (light + 0.05) / (dark + 0.05)
+  return contrastRatio(rgb(background), rgb(foreground))
 }
 
 describe('design-system contrast', () => {

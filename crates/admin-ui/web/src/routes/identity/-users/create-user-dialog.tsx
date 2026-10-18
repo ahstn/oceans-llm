@@ -13,8 +13,8 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { EntityTagsField } from '@/routes/identity/-entity-tags'
 import { GeneratedUrlInput, OnboardingResultSummary } from '@/routes/identity/-onboarding-result'
-import { useCreateUser, type CreateUserState } from '@/routes/identity/-use-create-user'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { useCreateUser, type CreateUserState } from '@/routes/identity/-users/use-create-user'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import {
   AuthMethodSelect,
   MembershipFields,
@@ -37,7 +37,7 @@ export function CreateUserDialog({
 }: UserFormOptions & {
   open: boolean
   onOpenChange: (open: boolean) => void
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const createUser = useCreateUser({ oidcProviders, oauthProviders, transition })
 

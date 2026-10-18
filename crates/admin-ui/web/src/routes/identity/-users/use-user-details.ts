@@ -7,15 +7,15 @@ import {
   reactivateIdentityUser,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
-import { useProviderCredentials } from '@/routes/identity/-use-provider-credentials'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { useProviderCredentials } from '@/routes/identity/-users/use-provider-credentials'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import {
   initialUpdateUserForm,
   sanitizeUpdateForm,
   updateFormFor,
   withAuthMode,
 } from '@/routes/identity/-user-form'
-import type { UserDetailsSection } from '@/routes/identity/-users-search'
+import type { UserDetailsSection } from '@/routes/identity/-users/users-search'
 import type { IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
 
 export type UserDetails = ReturnType<typeof useUserDetails>
@@ -34,7 +34,7 @@ export function useUserDetails({
   user: UserView | null
   oidcProviders: IdentityUsersPayload['oidc_providers']
   oauthProviders: IdentityUsersPayload['oauth_providers']
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const router = useRouter()
   const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateUserForm)
@@ -78,7 +78,7 @@ export function useUserDetails({
     transition.run(async () => {
       await action(user)
       toast.success(successMessage)
-      await transition.refreshUsers()
+      await transition.refresh()
       close()
     })
   }

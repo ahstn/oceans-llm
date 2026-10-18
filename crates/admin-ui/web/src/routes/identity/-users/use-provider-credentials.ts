@@ -5,7 +5,7 @@ import {
   removeIdentityUserProviderCredential,
   saveIdentityUserProviderCredential,
 } from '@/server/admin-data.functions'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 
 const emptyProviderTokens: Record<string, string> = {}
 
@@ -15,7 +15,7 @@ export type ProviderCredentials = ReturnType<typeof useProviderCredentials>
  * Unsaved provider token drafts, kept per user, and the actions that store or remove a token.
  * A finished request clears only the draft it sent, so newer typing and other users' drafts stay.
  */
-export function useProviderCredentials(userId: string | null, transition: UsersTransition) {
+export function useProviderCredentials(userId: string | null, transition: IdentityTransition) {
   const [tokensByUser, setTokensByUser] = useState<Record<string, Record<string, string>>>({})
   const tokens = userId ? (tokensByUser[userId] ?? emptyProviderTokens) : emptyProviderTokens
 
@@ -50,7 +50,7 @@ export function useProviderCredentials(userId: string | null, transition: UsersT
       })
       clearTokenIfUnchanged(userId, providerKey, tokenDraft)
       toast.success('Provider token saved')
-      await transition.refreshUsers()
+      await transition.refresh()
     })
   }
 
@@ -63,7 +63,7 @@ export function useProviderCredentials(userId: string | null, transition: UsersT
       })
       clearTokenIfUnchanged(userId, providerKey, tokenDraft)
       toast.success('Provider token removed')
-      await transition.refreshUsers()
+      await transition.refresh()
     })
   }
 

@@ -2,11 +2,11 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { FormEvent } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useCreateUser } from '@/routes/identity/-use-create-user'
-import { useOnboardingReset } from '@/routes/identity/-use-onboarding-reset'
-import { useProviderCredentials } from '@/routes/identity/-use-provider-credentials'
-import { useUserDetails } from '@/routes/identity/-use-user-details'
-import { useUsersTransition } from '@/routes/identity/-use-users-transition'
+import { useCreateUser } from '@/routes/identity/-users/use-create-user'
+import { useOnboardingReset } from '@/routes/identity/-users/use-onboarding-reset'
+import { useProviderCredentials } from '@/routes/identity/-users/use-provider-credentials'
+import { useUserDetails } from '@/routes/identity/-users/use-user-details'
+import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
 import { initialUpdateUserForm, updateFormFor } from '@/routes/identity/-user-form'
 import type { IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
 
@@ -87,10 +87,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('useUsersTransition', () => {
+describe('useIdentityTransition', () => {
   it('stays pending until the action settles', async () => {
     const request = deferred<void>()
-    const { result } = renderHook(() => useUsersTransition())
+    const { result } = renderHook(() => useIdentityTransition())
 
     act(() => result.current.run(() => request.promise))
     expect(result.current.isPending).toBe(true)
@@ -100,7 +100,7 @@ describe('useUsersTransition', () => {
   })
 
   it('reports a failed action as an error toast', async () => {
-    const { result } = renderHook(() => useUsersTransition())
+    const { result } = renderHook(() => useIdentityTransition())
 
     act(() =>
       result.current.run(async () => {
@@ -114,7 +114,7 @@ describe('useUsersTransition', () => {
   it('hands a failure to onError instead of the default toast', async () => {
     const failure = new Error('reset failed')
     const onError = vi.fn()
-    const { result } = renderHook(() => useUsersTransition())
+    const { result } = renderHook(() => useIdentityTransition())
 
     act(() =>
       result.current.run(async () => {
@@ -130,7 +130,7 @@ describe('useUsersTransition', () => {
 describe('useCreateUser', () => {
   function renderCreateUser() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useCreateUser({ oidcProviders, oauthProviders, transition })
     })
   }
@@ -200,7 +200,7 @@ describe('useProviderCredentials', () => {
   function renderCredentials() {
     return renderHook(
       ({ userId }: { userId: string | null }) => {
-        const transition = useUsersTransition()
+        const transition = useIdentityTransition()
         return useProviderCredentials(userId, transition)
       },
       { initialProps: { userId: 'user_1' as string | null } },
@@ -279,7 +279,7 @@ describe('useProviderCredentials', () => {
 describe('useOnboardingReset', () => {
   function renderOnboardingReset(user: UserView, updateForm: UpdateUserInput) {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useOnboardingReset({ user, updateForm, oidcProviders, oauthProviders, transition })
     })
   }
@@ -371,7 +371,7 @@ describe('useUserDetails', () => {
   function renderUserDetails(initialUser: UserView | null) {
     return renderHook(
       ({ user }: { user: UserView | null }) => {
-        const transition = useUsersTransition()
+        const transition = useIdentityTransition()
         return useUserDetails({ user, oidcProviders, oauthProviders, transition })
       },
       { initialProps: { user: initialUser } },

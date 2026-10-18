@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 
 import { addIdentityTeamMembers, createIdentityUser } from '@/server/admin-data.functions'
-import { initialInviteForm, sanitizeInviteForm } from '@/routes/identity/-team-form'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { initialInviteForm, sanitizeInviteForm } from '@/routes/identity/-teams/team-form'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import { withAuthMode } from '@/routes/identity/-user-form'
 import type {
   CreateUserInput,
@@ -27,7 +27,7 @@ export function useAddMembers({
   teams: TeamManagementView[]
   oidcProviders: IdentityTeamsPayload['oidc_providers']
   oauthProviders: IdentityTeamsPayload['oauth_providers']
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [teamId, setTeamId] = useState<string | null>(null)
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
@@ -72,7 +72,7 @@ export function useAddMembers({
       })
       toast.success('Members added')
       setSelectedUserIds([])
-      await transition.refreshUsers()
+      await transition.refresh()
     })
   }
 
@@ -92,7 +92,7 @@ export function useAddMembers({
           ? 'Member invite created'
           : 'Member sign-in URL created',
       )
-      await transition.refreshUsers()
+      await transition.refresh()
     })
   }
 

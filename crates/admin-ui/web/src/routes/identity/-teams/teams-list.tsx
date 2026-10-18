@@ -15,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
-import { teamStatusBadgeVariant } from '@/routes/identity/-status-badge'
+import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { TeamAssignableUserView, TeamManagementView } from '@/types/api'
 
 /** What a team's controls open: the team editor, `Add members`, and a member's transfer or removal. */
@@ -145,7 +145,7 @@ function TeamCard({
             <p className="text-muted-foreground truncate text-xs">{team.key}</p>
           </div>
         </div>
-        <Badge variant={teamStatusBadgeVariant(team.status)}>{team.status}</Badge>
+        <Badge variant={statusBadgeVariant(team.status)}>{team.status}</Badge>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -248,7 +248,7 @@ function TeamTableRows({
           />
         </TableCell>
         <TableCell className="px-3 py-3">
-          <Badge variant={teamStatusBadgeVariant(team.status)}>{team.status}</Badge>
+          <Badge variant={statusBadgeVariant(team.status)}>{team.status}</Badge>
         </TableCell>
         <TableCell className="px-3 py-3">
           <div className="flex flex-wrap gap-2">
@@ -404,7 +404,7 @@ function TeamMemberRoster({
               <p className="text-foreground truncate text-sm font-medium">{member.name}</p>
               <p className="text-muted-foreground truncate text-xs">{member.email}</p>
             </div>
-            <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+            <Badge variant={member.team_role === 'owner' ? 'secondary' : 'outline'}>
               {member.team_role ?? 'member'}
             </Badge>
             <Button

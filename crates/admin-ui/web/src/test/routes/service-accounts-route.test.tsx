@@ -136,6 +136,10 @@ describe('ServiceAccountsPage', () => {
     expect(screen.getAllByText('deploy-bot').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Core Platform').length).toBeGreaterThan(0)
     expect(screen.getAllByText('active').length).toBeGreaterThan(0)
+    // Disabled is inactive, not pending.
+    for (const badge of screen.getAllByText('disabled')) {
+      expect(badge).toHaveAttribute('data-variant', 'secondary')
+    }
     expect(screen.getAllByText('Deploy Worker Key').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Nightly Rollup').length).toBeGreaterThan(0)
     expect(screen.getAllByText('No credential attached').length).toBeGreaterThan(0)

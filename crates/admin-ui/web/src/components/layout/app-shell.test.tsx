@@ -8,9 +8,13 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
 let routerPath = '/admin/api-keys'
+// The leaf of the rendered matches. It trails `routerPath` while a navigation is pending.
+let presentedPath = '/api-keys'
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  useMatches: ({ select }: { select: (matches: { pathname: string }[]) => unknown }) =>
+    select([{ pathname: '/' }, { pathname: presentedPath }]),
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: routerPath } }),
 }))
@@ -27,6 +31,7 @@ describe('AppShell', () => {
 
   beforeEach(() => {
     routerPath = '/admin/api-keys'
+    presentedPath = '/api-keys'
     logoutAdminSession.mockReset()
     logoutAdminSession.mockResolvedValue({ data: { status: 'ok' } })
     replaceLocation.mockReset()
@@ -114,6 +119,28 @@ describe('AppShell', () => {
     expect(screen.getByText('Agent Extensions')).toBeVisible()
     expect(screen.getAllByText('Models').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Identity').length).toBeGreaterThan(0)
+  })
+
+  it('remounts the page only once the next page is presented', () => {
+    const shell = () => (
+      <TooltipProvider>
+        <AppShell oceansVersion="0.17.0" session={platformAdminSession()}>
+          content
+        </AppShell>
+      </TooltipProvider>
+    )
+    const view = render(shell())
+    const firstPage = screen.getByText('content')
+
+    // The navigation has started, but the old page is still the one rendered.
+    routerPath = '/admin/models'
+    view.rerender(shell())
+    expect(screen.getByText('content')).toBe(firstPage)
+    expect(screen.getByRole('link', { current: 'page' })).toHaveTextContent('Models')
+
+    presentedPath = '/models'
+    view.rerender(shell())
+    expect(screen.getByText('content')).not.toBe(firstPage)
   })
 
   it('signs out from the account menu', async () => {

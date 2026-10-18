@@ -17,8 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { canTransferMember } from '@/routes/identity/-team-form'
-import type { MembershipChange } from '@/routes/identity/-use-membership-change'
+import { canTransferMember } from '@/routes/identity/-teams/team-form'
+import type { MembershipChange } from '@/routes/identity/-teams/use-membership-change'
 import type { TeamManagementView, TransferTeamMemberInput } from '@/types/api'
 
 /** Confirms removing a member from their team. Owner memberships can't be removed. */

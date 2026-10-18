@@ -16,12 +16,12 @@ import {
 } from '@/components/ui/empty'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getUserDirectory, getUsers } from '@/server/admin-data.functions'
-import { CreateUserDialog } from '@/routes/identity/-create-user-dialog'
+import { CreateUserDialog } from '@/routes/identity/-users/create-user-dialog'
 import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
-import { useUsersTransition } from '@/routes/identity/-use-users-transition'
-import { UserDetailsDialog } from '@/routes/identity/-user-details-dialog'
-import { UsersList } from '@/routes/identity/-users-list'
-import { normalizeUserSearch, type UsersSearch } from '@/routes/identity/-users-search'
+import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
+import { UserDetailsDialog } from '@/routes/identity/-users/user-details-dialog'
+import { UsersList } from '@/routes/identity/-users/users-list'
+import { normalizeUserSearch, type UsersSearch } from '@/routes/identity/-users/users-search'
 import type { IdentityDirectoryUsersPayload, IdentityUsersPayload, UserView } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
@@ -77,7 +77,7 @@ function UserAdministration({
   search: UsersSearch
 }) {
   const router = useRouter()
-  const transition = useUsersTransition()
+  const transition = useIdentityTransition()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const { users, teams, oidcProviders, oauthProviders, copilotUserProviders } = adminPayload(data)
   const selectedUser = search.user_id

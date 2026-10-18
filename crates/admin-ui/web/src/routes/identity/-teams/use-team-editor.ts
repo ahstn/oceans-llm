@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 
 import { createIdentityTeam, updateIdentityTeam } from '@/server/admin-data.functions'
-import { initialTeamForm, sanitizeTeamForm } from '@/routes/identity/-team-form'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { initialTeamForm, sanitizeTeamForm } from '@/routes/identity/-teams/team-form'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { CreateTeamInput, TeamManagementView } from '@/types/api'
 
 type TeamEditorTarget = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
@@ -19,7 +19,7 @@ export function useTeamEditor({
   transition,
 }: {
   teams: TeamManagementView[]
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [target, setTarget] = useState<TeamEditorTarget>({ mode: 'closed' })
   const [form, setForm] = useState<CreateTeamInput>(initialTeamForm)
@@ -49,10 +49,12 @@ export function useTeamEditor({
     event.preventDefault()
 
     transition.run(async () => {
-      if (target.mode === 'edit' && editingTeam) {
+      // Edit saves by id even when the team has dropped out of `teams`, so the server reports a
+      // missing team instead of the form falling through to create a new one.
+      if (target.mode === 'edit') {
         await updateIdentityTeam({
           data: {
-            teamId: editingTeam.id,
+            teamId: target.teamId,
             input: sanitizeTeamForm(form),
           },
         })
@@ -61,7 +63,7 @@ export function useTeamEditor({
         await createIdentityTeam({ data: sanitizeTeamForm(form) })
         toast.success('Team created')
       }
-      await transition.refreshUsers()
+      await transition.refresh()
       close()
     })
   }

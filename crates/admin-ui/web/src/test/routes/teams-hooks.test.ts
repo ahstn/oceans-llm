@@ -12,11 +12,11 @@ import {
   sanitizeInviteForm,
   sanitizeTeamForm,
   sanitizeTransferForm,
-} from '@/routes/identity/-team-form'
-import { useAddMembers } from '@/routes/identity/-use-add-members'
-import { useMembershipChange } from '@/routes/identity/-use-membership-change'
-import { useTeamEditor } from '@/routes/identity/-use-team-editor'
-import { useUsersTransition } from '@/routes/identity/-use-users-transition'
+} from '@/routes/identity/-teams/team-form'
+import { useAddMembers } from '@/routes/identity/-teams/use-add-members'
+import { useMembershipChange } from '@/routes/identity/-teams/use-membership-change'
+import { useTeamEditor } from '@/routes/identity/-teams/use-team-editor'
+import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { IdentityTeamsPayload, TeamAssignableUserView, TeamManagementView } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
@@ -218,7 +218,7 @@ describe('team form helpers', () => {
 describe('useTeamEditor', () => {
   function renderTeamEditor() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useTeamEditor({ teams, transition })
     })
   }
@@ -286,6 +286,29 @@ describe('useTeamEditor', () => {
     await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Team updated'))
   })
 
+  it('still updates, never creates, when the edited team drops out of the list', async () => {
+    mocks.updateIdentityTeam.mockRejectedValue(new Error('team not found'))
+    const { result, rerender } = renderHook(
+      ({ teams }: { teams: TeamManagementView[] }) => {
+        const transition = useIdentityTransition()
+        return useTeamEditor({ teams, transition })
+      },
+      { initialProps: { teams } },
+    )
+
+    act(() => result.current.openEdit(research))
+    rerender({ teams: [platform] })
+    expect(result.current).toMatchObject({ isEditing: true, editingTeam: null })
+    await act(async () => result.current.saveTeam(submitEvent().event))
+
+    expect(mocks.updateIdentityTeam).toHaveBeenCalledWith({
+      data: { teamId: 'team_research', input: { name: 'Research', admin_user_ids: [], tags: [] } },
+    })
+    expect(mocks.createIdentityTeam).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('team not found'))
+    expect(result.current.isOpen).toBe(true)
+  })
+
   it('keeps the dialog open when saving fails', async () => {
     mocks.createIdentityTeam.mockRejectedValue(new Error('Team name already exists'))
     const { result } = renderTeamEditor()
@@ -301,7 +324,7 @@ describe('useTeamEditor', () => {
 describe('useAddMembers', () => {
   function renderAddMembers() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useAddMembers({ teams, oidcProviders, oauthProviders, transition })
     })
   }
@@ -422,7 +445,7 @@ describe('useAddMembers', () => {
 describe('useMembershipChange', () => {
   function renderMembershipChange() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useMembershipChange({ teams, users, transition })
     })
   }
