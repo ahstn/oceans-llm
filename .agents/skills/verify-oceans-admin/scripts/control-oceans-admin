@@ -80,16 +80,25 @@ listener_pid() {
   lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1
 }
 
-# Prints the git checkout that holds a process's working directory. Comparing checkout roots
-# rather than path prefixes keeps a nested worktree from passing as its parent repository.
+# Prints the checkout that holds a process's working directory: the nearest ancestor of its
+# canonical path that contains a `.git` entry. Walking the filesystem instead of asking Git
+# keeps the answer independent of Git configuration and environment (a foreign checkout's
+# `core.worktree` or an inherited GIT_DIR cannot redirect it), and a nested worktree still
+# resolves to its own root because it carries its own `.git` file.
 process_checkout() {
-  local cwd
+  local cwd dir
   cwd="$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
   [[ -n "$cwd" ]] || return 1
-  # An inherited GIT_DIR or GIT_WORK_TREE would make every directory resolve to that repository.
-  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
-    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_PREFIX \
-    git -C "$cwd" rev-parse --show-toplevel 2>/dev/null
+  dir="$(cd "$cwd" 2>/dev/null && pwd -P)" || return 1
+  while [[ -n "$dir" ]]; do
+    if [[ -e "$dir/.git" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    [[ "$dir" != / ]] || return 1
+    dir="$(dirname "$dir")"
+  done
+  return 1
 }
 
 repo_root_physical="$(cd "$repo_root" && pwd -P)"

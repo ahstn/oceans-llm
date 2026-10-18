@@ -13,6 +13,17 @@ const hasTools = ['lsof', 'git', 'bash'].every(
   (tool) => spawnSync('sh', ['-c', `command -v ${tool}`]).status === 0,
 )
 
+// Git subprocesses that target a fixture must not inherit a caller's repository location.
+const isolatedGitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
+)
+
+function git(args) {
+  const result = spawnSync('git', args, { env: isolatedGitEnv, encoding: 'utf8' })
+  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`)
+  return result.stdout.trim()
+}
+
 // Starts one loopback listener from `cwd` and resolves with its process and port.
 async function startListener(cwd) {
   const child = spawn(
@@ -78,8 +89,8 @@ async function exitSignal(child, timeoutMs = 5_000) {
 
 async function tempGitCheckout(t) {
   const checkout = await fs.mkdtemp(path.join(os.tmpdir(), 'oceans-other-checkout-'))
-  spawnSync('git', ['init', '--quiet', checkout])
   t.after(() => fs.rm(checkout, { recursive: true, force: true }))
+  git(['init', '--quiet', checkout])
   return checkout
 }
 
@@ -126,7 +137,8 @@ test('an inherited GIT_DIR cannot make a foreign listener look owned', { skip: !
       ...process.env,
       OCEANS_VERIFY_STATE_BASE: stateBase,
       OCEANS_VERIFY_RUN_ID: 'git-env-run',
-      GIT_DIR: path.join(repoRoot, '.git'),
+      // In a linked worktree `.git` is a pointer file, so resolve the real Git directory.
+      GIT_DIR: git(['-C', repoRoot, 'rev-parse', '--absolute-git-dir']),
       GIT_WORK_TREE: repoRoot,
     },
     encoding: 'utf8',
@@ -135,6 +147,25 @@ test('an inherited GIT_DIR cannot make a foreign listener look owned', { skip: !
   assert.equal(cleanup.status, 0, cleanup.stderr)
   await new Promise((resolve) => setTimeout(resolve, 200))
   assert.ok(isAlive(gateway.child.pid), 'GIT_DIR must not redirect the ownership check')
+})
+
+test('a foreign checkout cannot claim this checkout through core.worktree', { skip: !hasTools }, async (t) => {
+  const stateBase = await tempStateBase(t)
+  const otherCheckout = await tempGitCheckout(t)
+  git(['-C', otherCheckout, 'config', 'core.worktree', repoRoot])
+  const gateway = await listenerFor(t, otherCheckout)
+  const ui = await listenerFor(t, otherCheckout)
+  await recordRun(stateBase, 'worktree-config-run', gateway, ui)
+
+  const doctor = runControl(stateBase, 'worktree-config-run', 'doctor')
+  assert.notEqual(doctor.status, 0)
+  assert.match(doctor.stderr, /does not belong to/)
+
+  const cleanup = runControl(stateBase, 'worktree-config-run', 'cleanup')
+  assert.equal(cleanup.status, 0, cleanup.stderr)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.ok(isAlive(gateway.child.pid), 'core.worktree must not redirect the ownership check')
+  assert.ok(isAlive(ui.child.pid), 'core.worktree must not redirect the ownership check')
 })
 
 test('cleanup stops the owned listener and spares the foreign one', { skip: !hasTools }, async (t) => {
