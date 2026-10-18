@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/mcp/-access-tab.tsx
+  s_7a5811202bdfd5::t_1a83be8aa942c3 22,244,268,312
+crates/admin-ui/web/src/routes/mcp/-option-select.tsx
+  s_7a5811202bdfd5::t_9b037c0ab5eb03 1-38
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  s_7a5811202bdfd5::t_562cdb63bdf2bf 20,199,219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0cd43088adf5c9eb07a31eb333993e0b48c69984",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
