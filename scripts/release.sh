@@ -30,6 +30,8 @@ fi
 
 tag="$(git-cliff --bumped-version)"
 if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
+  # Leave the checkout as it was so the next attempt starts clean.
+  git restore -- "${refreshed[@]}"
   echo "error: no pull requests to release since $tag" >&2
   exit 1
 fi

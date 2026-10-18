@@ -31,7 +31,7 @@ The command creates the version commit and tag, then pushes them. The pushed tag
 
 Pull request titles must follow Conventional Commits. The changelog and release notes list one entry per merged pull request, using its title, author, and link. Commits inside a pull request and commits pushed straight to `main` do not appear and do not affect the version.
 
-git-cliff recognizes a pull request by the `(#123)` suffix that GitHub adds to its merge commit title. Keep the repository's merge commit title set to the pull request title.
+git-cliff recognizes a pull request by the `(#123)` suffix that GitHub adds to its merge commit title. Keep the repository's merge commit title set to the pull request title. Titles are untrusted, so the changelog escapes their link and HTML syntax (`[`, `]`, `<`, `>`); backticks still render as code.
 
 The pull request title also chooses the version bump:
 
@@ -146,7 +146,7 @@ If the release changed behavior for admins or users, confirm that the canonical 
 
 ## Failure Recovery
 
-If the command fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it. The script refuses to run on a dirty worktree. To start over, delete any local `vX.Y.Z` tag it created and reset `main` to `origin/main`.
+If the command fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it. The script refuses to run on a dirty worktree. When there is nothing to release, it restores the refreshed snapshots before it exits. To start over, delete any local `vX.Y.Z` tag it created and reset `main` to `origin/main`.
 
 If the tag was pushed but a required CI job failed, correct the problem and rerun the failed jobs for that tag when the source is valid. A failed prerequisite prevents the final GitHub release job. Images or charts that were already pushed remain published; there is no rollback across registries.
 
