@@ -404,6 +404,69 @@ async fn document_fetches_are_limited_per_source() {
     assert_eq!(fixture.fetches(), 31, "other sources are unaffected");
 }
 
+async fn harness_with_fetch_limit(
+    allowed_domains: &[&str],
+    per_minute: u32,
+) -> (Harness, Arc<Fixture>) {
+    let fixture = Arc::new(Fixture::default());
+    let documents = ClientMetadataDocuments::with_source(
+        allowed_domains.iter().map(ToString::to_string).collect(),
+        fixture.clone(),
+    )
+    .expect("documents")
+    .with_fetch_rate_limits(SourceRateLimits {
+        per_source_per_minute: per_minute,
+        per_minute,
+    })
+    .expect("limits");
+    (
+        Harness::with_settings(settings_with(documents)).await,
+        fixture,
+    )
+}
+
+/// Client IDs refused without a fetch must not spend the budget that
+/// documents on allowed hosts need.
+#[tokio::test]
+async fn client_ids_refused_before_fetching_do_not_count() {
+    let (harness, fixture) = harness_with_fetch_limit(&["editor.example.com"], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), None);
+    for client_id in [
+        "https://elsewhere.example.net/oauth/client.json",
+        "https://editor.example.com",
+    ] {
+        let (status, page) = body_text(&harness, &harness.authorize_query(client_id, &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{client_id}: {page}");
+    }
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1);
+}
+
+/// Once the fetch budget is spent, a stale copy that may still stand in
+/// serves as it does for an unreachable host, rather than a 429.
+#[tokio::test]
+async fn a_spent_fetch_budget_falls_back_to_a_usable_copy() {
+    let (harness, fixture) = harness_with_fetch_limit(&[], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
+    let request_id = harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    let code = harness.approve(&request_id).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+    let (status, token) = harness.exchange_code(CLIENT_ID, &code).await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1, "the limit still held");
+
+    // Without a usable copy, the refusal stands.
+    let uncached = "https://editor.example.com/oauth/other.json";
+    let (status, page) = body_text(&harness, &harness.authorize_query(uncached, &[])).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{page}");
+}
+
 #[tokio::test]
 async fn passing_failures_reuse_only_a_cacheable_copy() {
     let (harness, fixture) = harness_with_fixture(&[]).await;

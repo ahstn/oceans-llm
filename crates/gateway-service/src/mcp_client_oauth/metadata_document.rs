@@ -35,7 +35,7 @@ use super::{
         MAX_REDIRECT_URIS, MAX_URI_LENGTH, optional_https_uri, optional_text, validate_grant_types,
         validate_response_types,
     },
-    source_limits::{SourceRateLimiter, SourceRateLimits},
+    source_limits::{RateLimited, SourceRateLimiter, SourceRateLimits},
 };
 use crate::outbound_fetch::{
     InvalidDomainName, OutboundAddressScope, OutboundFetchError, OutboundFetcher,
@@ -179,7 +179,10 @@ impl ClientMetadataDocuments {
     }
 
     /// Limits document fetches per requesting address and across the
-    /// gateway. Requests answered from a cache do not count.
+    /// gateway. Requests answered from a cache, joining a fetch in flight, or
+    /// refused before fetching (an invalid or disallowed client ID) do not
+    /// count. A refused fetch falls back to a cached copy as an unreachable
+    /// host does.
     pub fn with_fetch_rate_limits(
         mut self,
         limits: SourceRateLimits,
@@ -223,10 +226,8 @@ impl ClientMetadataDocuments {
             None => {
                 let flight = InFlight::join(&self.in_flight, client_id);
                 let outcome = flight
-                    .cell
-                    .get_or_init(|| self.limited_refresh(repo, client_id, now, requester))
-                    .await
-                    .clone();
+                    .outcome(self.refresh(repo, client_id, now, requester))
+                    .await;
                 drop(flight);
                 outcome
             }
@@ -243,10 +244,11 @@ impl ClientMetadataDocuments {
         Err(failure.error)
     }
 
-    /// [`Self::refresh`], counted against the fetch limits. Only the caller
-    /// that starts a refresh runs this; callers that join it cause no fetch
-    /// of their own, so they do not count.
-    async fn limited_refresh<R>(
+    /// Fetches, validates, stores, and caches the document. When the host is
+    /// temporarily unreachable, or the fetch limits refuse the fetch, a cached
+    /// copy stands in instead. This runs once per refresh shared by concurrent
+    /// callers, so a burst during an outage costs one fetch and one write.
+    async fn refresh<R>(
         &self,
         repo: &R,
         client_id: &str,
@@ -256,29 +258,7 @@ impl ClientMetadataDocuments {
     where
         R: GatewayOauthRepository + ?Sized,
     {
-        if let Err(limited) = self.fetch_limiter.check(requester, Instant::now()) {
-            tracing::warn!(?requester, "client metadata document fetch rate limited");
-            return Err(ResolveFailure {
-                error: OauthError::rate_limited(
-                    "too many client metadata documents requested; try again later",
-                    limited.retry_after_seconds(),
-                ),
-                transient: true,
-                document_refused: false,
-            });
-        }
-        self.refresh(repo, client_id, now).await
-    }
-
-    /// Fetches, validates, stores, and caches the document. When the host is
-    /// temporarily unreachable, a cached copy stands in instead. This runs
-    /// once per refresh shared by concurrent callers, so a burst during an
-    /// outage costs one fetch and one write.
-    async fn refresh<R>(&self, repo: &R, client_id: &str, now: OffsetDateTime) -> RefreshOutcome
-    where
-        R: GatewayOauthRepository + ?Sized,
-    {
-        match self.fetch_and_store(repo, client_id, now).await {
+        match self.fetch_and_store(repo, client_id, now, requester).await {
             Err(failure) if failure.transient => self
                 .stand_in(repo, client_id, now, &failure)
                 .await
@@ -296,7 +276,8 @@ impl ClientMetadataDocuments {
         }
     }
 
-    /// Serves the cached copy for an unreachable host, if one may stand in.
+    /// Serves the cached copy for a document that cannot be fetched just now,
+    /// if one may stand in.
     /// It is written back first, since cleanup ages these rows by their last
     /// write and requests and grants need the row, then served for
     /// [`STAND_IN_RETRY_AFTER`] before the host is tried again.
@@ -336,6 +317,7 @@ impl ClientMetadataDocuments {
         repo: &R,
         client_id: &str,
         now: OffsetDateTime,
+        requester: Option<IpAddr>,
     ) -> RefreshOutcome
     where
         R: GatewayOauthRepository + ?Sized,
@@ -350,7 +332,7 @@ impl ClientMetadataDocuments {
                 transient: true,
                 document_refused: false,
             })?;
-        let fetched = self.fetch_and_validate(client_id, now).await?;
+        let fetched = self.fetch_and_validate(client_id, now, requester).await?;
         let stored = repo
             .upsert_gateway_oauth_metadata_document_client(&fetched.client)
             .await
@@ -462,16 +444,24 @@ impl ClientMetadataDocuments {
             .remove(client_id);
     }
 
+    /// Fetches and checks the document. Client IDs refused without a fetch
+    /// are refused before the fetch limits count, so they cannot spend the
+    /// gateway-wide budget that documents on allowed hosts need.
     async fn fetch_and_validate(
         &self,
         client_id: &str,
         now: OffsetDateTime,
+        requester: Option<IpAddr>,
     ) -> Result<ValidatedDocument, ResolveFailure> {
         let url = parse_client_id_url(client_id).map_err(ResolveFailure::permanent)?;
         if !self.host_is_allowed(&url) {
             return Err(ResolveFailure::permanent(OauthError::invalid_client(
                 "client metadata documents from this host are not accepted",
             )));
+        }
+        if let Err(limited) = self.fetch_limiter.check(requester, Instant::now()) {
+            tracing::warn!(?requester, "client metadata document fetch rate limited");
+            return Err(ResolveFailure::rate_limited(limited));
         }
         let fetched = self.source.fetch(&url).await.map_err(|error| {
             let transient = error.is_transient();
@@ -551,6 +541,26 @@ impl<'a> InFlight<'a> {
             cell: flight.cell.clone(),
         }
     }
+
+    /// The shared refresh's outcome, running `refresh` if no caller has
+    /// settled it yet. A fetch-limit refusal belongs to the caller it
+    /// refused, whose source may be the only one over the limits, so it is
+    /// not shared: the next waiting caller runs a refresh of its own.
+    async fn outcome(&self, refresh: impl Future<Output = RefreshOutcome>) -> RefreshOutcome {
+        let shared = self
+            .cell
+            .get_or_try_init(|| async {
+                match refresh.await {
+                    Err(failure) if failure.is_rate_limited() => Err(failure),
+                    outcome => Ok(outcome),
+                }
+            })
+            .await;
+        match shared {
+            Ok(outcome) => outcome.clone(),
+            Err(failure) => Err(failure),
+        }
+    }
 }
 
 impl Drop for InFlight<'_> {
@@ -580,7 +590,8 @@ struct ValidatedDocument {
 #[derive(Clone)]
 struct ResolveFailure {
     error: OauthError,
-    /// The document's host was unreachable, so a cached copy may stand in.
+    /// The document could not be fetched just now (its host was unreachable,
+    /// or the fetch limits refused), so a cached copy may stand in.
     transient: bool,
     /// The document itself was refused (missing, invalid, or not allowed),
     /// so the cached copy is dropped and the refusal remembered briefly.
@@ -594,6 +605,23 @@ impl ResolveFailure {
             transient: false,
             document_refused: true,
         }
+    }
+
+    /// The fetch limits refused the fetch: retryable, and a cached copy may
+    /// stand in, as for an unreachable host.
+    fn rate_limited(limited: RateLimited) -> Self {
+        Self {
+            error: OauthError::rate_limited(
+                "too many client metadata documents requested; try again later",
+                limited.retry_after_seconds(),
+            ),
+            transient: true,
+            document_refused: false,
+        }
+    }
+
+    fn is_rate_limited(&self) -> bool {
+        self.error.retry_after_seconds.is_some()
     }
 
     /// The store failed: neither the host's fault nor the document's.
