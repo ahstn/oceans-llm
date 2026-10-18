@@ -83,16 +83,19 @@ export async function verifyDiscoveryFailure(ui) {
   await expect(alert).toContainText(explanation);
   await expect(alert).toContainText(failed.last_error_summary);
   await expect(alert.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
-  // A toast would render alongside the alert; leave it time to appear before proving it didn't.
-  await page.waitForTimeout(1000);
-  await expect(discoveryToasts).toHaveCount(0);
+  // ServersTab calls toast() in the same tick that renders this alert, and Sonner mounts a toast one
+  // task later, so a task and a frame are enough to see one. Count once: a retrying assertion would
+  // pass after a toast had come and gone, since Sonner dismisses toasts after 4 s.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(() => requestAnimationFrame(() => resolve()), 0)));
+  expect(await discoveryToasts.count(), "discovery toasts beside the overview alert").toBe(0);
   await capture(page, "03-unreachable-overview");
   for (const [name, label] of [[`Refresh ${displayName}`, "Refresh tools"], [`Edit ${displayName}`, "Edit configuration"], [`More actions for ${displayName}`, "More actions"], ["Close", "Close"]]) {
     // Radix opens a tooltip on pointer movement into its trigger, and a diagonal path would cross the
     // neighbouring header buttons. Approach each one straight up from below the header instead.
     const box = await manage.getByRole("button", { name, exact: true }).boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height + 80, { steps: 4 });
-    await page.waitForTimeout(400);
+    // A trigger opens only once the previous tooltip has closed and released its hover grace area.
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
     await expect(page.locator('[data-slot="tooltip-content"]').filter({ hasText: label })).toBeVisible();
   }
