@@ -366,6 +366,10 @@ export function ServersTab({
         [server.id]: { ...result, revision: current[server.id]?.revision ?? 0 },
       }))
       announceRefreshResult(server, result)
+      // A 409 means the server was disabled, enabled, transferred or reconfigured meanwhile, so
+      // reload it: the dialog shouldn't keep offering actions for its old state. The request may
+      // also have failed because the gateway is unreachable, so a failed reload is ignored.
+      await router.invalidate().catch(() => undefined)
     } finally {
       setRefreshingServerIds((current) => current.filter((id) => id !== server.id))
     }

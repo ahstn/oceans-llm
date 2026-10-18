@@ -575,6 +575,22 @@ describe('ServersTab', () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  it('reloads the server after a refresh conflict, even if the reload fails', async () => {
+    refreshExternalMcpServerDiscoveryMock.mockRejectedValueOnce(
+      new Error('external MCP server was disabled during discovery; refresh it again'),
+    )
+    invalidateMock.mockRejectedValueOnce(new Error('gateway unreachable'))
+    await renderServersTab('server_1')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('was disabled during discovery')
+    await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Refresh GitHub' })).toBeEnabled(),
+    )
+  })
+
   it('toasts a refresh result only while its overview is hidden, linking back to it', async () => {
     refreshExternalMcpServerDiscoveryMock.mockResolvedValue({
       data: {
