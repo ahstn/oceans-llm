@@ -497,7 +497,12 @@ export function ServersTab({
         onRefresh={handleRefreshDiscovery}
         onToggleTool={toggleToolSelection}
         onClearSelection={() => setSelectedToolIds([])}
-        onAddToToolset={scope.platformAdmin ? handleAddToToolset : undefined}
+        // Tool sets are organisation-wide, so only organisation servers' tools join them.
+        onAddToToolset={
+          scope.platformAdmin && selectedServer?.visibility === 'organisation'
+            ? handleAddToToolset
+            : undefined
+        }
         onToolUpdated={
           scope.platformAdmin
             ? (updated) =>

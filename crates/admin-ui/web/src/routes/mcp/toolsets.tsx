@@ -18,7 +18,11 @@ export const Route = createFileRoute('/mcp/toolsets')({
       getMcpServers({ data: { include_disabled: true } }),
       getMcpToolsets({ data: { include_disabled: true } }),
     ])
-    return { servers: servers.data.items, toolsets: toolsets.data.items }
+    // Tool sets are organisation-wide, so team-only servers' tools never join them.
+    return {
+      servers: servers.data.items.filter((server) => server.visibility === 'organisation'),
+      toolsets: toolsets.data.items,
+    }
   },
   component: ToolsetsPage,
 })

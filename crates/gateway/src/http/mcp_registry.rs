@@ -1584,10 +1584,32 @@ pub async fn preview_mcp_effective_access(
         }
     }
     // Preview what a real caller gets: a key with its owner and team, a user
-    // or service account with its team.
-    let preview = gateway_service::McpAccess::new(state.store.clone())
-        .preview_subjects(&selected)
-        .await?;
+    // or service account with its team. Every selected subject is checked
+    // here, so a disabled service account is refused.
+    let previews = gateway_service::McpAccess::new(state.store.clone());
+    let mut preview = previews.preview_subjects(&selected).await?;
+    // A service account acts only through its keys, which runtime refuses
+    // without an active budget, so it adds nothing to the preview. Any other
+    // subject selected with it still previews what it reaches.
+    let account_can_act = match query.service_account_id {
+        Some(service_account_id) => {
+            service_account_can_authenticate(&state, service_account_id, None).await?
+        }
+        None => true,
+    };
+    let mut nothing_reached = false;
+    if !account_can_act {
+        let others: Vec<McpGrantSubject> = selected
+            .iter()
+            .filter(|subject| subject.subject_kind != McpToolGrantSubjectKind::ServiceAccount)
+            .cloned()
+            .collect();
+        if others.is_empty() {
+            nothing_reached = true;
+        } else {
+            preview = previews.preview_subjects(&others).await?;
+        }
+    }
     let resolution = state
         .store
         .resolve_mcp_access_for_subjects(
@@ -1622,18 +1644,10 @@ pub async fn preview_mcp_effective_access(
         .filter(|subject| subject.subject_kind == McpToolGrantSubjectKind::Team)
         .map(|subject| subject.subject_id)
         .collect();
-    // A service account acts only through its keys, which runtime refuses
-    // without an active budget; a disabled one was refused above.
-    let account_can_act = match query.service_account_id {
-        Some(service_account_id) => {
-            service_account_can_authenticate(&state, service_account_id, None).await?
-        }
-        None => true,
-    };
     let allowed_tools: Vec<_> = resolution
         .allowed_tools
         .into_iter()
-        .filter(|_| account_can_act)
+        .filter(|_| !nothing_reached)
         .filter(|tool| {
             servers.get(&tool.mcp_server_id).is_none_or(|server| {
                 (server.ownership.visibility == gateway_core::McpServerVisibility::Organisation

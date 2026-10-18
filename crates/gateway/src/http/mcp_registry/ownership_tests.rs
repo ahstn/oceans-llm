@@ -1955,6 +1955,63 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
 }
 
 #[tokio::test]
+async fn a_service_account_without_a_budget_leaves_other_preview_subjects_alone() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "shared-notes",
+            context.team_owned(context.team_a, McpServerVisibility::Organisation),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let user_id = context.member(context.team_a).await;
+    let account = context.service_account(context.team_a).await;
+    assert_eq!(
+        context
+            .grant(&admin, "user", user_id, "tool", server.tool_id)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let preview = |query: Value| {
+        let headers = admin.headers.clone();
+        let state = context.state.clone();
+        async move {
+            read(
+                preview_mcp_effective_access(
+                    State(state),
+                    headers,
+                    Query(serde_json::from_value(query).unwrap()),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    // The account has no budget, so it reaches nothing on its own.
+    let (status, body) = preview(json!({
+        "service_account_id": account,
+        "server_id": server.id,
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["tools"].as_array().map(Vec::len), Some(0));
+    // The user previewed with it keeps the tool granted to them.
+    let (status, body) = preview(json!({
+        "service_account_id": account,
+        "user_id": user_id,
+        "server_id": server.id,
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["data"]["tools"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
+}
+
+#[tokio::test]
 async fn settings_changes_audit_each_oauth_connection_they_end() {
     use gateway_core::{
         McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,

@@ -1031,6 +1031,19 @@ describe('ServersTab', () => {
     expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
   })
 
+  it('offers no tool set action on a team-only server', async () => {
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool] } })
+    await renderServersTab(null, [teamServer])
+    fireEvent.click(
+      within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Open Docs' }),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    expect(screen.queryByRole('checkbox', { name: 'Select query_docs' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to toolset' })).not.toBeInTheDocument()
+  })
+
   it('offers no tool selection without a tool set action', async () => {
     await renderServersTab(null, [{ ...server, can_manage: false }], {
       ...teamAdminScope,
