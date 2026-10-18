@@ -251,16 +251,23 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        // Status changes wait for an in-flight discovery, whose result would otherwise land
+        // on top of them and contradict the new status.
+        let discovery_lock = discovery_lock_for(mcp_server_id);
+        let _guard = discovery_lock.lock().await;
         self.repo
             .disable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
             .map_err(Into::into)
     }
 
+    /// Enables a disabled server; the flag is `false` when it was already active.
     pub async fn enable_server(
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        let discovery_lock = discovery_lock_for(mcp_server_id);
+        let _guard = discovery_lock.lock().await;
         self.repo
             .enable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -815,6 +822,30 @@ mod tests {
         assert!(resolved.auth_config.is_empty());
     }
 
+    #[tokio::test]
+    async fn enabling_waits_for_an_in_flight_discovery() {
+        let service = McpRegistryService::with_client(
+            Arc::new(NoopMcpRegistryRepository),
+            Arc::new(NoopMcpDiscoveryClient),
+        );
+        let server_id = Uuid::new_v4();
+        // Stand in for a refresh that has read the server but not yet written its result.
+        let discovery_lock = discovery_lock_for(server_id);
+        let discovery = discovery_lock.lock().await;
+
+        let enable = tokio::spawn(async move { service.enable_server(server_id).await });
+        tokio::task::yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            !enable.is_finished(),
+            "enable ran while discovery held the server"
+        );
+
+        drop(discovery);
+        let result = enable.await.expect("enable task");
+        assert!(result.is_err(), "the noop store reports the server missing");
+    }
+
     struct NoopMcpDiscoveryClient;
 
     #[async_trait]
@@ -926,10 +957,10 @@ mod tests {
 
         async fn enable_external_mcp_server(
             &self,
-            _mcp_server_id: Uuid,
+            mcp_server_id: Uuid,
             _enabled_at: OffsetDateTime,
         ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
-            unimplemented!()
+            Err(StoreError::NotFound(mcp_server_id.to_string()))
         }
 
         async fn list_external_mcp_tools(
