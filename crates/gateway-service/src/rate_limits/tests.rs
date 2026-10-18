@@ -1449,3 +1449,31 @@ async fn a_failed_team_lookup_follows_the_failure_mode() {
         assert_eq!(decision.is_err(), refused, "{mode:?}: {decision:?}");
     }
 }
+
+#[tokio::test]
+async fn a_rejected_request_does_not_count_its_own_cost_in_the_reset() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per key",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            1,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+    // At the start of the next minute the previous window still fills the
+    // limit and the current one is empty: the usage frees at this minute's end.
+    harness.advance(50);
+    let RateLimitDecision::Rejected(rejected) = harness.limiter.check(&subject).await.unwrap()
+    else {
+        panic!("expected rejection");
+    };
+    assert_eq!(rejected.reset_after_seconds, 60);
+}
