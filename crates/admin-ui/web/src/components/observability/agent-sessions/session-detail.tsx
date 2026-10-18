@@ -30,7 +30,7 @@ import type {
   AgentSessionDetailView,
   AgentSessionRequestView,
 } from '@/types/api'
-import { formatDuration, formatTimestamp } from '@/lib/format'
+import { formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 
 type AgentRequestAttempt = NonNullable<
   AgentSessionDetailView['report']
@@ -81,7 +81,10 @@ export function SessionDetail({
             label="Session score"
             value={showScore ? formatNullable(report?.score) : 'Score not shown'}
           />
-          <Metric label="Normalised cost" value={formatCost(detail.session.normalized_cost_usd)} />
+          <Metric
+            label="Normalised cost"
+            value={formatUsdTotal(detail.session.normalized_cost_usd)}
+          />
           <Metric label="Total time" value={formatDuration(components?.wall_time_ms)} />
         </section>
 

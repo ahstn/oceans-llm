@@ -7,6 +7,7 @@ import {
   formatTimestamp,
   formatUsd10000,
   formatUsd10000Precise,
+  formatUsdTotal,
 } from '@/lib/format'
 
 // DESIGN.md "Numbers and time": each kind of value has one format.
@@ -35,6 +36,11 @@ describe('shared number and time formats', () => {
     expect(formatUsd10000Precise(457)).toBe('$0.0457')
     expect(formatUsd10000Precise(5780)).toBe('$0.5780')
     expect(formatUsd10000Precise(1_982_090)).toBe('$198.2090')
+    expect(formatUsdTotal(0.24)).toBe('$0.24')
+    expect(formatUsdTotal(0.0031)).toBe('<$0.01')
+    expect(formatUsdTotal(0.007)).toBe('$0.01')
+    expect(formatUsdTotal(0)).toBe('$0.00')
+    expect(formatUsdTotal(null)).toBe('—')
   })
 
   it('writes timestamps in UTC with the zone, and seconds only on request', () => {

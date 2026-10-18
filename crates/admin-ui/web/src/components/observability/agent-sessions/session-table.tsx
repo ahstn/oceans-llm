@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { AgentSessionSummaryView } from '@/types/api'
-import { CURRENCY_FORMATTER, EMPTY_VALUE, formatDuration, formatTimestamp } from '@/lib/format'
+import { EMPTY_VALUE, formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface SessionTableProps {
@@ -97,7 +97,7 @@ export function SessionTable({
                   </p>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {formatCost(session.normalized_cost_usd)}
+                  {formatUsdTotal(session.normalized_cost_usd)}
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
                   {formatDuration(session.active_time_ms)}
@@ -211,10 +211,6 @@ const sessionColumns = [
   { label: 'Data quality', numeric: false },
 ] as const
 
-function formatCost(value?: number | null) {
-  // Session cost is a total, so the column keeps two decimals.
-  return value == null ? EMPTY_VALUE : CURRENCY_FORMATTER.format(value)
-}
 function humanize(value?: string | null) {
   return value
     ? value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())

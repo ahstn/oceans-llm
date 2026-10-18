@@ -11,6 +11,20 @@ export const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
+/**
+ * A dollar total for a column of totals: two decimals, and `<$0.01` for a non-zero amount that
+ * would otherwise round to `$0.00`, so a small real cost is never shown as nothing.
+ */
+export function formatUsdTotal(amountUsd: number | null | undefined) {
+  if (amountUsd == null) {
+    return EMPTY_VALUE
+  }
+  if (amountUsd > 0 && amountUsd < 0.005) {
+    return '<$0.01'
+  }
+  return CURRENCY_FORMATTER.format(amountUsd)
+}
+
 /** Formats an API amount expressed in ten-thousandths of a dollar. */
 export function formatUsd10000(amountUsd10000: number) {
   return CURRENCY_FORMATTER.format(amountUsd10000 / 10_000)
