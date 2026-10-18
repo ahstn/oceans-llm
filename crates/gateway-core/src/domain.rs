@@ -2868,27 +2868,12 @@ pub fn route_capability_defaults(
     if provider_type == "typesafe" || compatibility.selects_decisions_api() {
         return ProviderCapabilities::decisions_only();
     }
-    let mut capabilities = narrow_for_route_profile(
+    narrow_for_route_profile(
         provider_type,
         ProviderCapabilities::for_provider_type(provider_type),
         Some(upstream_model),
         Some(compatibility),
-    );
-    // Only Bedrock providers use api_style; other providers ignore the block.
-    if provider_type == "aws_bedrock"
-        && let Some(bedrock) = &compatibility.aws_bedrock
-    {
-        if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
-            capabilities.chat_completions = false;
-        } else {
-            capabilities.responses = false;
-            capabilities.json_schema = false;
-        }
-        if bedrock.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke {
-            capabilities.stream = false;
-        }
-    }
-    capabilities
+    )
 }
 
 fn narrow_for_route_profile(
@@ -2909,6 +2894,24 @@ fn narrow_for_route_profile(
                 decisions: true,
                 ..base
             }
+        }
+        // Only Bedrock providers use api_style; other providers ignore the block.
+        "aws_bedrock" => {
+            let mut capabilities = base;
+            if let Some(bedrock) =
+                compatibility.and_then(|compatibility| compatibility.aws_bedrock.as_ref())
+            {
+                if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
+                    capabilities.chat_completions = false;
+                } else {
+                    capabilities.responses = false;
+                    capabilities.json_schema = false;
+                }
+                if bedrock.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke {
+                    capabilities.stream = false;
+                }
+            }
+            capabilities
         }
         _ => base,
     }
@@ -3774,6 +3777,69 @@ mod tests {
         is_supported_vertex_google_chat_upstream_model,
         vertex_route_capabilities_for_upstream_model,
     };
+
+    #[test]
+    fn runtime_and_seeded_bedrock_capabilities_apply_the_same_api_style_policy() {
+        use super::{
+            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
+            RouteCompatibility, route_capability_defaults, route_provider_capabilities,
+        };
+
+        for api_style in [
+            AwsBedrockApiStyle::RuntimeConverse,
+            AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+            AwsBedrockApiStyle::RuntimeOpenaiChat,
+            AwsBedrockApiStyle::MantleOpenaiResponses,
+            AwsBedrockApiStyle::MantleOpenaiChat,
+            AwsBedrockApiStyle::MantleAnthropicMessages,
+        ] {
+            let compatibility = RouteCompatibility {
+                aws_bedrock: Some(AwsBedrockRouteCompatibility {
+                    api_style,
+                    openai_base_path: None,
+                    supports_strict_tools: None,
+                }),
+                ..Default::default()
+            };
+            let seeded = route_capability_defaults("aws_bedrock", "model", &compatibility);
+            // A route stored with every flag enabled, as an admin-created or older row may be.
+            let route = ModelRoute {
+                id: uuid::Uuid::nil(),
+                model_id: uuid::Uuid::nil(),
+                provider_key: "bedrock".to_string(),
+                upstream_model: "model".to_string(),
+                priority: 100,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: serde_json::Map::new(),
+                extra_body: serde_json::Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility,
+            };
+            let runtime = route_provider_capabilities(
+                "aws_bedrock",
+                ProviderCapabilities::aws_bedrock_baseline(),
+                Some(&route),
+            );
+            assert_eq!(runtime, seeded, "{api_style:?}");
+        }
+
+        let invoke = route_capability_defaults(
+            "aws_bedrock",
+            "model",
+            &RouteCompatibility {
+                aws_bedrock: Some(AwsBedrockRouteCompatibility {
+                    api_style: AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+                    openai_base_path: None,
+                    supports_strict_tools: None,
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(!invoke.stream && !invoke.responses && !invoke.json_schema && !invoke.embeddings);
+    }
 
     #[test]
     fn reasoning_effort_order_and_wire_values_match_policy_order() {
