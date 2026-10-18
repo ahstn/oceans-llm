@@ -34,7 +34,7 @@ export function FeedbackSection() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ShowcaseBlock
           title="Alert"
-          description="Default for notices, destructive for blocking errors. AlertAction holds the one action that clears it."
+          description="Default for notices, destructive for blocking errors. AlertAction holds one short action, such as Retry: the alert keeps room for a small button only."
         >
           <Alert>
             <HugeiconsIcon icon={InformationCircleIcon} />
@@ -45,11 +45,11 @@ export function FeedbackSection() {
             <HugeiconsIcon icon={Alert02Icon} />
             <AlertTitle>Provider unreachable</AlertTitle>
             <AlertDescription>
-              Requests to this model fail until the key is rotated.
+              Requests to this model fail until the provider responds.
             </AlertDescription>
             <AlertAction>
               <Button size="sm" variant="outline">
-                Rotate key
+                Retry
               </Button>
             </AlertAction>
           </Alert>

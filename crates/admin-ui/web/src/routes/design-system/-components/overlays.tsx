@@ -241,7 +241,8 @@ function ColumnMenu() {
           <HugeiconsIcon icon={UnfoldMoreIcon} data-icon="inline-end" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      {/* The menu otherwise takes the header's width; the data grid sizes it the same way. */}
+      <DropdownMenuContent className="w-40" align="start">
         <DropdownMenuGroup>
           <DropdownMenuItem>
             <HugeiconsIcon icon={ArrowUp02Icon} />
