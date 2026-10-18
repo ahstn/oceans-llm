@@ -7,7 +7,7 @@ import {
   UserIcon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, type SearchSchemaInput } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -91,7 +91,9 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
-  validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
+  validateSearch: (
+    search: { user_id?: string; user_section?: UserDetailsSection } & SearchSchemaInput,
+  ) => normalizeUserSearch(search),
   loader: ({ context }) =>
     isPlatformAdminSession(context.session) ? getUsers() : getUserDirectory(),
   component: UsersPage,
