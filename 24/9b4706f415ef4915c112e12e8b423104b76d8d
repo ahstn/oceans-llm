@@ -1,0 +1,23 @@
+crates/gateway/src/http/mcp_gateway.rs
+  s_b8e52ffc321bb1::t_253b552bde3dce 31,33,464,468-470,494
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_b8e52ffc321bb1::t_09f0849ad4eab6 11,26,129,144,149-150,209,212-218,221,241-243,247-248
+crates/gateway/src/http/mcp_gateway/governance.rs
+  s_b8e52ffc321bb1::t_9a9d2a5f434770 52-53,56,59-60,111-112,117,125,137-138,145,149-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "249b4706f415ef4915c112e12e8b423104b76d8d",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
