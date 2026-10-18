@@ -29,16 +29,21 @@ description = "Check admin UI formatting without modifying files"
 depends = ["install"]
 run = "bun run fmt:check"
 
+[tasks.typecheck]
+description = "Type-check the admin UI"
+depends = ["install"]
+run = "bun run typecheck"
+
 [tasks.test]
 description = "Run admin UI unit tests"
 depends = ["install"]
 run = "bun run test"
 
 [tasks.check]
-description = "Check formatting, lint, test, and build the admin UI"
+description = "Check formatting, lint, types, test, and build the admin UI"
 # Sequential: a concurrent Vite build starves vitest and trips its 5s test timeouts on CI.
 depends = ["install"]
-run = ["bun run fmt:check", "bun run lint", "bun run test", "bun run build"]
+run = ["bun run fmt:check", "bun run lint", "bun run typecheck", "bun run test", "bun run build"]
 
 [tasks."e2e:install"]
 description = "Install Playwright Chromium for the end-to-end suite"
