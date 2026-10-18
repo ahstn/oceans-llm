@@ -8,7 +8,7 @@ use gateway_core::{
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
     RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
-    github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
+    route_capability_defaults,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
@@ -59,59 +59,19 @@ pub struct ModelRouteConfig {
 impl ModelRouteConfig {
     /// Capabilities that the route's provider and compatibility profile already determine.
     /// Explicit `capabilities` flags override these, and validation still rejects flags a
-    /// profile cannot serve.
+    /// profile cannot serve. The policy lives in [`route_capability_defaults`] so seeded route
+    /// flags and request routing cannot drift apart.
     pub(super) fn capability_defaults(
         &self,
         provider: Option<&ProviderConfig>,
     ) -> ProviderCapabilities {
-        let openrouter_decisions = self
-            .compatibility
-            .openrouter
-            .as_ref()
-            .is_some_and(|openrouter| openrouter.api.is_decisions());
-        let openai_decisions = self
-            .compatibility
-            .openai_compat
-            .as_ref()
-            .is_some_and(|compat| compat.decisions_api.is_some());
-        if openrouter_decisions
-            || openai_decisions
-            || matches!(provider, Some(ProviderConfig::TypeSafe(_)))
-        {
-            return ProviderCapabilities {
-                decisions: true,
-                ..ProviderCapabilities::none()
-            };
-        }
-        if matches!(provider, Some(ProviderConfig::GitHubCopilot(_))) {
-            return github_copilot_route_capabilities(self.compatibility.github_copilot.as_ref());
-        }
-
-        // Start from the shared provider-type baseline that request routing also uses, so stored
-        // route flags agree with it; only the route-specific narrowing below lives here.
-        let mut capabilities = match provider {
-            Some(ProviderConfig::GcpVertex(_)) => {
-                vertex_route_capabilities_for_upstream_model(Some(&self.upstream_model))
-            }
-            Some(provider) => ProviderCapabilities::for_provider_type(provider.provider_type()),
-            // An unknown provider fails validation; keep the generic default until then.
-            None => ProviderCapabilities::openai_compat_baseline(),
-        };
-        // Only Bedrock providers use api_style; other providers ignore the block.
-        if let (Some(ProviderConfig::AwsBedrock(_)), Some(bedrock)) =
-            (provider, &self.compatibility.aws_bedrock)
-        {
-            if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
-                capabilities.chat_completions = false;
-            } else {
-                capabilities.responses = false;
-                capabilities.json_schema = false;
-            }
-            if bedrock.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke {
-                capabilities.stream = false;
-            }
-        }
-        capabilities
+        // An unknown provider fails validation; use the generic default until then.
+        let provider_type = provider.map_or("openai_compat", ProviderConfig::provider_type);
+        route_capability_defaults(
+            provider_type,
+            &self.upstream_model,
+            &self.compatibility.clone().into_compatibility(),
+        )
     }
 
     pub(super) fn effective_capabilities(

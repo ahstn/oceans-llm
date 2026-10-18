@@ -2847,15 +2847,63 @@ pub fn route_provider_capabilities(
     base: ProviderCapabilities,
     route: Option<&ModelRoute>,
 ) -> ProviderCapabilities {
+    narrow_for_route_profile(
+        provider_type,
+        base,
+        route.map(|route| route.upstream_model.as_str()),
+        route.map(|route| &route.compatibility),
+    )
+}
+
+/// Default capabilities for a configured route that sets no `capabilities` flags: the
+/// provider-type baseline narrowed by the route's upstream model and compatibility profile.
+/// Config seeding uses this, and request routing applies the same per-provider narrowing through
+/// [`route_provider_capabilities`], so both read one policy.
+#[must_use]
+pub fn route_capability_defaults(
+    provider_type: &str,
+    upstream_model: &str,
+    compatibility: &RouteCompatibility,
+) -> ProviderCapabilities {
+    if provider_type == "typesafe" || compatibility.selects_decisions_api() {
+        return ProviderCapabilities::decisions_only();
+    }
+    let mut capabilities = narrow_for_route_profile(
+        provider_type,
+        ProviderCapabilities::for_provider_type(provider_type),
+        Some(upstream_model),
+        Some(compatibility),
+    );
+    // Only Bedrock providers use api_style; other providers ignore the block.
+    if provider_type == "aws_bedrock"
+        && let Some(bedrock) = &compatibility.aws_bedrock
+    {
+        if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
+            capabilities.chat_completions = false;
+        } else {
+            capabilities.responses = false;
+            capabilities.json_schema = false;
+        }
+        if bedrock.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke {
+            capabilities.stream = false;
+        }
+    }
+    capabilities
+}
+
+fn narrow_for_route_profile(
+    provider_type: &str,
+    base: ProviderCapabilities,
+    upstream_model: Option<&str>,
+    compatibility: Option<&RouteCompatibility>,
+) -> ProviderCapabilities {
     match provider_type {
-        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(
-            route.map(|route| route.upstream_model.as_str()),
-        ),
+        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(upstream_model),
         "github_copilot" => github_copilot_route_capabilities(
-            route.and_then(|route| route.compatibility.github_copilot.as_ref()),
+            compatibility.and_then(|compatibility| compatibility.github_copilot.as_ref()),
         ),
         "openai_compat" | "gcp_cloud_run_openai_compat"
-            if route.is_some_and(|route| route.compatibility.selects_decisions_api()) =>
+            if compatibility.is_some_and(RouteCompatibility::selects_decisions_api) =>
         {
             ProviderCapabilities {
                 decisions: true,
