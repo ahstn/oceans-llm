@@ -14,9 +14,10 @@ import {
   sanitizeUpdateForm,
   updateFormFor,
   withAuthMode,
+  type UpdateUserForm,
 } from '@/routes/identity/-user-form'
 import type { UserDetailsSection } from '@/routes/identity/-users/users-search'
-import type { IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
+import type { IdentityUsersPayload, UserView } from '@/types/api'
 
 export type UserDetails = ReturnType<typeof useUserDetails>
 
@@ -37,7 +38,7 @@ export function useUserDetails({
   transition: IdentityTransition
 }) {
   const router = useRouter()
-  const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateUserForm)
+  const [updateForm, setUpdateForm] = useState<UpdateUserForm>(initialUpdateUserForm)
 
   useEffect(() => {
     setUpdateForm(user ? updateFormFor(user) : initialUpdateUserForm)

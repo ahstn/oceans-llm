@@ -5,6 +5,9 @@ type OidcProviders = IdentityUsersPayload['oidc_providers']
 type OauthProviders = IdentityUsersPayload['oauth_providers']
 type AuthFields = Pick<UpdateUserInput, 'auth_mode' | 'oidc_provider_key' | 'oauth_provider_key'>
 
+/** The manage form's state. It always holds an auth mode; only the API accepts null to leave it unchanged. */
+export type UpdateUserForm = Omit<UpdateUserInput, 'auth_mode'> & { auth_mode?: string }
+
 /** The teams and SSO providers that the create and manage forms offer. */
 export interface UserFormOptions {
   teams: IdentityUsersPayload['teams']
@@ -24,7 +27,7 @@ export const initialCreateUserForm: CreateUserInput = {
   tags: [],
 }
 
-export const initialUpdateUserForm: UpdateUserInput = {
+export const initialUpdateUserForm: UpdateUserForm = {
   global_role: 'user',
   team_id: null,
   team_role: null,
@@ -35,7 +38,7 @@ export const initialUpdateUserForm: UpdateUserInput = {
 }
 
 /** The manage form's starting values. An owner's team role stays out of the form. */
-export function updateFormFor(user: UserView): UpdateUserInput {
+export function updateFormFor(user: UserView): UpdateUserForm {
   return {
     global_role: user.global_role,
     team_id: user.team_id,
@@ -104,7 +107,7 @@ export function sanitizeCreateUserForm(form: CreateUserInput): CreateUserInput {
 }
 
 export function sanitizeUpdateForm(
-  form: UpdateUserInput,
+  form: UpdateUserForm,
   user: UserView,
   oidcProviders: OidcProviders,
   oauthProviders: OauthProviders,
@@ -144,7 +147,7 @@ export function sanitizeUpdateForm(
 }
 
 export function sanitizeOnboardingUpdateForm(
-  form: UpdateUserInput,
+  form: UpdateUserForm,
   user: UserView,
   oidcProviders: OidcProviders,
   oauthProviders: OauthProviders,
@@ -179,15 +182,17 @@ export function sanitizeOnboardingUpdateForm(
 }
 
 /** Whether the form's auth mode or provider differs from the user's pending onboarding. */
-export function onboardingAuthChanged(user: UserView, form: UpdateUserInput) {
+export function onboardingAuthChanged(user: UserView, form: UpdateUserForm) {
   if (form.auth_mode !== user.auth_mode) {
     return true
   }
+  const onboardingProviderKey =
+    user.onboarding && 'provider_key' in user.onboarding ? user.onboarding.provider_key : undefined
   if (form.auth_mode === 'oidc') {
-    return form.oidc_provider_key !== user.onboarding?.provider_key
+    return form.oidc_provider_key !== onboardingProviderKey
   }
   if (form.auth_mode === 'oauth') {
-    return form.oauth_provider_key !== user.onboarding?.provider_key
+    return form.oauth_provider_key !== onboardingProviderKey
   }
   return false
 }

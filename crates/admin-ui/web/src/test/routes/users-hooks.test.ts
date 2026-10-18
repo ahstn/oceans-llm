@@ -7,8 +7,12 @@ import { useOnboardingReset } from '@/routes/identity/-users/use-onboarding-rese
 import { useProviderCredentials } from '@/routes/identity/-users/use-provider-credentials'
 import { useUserDetails } from '@/routes/identity/-users/use-user-details'
 import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
-import { initialUpdateUserForm, updateFormFor } from '@/routes/identity/-user-form'
-import type { IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
+import {
+  initialUpdateUserForm,
+  updateFormFor,
+  type UpdateUserForm,
+} from '@/routes/identity/-user-form'
+import type { IdentityUsersPayload, UserView } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
   router: {
@@ -277,14 +281,14 @@ describe('useProviderCredentials', () => {
 })
 
 describe('useOnboardingReset', () => {
-  function renderOnboardingReset(user: UserView, updateForm: UpdateUserInput) {
+  function renderOnboardingReset(user: UserView, updateForm: UpdateUserForm) {
     return renderHook(() => {
       const transition = useIdentityTransition()
       return useOnboardingReset({ user, updateForm, oidcProviders, oauthProviders, transition })
     })
   }
 
-  const switchToGithub = (user: UserView): UpdateUserInput => ({
+  const switchToGithub = (user: UserView): UpdateUserForm => ({
     ...updateFormFor(user),
     auth_mode: 'oauth',
     oauth_provider_key: 'github',

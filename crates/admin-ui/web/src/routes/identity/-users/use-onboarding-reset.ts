@@ -6,8 +6,12 @@ import {
   getErrorMessage,
   type IdentityTransition,
 } from '@/routes/identity/-use-identity-transition'
-import { onboardingAuthChanged, sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
-import type { CreateUserResult, IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
+import {
+  onboardingAuthChanged,
+  sanitizeOnboardingUpdateForm,
+  type UpdateUserForm,
+} from '@/routes/identity/-user-form'
+import type { CreateUserResult, IdentityUsersPayload, UserView } from '@/types/api'
 
 export type OnboardingReset = ReturnType<typeof useOnboardingReset>
 
@@ -23,7 +27,7 @@ export function useOnboardingReset({
   transition,
 }: {
   user: UserView
-  updateForm: UpdateUserInput
+  updateForm: UpdateUserForm
   oidcProviders: IdentityUsersPayload['oidc_providers']
   oauthProviders: IdentityUsersPayload['oauth_providers']
   transition: IdentityTransition
