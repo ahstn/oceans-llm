@@ -217,6 +217,36 @@ async fn direct_tools_call_returns_a_tool_error_with_the_connect_url() {
 }
 
 #[tokio::test]
+async fn a_tools_call_notification_gets_the_guidance_as_a_json_rpc_error() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure_oauth(&mut state, Some("https://gateway.example"));
+    let (auth, _) = seed_drive(&state, ExternalMcpAuthMode::OauthObo, oauth_config()).await;
+
+    let (status, body) = send(
+        &state,
+        &auth,
+        json!({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search", "arguments": {}}}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["jsonrpc"], "2.0");
+    assert!(body.get("id").is_none(), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!(
+                "Connect your account at {CONNECT_URL}, then retry the call."
+            ))
+    );
+    assert_eq!(
+        body["error"]["data"],
+        json!({"server_key": "drive", "connect_url": CONNECT_URL, "error_code": "credential_required"})
+    );
+}
+
+#[tokio::test]
 async fn direct_non_tool_requests_return_the_connect_url_in_the_error() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure_oauth(&mut state, Some("https://gateway.example"));
