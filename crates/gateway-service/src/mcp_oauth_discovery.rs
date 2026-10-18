@@ -408,12 +408,20 @@ pub async fn discover_mcp_oauth(
 /// then keep working without a re-save, which would revoke every user's
 /// connection. The tolerance is no mix-up risk: both strings name the same
 /// host and path, whose metadata a save checks the endpoints against, so no
-/// other authorization server can issue a code that passes.
+/// other authorization server can issue a code that passes. It applies only
+/// where the `/` ends the path: an issuer has no query or fragment (RFC 8414),
+/// and a `/` at the end of one names a different identifier.
 #[must_use]
 pub fn issuer_matches(expected: &str, iss: &str) -> bool {
+    let ends_path = |issuer: &str| !issuer.contains(['?', '#']);
+    // `longer` is `shorter` plus one `/`, and `shorter` has none to lose.
+    let one_slash_more = |longer: &str, shorter: &str| {
+        longer.strip_suffix('/') == Some(shorter) && !shorter.ends_with('/')
+    };
     expected == iss
-        || expected.strip_suffix('/') == Some(iss)
-        || iss.strip_suffix('/') == Some(expected)
+        || (ends_path(expected)
+            && ends_path(iss)
+            && (one_slash_more(expected, iss) || one_slash_more(iss, expected)))
 }
 
 /// Reads the RFC 8414 metadata of the authorization server `issuer`, falling
