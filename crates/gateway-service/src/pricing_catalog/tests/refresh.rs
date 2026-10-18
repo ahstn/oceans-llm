@@ -12,6 +12,19 @@ fn minimal_catalog_body() -> Value {
 }
 
 #[test]
+fn vendored_snapshot_json_ends_with_one_newline() {
+    let snapshot = fallback_snapshot();
+    let file = PricingCatalogSnapshotFile {
+        metadata: snapshot.metadata,
+        providers: snapshot.document.providers,
+    };
+
+    let json = snapshot_to_pretty_json(&file).expect("snapshot serializes");
+
+    assert!(json.ends_with("}\n"), "expected a single trailing newline");
+}
+
+#[test]
 fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
     let current = fallback_snapshot();
     let same_second = current.metadata.fetched_at;

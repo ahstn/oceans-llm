@@ -111,9 +111,43 @@ pub struct McpDiscoveryResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiscoveryFailureKind {
-    /// `invalid_auth_config`, or a client error class from `classify_client_error`.
-    pub kind: &'static str,
+    pub kind: McpDiscoveryErrorKind,
     pub http_status: Option<u16>,
+}
+
+/// Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's
+/// error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpDiscoveryErrorKind {
+    Transport,
+    Timeout,
+    Http,
+    JsonRpc,
+    InvalidResponse,
+    InvalidUrl,
+    InvalidHeader,
+    InvalidAuthConfig,
+    ResponseTooLarge,
+    InvalidToolSchema,
+}
+
+impl McpDiscoveryErrorKind {
+    /// The kind's stable name: the admin API's `error_kind`, and the `client_error` a discovery
+    /// run's details record.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transport => "transport",
+            Self::Timeout => "timeout",
+            Self::Http => "http",
+            Self::JsonRpc => "json_rpc",
+            Self::InvalidResponse => "invalid_response",
+            Self::InvalidUrl => "invalid_url",
+            Self::InvalidHeader => "invalid_header",
+            Self::InvalidAuthConfig => "invalid_auth_config",
+            Self::ResponseTooLarge => "response_too_large",
+            Self::InvalidToolSchema => "invalid_tool_schema",
+        }
+    }
 }
 
 #[async_trait]
@@ -552,7 +586,7 @@ where
                             started_at,
                             summary: bounded_error_summary(error.to_string()),
                             kind: Some(DiscoveryFailureKind {
-                                kind: "invalid_auth_config",
+                                kind: McpDiscoveryErrorKind::InvalidAuthConfig,
                                 http_status: None,
                             }),
                             details: json!({"reason": "invalid_discovery_auth_config"}),
@@ -625,6 +659,7 @@ where
             }
             Err(error) => {
                 let summary = bounded_error_summary(discovery_error_summary(&error));
+                let kind = classify_client_error(&error);
                 self.record_discovery_failure(
                     server,
                     DiscoveryFailure {
@@ -632,13 +667,13 @@ where
                         started_at,
                         summary,
                         kind: Some(DiscoveryFailureKind {
-                            kind: classify_client_error(&error),
+                            kind,
                             http_status: match &error {
                                 McpClientError::Http { status, .. } => Some(*status),
                                 _ => None,
                             },
                         }),
-                        details: json!({"client_error": classify_client_error(&error)}),
+                        details: json!({"client_error": kind.as_str()}),
                     },
                     &persist,
                 )
@@ -942,17 +977,17 @@ fn discovery_error_summary(error: &McpClientError) -> String {
     }
 }
 
-fn classify_client_error(error: &McpClientError) -> &'static str {
+fn classify_client_error(error: &McpClientError) -> McpDiscoveryErrorKind {
     match error {
-        McpClientError::InvalidUrl { .. } => "invalid_url",
-        McpClientError::InvalidHeader(_) => "invalid_header",
-        McpClientError::Timeout => "timeout",
-        McpClientError::Transport(_) => "transport",
-        McpClientError::Http { .. } => "http",
-        McpClientError::ResponseTooLarge { .. } => "response_too_large",
-        McpClientError::JsonRpc(_) => "json_rpc",
-        McpClientError::InvalidResponse { .. } => "invalid_response",
-        McpClientError::InvalidToolSchema { .. } => "invalid_tool_schema",
+        McpClientError::InvalidUrl { .. } => McpDiscoveryErrorKind::InvalidUrl,
+        McpClientError::InvalidHeader(_) => McpDiscoveryErrorKind::InvalidHeader,
+        McpClientError::Timeout => McpDiscoveryErrorKind::Timeout,
+        McpClientError::Transport(_) => McpDiscoveryErrorKind::Transport,
+        McpClientError::Http { .. } => McpDiscoveryErrorKind::Http,
+        McpClientError::ResponseTooLarge { .. } => McpDiscoveryErrorKind::ResponseTooLarge,
+        McpClientError::JsonRpc(_) => McpDiscoveryErrorKind::JsonRpc,
+        McpClientError::InvalidResponse { .. } => McpDiscoveryErrorKind::InvalidResponse,
+        McpClientError::InvalidToolSchema { .. } => McpDiscoveryErrorKind::InvalidToolSchema,
     }
 }
 

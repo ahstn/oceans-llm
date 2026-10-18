@@ -3798,12 +3798,7 @@ export interface components {
                  * @description The upstream HTTP status when `error_kind` is `http`.
                  */
                 error_http_status?: number | null;
-                /**
-                 * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
-                 *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
-                 *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
-                 */
-                error_kind?: string | null;
+                error_kind?: null | components["schemas"]["McpDiscoveryErrorKindView"];
                 /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
                 error_summary?: string | null;
                 server: components["schemas"]["McpServerView"];
@@ -4392,18 +4387,19 @@ export interface components {
         McpCredentialBindingsPayload: {
             items: components["schemas"]["McpCredentialBindingView"][];
         };
+        /**
+         * @description Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's
+         *     error. Clients branch on it.
+         * @enum {string}
+         */
+        McpDiscoveryErrorKindView: "transport" | "timeout" | "http" | "json_rpc" | "invalid_response" | "invalid_url" | "invalid_header" | "invalid_auth_config" | "response_too_large" | "invalid_tool_schema";
         McpDiscoveryRefreshPayload: {
             /**
              * Format: int32
              * @description The upstream HTTP status when `error_kind` is `http`.
              */
             error_http_status?: number | null;
-            /**
-             * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
-             *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
-             *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
-             */
-            error_kind?: string | null;
+            error_kind?: null | components["schemas"]["McpDiscoveryErrorKindView"];
             /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
             error_summary?: string | null;
             server: components["schemas"]["McpServerView"];

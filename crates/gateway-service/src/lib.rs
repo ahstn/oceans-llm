@@ -123,8 +123,9 @@ pub use mcp_ownership::{
     parse_mcp_server_visibility, refuse_private_network_host, require_public_destination,
 };
 pub use mcp_registry::{
-    CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
-    McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
+    CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient,
+    McpDiscoveryErrorKind, McpDiscoveryResult, McpRegistryService,
+    RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
 pub use mcp_tool_policy::{

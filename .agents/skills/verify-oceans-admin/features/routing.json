@@ -45,6 +45,7 @@
         "gha-research/**",
         "cliff.toml",
         "cog.toml",
+        "scripts/release.sh",
         "skills-lock.json",
         "rust-analyzer.toml",
         "crates/admin-ui/web/Dockerfile"

@@ -21,6 +21,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
+  FieldTitle,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
@@ -238,7 +239,10 @@ export function InputsSection() {
 
 function ChoiceBlock() {
   return (
-    <ShowcaseBlock title="Choices" description="Select, Checkbox and Switch with Label.">
+    <ShowcaseBlock
+      title="Choices"
+      description="Select, Checkbox and Switch with Label. When each option needs a description, the whole option is the label, with a FieldTitle."
+    >
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="ds-model">Default model</FieldLabel>
@@ -294,6 +298,33 @@ function ChoiceBlock() {
               Weekly digest (coming soon)
             </FieldLabel>
           </Field>
+        </FieldSet>
+        <FieldSet>
+          <FieldLegend variant="label">Scopes</FieldLegend>
+          <FieldGroup data-slot="checkbox-group" className="gap-3">
+            <FieldLabel htmlFor="ds-scope-inference">
+              <Field orientation="horizontal">
+                <Checkbox id="ds-scope-inference" defaultChecked />
+                <FieldContent>
+                  <FieldTitle>
+                    Inference <code className="text-muted-foreground text-xs">inference</code>
+                  </FieldTitle>
+                  <FieldDescription>Model calls, model listing and batches.</FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+            <FieldLabel htmlFor="ds-scope-mcp">
+              <Field orientation="horizontal">
+                <Checkbox id="ds-scope-mcp" />
+                <FieldContent>
+                  <FieldTitle>
+                    MCP proxy <code className="text-muted-foreground text-xs">mcp:proxy</code>
+                  </FieldTitle>
+                  <FieldDescription>Per-server /mcp/{'{server_key}'} routes.</FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+          </FieldGroup>
         </FieldSet>
         <Field orientation="horizontal">
           <FieldContent>

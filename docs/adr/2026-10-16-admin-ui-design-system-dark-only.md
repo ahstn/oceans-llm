@@ -45,7 +45,7 @@ Success is Tokyo Night green1 `#73daca`, and warning is `#eaa518`. Destructive i
 - `registry.json` and the copies the docs site serves under `docs/public/r` form a shadcn `registry:theme` item, built with a pinned shadcn CLI. `mise run lint` fails when they're stale.
 - The docs site's dark theme repeats the admin surfaces, text, lilac, and status colors. `mise run lint` fails when they differ.
 - Recharts needs the chart duration as a number, so `src/lib/chart-motion.ts` repeats it. An admin UI test fails when it differs from `--duration-chart`.
-- Another admin UI test fails when the design-system page misses an installed component.
+- Another admin UI test fails when the design-system page misses an installed component, or a part of one that the app renders, such as a dropdown menu's checkbox item. Parts the admin shell renders count, since the shell frames the page.
 - A third fails when a text pair drops below 4.5:1, or a chart series or active heatmap level below 3:1 on the card (WCAG 1.4.11). The design-system page grades the same pairs in the browser.
 
 ## Consequences

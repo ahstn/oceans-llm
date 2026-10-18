@@ -1,11 +1,15 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  ArrowDown02Icon,
+  ArrowUp02Icon,
   Copy01Icon,
   Delete02Icon,
   InformationCircleIcon,
   Key01Icon,
   MoreHorizontalIcon,
   Settings02Icon,
+  SlidersHorizontalIcon,
+  UnfoldMoreIcon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons'
 import { useState } from 'react'
@@ -45,12 +49,16 @@ import {
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -111,7 +119,7 @@ export function OverlaysSection() {
 
         <ShowcaseBlock
           title="Anchored layers"
-          description="Popover for small forms, Tooltip for icon labels, DropdownMenu for row actions."
+          description="Popover for small forms, Tooltip for icon labels, DropdownMenu for row actions and column menus. A column menu's Columns submenu toggles columns with checkbox items."
         >
           <ShowcaseRow label="Open one">
             <Popover>
@@ -139,6 +147,7 @@ export function OverlaysSection() {
               <TooltipContent>Copy key ID</TooltipContent>
             </Tooltip>
             <RowActionsMenu />
+            <ColumnMenu />
           </ShowcaseRow>
         </ShowcaseBlock>
       </div>
@@ -203,6 +212,71 @@ function RevokeKeyAlert() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+const columns = ['Model', 'Latency', 'Cost'] as const
+
+/** A table column's menu, as the data grid builds it: sorting, then a Columns submenu. */
+function ColumnMenu() {
+  const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set(['Model', 'Latency']))
+
+  function toggle(column: string, checked: boolean) {
+    setShown((current) => {
+      const next = new Set(current)
+      if (checked) {
+        next.add(column)
+      } else {
+        next.delete(column)
+      }
+      return next
+    })
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm">
+          Latency
+          <HugeiconsIcon icon={UnfoldMoreIcon} data-icon="inline-end" />
+        </Button>
+      </DropdownMenuTrigger>
+      {/* The menu otherwise takes the header's width; the data grid sizes it the same way. */}
+      <DropdownMenuContent className="w-40" align="start">
+        <DropdownMenuGroup>
+          <DropdownMenuItem>
+            <HugeiconsIcon icon={ArrowUp02Icon} />
+            Sort ascending
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <HugeiconsIcon icon={ArrowDown02Icon} />
+            Sort descending
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <HugeiconsIcon icon={SlidersHorizontalIcon} />
+            Columns
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuGroup>
+              {columns.map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column}
+                  checked={shown.has(column)}
+                  // Keep the menu open, so several columns can be toggled in a row.
+                  onSelect={(event) => event.preventDefault()}
+                  onCheckedChange={(checked) => toggle(column, checked)}
+                >
+                  {column}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

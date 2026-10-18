@@ -1,6 +1,6 @@
 # Release Process
 
-`See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
+`See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [ADR: git-cliff Owns Release Versioning and a Pull-Request Changelog](../../adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md)
 
 This runbook explains how maintainers publish an Oceans LLM release.
 
@@ -19,8 +19,8 @@ The command creates the version commit and tag, then pushes them. The pushed tag
 ## Source Files
 
 - [mise.toml](../../../mise.toml) defines the release and changelog tasks.
-- [cog.toml](../../../cog.toml) defines versioning and pre-bump hooks.
-- [cliff.toml](../../../cliff.toml) defines changelog content and layout.
+- [scripts/release.sh](../../../scripts/release.sh) prepares the version commit and tag.
+- [cliff.toml](../../../cliff.toml) defines which pull requests are released, how they bump the version, and the changelog layout.
 - [release.yml](../../../.github/workflows/release.yml) builds and publishes release artifacts.
 - [dist-workspace.toml](../../../dist-workspace.toml) configures CLI targets, archives, installers, and publication gates.
 - [release-cli-check.yml](../../../.github/workflows/release-cli-check.yml) runs the packaged binaries on each target operating system. CLI behavior is tested before merge by `cli-ci.yml` and `ci.yml`.
@@ -29,17 +29,23 @@ The command creates the version commit and tag, then pushes them. The pushed tag
 
 ## Merge and Changelog Rules
 
-Pull request titles must follow Conventional Commits. Merge commits include the pull request number, author, and link in the generated changelog.
+Pull request titles must follow Conventional Commits. The changelog and release notes list one entry per merged pull request, using its title, author, and link. Commits inside a pull request and commits pushed straight to `main` do not appear and do not affect the version.
 
-git-cliff removes duplicate entries across each release. It keeps the later commit so the pull request link remains. It also keeps distinct scoped entries and any breaking-change marker from the duplicate commits.
+git-cliff recognizes a pull request by the `(#123)` suffix that GitHub adds to its merge commit title. Keep the repository's merge commit title set to the pull request title. Titles are untrusted, so the changelog escapes their link and HTML syntax (`[`, `]`, `<`, `>`); backticks still render as code.
+
+The pull request title also chooses the version bump:
+
+- A breaking change, marked with `!`, produces a major release.
+- A `feat` pull request produces a minor release.
+- Any other listed pull request produces a patch release.
 
 The changelog uses these groups in this order:
 
-1. `:rocket: New features` for `feat` commits.
-2. `:bug: Bug fixes` for `fix` commits.
+1. `:rocket: New features` for `feat` pull requests.
+2. `:bug: Bug fixes` for `fix` pull requests.
 3. `Changed` for `perf`, `refactor`, `revert`, `docs`, `chore`, and other public changes.
 
-Build, CI, style, and test commits do not appear by default. Use a `changelog: ignore` commit footer when another conventional commit must not appear. Breaking commits remain visible even when their type is normally hidden.
+Build, CI, style, and test pull requests do not appear unless their title marks a breaking change.
 
 ## Before a Release
 
@@ -48,7 +54,7 @@ Before you run the release command:
 - Update local `main` from `origin/main`.
 - Confirm that normal CI passed for the current commit.
 - Confirm that generated admin contract files are current.
-- Confirm that changelog-worthy commits have clear titles.
+- Confirm that merged pull requests have clear titles. Preview the notes with `mise exec -- git-cliff --unreleased --bump`.
 - Set a valid `GITHUB_TOKEN` for git-cliff and the GitHub CLI.
 
 ## Publish a Release
@@ -61,13 +67,14 @@ mise run release
 
 The command completes these steps:
 
-1. Update the pricing catalog.
-2. Ask Cocogitto to calculate the next version.
-3. Update workspace Cargo versions.
-4. Regenerate `CHANGELOG.md`.
-5. Create the release commit and `vX.Y.Z` tag.
-6. Push `main` and the tag to GitHub.
-7. Start the tag workflow, which publishes the release after its required jobs pass.
+1. Refresh the vendored pricing catalog and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
+2. Check that `main` matches `origin/main` and has no tracked changes other than those two snapshots.
+3. Ask git-cliff to calculate the next version from the merged pull requests.
+4. Update workspace Cargo versions.
+5. Add the new section to the top of `CHANGELOG.md`.
+6. Create the release commit and `vX.Y.Z` tag.
+7. Push `main` and the tag to GitHub.
+8. Start the tag workflow, which publishes the release after its required jobs pass.
 
 The release tag points to a commit that contains the Cargo version changes and the new changelog section.
 
@@ -84,7 +91,7 @@ The pushed `vX.Y.Z` tag starts [release.yml](../../../.github/workflows/release.
 - Builds and publishes the admin UI image for `linux/amd64` and `linux/arm64`.
 - Adds provenance attestations to both images.
 - Validates, packages, and publishes the Helm chart after both image jobs pass.
-- Creates the GitHub release only after those jobs succeed. Release notes come from the git-cliff changelog, with installation instructions added by cargo-dist.
+- Creates the GitHub release only after those jobs succeed. Release notes come from the new `CHANGELOG.md` section, with installation instructions added by cargo-dist.
 
 Linux binaries are built on Ubuntu 22.04 runners. Check the cargo-dist linkage report before claiming support for an older distribution. The initial release targets use glibc; musl archives are not configured.
 
@@ -102,7 +109,7 @@ For a tag named `vX.Y.Z`, the chart version is `X.Y.Z` and its `appVersion` is `
 
 ## Maintain Release Tooling
 
-cargo-dist and cargo-release are installed through `mise` with pinned versions. Cocogitto owns the version commit and tag. Its cargo-release hook updates all workspace Cargo versions, and its git-cliff hook writes `CHANGELOG.md` before that commit.
+git-cliff, cargo-dist, and cargo-release are installed through `mise` with pinned versions. The release script owns the version commit and tag. It uses git-cliff for the version and changelog, and cargo-release for workspace Cargo versions.
 
 Change distribution settings in `dist-workspace.toml` and regenerate the workflow:
 
@@ -139,7 +146,7 @@ If the release changed behavior for admins or users, confirm that the canonical 
 
 ## Failure Recovery
 
-If the command fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it.
+If the command fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it. The script refuses to run on a dirty worktree. When there is nothing to release, it restores the refreshed snapshots before it exits. To start over, delete any local `vX.Y.Z` tag it created and reset `main` to `origin/main`.
 
 If the tag was pushed but a required CI job failed, correct the problem and rerun the failed jobs for that tag when the source is valid. A failed prerequisite prevents the final GitHub release job. Images or charts that were already pushed remain published; there is no rollback across registries.
 

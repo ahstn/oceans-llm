@@ -3,7 +3,7 @@
 - Date: 2026-03-06
 - Status: Accepted
 
-GitHub release creation and distribution workflow ownership are superseded by [CLI binary distribution with cargo-dist](2026-10-05-cli-binary-distribution-with-cargo-dist.md). Cocogitto versioning, git-cliff changelogs, and the shared product version remain in effect.
+GitHub release creation and distribution workflow ownership are superseded by [CLI binary distribution with cargo-dist](2026-10-05-cli-binary-distribution-with-cargo-dist.md). Cocogitto versioning and the per-commit changelog are superseded by [git-cliff release versioning and a pull-request changelog](2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md). The shared product version remains in effect.
 
 ## Current state
 

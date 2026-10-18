@@ -1,4 +1,4 @@
-import type { McpServerView } from '@/types/api'
+import type { McpDiscoveryErrorKind, McpServerView } from '@/types/api'
 
 /**
  * An active server whose last discovery failed or is waiting on credentials. The server registry
@@ -40,7 +40,7 @@ export interface DiscoveryRefreshResult {
   /** The gateway's discovery status, or `request_failed` when the refresh request didn't complete. */
   status: string
   /** The gateway's stable reason for a `failed` discovery (`error_kind`). */
-  errorKind?: string | null
+  errorKind?: McpDiscoveryErrorKind | null
   httpStatus?: number | null
   errorSummary: string | null
   toolCount: number
@@ -57,6 +57,7 @@ export interface DiscoveryFeedback {
 }
 
 type FailureContext = { host: string; timeout: string; httpStatus: number | null }
+type FailureMessage = (context: FailureContext) => string
 
 function httpFailureMessage({ host, httpStatus }: FailureContext) {
   const code = httpStatus ? ` (HTTP ${httpStatus})` : ''
@@ -72,8 +73,9 @@ function httpFailureMessage({ host, httpStatus }: FailureContext) {
   return `Reached ${host}, but it returned an HTTP error${code}. Check the endpoint and auth config, then Retry.`
 }
 
-// Keyed by the gateway's `error_kind`, so copy doesn't depend on the summary's wording.
-const failedDiscoveryMessages: Record<string, (context: FailureContext) => string> = {
+// Keyed by the gateway's `error_kind`, so copy doesn't depend on the summary's wording. The type
+// check fails when the gateway adds a kind that has no copy here.
+const failedDiscoveryMessages: Record<McpDiscoveryErrorKind, FailureMessage> = {
   transport: ({ host }) => `Couldn't reach ${host}. Check the endpoint, then Retry.`,
   timeout: ({ host, timeout }) =>
     `Timed out after ${timeout} waiting for ${host}. Check the endpoint or raise the timeout in Configuration, then Retry.`,
