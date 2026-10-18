@@ -1,0 +1,35 @@
+crates/admin-ui/web/src/components/reui/code-block/code-block.tsx
+  s_62fa2e8ede3ddb::t_933b10455c7027 32-33,48,101,104-109,122,125,144-149
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_62fa2e8ede3ddb::t_368e97b1cfe261 1-112
+crates/admin-ui/web/src/routes/observability/-request-log-detail/hero-layout.tsx
+  s_62fa2e8ede3ddb::t_076a392a791b93 1-114
+crates/admin-ui/web/src/routes/observability/-request-log-detail/layout-switch.tsx
+  s_62fa2e8ede3ddb::t_25d509f5658be5 1-79
+crates/admin-ui/web/src/routes/observability/-request-log-detail/parts.tsx
+  s_62fa2e8ede3ddb::t_7edfad5ce7dd2d 1-741
+crates/admin-ui/web/src/routes/observability/-request-log-detail/sectioned-layout.tsx
+  s_62fa2e8ede3ddb::t_fe5922ff5ab01c 1-174
+crates/admin-ui/web/src/routes/observability/-request-log-detail/two-pane-layout.tsx
+  s_62fa2e8ede3ddb::t_674cbcd1c491b7 1-151
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_62fa2e8ede3ddb::t_177e42c41d8b02 42,52-65,416-419,424-426,428-438,444-469,921
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_62fa2e8ede3ddb::t_5a7d89ccd8fba5 626-697
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "604cc6825e3546d58c6aa9644292def52cf04a73",
+  "prompts": {},
+  "sessions": {
+    "s_62fa2e8ede3ddb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad3c80f2ff3e91388",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
