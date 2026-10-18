@@ -250,6 +250,7 @@ once as before. When it is on:
 | A new tool | **Pending review**. Not listed, searchable, or callable. |
 | A change to the description or title only | **Change pending**. The previous approved version keeps being served and callable. Clients never see the new text until it is approved. |
 | A change to the input schema, output schema, or annotations | **Pending review**. The tool is withheld, because the approved definition no longer describes what the upstream accepts or claims. |
+| A title, annotations or output schema on a tool discovered before Oceans stored them | **Change pending**, unless the input schema changed too. The tool keeps being served on its approved definition, without the new hints, until an admin approves them. |
 | The approved definition again | The waiting version is superseded and the tool is served as approved. |
 | An older definition an admin approved | Its earlier version is served again, without a new version or review. A definition discovery approved on its own while approval was off waits for review instead. |
 | An older definition that was superseded before review | It waits for review again under its earlier version number. |

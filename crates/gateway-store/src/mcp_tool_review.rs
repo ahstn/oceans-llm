@@ -151,7 +151,8 @@ pub(crate) fn plan_tool_write(
     // Rows from before V58 kept no metadata. Without approval, capturing it
     // is not a change. With approval the captured claims were never reviewed,
     // and a waiting version must still be resolved, so both go through the
-    // review decision below.
+    // review decision below, which keeps the approved definition served while
+    // the captured metadata waits.
     let nothing_waiting = stored.tool.review.approval_status == McpToolApprovalStatus::Approved
         && stored.tool.review.pending_schema_version.is_none();
     if !approve_tool_changes
@@ -187,6 +188,7 @@ pub(crate) fn plan_tool_write(
         pending_version: stored.tool.review.pending_schema_version,
         rejected: &rejected,
         latest_version,
+        metadata_captured: stored.metadata_captured,
     };
     let write = match decide_discovery(Some(&review), &discovered_def, approve_tool_changes) {
         DiscoveryDecision::Insert { status } => ToolWrite::Insert { status },
@@ -904,7 +906,7 @@ mod tests {
             plan_tool_write(Some(&stored), &discovered, true),
             ToolWrite::Hold {
                 version: 2,
-                status: McpToolApprovalStatus::PendingReview,
+                status: McpToolApprovalStatus::PendingChange,
                 write_definition: false,
                 insert_version: true,
             }
@@ -925,10 +927,16 @@ mod tests {
             }
         );
         // With approval it replaces the pending version for review.
-        assert!(matches!(
+        // The approved version keeps being served meanwhile.
+        assert_eq!(
             plan_tool_write(Some(&stored), &discovered, true),
-            ToolWrite::Hold { version: 3, .. }
-        ));
+            ToolWrite::Hold {
+                version: 3,
+                status: McpToolApprovalStatus::PendingChange,
+                write_definition: false,
+                insert_version: true,
+            }
+        );
     }
 
     #[test]
