@@ -52,8 +52,8 @@ impl RouteSurvivors {
     /// whose priority changes, or an unclaimed row sitting on a configured route's target, could
     /// block another route; two routes swapping priorities would block each other. Parked rows
     /// take priorities below every existing and configured priority of their provider and
-    /// upstream group, or above it when the group already reaches `i32::MIN`, so they cannot
-    /// collide. Claimed rows then get their real priority from
+    /// upstream group, or above it, or in an unused gap when the group spans the whole i32
+    /// range, so they cannot collide. Claimed rows then get their real priority from
     /// the upsert; unclaimed ones stay parked as disabled history.
     pub(crate) fn parking_plan(
         &self,
@@ -67,20 +67,19 @@ impl RouteSurvivors {
             .iter()
             .map(|(_, key)| key)
             .collect::<std::collections::HashSet<_>>();
-        // The (lowest, highest) priority in use per provider and upstream group, across
-        // survivors and configured targets.
-        let mut bounds = std::collections::HashMap::<(&str, &str), (i64, i64)>::new();
+        // Priorities in use per provider and upstream group, across survivors and configured
+        // targets. Parked priorities are added as they are assigned.
+        let mut used =
+            std::collections::HashMap::<(&str, &str), std::collections::BTreeSet<i64>>::new();
         for (provider, upstream, priority) in self
             .all
             .iter()
             .map(|(_, key)| key)
             .chain(claimed.iter().map(|(_, key)| key))
         {
-            let (low, high) = bounds
-                .entry((provider.as_str(), upstream.as_str()))
-                .or_insert((*priority, *priority));
-            *low = (*low).min(*priority);
-            *high = (*high).max(*priority);
+            used.entry((provider.as_str(), upstream.as_str()))
+                .or_default()
+                .insert(*priority);
         }
 
         let mut blocking = self
@@ -95,17 +94,12 @@ impl RouteSurvivors {
         blocking
             .into_iter()
             .map(|(id, (provider, upstream, _))| {
-                let (low, high) = bounds
+                let used = used
                     .get_mut(&(provider.as_str(), upstream.as_str()))
-                    .expect("every survivor has bounds");
-                // Park below the group, or above it when that would leave the i32 column range.
-                if *low > i64::from(i32::MIN) {
-                    *low -= 1;
-                    (*id, *low)
-                } else {
-                    *high += 1;
-                    (*id, *high)
-                }
+                    .expect("every survivor has a priority group");
+                let parked = free_priority(used);
+                used.insert(parked);
+                (*id, parked)
             })
             .collect()
     }
@@ -140,6 +134,24 @@ impl RouteSurvivors {
         }
         claimed.into_iter().flatten().collect()
     }
+}
+
+/// An unused priority for a parked row: below the group, else above it, else the first gap
+/// inside the i32 range. The group is never the whole range, because it holds one priority per
+/// configured route and survivor.
+fn free_priority(used: &std::collections::BTreeSet<i64>) -> i64 {
+    let (min, max) = (i64::from(i32::MIN), i64::from(i32::MAX));
+    let low = used.first().copied().unwrap_or(0);
+    let high = used.last().copied().unwrap_or(0);
+    if low > min {
+        return low - 1;
+    }
+    if high < max {
+        return high + 1;
+    }
+    (min..=max)
+        .find(|priority| !used.contains(priority))
+        .expect("a priority group cannot fill the i32 range")
 }
 
 pub(crate) fn model_uuid(model_key: &str) -> Uuid {
@@ -1109,5 +1121,26 @@ mod route_survivor_tests {
 
         assert_eq!(plan, vec![(route, 11)]);
         assert!(i32::try_from(plan[0].1).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod free_priority_tests {
+    use std::collections::BTreeSet;
+
+    use super::free_priority;
+
+    #[test]
+    fn finds_an_in_range_gap_when_both_edges_are_taken() {
+        let used = BTreeSet::from([i64::from(i32::MIN), i64::from(i32::MAX)]);
+        let parked = free_priority(&used);
+        assert!(i32::try_from(parked).is_ok());
+        assert!(!used.contains(&parked));
+        assert_eq!(free_priority(&BTreeSet::from([10, 20])), 9);
+        assert_eq!(
+            free_priority(&BTreeSet::from([i64::from(i32::MIN), 5])),
+            6,
+            "parks above when the group reaches i32::MIN"
+        );
     }
 }
