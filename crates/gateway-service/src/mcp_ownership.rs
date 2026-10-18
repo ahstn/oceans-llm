@@ -230,8 +230,18 @@ where
             .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, false)
             .await?
             .into_iter()
-            // Only the current owner's own team and service-account credentials,
-            // stored as encrypted secrets, may follow the server to a new URL.
+            // Only credentials the gateway could still send count: OAuth tokens
+            // are revoked by the URL change itself, and an expired one is
+            // never sent. Of those, only the current owner's own team and
+            // service-account credentials, stored as encrypted secrets, may
+            // follow the server to a new URL.
+            .filter(|binding| {
+                binding.material_kind
+                    != gateway_core::McpUpstreamCredentialMaterialKind::OauthTokens
+                    && binding
+                        .expires_at
+                        .is_none_or(|expires_at| expires_at > time::OffsetDateTime::now_utc())
+            })
             .filter(|binding| {
                 binding.owner_scope_kind == McpUpstreamCredentialOwnerScopeKind::User
                     || binding.secret_ref.is_some()

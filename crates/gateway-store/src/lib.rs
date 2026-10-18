@@ -2397,6 +2397,66 @@ pub(crate) mod tests {
             .revoke_mcp_upstream_credential_binding(user_binding.credential_binding_id, now)
             .await
             .expect("revoke user binding");
+        // Credentials the gateway could no longer send do not block it: an
+        // expired one, and OAuth tokens, which the retarget itself revokes.
+        let user_credential =
+            |user_id: Uuid, material_kind, expires_at| UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: format!("mcp_credential:v1:user:{user_id}"),
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+                expected_replaced: None,
+            };
+        store
+            .upsert_mcp_upstream_credential_binding(&user_credential(
+                user.user_id,
+                McpUpstreamCredentialMaterialKind::BearerToken,
+                Some(now - Duration::minutes(1)),
+            ))
+            .await
+            .expect("expired user binding");
+        let connected = store
+            .create_identity_user(
+                "Retarget OAuth user",
+                "mcp-retarget-oauth@example.com",
+                "mcp-retarget-oauth@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("OAuth user");
+        store
+            .upsert_mcp_upstream_credential_binding(&user_credential(
+                connected.user_id,
+                McpUpstreamCredentialMaterialKind::OauthTokens,
+                None,
+            ))
+            .await
+            .expect("user OAuth tokens");
+        let retargeted = store
+            .update_external_mcp_server(&save(moved, None, true))
+            .await
+            .expect("retarget past unusable credentials");
+        assert_eq!(retargeted.revoked_oauth_bindings.len(), 1);
+        store
+            .update_external_mcp_server(&save(&server.server_url, None, true))
+            .await
+            .expect("retarget back");
         // A save authorized against other auth settings is refused, so a stale
         // form cannot overwrite a newer change.
         let current = store

@@ -132,12 +132,6 @@ pub async fn list_mcp_servers(
             }
         };
         let (listed, owners) = list_admin_servers(&state, scope, &query).await?;
-        if !matches!(
-            require_mcp_viewer(&state, &headers).await?,
-            McpViewer::Admin(current) if current == scope
-        ) {
-            continue;
-        }
         // The view of each server follows its owner as read, so a transfer in
         // between must not leave its former team's admin the full settings.
         // Only the ownership columns are read again.
@@ -148,7 +142,13 @@ pub async fn list_mcp_servers(
             .await?
             .iter()
             .all(|(mcp_server_id, ownership)| owners.get(mcp_server_id) == Some(ownership));
-        if unchanged {
+        // The viewer is read last, so a role or team change at any point
+        // before it is seen.
+        let same_viewer = matches!(
+            require_mcp_viewer(&state, &headers).await?,
+            McpViewer::Admin(current) if current == scope
+        );
+        if unchanged && same_viewer {
             return Ok(listed);
         }
     }
@@ -1086,13 +1086,24 @@ pub async fn list_mcp_grants(
         .as_deref()
         .map(parse_grant_subject_kind)
         .transpose()?;
-    let items = ownership(&state)
+    let ownership = ownership(&state);
+    let mut grants = ownership
         .list_grants(&scope, subject_kind, query.subject_id)
-        .await?
-        .into_iter()
-        .map(map_grant)
-        .collect();
+        .await?;
+    // A team admin's list follows the servers their team owns when read. It is
+    // read again and only grants in both reads are returned, so a server moved
+    // away in between drops out; the caller's scope is then checked last.
+    if scope.managed_team_id().is_some() {
+        let still_listed: std::collections::HashSet<Uuid> = ownership
+            .list_grants(&scope, subject_kind, query.subject_id)
+            .await?
+            .into_iter()
+            .map(|grant| grant.grant_id)
+            .collect();
+        grants.retain(|grant| still_listed.contains(&grant.grant_id));
+    }
     recheck_admin_scope(&state, &headers, &scope).await?;
+    let items = grants.into_iter().map(map_grant).collect();
     Ok(Json(envelope(McpGrantsPayload { items })))
 }
 
@@ -1256,7 +1267,7 @@ pub async fn list_mcp_credential_bindings(
     // A team admin's list is limited to their team's servers in the query
     // itself, a named server included, so a transfer after the check above
     // cannot hand them the new owner's bindings.
-    let bindings = match scope.managed_team_id() {
+    let mut bindings: Vec<_> = match scope.managed_team_id() {
         Some(team_id) => service
             .list_bindings_for_owner_team(
                 team_id,
@@ -1283,8 +1294,27 @@ pub async fn list_mcp_credential_bindings(
                 .await?
         }
     };
-    let items = bindings.into_iter().map(map_credential_binding).collect();
+    // Each binding's server is read again, so one moved away from a team
+    // admin's team in between drops out; the caller's scope is checked last.
+    if let Some(team_id) = scope.managed_team_id() {
+        let server_ids: Vec<Uuid> = bindings
+            .iter()
+            .map(|binding| binding.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        let still_owned: std::collections::HashSet<Uuid> = state
+            .store
+            .list_mcp_server_ownerships(&server_ids)
+            .await?
+            .into_iter()
+            .filter(|(_, ownership)| ownership.owned_by(team_id))
+            .map(|(mcp_server_id, _)| mcp_server_id)
+            .collect();
+        bindings.retain(|binding| still_owned.contains(&binding.mcp_server_id));
+    }
     recheck_admin_scope(&state, &headers, &scope).await?;
+    let items = bindings.into_iter().map(map_credential_binding).collect();
     Ok(Json(envelope(McpCredentialBindingsPayload { items })))
 }
 
@@ -1583,6 +1613,9 @@ pub async fn preview_mcp_effective_access(
                 .is_none_or(|server| server.ownership.is_reachable_from(team_id))
         });
     }
+    // The active tools in scope (all, or the named server's), so every
+    // subject's resolution reports the same count; it does not depend on who
+    // is asking.
     let exposed_tool_count = parts.first().map_or(0, |(_, part)| part.exposed_tool_count);
     let mut tools: std::collections::BTreeMap<(Uuid, String), gateway_core::ExternalMcpToolRecord> =
         std::collections::BTreeMap::new();

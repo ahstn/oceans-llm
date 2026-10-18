@@ -87,11 +87,14 @@ fn funded_sql(owner: &str) -> String {
     )
 }
 
-/// SQL counting a server's active credentials that may not follow it to a new
-/// URL: user-scoped, `secret_ref`, or not the owning team's.
-pub(crate) fn foreign_credentials_sql(server: &str, team: &str) -> String {
+/// SQL counting a server's credentials that may not follow it to a new URL:
+/// user-scoped, `secret_ref`, or not the owning team's. Only one the gateway
+/// could still send counts, as runtime resolution decides: not revoked, not
+/// past `expires_at` (`now`), and not OAuth tokens, which the same settings
+/// write revokes because the URL changed.
+pub(crate) fn foreign_credentials_sql(server: &str, team: &str, now: &str) -> String {
     format!(
-        "SELECT COUNT(*) FROM mcp_upstream_credential_bindings WHERE mcp_server_id = {server} AND revoked_at IS NULL AND (owner_scope_kind = 'user' OR secret_ref IS NOT NULL OR owner_team_id IS NULL OR owner_team_id <> {team})"
+        "SELECT COUNT(*) FROM mcp_upstream_credential_bindings WHERE mcp_server_id = {server} AND revoked_at IS NULL AND material_kind <> 'oauth_tokens' AND (expires_at IS NULL OR expires_at > {now}) AND (owner_scope_kind = 'user' OR secret_ref IS NOT NULL OR owner_team_id IS NULL OR owner_team_id <> {team})"
     )
 }
 

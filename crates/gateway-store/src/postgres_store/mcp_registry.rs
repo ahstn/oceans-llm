@@ -518,7 +518,7 @@ impl McpRegistryRepository for PostgresStore {
         if input.retarget_owner_credentials_only && existing.server_url != input.server_url {
             // Counted under the row lock: a credential write holds the row
             // `FOR SHARE` until it commits, so one that landed first is seen.
-            let foreign: i64 = sqlx::query_scalar(&foreign_credentials_sql("$1", "$2"))
+            let foreign: i64 = sqlx::query_scalar(&foreign_credentials_sql("$1", "$2", "$3"))
                 .bind(input.mcp_server_id.to_string())
                 .bind(
                     existing
@@ -527,6 +527,7 @@ impl McpRegistryRepository for PostgresStore {
                         .map(|team_id| team_id.to_string())
                         .unwrap_or_default(),
                 )
+                .bind(input.updated_at.unix_timestamp())
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(to_query_error)?;

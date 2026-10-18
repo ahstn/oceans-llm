@@ -565,14 +565,15 @@ impl McpRegistryRepository for LibsqlStore {
         if input.retarget_owner_credentials_only && existing.server_url != input.server_url {
             let mut rows = tx
                 .query(
-                    &foreign_credentials_sql("?1", "?2"),
+                    &foreign_credentials_sql("?1", "?2", "?3"),
                     libsql::params![
                         input.mcp_server_id.to_string(),
                         existing
                             .ownership
                             .owner_team_id
                             .map(|team_id| team_id.to_string())
-                            .unwrap_or_default()
+                            .unwrap_or_default(),
+                        input.updated_at.unix_timestamp()
                     ],
                 )
                 .await
