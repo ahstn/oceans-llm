@@ -842,6 +842,13 @@ where
         Ok(result)
     }
 
+    /// Startup refresh. It skips the context-override warning that periodic refreshes log,
+    /// because startup runs [`Self::validate_route_overrides`] next, which rejects the same
+    /// conflicts and reads the routes only once.
+    pub async fn initialize_pricing_catalog(&self) -> Result<(), GatewayError> {
+        self.pricing_catalog.refresh_if_stale_and_sync().await
+    }
+
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
         self.pricing_catalog.refresh_if_stale_and_sync().await?;
         self.warn_on_route_context_override_conflicts().await

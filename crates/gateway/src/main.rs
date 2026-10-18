@@ -261,7 +261,7 @@ async fn run_serve_with_store(
         agent_analysis.policy.clone(),
     )?;
     service
-        .refresh_pricing_catalog_if_stale()
+        .initialize_pricing_catalog()
         .await
         .context("failed to initialize pricing catalog")?;
     let overridden_routes = service

@@ -327,3 +327,34 @@ fn rejects_symlinks_that_resolve_outside_the_config_directory() {
         "unexpected error: {error:#}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn records_the_listed_path_while_reading_the_validated_target() {
+    let tmp = tempdir().expect("tempdir");
+    write(tmp.path(), "gateway.yaml", MAIN);
+    write(
+        tmp.path(),
+        "conf.d/..data/models.yaml",
+        "models:\n  gpt-5:\n    route: { provider: openai-prod, upstream_model: gpt-5 }\n",
+    );
+    // The Kubernetes ConfigMap layout: a visible name linking into the hidden data directory.
+    std::os::unix::fs::symlink(
+        tmp.path().join("conf.d/..data/models.yaml"),
+        tmp.path().join("conf.d/models.yaml"),
+    )
+    .expect("data symlink");
+
+    let loaded = GatewayConfig::load(&sources(tmp.path())).expect("config should load");
+    assert_eq!(loaded.config.models.len(), 1);
+    let source = loaded
+        .sources
+        .iter()
+        .find(|source| source.id == "gpt-5")
+        .expect("model source");
+    assert!(
+        source.path.ends_with("conf.d/models.yaml"),
+        "sources name the listed path, not the symlink target: {}",
+        source.path.display()
+    );
+}

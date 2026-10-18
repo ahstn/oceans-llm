@@ -81,8 +81,8 @@ impl GatewayConfig {
         tracker.record_main(&config, &sources.path)?;
 
         if let Some(dir) = &sources.dir {
-            for path in fragment_files(dir)? {
-                let raw = fs::read_to_string(&path).with_context(|| {
+            for FragmentFile { path, canonical } in fragment_files(dir)? {
+                let raw = fs::read_to_string(&canonical).with_context(|| {
                     format!("failed reading config fragment `{}`", path.display())
                 })?;
                 if is_blank_yaml(&raw) {
@@ -158,7 +158,15 @@ fn read_main_file(sources: &ConfigSources) -> anyhow::Result<(GatewayConfig, Opt
 /// Entries whose name starts with `.` are skipped. Kubernetes ConfigMap mounts place the real
 /// files under `..data` and timestamped `..2026_...` directories and link to them from the
 /// visible names, so skipping dot entries and following symlinks reads each file once.
-fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+/// A fragment as listed under the config directory, plus the validated target it resolves to.
+/// The loader reads `canonical`, the path containment was checked against, so swapping `path`
+/// for a symlink after the walk cannot redirect the read outside the config directory.
+struct FragmentFile {
+    path: PathBuf,
+    canonical: PathBuf,
+}
+
+fn fragment_files(dir: &Path) -> anyhow::Result<Vec<FragmentFile>> {
     let metadata = fs::metadata(dir)
         .with_context(|| format!("config directory `{}` does not exist", dir.display()))?;
     if !metadata.is_dir() {
@@ -170,9 +178,10 @@ fn fragment_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     let mut visited = BTreeSet::new();
     collect_fragment_files(&root, dir, &mut files, &mut visited)?;
     files.sort_by(|left, right| {
-        left.strip_prefix(dir)
+        left.path
+            .strip_prefix(dir)
             .ok()
-            .cmp(&right.strip_prefix(dir).ok())
+            .cmp(&right.path.strip_prefix(dir).ok())
     });
     Ok(files)
 }
@@ -198,7 +207,7 @@ fn resolve_inside(root: &Path, path: &Path) -> anyhow::Result<PathBuf> {
 fn collect_fragment_files(
     root: &Path,
     dir: &Path,
-    files: &mut Vec<PathBuf>,
+    files: &mut Vec<FragmentFile>,
     visited: &mut BTreeSet<PathBuf>,
 ) -> anyhow::Result<()> {
     if !visited.insert(resolve_inside(root, dir)?) {
@@ -221,9 +230,11 @@ fn collect_fragment_files(
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "yaml" | "yml"))
-            && visited.insert(resolve_inside(root, &path)?)
         {
-            files.push(path);
+            let canonical = resolve_inside(root, &path)?;
+            if visited.insert(canonical.clone()) {
+                files.push(FragmentFile { path, canonical });
+            }
         }
     }
     Ok(())
