@@ -435,6 +435,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V70__mcp_server_ownership.sql"),
         postgres_sql: include_str!("../migrations/postgres/V70__mcp_server_ownership.sql"),
     },
+    MigrationManifest {
+        version: 71,
+        name: "mcp_oauth_state_issuer",
+        checksum: "V71__mcp_oauth_state_issuer.sql",
+        libsql_sql: include_str!("../migrations/V71__mcp_oauth_state_issuer.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V71__mcp_oauth_state_issuer.sql"),
+    },
 ];
 
 #[cfg(test)]

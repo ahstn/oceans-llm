@@ -2546,6 +2546,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: current.server_url.clone(),
             scopes: Vec::new(),
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -2596,6 +2598,8 @@ pub(crate) mod tests {
                 redirect_to: "/admin/account/connections".to_string(),
                 resource: current.server_url.clone(),
                 scopes: Vec::new(),
+                expected_issuer: None,
+                issuer_required: false,
                 expires_at: now + Duration::minutes(10),
                 consumed_at: None,
                 created_at: now,
@@ -3964,6 +3968,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
             scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expected_issuer: Some("https://accounts.example.test".to_string()),
+            issuer_required: true,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -4003,6 +4009,8 @@ pub(crate) mod tests {
         assert_eq!(consumed_state.pkce_verifier, oauth_state.pkce_verifier);
         assert_eq!(consumed_state.resource, oauth_state.resource);
         assert_eq!(consumed_state.scopes, oauth_state.scopes);
+        assert_eq!(consumed_state.expected_issuer, oauth_state.expected_issuer);
+        assert!(consumed_state.issuer_required);
         assert!(
             store
                 .consume_mcp_oauth_state(
@@ -4024,6 +4032,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
             scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now - Duration::minutes(1),
             consumed_at: None,
             created_at: now,

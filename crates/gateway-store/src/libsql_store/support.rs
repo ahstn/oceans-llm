@@ -494,6 +494,7 @@ pub(super) fn decode_mcp_oauth_state_record(
     let expires_at: i64 = row.get(8).map_err(to_query_error)?;
     let consumed_at: Option<i64> = row.get(9).map_err(to_query_error)?;
     let created_at: i64 = row.get(10).map_err(to_query_error)?;
+    let issuer_required: i64 = row.get(12).map_err(to_query_error)?;
     Ok(McpOauthStateRecord {
         state_hash: row.get(0).map_err(to_query_error)?,
         user_id: parse_uuid(&user_id)?,
@@ -504,6 +505,8 @@ pub(super) fn decode_mcp_oauth_state_record(
         resource: row.get(6).map_err(to_query_error)?,
         scopes: serde_json::from_str(&scopes_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        expected_issuer: row.get(11).map_err(to_query_error)?,
+        issuer_required: issuer_required != 0,
         expires_at: unix_to_datetime(expires_at)?,
         consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
         created_at: unix_to_datetime(created_at)?,

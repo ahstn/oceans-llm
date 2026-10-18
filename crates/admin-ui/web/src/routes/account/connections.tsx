@@ -266,6 +266,8 @@ function connectionErrorMessage(code: string) {
       return 'The connection request expired. Start it again.'
     case 'state_invalid':
       return 'The connection request could not be verified. Start it again.'
+    case 'issuer_mismatch':
+      return 'The response came from a different authorization server than this connection uses.'
     default:
       return 'The provider did not complete the connection.'
   }

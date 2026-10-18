@@ -49,6 +49,9 @@ pub struct McpOauthDiscovery {
     pub token_endpoint_auth_methods_supported: Vec<String>,
     pub code_challenge_methods_supported: Vec<String>,
     pub client_id_metadata_document_supported: bool,
+    /// RFC 9207: the authorization server returns `iss` with every
+    /// authorization response.
+    pub authorization_response_iss_parameter_supported: bool,
     /// `dynamic`, `metadata_document`, or `manual`.
     pub recommended_client_registration: &'static str,
     pub token_endpoint_auth_method: McpOauthTokenEndpointAuthMethod,
@@ -94,6 +97,12 @@ impl McpOauthDiscovery {
         }
         if !self.default_scopes.is_empty() {
             config.insert("scopes".to_string(), json!(self.default_scopes));
+        }
+        if self.authorization_response_iss_parameter_supported {
+            config.insert(
+                "authorization_response_iss_parameter_supported".to_string(),
+                json!(true),
+            );
         }
         config
     }
@@ -216,6 +225,8 @@ struct AuthorizationServerMetadata {
     code_challenge_methods_supported: Option<Vec<String>>,
     #[serde(default)]
     client_id_metadata_document_supported: bool,
+    #[serde(default)]
+    authorization_response_iss_parameter_supported: bool,
 }
 
 /// Discovers how to authorize against the MCP server at `server_url`.
@@ -407,6 +418,8 @@ pub async fn discover_mcp_oauth(
         token_endpoint_auth_methods_supported,
         code_challenge_methods_supported,
         client_id_metadata_document_supported: metadata.client_id_metadata_document_supported,
+        authorization_response_iss_parameter_supported: metadata
+            .authorization_response_iss_parameter_supported,
         recommended_client_registration,
         warnings,
     })
