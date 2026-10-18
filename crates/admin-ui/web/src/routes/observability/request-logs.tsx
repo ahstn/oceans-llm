@@ -263,11 +263,15 @@ function RequestLogDesktopTable({
   onInspect: (requestLogId: string) => void
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null)
+  // The sticky header shares the scroll element, so the rows start one header height down.
+  // scrollMargin tells the virtualizer where they start; row offsets subtract it again below.
+  const [headerHeight, setHeaderHeight] = useState(0)
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => requestLogRowEstimatePx,
     overscan: 12,
+    scrollMargin: headerHeight,
   })
 
   return (
@@ -280,6 +284,9 @@ function RequestLogDesktopTable({
     >
       <div className="min-w-[68rem]">
         <div
+          ref={(node) => {
+            if (node) setHeaderHeight(node.offsetHeight)
+          }}
           className={cn(
             requestLogGridColumns,
             'bg-surface-muted text-muted-foreground sticky top-0 z-20 text-sm whitespace-nowrap',
@@ -304,7 +311,7 @@ function RequestLogDesktopTable({
                 key={items[virtualRow.index].request_log_id}
                 item={items[virtualRow.index]}
                 size={virtualRow.size}
-                start={virtualRow.start}
+                start={virtualRow.start - headerHeight}
                 onInspect={onInspect}
               />
             ))}
