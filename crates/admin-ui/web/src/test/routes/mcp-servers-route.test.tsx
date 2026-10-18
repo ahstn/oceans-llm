@@ -505,6 +505,7 @@ describe('ServersTab', () => {
       data: {
         server: unreachable,
         status: 'failed',
+        error_kind: 'transport',
         error_summary: 'MCP transport failure: error sending request',
         tools: [],
       },
@@ -548,6 +549,7 @@ describe('ServersTab', () => {
       data: {
         server,
         status: 'failed',
+        error_kind: 'transport',
         error_summary: 'MCP transport failure: error sending request',
         tools: [],
       },

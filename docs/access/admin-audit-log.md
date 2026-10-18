@@ -48,7 +48,7 @@ Not recorded:
 - Failed sign-in attempts and session refreshes.
 - Model traffic, MCP tool calls, batches and Skills publishing. Request logs and MCP invocations cover traffic.
 - Guardrail policy, because it is set in `gateway.yaml` and has no admin edit endpoint.
-- Enabling or deleting an MCP server, because the API only disables servers today.
+- Deleting an MCP server, because the API only disables and re-enables servers.
 
 ## Redaction
 

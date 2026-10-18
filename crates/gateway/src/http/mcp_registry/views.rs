@@ -177,7 +177,14 @@ impl McpToolAnnotationsView {
 pub struct McpDiscoveryRefreshPayload {
     server: McpServerView,
     status: String,
+    /// Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`.
     error_summary: Option<String>,
+    /// Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
+    /// `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
+    /// `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
+    error_kind: Option<String>,
+    /// The upstream HTTP status when `error_kind` is `http`.
+    error_http_status: Option<u16>,
     tools: Vec<McpToolView>,
 }
 
@@ -626,6 +633,8 @@ pub(super) fn map_discovery_result(result: McpDiscoveryResult) -> McpDiscoveryRe
         server: map_server(result.server),
         status: result.status.as_str().to_string(),
         error_summary: result.error_summary,
+        error_kind: result.error.map(|error| error.kind.to_string()),
+        error_http_status: result.error.and_then(|error| error.http_status),
         tools: result.tools.into_iter().map(map_tool).collect(),
     }
 }

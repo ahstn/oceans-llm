@@ -80,7 +80,17 @@ pub struct McpDiscoveryResult {
     pub server: ExternalMcpServerRecord,
     pub status: ExternalMcpDiscoveryStatus,
     pub error_summary: Option<String>,
+    /// Why a `failed` discovery failed, as a stable value clients can branch on; the summary
+    /// is diagnostic text whose wording may change.
+    pub error: Option<DiscoveryFailureKind>,
     pub tools: Vec<ExternalMcpToolRecord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscoveryFailureKind {
+    /// `invalid_auth_config`, or a client error class from `classify_client_error`.
+    pub kind: &'static str,
+    pub http_status: Option<u16>,
 }
 
 #[async_trait]
@@ -291,10 +301,13 @@ where
             return self
                 .record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::Disabled,
-                    OffsetDateTime::now_utc(),
-                    Some("external MCP server is disabled".to_string()),
-                    json!({"reason": "disabled"}),
+                    DiscoveryFailure {
+                        status: ExternalMcpDiscoveryStatus::Disabled,
+                        started_at: OffsetDateTime::now_utc(),
+                        summary: "external MCP server is disabled".to_string(),
+                        kind: None,
+                        details: json!({"reason": "disabled"}),
+                    },
                     progress,
                 )
                 .await;
@@ -304,12 +317,14 @@ where
             return self
                 .record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::AuthRequired,
-                    OffsetDateTime::now_utc(),
-                    Some(
-                        "server auth mode requires per-user credentials for discovery".to_string(),
-                    ),
-                    json!({"auth_mode": auth_mode}),
+                    DiscoveryFailure {
+                        status: ExternalMcpDiscoveryStatus::AuthRequired,
+                        started_at: OffsetDateTime::now_utc(),
+                        summary: "server auth mode requires per-user credentials for discovery"
+                            .to_string(),
+                        kind: None,
+                        details: json!({"auth_mode": auth_mode}),
+                    },
                     progress,
                 )
                 .await;
@@ -326,10 +341,16 @@ where
                 return self
                     .record_discovery_failure(
                         server,
-                        ExternalMcpDiscoveryStatus::Failed,
-                        started_at,
-                        Some(bounded_error_summary(error.to_string())),
-                        json!({"reason": "invalid_discovery_auth_config"}),
+                        DiscoveryFailure {
+                            status: ExternalMcpDiscoveryStatus::Failed,
+                            started_at,
+                            summary: bounded_error_summary(error.to_string()),
+                            kind: Some(DiscoveryFailureKind {
+                                kind: "invalid_auth_config",
+                                http_status: None,
+                            }),
+                            details: json!({"reason": "invalid_discovery_auth_config"}),
+                        },
                         progress,
                     )
                     .await;
@@ -389,6 +410,7 @@ where
                     server: refreshed_server,
                     status: ExternalMcpDiscoveryStatus::Success,
                     error_summary: None,
+                    error: None,
                     tools: stored_tools,
                 })
             }
@@ -396,10 +418,19 @@ where
                 let summary = bounded_error_summary(discovery_error_summary(&error));
                 self.record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::Failed,
-                    started_at,
-                    Some(summary),
-                    json!({"client_error": classify_client_error(&error)}),
+                    DiscoveryFailure {
+                        status: ExternalMcpDiscoveryStatus::Failed,
+                        started_at,
+                        summary,
+                        kind: Some(DiscoveryFailureKind {
+                            kind: classify_client_error(&error),
+                            http_status: match &error {
+                                McpClientError::Http { status, .. } => Some(*status),
+                                _ => None,
+                            },
+                        }),
+                        details: json!({"client_error": classify_client_error(&error)}),
+                    },
                     progress,
                 )
                 .await
@@ -487,12 +518,16 @@ where
     async fn record_discovery_failure(
         &self,
         server: ExternalMcpServerRecord,
-        status: ExternalMcpDiscoveryStatus,
-        started_at: OffsetDateTime,
-        error_summary: Option<String>,
-        details: Value,
+        failure: DiscoveryFailure,
         progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
+        let DiscoveryFailure {
+            status,
+            started_at,
+            summary,
+            kind,
+            details,
+        } = failure;
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
             discovery_run_id: Uuid::new_v4(),
@@ -503,7 +538,7 @@ where
             discovered_tool_count: 0,
             active_tool_count: server.last_tool_count.unwrap_or(0),
             schema_set_hash: None,
-            error_summary,
+            error_summary: Some(summary),
             details: value_object(details)?,
         };
         self.repo
@@ -519,9 +554,19 @@ where
             server: refreshed_server,
             status,
             error_summary: run.error_summary,
+            error: kind,
             tools,
         })
     }
+}
+
+/// A discovery that ended without a tool list, as the run history records it.
+struct DiscoveryFailure {
+    status: ExternalMcpDiscoveryStatus,
+    started_at: OffsetDateTime,
+    summary: String,
+    kind: Option<DiscoveryFailureKind>,
+    details: Value,
 }
 
 struct ResolvedCreateInput {

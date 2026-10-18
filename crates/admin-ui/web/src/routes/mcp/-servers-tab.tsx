@@ -337,6 +337,8 @@ export function ServersTab({
       const response = await refreshExternalMcpServerDiscovery({ data: { serverId: server.id } })
       const result = {
         status: response.data.status,
+        errorKind: response.data.error_kind ?? null,
+        httpStatus: response.data.error_http_status ?? null,
         errorSummary: response.data.error_summary ?? null,
         toolCount: response.data.tools.length,
       }

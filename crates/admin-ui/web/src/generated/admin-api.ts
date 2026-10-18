@@ -3763,6 +3763,18 @@ export interface components {
         };
         Envelope_McpDiscoveryRefreshPayload: {
             data: {
+                /**
+                 * Format: int32
+                 * @description The upstream HTTP status when `error_kind` is `http`.
+                 */
+                error_http_status?: number | null;
+                /**
+                 * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
+                 *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
+                 *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
+                 */
+                error_kind?: string | null;
+                /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
                 error_summary?: string | null;
                 server: components["schemas"]["McpServerView"];
                 status: string;
@@ -4349,6 +4361,18 @@ export interface components {
             items: components["schemas"]["McpCredentialBindingView"][];
         };
         McpDiscoveryRefreshPayload: {
+            /**
+             * Format: int32
+             * @description The upstream HTTP status when `error_kind` is `http`.
+             */
+            error_http_status?: number | null;
+            /**
+             * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
+             *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
+             *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
+             */
+            error_kind?: string | null;
+            /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
             error_summary?: string | null;
             server: components["schemas"]["McpServerView"];
             status: string;

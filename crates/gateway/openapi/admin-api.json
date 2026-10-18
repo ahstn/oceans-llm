@@ -14389,11 +14389,28 @@
               "tools"
             ],
             "properties": {
+              "error_http_status": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "The upstream HTTP status when `error_kind` is `http`.",
+                "minimum": 0
+              },
+              "error_kind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+              },
               "error_summary": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
               },
               "server": {
                 "$ref": "#/components/schemas/McpServerView"
@@ -16797,11 +16814,28 @@
           "tools"
         ],
         "properties": {
+          "error_http_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The upstream HTTP status when `error_kind` is `http`.",
+            "minimum": 0
+          },
+          "error_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+          },
           "error_summary": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
           },
           "server": {
             "$ref": "#/components/schemas/McpServerView"

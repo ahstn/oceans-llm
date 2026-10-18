@@ -39,6 +39,9 @@ export function endpointHost(server: Pick<McpServerView, 'server_url'>) {
 export interface DiscoveryRefreshResult {
   /** The gateway's discovery status, or `request_failed` when the refresh request didn't complete. */
   status: string
+  /** The gateway's stable reason for a `failed` discovery (`error_kind`). */
+  errorKind?: string | null
+  httpStatus?: number | null
   errorSummary: string | null
   toolCount: number
 }
@@ -53,54 +56,49 @@ export interface DiscoveryFeedback {
   retry: boolean
 }
 
-type FailureContext = { host: string; timeout: string; status: string }
+type FailureContext = { host: string; timeout: string; httpStatus: number | null }
 
-// Summaries begin with the gateway's error text (gateway-mcp `McpClientError` and the discovery
-// service). Anything unrecognised falls back to a general next step, with the summary still shown.
-const failedDiscoveryMessages: [RegExp, (context: FailureContext) => string][] = [
-  [
-    /^MCP transport failure/,
-    ({ host }) => `Couldn't reach ${host}. Check the endpoint, then Retry.`,
-  ],
-  [
-    /^MCP upstream timed out/,
-    ({ host, timeout }) =>
-      `Timed out after ${timeout} waiting for ${host}. Check the endpoint or raise the timeout in Configuration, then Retry.`,
-  ],
-  [
-    /^MCP upstream returned HTTP 40[13]\b/,
-    ({ host, status }) =>
-      `Reached ${host}, but it rejected the gateway's credentials (HTTP ${status}). Check the auth config, then Retry.`,
-  ],
-  [
-    /^MCP upstream returned HTTP 40[45]\b/,
-    ({ host, status }) =>
-      `Reached ${host}, but found no MCP endpoint at this URL (HTTP ${status}). Check the endpoint, then Retry.`,
-  ],
-  [
-    /^MCP upstream returned HTTP (408|429|5\d\d)\b/,
-    ({ host, status }) =>
-      `Reached ${host}, but it couldn't handle the request (HTTP ${status}). Wait a moment, then Retry.`,
-  ],
-  [
-    /^MCP upstream returned HTTP/,
-    ({ host, status }) =>
-      `Reached ${host}, but it returned HTTP ${status}. Check the endpoint and auth config, then Retry.`,
-  ],
-  [
-    /^(MCP JSON-RPC error|invalid MCP response)/,
-    ({ host }) =>
-      `Reached ${host}, but it didn't respond as an MCP server. Check that the endpoint is a Streamable HTTP MCP URL, then Retry.`,
-  ],
-  [
-    /^invalid MCP server URL/,
-    () => `The endpoint isn't a valid URL. Fix it in Configuration, then Retry.`,
-  ],
-  [
-    /secret_ref|auth_config\./,
-    () => `The gateway couldn't load this server's credentials. Check the auth config, then Retry.`,
-  ],
-]
+function httpFailureMessage({ host, httpStatus }: FailureContext) {
+  const code = httpStatus ? ` (HTTP ${httpStatus})` : ''
+  if (httpStatus === 401 || httpStatus === 403) {
+    return `Reached ${host}, but it rejected the gateway's credentials${code}. Check the auth config, then Retry.`
+  }
+  if (httpStatus === 404 || httpStatus === 405) {
+    return `Reached ${host}, but found no MCP endpoint at this URL${code}. Check the endpoint, then Retry.`
+  }
+  if (httpStatus === 408 || httpStatus === 429 || (httpStatus ?? 0) >= 500) {
+    return `Reached ${host}, but it couldn't handle the request${code}. Wait a moment, then Retry.`
+  }
+  return `Reached ${host}, but it returned an HTTP error${code}. Check the endpoint and auth config, then Retry.`
+}
+
+// Keyed by the gateway's `error_kind`, so copy doesn't depend on the summary's wording.
+const failedDiscoveryMessages: Record<string, (context: FailureContext) => string> = {
+  transport: ({ host }) => `Couldn't reach ${host}. Check the endpoint, then Retry.`,
+  timeout: ({ host, timeout }) =>
+    `Timed out after ${timeout} waiting for ${host}. Check the endpoint or raise the timeout in Configuration, then Retry.`,
+  http: httpFailureMessage,
+  json_rpc: ({ host }) =>
+    `${host} answered as an MCP server but refused to list its tools; its error is below. Check the server's access requirements, then Retry.`,
+  invalid_response: ({ host }) =>
+    `Reached ${host}, but it didn't respond as an MCP server. Check that the endpoint is a Streamable HTTP MCP URL, then Retry.`,
+  invalid_url: () => `The endpoint isn't a valid URL. Fix it in Configuration, then Retry.`,
+  invalid_header: () =>
+    `The gateway couldn't build this server's auth header. Check the auth config, then Retry.`,
+  invalid_auth_config: () =>
+    `The gateway couldn't load this server's credentials. Check the auth config, then Retry.`,
+  response_too_large: ({ host }) =>
+    `${host} sent a tool list larger than the gateway accepts. Limit the tools it exposes, then Retry.`,
+  invalid_tool_schema: ({ host }) =>
+    `${host} sent a tool with an invalid schema; the tool is named below. Fix it on the server, then Retry.`,
+}
+
+function authRequiredMessage(authMode: string) {
+  if (authMode === 'oauth_obo') {
+    return 'This server uses OAuth on-behalf-of, so the gateway can only discover its tools if the upstream allows public discovery. If it does, set discovery_auth to none in the auth config, then Retry.'
+  }
+  return "This server uses per-user credentials, so the gateway can't discover its tools on its own. Switch to a gateway auth mode in Configuration, then Retry."
+}
 
 /**
  * Explains a refresh result in the server overview: what failed and what to do next, with the
@@ -108,7 +106,7 @@ const failedDiscoveryMessages: [RegExp, (context: FailureContext) => string][] =
  */
 export function describeDiscoveryResult(
   result: DiscoveryRefreshResult,
-  server: Pick<McpServerView, 'server_url' | 'timeout_ms'>,
+  server: Pick<McpServerView, 'server_url' | 'timeout_ms' | 'auth_mode'>,
 ): DiscoveryFeedback {
   const detail = result.errorSummary
   const failure = (title: string, message: string, retry = true) => ({
@@ -134,10 +132,7 @@ export function describeDiscoveryResult(
         "The discovery request didn't complete. Retry, or check the gateway logs if it keeps failing.",
       )
     case 'auth_required':
-      return failure(
-        discoveryLabel(result.status),
-        "This server uses per-user credentials, so the gateway can't discover its tools on its own. Switch to a gateway auth mode in Configuration, then Retry.",
-      )
+      return failure(discoveryLabel(result.status), authRequiredMessage(server.auth_mode))
     case 'disabled':
       return failure(
         discoveryLabel(result.status),
@@ -145,24 +140,27 @@ export function describeDiscoveryResult(
         false,
       )
     default: {
-      const summary = detail ?? ''
       const context = {
         host: endpointHost(server),
         timeout: formatTimeout(server.timeout_ms),
-        status: /HTTP (\d{3})/.exec(summary)?.[1] ?? '',
+        httpStatus: result.httpStatus ?? null,
       }
+      const explain = result.errorKind ? failedDiscoveryMessages[result.errorKind] : undefined
       const message =
-        failedDiscoveryMessages.find(([pattern]) => pattern.test(summary))?.[1](context) ??
+        explain?.(context) ??
         `Discovery didn't complete for ${context.host}. Check the endpoint and auth config, then Retry.`
       return failure(discoveryLabel(result.status), message)
     }
   }
 }
 
+// Rounds before splitting into units, so 59,999 ms reads `1 min`, never `60 s` or `0 min 60 s`.
 function formatTimeout(ms: number) {
   if (ms < 1000) return `${ms} ms`
-  if (ms < 60_000) return `${Number((ms / 1000).toFixed(2))} s`
-  const minutes = Math.floor(ms / 60_000)
-  const seconds = Math.round((ms % 60_000) / 1000)
-  return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`
+  const seconds = Math.round(ms / 10) / 100
+  if (seconds < 60) return `${seconds} s`
+  const total = Math.round(ms / 1000)
+  const minutes = Math.floor(total / 60)
+  const rest = total % 60
+  return rest ? `${minutes} min ${rest} s` : `${minutes} min`
 }
