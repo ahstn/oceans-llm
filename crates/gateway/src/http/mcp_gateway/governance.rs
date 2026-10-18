@@ -49,14 +49,15 @@ pub(super) enum Refusal {
     Credential(GatewayError),
 }
 
-/// A refusal, with the argument guardrail evaluation when a step after it
-/// refused the call, so the route can log it.
+/// A refusal, with the guarded arguments when a step after argument
+/// guardrails refused the call, so the route can log them.
 pub(super) struct Refused {
     pub(super) refusal: Refusal,
-    pub(super) evaluation: Option<GuardrailEvaluation>,
+    pub(super) arguments: Option<GuardedArguments>,
 }
 
-/// Tool arguments after request guardrails.
+/// Tool arguments after request guardrails. `value` is moved out of the
+/// evaluation's output, which no longer holds them.
 pub(super) struct GuardedArguments {
     pub(super) value: Value,
     pub(super) evaluation: GuardrailEvaluation,
@@ -107,18 +108,13 @@ impl<'a> GovernedCall<'a> {
 
     /// Runs every step for an authorized call. `tool_call` names the tool
     /// and its arguments for `tools/call`; other methods pass `None`. A
-    /// refusal from a step after argument guardrails also returns their
-    /// evaluation, so it can be logged.
+    /// refusal from a step after argument guardrails also returns the guarded
+    /// arguments, so they can be logged.
     pub(super) async fn admit(
         &self,
         tool_call: Option<(&str, Value)>,
     ) -> Result<Admitted, Box<Refused>> {
-        let refused = |refusal, evaluation| {
-            Box::new(Refused {
-                refusal,
-                evaluation,
-            })
-        };
+        let refused = |refusal, arguments| Box::new(Refused { refusal, arguments });
         match rate_limits::check_tool_call(self.state, self.policy, self.auth, self.server).await {
             Ok(None) => {}
             Ok(Some(rejected)) => return Err(refused(Refusal::RateLimited(rejected), None)),
@@ -126,7 +122,7 @@ impl<'a> GovernedCall<'a> {
         }
         let arguments = match tool_call {
             Some((tool_name, arguments)) => {
-                let evaluation = evaluate_mcp_call(
+                let mut evaluation = evaluate_mcp_call(
                     self.state,
                     Some(&self.request_id),
                     Some(self.invocation_id),
@@ -138,28 +134,25 @@ impl<'a> GovernedCall<'a> {
                 if evaluation.denied() {
                     return Err(refused(Refusal::GuardrailDenied(evaluation), None));
                 }
-                let value = match &evaluation.output {
-                    EvaluationPayload::McpCall { call } => call.arguments.clone(),
+                let value = match &mut evaluation.output {
+                    EvaluationPayload::McpCall { call } => std::mem::take(&mut call.arguments),
                     _ => unreachable!("MCP call evaluation preserves payload kind"),
                 };
                 Some(GuardedArguments { value, evaluation })
             }
             None => None,
         };
-        let upstream = McpGatewayService::new(self.state.store.clone())
+        match McpGatewayService::new(self.state.store.clone())
             .with_oauth_runtime(self.state.mcp_oauth_runtime.clone())
             .prepare_upstream_for_auth(self.auth, self.server.clone())
             .await
-            .map_err(|error| {
-                refused(
-                    Refusal::Credential(error),
-                    arguments.as_ref().map(|guarded| guarded.evaluation.clone()),
-                )
-            })?;
-        Ok(Admitted {
-            arguments,
-            upstream,
-        })
+        {
+            Ok(upstream) => Ok(Admitted {
+                arguments,
+                upstream,
+            }),
+            Err(error) => Err(refused(Refusal::Credential(error), arguments)),
+        }
     }
 }
 

@@ -28,9 +28,9 @@ use gateway_core::{
     McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
     ProviderError, SCOPE_MCP_PROXY, auth::extract_bearer_token, is_oauth_access_token,
 };
-use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
+use gateway_guardrails::GuardrailEvaluation;
 use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
-use governance::{GovernedCall, Refused};
+use governance::{GovernedCall, GuardedArguments, Refused};
 use guardrails::{enforce_direct_mcp_result, evaluate_mcp_result, guardrail_decision_metadata};
 use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
 use methods::{
@@ -461,16 +461,13 @@ async fn handle_tools_call(
         Err(refused) => {
             let Refused {
                 refusal,
-                evaluation,
+                arguments: guarded,
             } = *refused;
             let refused = refusal.log();
             // A refusal after guardrails logs the arguments they produced.
-            let logged_arguments = evaluation
-                .filter(|evaluation| evaluation.decisions.iter().any(|d| d.transformed))
-                .and_then(|evaluation| match evaluation.output {
-                    EvaluationPayload::McpCall { call } => Some(call.arguments),
-                    _ => None,
-                })
+            let logged_arguments = guarded
+                .filter(GuardedArguments::transformed)
+                .map(|guarded| guarded.value)
                 .or(arguments);
             let mut log_input = tool_call_log_input(
                 &server,
@@ -494,7 +491,7 @@ async fn handle_tools_call(
         .expect("tools/call runs argument guardrails");
     let (body, arguments) = if guarded.transformed() {
         match rewrite_tools_call_arguments(&body, &guarded.value) {
-            Ok(body) => (body, Some(guarded.value.clone())),
+            Ok(body) => (body, Some(guarded.value)),
             Err(error) => return mcp_error_response(error),
         }
     } else {

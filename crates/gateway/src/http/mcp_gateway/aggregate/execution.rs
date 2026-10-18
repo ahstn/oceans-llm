@@ -8,7 +8,7 @@ use gateway_core::{
     AuthenticatedApiKey, GatewayError, McpCatalogToolRecord, McpToolInvocationStatus,
     McpToolPolicyResult, ProviderError,
 };
-use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
+use gateway_guardrails::EvaluationPayload;
 use gateway_mcp::server::{
     JSON_RPC_INVALID_PARAMS, call_tool_error_result, json_rpc_error, json_rpc_success,
 };
@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::http::{
     mcp_gateway::{
         credentials::credential_guidance,
-        governance::{GovernedCall, Refusal, Refused},
+        governance::{GovernedCall, GuardedArguments, Refusal, Refused},
         rate_limits::{
             JSON_RPC_INTERNAL_ERROR, RATE_LIMITED_ERROR_CODE, rejection_body, rejection_metadata,
         },
@@ -126,7 +126,7 @@ struct CatalogInvocation<'a> {
 impl CatalogInvocation<'_> {
     async fn call(&mut self) -> Result<ToolsCallResponse, CatalogCallError> {
         let original_arguments = self.arguments.take();
-        self.arguments = if original_arguments.is_null() {
+        let arguments = if original_arguments.is_null() {
             json!({})
         } else {
             original_arguments.clone()
@@ -141,16 +141,13 @@ impl CatalogInvocation<'_> {
         );
         self.mcp_tool_invocation_id = governed.invocation_id;
         let admitted = match governed
-            .admit(Some((&record.tool.upstream_name, self.arguments.clone())))
+            .admit(Some((&record.tool.upstream_name, arguments)))
             .await
         {
             Ok(admitted) => admitted,
             Err(refused) => {
-                let Refused {
-                    refusal,
-                    evaluation,
-                } = *refused;
-                return Err(self.refused(refusal, evaluation, original_arguments));
+                let Refused { refusal, arguments } = *refused;
+                return Err(self.refused(refusal, arguments, original_arguments));
             }
         };
         let guarded = admitted
@@ -209,13 +206,19 @@ impl CatalogInvocation<'_> {
     fn refused(
         &mut self,
         refusal: Refusal,
-        evaluation: Option<GuardrailEvaluation>,
+        guarded: Option<GuardedArguments>,
         original_arguments: Value,
     ) -> CatalogCallError {
-        if let Some(evaluation) = &evaluation {
+        let sent_none = original_arguments.is_null();
+        self.arguments = if sent_none {
+            json!({})
+        } else {
+            original_arguments
+        };
+        if let Some(guarded) = &guarded {
             self.metadata.insert(
                 "guardrail_call".to_string(),
-                Value::Object(guardrail_decision_metadata(evaluation)),
+                Value::Object(guardrail_decision_metadata(&guarded.evaluation)),
             );
         }
         match refusal {
@@ -235,14 +238,14 @@ impl CatalogInvocation<'_> {
                 error @ (GatewayError::McpCredentialRequired { .. }
                 | GatewayError::McpCredentialExpired { .. }),
             ) => {
-                self.arguments = original_arguments;
+                if sent_none {
+                    self.arguments = Value::Null;
+                }
                 CatalogCallError::Gateway(error)
             }
             Refusal::Credential(error) => {
-                if let Some(EvaluationPayload::McpCall { call }) =
-                    evaluation.map(|evaluation| evaluation.output)
-                {
-                    self.arguments = call.arguments;
+                if let Some(guarded) = guarded {
+                    self.arguments = guarded.value;
                 }
                 CatalogCallError::Gateway(error)
             }
