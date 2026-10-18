@@ -769,10 +769,10 @@ fn build_gateway_service(
     let payload_policy = config
         .request_log_payload_policy()
         .context("failed to build request log payload policy")?;
-    let rate_limiter = Arc::new(RateLimiter::new(
-        store.clone(),
-        config.rate_limits.settings(),
-    ));
+    let rate_limiter = Arc::new(
+        RateLimiter::new(store.clone(), config.rate_limits.settings())
+            .with_team_lookup(store.clone()),
+    );
     Ok(Arc::new(
         GatewayService::new_with_budget_alert_sender_and_payload_policy(
             store,

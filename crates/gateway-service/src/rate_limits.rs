@@ -87,6 +87,11 @@ pub struct RateLimitSubject<'a> {
 }
 
 impl<'a> RateLimitSubject<'a> {
+    /// The subject for a credential. `api_key_id` is the credential's id: an
+    /// API key's, or for an OAuth caller its grant's, so `api_key` scope
+    /// counts each authorized client on its own, as it does each key. A
+    /// user's team is not on the credential; the limiter looks it up for
+    /// team-scoped policies.
     #[must_use]
     pub fn new(operation: RateLimitOperation, auth: &AuthenticatedApiKey) -> Self {
         Self {
@@ -422,8 +427,34 @@ impl Drop for PendingCharge {
     }
 }
 
+/// Finds the team a user belongs to, so team-scoped policies also count the
+/// requests members make with their own keys and OAuth grants.
+#[async_trait::async_trait]
+pub trait RateLimitTeamLookup: Send + Sync {
+    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError>;
+}
+
+#[async_trait::async_trait]
+impl<T> RateLimitTeamLookup for T
+where
+    T: gateway_core::IdentityRepository + ?Sized,
+{
+    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError> {
+        Ok(self
+            .get_team_membership_for_user(user_id)
+            .await?
+            .map(|membership| membership.team_id))
+    }
+}
+
+/// Users whose team is cached at once. Past this the cache starts over.
+const MAX_CACHED_MEMBER_TEAMS: usize = 10_000;
+
 pub struct RateLimiter {
     store: Option<Arc<dyn RateLimitRepository>>,
+    team_lookup: Option<Arc<dyn RateLimitTeamLookup>>,
+    /// Each user's team, as of when it was read, for `policy_refresh`.
+    member_teams: std::sync::Mutex<HashMap<Uuid, (Instant, Option<Uuid>)>>,
     settings: RateLimitSettings,
     config_policies: Vec<ActivePolicy>,
     cache: RwLock<Option<PolicyCache>>,
@@ -470,6 +501,8 @@ impl RateLimiter {
             .collect();
         Self {
             store,
+            team_lookup: None,
+            member_teams: std::sync::Mutex::new(HashMap::new()),
             settings,
             config_policies,
             cache: RwLock::new(None),
@@ -481,6 +514,75 @@ impl RateLimiter {
             charges_done: Arc::new(tokio::sync::Notify::new()),
             clock: Arc::new(OffsetDateTime::now_utc),
         }
+    }
+
+    /// Resolves the team of a user whose credential carries none, for
+    /// team-scoped policies. Without it those policies count only team
+    /// (service account) keys.
+    #[must_use]
+    pub fn with_team_lookup(mut self, lookup: Arc<dyn RateLimitTeamLookup>) -> Self {
+        self.team_lookup = Some(lookup);
+        self
+    }
+
+    /// The user's team from the cache, when it was read recently.
+    fn cached_member_team(&self, user_id: Uuid) -> Option<Option<Uuid>> {
+        let teams = self
+            .member_teams
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        teams
+            .get(&user_id)
+            .filter(|(read_at, _)| read_at.elapsed() < self.settings.policy_refresh)
+            .map(|(_, team)| *team)
+    }
+
+    /// Whether `subject` needs its user's team looked up for `set`.
+    fn needs_member_team(&self, set: &PolicySet, subject: &RateLimitSubject<'_>) -> bool {
+        self.team_lookup.is_some()
+            && subject.team_id.is_none()
+            && subject.user_id.is_some()
+            && set
+                .for_operation(subject.operation)
+                .iter()
+                .any(|policy| policy.scope_kind == RateLimitScopeKind::Team)
+    }
+
+    /// `subject` with its user's team filled in, when a team-scoped policy
+    /// for the operation could need it. A failed lookup leaves it out.
+    async fn with_member_team<'a>(
+        &self,
+        set: &PolicySet,
+        subject: &RateLimitSubject<'a>,
+    ) -> RateLimitSubject<'a> {
+        let mut subject = *subject;
+        if !self.needs_member_team(set, &subject) {
+            return subject;
+        }
+        let (Some(lookup), Some(user_id)) = (&self.team_lookup, subject.user_id) else {
+            return subject;
+        };
+        if let Some(team) = self.cached_member_team(user_id) {
+            subject.team_id = team;
+            return subject;
+        }
+        match lookup.team_for_user(user_id).await {
+            Ok(team) => {
+                let mut teams = self
+                    .member_teams
+                    .lock()
+                    .unwrap_or_else(|poison| poison.into_inner());
+                if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
+                    teams.clear();
+                }
+                teams.insert(user_id, (Instant::now(), team));
+                subject.team_id = team;
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "could not read the user's team for rate limits");
+            }
+        }
+        subject
     }
 
     /// Replaces the clock, so tests can move between windows.
@@ -513,6 +615,7 @@ impl RateLimiter {
                 StoreError::Unavailable("rate limit policies could not be loaded".to_string()),
             );
         }
+        let subject = &self.with_member_team(&set, subject).await;
         let now = (self.clock)();
         let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = set
             .for_operation(subject.operation)
@@ -597,15 +700,26 @@ impl RateLimiter {
                     period: policy.period,
                     limit: policy.limit,
                     remaining: (policy.limit - estimate).max(0),
-                    reset_after_seconds: charge.window.reset_after_seconds(now),
+                    reset_after_seconds: charge
+                        .window
+                        .quota_reset_after_seconds(now, observation.current),
                     retry_after_seconds,
                 }
             })
             .collect::<Vec<_>>();
 
         if result.admitted {
-            // Report the policy with the least room left.
-            statuses.sort_by_key(|status| (status.remaining, status.limit));
+            // Report the policy with the smallest share of its limit left.
+            // Request and token limits count different units, so their
+            // remaining amounts cannot be compared directly.
+            statuses.sort_by(|left, right| {
+                let share = |status: &RateLimitStatus, other: &RateLimitStatus| {
+                    i128::from(status.remaining) * i128::from(other.limit.max(1))
+                };
+                share(left, right)
+                    .cmp(&share(right, left))
+                    .then(left.limit.cmp(&right.limit))
+            });
             return Ok(RateLimitDecision::Admitted(statuses.swap_remove(0)));
         }
         // Report the rejecting policy the caller must wait longest for.
@@ -679,16 +793,34 @@ impl RateLimiter {
         // after an invalidation, or once it is stale) the task loads the set
         // itself and every token check waits.
         let snapshot = self.cached(false);
-        let keys = snapshot.as_ref().map_or_else(
-            || vec![ANY_PENDING_COUNTER.to_string()],
-            |set| {
-                set.for_operation(subject.operation)
-                    .iter()
-                    .filter(|policy| policy.metric == RateLimitMetric::Tokens)
-                    .filter_map(|policy| policy.counter_key(subject))
-                    .collect()
-            },
-        );
+        // The same goes for a member's team: from the cache the marked
+        // counters are exact; otherwise the task looks it up and every token
+        // check waits.
+        let mut subject = *subject;
+        let team_unknown = match &snapshot {
+            Some(set) if self.needs_member_team(set, &subject) => {
+                match subject
+                    .user_id
+                    .and_then(|user| self.cached_member_team(user))
+                {
+                    Some(team) => {
+                        subject.team_id = team;
+                        false
+                    }
+                    None => true,
+                }
+            }
+            _ => false,
+        };
+        let keys = match &snapshot {
+            Some(set) if !team_unknown => set
+                .for_operation(subject.operation)
+                .iter()
+                .filter(|policy| policy.metric == RateLimitMetric::Tokens)
+                .filter_map(|policy| policy.counter_key(&subject))
+                .collect(),
+            _ => vec![ANY_PENDING_COUNTER.to_string()],
+        };
         let pending = PendingCharge::start(keys, &self.pending_charges, &self.charges_done);
         let limiter = Arc::clone(self);
         let operation = subject.operation;
@@ -711,6 +843,7 @@ impl RateLimiter {
                 Some(set) => set,
                 None => limiter.policies().await,
             };
+            let subject = limiter.with_member_team(&set, &subject).await;
             limiter
                 .charge_tokens(&set, &subject, total_tokens, finished_at)
                 .await;
@@ -757,7 +890,8 @@ impl RateLimiter {
         finished_at: OffsetDateTime,
     ) {
         let set = self.policies().await;
-        self.charge_tokens(&set, subject, total_tokens, finished_at)
+        let subject = self.with_member_team(&set, subject).await;
+        self.charge_tokens(&set, &subject, total_tokens, finished_at)
             .await;
     }
 

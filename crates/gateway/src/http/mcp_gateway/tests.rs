@@ -1685,7 +1685,8 @@ mod proxy_policy {
         assert_eq!(admitted.status(), StatusCode::OK);
         assert_eq!(admitted.headers()["x-ratelimit-limit"], "1");
         assert_eq!(admitted.headers()["x-ratelimit-remaining"], "0");
-        assert_eq!(admitted.headers()["x-ratelimit-reset"], "50");
+        // The sliding window frees the whole limit at the end of the next minute.
+        assert_eq!(admitted.headers()["x-ratelimit-reset"], "110");
         assert!(admitted.headers().get("retry-after").is_none());
 
         let limited = router.oneshot(call(2)).await.unwrap();

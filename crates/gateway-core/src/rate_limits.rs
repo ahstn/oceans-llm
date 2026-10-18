@@ -328,6 +328,19 @@ impl RateLimitWindow {
         seconds_until(now, self.end as f64)
     }
 
+    /// Seconds from `now` until none of the counted usage weighs on the limit
+    /// any more, at least 1. A calendar window frees everything at its end. A
+    /// sliding window does not: at its end the current count becomes the
+    /// previous one at full weight, and slides out over the next window.
+    #[must_use]
+    pub fn quota_reset_after_seconds(&self, now: OffsetDateTime, current: i64) -> u64 {
+        if self.period.is_sliding() && current > 0 {
+            seconds_until(now, (self.end + self.length()) as f64)
+        } else {
+            self.reset_after_seconds(now)
+        }
+    }
+
     /// Seconds until a charge of `need` fits under `limit`, given the counts
     /// read before this request was charged. At least 1.
     #[must_use]

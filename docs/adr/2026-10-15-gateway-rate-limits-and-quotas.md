@@ -88,6 +88,13 @@ The rate-limit table is in the same database that authenticates API keys. When t
 
 Every limited response carries `Retry-After` (seconds). Every response that a policy applied to, admitted or rejected, carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the window resets) for the tightest policy: the rejecting one, or otherwise the one with the least remaining. The message names the operation, metric, period and scope kind, but no ids.
 
+_Changed 2026-10-18 after a review of the MCP gateway epic:_
+
+- `X-RateLimit-Reset` reported the end of the current window for sliding periods too. Nothing resets then: the current count becomes the previous one at full weight. It now reports when the whole limit is free again, which for a sliding window with usage in it is the end of the next window.
+- "The least remaining" compared request counts with token counts. The tightest admitted policy is now the one with the smallest share of its limit left.
+- `team` scope matched only `owner_team_id`, which only service-account keys carry, so team policies never counted members' own keys or OAuth clients. The limiter now looks up the user's team (`RateLimitTeamLookup`, backed by team membership) when a team-scoped policy could apply, and caches it per user for the policy refresh interval. Token charges use the same lookup.
+- `api_key` scope uses the credential id, which for an OAuth caller is its grant. This is now the documented meaning: each authorized client has its own `api_key` counter, as each key does, and `user` scope limits a person across keys and clients. Re-authorizing a client creates a new grant and so a new counter; `user` and `team` policies are the controls that cannot be reset that way.
+
 The rate-limit check runs after model resolution and before the request log, guardrails, budget and provider call. A rejected inference request writes no request-log row and calls no provider. The gateway does not retry or fall back across providers, so one request is counted once.
 
 Rejected MCP calls are logged in the MCP invocation log with status `policy_denied`, policy result `denied` and error code `rate_limited`, plus the policy, period and retry delay in `metadata`. Grant and guardrail denials are already told apart by error code, so this needs no new status value and no table rebuild.

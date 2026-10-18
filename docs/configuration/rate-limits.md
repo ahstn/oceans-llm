@@ -18,7 +18,9 @@ A policy counts one kind of traffic for one scope over one window.
 | `period` | `minute`, `hour`, `day`, `month` | See [Windows](#windows). |
 | `limit` | positive integer | |
 
-A `user` or `team` scope only applies to keys that have one: a service-account key has a team but no user.
+A `user` scope applies to user keys and OAuth callers; a service-account key has no user. A `team` scope applies to a service-account key's team, and to a user who belongs to a team, whether they use their own key or an OAuth client, so every member counts against the team's counter. The gateway reads a user's team when a team policy could apply and keeps it for the policy refresh interval (10 seconds by default).
+
+An `api_key` scope counts the credential a request presents. For an MCP client that signed in with OAuth, that is its grant: each authorized client has its own counter, as each key does. Use a `user` scope to limit a person across all their keys and clients.
 
 ### Every matching policy applies
 
@@ -108,9 +110,9 @@ Headers:
 | `Retry-After` | rejected requests | Seconds until the request would fit |
 | `X-RateLimit-Limit` | any request a policy matched | The tightest policy's limit |
 | `X-RateLimit-Remaining` | any request a policy matched | Requests or tokens left in that policy's window |
-| `X-RateLimit-Reset` | any request a policy matched | Seconds until that policy's current window ends |
+| `X-RateLimit-Reset` | any request a policy matched | Seconds until that policy's whole limit is free again. For `day` and `month`, the end of the window. For `minute` and `hour`, usage in the current window keeps counting, at a falling weight, until the end of the next window, so that is the reset. |
 
-The tightest policy is the one that rejected the request, or, when the request was admitted, the one with the least remaining. Requests that no policy matches carry none of these headers.
+The tightest policy is the one that rejected the request, or, when the request was admitted, the one with the smallest share of its limit left. Shares are compared rather than amounts, because request and token limits count different units. Requests that no policy matches carry none of these headers.
 
 The headers describe the state when the request was admitted. For a token policy, `X-RateLimit-Remaining` does not include the tokens of the response that carries it, because streamed responses send headers before usage is known; non-streaming responses behave the same way so the two agree. The next request's headers include them.
 

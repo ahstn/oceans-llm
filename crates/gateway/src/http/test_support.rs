@@ -167,6 +167,7 @@ pub fn install_rate_limits(
             ..Default::default()
         },
     )
+    .with_team_lookup(state.store.clone())
     .with_clock(move || *reader.0.lock().unwrap());
     state.service = Arc::new(
         GatewayService::new(

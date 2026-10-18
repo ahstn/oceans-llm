@@ -152,7 +152,7 @@ pub use provider_credentials::{
 };
 pub use rate_limits::{
     ConfiguredRateLimitPolicy, RateLimitDecision, RateLimitFailureMode, RateLimitPolicySource,
-    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimiter,
+    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimitTeamLookup, RateLimiter,
 };
 pub use redaction::{
     MAX_INLINE_REQUEST_BYTES, PayloadPath, PayloadSecretRedactor, RequestLogPayloadCaptureMode,

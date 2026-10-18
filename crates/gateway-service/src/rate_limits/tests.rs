@@ -298,7 +298,8 @@ async fn requests_are_rejected_at_the_limit_and_admitted_after_the_window() {
         panic!("expected admit, got {first:?}");
     };
     assert_eq!((status.limit, status.remaining), (2, 1));
-    assert_eq!(status.reset_after_seconds, 50);
+    // The request keeps counting until the next minute has slid past it.
+    assert_eq!(status.reset_after_seconds, 110);
     assert!(matches!(
         harness.limiter.check(&subject).await.unwrap(),
         RateLimitDecision::Admitted(RateLimitStatus { remaining: 0, .. })
@@ -1296,4 +1297,121 @@ async fn a_detached_charge_writes_the_counters_it_marked_pending() {
         charged.iter().all(|key| key.contains(&alpha_id)),
         "{charged:?}"
     );
+}
+
+/// Team membership by user, for team-scoped policies.
+struct Teams(HashMap<Uuid, Uuid>);
+
+#[async_trait]
+impl RateLimitTeamLookup for Teams {
+    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError> {
+        Ok(self.0.get(&user_id).copied())
+    }
+}
+
+#[tokio::test]
+async fn team_policies_count_members_own_keys() {
+    let (alice, bob, team) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )],
+    );
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(
+        limiter.with_team_lookup(Arc::new(Teams(HashMap::from([(alice, team), (bob, team)])))),
+    );
+
+    // Alice's own key is not a team key, but she is a member.
+    let RateLimitDecision::Admitted(status) = harness
+        .limiter
+        .check(&user_subject(alice, Uuid::new_v4()))
+        .await
+        .unwrap()
+    else {
+        panic!("expected admit");
+    };
+    assert_eq!(status.policy_name, "per team");
+    // Bob shares the team's counter.
+    assert!(matches!(
+        harness
+            .limiter
+            .check(&user_subject(bob, Uuid::new_v4()))
+            .await
+            .unwrap(),
+        RateLimitDecision::Rejected(_)
+    ));
+    // A user in no team is not limited by it.
+    assert!(matches!(
+        harness
+            .limiter
+            .check(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+            .await
+            .unwrap(),
+        RateLimitDecision::Unlimited
+    ));
+}
+
+#[tokio::test]
+async fn reset_is_when_a_sliding_window_frees_the_whole_limit() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per key",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            5,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let RateLimitDecision::Admitted(status) = harness.limiter.check(&subject).await.unwrap() else {
+        panic!("expected admit");
+    };
+    // Ten seconds into the minute: this request keeps counting, at a falling
+    // weight, until the end of the next minute.
+    assert_eq!(status.reset_after_seconds, 110);
+}
+
+#[tokio::test]
+async fn the_reported_policy_has_the_smallest_share_left_whatever_its_unit() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![
+            config(
+                "requests",
+                RateLimitOperation::Inference,
+                RateLimitScopeKind::User,
+                RateLimitMetric::Requests,
+                RateLimitPeriod::Day,
+                10,
+            ),
+            config(
+                "tokens",
+                RateLimitOperation::Inference,
+                RateLimitScopeKind::User,
+                RateLimitMetric::Tokens,
+                RateLimitPeriod::Day,
+                1_000,
+            ),
+        ],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness
+        .limiter
+        .add_tokens(&subject, 900, harness.now())
+        .await;
+    // Nine requests of ten are left, but only 100 tokens of 1,000.
+    let RateLimitDecision::Admitted(status) = harness.limiter.check(&subject).await.unwrap() else {
+        panic!("expected admit");
+    };
+    assert_eq!(status.policy_name, "tokens");
+    assert_eq!(status.remaining, 100);
 }
