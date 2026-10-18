@@ -426,9 +426,8 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
-        // Status changes wait for an in-flight discovery in this process. Across replicas, the
-        // store refuses a discovery result recorded against a status that has since changed.
-        let _discovery = lock_discovery(mcp_server_id).await;
+        // Takes effect at once, even while a discovery runs: the store refuses a discovery result
+        // recorded against a status that has since changed, in this process or another replica.
         self.repo
             .disable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -440,7 +439,6 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
-        let _discovery = lock_discovery(mcp_server_id).await;
         self.repo
             .enable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
@@ -454,7 +452,6 @@ where
         mcp_server_id: Uuid,
         expected_owner_team_id: Option<Uuid>,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
-        let _discovery = lock_discovery(mcp_server_id).await;
         self.repo
             .disable_external_mcp_server_for_owner(
                 mcp_server_id,
@@ -472,7 +469,6 @@ where
         mcp_server_id: Uuid,
         expected_owner_team_id: Option<Uuid>,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
-        let _discovery = lock_discovery(mcp_server_id).await;
         self.repo
             .enable_external_mcp_server_for_owner(
                 mcp_server_id,
@@ -1126,31 +1122,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enabling_waits_for_an_in_flight_discovery() {
+    async fn status_changes_do_not_wait_for_an_in_flight_discovery() {
         let service = McpRegistryService::with_client(
             Arc::new(NoopMcpRegistryRepository),
             Arc::new(NoopMcpDiscoveryClient),
         );
         let server_id = Uuid::new_v4();
-        // Stand in for a refresh that has read the server but not yet written its result.
+        // Stand in for a refresh waiting on a slow upstream, holding the server's discovery lock.
         let discovery = lock_discovery(server_id).await;
 
-        let enable = tokio::spawn(async move { service.enable_server(server_id).await });
-        tokio::task::yield_now().await;
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        // Disabling is a kill switch, so it must not wait out the discovery's timeout.
+        let changes = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            (
+                service.disable_server(server_id).await,
+                service.enable_server(server_id).await,
+                service.disable_server_for_owner(server_id, None).await,
+                service.enable_server_for_owner(server_id, None).await,
+            )
+        })
+        .await
+        .expect("status changes waited for the discovery lock");
         assert!(
-            !enable.is_finished(),
-            "enable ran while discovery held the server"
+            changes.0.is_err() && changes.1.is_err() && changes.2.is_err() && changes.3.is_err(),
+            "the noop store reports the server missing"
         );
-
         drop(discovery);
-        let result = enable.await.expect("enable task");
-        assert!(result.is_err(), "the noop store reports the server missing");
-        assert_eq!(
-            discovery_lock_holders(server_id),
-            None,
-            "the registry kept the lock of a server no task uses"
-        );
+        assert_eq!(discovery_lock_holders(server_id), None);
     }
 
     #[tokio::test]
@@ -1305,10 +1302,10 @@ mod tests {
 
         async fn disable_external_mcp_server(
             &self,
-            _mcp_server_id: Uuid,
+            mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
         ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
-            unimplemented!()
+            Err(StoreError::NotFound(mcp_server_id.to_string()))
         }
 
         async fn enable_external_mcp_server(
