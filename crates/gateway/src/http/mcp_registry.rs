@@ -1092,6 +1092,7 @@ pub async fn list_mcp_grants(
         .into_iter()
         .map(map_grant)
         .collect();
+    recheck_admin_scope(&state, &headers, &scope).await?;
     Ok(Json(envelope(McpGrantsPayload { items })))
 }
 
@@ -1283,6 +1284,7 @@ pub async fn list_mcp_credential_bindings(
         }
     };
     let items = bindings.into_iter().map(map_credential_binding).collect();
+    recheck_admin_scope(&state, &headers, &scope).await?;
     Ok(Json(envelope(McpCredentialBindingsPayload { items })))
 }
 
@@ -1592,6 +1594,12 @@ pub async fn preview_mcp_effective_access(
         }
     }
     let allowed_tools: Vec<_> = tools.into_values().collect();
+    // Checked again after every read: a team admin who lost their role or
+    // team, or whose server moved, during the preview gets none of it.
+    recheck_admin_scope(&state, &headers, &scope).await?;
+    if let (Some(_), Some(server_id)) = (scope.managed_team_id(), query.server_id) {
+        ownership(&state).managed_server(&scope, server_id).await?;
+    }
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: allowed_tools
             .iter()
@@ -1921,6 +1929,27 @@ async fn list_member_servers(
                 .to_string(),
         ),
     )))
+}
+
+/// Confirms, after a read, that the caller still holds the admin scope the read
+/// was authorized and filtered by. An admin who lost their role or changed team
+/// in between gets a conflict to retry, never the former scope's data.
+async fn recheck_admin_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+    scope: &McpAdminScope,
+) -> Result<(), AppError> {
+    let (_, current) = require_mcp_admin_scope(state, headers).await?;
+    if current == *scope {
+        Ok(())
+    } else {
+        Err(AppError(GatewayError::Store(
+            gateway_core::StoreError::Conflict(
+                "your MCP admin access changed during this request; reload and try again"
+                    .to_string(),
+            ),
+        )))
+    }
 }
 
 /// The distinct owning teams of `servers`, whose names a response needs.

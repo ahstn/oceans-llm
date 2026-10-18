@@ -2218,3 +2218,34 @@ async fn combined_previews_judge_each_subject_by_its_own_team() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn reads_are_refused_once_the_admin_scope_they_used_is_gone() {
+    let context = TestContext::new().await;
+    let admin = context.team_admin(context.team_a).await;
+    let Ok((_, scope)) = require_mcp_admin_scope(&context.state, &admin.headers).await else {
+        panic!("a team admin has a scope");
+    };
+    assert!(
+        recheck_admin_scope(&context.state, &admin.headers, &scope)
+            .await
+            .is_ok()
+    );
+    // Moved to another team: the scope a read was filtered by no longer holds.
+    context
+        .state
+        .store
+        .remove_team_membership(context.team_a, admin.user_id)
+        .await
+        .unwrap();
+    context
+        .state
+        .store
+        .assign_team_membership(admin.user_id, context.team_b, MembershipRole::Admin)
+        .await
+        .unwrap();
+    let Err(error) = recheck_admin_scope(&context.state, &admin.headers, &scope).await else {
+        panic!("a changed scope must refuse the read");
+    };
+    assert_eq!(error.0.error_code(), "conflict");
+}
