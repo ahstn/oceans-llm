@@ -11,7 +11,7 @@ vi.mock('@hugeicons/react', () => ({
 
 describe('AppIcon', () => {
   it('uses the default icon size and stroke width', () => {
-    const { container } = render(<AppIcon icon={{}} />)
+    const { container } = render(<AppIcon icon={[]} />)
 
     const node = container.querySelector('[data-testid="huge-icon"]')
     const props = JSON.parse(node?.getAttribute('data-props') ?? '{}')
@@ -21,7 +21,7 @@ describe('AppIcon', () => {
   })
 
   it('allows supported stroke variants', () => {
-    const { container } = render(<AppIcon icon={{}} stroke={1.5} />)
+    const { container } = render(<AppIcon icon={[]} stroke={1.5} />)
 
     const node = container.querySelector('[data-testid="huge-icon"]')
     const props = JSON.parse(node?.getAttribute('data-props') ?? '{}')

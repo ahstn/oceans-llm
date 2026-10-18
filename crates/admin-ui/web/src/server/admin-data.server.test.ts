@@ -1004,8 +1004,10 @@ describe('server-side admin data wrappers', () => {
     ).resolves.toMatchObject({ data: { status: 'ok' } })
 
     const reset = await resetUserOnboarding('user_1')
-    expect(reset.data.kind).toBe('password_invite')
-    expect(reset.data.invite_url).toContain('/admin/invite/')
+    expect(reset.data).toMatchObject({
+      kind: 'password_invite',
+      invite_url: expect.stringContaining('/admin/invite/'),
+    })
 
     expect(PATCH).toHaveBeenCalledWith('/api/v1/admin/identity/users/{user_id}', {
       params: { path: { user_id: 'user_1' } },

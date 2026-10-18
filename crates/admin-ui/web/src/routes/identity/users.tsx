@@ -7,7 +7,7 @@ import {
   UserIcon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, type SearchSchemaInput } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -86,12 +86,17 @@ import type {
   CreateUserResult,
   IdentityDirectoryUsersPayload,
   IdentityUsersPayload,
-  UpdateUserInput,
+  UpdateUserInput as UpdateUserRequest,
   UserView,
 } from '@/types/api'
 
+// The form always holds an auth mode; only the API accepts null to leave it unchanged.
+type UpdateUserInput = Omit<UpdateUserRequest, 'auth_mode'> & { auth_mode?: string }
+
 export const Route = createFileRoute('/identity/users')({
-  validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
+  validateSearch: (
+    search: { user_id?: string; user_section?: UserDetailsSection } & SearchSchemaInput,
+  ) => normalizeUserSearch(search),
   loader: ({ context }) =>
     isPlatformAdminSession(context.session) ? getUsers() : getUserDirectory(),
   component: UsersPage,
@@ -1574,11 +1579,13 @@ function onboardingAuthChanged(user: UserView, form: UpdateUserInput) {
   if (form.auth_mode !== user.auth_mode) {
     return true
   }
+  const onboardingProviderKey =
+    user.onboarding && 'provider_key' in user.onboarding ? user.onboarding.provider_key : undefined
   if (form.auth_mode === 'oidc') {
-    return form.oidc_provider_key !== user.onboarding?.provider_key
+    return form.oidc_provider_key !== onboardingProviderKey
   }
   if (form.auth_mode === 'oauth') {
-    return form.oauth_provider_key !== user.onboarding?.provider_key
+    return form.oauth_provider_key !== onboardingProviderKey
   }
   return false
 }

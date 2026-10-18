@@ -306,36 +306,29 @@ export const getApiKeys = createServerFn({ method: 'GET' }).handler(async () => 
   return listApiKeys()
 })
 
-export const createGatewayApiKey = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createApiKey>[0] }) => {
+export const createGatewayApiKey = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createApiKey>[0]) => data)
+  .handler(async ({ data }) => {
     return createApiKey(data)
-  },
-)
+  })
 
-export const revokeGatewayApiKey = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { apiKeyId: string } }) => {
+export const revokeGatewayApiKey = createServerFn({ method: 'POST' })
+  .validator((data: { apiKeyId: string }) => data)
+  .handler(async ({ data }) => {
     return revokeApiKey(data.apiKeyId)
-  },
-)
+  })
 
-export const revealGatewayApiKeySecret = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { apiKeyId: string } }) => {
+export const revealGatewayApiKeySecret = createServerFn({ method: 'POST' })
+  .validator((data: { apiKeyId: string }) => data)
+  .handler(async ({ data }) => {
     return revealApiKeySecret(data.apiKeyId)
-  },
-)
+  })
 
-export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      apiKeyId: string
-      input: Parameters<typeof updateApiKey>[1]
-    }
-  }) => {
+export const updateGatewayApiKey = createServerFn({ method: 'POST' })
+  .validator((data: { apiKeyId: string; input: Parameters<typeof updateApiKey>[1] }) => data)
+  .handler(async ({ data }) => {
     return updateApiKey(data.apiKeyId, data.input)
-  },
-)
+  })
 
 /** `null` restores full access or every server; otherwise a list of names. */
 function nullableStringList(value: unknown, label: string): string[] | null {
@@ -369,17 +362,17 @@ export const updateGatewayApiKeyScopes = createServerFn({ method: 'POST' })
     return updateApiKeyScopes(data.apiKeyId, data.input)
   })
 
-export const getModels = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {
+export const getModels = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof listModels>[0]) => data)
+  .handler(async ({ data }) => {
     return listModels(data)
-  },
-)
+  })
 
-export const getModelClientConfigs = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof generateModelClientConfigs>[0] }) => {
+export const getModelClientConfigs = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof generateModelClientConfigs>[0]) => data)
+  .handler(async ({ data }) => {
     return generateModelClientConfigs(data)
-  },
-)
+  })
 
 export const refreshModelPricing = createServerFn({ method: 'POST' }).handler(async () => {
   return refreshModelPricingCatalog()
@@ -398,68 +391,59 @@ export const getMyProfile = createServerFn({ method: 'GET' }).handler(async () =
   return getGatewayMyProfile()
 })
 
-export const getObservabilityLeaderboard = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: { range?: '7d' | '31d' } }) => {
+export const getObservabilityLeaderboard = createServerFn({ method: 'GET' })
+  .validator((data: { range?: '7d' | '31d' }) => data)
+  .handler(async ({ data }) => {
     return getUsageLeaderboard(data)
-  },
-)
+  })
 
-export const refreshObservabilityLeaderboard = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { range: '7d' | '31d' } }) => {
+export const refreshObservabilityLeaderboard = createServerFn({ method: 'POST' })
+  .validator((data: { range: '7d' | '31d' }) => data)
+  .handler(async ({ data }) => {
     return getUsageLeaderboard(data)
-  },
-)
+  })
 
-export const getObservabilityHarnessUsage = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: { range?: '7d' | '31d' } }) => {
+export const getObservabilityHarnessUsage = createServerFn({ method: 'GET' })
+  .validator((data: { range?: '7d' | '31d' }) => data)
+  .handler(async ({ data }) => {
     return getHarnessUsage(data)
-  },
-)
+  })
 
-export const refreshObservabilityHarnessUsage = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { range: '7d' | '31d' } }) => {
+export const refreshObservabilityHarnessUsage = createServerFn({ method: 'POST' })
+  .validator((data: { range: '7d' | '31d' }) => data)
+  .handler(async ({ data }) => {
     return getHarnessUsage(data)
-  },
-)
+  })
 
-export const getSpendUsageReport = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      days: 7 | 30
-      owner_kind: 'all' | 'user' | 'service_account'
-    }
-  }) => {
+export const getSpendUsageReport = createServerFn({ method: 'POST' })
+  .validator((data: { days: 7 | 30; owner_kind: 'all' | 'user' | 'service_account' }) => data)
+  .handler(async ({ data }) => {
     return getSpendReport(data)
-  },
-)
+  })
 
 export const getSpendBudgets = createServerFn({ method: 'GET' }).handler(async () => {
   return listSpendBudgets()
 })
 
-export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data?: {
+export const getBudgetAlertHistory = createServerFn({ method: 'POST' })
+  .validator(
+    (data: {
       page?: number
       page_size?: number
       owner_kind?: 'all' | 'user' | 'service_account'
       status?: 'all' | 'pending' | 'sent' | 'failed'
       channel?: 'all' | 'email'
-    }
-  }) => {
+    }) => data,
+  )
+  .handler(async ({ data }) => {
     return listBudgetAlertHistory(data)
-  },
-)
+  })
 
-export const saveBudget = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof upsertBudget>[0] }) => {
+export const saveBudget = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof upsertBudget>[0]) => data)
+  .handler(async ({ data }) => {
     return upsertBudget(data)
-  },
-)
+  })
 
 type BudgetIncreaseInput = Parameters<typeof createBudgetIncrease>[0]
 
@@ -489,11 +473,11 @@ export const increaseBudget = createServerFn({ method: 'POST' })
     return createBudgetIncrease(data)
   })
 
-export const removeBudget = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof deactivateBudget>[0] }) => {
+export const removeBudget = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof deactivateBudget>[0]) => data)
+  .handler(async ({ data }) => {
     return deactivateBudget(data)
-  },
-)
+  })
 
 export const getAgentSessions = createServerFn({ method: 'POST' })
   .validator(validateAgentSessionFilters)
@@ -507,11 +491,11 @@ export const getObservabilityAgentSessionDetail = createServerFn({ method: 'GET'
     return getAgentSessionDetail(data.sessionId)
   })
 
-export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data?: Parameters<typeof listRequestLogs>[0] }) => {
+export const getRequestLogs = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof listRequestLogs>[0]) => data)
+  .handler(async ({ data }) => {
     return listRequestLogs(data)
-  },
-)
+  })
 
 export const getBatches = createServerFn({ method: 'POST' })
   .validator(validateBatchFilters)
@@ -531,17 +515,17 @@ export const cancelGatewayBatch = createServerFn({ method: 'POST' })
     return cancelBatch(data.batchId)
   })
 
-export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: { requestLogId: string } }) => {
+export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' })
+  .validator((data: { requestLogId: string }) => data)
+  .handler(async ({ data }) => {
     return getRequestLogDetail(data.requestLogId)
-  },
-)
+  })
 
-export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data?: Parameters<typeof listMcpInvocations>[0] }) => {
+export const getMcpInvocations = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof listMcpInvocations>[0]) => data)
+  .handler(async ({ data }) => {
     return listMcpInvocations(data)
-  },
-)
+  })
 
 export const getGuardrailPolicyView = createServerFn({ method: 'GET' }).handler(async () => {
   return getGuardrailPolicies()
@@ -659,11 +643,11 @@ export const decideOauthAuthorization = createServerFn({ method: 'POST' })
     return decideOauthAuthorizationRequest(data.requestId, data.approve)
   })
 
-export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: { invocationId: string } }) => {
+export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' })
+  .validator((data: { invocationId: string }) => data)
+  .handler(async ({ data }) => {
     return getMcpInvocationDetail(data.invocationId)
-  },
-)
+  })
 
 export const getMcpConnectionInfo = createServerFn({ method: 'GET' }).handler(async () => {
   return getGatewayMcpConnectionInfo()
@@ -673,30 +657,23 @@ export const getRecommendedMcpServers = createServerFn({ method: 'GET' }).handle
   return listRecommendedMcpServers()
 })
 
-export const getMcpServers = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: Parameters<typeof listMcpServers>[0] }) => {
+export const getMcpServers = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof listMcpServers>[0]) => data)
+  .handler(async ({ data }) => {
     return listMcpServers(data)
-  },
-)
+  })
 
-export const addMcpServer = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createMcpServer>[0] }) => {
+export const addMcpServer = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createMcpServer>[0]) => data)
+  .handler(async ({ data }) => {
     return createMcpServer(data)
-  },
-)
+  })
 
-export const saveMcpServer = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      serverId: string
-      input: Parameters<typeof updateMcpServer>[1]
-    }
-  }) => {
+export const saveMcpServer = createServerFn({ method: 'POST' })
+  .validator((data: { serverId: string; input: Parameters<typeof updateMcpServer>[1] }) => data)
+  .handler(async ({ data }) => {
     return updateMcpServer(data.serverId, data.input)
-  },
-)
+  })
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -737,30 +714,23 @@ export const transferExternalMcpServerOwnership = createServerFn({ method: 'POST
     return transferMcpServerOwnership(data.serverId, data.input)
   })
 
-export const disableExternalMcpServer = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { serverId: string } }) => {
+export const disableExternalMcpServer = createServerFn({ method: 'POST' })
+  .validator((data: { serverId: string }) => data)
+  .handler(async ({ data }) => {
     return disableMcpServer(data.serverId)
-  },
-)
+  })
 
-export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      serverId: string
-      include_inactive?: boolean
-    }
-  }) => {
+export const getMcpServerTools = createServerFn({ method: 'GET' })
+  .validator((data: { serverId: string; include_inactive?: boolean }) => data)
+  .handler(async ({ data }) => {
     return listMcpServerTools(data.serverId, { include_inactive: data.include_inactive })
-  },
-)
+  })
 
-export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { serverId: string } }) => {
+export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' })
+  .validator((data: { serverId: string }) => data)
+  .handler(async ({ data }) => {
     return refreshMcpServerDiscovery(data.serverId)
-  },
-)
+  })
 
 function validateMcpOauthDiscoveryInput(input: unknown): { serverUrl: string } {
   if (
@@ -781,35 +751,35 @@ export const discoverExternalMcpServerOauth = createServerFn({ method: 'POST' })
     return discoverMcpServerOauth(data.serverUrl)
   })
 
-export const getMcpCredentialBindings = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: Parameters<typeof listMcpCredentialBindings>[0] }) => {
+export const getMcpCredentialBindings = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof listMcpCredentialBindings>[0]) => data)
+  .handler(async ({ data }) => {
     return listMcpCredentialBindings(data)
-  },
-)
+  })
 
-export const saveMcpCredentialBinding = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof upsertMcpCredentialBinding>[0] }) => {
+export const saveMcpCredentialBinding = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof upsertMcpCredentialBinding>[0]) => data)
+  .handler(async ({ data }) => {
     return upsertMcpCredentialBinding(data)
-  },
-)
+  })
 
-export const removeMcpCredentialBinding = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { credentialBindingId: string } }) => {
+export const removeMcpCredentialBinding = createServerFn({ method: 'POST' })
+  .validator((data: { credentialBindingId: string }) => data)
+  .handler(async ({ data }) => {
     return revokeMcpCredentialBinding(data.credentialBindingId)
-  },
-)
+  })
 
-export const getMcpToolsets = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: Parameters<typeof listMcpToolsets>[0] }) => {
+export const getMcpToolsets = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof listMcpToolsets>[0]) => data)
+  .handler(async ({ data }) => {
     return listMcpToolsets(data)
-  },
-)
+  })
 
-export const addMcpToolset = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createMcpToolset>[0] }) => {
+export const addMcpToolset = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createMcpToolset>[0]) => data)
+  .handler(async ({ data }) => {
     return createMcpToolset(data)
-  },
-)
+  })
 
 function validateMcpToolsetId(input: unknown): { toolsetId: string } {
   const data = requireObject(input, 'Tool set input')
@@ -837,24 +807,17 @@ export const getMcpToolsetTools = createServerFn({ method: 'GET' })
     return listMcpToolsetTools(data.toolsetId)
   })
 
-export const saveMcpToolset = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      toolsetId: string
-      input: Parameters<typeof updateMcpToolset>[1]
-    }
-  }) => {
+export const saveMcpToolset = createServerFn({ method: 'POST' })
+  .validator((data: { toolsetId: string; input: Parameters<typeof updateMcpToolset>[1] }) => data)
+  .handler(async ({ data }) => {
     return updateMcpToolset(data.toolsetId, data.input)
-  },
-)
+  })
 
-export const disableExternalMcpToolset = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { toolsetId: string } }) => {
+export const disableExternalMcpToolset = createServerFn({ method: 'POST' })
+  .validator((data: { toolsetId: string }) => data)
+  .handler(async ({ data }) => {
     return disableMcpToolset(data.toolsetId)
-  },
-)
+  })
 
 export const saveMcpToolsetTools = createServerFn({ method: 'POST' })
   .validator(validateMcpToolsetMembership)
@@ -862,29 +825,29 @@ export const saveMcpToolsetTools = createServerFn({ method: 'POST' })
     return replaceMcpToolsetTools(data.toolsetId, data.toolIds)
   })
 
-export const getMcpGrants = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data?: Parameters<typeof listMcpGrants>[0] }) => {
+export const getMcpGrants = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof listMcpGrants>[0]) => data)
+  .handler(async ({ data }) => {
     return listMcpGrants(data)
-  },
-)
+  })
 
-export const saveMcpGrant = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof upsertMcpGrant>[0] }) => {
+export const saveMcpGrant = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof upsertMcpGrant>[0]) => data)
+  .handler(async ({ data }) => {
     return upsertMcpGrant(data)
-  },
-)
+  })
 
-export const removeMcpGrant = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof revokeMcpGrant>[0] }) => {
+export const removeMcpGrant = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof revokeMcpGrant>[0]) => data)
+  .handler(async ({ data }) => {
     return revokeMcpGrant(data)
-  },
-)
+  })
 
-export const getMcpEffectiveAccess = createServerFn({ method: 'GET' }).handler(
-  async ({ data }: { data: Parameters<typeof previewMcpEffectiveAccess>[0] }) => {
+export const getMcpEffectiveAccess = createServerFn({ method: 'GET' })
+  .validator((data: Parameters<typeof previewMcpEffectiveAccess>[0]) => data)
+  .handler(async ({ data }) => {
     return previewMcpEffectiveAccess(data)
-  },
-)
+  })
 
 export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()
@@ -898,55 +861,54 @@ export const getAuthSession = createServerFn({ method: 'GET' }).handler(async ()
   return getSession()
 })
 
-export const loginAdminWithPassword = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof loginWithPassword>[0] }) => {
+export const loginAdminWithPassword = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof loginWithPassword>[0]) => data)
+  .handler(async ({ data }) => {
     return loginWithPassword(data)
-  },
-)
+  })
 
-export const changeCurrentPassword = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof changePassword>[0] }) => {
+export const changeCurrentPassword = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof changePassword>[0]) => data)
+  .handler(async ({ data }) => {
     return changePassword(data)
-  },
-)
+  })
 
 export const logoutAdminSession = createServerFn({ method: 'POST' }).handler(async () => {
   return logoutCurrentSession()
 })
 
-export const createIdentityTeam = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createTeam>[0] }) => {
+export const createIdentityTeam = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createTeam>[0]) => data)
+  .handler(async ({ data }) => {
     return createTeam(data)
-  },
-)
+  })
 
-export const updateIdentityTeam = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { teamId: string; input: Parameters<typeof updateTeam>[1] } }) => {
+export const updateIdentityTeam = createServerFn({ method: 'POST' })
+  .validator((data: { teamId: string; input: Parameters<typeof updateTeam>[1] }) => data)
+  .handler(async ({ data }) => {
     return updateTeam(data.teamId, data.input)
-  },
-)
+  })
 
-export const addIdentityTeamMembers = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { teamId: string; input: Parameters<typeof addTeamMembers>[1] } }) => {
+export const addIdentityTeamMembers = createServerFn({ method: 'POST' })
+  .validator((data: { teamId: string; input: Parameters<typeof addTeamMembers>[1] }) => data)
+  .handler(async ({ data }) => {
     return addTeamMembers(data.teamId, data.input)
-  },
-)
+  })
 
-export const removeIdentityTeamMember = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { teamId: string; userId: string } }) => {
+export const removeIdentityTeamMember = createServerFn({ method: 'POST' })
+  .validator((data: { teamId: string; userId: string }) => data)
+  .handler(async ({ data }) => {
     return removeTeamMember(data.teamId, data.userId)
-  },
-)
+  })
 
-export const transferIdentityTeamMember = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: { teamId: string; userId: string; input: Parameters<typeof transferTeamMember>[2] }
-  }) => {
+export const transferIdentityTeamMember = createServerFn({ method: 'POST' })
+  .validator(
+    (data: { teamId: string; userId: string; input: Parameters<typeof transferTeamMember>[2] }) =>
+      data,
+  )
+  .handler(async ({ data }) => {
     return transferTeamMember(data.teamId, data.userId, data.input)
-  },
-)
+  })
 
 export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
   return listUsers()
@@ -976,17 +938,17 @@ export const getOidcLoginOptions = createServerFn({ method: 'GET' }).handler(asy
   }
 })
 
-export const createIdentityUser = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createUser>[0] }) => {
+export const createIdentityUser = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createUser>[0]) => data)
+  .handler(async ({ data }) => {
     return createUser(data)
-  },
-)
+  })
 
-export const updateIdentityUser = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string; input: Parameters<typeof updateUser>[1] } }) => {
+export const updateIdentityUser = createServerFn({ method: 'POST' })
+  .validator((data: { userId: string; input: Parameters<typeof updateUser>[1] }) => data)
+  .handler(async ({ data }) => {
     return updateUser(data.userId, data.input)
-  },
-)
+  })
 
 export const saveIdentityUserProviderCredential = createServerFn({ method: 'POST' })
   .validator(validateProviderCredentialInput)
@@ -1000,29 +962,29 @@ export const removeIdentityUserProviderCredential = createServerFn({ method: 'PO
     return deleteUserProviderCredential(data.userId, data.providerKey)
   })
 
-export const deactivateIdentityUser = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string } }) => {
+export const deactivateIdentityUser = createServerFn({ method: 'POST' })
+  .validator((data: { userId: string }) => data)
+  .handler(async ({ data }) => {
     return deactivateUser(data.userId)
-  },
-)
+  })
 
-export const reactivateIdentityUser = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string } }) => {
+export const reactivateIdentityUser = createServerFn({ method: 'POST' })
+  .validator((data: { userId: string }) => data)
+  .handler(async ({ data }) => {
     return reactivateUser(data.userId)
-  },
-)
+  })
 
-export const resetIdentityUserOnboarding = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string } }) => {
+export const resetIdentityUserOnboarding = createServerFn({ method: 'POST' })
+  .validator((data: { userId: string }) => data)
+  .handler(async ({ data }) => {
     return resetUserOnboarding(data.userId)
-  },
-)
+  })
 
-export const resendIdentityUserPasswordInvite = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string } }) => {
+export const resendIdentityUserPasswordInvite = createServerFn({ method: 'POST' })
+  .validator((data: { userId: string }) => data)
+  .handler(async ({ data }) => {
     return resendPasswordInvite(data.userId)
-  },
-)
+  })
 
 export const getReviewAgentOverview = createServerFn({ method: 'GET' }).handler(async () => {
   const [repositories, serviceAccounts] = await Promise.all([
@@ -1049,61 +1011,53 @@ export const getReviewAgentOverview = createServerFn({ method: 'GET' }).handler(
   }
 })
 
-export const createReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: Parameters<typeof createReviewAgentRepository>[0] }) => {
+export const createReviewAgentRepo = createServerFn({ method: 'POST' })
+  .validator((data: Parameters<typeof createReviewAgentRepository>[0]) => data)
+  .handler(async ({ data }) => {
     return createReviewAgentRepository(data)
-  },
-)
+  })
 
-export const updateReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      repositoryId: string
-      input: Parameters<typeof updateReviewAgentRepository>[1]
-    }
-  }) => {
+export const updateReviewAgentRepo = createServerFn({ method: 'POST' })
+  .validator(
+    (data: { repositoryId: string; input: Parameters<typeof updateReviewAgentRepository>[1] }) =>
+      data,
+  )
+  .handler(async ({ data }) => {
     return updateReviewAgentRepository(data.repositoryId, data.input)
-  },
-)
+  })
 
-export const disableReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { repositoryId: string } }) => {
+export const disableReviewAgentRepo = createServerFn({ method: 'POST' })
+  .validator((data: { repositoryId: string }) => data)
+  .handler(async ({ data }) => {
     return disableReviewAgentRepository(data.repositoryId)
-  },
-)
+  })
 
-export const reactivateReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { repositoryId: string } }) => {
+export const reactivateReviewAgentRepo = createServerFn({ method: 'POST' })
+  .validator((data: { repositoryId: string }) => data)
+  .handler(async ({ data }) => {
     return reactivateReviewAgentRepository(data.repositoryId)
-  },
-)
+  })
 
-export const renderReviewAgentRepoWorkflow = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      repositoryId: string
-      input: Parameters<typeof renderReviewAgentWorkflow>[1]
-    }
-  }) => {
+export const renderReviewAgentRepoWorkflow = createServerFn({ method: 'POST' })
+  .validator(
+    (data: { repositoryId: string; input: Parameters<typeof renderReviewAgentWorkflow>[1] }) =>
+      data,
+  )
+  .handler(async ({ data }) => {
     return renderReviewAgentWorkflow(data.repositoryId, data.input)
-  },
-)
+  })
 
-export const getInviteState = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { token: string } }) => {
+export const getInviteState = createServerFn({ method: 'POST' })
+  .validator((data: { token: string }) => data)
+  .handler(async ({ data }) => {
     return getInvitation(data.token)
-  },
-)
+  })
 
-export const completeInvitePassword = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { token: string; password: string } }) => {
+export const completeInvitePassword = createServerFn({ method: 'POST' })
+  .validator((data: { token: string; password: string }) => data)
+  .handler(async ({ data }) => {
     return completeInvitation(data.token, data.password)
-  },
-)
+  })
 
 export const getRateLimitPolicies = createServerFn({ method: 'GET' }).handler(async () => {
   return listRateLimitPolicies()

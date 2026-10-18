@@ -150,16 +150,17 @@ describe('skill attribution', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
-  it.each([undefined, {}, { author: ' ', version: '\n', github: '\t' }])(
-    'omits missing or blank attribution without affecting the version details',
-    (metadata) => {
-      render(<VersionMetadata detail={withMetadata(metadata)} />)
-      expect(screen.queryByText('Author')).not.toBeInTheDocument()
-      expect(screen.queryByText('Upstream version')).not.toBeInTheDocument()
-      expect(screen.queryByText('Source')).not.toBeInTheDocument()
-      expect(screen.getByText('Uploaded')).toBeVisible()
-    },
-  )
+  it.each<Record<string, string> | undefined>([
+    undefined,
+    {},
+    { author: ' ', version: '\n', github: '\t' },
+  ])('omits missing or blank attribution without affecting the version details', (metadata) => {
+    render(<VersionMetadata detail={withMetadata(metadata)} />)
+    expect(screen.queryByText('Author')).not.toBeInTheDocument()
+    expect(screen.queryByText('Upstream version')).not.toBeInTheDocument()
+    expect(screen.queryByText('Source')).not.toBeInTheDocument()
+    expect(screen.getByText('Uploaded')).toBeVisible()
+  })
 
   it('renders author text without executing markup', () => {
     const author = '<img src=x onerror=alert(1)>'

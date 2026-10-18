@@ -859,8 +859,8 @@ function formatOccurredAt(occurredAt: string) {
   return occurredAt.replace('T', ' ').slice(0, 19)
 }
 
-function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
-  if (statusCode === null) {
+function badgeVariant(statusCode: number | null | undefined): 'success' | 'warning' | 'outline' {
+  if (statusCode == null) {
     return 'outline'
   }
 
@@ -871,12 +871,12 @@ function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'out
   return status === 'success' ? 'success' : status.endsWith('error') ? 'warning' : 'outline'
 }
 
-function formatLatency(latencyMs: number | null) {
-  return latencyMs === null ? 'n/a' : `${latencyMs}ms`
+function formatLatency(latencyMs: number | null | undefined) {
+  return latencyMs == null ? 'n/a' : `${latencyMs}ms`
 }
 
-function formatTokenCount(totalTokens: number | null) {
-  return totalTokens === null ? 'n/a' : String(totalTokens)
+function formatTokenCount(totalTokens: number | null | undefined) {
+  return totalTokens == null ? 'n/a' : String(totalTokens)
 }
 
 function formatRequestCost(costUsd10000: number | null | undefined) {
@@ -892,8 +892,8 @@ function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undef
   return `${cached} of ${promptTokens.toLocaleString('en-US')} prompt tokens cached (${percent}%)`
 }
 
-function formatBasisPoints(value: number | null) {
-  return value === null ? 'n/a' : `${(value / 100).toFixed(2)}%`
+function formatBasisPoints(value: number | null | undefined) {
+  return value == null ? 'n/a' : `${(value / 100).toFixed(2)}%`
 }
 
 function formatToolCount(value: number | null | undefined) {
