@@ -99,7 +99,7 @@ A rejected request returns `429` before route selection, guardrails, budget chec
 |---|---|
 | OpenAI-compatible routes | `{"error": {"type": "rate_limit_error", "code": "rate_limited", "message": "..."}}` |
 | `/v1/messages`, `/v1/messages/count_tokens` | `{"type": "error", "error": {"type": "rate_limit_error", "code": "rate_limited", "message": "..."}}` |
-| MCP `tools/call` and aggregate `call_tool` | a JSON-RPC error with code `-32029` and `data: {"error_code": "rate_limited", "retry_after_seconds": N}` |
+| MCP `tools/call`, the governed resources, prompts and completion methods on `/mcp/{server_key}`, and aggregate `call_tool` | a JSON-RPC error with code `-32029` and `data: {"error_code": "rate_limited", "retry_after_seconds": N}`; a notification's error has no `id` |
 
 The message names the scope kind, the limit, the window, and the retry delay, for example `rate limited: API key rate limit exceeded: 60 inference requests per minute. Retry after 12 seconds`. The JSON-RPC error message has no `rate limited: ` prefix. It never includes ids.
 
@@ -136,7 +136,7 @@ Counter rows expire one window after the window ends. Each replica deletes expir
 `rate_limits.failure_mode` controls what happens if a counter check fails:
 
 - `open` (default): the request is admitted without rate-limit headers, and the gateway logs a warning.
-- `closed`: the request is rejected with `503`. MCP `tools/call` and aggregate `call_tool` return HTTP `503` with a JSON-RPC error (code `-32603`). After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
+- `closed`: the request is rejected with `503`. MCP `tools/call`, the governed resources, prompts and completion methods, and aggregate `call_tool` return HTTP `503` with a JSON-RPC error (code `-32603`). After a token usage write fails, requests that match a token policy are also rejected for 5 seconds, so usage that could not be recorded cannot keep passing a read-only check.
 
 Both modes treat a replica that has never loaded the admin policies, and cannot, as a store failure: it cannot tell which policies a request would match. A replica that loaded them before keeps enforcing that set.
 
