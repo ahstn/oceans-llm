@@ -1,14 +1,18 @@
 use axum::{
     extract::{RawQuery, State},
-    http::{StatusCode, header::CACHE_CONTROL},
+    http::{
+        StatusCode,
+        header::{CACHE_CONTROL, RETRY_AFTER},
+    },
     response::{Html, IntoResponse, Redirect, Response},
 };
 use gateway_service::{AuthorizationParams, AuthorizationRejection, OauthError};
 use time::OffsetDateTime;
 
 use super::{
+    ClientSource,
     form::{parse_pairs, repeated_parameter},
-    oauth_service,
+    oauth_service_for,
 };
 use crate::http::state::AppState;
 
@@ -17,8 +21,12 @@ const CONSENT_PATH: &str = "/admin/oauth/consent";
 
 /// `GET /oauth/authorize`: validates the request and sends the browser to the
 /// consent screen, which uses the normal admin sign-in.
-pub async fn oauth_authorize(State(state): State<AppState>, RawQuery(query): RawQuery) -> Response {
-    let Some(service) = oauth_service(&state) else {
+pub async fn oauth_authorize(
+    State(state): State<AppState>,
+    source: ClientSource,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let Some(service) = oauth_service_for(&state, source) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let parsed = match parse_pairs(query.as_deref().unwrap_or_default()) {
@@ -73,6 +81,7 @@ fn authorization_params(pairs: Vec<(String, String)>) -> AuthorizationParams {
 /// `5xx` status so it reads as retryable rather than as a bad request.
 fn error_page(error: &OauthError) -> Response {
     let status = match error.error {
+        _ if error.retry_after_seconds.is_some() => StatusCode::TOO_MANY_REQUESTS,
         "server_error" => StatusCode::INTERNAL_SERVER_ERROR,
         "temporarily_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::BAD_REQUEST,
@@ -84,7 +93,13 @@ fn error_page(error: &OauthError) -> Response {
         escape_html(&error.description),
         escape_html(error.error),
     );
-    (status, [(CACHE_CONTROL, "no-store")], Html(body)).into_response()
+    let mut response = (status, [(CACHE_CONTROL, "no-store")], Html(body)).into_response();
+    if let Some(seconds) = error.retry_after_seconds {
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, axum::http::HeaderValue::from(seconds));
+    }
+    response
 }
 
 fn escape_html(value: &str) -> String {

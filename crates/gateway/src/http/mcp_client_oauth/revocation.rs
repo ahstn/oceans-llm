@@ -7,7 +7,7 @@ use axum::{
 use time::OffsetDateTime;
 
 use super::{
-    oauth_service,
+    ClientSource, oauth_service_for,
     token::{no_store, oauth_error_response, parse_client_form},
 };
 use crate::http::state::AppState;
@@ -16,10 +16,11 @@ use crate::http::state::AppState;
 /// ends the whole grant.
 pub async fn oauth_revoke(
     State(state): State<AppState>,
+    source: ClientSource,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let Some(service) = oauth_service(&state) else {
+    let Some(service) = oauth_service_for(&state, source) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let used_basic = headers.contains_key(AUTHORIZATION);

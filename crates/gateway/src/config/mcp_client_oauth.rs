@@ -1,5 +1,7 @@
 use anyhow::{Context, bail};
-use gateway_service::{ClientMetadataDocuments, McpClientOauthSettings, mcp_client_oauth};
+use gateway_service::{
+    ClientMetadataDocuments, McpClientOauthSettings, SourceRateLimits, mcp_client_oauth,
+};
 use serde::Deserialize;
 
 use super::GatewayConfig;
@@ -27,6 +29,44 @@ pub struct McpClientOauthConfig {
     pub unused_client_retention_days: i64,
     #[serde(default)]
     pub client_id_metadata_documents: ClientIdMetadataDocumentsConfig,
+    /// Limits on open registration, per source address and across the gateway.
+    #[serde(default = "default_registration_rate_limit")]
+    pub registration_rate_limit: SourceRateLimitConfig,
+}
+
+/// Requests allowed per minute from one source address, and in total. Each
+/// replica counts its own requests.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRateLimitConfig {
+    pub per_source_per_minute: u32,
+    pub per_minute: u32,
+}
+
+impl From<SourceRateLimitConfig> for SourceRateLimits {
+    fn from(config: SourceRateLimitConfig) -> Self {
+        Self {
+            per_source_per_minute: config.per_source_per_minute,
+            per_minute: config.per_minute,
+        }
+    }
+}
+
+impl From<SourceRateLimits> for SourceRateLimitConfig {
+    fn from(limits: SourceRateLimits) -> Self {
+        Self {
+            per_source_per_minute: limits.per_source_per_minute,
+            per_minute: limits.per_minute,
+        }
+    }
+}
+
+fn default_registration_rate_limit() -> SourceRateLimitConfig {
+    mcp_client_oauth::DEFAULT_REGISTRATION_RATE_LIMITS.into()
+}
+
+fn default_fetch_rate_limit() -> SourceRateLimitConfig {
+    mcp_client_oauth::metadata_document::DEFAULT_FETCH_RATE_LIMITS.into()
 }
 
 /// `mcp.client_oauth.client_id_metadata_documents`: clients that use an https
@@ -40,6 +80,10 @@ pub struct ClientIdMetadataDocumentsConfig {
     /// Empty allows any public host.
     #[serde(default)]
     pub allowed_domains: Vec<String>,
+    /// Limits on document fetches, per requesting address and across the
+    /// gateway. Requests answered from the cache do not count.
+    #[serde(default = "default_fetch_rate_limit")]
+    pub fetch_rate_limit: SourceRateLimitConfig,
 }
 
 impl Default for ClientIdMetadataDocumentsConfig {
@@ -47,6 +91,7 @@ impl Default for ClientIdMetadataDocumentsConfig {
         Self {
             enabled: true,
             allowed_domains: Vec::new(),
+            fetch_rate_limit: default_fetch_rate_limit(),
         }
     }
 }
@@ -61,6 +106,7 @@ impl Default for McpClientOauthConfig {
             dynamic_client_registration: true,
             unused_client_retention_days: default_unused_client_retention_days(),
             client_id_metadata_documents: ClientIdMetadataDocumentsConfig::default(),
+            registration_rate_limit: default_registration_rate_limit(),
         }
     }
 }
@@ -117,13 +163,18 @@ impl GatewayConfig {
         )
         .with_context(|| format!("{field} cannot be used as the MCP OAuth issuer"))?
         .with_unused_client_retention_days(config.unused_client_retention_days)
-        .context("mcp.client_oauth.unused_client_retention_days")?;
+        .context("mcp.client_oauth.unused_client_retention_days")?
+        .with_registration_rate_limits(config.registration_rate_limit.into())
+        .context("mcp.client_oauth.registration_rate_limit")?;
         let documents = &config.client_id_metadata_documents;
         if !documents.enabled {
             return Ok(Some(settings));
         }
+        let fetch_rate_limit = documents.fetch_rate_limit;
         let documents = ClientMetadataDocuments::new(documents.allowed_domains.clone())
-            .context("mcp.client_oauth.client_id_metadata_documents.allowed_domains")?;
+            .context("mcp.client_oauth.client_id_metadata_documents.allowed_domains")?
+            .with_fetch_rate_limits(fetch_rate_limit.into())
+            .context("mcp.client_oauth.client_id_metadata_documents.fetch_rate_limit")?;
         Ok(Some(settings.with_client_id_metadata_documents(documents)))
     }
 }

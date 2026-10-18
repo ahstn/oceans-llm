@@ -32,9 +32,40 @@ pub fn oauth_token_hash(token: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// Runs Argon2 work for registration or client authentication.
+const CLIENT_SECRET_HASH_PREFIX: &str = "sha256:";
+
+/// The stored hash of a client secret the gateway generated.
 ///
-/// Both endpoints are reachable without an Oceans credential, and Argon2 is
+/// Generated secrets are 256-bit random tokens, like access tokens, so a fast
+/// digest is enough. Registration is open to anyone, and hashing with Argon2
+/// there let a flood of registrations take the Argon2 slots that client
+/// authentication needs.
+#[must_use]
+pub(crate) fn hash_client_secret(secret: &str) -> String {
+    format!("{CLIENT_SECRET_HASH_PREFIX}{}", oauth_token_hash(secret))
+}
+
+/// Checks a secret against a [`hash_client_secret`] hash in constant time.
+/// `None` for a hash in another format: an Argon2 hash from a client
+/// registered before secrets were hashed this way.
+#[must_use]
+pub(crate) fn client_secret_matches(secret: &str, stored: &str) -> Option<bool> {
+    let expected = stored.strip_prefix(CLIENT_SECRET_HASH_PREFIX)?;
+    let actual = oauth_token_hash(secret);
+    Some(
+        expected.len() == actual.len()
+            && expected
+                .bytes()
+                .zip(actual.bytes())
+                .fold(0u8, |acc, (left, right)| acc | (left ^ right))
+                == 0,
+    )
+}
+
+/// Runs Argon2 work for client authentication.
+///
+/// Only clients registered before secrets were hashed with SHA-256 still need
+/// it. The endpoints are reachable without an Oceans credential, and Argon2 is
 /// deliberately CPU- and memory-hard. The work therefore runs on the blocking
 /// pool, a few at a time, so a flood of requests queues briefly and then gets
 /// `temporarily_unavailable` instead of starving the async executor.
@@ -111,6 +142,18 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_secrets_hash_with_sha256_and_leave_argon2_hashes_to_argon2() {
+        let hash = hash_client_secret("ocs_secret");
+        assert!(hash.starts_with("sha256:"));
+        assert_eq!(client_secret_matches("ocs_secret", &hash), Some(true));
+        assert_eq!(client_secret_matches("ocs_other", &hash), Some(false));
+        assert_eq!(
+            client_secret_matches("ocs_secret", "$argon2id$v=19$m=19456,t=2,p=1$x$y"),
+            None
+        );
+    }
 
     #[test]
     fn generated_tokens_are_prefixed_and_unique() {

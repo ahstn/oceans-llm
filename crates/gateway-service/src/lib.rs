@@ -98,7 +98,8 @@ pub use mcp_client_oauth::{
     AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
     ClientMetadataDocumentSource, ClientMetadataDocuments, ClientRegistrationRequest,
     ClientRegistrationResponse, FetchedDocument, McpClientOauthService, McpClientOauthSettings,
-    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
+    McpClientOauthSettingsError, OauthError, PendingAuthorization, SourceRateLimits, TokenRequest,
+    TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,

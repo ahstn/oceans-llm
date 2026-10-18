@@ -12,8 +12,9 @@
 use std::{
     collections::HashMap,
     fmt,
+    net::IpAddr,
     sync::{Arc, Mutex},
-    time::Duration as StdDuration,
+    time::{Duration as StdDuration, Instant},
 };
 
 use async_trait::async_trait;
@@ -34,6 +35,7 @@ use super::{
         MAX_REDIRECT_URIS, MAX_URI_LENGTH, optional_https_uri, optional_text, validate_grant_types,
         validate_response_types,
     },
+    source_limits::{SourceRateLimiter, SourceRateLimits},
 };
 use crate::outbound_fetch::{
     InvalidDomainName, OutboundAddressScope, OutboundFetchError, OutboundFetcher,
@@ -60,6 +62,13 @@ const MAX_CONCURRENT_FETCHES: usize = 32;
 const FAILURE_TTL: Duration = Duration::seconds(30);
 const FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
+/// Fetches allowed per minute, per requesting address and across the gateway.
+/// Each new URL misses every cache, so without this one caller could make
+/// the gateway fetch and store a client for as many URLs as it can invent.
+pub const DEFAULT_FETCH_RATE_LIMITS: SourceRateLimits = SourceRateLimits {
+    per_source_per_minute: 30,
+    per_minute: 300,
+};
 
 /// A fetched document, before validation. The headers decide how long it
 /// may be cached.
@@ -129,6 +138,7 @@ pub struct ClientMetadataDocuments {
     /// Documents recently refused for good, so repeating the request does
     /// not fetch again until [`FAILURE_TTL`] passes.
     failures: Mutex<HashMap<String, (ResolveFailure, OffsetDateTime)>>,
+    fetch_limiter: SourceRateLimiter,
 }
 
 type RefreshOutcome = Result<GatewayOauthClientRecord, ResolveFailure>;
@@ -164,7 +174,19 @@ impl ClientMetadataDocuments {
             in_flight: Mutex::new(HashMap::new()),
             failures: Mutex::new(HashMap::new()),
             fetch_permits: Semaphore::new(MAX_CONCURRENT_FETCHES),
+            fetch_limiter: SourceRateLimiter::new(DEFAULT_FETCH_RATE_LIMITS),
         })
+    }
+
+    /// Limits document fetches per requesting address and across the
+    /// gateway. Requests answered from a cache do not count.
+    pub fn with_fetch_rate_limits(
+        mut self,
+        limits: SourceRateLimits,
+    ) -> Result<Self, super::McpClientOauthSettingsError> {
+        super::settings::validate_rate_limits(limits)?;
+        self.fetch_limiter = SourceRateLimiter::new(limits);
+        Ok(self)
     }
 
     #[must_use]
@@ -188,6 +210,7 @@ impl ClientMetadataDocuments {
         client_id: &str,
         now: OffsetDateTime,
         lookup: ClientLookup,
+        requester: Option<IpAddr>,
     ) -> Result<GatewayOauthClientRecord, OauthError>
     where
         R: GatewayOauthRepository + ?Sized,
@@ -197,16 +220,29 @@ impl ClientMetadataDocuments {
         }
         let outcome = match self.recent_failure(client_id, now) {
             Some(failure) => Err(failure),
-            None => {
-                let flight = InFlight::join(&self.in_flight, client_id);
-                let outcome = flight
-                    .cell
-                    .get_or_init(|| self.refresh(repo, client_id, now))
-                    .await
-                    .clone();
-                drop(flight);
-                outcome
-            }
+            None => match self.fetch_limiter.check(requester, Instant::now()) {
+                Err(limited) => {
+                    tracing::warn!(?requester, "client metadata document fetch rate limited");
+                    Err(ResolveFailure {
+                        error: OauthError::rate_limited(
+                            "too many client metadata documents requested; try again later",
+                            limited.retry_after.as_secs(),
+                        ),
+                        transient: true,
+                        document_refused: false,
+                    })
+                }
+                Ok(()) => {
+                    let flight = InFlight::join(&self.in_flight, client_id);
+                    let outcome = flight
+                        .cell
+                        .get_or_init(|| self.refresh(repo, client_id, now))
+                        .await
+                        .clone();
+                    drop(flight);
+                    outcome
+                }
+            },
         };
         let failure = match outcome {
             Ok(client) => return Ok(client),

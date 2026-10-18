@@ -345,6 +345,42 @@ async fn document_fetches_are_capped() {
     assert!(fixture.fetches() <= 32, "{} fetches ran", fixture.fetches());
 }
 
+/// Unique document URLs miss every cache, so fetches are limited per source.
+#[tokio::test]
+async fn document_fetches_are_limited_per_source() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    let authorize =
+        |index: usize, address: [u8; 4]| {
+            let query = harness.authorize_query(
+                &format!("https://editor.example.com/clients/{index}.json"),
+                &[],
+            );
+            let mut request = Request::builder()
+                .uri(format!("/oauth/authorize?{query}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from((address, 40_000)),
+            ));
+            send_with_headers(&harness.router, request)
+        };
+    for index in 0..30 {
+        authorize(index, [192, 0, 2, 9]).await;
+    }
+    assert_eq!(fixture.fetches(), 30);
+    let (status, headers, page) = authorize(30, [192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers.contains_key(header::RETRY_AFTER));
+    assert!(
+        page.as_str()
+            .unwrap_or_default()
+            .contains("temporarily_unavailable")
+    );
+    assert_eq!(fixture.fetches(), 30, "the refused request fetched nothing");
+    authorize(31, [198, 51, 100, 9]).await;
+    assert_eq!(fixture.fetches(), 31, "other sources are unaffected");
+}
+
 #[tokio::test]
 async fn passing_failures_reuse_only_a_cacheable_copy() {
     let (harness, fixture) = harness_with_fixture(&[]).await;

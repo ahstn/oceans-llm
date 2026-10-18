@@ -153,6 +153,8 @@ Only active users can approve. A user who has no MCP grants can still approve, b
 - `token_endpoint_auth_method` defaults to `client_secret_basic`, as RFC 7591 specifies. MCP clients without a backend register with `none`. `client_secret_post` and `client_secret_basic` get a generated `ocs_` secret. Only its Argon2 hash is stored, and the secret is returned once.
 - A registered client can do nothing until a user approves it on the consent screen.
 - Argon2 (secret hashing at registration, secret checks at the token and revocation endpoints) runs on the blocking pool, at most four at a time. A request that waits more than five seconds for a slot gets `503 temporarily_unavailable`, so unauthenticated floods cannot starve the async executor. Per-IP throttling is a follow-up.
+- _Changed 2026-10-18 after a review of the MCP gateway epic:_ registration no longer runs Argon2. A generated `ocs_` secret is a 256-bit random token, like an access token, so it is stored as `sha256:` plus its SHA-256 digest and checked in constant time. Open registration with the default `client_secret_basic` had run Argon2 for every request, so a flood held the four slots and real confidential clients got `503` at the token endpoint. Clients registered earlier keep their Argon2 hash, which the token and revocation endpoints still check through the slots.
+- _Also added 2026-10-18:_ `/oauth/register` is limited per client address and across the gateway (`mcp.client_oauth.registration_rate_limit`, defaults 10 and 100 a minute), before the request is read. Over a limit it returns `429` with `Retry-After`. This closes #513.
 
 `mcp.client_oauth.dynamic_client_registration` (default `true`) turns the endpoint off. When it is off, `registration_endpoint` is left out of the metadata.
 
@@ -265,12 +267,13 @@ The policy grants no credentials, and none of these endpoints read cookies: the 
 - The issuer must be configured. A deployment that serves the gateway at more than one origin can expose OAuth on only one of them.
 - Plain `http` loopback issuers break the HTTPS rule for authorization servers. They are allowed only so the local stack and tests work.
 - A metadata document proves only that its host published it. The consent screen names that host and marks the client unverified, but a user can still approve a client from a host they do not know.
-- Metadata documents let an unauthenticated request make the gateway fetch a URL, and each new URL creates a client row. The fetcher's address rules, timeout, and size limit bound each fetch, and cleanup removes unused rows. Per-IP throttling, tracked with registration in #513, would bound how many fetches one caller can start.
+- Metadata documents let an unauthenticated request make the gateway fetch a URL, and each new URL creates a client row. The fetcher's address rules, timeout, and size limit bound each fetch, and cleanup removes unused rows. The failure cache is per URL, so it never bounded a caller who invents URLs. Since 2026-10-18 fetches are also limited per requesting address and across the gateway (`client_id_metadata_documents.fetch_rate_limit`, defaults 30 and 300 a minute); cache hits do not count. `allowed_domains` remains the way to restrict which hosts may publish documents at all.
+- Request limits are counted in memory per replica, keyed by client address (IPv6 by `/64`). A caller with many addresses is held only by the gateway-wide limit, and the gateway-wide limit scales with the number of replicas.
 - The document cache is per process. Replicas fetch the same document independently, and a change can take up to the cache lifetime to reach every replica.
 
 ## Follow-up
 
-- Throttle metadata document fetches per IP, together with dynamic registration (#513).
+- Consider sharing request-limit counts across replicas if a deployment needs one gateway-wide registration limit.
 - An admin UI view of a user's authorized clients. The admin API exists; the user management sheet does not show it yet.
 - Pre-registered clients that admins manage, with an option to skip consent for trusted clients.
 - Show `auth_method` in the invocation-log UI and filters (#448).

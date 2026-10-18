@@ -184,3 +184,87 @@ async fn registration_rejects_unsafe_or_unsupported_metadata() {
     .await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }
+
+fn from_address(mut request: Request<Body>, address: [u8; 4]) -> Request<Body> {
+    request
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+            address, 40_000,
+        ))));
+    request
+}
+
+/// Open registration runs no Argon2, so a flood cannot take the slots that
+/// token requests from older confidential clients still need, and each
+/// source is limited before anything is parsed or stored.
+#[tokio::test]
+async fn registration_is_limited_per_source_and_hashes_secrets_cheaply() {
+    use gateway_core::GatewayOauthRepository;
+    let harness = Harness::new().await;
+    let register = |address| {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/oauth/register")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({
+                    "redirect_uris": ["https://editor.example.com/cb"],
+                    "token_endpoint_auth_method": "client_secret_basic",
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        send_with_headers(&harness.router, from_address(request, address))
+    };
+
+    let (status, _, body) = register([192, 0, 2, 7]).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let stored = harness
+        .state
+        .store
+        .get_gateway_oauth_client(body["client_id"].as_str().unwrap())
+        .await
+        .expect("client lookup")
+        .expect("client");
+    assert!(
+        stored
+            .client_secret_hash
+            .as_deref()
+            .is_some_and(|hash| hash.starts_with("sha256:")),
+        "a generated secret is a random token, hashed with SHA-256"
+    );
+    for _ in 1..10 {
+        let (status, _, _) = register([192, 0, 2, 7]).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    let (status, headers, body) = register([192, 0, 2, 7]).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers.contains_key("retry-after"));
+    assert_eq!(body["error"], "temporarily_unavailable");
+    let (status, _, _) = register([198, 51, 100, 7]).await;
+    assert_eq!(status, StatusCode::CREATED, "other sources are unaffected");
+}
+
+/// The gateway-wide limit holds callers whose address is unknown, or who
+/// spread requests over many addresses.
+#[tokio::test]
+async fn registration_has_a_gateway_wide_limit() {
+    let settings = super::tests::oauth_settings()
+        .with_registration_rate_limits(gateway_service::SourceRateLimits {
+            per_source_per_minute: 10,
+            per_minute: 2,
+        })
+        .unwrap();
+    let harness = Harness::with_settings(settings).await;
+    let body = json!({
+        "redirect_uris": ["https://editor.example.com/cb"],
+        "token_endpoint_auth_method": "none",
+    });
+    for _ in 0..2 {
+        let (status, _, _) = harness.register(body.clone()).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    let (status, headers, _) = harness.register(body).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers.contains_key("retry-after"));
+}
