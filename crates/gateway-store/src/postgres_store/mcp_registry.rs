@@ -1137,6 +1137,30 @@ impl McpRegistryRepository for PostgresStore {
         .await
     }
 
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        if versions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (tool_ids, schema_versions): (Vec<String>, Vec<i64>) = versions
+            .iter()
+            .map(|(mcp_tool_id, schema_version)| (mcp_tool_id.to_string(), *schema_version))
+            .unzip();
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT mcp_tool_id, schema_version FROM mcp_tool_versions WHERE reviewed_at IS NOT NULL AND (mcp_tool_id, schema_version) IN (SELECT * FROM UNNEST($1::text[], $2::bigint[]))",
+        )
+        .bind(tool_ids)
+        .bind(schema_versions)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.into_iter()
+            .map(|(mcp_tool_id, schema_version)| Ok((parse_uuid(&mcp_tool_id)?, schema_version)))
+            .collect()
+    }
+
     async fn list_mcp_tool_versions(
         &self,
         mcp_tool_id: Uuid,

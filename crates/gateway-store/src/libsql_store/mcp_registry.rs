@@ -1214,6 +1214,47 @@ impl McpRegistryRepository for LibsqlStore {
         .await
     }
 
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        let mut reviewed = Vec::new();
+        // 500 pairs bind 1,000 variables, well under SQLite's limit.
+        for batch in versions.chunks(500) {
+            let pairs = (0..batch.len())
+                .map(|index| format!("(?{}, ?{})", 2 * index + 1, 2 * index + 2))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let params = batch
+                .iter()
+                .flat_map(|(mcp_tool_id, schema_version)| {
+                    [
+                        libsql::Value::Text(mcp_tool_id.to_string()),
+                        libsql::Value::Integer(*schema_version),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let mut rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT mcp_tool_id, schema_version FROM mcp_tool_versions WHERE reviewed_at IS NOT NULL AND (mcp_tool_id, schema_version) IN (VALUES {pairs})"
+                    ),
+                    libsql::params_from_iter(params),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
+                reviewed.push((
+                    parse_uuid(&mcp_tool_id)?,
+                    row.get(1).map_err(to_query_error)?,
+                ));
+            }
+        }
+        Ok(reviewed)
+    }
+
     async fn list_mcp_tool_versions(
         &self,
         mcp_tool_id: Uuid,
