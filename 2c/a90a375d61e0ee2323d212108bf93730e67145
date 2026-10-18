@@ -1,0 +1,19 @@
+crates/gateway/src/http/mcp_oauth/tests/generic.rs
+  s_b8e52ffc321bb1::t_0fa937d01bb858 604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ca90a375d61e0ee2323d212108bf93730e67145",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
