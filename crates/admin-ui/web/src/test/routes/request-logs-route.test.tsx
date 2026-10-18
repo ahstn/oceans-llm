@@ -5,15 +5,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { regularUserSession } from '@/test/auth-session'
 import type { RequestLogView } from '@/types/api'
+import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
 const navigateMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -99,8 +101,7 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-async function renderPage() {
-  const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+function renderPage() {
   return render(
     <TooltipProvider>
       <RequestLogsPage />
@@ -141,10 +142,10 @@ async function waitForListTransition() {
 describe('RequestLogsPage table', () => {
   beforeEach(resetMocks)
 
-  it('renders dedicated mobile and desktop log layouts from the same payload', async () => {
+  it('renders dedicated mobile and desktop log layouts from the same payload', () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    await renderPage()
+    renderPage()
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
@@ -178,7 +179,7 @@ describe('RequestLogsPage table', () => {
     expect(screen.queryByText('payload')).not.toBeInTheDocument()
   })
 
-  it('counts distinct tools used and falls back to call counts for older logs', async () => {
+  it('counts distinct tools used and falls back to call counts for older logs', () => {
     const repeatedToolItem: RequestLogView = {
       ...items[0],
       request_log_id: 'reqlog_repeat',
@@ -201,7 +202,7 @@ describe('RequestLogsPage table', () => {
       data: { items: [repeatedToolItem, legacyItem], total: 2 },
     })
 
-    await renderPage()
+    renderPage()
 
     const usage = screen.getAllByTestId('request-log-tool-usage').map((el) => el.textContent)
     expect(usage).toContain('1 / 5')
@@ -209,7 +210,7 @@ describe('RequestLogsPage table', () => {
     expect(usage).not.toContain('3 / 5')
   })
 
-  it('renders service-account and unknown callers with sensible fallbacks', async () => {
+  it('renders service-account and unknown callers with sensible fallbacks', () => {
     const serviceAccountItem: RequestLogView = {
       ...items[0],
       request_log_id: 'reqlog_2',
@@ -234,7 +235,7 @@ describe('RequestLogsPage table', () => {
       data: { items: [serviceAccountItem, unknownCallerItem], total: 2 },
     })
 
-    await renderPage()
+    renderPage()
 
     // The mocked virtualizer renders only the first row in the desktop table,
     // so the second item is asserted via the mobile list alone.
@@ -259,7 +260,7 @@ describe('RequestLogsPage table', () => {
       data: { items: [items[0], uncachedLegacyItem], total: 2 },
     })
 
-    const view = await renderPage()
+    const view = renderPage()
     const scope = within(view.container)
 
     // Only the cached row (mobile + desktop) renders the indicator.
@@ -316,7 +317,7 @@ describe('RequestLogsPage detail', () => {
       },
     })
 
-    await renderPage()
+    renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     // The sheet opens before the detail request resolves, so wait for the loaded body.
@@ -397,7 +398,7 @@ describe('RequestLogsPage detail states', () => {
       },
     })
 
-    await renderPage()
+    renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     // The sheet opens before the detail request resolves, so wait for the loaded body.
@@ -437,7 +438,7 @@ describe('RequestLogsPage detail states', () => {
       },
     })
 
-    await renderPage()
+    renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
@@ -474,7 +475,7 @@ describe('RequestLogsPage detail states', () => {
       },
     })
 
-    await renderPage()
+    renderPage()
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
@@ -486,7 +487,7 @@ describe('RequestLogsPage detail states', () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
     getObservabilityRequestLogDetailMock.mockRejectedValue(new Error('request log missing'))
 
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
@@ -502,7 +503,7 @@ describe('RequestLogsPage filter chips', () => {
   it('adds a tag filter chip and treats whitespace-only input as empty', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const view = await renderPage()
+    const view = renderPage()
     const scope = within(view.container)
 
     fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), {
@@ -538,7 +539,7 @@ describe('RequestLogsPage filter chips', () => {
     routeMock.useSearch.mockReturnValue({ request_id: 'req_1', q: 'alice' })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const view = await renderPage()
+    const view = renderPage()
     const scope = within(view.container)
 
     expect(scope.getByTestId('request-log-filter-request-id')).toHaveValue('req_1')
@@ -557,7 +558,7 @@ describe('RequestLogsPage filter chips', () => {
   it('keeps a chip edit typed while an earlier filter navigation was loading', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const view = await renderPage()
+    const view = renderPage()
     const scope = within(view.container)
 
     fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), { key: 'Enter' })
@@ -568,7 +569,6 @@ describe('RequestLogsPage filter chips', () => {
 
     // An earlier provider filter lands while the environment value is still uncommitted.
     routeMock.useSearch.mockReturnValue({ provider_key: 'openai' })
-    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
     view.rerender(
       <TooltipProvider>
         <RequestLogsPage />
@@ -586,7 +586,7 @@ describe('RequestLogsPage search', () => {
   it('debounces the model/user search into the q URL param', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const view = await renderPage()
+    const view = renderPage()
     const search = within(view.container).getByPlaceholderText('Search by model or user…')
 
     fireEvent.change(search, { target: { value: 'gpt' } })
@@ -602,7 +602,7 @@ describe('RequestLogsPage search', () => {
   it('merges the debounced search into filters committed after typing started', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
-    const view = await renderPage()
+    const view = renderPage()
     fireEvent.change(within(view.container).getByPlaceholderText('Search by model or user…'), {
       target: { value: 'gpt' },
     })

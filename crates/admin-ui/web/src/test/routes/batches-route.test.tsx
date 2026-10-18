@@ -189,7 +189,7 @@ describe('BatchesPage', () => {
     })
   })
 
-  it('does not offer cross-user filters to a non-platform session', async () => {
+  it('does not offer cross-user filters to a non-platform session', () => {
     routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
 
     render(<BatchesPage />)

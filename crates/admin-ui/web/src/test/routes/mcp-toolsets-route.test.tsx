@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpServerView, McpToolsetView, McpToolView } from '@/types/api'
+import { ToolsetsTab } from '@/routes/mcp/-toolsets-tab'
 
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
@@ -147,13 +148,12 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-async function renderToolsetsTab({
+function renderToolsetsTab({
   initialToolsetId = toolset.id as string | null,
   initialSeedIds = [] as string[],
   initialToolsets = [toolset, secondToolset],
   servers = [server],
 } = {}) {
-  const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
   const onSeedConsumed = vi.fn()
 
   function ToolsetsHarness() {
@@ -252,7 +252,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('loads saved tools into the picker and shows real counts beside row actions', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     expect(await ready()).toBeChecked()
     expect(screen.getByRole('checkbox', { name: secondTool.display_name })).not.toBeChecked()
     expect(row().getByText('1 tool')).toBeInTheDocument()
@@ -265,14 +265,14 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('selects the first tool set when the route has no selection or carried tools', async () => {
-    await renderToolsetsTab({ initialToolsetId: null })
+    renderToolsetsTab({ initialToolsetId: null })
 
     expect(await ready()).toBeChecked()
     expect(screen.getByRole('radio', { name: `Select ${toolset.display_name}` })).toBeChecked()
   })
 
   it('loads gateway connection info on demand and preserves unsaved tools', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     expect(saveButton()).toBeEnabled()
@@ -293,7 +293,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('falls back to the first tool set when a stale link selects a missing set', async () => {
-    await renderToolsetsTab({ initialToolsetId: 'missing_toolset' })
+    renderToolsetsTab({ initialToolsetId: 'missing_toolset' })
 
     expect(await ready()).toBeChecked()
     expect(screen.getByRole('radio', { name: `Select ${toolset.display_name}` })).toBeChecked()
@@ -301,7 +301,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('saves the draft and returns its navigator status to saved', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     expect(row().getByText('2 tools')).toBeInTheDocument()
@@ -317,7 +317,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('disables save when edits return to the saved selection', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     const secondCheckbox = screen.getByRole('checkbox', { name: secondTool.display_name })
     fireEvent.click(secondCheckbox)
@@ -332,7 +332,7 @@ describe('ToolsetsTab Workbench', () => {
     getMcpServerToolsMock.mockResolvedValue({
       data: { items: [firstTool, { ...secondTool, is_active: false }] },
     })
-    await renderToolsetsTab()
+    renderToolsetsTab()
     expect(await ready()).toBeChecked()
     const inactiveTool = screen.getByRole('checkbox', { name: secondTool.display_name })
     expect(inactiveTool).toBeDisabled()
@@ -383,7 +383,7 @@ describe('ToolsetsTab Workbench', () => {
       Promise.resolve({ data: { items: toolsByServer[data.serverId] } }),
     )
     getMcpToolsetToolsMock.mockResolvedValue({ data: { tool_ids: [firstTool.id, docsTool.id] } })
-    await renderToolsetsTab({ servers: [docsServer, disabledServer, server] })
+    renderToolsetsTab({ servers: [docsServer, disabledServer, server] })
     expect(await ready()).toBeChecked()
     const catalog = within(screen.getByTestId('toolset-catalog-groups'))
     const groups = catalog.getAllByRole('group', { name: /available/ })
@@ -413,7 +413,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('keeps the current draft and its save action visible when the navigator filter hides it', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Search tool sets' }), {
@@ -438,7 +438,7 @@ describe('ToolsetsTab Workbench', () => {
 
   it('retains edits after save fails and lets the same draft retry', async () => {
     saveMcpToolsetToolsMock.mockRejectedValueOnce(new Error('Membership update failed'))
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     fireEvent.click(saveButton())
@@ -454,7 +454,7 @@ describe('ToolsetsTab Workbench', () => {
   it('preserves drafts across navigation and saves the row that was clicked', async () => {
     const pendingSave = deferred<{ data: { tool_ids: string[] } }>()
     saveMcpToolsetToolsMock.mockReturnValueOnce(pendingSave.promise)
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     fireEvent.click(screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }))
@@ -480,7 +480,7 @@ describe('ToolsetsTab Workbench', () => {
 
   it('does not turn a failed membership read into an empty saved set', async () => {
     getMcpToolsetToolsMock.mockRejectedValueOnce(new Error('Saved tools are unavailable'))
-    await renderToolsetsTab()
+    renderToolsetsTab()
     const retry = await screen.findByRole('button', {
       name: `Retry tools for ${toolset.display_name}`,
     })
@@ -495,7 +495,7 @@ describe('ToolsetsTab Workbench', () => {
   it('merges carried tools after saved membership loads without losing the saved selection', async () => {
     const pendingRead = deferred<{ data: { tool_ids: string[] } }>()
     getMcpToolsetToolsMock.mockReturnValueOnce(pendingRead.promise)
-    const { onSeedConsumed } = await renderToolsetsTab({ initialSeedIds: ['tool_2'] })
+    const { onSeedConsumed } = renderToolsetsTab({ initialSeedIds: ['tool_2'] })
     expect(saveButton()).toBeDisabled()
     await act(async () => pendingRead.resolve({ data: { tool_ids: ['tool_1'] } }))
     expect(await ready()).toBeChecked()
@@ -517,7 +517,7 @@ describe('ToolsetsTab Workbench', () => {
         ? pendingRead.promise
         : Promise.resolve({ data: { tool_ids: ['tool_1'] } }),
     )
-    const { onSeedConsumed } = await renderToolsetsTab({ initialSeedIds: ['tool_2'] })
+    const { onSeedConsumed } = renderToolsetsTab({ initialSeedIds: ['tool_2'] })
     expect(saveButton()).toBeDisabled()
     fireEvent.click(screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }))
     expect(await ready()).toBeChecked()
@@ -552,7 +552,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('keeps carried tools unassigned until the first tool set is chosen', async () => {
-    await renderToolsetsTab({ initialToolsetId: null, initialSeedIds: ['tool_1'] })
+    renderToolsetsTab({ initialToolsetId: null, initialSeedIds: ['tool_1'] })
     expect(screen.getByText('Choose a tool set')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('radio', { name: `Select ${secondToolset.display_name}` }))
     expect(await ready()).toBeChecked()
@@ -562,7 +562,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('keeps carried tools assignable when a stale link selects a missing set', async () => {
-    await renderToolsetsTab({
+    renderToolsetsTab({
       initialToolsetId: 'missing_toolset',
       initialSeedIds: ['tool_1'],
     })
@@ -581,7 +581,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('assigns carried tools to a newly created set', async () => {
-    await renderToolsetsTab({ initialToolsetId: null, initialSeedIds: ['tool_1'] })
+    renderToolsetsTab({ initialToolsetId: null, initialSeedIds: ['tool_1'] })
     fireEvent.click(screen.getByRole('button', { name: 'New tool set' }))
     fireEvent.change(screen.getByLabelText('Key'), {
       target: { value: createdToolset.toolset_key },
@@ -601,7 +601,6 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('retains a newly created draft until its tool set reaches the loader data', async () => {
-    const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
     invalidateMock.mockResolvedValue(undefined)
     function DelayedLoader({ toolsets }: { toolsets: McpToolsetView[] }) {
       const [selectedToolsetId, onSelectToolset] = useState<string | null>(null)
@@ -649,7 +648,7 @@ describe('ToolsetsTab Workbench', () => {
   it('prevents saving a draft until the tool catalog loads', async () => {
     const pendingCatalog = deferred<{ data: { items: McpToolView[] } }>()
     getMcpServerToolsMock.mockReturnValueOnce(pendingCatalog.promise)
-    await renderToolsetsTab({ initialSeedIds: ['tool_2'] })
+    renderToolsetsTab({ initialSeedIds: ['tool_2'] })
     await waitFor(() => expect(row().getByText('2 tools')).toBeInTheDocument())
     expect(saveButton()).toBeDisabled()
     fireEvent.click(saveButton())
@@ -660,7 +659,7 @@ describe('ToolsetsTab Workbench', () => {
 
   it('retains a draft after catalog failure and enables save after retry', async () => {
     getMcpServerToolsMock.mockRejectedValueOnce(new Error('Discovery catalog is unavailable'))
-    await renderToolsetsTab({ initialSeedIds: ['tool_2'] })
+    renderToolsetsTab({ initialSeedIds: ['tool_2'] })
     const retry = await screen.findByRole('button', { name: 'Retry catalog' })
     expect(saveButton()).toBeDisabled()
     fireEvent.click(retry)
@@ -672,7 +671,7 @@ describe('ToolsetsTab Workbench', () => {
 
   it('requires explicit removal of unavailable saved IDs before saving edits', async () => {
     getMcpToolsetToolsMock.mockResolvedValueOnce({ data: { tool_ids: ['tool_1', 'missing_tool'] } })
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('checkbox', { name: secondTool.display_name }))
     expect(row().getByText('3 tools')).toBeInTheDocument()
@@ -688,7 +687,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('confirms removal of the final saved tool before replacing membership', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     fireEvent.click(await ready())
     fireEvent.click(saveButton())
     const confirmation = screen.getByRole('alertdialog')
@@ -710,7 +709,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('edits the chosen navigator row without changing the selected tool set', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: `Edit ${secondToolset.display_name}` }))
     const dialog = screen.getByRole('dialog')
@@ -734,7 +733,7 @@ describe('ToolsetsTab Workbench', () => {
   })
 
   it('disables the selected tool set through the server function', async () => {
-    await renderToolsetsTab()
+    renderToolsetsTab()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: `Disable ${toolset.display_name}` }))
     await waitFor(() =>

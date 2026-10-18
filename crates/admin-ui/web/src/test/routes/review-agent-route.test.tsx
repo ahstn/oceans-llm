@@ -6,11 +6,13 @@ import type {
   ReviewAgentRepositoryView,
   ReviewAgentRunView,
 } from '@/types/api'
+import { ReviewAgentPage } from '@/routes/review-agent'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 const routerMock = {
   invalidate: vi.fn(async () => {}),
@@ -162,10 +164,8 @@ describe('ReviewAgentPage', () => {
     updateRepoMock.mockReset()
   })
 
-  it('teaches the next step when no repositories are configured', async () => {
+  it('teaches the next step when no repositories are configured', () => {
     routeMock.useLoaderData.mockReturnValue({ data: emptyPayload })
-
-    const { ReviewAgentPage } = await import('@/routes/review-agent')
 
     render(<ReviewAgentPage />)
 
@@ -177,10 +177,8 @@ describe('ReviewAgentPage', () => {
     expect(screen.getByRole('button', { name: 'Configure repository' })).toBeDisabled()
   })
 
-  it('lists configured repositories with status and recent runs', async () => {
+  it('lists configured repositories with status and recent runs', () => {
     routeMock.useLoaderData.mockReturnValue({ data: seedPayload })
-
-    const { ReviewAgentPage } = await import('@/routes/review-agent')
 
     render(<ReviewAgentPage />)
 
@@ -194,11 +192,9 @@ describe('ReviewAgentPage', () => {
     expect(screen.getByText('1m 32s')).toBeInTheDocument()
   })
 
-  it('shows review settings toggles and lifecycle actions in the manage dialog', async () => {
+  it('shows review settings toggles and lifecycle actions in the manage dialog', () => {
     routeMock.useLoaderData.mockReturnValue({ data: seedPayload })
     routeMock.useSearch.mockReturnValue({ repo_id: 'repo_oceans', repo_section: 'settings' })
-
-    const { ReviewAgentPage } = await import('@/routes/review-agent')
 
     render(<ReviewAgentPage />)
 
@@ -222,8 +218,6 @@ describe('ReviewAgentPage', () => {
         oceans_url: 'https://oceans.example.test',
       },
     })
-
-    const { ReviewAgentPage } = await import('@/routes/review-agent')
 
     render(<ReviewAgentPage />)
 
@@ -254,8 +248,6 @@ describe('ReviewAgentPage', () => {
         oceans_url: 'https://oceans.example.test',
       },
     })
-
-    const { ReviewAgentPage } = await import('@/routes/review-agent')
 
     render(<ReviewAgentPage />)
 

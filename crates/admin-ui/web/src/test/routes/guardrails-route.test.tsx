@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { GuardrailsPage } from '@/routes/observability/guardrails'
 
 const navigateMock = vi.fn()
 let routeSearch = ''
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -63,13 +65,12 @@ describe('GuardrailsPage', () => {
     routeMock.useSearch.mockReturnValue({})
   })
 
-  async function renderPage() {
-    const { GuardrailsPage } = await import('@/routes/observability/guardrails')
+  function renderPage() {
     render(<GuardrailsPage />)
   }
 
-  it('renders privacy-safe decisions without policies or mutation controls', async () => {
-    await renderPage()
+  it('renders privacy-safe decisions without policies or mutation controls', () => {
+    renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Guardrails' })).toBeInTheDocument()
     expect(screen.queryByText('Effective policies')).not.toBeInTheDocument()
@@ -83,7 +84,7 @@ describe('GuardrailsPage', () => {
   })
 
   it('applies privacy-safe decision filters through route search', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.change(screen.getByLabelText('Request ID'), { target: { value: 'request-1' } })
     fireEvent.submit(screen.getByLabelText('Request ID').closest('form')!)
@@ -97,7 +98,7 @@ describe('GuardrailsPage', () => {
   })
 
   it('filters by an evaluator typed into the toolbar', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.change(screen.getByLabelText('Evaluator'), { target: { value: 'bedrock' } })
     fireEvent.submit(screen.getByLabelText('Evaluator').closest('form')!)
@@ -111,7 +112,7 @@ describe('GuardrailsPage', () => {
   })
 
   it('filters by action from the toolbar', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
 
@@ -124,7 +125,7 @@ describe('GuardrailsPage', () => {
   })
 
   it('filters by phase from the action mix', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: /Prompt/ }))
 
@@ -138,7 +139,7 @@ describe('GuardrailsPage', () => {
 
   it('locks phase, evaluator, and text filters while a navigation is pending', async () => {
     navigateMock.mockReturnValue(new Promise(() => {}))
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Deny' }))
 
@@ -150,7 +151,7 @@ describe('GuardrailsPage', () => {
   })
 
   it('filters by evaluator from a decision row', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'deterministic' }))
 
@@ -162,12 +163,12 @@ describe('GuardrailsPage', () => {
     })
   })
 
-  it('renders an empty state when no decisions match', async () => {
+  it('renders an empty state when no decisions match', () => {
     routeMock.useLoaderData.mockReturnValue({
       ...loaderData,
       decisions: { items: [], page: 1, page_size: 25, total: 0 },
     })
-    await renderPage()
+    renderPage()
 
     expect(screen.getByText('No guardrail decisions')).toBeInTheDocument()
     expect(screen.getByText('No events match the current filters.')).toBeInTheDocument()
@@ -179,7 +180,7 @@ describe('GuardrailsPage', () => {
       decisions: { ...loaderData.decisions, page: 2, page_size: 25, total: 60 },
     })
     routeMock.useSearch.mockReturnValue({ evaluator: 'deterministic', page: 2, page_size: 25 })
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
 
@@ -191,8 +192,8 @@ describe('GuardrailsPage', () => {
     })
   })
 
-  it('links Configure to the guardrail settings page', async () => {
-    await renderPage()
+  it('links Configure to the guardrail settings page', () => {
+    renderPage()
 
     expect(screen.getByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/guardrails')
   })
