@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value, json};
 
-pub(super) fn normalize_anthropic_messages_for_openai(body: &mut Map<String, Value>) {
+pub(crate) fn normalize_anthropic_messages_for_openai(body: &mut Map<String, Value>) {
     if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
         for tool in tools {
             normalize_tool(tool);

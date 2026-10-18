@@ -765,6 +765,79 @@ async fn applies_openai_compatibility_to_chat_requests() {
 }
 
 #[tokio::test]
+async fn translates_anthropic_messages_tool_exchange_for_chat_completions() {
+    let provider = CopilotProvider::new(CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    ))
+    .unwrap();
+    let message = |role: &str, content: Value| CoreChatMessage {
+        role: role.to_string(),
+        content,
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    let request = CoreChatRequest {
+        model: "gpt-4o".to_string(),
+        messages: vec![
+            message("user", json!("weather in Paris?")),
+            message(
+                "assistant",
+                json!([{"type":"tool_use","id":"toolu_1","name":"weather","input":{"city":"Paris"}}]),
+            ),
+            message(
+                "user",
+                json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"18C"}]),
+            ),
+        ],
+        stream: false,
+        extra: BTreeMap::from([
+            (
+                "tools".to_string(),
+                json!([{"name":"weather","input_schema":{"type":"object","properties":{}}}]),
+            ),
+            ("tool_choice".to_string(), json!({"type":"auto"})),
+        ]),
+    };
+
+    let built = provider
+        .build_chat_request(
+            &request,
+            &dummy_context("gpt-4o"),
+            GitHubCopilotChatApi::ChatCompletions,
+            false,
+        )
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(
+        built
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .expect("JSON request body"),
+    )
+    .unwrap();
+
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["function"]["name"], "weather");
+    assert_eq!(body["tool_choice"], "auto");
+    assert_eq!(
+        body["messages"][1]["tool_calls"][0]["function"],
+        json!({"name":"weather","arguments":"{\"city\":\"Paris\"}"})
+    );
+    assert_eq!(
+        body["messages"][2],
+        json!({"role":"tool","tool_call_id":"toolu_1","content":"18C"})
+    );
+    assert_eq!(
+        built.headers()["x-initiator"],
+        "agent",
+        "a tool-result turn is agent-initiated"
+    );
+}
+
+#[tokio::test]
 async fn normalizes_responses_replay_ids() {
     let provider = CopilotProvider::new(CopilotProviderConfig::new(
         "github_copilot".to_string(),
