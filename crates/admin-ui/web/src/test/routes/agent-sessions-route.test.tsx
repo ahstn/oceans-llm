@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { ComponentProps, ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
 import type { AgentSessionDetailView, AgentSessionSummaryView } from '@/types/api'
 
@@ -447,6 +448,27 @@ describe('AgentSessionsPage', () => {
     const sessionRow = screen.getByRole('row', { name: /Opencode/ })
     expect(sessionRow).toHaveTextContent('8')
     expect(sessionRow).toHaveTextContent('2')
+  })
+
+  it('keeps Enter on a compact count tooltip from opening the session', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [{ ...session, request_count: 150_000 }], page: 1, page_size: 50, total: 1 },
+    })
+    render(
+      <TooltipProvider>
+        <AgentSessionsPage />
+      </TooltipProvider>,
+    )
+
+    const sessionRow = screen.getByRole('row', { name: /Opencode/ })
+    const count = within(sessionRow).getByTestId('compact-count')
+    expect(count).toHaveTextContent('150K')
+    fireEvent.keyDown(count, { key: 'Enter' })
+    fireEvent.keyDown(count, { key: ' ' })
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(sessionRow, { key: 'Enter' })
+    expect(navigateMock).toHaveBeenCalledTimes(1)
   })
 
   it('right-aligns numeric columns in both the header and the cells', () => {

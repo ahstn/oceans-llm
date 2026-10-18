@@ -66,6 +66,8 @@ export function SessionTable({
                 tabIndex={0}
                 onClick={() => onOpen(session)}
                 onKeyDown={(event) => {
+                  // Keys pressed on a focusable child, such as a count's tooltip trigger, stay there.
+                  if (event.target !== event.currentTarget) return
                   if (event.key === 'Enter' || event.key === ' ') onOpen(session)
                 }}
               >
