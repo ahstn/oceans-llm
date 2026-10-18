@@ -6,14 +6,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { getMcpEffectiveAccess, removeMcpGrant, saveMcpGrant } from '@/server/admin-data.functions'
 import type {
   ApiKeyOwnerServiceAccountView,
@@ -27,6 +19,7 @@ import type {
   AdminTeamOption,
 } from '@/types/api'
 import { useToolCatalog } from './-catalog'
+import { OptionSelect } from './-option-select'
 import { TagRulesSection } from './-tag-rules'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
 import { platformMcpScope, type McpWorkspaceScope } from './-scope'
@@ -248,7 +241,7 @@ export function AccessTab({
             <FieldGroup className="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel>Subject type</FieldLabel>
-                <KindSelect
+                <OptionSelect
                   ariaLabel="Grant subject type"
                   value={grantForm.subject_kind}
                   options={subjectKinds}
@@ -272,7 +265,7 @@ export function AccessTab({
               </Field>
               <Field>
                 <FieldLabel>Target type</FieldLabel>
-                <KindSelect
+                <OptionSelect
                   ariaLabel="Grant target type"
                   value={grantForm.target_kind}
                   options={scope.platformAdmin ? targetKinds : teamTargetKinds}
@@ -316,7 +309,7 @@ export function AccessTab({
             <FieldGroup className="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel>Subject type</FieldLabel>
-                <KindSelect
+                <OptionSelect
                   ariaLabel="Preview subject type"
                   value={previewForm.subject_kind}
                   options={subjectKinds}
@@ -433,35 +426,6 @@ export function AccessTab({
         />
       ) : null}
     </div>
-  )
-}
-
-function KindSelect({
-  ariaLabel,
-  value,
-  options,
-  onChange,
-}: {
-  ariaLabel: string
-  value: string
-  options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger aria-label={ariaLabel}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
   )
 }
 
