@@ -1415,3 +1415,37 @@ async fn the_reported_policy_has_the_smallest_share_left_whatever_its_unit() {
     assert_eq!(status.policy_name, "tokens");
     assert_eq!(status.remaining, 100);
 }
+
+struct FailingTeams;
+
+#[async_trait]
+impl RateLimitTeamLookup for FailingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        Err(StoreError::Unavailable("identity store down".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn a_failed_team_lookup_follows_the_failure_mode() {
+    let team_policy = || {
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )]
+    };
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    for (mode, refused) in [
+        (RateLimitFailureMode::Closed, true),
+        (RateLimitFailureMode::Open, false),
+    ] {
+        let mut harness = Harness::with_mode(MemoryStore::default(), team_policy(), mode);
+        let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+        harness.limiter = Arc::new(limiter.with_team_lookup(Arc::new(FailingTeams)));
+        let decision = harness.limiter.check(&subject).await;
+        assert_eq!(decision.is_err(), refused, "{mode:?}: {decision:?}");
+    }
+}
