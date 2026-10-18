@@ -287,7 +287,8 @@ pub async fn preview_mcp_effective_access(
         .into_iter()
         .filter(|_| !nothing_reached)
         .filter(|tool| {
-            servers.get(&tool.mcp_server_id).is_none_or(|server| {
+            // A tool whose server was not read is left out, as runtime refuses it.
+            servers.get(&tool.mcp_server_id).is_some_and(|server| {
                 (server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
                     || server
                         .ownership

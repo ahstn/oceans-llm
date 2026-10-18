@@ -206,13 +206,19 @@ pub async fn replace_mcp_toolset_tools(
                 &meta.user_context(&actor),
                 // Labelled like the other tool set entries, so it stays readable
                 // after the tool set is renamed or disabled.
+                // The membership is already committed, so a failed label read
+                // still records the entry, unlabelled, and the request succeeds.
                 scope.annotate(
-                    match state.store.get_mcp_toolset(toolset_id).await? {
-                        Some(toolset) => toolset_event(
+                    match state.store.get_mcp_toolset(toolset_id).await {
+                        Ok(Some(toolset)) => toolset_event(
                             actions::MCP_TOOLSET_TOOLS_REPLACED,
                             &map_toolset(toolset),
                         ),
-                        None => {
+                        Ok(None) => {
+                            AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED).target(toolset_id)
+                        }
+                        Err(error) => {
+                            tracing::warn!(%toolset_id, error = %error, "could not read the tool set to label its audit entry");
                             AuditEvent::new(actions::MCP_TOOLSET_TOOLS_REPLACED).target(toolset_id)
                         }
                     }
