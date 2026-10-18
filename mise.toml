@@ -214,6 +214,8 @@ run = "node scripts/copilot-installation-canary.mjs"
 
 [tasks.release]
 description = "Prepare a release and push its source for CI publication"
+# Refresh the vendored pricing and Artificial Analysis snapshots so the release commit carries them.
+depends = ["//crates/gateway:sync-pricing-catalog", "//crates/gateway:sync-model-benchmarks"]
 env = { GITHUB_TOKEN = { required = true } }
 run = '''
 scripts/release.sh

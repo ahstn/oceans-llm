@@ -67,8 +67,8 @@ mise run release
 
 The command completes these steps:
 
-1. Check that `main` is clean and matches `origin/main`.
-2. Update the pricing catalog.
+1. Refresh the vendored pricing catalog and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
+2. Check that `main` matches `origin/main` and has no tracked changes other than those two snapshots.
 3. Ask git-cliff to calculate the next version from the merged pull requests.
 4. Update workspace Cargo versions.
 5. Add the new section to the top of `CHANGELOG.md`.

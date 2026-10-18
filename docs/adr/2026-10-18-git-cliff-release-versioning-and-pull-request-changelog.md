@@ -32,7 +32,7 @@ Each entry links to its pull request from the number in the subject, so the link
 
 ### 3. Replace Cocogitto with a release script
 
-[scripts/release.sh](../../scripts/release.sh) prepares the release. It requires a clean `main` that matches `origin/main`, refreshes the pricing catalog, chooses the version, runs cargo-release, prepends the changelog section, then creates the `chore(version): vX.Y.Z` commit and a lightweight `vX.Y.Z` tag. `mise run release` runs the script and pushes `main` and the tag atomically.
+[scripts/release.sh](../../scripts/release.sh) prepares the release. It requires a `main` that matches `origin/main` with no tracked changes other than the vendored snapshots, chooses the version, runs cargo-release, prepends the changelog section, then creates the `chore(version): vX.Y.Z` commit and a lightweight `vX.Y.Z` tag. `mise run release` first refreshes the pricing catalog and the Artificial Analysis benchmark snapshot as task dependencies, so the version commit carries both. It then runs the script and pushes `main` and the tag atomically.
 
 ### 4. Prepend new sections
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Prepare a release on main: choose the next version from the pull requests merged
 # since the last tag, update Cargo versions and CHANGELOG.md, then commit and tag.
-# `mise run release` runs this and pushes the result. cliff.toml defines which
-# pull requests count and how they bump the version.
+# `mise run release` refreshes the vendored snapshots below, runs this, and pushes
+# the result. cliff.toml defines which pull requests count and how they bump the
+# version.
 set -euo pipefail
 
 branch="$(git branch --show-current)"
@@ -10,7 +11,12 @@ if [[ "$branch" != "main" ]]; then
   echo "error: releases are cut from main, not '${branch:-detached HEAD}'" >&2
   exit 1
 fi
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+# The release task's dependencies rewrite these before this script runs.
+refreshed=(
+  crates/gateway-service/data/pricing_catalog_fallback.json
+  crates/gateway-service/data/model_benchmarks.json
+)
+if [[ -n "$(git status --porcelain --untracked-files=no -- . "${refreshed[@]/#/:(exclude)}")" ]]; then
   echo "error: commit or discard tracked changes before releasing" >&2
   exit 1
 fi
@@ -21,8 +27,6 @@ if [[ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]]; then
   echo "error: local main differs from origin/main; sync it before releasing" >&2
   exit 1
 fi
-
-mise run //crates/gateway:sync-pricing-catalog
 
 tag="$(git-cliff --bumped-version)"
 if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
