@@ -628,14 +628,21 @@ pub async fn list_mcp_server_tools(
             } else {
                 std::collections::HashSet::new()
             };
-            // The access was resolved for the team read above, so the member
-            // must still be in it.
+            // The server's ownership is read again, then the viewer last: a
+            // server moved away, or the member leaving the team the access was
+            // resolved for, during the reads above hides the tools.
+            let still_reachable = state
+                .store
+                .list_mcp_server_ownerships(&[server_id])
+                .await?
+                .iter()
+                .any(|(_, ownership)| ownership.is_reachable_from(team_id));
             let same_viewer = matches!(
                 require_mcp_viewer(&state, &headers).await?,
                 McpViewer::Member { user_id: current_user, team_id: current_team }
                     if (current_user, current_team) == (user_id, team_id)
             );
-            if allowed.is_empty() || !same_viewer {
+            if allowed.is_empty() || !still_reachable || !same_viewer {
                 return Err(not_found());
             }
             tools
