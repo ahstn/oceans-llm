@@ -98,10 +98,13 @@ impl ChatRequest {
             stream: self.stream,
             embeddings: false,
             decisions: false,
+            // Tool history needs a tool-capable route even when the caller omits `tools`,
+            // because Chat Completions adapters replay it as `tool_calls` and `tool` messages.
             tools: self
                 .extra
                 .get("tools")
-                .is_some_and(value_is_present_for_capability),
+                .is_some_and(value_is_present_for_capability)
+                || self.messages.iter().any(message_has_tool_history),
             vision: self
                 .messages
                 .iter()
@@ -345,15 +348,39 @@ fn content_part_has_vision_input(value: &Value) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
+    let kind = object.get("type").and_then(Value::as_str);
+
+    // Anthropic Messages sends images as `image` blocks, including inside tool results.
+    match kind {
+        Some("image") => return true,
+        Some("tool_result") => {
+            return object.get("content").is_some_and(message_has_vision_input);
+        }
+        _ => {}
+    }
 
     // `vision` is the gateway's capability gate for non-text inputs. Keep the Chat file
     // aliases accepted by provider adapters aligned with Responses `input_file` routing.
-    object
-        .get("type")
-        .and_then(Value::as_str)
-        .and_then(ContentPartType::parse)
-        .is_some()
-        || object.contains_key("image_url")
+    kind.and_then(ContentPartType::parse).is_some() || object.contains_key("image_url")
+}
+
+/// Detects OpenAI (`tool` role, `tool_calls`) and Anthropic (`tool_use`, `tool_result`)
+/// tool history.
+fn message_has_tool_history(message: &ChatMessage) -> bool {
+    message.role.eq_ignore_ascii_case("tool")
+        || message
+            .extra
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|calls| !calls.is_empty())
+        || message.content.as_array().is_some_and(|blocks| {
+            blocks.iter().any(|block| {
+                matches!(
+                    block.get("type").and_then(Value::as_str),
+                    Some("tool_use" | "tool_result")
+                )
+            })
+        })
 }
 
 #[cfg(test)]
@@ -405,6 +432,75 @@ mod tests {
         assert!(requirements.developer_role);
         assert!(!requirements.embeddings);
         assert!(!requirements.responses);
+    }
+
+    #[test]
+    fn anthropic_image_blocks_require_vision_capability() {
+        let message = |content: Value| ChatRequest {
+            model: "claude".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content,
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let image = json!({"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBOR"}});
+
+        assert!(message(json!([image.clone()])).requirements().vision);
+        assert!(
+            message(json!([{"type":"tool_result","tool_use_id":"toolu_1","content":[image]}]))
+                .requirements()
+                .vision
+        );
+        assert!(
+            !message(json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]))
+                .requirements()
+                .vision
+        );
+    }
+
+    #[test]
+    fn tool_history_requires_tools_capability_without_tool_definitions() {
+        let chat = |role: &str, content: Value, extra: BTreeMap<String, Value>| ChatRequest {
+            model: "fast".to_string(),
+            messages: vec![ChatMessage {
+                role: role.to_string(),
+                content,
+                name: None,
+                extra,
+            }],
+            stream: false,
+            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+        };
+
+        let anthropic_use = chat(
+            "assistant",
+            json!([{"type":"tool_use","id":"toolu_1","name":"f","input":{}}]),
+            BTreeMap::new(),
+        );
+        let anthropic_result = chat(
+            "user",
+            json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]),
+            BTreeMap::new(),
+        );
+        let openai_calls = chat(
+            "assistant",
+            Value::Null,
+            BTreeMap::from([(
+                "tool_calls".to_string(),
+                json!([{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]),
+            )]),
+        );
+        let openai_result = chat("tool", json!("ok"), BTreeMap::new());
+        let plain = chat("user", json!("hello"), BTreeMap::new());
+
+        for request in [anthropic_use, anthropic_result, openai_calls, openai_result] {
+            assert!(request.requirements().tools, "{:?}", request.messages[0]);
+        }
+        assert!(!plain.requirements().tools);
     }
 
     #[test]

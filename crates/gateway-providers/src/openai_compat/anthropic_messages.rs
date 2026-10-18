@@ -123,7 +123,7 @@ fn normalize_message(message: Value) -> Result<Vec<Value>, ProviderError> {
     };
 
     match object.get("role").and_then(Value::as_str) {
-        Some("assistant") => Ok(vec![assistant_message(object, blocks)]),
+        Some("assistant") => Ok(vec![assistant_message(object, blocks)?]),
         Some("user") => user_messages(object, blocks),
         _ => {
             object.insert("content".to_string(), Value::Array(blocks));
@@ -146,7 +146,10 @@ fn block_type(block: &Value) -> Option<&str> {
 /// Assistant `tool_use` blocks become `tool_calls`. Thinking blocks are
 /// dropped because Chat Completions has no request field that carries them
 /// back, and their signatures are only meaningful to Anthropic upstreams.
-fn assistant_message(mut object: Map<String, Value>, blocks: Vec<Value>) -> Value {
+fn assistant_message(
+    mut object: Map<String, Value>,
+    blocks: Vec<Value>,
+) -> Result<Value, ProviderError> {
     let mut tool_calls = match object.remove("tool_calls") {
         Some(Value::Array(existing)) => existing,
         _ => Vec::new(),
@@ -156,6 +159,14 @@ fn assistant_message(mut object: Map<String, Value>, blocks: Vec<Value>) -> Valu
         match block_type(&block) {
             Some("tool_use") => tool_calls.push(tool_call(&block)),
             Some("thinking" | "redacted_thinking") => {}
+            // Chat Completions accepts images only from users, so converting one to
+            // `image_url` would still be rejected upstream.
+            Some("image") => {
+                return Err(ProviderError::InvalidRequest(
+                    "assistant `image` blocks cannot be sent to a Chat Completions upstream"
+                        .to_string(),
+                ));
+            }
             _ => content.push(block),
         }
     }
@@ -170,7 +181,7 @@ fn assistant_message(mut object: Map<String, Value>, blocks: Vec<Value>) -> Valu
     if !tool_calls.is_empty() {
         object.insert("tool_calls".to_string(), Value::Array(tool_calls));
     }
-    Value::Object(object)
+    Ok(Value::Object(object))
 }
 
 fn tool_call(block: &Value) -> Value {
@@ -499,6 +510,16 @@ mod tests {
             tool_result_image.contains("media_type"),
             "{tool_result_image}"
         );
+    }
+
+    #[test]
+    fn rejects_assistant_image_blocks() {
+        let message = invalid_request_message(json!({"messages": [
+            {"role": "assistant", "content": [
+                {"type": "image", "source": {"type": "url", "url": "https://example.com/a.png"}}
+            ]}
+        ]}));
+        assert!(message.contains("assistant `image`"), "{message}");
     }
 
     #[test]
