@@ -1637,6 +1637,193 @@ impl ExternalMcpDiscoveryStatus {
     }
 }
 
+/// Who may be granted a server's tools, and who sees it in the admin catalog.
+/// See `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpServerVisibility {
+    /// Only subjects of the owning team can be granted the server's tools.
+    Team,
+    /// Published to the organisation catalog.
+    #[default]
+    Organisation,
+}
+
+impl McpServerVisibility {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+            Self::Organisation => "organisation",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "team" => Some(Self::Team),
+            "organisation" => Some(Self::Organisation),
+            _ => None,
+        }
+    }
+}
+
+/// The accountable owner of an MCP server. The default is platform-owned and
+/// published to the organisation, which is what every server was before
+/// ownership existed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerOwnership {
+    /// The owning team; `None` means the platform owns the server.
+    pub owner_team_id: Option<Uuid>,
+    pub owner_contact: Option<String>,
+    pub visibility: McpServerVisibility,
+}
+
+impl McpServerOwnership {
+    #[must_use]
+    pub fn team(team_id: Uuid, owner_contact: Option<String>) -> Self {
+        Self {
+            owner_team_id: Some(team_id),
+            owner_contact,
+            visibility: McpServerVisibility::Team,
+        }
+    }
+
+    #[must_use]
+    pub fn owned_by(&self, team_id: Uuid) -> bool {
+        self.owner_team_id == Some(team_id)
+    }
+
+    /// Whether a caller whose current team is `team_id` can reach the server:
+    /// it is published to the organisation, or that team owns it. This is the
+    /// one visibility rule every access path applies; the store's
+    /// `list_team_only_mcp_server_ids_outside` and `is_mcp_server_hidden_from`
+    /// are its SQL form, and a store test holds them to it.
+    #[must_use]
+    pub fn is_reachable_from(&self, team_id: Option<Uuid>) -> bool {
+        mcp_server_reachable_from(self.visibility, self.owner_team_id, team_id)
+    }
+}
+
+/// The server columns a store reads under the write lock to check a
+/// [`McpServerOwnershipGuard`].
+#[derive(Debug, Clone, Copy)]
+pub struct McpServerGuardRow<'a> {
+    pub mcp_server_id: Uuid,
+    pub owner_team_id: Option<Uuid>,
+    pub visibility: McpServerVisibility,
+    pub server_url: &'a str,
+    pub auth_mode: ExternalMcpAuthMode,
+    pub auth_config: &'a Map<String, Value>,
+}
+
+impl<'a> McpServerGuardRow<'a> {
+    #[must_use]
+    pub fn of(server: &'a ExternalMcpServerRecord) -> Self {
+        Self {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: server.ownership.owner_team_id,
+            visibility: server.ownership.visibility,
+            server_url: &server.server_url,
+            auth_mode: server.auth_mode,
+            auth_config: &server.auth_config,
+        }
+    }
+}
+
+/// The owner and visibility a grant or credential write was authorized
+/// against. A store write that carries one happens only while the server
+/// still has them, checked in the same transaction with the server row
+/// locked; otherwise it is a conflict and nothing is written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct McpServerOwnershipGuard {
+    pub mcp_server_id: Uuid,
+    pub owner_team_id: Option<Uuid>,
+    pub visibility: McpServerVisibility,
+    /// When set, the server must also still have this URL. Credential writes
+    /// pin it, so a credential is never stored for a destination it was not
+    /// authorized for.
+    pub server_url: Option<String>,
+    /// When set, the server must also still have this auth mode and config.
+    /// OAuth writes pin it, so a token bundle or registered client is never
+    /// stored for endpoints a settings change has since replaced.
+    pub auth_settings: Option<(ExternalMcpAuthMode, Map<String, Value>)>,
+}
+
+/// The rule behind [`McpServerOwnership::is_reachable_from`], for callers that
+/// hold only a server's visibility and owning team.
+#[must_use]
+pub fn mcp_server_reachable_from(
+    visibility: McpServerVisibility,
+    owner_team_id: Option<Uuid>,
+    team_id: Option<Uuid>,
+) -> bool {
+    visibility == McpServerVisibility::Organisation
+        || owner_team_id.is_some_and(|owner| Some(owner) == team_id)
+}
+
+impl McpServerOwnershipGuard {
+    /// [`McpServerOwnership::is_reachable_from`] for the server this guard pins.
+    #[must_use]
+    pub fn is_reachable_from(&self, team_id: Option<Uuid>) -> bool {
+        mcp_server_reachable_from(self.visibility, self.owner_team_id, team_id)
+    }
+
+    #[must_use]
+    pub fn of(server: &ExternalMcpServerRecord) -> Self {
+        Self {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: server.ownership.owner_team_id,
+            visibility: server.ownership.visibility,
+            server_url: None,
+            auth_settings: None,
+        }
+    }
+
+    /// Also requires the server's current URL, auth mode and auth config, the
+    /// settings an OAuth exchange or registration ran against.
+    #[must_use]
+    pub fn with_auth_settings(self, server: &ExternalMcpServerRecord) -> Self {
+        let mut guard = self.with_server_url(&server.server_url);
+        guard.auth_settings = Some((server.auth_mode, server.auth_config.clone()));
+        guard
+    }
+
+    /// Also requires the server's current URL.
+    #[must_use]
+    pub fn with_server_url(mut self, server_url: &str) -> Self {
+        self.server_url = Some(server_url.to_string());
+        self
+    }
+
+    /// Whether a server row read under the write lock still matches.
+    #[must_use]
+    pub fn matches(&self, server: &McpServerGuardRow<'_>) -> bool {
+        self.mcp_server_id == server.mcp_server_id
+            && self.owner_team_id == server.owner_team_id
+            && self.visibility == server.visibility
+            && self
+                .server_url
+                .as_deref()
+                .is_none_or(|url| url == server.server_url)
+            && self
+                .auth_settings
+                .as_ref()
+                .is_none_or(|(auth_mode, auth_config)| {
+                    *auth_mode == server.auth_mode && auth_config == server.auth_config
+                })
+    }
+
+    /// The conflict a store returns when the server no longer matches.
+    #[must_use]
+    pub fn conflict(&self) -> crate::StoreError {
+        crate::StoreError::Conflict(format!(
+            "external MCP server `{}` changed owner or visibility; reload it and try again",
+            self.mcp_server_id
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalMcpServerRecord {
     pub mcp_server_id: Uuid,
@@ -1657,9 +1844,24 @@ pub struct ExternalMcpServerRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
+    pub ownership: McpServerOwnership,
+    /// Set once a team has owned the server, until a platform admin saves its
+    /// settings: a team may have chosen its URL and auth endpoints, which a
+    /// platform admin has not vouched for.
+    pub team_destinations: bool,
     /// Hold new and changed tools until an admin approves them.
     #[serde(default)]
     pub approve_tool_changes: bool,
+}
+
+impl ExternalMcpServerRecord {
+    /// Whether the server's traffic keeps the public-address guard: it is
+    /// team-owned, or a team set destinations no platform admin has vouched
+    /// for since, so a takeover never widens where they can reach.
+    #[must_use]
+    pub fn guards_destinations(&self) -> bool {
+        self.ownership.owner_team_id.is_some() || self.team_destinations
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1672,11 +1874,14 @@ pub struct NewExternalMcpServerRecord {
     pub auth_mode: ExternalMcpAuthMode,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
+    pub ownership: McpServerOwnership,
     pub created_at: OffsetDateTime,
     #[serde(default)]
     pub approve_tool_changes: bool,
 }
 
+/// A settings save. The owning team is changed only by
+/// [`TransferExternalMcpServerOwnershipRecord`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateExternalMcpServerRecord {
     pub mcp_server_id: Uuid,
@@ -1686,8 +1891,72 @@ pub struct UpdateExternalMcpServerRecord {
     pub auth_mode: ExternalMcpAuthMode,
     pub auth_config: Map<String, Value>,
     pub timeout_ms: i64,
+    /// `None` keeps the contact the server has when the write runs, read under
+    /// the write lock; `Some(None)` clears it.
+    pub owner_contact: Option<Option<String>>,
+    /// A change to `team` is refused while access would be stranded, checked
+    /// in the same write exactly as a narrowing transfer is, so a server is
+    /// never left narrowed without the settings saved with it.
+    pub visibility: McpServerVisibility,
+    /// When set and the URL changes, the save fails with a conflict while the
+    /// server holds a user-scoped, `secret_ref` or other team's credential,
+    /// counted under the write lock, since the gateway would send it to the new
+    /// URL. Set for team admins.
+    pub retarget_owner_credentials_only: bool,
+    /// When set, the save also needs the server to still have this URL and
+    /// these auth settings, checked under the write lock, so a stale form
+    /// cannot overwrite a newer change, such as bring back a removed secret.
+    pub expected_server: Option<McpServerOwnershipGuard>,
+    /// The owning team the caller was authorized against. The save fails with a
+    /// conflict when the server has changed owner since.
+    pub expected_owner_team_id: Option<Uuid>,
+    /// The visibility the caller's change was authorized against, checked the
+    /// same way, so a save cannot republish a server another request narrowed.
+    pub expected_visibility: McpServerVisibility,
+    /// Set for a platform admin: the save vouches for the server's
+    /// destinations, clearing [`ExternalMcpServerRecord::team_destinations`].
+    pub vouch_for_destinations: bool,
     pub updated_at: OffsetDateTime,
     pub approve_tool_changes: bool,
+}
+
+/// The outcome of [`UpdateExternalMcpServerRecord`]. `previous` is `None`
+/// when the save changed nothing.
+#[derive(Debug, Clone)]
+pub struct ExternalMcpServerUpdate {
+    pub current: ExternalMcpServerRecord,
+    pub previous: Option<ExternalMcpServerRecord>,
+    /// Users' OAuth bindings the save revoked because the endpoints that issued
+    /// them changed, as they stand after the revoke.
+    pub revoked_oauth_bindings: Vec<McpUpstreamCredentialBindingRecord>,
+}
+
+impl ExternalMcpServerUpdate {
+    #[must_use]
+    pub fn unchanged(current: ExternalMcpServerRecord) -> Self {
+        Self {
+            current,
+            previous: None,
+            revoked_oauth_bindings: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferExternalMcpServerOwnershipRecord {
+    pub mcp_server_id: Uuid,
+    pub ownership: McpServerOwnership,
+    /// When set, the write happens only if the server still has exactly this
+    /// ownership, checked under the write lock; otherwise it is a conflict.
+    /// Rollbacks use it so they never overwrite a newer transfer.
+    pub expected_ownership: Option<McpServerOwnership>,
+    /// When the new ownership limits the server to a team, refuse the write
+    /// while access would be stranded: a grant held outside that team, or one
+    /// of the server's tools in an active tool set. Checked inside the write
+    /// with the server row locked, so a racing grant either is counted or is
+    /// refused by its own guard.
+    pub require_no_stranded_access: bool,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1730,6 +1999,16 @@ impl McpToolMetadata {
     pub fn hint(&self, name: &str) -> Option<bool> {
         self.annotations.as_ref()?.get(name)?.as_bool()
     }
+}
+
+/// One active tool an API key is granted, directly or through an active tool
+/// set, with the server key its MCP server list is checked against.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpApiKeyToolAccess {
+    pub api_key_id: Uuid,
+    pub mcp_tool_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub server_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1873,6 +2152,34 @@ pub struct UpsertMcpUpstreamCredentialBindingRecord {
     pub expires_at: Option<OffsetDateTime>,
     pub metadata: Map<String, Value>,
     pub updated_at: OffsetDateTime,
+    /// When set, the write is conditional on the binding's server, as
+    /// [`McpServerOwnershipGuard`] describes.
+    pub expected_server: Option<McpServerOwnershipGuard>,
+    /// For a write naming `credential_binding_id`, what the caller was
+    /// authorized against: `Some(Some(pin))` the binding it replaces, and
+    /// `Some(None)` that no binding has the ID, so the write is a create. The
+    /// store compares it with the row it locks, so a binding changed, or
+    /// created with that ID, meanwhile makes the write a conflict. `None`
+    /// skips the check.
+    pub expected_replaced: Option<Option<McpCredentialBindingPin>>,
+}
+
+/// What a replacement's authorization relied on in the binding it replaces.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpCredentialBindingPin {
+    pub mcp_server_id: Uuid,
+    /// Encodes the owner scope kind and its IDs.
+    pub owner_scope_key: String,
+    pub uses_secret_ref: bool,
+}
+
+impl McpCredentialBindingPin {
+    #[must_use]
+    pub fn matches(&self, binding: &McpUpstreamCredentialBindingRecord) -> bool {
+        self.mcp_server_id == binding.mcp_server_id
+            && self.owner_scope_key == binding.owner_scope_key
+            && self.uses_secret_ref == binding.secret_ref.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1910,6 +2217,11 @@ pub struct ExternalMcpDiscoveryRunRecord {
     pub schema_set_hash: Option<String>,
     pub error_summary: Option<String>,
     pub details: Map<String, Value>,
+    /// When set, the run, and for a success its tools, are stored only while
+    /// the server still matches, checked under the write lock. A refresh can
+    /// take a while, so a transfer or settings change in between makes it a
+    /// conflict rather than letting a former owner's result land.
+    pub expected_server: Option<McpServerOwnershipGuard>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2057,6 +2369,13 @@ pub struct UpsertMcpToolGrantRecord {
     pub target_kind: McpToolGrantTargetKind,
     pub target_id: Uuid,
     pub updated_at: OffsetDateTime,
+    /// When set, the grant is written only while the target tool belongs to
+    /// this server and the server still has this owner and visibility.
+    pub expected_server: Option<McpServerOwnershipGuard>,
+    /// When set, the subject's team (`None` for no team) the grant was
+    /// authorized against, checked in the same transaction: a user or key that
+    /// moved team in between is not granted on the old team's terms.
+    pub expected_subject_team: Option<Option<Uuid>>,
 }
 
 /// Which tool columns an access resolution loads.
@@ -2066,6 +2385,10 @@ pub enum McpToolProjection {
     /// policy that tag rules are evaluated from. The title and output schema
     /// are left out, because authorization does not read them.
     Access,
+    /// As [`Self::Access`], without the counts: `exposed_tool_count` and
+    /// `filtered_tool_count` are left at zero, so no count of the whole
+    /// catalog runs. For callers that read only which tools are granted.
+    AccessUncounted,
     /// Also loads the title, annotations and output schema.
     Full,
 }

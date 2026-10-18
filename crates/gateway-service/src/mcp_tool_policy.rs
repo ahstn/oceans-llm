@@ -169,6 +169,27 @@ where
             .await?)
     }
 
+    /// Like [`Self::create_rule`], written only while the server keeps the
+    /// owner and visibility in `expected_server` and, when set, the subject is
+    /// still in `expected_subject_team`, checked in the same write.
+    pub async fn create_rule_guarded(
+        &self,
+        key: McpToolTagRuleKey,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
+    ) -> Result<(McpToolTagRuleRecord, bool), GatewayError> {
+        let key = self.normalize_rule(key).await?;
+        Ok(self
+            .repo
+            .upsert_mcp_tool_tag_rule_guarded(
+                &key,
+                OffsetDateTime::now_utc(),
+                expected_server,
+                expected_subject_team,
+            )
+            .await?)
+    }
+
     pub async fn revoke_rule(
         &self,
         rule_id: Uuid,

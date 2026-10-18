@@ -230,6 +230,24 @@ pub(super) async fn active_tool_count(
     ))
 }
 
+/// Whether any subject has an active tag rule, without counting tools.
+pub(super) async fn rules_exist(
+    pool: &PgPool,
+    subjects: &[McpGrantSubject],
+) -> Result<bool, StoreError> {
+    let (kinds, ids) = subject_arrays(subjects);
+    // `$1` is unused, so the shared rule check keeps its parameter numbers.
+    sqlx::query_scalar(&format!(
+        "SELECT {RULES_EXIST_SQL} FROM (SELECT $1::text) unused"
+    ))
+    .bind(Option::<String>::None)
+    .bind(kinds)
+    .bind(ids)
+    .fetch_one(pool)
+    .await
+    .map_err(to_query_error)
+}
+
 /// Whether any subject holds a grant on the server, and whether any subject
 /// has a tag rule, in one query.
 pub(super) async fn server_grant_exists(
@@ -255,7 +273,7 @@ pub(super) async fn server_grant_exists(
 
 pub(super) fn tool_columns(projection: McpToolProjection) -> &'static str {
     match projection {
-        McpToolProjection::Access => ACCESS_TOOL_COLUMNS,
+        McpToolProjection::Access | McpToolProjection::AccessUncounted => ACCESS_TOOL_COLUMNS,
         McpToolProjection::Full => TOOL_COLUMNS,
     }
 }

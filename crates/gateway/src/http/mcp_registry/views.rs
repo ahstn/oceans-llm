@@ -27,6 +27,8 @@ pub struct McpConnectionInfoPayload {
 pub struct McpServersQuery {
     #[serde(default)]
     pub(super) include_disabled: bool,
+    /// `platform` for platform-owned servers, or an owning team id.
+    pub(super) owner: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -57,6 +59,8 @@ pub struct RecommendedMcpServerView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct McpServersPayload {
     pub(super) items: Vec<McpServerView>,
+    /// Whether the caller may set `organisation` visibility on servers they manage.
+    pub(super) can_publish_to_organisation: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -87,6 +91,14 @@ pub struct McpServerView {
     created_at: String,
     updated_at: String,
     disabled_at: Option<String>,
+    /// The owning team; `null` for a platform-owned server.
+    owner_team_id: Option<String>,
+    owner_team_name: Option<String>,
+    owner_contact: Option<String>,
+    /// `team` or `organisation`.
+    visibility: String,
+    /// Whether the caller may edit the server, its grants and its credentials.
+    can_manage: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -358,6 +370,12 @@ pub struct CreateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Platform admins only; a team admin always registers for their own team.
+    pub(super) owner_team_id: Option<Uuid>,
+    /// Defaults to the caller's email address.
+    pub(super) owner_contact: Option<String>,
+    /// `team` or `organisation`. Defaults to `team` for a team-owned server.
+    pub(super) visibility: Option<String>,
     /// Hold new and changed tools for review. Off when omitted.
     #[serde(default)]
     pub(super) approve_tool_changes: Option<bool>,
@@ -405,9 +423,47 @@ pub struct UpdateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Omitted keeps the current contact; an empty string clears it.
+    pub(super) owner_contact: Option<String>,
+    /// Omitted keeps the current visibility.
+    pub(super) visibility: Option<String>,
     /// Hold new and changed tools for review. Kept as it is when omitted.
     #[serde(default)]
     pub(super) approve_tool_changes: Option<bool>,
+}
+
+/// A platform admin's ownership transfer.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct TransferMcpServerOwnershipRequest {
+    /// Required. The new owning team, or `null` to move the server to the
+    /// platform. Omitting it is rejected, so a request that only changes the
+    /// contact cannot take the server away from its team.
+    #[serde(default, deserialize_with = "present_nullable")]
+    #[schema(value_type = Option<Uuid>, required = true, nullable)]
+    pub(super) owner_team_id: Option<Option<Uuid>>,
+    /// Omitted keeps the current contact; an empty string clears it.
+    pub(super) owner_contact: Option<String>,
+    /// Omitted keeps the current visibility. Platform-owned servers are always
+    /// `organisation`.
+    pub(super) visibility: Option<String>,
+}
+
+/// `scheme://host[:port]` of a URL, or nothing for one that does not parse.
+fn url_origin(raw: &str) -> String {
+    url::Url::parse(raw)
+        .ok()
+        .map(|url| url.origin().ascii_serialization())
+        .filter(|origin| origin != "null")
+        .unwrap_or_default()
+}
+
+/// Distinguishes an explicit `null` (`Some(None)`) from an omitted field (`None`).
+fn present_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 pub(super) fn map_recommended_server(
@@ -450,6 +506,30 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
         created_at: format_timestamp(server.created_at),
         updated_at: format_timestamp(server.updated_at),
         disabled_at: server.disabled_at.map(format_timestamp),
+        owner_team_id: server.ownership.owner_team_id.map(|id| id.to_string()),
+        owner_team_name: None,
+        owner_contact: server.ownership.owner_contact,
+        visibility: server.ownership.visibility.as_str().to_string(),
+        can_manage: false,
+    }
+}
+
+impl McpServerView {
+    /// Adds what depends on who is asking: the owning team's name and whether the
+    /// caller may manage the server.
+    /// A caller who cannot manage the server sees only its URL's origin, because
+    /// a path segment can be an opaque credential that no pattern recognises,
+    /// and none of its auth settings or discovery errors, which may embed
+    /// upstream details.
+    pub(super) fn for_viewer(mut self, owner_team_name: Option<String>, can_manage: bool) -> Self {
+        self.owner_team_name = owner_team_name;
+        self.can_manage = can_manage;
+        if !can_manage {
+            self.server_url = url_origin(&self.server_url);
+            self.auth_config = Map::new();
+            self.last_error_summary = None;
+        }
+        self
     }
 }
 
@@ -460,7 +540,13 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
 pub(super) fn server_audit_summary(server: &McpServerView) -> Value {
     let mut summary = serde_json::to_value(server).unwrap_or(Value::Null);
     if let Some(object) = summary.as_object_mut() {
-        for volatile in ["created_at", "updated_at", "last_discovery_at"] {
+        for volatile in [
+            "created_at",
+            "updated_at",
+            "last_discovery_at",
+            "owner_team_name",
+            "can_manage",
+        ] {
             object.remove(volatile);
         }
         object.insert(
@@ -621,9 +707,13 @@ pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
     }
 }
 
-pub(super) fn map_discovery_result(result: McpDiscoveryResult) -> McpDiscoveryRefreshPayload {
+/// Maps a refresh result. Only a caller who manages the server can refresh it.
+pub(super) fn map_discovery_result(
+    result: McpDiscoveryResult,
+    owner_team_name: Option<String>,
+) -> McpDiscoveryRefreshPayload {
     McpDiscoveryRefreshPayload {
-        server: map_server(result.server),
+        server: map_server(result.server).for_viewer(owner_team_name, true),
         status: result.status.as_str().to_string(),
         error_summary: result.error_summary,
         tools: result.tools.into_iter().map(map_tool).collect(),
@@ -780,8 +870,16 @@ mod audit_summary_tests {
             created_at: String::new(),
             updated_at: String::new(),
             disabled_at: None,
+            owner_team_id: None,
+            owner_team_name: Some("Docs".to_string()),
+            owner_contact: Some("docs@example.test".to_string()),
+            visibility: "organisation".to_string(),
+            can_manage: true,
         };
         let summary = server_audit_summary(&server);
+        assert_eq!(summary["visibility"], "organisation");
+        assert_eq!(summary["owner_contact"], "docs@example.test");
+        assert!(summary.get("can_manage").is_none());
         assert_eq!(summary["server_url"], "https://mcp.example/mcp");
         assert_eq!(summary["auth_config"]["resource"], "https://mcp.example/");
         assert_eq!(

@@ -22,10 +22,19 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { McpServerView } from '@/types/api'
+import { matchesOwner, ownerLabel, ownerOptions, visibilityLabel } from './server-ownership'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
 
@@ -42,8 +51,9 @@ interface RegistryProps {
   refreshingServerIds: string[]
   onManage: (serverId: string) => void
   onRefresh: (server: McpServerView) => void
-  onAdd: () => void
-  onCatalog: () => void
+  /** Omitted for a read-only viewer, who cannot register servers. */
+  onAdd?: () => void
+  onCatalog?: () => void
 }
 
 type RegistryRowsProps = Omit<RegistryProps, 'refreshingServerIds'> & {
@@ -53,6 +63,7 @@ type RegistryRowsProps = Omit<RegistryProps, 'refreshingServerIds'> & {
 export function ServerRegistry(props: RegistryProps) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ServerFilter>('all')
+  const [owner, setOwner] = useState('all')
   const [sorting, setSorting] = useState<SortingState>([])
   const active = props.servers.filter((server) => server.status === 'active').length
   const attention = props.servers.filter(needsAttention).length
@@ -64,6 +75,7 @@ export function ServerRegistry(props: RegistryProps) {
     const text = `${server.display_name} ${server.server_key} ${server.server_url} ${server.description ?? ''}`
     return (
       text.toLowerCase().includes(search) &&
+      matchesOwner(server, owner) &&
       (filter === 'all' ||
         (filter === 'attention' ? needsAttention(server) : server.status === filter))
     )
@@ -78,18 +90,22 @@ export function ServerRegistry(props: RegistryProps) {
             <Badge variant="secondary">{props.servers.length}</Badge>
           </div>
           <p className="text-muted-foreground text-sm">
-            Manage the connections that bring tools into your gateway.
+            {props.onAdd
+              ? 'Manage the connections that bring tools into your gateway.'
+              : 'The MCP servers your access lets you connect to.'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={props.onCatalog}>
-            Browse catalog
-          </Button>
-          <Button type="button" onClick={props.onAdd}>
-            <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
-            Add server
-          </Button>
-        </div>
+        {props.onAdd ? (
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={props.onCatalog}>
+              Browse catalog
+            </Button>
+            <Button type="button" onClick={props.onAdd}>
+              <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
+              Add server
+            </Button>
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <span>
@@ -121,8 +137,11 @@ export function ServerRegistry(props: RegistryProps) {
           <RegistryToolbar
             query={query}
             filter={filter}
+            owner={owner}
+            owners={ownerOptions(props.servers)}
             onQueryChange={setQuery}
             onFilterChange={setFilter}
+            onOwnerChange={setOwner}
           />
           {servers.length ? (
             <RegistryTable
@@ -132,36 +151,15 @@ export function ServerRegistry(props: RegistryProps) {
               onSortingChange={setSorting}
             />
           ) : (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>
-                  {props.servers.length ? 'No matching servers' : 'No MCP servers'}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {props.servers.length
-                    ? 'Try another search or clear the filters.'
-                    : 'Add a catalog server or configure your own endpoint.'}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                {props.servers.length ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setQuery('')
-                      setFilter('all')
-                    }}
-                  >
-                    Clear filters
-                  </Button>
-                ) : (
-                  <Button type="button" variant="outline" onClick={props.onCatalog}>
-                    Find a server
-                  </Button>
-                )}
-              </EmptyContent>
-            </Empty>
+            <RegistryEmpty
+              hasServers={props.servers.length > 0}
+              onCatalog={props.onCatalog}
+              onClear={() => {
+                setQuery('')
+                setFilter('all')
+                setOwner('all')
+              }}
+            />
           )}
           <p className="text-muted-foreground text-xs" role="status">
             Showing {servers.length} of {props.servers.length} servers
@@ -172,30 +170,89 @@ export function ServerRegistry(props: RegistryProps) {
   )
 }
 
+function RegistryEmpty({
+  hasServers,
+  onCatalog,
+  onClear,
+}: {
+  hasServers: boolean
+  onCatalog?: () => void
+  onClear: () => void
+}) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>{hasServers ? 'No matching servers' : 'No MCP servers'}</EmptyTitle>
+        <EmptyDescription>
+          {hasServers
+            ? 'Try another search or clear the filters.'
+            : onCatalog
+              ? 'Add a catalog server or configure your own endpoint.'
+              : 'You cannot connect to any MCP server yet. Ask your team admins for access.'}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        {hasServers ? (
+          <Button type="button" variant="outline" onClick={onClear}>
+            Clear filters
+          </Button>
+        ) : onCatalog ? (
+          <Button type="button" variant="outline" onClick={onCatalog}>
+            Find a server
+          </Button>
+        ) : null}
+      </EmptyContent>
+    </Empty>
+  )
+}
+
 function RegistryToolbar({
   query,
   filter,
+  owner,
+  owners,
   onQueryChange,
   onFilterChange,
+  onOwnerChange,
 }: {
   query: string
   filter: ServerFilter
+  owner: string
+  owners: { value: string; label: string }[]
   onQueryChange: (query: string) => void
   onFilterChange: (filter: ServerFilter) => void
+  onOwnerChange: (owner: string) => void
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <InputGroup className="w-full sm:max-w-xs">
-        <InputGroupInput
-          aria-label="Search servers"
-          placeholder="Search servers…"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-        <InputGroupAddon>
-          <AppIcon icon={Search01Icon} aria-hidden />
-        </InputGroupAddon>
-      </InputGroup>
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+        <InputGroup className="w-full sm:max-w-xs">
+          <InputGroupInput
+            aria-label="Search servers"
+            placeholder="Search servers…"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          <InputGroupAddon>
+            <AppIcon icon={Search01Icon} aria-hidden />
+          </InputGroupAddon>
+        </InputGroup>
+        <Select value={owner} onValueChange={onOwnerChange}>
+          <SelectTrigger aria-label="Filter by owner" className="w-full sm:w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="all">All owners</SelectItem>
+              {owners.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
       <ToggleGroup
         type="single"
         variant="outline"
@@ -230,7 +287,46 @@ function RegistryTable(
     onSortingChange,
   } = props
   const refreshingIds = useMemo(() => new Set(refreshingServerIds), [refreshingServerIds])
-  const columns = useMemo<ColumnDef<DataGridFeatures, McpServerView>[]>(
+  const columns = useRegistryColumns({ onManage, onRefresh, refreshingIds, actionPending })
+  const table = useTable({
+    features: dataGridFeatures,
+    columns,
+    data: servers,
+    getRowId: (server: McpServerView) => server.id,
+    state: { sorting },
+    onSortingChange,
+    manualPagination: true,
+  })
+  return (
+    <>
+      <div className="hidden min-w-0 md:block" data-testid="mcp-server-list">
+        <DataGrid
+          table={table}
+          recordCount={servers.length}
+          tableLayout={{ rowBorder: true, headerBackground: true }}
+        >
+          <DataGridContainer>
+            <div className="overflow-x-auto" data-testid="mcp-server-table-scroll">
+              <DataGridTable />
+            </div>
+          </DataGridContainer>
+        </DataGrid>
+      </div>
+      <MobileRegistry {...props} refreshingServerIds={refreshingIds} />
+    </>
+  )
+}
+
+/** Columns of the desktop registry table. */
+function useRegistryColumns({
+  onManage,
+  onRefresh,
+  refreshingIds,
+  actionPending,
+}: Pick<RegistryProps, 'onManage' | 'onRefresh' | 'actionPending'> & {
+  refreshingIds: ReadonlySet<string>
+}) {
+  return useMemo<ColumnDef<DataGridFeatures, McpServerView>[]>(
     () => [
       {
         accessorKey: 'display_name',
@@ -255,6 +351,13 @@ function RegistryTable(
             </span>
           </button>
         ),
+      },
+      {
+        id: 'owner',
+        accessorFn: (server: McpServerView) => ownerLabel(server),
+        header: ({ column }) => <DataGridColumnHeader column={column} title="Owner" />,
+        size: 160,
+        cell: ({ row }) => <OwnerCell server={row.original} />,
       },
       {
         accessorKey: 'auth_mode',
@@ -306,33 +409,6 @@ function RegistryTable(
     ],
     [onManage, onRefresh, refreshingIds, actionPending],
   )
-  const table = useTable({
-    features: dataGridFeatures,
-    columns,
-    data: servers,
-    getRowId: (server: McpServerView) => server.id,
-    state: { sorting },
-    onSortingChange,
-    manualPagination: true,
-  })
-  return (
-    <>
-      <div className="hidden min-w-0 md:block" data-testid="mcp-server-list">
-        <DataGrid
-          table={table}
-          recordCount={servers.length}
-          tableLayout={{ rowBorder: true, headerBackground: true }}
-        >
-          <DataGridContainer>
-            <div className="overflow-x-auto" data-testid="mcp-server-table-scroll">
-              <DataGridTable />
-            </div>
-          </DataGridContainer>
-        </DataGrid>
-      </div>
-      <MobileRegistry {...props} refreshingServerIds={refreshingIds} />
-    </>
-  )
 }
 
 function MobileRegistry({
@@ -365,6 +441,7 @@ function MobileRegistry({
               {server.last_tool_count ?? '—'} {server.last_tool_count === 1 ? 'tool' : 'tools'}
             </span>
           </div>
+          <OwnerCell server={server} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-muted-foreground text-xs">{authLabel(server.auth_mode)}</span>
             <RegistryActions
@@ -397,10 +474,10 @@ function RegistryActions({
         type="button"
         size="sm"
         variant="outline"
-        aria-label={`Manage ${server.display_name}`}
+        aria-label={`${server.can_manage ? 'Manage' : 'View'} ${server.display_name}`}
         onClick={() => onManage(server.id)}
       >
-        Manage
+        {server.can_manage ? 'Manage' : 'View'}
       </Button>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -409,7 +486,9 @@ function RegistryActions({
             variant="ghost"
             size="icon-sm"
             aria-label={`Refresh ${server.display_name}`}
-            disabled={actionPending || refreshing || server.status !== 'active'}
+            disabled={
+              actionPending || refreshing || server.status !== 'active' || !server.can_manage
+            }
             onClick={() => onRefresh(server)}
           >
             {refreshing ? (
@@ -421,6 +500,25 @@ function RegistryActions({
         </TooltipTrigger>
         <TooltipContent>Refresh {server.display_name} tools</TooltipContent>
       </Tooltip>
+    </div>
+  )
+}
+
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  return (
+    <Badge variant={visibility === 'team' ? 'outline' : 'secondary'}>
+      {visibilityLabel(visibility)}
+    </Badge>
+  )
+}
+
+function OwnerCell({ server }: { server: McpServerView }) {
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
+      <span className="max-w-40 truncate text-sm" title={server.owner_contact ?? undefined}>
+        {ownerLabel(server)}
+      </span>
+      <VisibilityBadge visibility={server.visibility} />
     </div>
   )
 }

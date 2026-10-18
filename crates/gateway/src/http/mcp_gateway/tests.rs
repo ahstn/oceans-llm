@@ -379,6 +379,7 @@ mod proxy_policy {
             .expect("API key");
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "notes".to_string(),
                 display_name: "Notes".to_string(),
                 description: None,
@@ -405,6 +406,7 @@ mod proxy_policy {
                     schema_set_hash: None,
                     error_summary: None,
                     details: Map::new(),
+                    expected_server: None,
                 },
                 &[UpsertExternalMcpToolRecord {
                     mcp_server_id: server.mcp_server_id,
@@ -426,6 +428,8 @@ mod proxy_policy {
                     target_kind: McpToolGrantTargetKind::Tool,
                     target_id: tools[0].mcp_tool_id,
                     updated_at: now,
+                    expected_server: None,
+                    expected_subject_team: None,
                 })
                 .await
                 .expect("tool grant");
@@ -537,6 +541,97 @@ mod proxy_policy {
             "annotations": {"readOnlyHint": true, "openWorldHint": false, "x-extra": 1},
             "_meta": {"origin": "upstream"},
         })
+    }
+
+    #[tokio::test]
+    async fn event_stream_replies_to_posts_are_watched_like_the_get_stream() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        // The upstream answers `prompts/get` as an event stream.
+        let response = dispatch_mcp_request(
+            &state,
+            &crate::http::request_policy::RequestPolicyContext::default(),
+            &auth,
+            "notes",
+            &Method::POST,
+            &headers,
+            Bytes::from(
+                json!({"jsonrpc": "2.0", "id": 4, "method": "prompts/get", "params": {"name": "summarise"}})
+                    .to_string(),
+            ),
+            Instant::now(),
+        )
+        .await;
+        assert!(super::super::stream_reach::is_event_stream(&response));
+        assert_eq!(state.mcp_stream_reach.watched(), 1);
+        drop(response);
+        assert_eq!(
+            state.mcp_stream_reach.watched(),
+            0,
+            "a dropped stream stops being watched"
+        );
+    }
+
+    #[tokio::test]
+    async fn another_teams_team_only_server_does_not_exist_for_lifecycle_methods() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let team = state
+            .store
+            .create_team("lifecycle", "Lifecycle")
+            .await
+            .unwrap();
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .unwrap()
+            .unwrap();
+        state
+            .store
+            .transfer_external_mcp_server_ownership(
+                &gateway_core::TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
+                    expected_ownership: None,
+                    updated_at: OffsetDateTime::now_utc(),
+                    require_no_stranded_access: false,
+                },
+            )
+            .await
+            .unwrap();
+        let initialize = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}},
+        });
+
+        // Outside the owning team, the server answers like a missing one and
+        // its upstream is never contacted.
+        let (status, body) = send(&state, &auth, initialize.clone()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+
+        // A member of the owning team reaches it without any grant.
+        state
+            .store
+            .assign_team_membership(
+                auth.owner_user_id.unwrap(),
+                team.team_id,
+                gateway_core::MembershipRole::Member,
+            )
+            .await
+            .unwrap();
+        let (status, body) = send(&state, &auth, initialize).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(upstream.requests.load(Ordering::SeqCst) > 0);
     }
 
     #[tokio::test]
@@ -696,6 +791,13 @@ mod proxy_policy {
                 auth_mode: server.auth_mode,
                 auth_config: server.auth_config.clone(),
                 timeout_ms: server.timeout_ms,
+                owner_contact: None,
+                visibility: server.ownership.visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                expected_owner_team_id: server.ownership.owner_team_id,
+                expected_visibility: server.ownership.visibility,
+                vouch_for_destinations: false,
                 updated_at: OffsetDateTime::now_utc(),
                 approve_tool_changes: true,
             })
@@ -838,6 +940,88 @@ mod proxy_policy {
             .find(|tool| tool.upstream_name == "purge")
             .expect("purge tool");
         assert_eq!(purge.metadata, gateway_core::McpToolMetadata::default());
+    }
+
+    #[tokio::test]
+    async fn team_servers_reach_only_the_addresses_their_url_allows() {
+        // `localhost.` is a name other than `localhost`, so its spelling makes it
+        // public, yet it resolves to loopback: a public name rebound inside.
+        let resolves = tokio::net::lookup_host("localhost.:0")
+            .await
+            .is_ok_and(|mut addresses| addresses.next().is_some());
+        if !resolves {
+            eprintln!("skipping: `localhost.` does not resolve here");
+            return;
+        }
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(
+            &state,
+            &upstream.url.replace("127.0.0.1", "localhost."),
+            true,
+        )
+        .await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let call = json!({
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let registry = gateway_service::McpRegistryService::with_client(
+            state.store.clone(),
+            Arc::new(gateway_service::HttpMcpDiscoveryClient::new(
+                state.mcp_http_clients.clone(),
+            )),
+        );
+        let refresh = || registry.refresh_discovery(server.mcp_server_id);
+
+        // A platform admin's server may point anywhere.
+        let (status, body) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            refresh().await.expect("discovery").status,
+            ExternalMcpDiscoveryStatus::Success
+        );
+        let reached = upstream.requests.load(Ordering::SeqCst);
+        assert!(reached > 0);
+
+        // Once a team owns it, the same name is held to public addresses when
+        // it connects, for the proxy and for discovery alike.
+        let team = state
+            .store
+            .create_team("notes-owners", "Notes Owners")
+            .await
+            .expect("team");
+        state
+            .store
+            .transfer_external_mcp_server_ownership(
+                &gateway_core::TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: gateway_core::McpServerOwnership {
+                        owner_team_id: Some(team.team_id),
+                        owner_contact: None,
+                        visibility: gateway_core::McpServerVisibility::Organisation,
+                    },
+                    expected_ownership: None,
+                    updated_at: OffsetDateTime::now_utc(),
+                    require_no_stranded_access: false,
+                },
+            )
+            .await
+            .expect("transfer");
+        let (status, body) = send(&state, &auth, call).await;
+        assert_ne!(status, StatusCode::OK, "{body}");
+        let refreshed = refresh().await.expect("discovery result");
+        assert_eq!(refreshed.status, ExternalMcpDiscoveryStatus::Failed);
+        assert_eq!(
+            upstream.requests.load(Ordering::SeqCst),
+            reached,
+            "nothing reached the upstream"
+        );
     }
 
     fn read_resource() -> Value {
@@ -1191,6 +1375,245 @@ mod proxy_policy {
     }
 }
 
+mod stream_reach {
+    use std::time::Duration;
+
+    use axum::body::to_bytes;
+    use gateway_core::{
+        AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode,
+        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+        ExternalMcpTransport, GlobalRole, McpAccessRepository, McpRegistryRepository,
+        McpServerOwnership, McpServerVisibility, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+        MembershipRole, NewApiKeyRecord, NewExternalMcpServerRecord, SCOPE_MCP_PROXY,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord, UserStatus,
+    };
+    use gateway_store::GatewayStore;
+
+    use super::super::stream_reach::{McpStreamReachWatcher, StreamCaller, bound_to_reach};
+    use super::*;
+
+    const STREAMER_KEY: &str = "gwk_streamer.stream-secret";
+
+    struct Seeded {
+        state: AppState,
+        _directory: tempfile::TempDir,
+        team_id: Uuid,
+        user_id: Uuid,
+        api_key_id: Uuid,
+        caller: StreamCaller,
+        /// Rechecks every 50ms.
+        watcher: std::sync::Arc<McpStreamReachWatcher>,
+    }
+
+    /// A team member with an API key and a grant on one tool of a server their
+    /// team owns, published with `visibility`.
+    async fn seed(visibility: McpServerVisibility) -> Seeded {
+        let (directory, state) = crate::http::test_support::app_state().await;
+        let store = &state.store;
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team("stream-team", "Stream Team")
+            .await
+            .unwrap();
+        let user = store
+            .create_identity_user(
+                "Streamer",
+                "streamer@example.test",
+                "streamer@example.test",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .unwrap();
+        store
+            .assign_team_membership(user.user_id, team.team_id, MembershipRole::Member)
+            .await
+            .unwrap();
+        let key = store
+            .create_api_key(&NewApiKeyRecord {
+                name: "Streamer".to_string(),
+                public_id: "streamer".to_string(),
+                secret_hash: gateway_core::hash_gateway_key_secret("stream-secret").unwrap(),
+                model_grant_mode: ApiKeyModelGrantMode::All,
+                owner_kind: ApiKeyOwnerKind::User,
+                owner_user_id: Some(user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                access: Default::default(),
+                created_at: now,
+            })
+            .await
+            .unwrap();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                approve_tool_changes: false,
+                ownership: McpServerOwnership {
+                    visibility,
+                    ..McpServerOwnership::team(team.team_id, None)
+                },
+                server_key: "team-stream".to_string(),
+                display_name: "Team stream".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://8.8.8.8/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 2_000,
+                created_at: now,
+            })
+            .await
+            .unwrap();
+        let tools = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: server.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .unwrap();
+        store
+            .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+                subject_kind: McpToolGrantSubjectKind::User,
+                subject_id: user.user_id,
+                target_kind: McpToolGrantTargetKind::Tool,
+                target_id: tools[0].mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .unwrap();
+        let auth = state
+            .service
+            .authenticate_bearer_token_for_scope(STREAMER_KEY, SCOPE_MCP_PROXY)
+            .await
+            .unwrap();
+        Seeded {
+            _directory: directory,
+            team_id: team.team_id,
+            user_id: user.user_id,
+            api_key_id: key.id,
+            caller: StreamCaller::of(&auth, "team-stream", server.mcp_server_id),
+            watcher: McpStreamReachWatcher::new(state.store.clone(), Duration::from_millis(50)),
+            state,
+        }
+    }
+
+    /// Opens an upstream event stream that never ends on its own, watched by
+    /// `seeded`'s watcher, and returns the task reading it.
+    fn open(seeded: &Seeded) -> tokio::task::JoinHandle<Result<Bytes, axum::Error>> {
+        let upstream = Response::new(Body::from_stream(futures_util::stream::pending::<
+            Result<Bytes, std::io::Error>,
+        >()));
+        let response = bound_to_reach(&seeded.watcher, seeded.caller.clone(), upstream);
+        tokio::spawn(to_bytes(response.into_body(), usize::MAX))
+    }
+
+    async fn assert_ends(reading: tokio::task::JoinHandle<Result<Bytes, axum::Error>>) {
+        let ended = tokio::time::timeout(Duration::from_secs(5), reading).await;
+        assert!(
+            ended.is_ok(),
+            "the stream ends once its caller is no longer reached"
+        );
+    }
+
+    #[tokio::test]
+    async fn team_only_streams_end_when_the_member_leaves_the_team() {
+        let seeded = seed(McpServerVisibility::Team).await;
+        let reading = open(&seeded);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!reading.is_finished(), "a member's stream stays open");
+
+        seeded
+            .state
+            .store
+            .remove_team_membership(seeded.team_id, seeded.user_id)
+            .await
+            .unwrap();
+        assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn organisation_streams_end_when_their_api_key_is_revoked() {
+        let seeded = seed(McpServerVisibility::Organisation).await;
+        let reading = open(&seeded);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!reading.is_finished(), "a live key's stream stays open");
+
+        // The grant survives, so only re-authenticating the key notices.
+        seeded
+            .state
+            .store
+            .revoke_api_key(seeded.api_key_id, OffsetDateTime::now_utc())
+            .await
+            .unwrap();
+        assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn streams_end_when_their_key_loses_the_mcp_scope() {
+        let seeded = seed(McpServerVisibility::Organisation).await;
+        let reading = open(&seeded);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !reading.is_finished(),
+            "an MCP-scoped key's stream stays open"
+        );
+
+        seeded
+            .state
+            .store
+            .replace_api_key_access(
+                seeded.api_key_id,
+                &gateway_core::ApiKeyAccess::new(Some(vec!["inference".to_string()]), None)
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn many_streams_of_one_caller_cost_one_check_per_recheck() {
+        let seeded = seed(McpServerVisibility::Team).await;
+        let readings: Vec<_> = (0..20).map(|_| open(&seeded)).collect();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(readings.iter().all(|reading| !reading.is_finished()));
+        assert_eq!(seeded.watcher.last_pairs_checked(), 1);
+
+        // One change still ends every one of them.
+        seeded
+            .state
+            .store
+            .remove_team_membership(seeded.team_id, seeded.user_id)
+            .await
+            .unwrap();
+        for reading in readings {
+            assert_ends(reading).await;
+        }
+    }
+}
+
 #[test]
 fn stored_definitions_are_served_while_approval_is_on_or_a_change_waits() {
     use gateway_core::{McpToolApprovalStatus, McpToolReviewState};
@@ -1214,6 +1637,8 @@ fn stored_definitions_are_served_while_approval_is_on_or_a_change_waits() {
         created_at: now,
         updated_at: now,
         disabled_at: None,
+        ownership: Default::default(),
+        team_destinations: false,
         approve_tool_changes: false,
     };
     let mut tool = gateway_core::ExternalMcpToolRecord {

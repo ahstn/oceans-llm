@@ -16,8 +16,15 @@ export type ServerFormState = {
   auth_mode: string
   auth_config: string
   timeout_ms: string
+  visibility: ServerVisibility
+  /** Blank on create defaults to the caller's email; blank on edit clears it. */
+  owner_contact: string
+  /** A platform admin's choice of owning team on create; blank is the platform. */
+  owner_team_id: string
   approve_tool_changes: boolean
 }
+
+export type ServerVisibility = 'team' | 'organisation'
 
 export type CredentialBindingFormState = {
   owner_scope_kind: 'user' | 'team' | 'service_account'
@@ -32,7 +39,8 @@ export type CredentialBindingFormState = {
   expires_at: string
 }
 
-export function emptyServerForm(): ServerFormState {
+/** Team admins register for their team, so their servers start team-only. */
+export function emptyServerForm(visibility: ServerVisibility = 'organisation'): ServerFormState {
   return {
     server_key: '',
     display_name: '',
@@ -41,15 +49,19 @@ export function emptyServerForm(): ServerFormState {
     auth_mode: 'none',
     auth_config: '{}',
     timeout_ms: '30000',
+    visibility,
+    owner_contact: '',
+    owner_team_id: '',
     approve_tool_changes: false,
   }
 }
 
-export function emptyCredentialBindingForm(): CredentialBindingFormState {
+/** A team admin sets only their team's shared credential or a service account's. */
+export function emptyCredentialBindingForm(teamId?: string | null): CredentialBindingFormState {
   return {
-    owner_scope_kind: 'user',
+    owner_scope_kind: teamId ? 'team' : 'user',
     owner_user_id: '',
-    owner_team_id: '',
+    owner_team_id: teamId ?? '',
     owner_service_account_id: '',
     material_kind: 'bearer_token',
     header_name: '',
@@ -60,8 +72,14 @@ export function emptyCredentialBindingForm(): CredentialBindingFormState {
   }
 }
 
-export function formFromRecommended(server: RecommendedMcpServerView): ServerFormState {
+export function formFromRecommended(
+  server: RecommendedMcpServerView,
+  visibility: ServerVisibility = 'organisation',
+): ServerFormState {
   return {
+    visibility,
+    owner_contact: '',
+    owner_team_id: '',
     server_key: server.catalog_key,
     display_name: server.display_name,
     description: server.description ?? '',
@@ -82,6 +100,9 @@ export function formFromServer(server: McpServerView): ServerFormState {
     auth_mode: server.auth_mode,
     auth_config: JSON.stringify(server.auth_config ?? {}, null, 2),
     timeout_ms: String(server.timeout_ms),
+    visibility: server.visibility === 'team' ? 'team' : 'organisation',
+    owner_contact: server.owner_contact ?? '',
+    owner_team_id: server.owner_team_id ?? '',
     approve_tool_changes: server.approve_tool_changes,
   }
 }
@@ -100,6 +121,10 @@ export function formToCreateInput(form: ServerFormState): CreateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    visibility: form.visibility,
+    owner_contact: optionalString(form.owner_contact),
+    // A team admin leaves it blank; the gateway registers for their team.
+    owner_team_id: optionalString(form.owner_team_id),
     approve_tool_changes: form.approve_tool_changes,
   }
 }
@@ -116,6 +141,9 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
     auth_mode: form.auth_mode,
     auth_config: authConfig,
     timeout_ms: optionalNumber(form.timeout_ms),
+    visibility: form.visibility,
+    // An empty string clears the contact.
+    owner_contact: form.owner_contact.trim(),
     approve_tool_changes: form.approve_tool_changes,
   }
 }

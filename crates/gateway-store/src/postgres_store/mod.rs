@@ -315,6 +315,14 @@ impl GatewayStore for PostgresStore {
         Self::create_mcp_oauth_state(self, state).await
     }
 
+    async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &gateway_core::McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError> {
+        Self::create_mcp_oauth_state_guarded(self, state, expected_server).await
+    }
+
     async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
@@ -323,6 +331,10 @@ impl GatewayStore for PostgresStore {
         consumed_at: OffsetDateTime,
     ) -> Result<Option<gateway_core::McpOauthStateRecord>, StoreError> {
         Self::consume_mcp_oauth_state(self, state_hash, user_id, provider_key, consumed_at).await
+    }
+
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        Self::mcp_oauth_state_exists(self, state_hash).await
     }
 
     async fn get_user_by_email_normalized(
@@ -839,6 +851,10 @@ impl AdminIdentityRepository for PostgresStore {
 
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_teams(self).await
+    }
+
+    async fn list_teams_by_ids(&self, team_ids: &[Uuid]) -> Result<Vec<TeamRecord>, StoreError> {
+        Self::list_teams_by_ids(self, team_ids).await
     }
 
     async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {

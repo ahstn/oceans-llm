@@ -1444,6 +1444,2060 @@ pub(crate) mod tests {
         );
     }
 
+    /// Ownership survives create, settings saves and transfers, and a write that
+    /// changes nothing reports no previous record.
+    async fn exercise_mcp_server_ownership_repository<S>(store: &S)
+    where
+        S: GatewayStore
+            + McpRegistryRepository
+            + gateway_core::McpAccessRepository
+            + gateway_core::McpUpstreamCredentialRepository
+            + Sync,
+    {
+        use gateway_core::{
+            McpServerOwnership, McpServerVisibility, TransferExternalMcpServerOwnershipRecord,
+        };
+
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team("mcp-owners", "MCP Owners")
+            .await
+            .expect("create team");
+        let owned = McpServerOwnership::team(team.team_id, Some("#mcp-owners".to_string()));
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                approve_tool_changes: false,
+                server_key: "team-docs".to_string(),
+                display_name: "Team Docs".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://docs.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                ownership: owned.clone(),
+                created_at: now,
+            })
+            .await
+            .expect("create team-owned MCP server");
+        // The owner filter runs in the query: the team's servers, or the
+        // platform's for `None`.
+        let owned_by =
+            |owner_team_id| store.list_external_mcp_servers_owned_by(owner_team_id, true);
+        assert_eq!(
+            owned_by(Some(team.team_id))
+                .await
+                .expect("team's servers")
+                .iter()
+                .map(|server| server.mcp_server_id)
+                .collect::<Vec<_>>(),
+            vec![server.mcp_server_id]
+        );
+        assert!(
+            owned_by(None)
+                .await
+                .expect("platform's servers")
+                .iter()
+                .all(|listed| listed.mcp_server_id != server.mcp_server_id)
+        );
+        assert_eq!(
+            store
+                .list_external_mcp_servers_by_ids(&[server.mcp_server_id, Uuid::new_v4()])
+                .await
+                .expect("servers by ID")
+                .iter()
+                .map(|listed| listed.mcp_server_id)
+                .collect::<Vec<_>>(),
+            vec![server.mcp_server_id]
+        );
+        // A team admin's registry, filtered in the query: the team's own server,
+        // which is team-only, is visible to that team and no other.
+        let visible_to = |team_id| store.list_external_mcp_servers_visible_to_team(team_id, true);
+        assert!(
+            visible_to(team.team_id)
+                .await
+                .expect("own team")
+                .iter()
+                .any(|listed| listed.mcp_server_id == server.mcp_server_id)
+        );
+        assert!(
+            !visible_to(Uuid::new_v4())
+                .await
+                .expect("another team")
+                .iter()
+                .any(|listed| listed.mcp_server_id == server.mcp_server_id)
+        );
+        assert!(
+            store
+                .list_external_mcp_servers_by_ids(&[])
+                .await
+                .expect("no IDs")
+                .is_empty()
+        );
+        assert!(
+            owned_by(Some(Uuid::new_v4()))
+                .await
+                .expect("unknown team")
+                .is_empty()
+        );
+        assert_eq!(server.ownership, owned);
+        // Both backends refuse a platform-owned server that is team-only.
+        assert!(
+            store
+                .create_external_mcp_server(&NewExternalMcpServerRecord {
+                    approve_tool_changes: false,
+                    server_key: "orphan".to_string(),
+                    display_name: "Orphan".to_string(),
+                    description: None,
+                    transport: ExternalMcpTransport::StreamableHttp,
+                    server_url: "https://orphan.example.com/mcp".to_string(),
+                    auth_mode: ExternalMcpAuthMode::None,
+                    auth_config: Map::new(),
+                    timeout_ms: 30_000,
+                    ownership: McpServerOwnership {
+                        owner_team_id: None,
+                        owner_contact: None,
+                        visibility: McpServerVisibility::Team,
+                    },
+                    created_at: now,
+                })
+                .await
+                .is_err()
+        );
+        let listed = store
+            .list_external_mcp_servers(true)
+            .await
+            .expect("list MCP servers");
+        assert_eq!(listed[0].ownership, owned);
+
+        let settings = |owner_contact: Option<&str>, visibility, expected_visibility| {
+            UpdateExternalMcpServerRecord {
+                approve_tool_changes: false,
+                vouch_for_destinations: false,
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: None,
+                server_url: server.server_url.clone(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                owner_contact: Some(owner_contact.map(str::to_string)),
+                visibility,
+                expected_owner_team_id: Some(team.team_id),
+                expected_visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                updated_at: now + Duration::seconds(1),
+            }
+        };
+        let published = store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+                McpServerVisibility::Team,
+            ))
+            .await
+            .expect("publish server");
+        assert_eq!(
+            published
+                .previous
+                .expect("publishing is a change")
+                .ownership,
+            owned
+        );
+        assert_eq!(
+            published.current.ownership.visibility,
+            McpServerVisibility::Organisation
+        );
+        assert_eq!(
+            published.current.ownership.owner_contact.as_deref(),
+            Some("docs@example.com")
+        );
+        // The owning team is not part of a settings save.
+        assert_eq!(
+            published.current.ownership.owner_team_id,
+            Some(team.team_id)
+        );
+        let resaved = store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+                McpServerVisibility::Organisation,
+            ))
+            .await
+            .expect("resave server");
+        assert!(resaved.previous.is_none());
+        // A save authorized against another owner is rejected under the write lock.
+        // Changing the auth settings drops a dynamically registered OAuth
+        // client, so it is never reused against new endpoints.
+        store
+            .insert_mcp_oauth_client_if_absent(
+                &gateway_core::McpOauthClientRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    issuer: "https://auth.example.com".to_string(),
+                    redirect_uri: "https://gateway.example.com/callback".to_string(),
+                    client_id: "dynamic-client".to_string(),
+                    token_endpoint_auth_method: "none".to_string(),
+                    secret_ciphertext: None,
+                    secret_nonce: None,
+                    secret_key_id: None,
+                    client_secret_expires_at: None,
+                    created_at: now,
+                    updated_at: now,
+                },
+                None,
+            )
+            .await
+            .expect("store OAuth client");
+        // Users' OAuth tokens are revoked with it; other credentials stand.
+        let oauth_user = store
+            .create_identity_user(
+                "OAuth user",
+                "mcp-oauth-user@example.com",
+                "mcp-oauth-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("OAuth user");
+        let binding = |owner_scope_kind,
+                       owner_user_id: Option<Uuid>,
+                       owner_team_id: Option<Uuid>,
+                       material_kind| {
+            UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind,
+                owner_scope_key: format!(
+                    "mcp_credential:v1:{}:{}",
+                    if owner_user_id.is_some() {
+                        "user"
+                    } else {
+                        "team"
+                    },
+                    owner_user_id.or(owner_team_id).unwrap_or_default()
+                ),
+                owner_user_id,
+                owner_team_id,
+                owner_service_account_id: None,
+                material_kind,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+                expected_replaced: None,
+            }
+        };
+        store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                McpUpstreamCredentialOwnerScopeKind::User,
+                Some(oauth_user.user_id),
+                None,
+                McpUpstreamCredentialMaterialKind::OauthTokens,
+            ))
+            .await
+            .expect("user OAuth tokens");
+        let (team_binding, _) = store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                McpUpstreamCredentialOwnerScopeKind::Team,
+                None,
+                Some(team.team_id),
+                McpUpstreamCredentialMaterialKind::BearerToken,
+            ))
+            .await
+            .expect("team bearer token");
+        let mut retargeted = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
+        retargeted.auth_config = Map::from_iter([(
+            "token_endpoint".to_string(),
+            json!("https://new.example.com/token"),
+        )]);
+        let retarget = store
+            .update_external_mcp_server(&retargeted)
+            .await
+            .expect("change auth settings");
+        // The revoked OAuth bindings are returned, so each revoke is audited.
+        assert_eq!(
+            retarget
+                .revoked_oauth_bindings
+                .iter()
+                .map(|binding| (binding.material_kind, binding.revoked_at.is_some()))
+                .collect::<Vec<_>>(),
+            vec![(McpUpstreamCredentialMaterialKind::OauthTokens, true)]
+        );
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("load OAuth client")
+                .is_none()
+        );
+        let active = store
+            .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, false)
+            .await
+            .expect("active bindings");
+        assert_eq!(
+            active
+                .iter()
+                .map(|binding| binding.material_kind)
+                .collect::<Vec<_>>(),
+            vec![McpUpstreamCredentialMaterialKind::BearerToken],
+            "only the OAuth tokens are revoked"
+        );
+        store
+            .revoke_mcp_upstream_credential_binding(team_binding.credential_binding_id, now)
+            .await
+            .expect("revoke team bearer token");
+        // Restore the settings the rest of this test expects.
+        store
+            .update_external_mcp_server(&settings(
+                Some("docs@example.com"),
+                McpServerVisibility::Organisation,
+                McpServerVisibility::Organisation,
+            ))
+            .await
+            .expect("restore settings");
+        // A save authorized against an older visibility is rejected too, so it
+        // cannot republish a server another request narrowed.
+        let narrowed_view = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Team,
+        );
+        assert!(matches!(
+            store.update_external_mcp_server(&narrowed_view).await,
+            Err(StoreError::Conflict(_))
+        ));
+        let mut stale = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
+        stale.expected_owner_team_id = None;
+        stale.display_name = "Renamed".to_string();
+        assert!(matches!(
+            store.update_external_mcp_server(&stale).await,
+            Err(StoreError::Conflict(_))
+        ));
+
+        let transfer = TransferExternalMcpServerOwnershipRecord {
+            mcp_server_id: server.mcp_server_id,
+            ownership: McpServerOwnership::default(),
+            expected_ownership: None,
+            updated_at: now + Duration::seconds(2),
+            require_no_stranded_access: false,
+        };
+        let taken_over = store
+            .transfer_external_mcp_server_ownership(&transfer)
+            .await
+            .expect("take over server");
+        assert_eq!(
+            taken_over
+                .previous
+                .as_ref()
+                .expect("a transfer is a change")
+                .ownership
+                .owner_team_id,
+            Some(team.team_id)
+        );
+        assert_eq!(taken_over.current.ownership, McpServerOwnership::default());
+        // The team may have set its destinations, so the takeover keeps them
+        // unvouched until a platform admin saves the settings.
+        assert!(taken_over.current.team_destinations);
+        assert!(taken_over.current.guards_destinations());
+        let mut unvouched = settings(
+            Some("docs@example.com"),
+            McpServerVisibility::Organisation,
+            McpServerVisibility::Organisation,
+        );
+        unvouched.expected_owner_team_id = None;
+        unvouched.owner_contact = None;
+        unvouched.display_name = taken_over.current.display_name.clone();
+        unvouched.description = taken_over.current.description.clone();
+        unvouched.server_url = taken_over.current.server_url.clone();
+        unvouched.auth_mode = taken_over.current.auth_mode;
+        unvouched.auth_config = taken_over.current.auth_config.clone();
+        unvouched.timeout_ms = taken_over.current.timeout_ms;
+        assert!(
+            store
+                .update_external_mcp_server(&unvouched)
+                .await
+                .expect("unchanged save")
+                .previous
+                .is_none(),
+            "a save that does not vouch changes nothing"
+        );
+        let vouched = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: true,
+                ..unvouched.clone()
+            })
+            .await
+            .expect("vouching save");
+        assert!(
+            vouched
+                .previous
+                .expect("vouching is a change")
+                .team_destinations
+        );
+        assert!(!vouched.current.team_destinations);
+        assert!(!vouched.current.guards_destinations());
+        assert!(
+            store
+                .transfer_external_mcp_server_ownership(&transfer)
+                .await
+                .expect("repeat transfer")
+                .previous
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_external_mcp_server(server.mcp_server_id)
+                .await
+                .expect("load server")
+                .expect("server exists")
+                .ownership,
+            McpServerOwnership::default()
+        );
+        // A conditional transfer against a stale ownership is a conflict.
+        assert!(matches!(
+            store
+                .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership: owned.clone(),
+                    expected_ownership: Some(owned.clone()),
+                    updated_at: now + Duration::seconds(2),
+                    require_no_stranded_access: false,
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+
+        let run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: now,
+            finished_at: now,
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: None,
+            error_summary: None,
+            details: Map::new(),
+            expected_server: None,
+        };
+        let tools = store
+            .record_external_mcp_discovery_success(
+                &run,
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .expect("discover tool");
+        let tool = store
+            .get_external_mcp_tool(tools[0].mcp_tool_id)
+            .await
+            .expect("load tool")
+            .expect("tool exists");
+        assert_eq!(tool.mcp_server_id, server.mcp_server_id);
+        assert!(
+            store
+                .get_external_mcp_tool(Uuid::new_v4())
+                .await
+                .expect("load missing tool")
+                .is_none()
+        );
+
+        // Server- and team-scoped lookups used by the ownership checks.
+        let toolset = store
+            .create_mcp_toolset(&gateway_core::NewMcpToolsetRecord {
+                toolset_key: "team-docs-set".to_string(),
+                display_name: "Team docs".to_string(),
+                description: None,
+                created_at: now,
+            })
+            .await
+            .expect("create tool set");
+        store
+            .replace_mcp_toolset_tools(toolset.toolset_id, &[tool.mcp_tool_id], now)
+            .await
+            .expect("add tool to set");
+        // A disabled tool set exposes nothing, so only active sets count.
+        let disabled = store
+            .create_mcp_toolset(&gateway_core::NewMcpToolsetRecord {
+                toolset_key: "aaa-disabled-set".to_string(),
+                display_name: "Disabled".to_string(),
+                description: None,
+                created_at: now,
+            })
+            .await
+            .expect("create disabled tool set");
+        store
+            .replace_mcp_toolset_tools(disabled.toolset_id, &[tool.mcp_tool_id], now)
+            .await
+            .expect("add tool to disabled set");
+        store
+            .disable_mcp_toolset(disabled.toolset_id, now)
+            .await
+            .expect("disable tool set");
+        assert_eq!(
+            store
+                .first_active_mcp_toolset_key_for_server(server.mcp_server_id)
+                .await
+                .expect("tool sets for server")
+                .as_deref(),
+            Some("team-docs-set")
+        );
+        let grant = |subject_id| gateway_core::UpsertMcpToolGrantRecord {
+            subject_kind: gateway_core::McpToolGrantSubjectKind::Team,
+            subject_id,
+            target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+            target_id: tool.mcp_tool_id,
+            updated_at: now,
+            expected_server: None,
+            expected_subject_team: None,
+        };
+        let revoked_subject = Uuid::new_v4();
+        store
+            .upsert_mcp_tool_grant(&grant(team.team_id))
+            .await
+            .expect("grant team");
+        store
+            .upsert_mcp_tool_grant(&grant(revoked_subject))
+            .await
+            .expect("grant other subject");
+        store
+            .revoke_mcp_tool_grant(
+                gateway_core::McpToolGrantSubjectKind::Team,
+                revoked_subject,
+                gateway_core::McpToolGrantTargetKind::Tool,
+                tool.mcp_tool_id,
+                now,
+            )
+            .await
+            .expect("revoke grant");
+        // Only the team's own grant is active; the revoked one is not counted.
+        let outside =
+            |team_id| store.count_mcp_tool_grants_outside_team(server.mcp_server_id, team_id);
+        assert_eq!(outside(team.team_id).await.expect("count inside"), 0);
+        assert_eq!(
+            outside(Uuid::new_v4())
+                .await
+                .expect("count for another team"),
+            1
+        );
+        exercise_mcp_grant_subject_teams(store, &tool, team.team_id).await;
+        // The server is platform-owned after the takeover above, so the team owns
+        // nothing until it is moved back.
+        assert!(
+            store
+                .list_mcp_tool_grants_for_owner_team(team.team_id, None, None)
+                .await
+                .expect("team grants")
+                .is_empty()
+        );
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: true,
+            })
+            .await
+            .map(|_| ())
+            .expect_err("a tool set and outside grants would be stranded");
+        assert_eq!(
+            store
+                .get_external_mcp_server(server.mcp_server_id)
+                .await
+                .expect("reload")
+                .expect("server")
+                .ownership
+                .owner_team_id,
+            None,
+            "a refused narrowing writes nothing"
+        );
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
+            })
+            .await
+            .expect("move back to the team");
+        // A narrowing saved with the settings is checked in the same write: a
+        // refused one saves neither the visibility nor the other settings.
+        let published = McpServerOwnership {
+            visibility: McpServerVisibility::Organisation,
+            ..owned.clone()
+        };
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: published.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
+            })
+            .await
+            .expect("publish to the organisation");
+        let mut narrowing = settings(
+            Some("#mcp-owners"),
+            McpServerVisibility::Team,
+            McpServerVisibility::Organisation,
+        );
+        narrowing.display_name = "Narrowed Docs".to_string();
+        assert!(matches!(
+            store.update_external_mcp_server(&narrowing).await,
+            Err(StoreError::Conflict(_))
+        ));
+        let unchanged = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        assert_eq!(
+            unchanged.ownership, published,
+            "a refused save writes nothing"
+        );
+        assert_eq!(unchanged.display_name, server.display_name);
+        store
+            .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                mcp_server_id: server.mcp_server_id,
+                ownership: owned.clone(),
+                expected_ownership: None,
+                updated_at: now + Duration::seconds(3),
+                require_no_stranded_access: false,
+            })
+            .await
+            .expect("limit to the team again");
+        // A disable checked against a former owner is a conflict, and changes nothing.
+        assert!(matches!(
+            store
+                .disable_external_mcp_server_for_owner(server.mcp_server_id, None, now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let (current, disabled) = store
+            .disable_external_mcp_server_for_owner(server.mcp_server_id, Some(team.team_id), now)
+            .await
+            .expect("disable as the owner");
+        assert!(disabled);
+        assert_eq!(current.status, ExternalMcpServerStatus::Disabled);
+        // A disabled server's tool set and grants reach no one, so narrowing it
+        // strands nothing.
+        assert_eq!(
+            store
+                .first_active_mcp_toolset_key_for_server(server.mcp_server_id)
+                .await
+                .expect("tool set lookup"),
+            None
+        );
+        for (ownership, require_no_stranded_access) in
+            [(published.clone(), false), (owned.clone(), true)]
+        {
+            store
+                .transfer_external_mcp_server_ownership(&TransferExternalMcpServerOwnershipRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    ownership,
+                    expected_ownership: None,
+                    updated_at: now + Duration::seconds(3),
+                    require_no_stranded_access,
+                })
+                .await
+                .expect("move the disabled server");
+        }
+        // Revoked grants are listed too, as the unscoped grant list does: the
+        // Subject filters run in the query: only the team's own grant.
+        let team_grants = store
+            .list_mcp_tool_grants_for_owner_team(
+                team.team_id,
+                Some(gateway_core::McpToolGrantSubjectKind::Team),
+                Some(team.team_id),
+            )
+            .await
+            .expect("filtered team grants");
+        assert_eq!(team_grants.len(), 1);
+        assert_eq!(team_grants[0].subject_id, team.team_id);
+        // two above and the twelve the subject-team check revoked.
+        assert_eq!(
+            store
+                .list_mcp_tool_grants_for_owner_team(team.team_id, None, None)
+                .await
+                .expect("team grants")
+                .len(),
+            14
+        );
+
+        exercise_mcp_ownership_guards(
+            store,
+            &server,
+            tool.mcp_tool_id,
+            team.team_id,
+            toolset.toolset_id,
+        )
+        .await;
+        exercise_mcp_settings_under_lock(store, server.mcp_server_id).await;
+        exercise_mcp_visibility_rule(store, team.team_id).await;
+    }
+
+    /// The store's hidden-server queries are the SQL form of
+    /// `McpServerOwnership::is_reachable_from`, and must agree with it for
+    /// every visibility, owner and caller team.
+    async fn exercise_mcp_visibility_rule<S>(store: &S, team_id: Uuid)
+    where
+        S: McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
+    {
+        use gateway_core::{McpServerOwnership, McpServerVisibility};
+
+        let now = OffsetDateTime::now_utc();
+        let other_team = Uuid::new_v4();
+        let ownerships = [
+            McpServerOwnership::default(),
+            McpServerOwnership {
+                visibility: McpServerVisibility::Organisation,
+                ..McpServerOwnership::team(team_id, None)
+            },
+            McpServerOwnership::team(team_id, None),
+        ];
+        let mut servers = Vec::new();
+        for (index, ownership) in ownerships.into_iter().enumerate() {
+            let server = store
+                .create_external_mcp_server(&NewExternalMcpServerRecord {
+                    approve_tool_changes: false,
+                    server_key: format!("visibility-rule-{index}"),
+                    display_name: format!("Visibility rule {index}"),
+                    description: None,
+                    transport: ExternalMcpTransport::StreamableHttp,
+                    server_url: format!("https://rule-{index}.example.com/mcp"),
+                    auth_mode: ExternalMcpAuthMode::None,
+                    auth_config: Map::new(),
+                    timeout_ms: 30_000,
+                    ownership,
+                    created_at: now,
+                })
+                .await
+                .expect("server");
+            servers.push(server);
+        }
+        // The ownership-only read matches the full records.
+        let ids: Vec<Uuid> = servers.iter().map(|server| server.mcp_server_id).collect();
+        let mut ownerships = store
+            .list_mcp_server_ownerships(&ids)
+            .await
+            .expect("ownerships");
+        ownerships.sort_by_key(|(mcp_server_id, _)| *mcp_server_id);
+        let mut expected: Vec<_> = servers
+            .iter()
+            .map(|server| (server.mcp_server_id, server.ownership.clone()))
+            .collect();
+        expected.sort_by_key(|(mcp_server_id, _)| *mcp_server_id);
+        assert_eq!(ownerships, expected);
+        assert!(
+            store
+                .list_mcp_server_ownerships(&[])
+                .await
+                .expect("no IDs")
+                .is_empty()
+        );
+        // A team admin's registry lists each server it reaches exactly once,
+        // in key order: the team's own published server is in both branches
+        // of the query.
+        for caller_team in [team_id, other_team] {
+            let listed: Vec<_> = store
+                .list_external_mcp_servers_visible_to_team(caller_team, true)
+                .await
+                .expect("visible to team")
+                .into_iter()
+                .filter(|listed| {
+                    servers
+                        .iter()
+                        .any(|server| server.mcp_server_id == listed.mcp_server_id)
+                })
+                .map(|listed| listed.server_key)
+                .collect();
+            let expected: Vec<_> = servers
+                .iter()
+                .filter(|server| server.ownership.is_reachable_from(Some(caller_team)))
+                .map(|server| server.server_key.clone())
+                .collect();
+            assert_eq!(listed, expected, "for {caller_team}");
+        }
+        for caller_team in [None, Some(team_id), Some(other_team)] {
+            let outside = store
+                .list_team_only_mcp_server_ids_outside(caller_team)
+                .await
+                .expect("hidden servers");
+            let hidden_among = store
+                .list_mcp_server_ids_hidden_from(&ids, caller_team)
+                .await
+                .expect("hidden among servers");
+            for server in &servers {
+                let reachable = server.ownership.is_reachable_from(caller_team);
+                let hidden = store
+                    .is_mcp_server_hidden_from(server.mcp_server_id, caller_team)
+                    .await
+                    .expect("hidden lookup");
+                assert_eq!(
+                    hidden, !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+                assert_eq!(
+                    outside.contains(&server.mcp_server_id),
+                    !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+                assert_eq!(
+                    hidden_among.contains(&server.mcp_server_id),
+                    !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+            }
+        }
+    }
+
+    /// Settings saves resolve what they depend on under the write lock: an
+    /// omitted contact, and the credentials a team admin's retarget would carry.
+    async fn exercise_mcp_settings_under_lock<S>(store: &S, mcp_server_id: Uuid)
+    where
+        S: GatewayStore
+            + McpRegistryRepository
+            + gateway_core::McpUpstreamCredentialRepository
+            + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("load server")
+            .expect("server exists");
+        let save = |server_url: &str, owner_contact, retarget| UpdateExternalMcpServerRecord {
+            approve_tool_changes: false,
+            vouch_for_destinations: false,
+            mcp_server_id,
+            display_name: server.display_name.clone(),
+            description: server.description.clone(),
+            server_url: server_url.to_string(),
+            auth_mode: server.auth_mode,
+            auth_config: server.auth_config.clone(),
+            timeout_ms: server.timeout_ms,
+            owner_contact,
+            visibility: server.ownership.visibility,
+            retarget_owner_credentials_only: retarget,
+            expected_server: None,
+            expected_owner_team_id: server.ownership.owner_team_id,
+            expected_visibility: server.ownership.visibility,
+            updated_at: now,
+        };
+
+        // A discovery result authorized against another owner is not stored.
+        let stale_owner = gateway_core::McpServerOwnershipGuard {
+            owner_team_id: Some(Uuid::new_v4()),
+            ..gateway_core::McpServerOwnershipGuard::of(&server)
+        };
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Failed,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 0,
+                    active_tool_count: 0,
+                    schema_set_hash: None,
+                    error_summary: Some("stale".to_string()),
+                    details: Map::new(),
+                    expected_server: Some(stale_owner),
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_ne!(
+            store
+                .get_external_mcp_server(mcp_server_id)
+                .await
+                .expect("reload")
+                .expect("server")
+                .last_error_summary
+                .as_deref(),
+            Some("stale"),
+            "a refused run writes nothing"
+        );
+
+        // Guarded discoveries of one server can land together: each locks the
+        // server before checking its guard, so neither waits on the other's
+        // share lock, and both are stored.
+        let run = |status, error: Option<&str>| ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id,
+            status,
+            started_at: now,
+            finished_at: now,
+            discovered_tool_count: 0,
+            active_tool_count: 0,
+            schema_set_hash: None,
+            error_summary: error.map(str::to_string),
+            details: Map::new(),
+            expected_server: Some(gateway_core::McpServerOwnershipGuard::of(&server)),
+        };
+        for _ in 0..4 {
+            let (first, second, failed) = (
+                run(ExternalMcpDiscoveryStatus::Success, None),
+                run(ExternalMcpDiscoveryStatus::Success, None),
+                run(ExternalMcpDiscoveryStatus::Failed, Some("overlapping")),
+            );
+            let (first, second, failure) = tokio::join!(
+                store.record_external_mcp_discovery_success(&first, &[]),
+                store.record_external_mcp_discovery_success(&second, &[]),
+                store.record_external_mcp_discovery_failure(&failed),
+            );
+            first.expect("first concurrent discovery");
+            second.expect("second concurrent discovery");
+            failure.expect("concurrent failed discovery");
+        }
+
+        // Another request changed the contact; a save that omits it keeps that.
+        store
+            .update_external_mcp_server(&save(
+                &server.server_url,
+                Some(Some("#docs-oncall".to_string())),
+                false,
+            ))
+            .await
+            .expect("change contact");
+        let renamed = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                display_name: "Renamed docs".to_string(),
+                ..save(&server.server_url, None, false)
+            })
+            .await
+            .expect("save without a contact");
+        assert_eq!(
+            renamed.current.ownership.owner_contact.as_deref(),
+            Some("#docs-oncall")
+        );
+
+        // A user's credential would follow the server to its new URL, so a team
+        // admin's retarget is refused under the lock while it is active.
+        let user = store
+            .create_identity_user(
+                "Retarget user",
+                "mcp-retarget-user@example.com",
+                "mcp-retarget-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let (user_binding, _) = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: format!("mcp_credential:v1:user:{}", user.user_id),
+                owner_user_id: Some(user.user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+                expected_replaced: None,
+            })
+            .await
+            .expect("user binding");
+        let moved = "https://moved.example.com/mcp";
+        assert!(matches!(
+            store
+                .update_external_mcp_server(&save(moved, None, true))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        store
+            .revoke_mcp_upstream_credential_binding(user_binding.credential_binding_id, now)
+            .await
+            .expect("revoke user binding");
+        // Credentials the gateway could no longer send do not block it: an
+        // expired one, and OAuth tokens, which the retarget itself revokes.
+        let user_credential =
+            |user_id: Uuid, material_kind, expires_at| UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: format!("mcp_credential:v1:user:{user_id}"),
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("key".to_string()),
+                secret_ref: None,
+                expires_at,
+                metadata: Map::new(),
+                updated_at: now,
+                expected_server: None,
+                expected_replaced: None,
+            };
+        store
+            .upsert_mcp_upstream_credential_binding(&user_credential(
+                user.user_id,
+                McpUpstreamCredentialMaterialKind::BearerToken,
+                Some(now - Duration::minutes(1)),
+            ))
+            .await
+            .expect("expired user binding");
+        let connected = store
+            .create_identity_user(
+                "Retarget OAuth user",
+                "mcp-retarget-oauth@example.com",
+                "mcp-retarget-oauth@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("OAuth user");
+        store
+            .upsert_mcp_upstream_credential_binding(&user_credential(
+                connected.user_id,
+                McpUpstreamCredentialMaterialKind::OauthTokens,
+                None,
+            ))
+            .await
+            .expect("user OAuth tokens");
+        let retargeted = store
+            .update_external_mcp_server(&save(moved, None, true))
+            .await
+            .expect("retarget past unusable credentials");
+        assert_eq!(retargeted.revoked_oauth_bindings.len(), 1);
+        store
+            .update_external_mcp_server(&save(&server.server_url, None, true))
+            .await
+            .expect("retarget back");
+        // A save authorized against other auth settings is refused, so a stale
+        // form cannot overwrite a newer change.
+        let current = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        let mut stale_settings = current.clone();
+        stale_settings.auth_config = Map::from_iter([(
+            "client_secret_ref".to_string(),
+            json!("env/OCEANS_MCP_REMOVED_SECRET"),
+        )]);
+        assert!(matches!(
+            store
+                .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                    expected_server: Some(
+                        gateway_core::McpServerOwnershipGuard::of(&current)
+                            .with_auth_settings(&stale_settings),
+                    ),
+                    display_name: "Stale form".to_string(),
+                    ..save(&current.server_url, None, false)
+                })
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        // An OAuth flow started now cannot finish once the settings change. A
+        // state for settings that have already changed is not stored at all.
+        let state_hash = "retarget-state-hash";
+        let flow_state = |hash: &str| gateway_core::McpOauthStateRecord {
+            state_hash: hash.to_string(),
+            user_id: user.user_id,
+            mcp_server_id,
+            provider_key: "mcp_server".to_string(),
+            pkce_verifier: "verifier".to_string(),
+            redirect_to: "/admin/account/connections".to_string(),
+            resource: current.server_url.clone(),
+            scopes: Vec::new(),
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+        // A guard read for another server does not cover this one.
+        assert!(matches!(
+            store
+                .create_mcp_oauth_state_guarded(
+                    &flow_state("other-server-state-hash"),
+                    &gateway_core::McpServerOwnershipGuard {
+                        mcp_server_id: Uuid::new_v4(),
+                        ..gateway_core::McpServerOwnershipGuard::of(&current)
+                    },
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store
+                .create_mcp_oauth_state_guarded(
+                    &flow_state("stale-state-hash"),
+                    &gateway_core::McpServerOwnershipGuard::of(&current)
+                        .with_auth_settings(&stale_settings),
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            !store
+                .mcp_oauth_state_exists("stale-state-hash")
+                .await
+                .expect("state")
+        );
+        store
+            .create_mcp_oauth_state_guarded(
+                &flow_state("current-state-hash"),
+                &gateway_core::McpServerOwnershipGuard::of(&current).with_auth_settings(&current),
+            )
+            .await
+            .expect("guarded state");
+        store
+            .create_mcp_oauth_state(&gateway_core::McpOauthStateRecord {
+                state_hash: state_hash.to_string(),
+                user_id: user.user_id,
+                mcp_server_id,
+                provider_key: "mcp_server".to_string(),
+                pkce_verifier: "verifier".to_string(),
+                redirect_to: "/admin/account/connections".to_string(),
+                resource: current.server_url.clone(),
+                scopes: Vec::new(),
+                expires_at: now + Duration::minutes(10),
+                consumed_at: None,
+                created_at: now,
+            })
+            .await
+            .expect("OAuth state");
+        assert!(
+            store
+                .mcp_oauth_state_exists(state_hash)
+                .await
+                .expect("state")
+        );
+        // The team's own encrypted credential may follow it.
+        let moved_server = store
+            .update_external_mcp_server(&save(moved, None, true))
+            .await
+            .expect("retarget");
+        assert_eq!(moved_server.current.server_url, moved);
+        assert!(
+            !store
+                .mcp_oauth_state_exists(state_hash)
+                .await
+                .expect("state"),
+            "a settings change drops the server's OAuth states"
+        );
+    }
+
+    /// Resolves each kind of grant subject to its team in one query, as the
+    /// narrowing check counts them, then revokes the grants it made.
+    async fn exercise_mcp_grant_subject_teams<S>(
+        store: &S,
+        tool: &gateway_core::ExternalMcpToolRecord,
+        team_id: Uuid,
+    ) where
+        S: GatewayStore + McpRegistryRepository + gateway_core::McpAccessRepository + Sync,
+    {
+        use gateway_core::{McpToolGrantSubjectKind as Kind, NewApiKeyRecord};
+
+        let now = OffsetDateTime::now_utc();
+        let user = |email: &'static str| {
+            store.create_identity_user(
+                email,
+                email,
+                email,
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+        };
+        let member = user("mcp-member@example.com").await.expect("member");
+        store
+            .assign_team_membership(member.user_id, team_id, MembershipRole::Member)
+            .await
+            .expect("join team");
+        let outsider = user("mcp-outsider@example.com").await.expect("outsider");
+        let service_account = store
+            .create_service_account(team_id, "mcp-bot", "MCP bot", now)
+            .await
+            .expect("service account");
+        let key =
+            |public_id: &str, owner_kind, owner_user_id, owner_service_account_id: Option<Uuid>| {
+                NewApiKeyRecord {
+                    name: public_id.to_string(),
+                    public_id: public_id.to_string(),
+                    secret_hash: format!("hash-{public_id}"),
+                    // Service-account keys must name their models.
+                    model_grant_mode: if owner_service_account_id.is_some() {
+                        gateway_core::ApiKeyModelGrantMode::Explicit
+                    } else {
+                        gateway_core::ApiKeyModelGrantMode::All
+                    },
+                    owner_kind,
+                    owner_user_id,
+                    owner_team_id: owner_service_account_id.map(|_| team_id),
+                    owner_service_account_id,
+                    access: Default::default(),
+                    created_at: now,
+                }
+            };
+        let member_key = store
+            .create_api_key(&key(
+                "mcpmember",
+                ApiKeyOwnerKind::User,
+                Some(member.user_id),
+                None,
+            ))
+            .await
+            .expect("member key");
+        let service_account_key = store
+            .create_api_key(&key(
+                "mcpbot",
+                ApiKeyOwnerKind::ServiceAccount,
+                None,
+                Some(service_account.service_account_id),
+            ))
+            .await
+            .expect("service account key");
+        let outsider_key = store
+            .create_api_key(&key(
+                "mcpoutsider",
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            ))
+            .await
+            .expect("outsider key");
+        // A revoked key cannot authenticate, so its grant strands nothing.
+        let revoked_key = store
+            .create_api_key(&key(
+                "mcprevoked",
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            ))
+            .await
+            .expect("revoked key");
+        store
+            .revoke_api_key(revoked_key.id, now)
+            .await
+            .expect("revoke key");
+        // A key that cannot call MCP, or this server, holds no access either;
+        // one whose list names this server does.
+        let server_key = store
+            .get_external_mcp_server(tool.mcp_server_id)
+            .await
+            .expect("load server")
+            .expect("server")
+            .server_key;
+        let scoped_key = |public_id: &'static str, access: gateway_core::ApiKeyAccess| {
+            let mut record = key(
+                public_id,
+                ApiKeyOwnerKind::User,
+                Some(outsider.user_id),
+                None,
+            );
+            record.access = access;
+            record
+        };
+        let inference_key = store
+            .create_api_key(&scoped_key(
+                "mcpinference",
+                gateway_core::ApiKeyAccess::new(Some(vec!["inference".to_string()]), None).unwrap(),
+            ))
+            .await
+            .expect("inference key");
+        let other_server_key = store
+            .create_api_key(&scoped_key(
+                "mcpother",
+                gateway_core::ApiKeyAccess::new(None, Some(vec!["other-server".to_string()]))
+                    .unwrap(),
+            ))
+            .await
+            .expect("other-server key");
+        let listed_key = store
+            .create_api_key(&scoped_key(
+                "mcplisted",
+                gateway_core::ApiKeyAccess::new(
+                    Some(vec!["mcp:proxy".to_string()]),
+                    Some(vec!["other-server".to_string(), server_key.clone()]),
+                )
+                .unwrap(),
+            ))
+            .await
+            .expect("listed key");
+        let subjects = [
+            (Kind::ApiKey, inference_key.id),
+            (Kind::ApiKey, other_server_key.id),
+            (Kind::ApiKey, listed_key.id),
+            (Kind::ApiKey, revoked_key.id),
+            (Kind::User, member.user_id),
+            (Kind::ServiceAccount, service_account.service_account_id),
+            (Kind::ApiKey, member_key.id),
+            (Kind::ApiKey, service_account_key.id),
+            // Outside: a user with no team, and that user's key.
+            (Kind::User, outsider.user_id),
+            (Kind::ApiKey, outsider_key.id),
+            // Gone: a subject that no longer exists holds no access.
+            (Kind::User, Uuid::new_v4()),
+            (Kind::ApiKey, Uuid::new_v4()),
+        ];
+        for (subject_kind, subject_id) in subjects {
+            store
+                .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                    subject_kind,
+                    subject_id,
+                    target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                    target_id: tool.mcp_tool_id,
+                    updated_at: now,
+                    expected_server: None,
+                    expected_subject_team: None,
+                })
+                .await
+                .expect("grant subject");
+        }
+        let outside = store
+            .count_mcp_tool_grants_outside_team(tool.mcp_server_id, team_id)
+            .await
+            .expect("count outside");
+        assert_eq!(
+            outside, 3,
+            "the outsider, their key, and their key listing this server"
+        );
+        for (subject_kind, subject_id) in subjects {
+            store
+                .revoke_mcp_tool_grant(
+                    subject_kind,
+                    subject_id,
+                    gateway_core::McpToolGrantTargetKind::Tool,
+                    tool.mcp_tool_id,
+                    now,
+                )
+                .await
+                .expect("revoke subject grant");
+        }
+
+        // A server list matches keys exactly: `_` is not a wildcard, so a key
+        // listing `fooxbar` cannot call `foo_bar`.
+        let underscored = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                approve_tool_changes: false,
+                ownership: Default::default(),
+                server_key: "foo_bar".to_string(),
+                display_name: "Foo bar".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://foo-bar.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 5_000,
+                created_at: now,
+            })
+            .await
+            .expect("underscored server");
+        let underscored_tool = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: underscored.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "hash".to_string(),
+                }],
+            )
+            .await
+            .expect("underscored tool")
+            .remove(0);
+        let mut listed_key_ids = Vec::new();
+        for (public_id, listed, counted) in [
+            ("mcpwildcard", "fooxbar", 0_u64),
+            ("mcpexact", "foo_bar", 1_u64),
+        ] {
+            let key = store
+                .create_api_key(&scoped_key(
+                    public_id,
+                    gateway_core::ApiKeyAccess::new(None, Some(vec![listed.to_string()])).unwrap(),
+                ))
+                .await
+                .expect("listed key");
+            listed_key_ids.push(key.id);
+            store
+                .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                    subject_kind: Kind::ApiKey,
+                    subject_id: key.id,
+                    target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                    target_id: underscored_tool.mcp_tool_id,
+                    updated_at: now,
+                    expected_server: None,
+                    expected_subject_team: None,
+                })
+                .await
+                .expect("grant");
+            assert_eq!(
+                store
+                    .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                    .await
+                    .expect("count"),
+                counted,
+                "{listed}"
+            );
+        }
+        // Keys read back by ID in one query; unknown IDs are skipped.
+        let mut by_ids: Vec<Uuid> = gateway_core::AdminApiKeyRepository::list_api_keys_by_ids(
+            store,
+            &[listed_key_ids[0], Uuid::new_v4(), listed_key_ids[1]],
+        )
+        .await
+        .expect("keys by ID")
+        .into_iter()
+        .map(|key| key.id)
+        .collect();
+        by_ids.sort();
+        listed_key_ids.sort();
+        assert_eq!(by_ids, listed_key_ids);
+        // A disabled service account cannot authenticate, so its grant strands
+        // nothing either.
+        let other_team = store
+            .create_team("mcp-other-team", "MCP Other Team")
+            .await
+            .expect("other team");
+        let disabled = store
+            .create_service_account(other_team.team_id, "mcp-disabled-bot", "Disabled bot", now)
+            .await
+            .expect("service account");
+        store
+            .disable_service_account(disabled.service_account_id, now)
+            .await
+            .expect("disable");
+        store
+            .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                subject_kind: Kind::ServiceAccount,
+                subject_id: disabled.service_account_id,
+                target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                target_id: underscored_tool.mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .expect("grant");
+        assert_eq!(
+            store
+                .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                .await
+                .expect("count"),
+            1,
+            "only the exact key still counts"
+        );
+        // Nor does an active service account without a budget, whose keys
+        // authentication refuses, until it gets one.
+        let unfunded = store
+            .create_service_account(other_team.team_id, "mcp-unfunded-bot", "Unfunded bot", now)
+            .await
+            .expect("service account");
+        store
+            .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
+                subject_kind: Kind::ServiceAccount,
+                subject_id: unfunded.service_account_id,
+                target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+                target_id: underscored_tool.mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .expect("grant");
+        let outside =
+            || store.count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id);
+        assert_eq!(
+            outside().await.expect("count"),
+            1,
+            "an unfunded account does not count"
+        );
+        gateway_core::BudgetRepository::upsert_active_budget(
+            store,
+            &gateway_core::BudgetScope::ServiceAccount {
+                service_account_id: unfunded.service_account_id,
+            },
+            &gateway_core::BudgetSettings {
+                cadence: gateway_core::BudgetCadence::Monthly,
+                amount_usd: gateway_core::Money4::from_scaled(10_000),
+                hard_limit: true,
+                timezone: "UTC".into(),
+            },
+            now,
+        )
+        .await
+        .expect("budget");
+        assert_eq!(
+            outside().await.expect("count"),
+            2,
+            "a funded account counts"
+        );
+        // A tool waiting for review is not callable, so grants on it strand
+        // nothing: turn on approval and discover a changed input schema.
+        store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                mcp_server_id: underscored.mcp_server_id,
+                display_name: underscored.display_name.clone(),
+                description: underscored.description.clone(),
+                server_url: underscored.server_url.clone(),
+                auth_mode: underscored.auth_mode,
+                auth_config: underscored.auth_config.clone(),
+                timeout_ms: underscored.timeout_ms,
+                owner_contact: None,
+                visibility: underscored.ownership.visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                expected_owner_team_id: underscored.ownership.owner_team_id,
+                expected_visibility: underscored.ownership.visibility,
+                vouch_for_destinations: false,
+                updated_at: now,
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("require approval");
+        let changed = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: underscored.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object", "required": ["query"]}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "changed-hash".to_string(),
+                }],
+            )
+            .await
+            .expect("changed tool");
+        assert_ne!(
+            changed[0].review.approval_status,
+            gateway_core::McpToolApprovalStatus::Approved,
+            "the changed tool waits for review"
+        );
+        assert_eq!(
+            outside().await.expect("count"),
+            0,
+            "tool waiting for review"
+        );
+        // A tool discovery no longer finds is inactive and not callable, so
+        // grants on it strand nothing either.
+        store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 0,
+                    active_tool_count: 0,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[],
+            )
+            .await
+            .expect("tool no longer discovered");
+        assert_eq!(outside().await.expect("count"), 0, "inactive tool");
+        // An include tag rule grants every matching tool on the server, now or
+        // after discovery, so one held outside the team counts like a grant;
+        // an exclude rule only removes access and never does.
+        let rule = |effect| gateway_core::McpToolTagRuleKey {
+            subject_kind: Kind::Team,
+            subject_id: other_team.team_id,
+            mcp_server_id: Some(underscored.mcp_server_id),
+            tag: "read_only".to_string(),
+            effect,
+        };
+        store
+            .upsert_mcp_tool_tag_rule(&rule(gateway_core::McpTagRuleEffect::Exclude), now)
+            .await
+            .expect("exclude rule");
+        assert_eq!(outside().await.expect("count"), 0, "exclude rule");
+        // A guarded write is refused when the server's owner, or the subject's
+        // team, changed since it was checked, and lands when neither did.
+        let server_now = store
+            .get_external_mcp_server(underscored.mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        let stale = gateway_core::McpServerOwnershipGuard {
+            owner_team_id: Some(Uuid::new_v4()),
+            ..gateway_core::McpServerOwnershipGuard::of(&server_now)
+        };
+        let include_rule = rule(gateway_core::McpTagRuleEffect::Include);
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_tag_rule_guarded(&include_rule, now, &stale, None)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let current = gateway_core::McpServerOwnershipGuard::of(&server_now);
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_tag_rule_guarded(
+                    &include_rule,
+                    now,
+                    &current,
+                    Some(Some(Uuid::new_v4()))
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            outside().await.expect("count"),
+            0,
+            "a refused rule is not written"
+        );
+        let (include, _) = store
+            .upsert_mcp_tool_tag_rule_guarded(
+                &include_rule,
+                now,
+                &current,
+                Some(Some(other_team.team_id)),
+            )
+            .await
+            .expect("include rule");
+        assert_eq!(outside().await.expect("count"), 1, "include rule");
+        store
+            .revoke_mcp_tool_tag_rule(include.rule_id, now)
+            .await
+            .expect("revoke include rule");
+        assert_eq!(outside().await.expect("count"), 0, "revoked include rule");
+        // Only subjects with an active rule are listed: the exclude rule keeps
+        // the team listed, and once it is revoked too, nothing does.
+        let with_rules = |ids: Vec<Uuid>| async move {
+            store
+                .list_mcp_tag_rule_subject_ids(Kind::Team, &ids)
+                .await
+                .expect("rule subjects")
+        };
+        assert_eq!(
+            with_rules(vec![other_team.team_id, Uuid::new_v4()]).await,
+            vec![other_team.team_id]
+        );
+        let exclude = store
+            .list_mcp_tool_tag_rules(Some(Kind::Team), Some(other_team.team_id))
+            .await
+            .expect("rules")
+            .into_iter()
+            .find(|rule| rule.is_active)
+            .expect("active exclude rule");
+        store
+            .revoke_mcp_tool_tag_rule(exclude.rule_id, now)
+            .await
+            .expect("revoke exclude rule");
+        assert!(with_rules(vec![other_team.team_id]).await.is_empty());
+        // A disabled server exposes nothing and cannot be enabled again, so its
+        // grants strand nothing.
+        store
+            .disable_external_mcp_server(underscored.mcp_server_id, now)
+            .await
+            .expect("disable server");
+        assert_eq!(
+            store
+                .count_mcp_tool_grants_outside_team(underscored.mcp_server_id, team_id)
+                .await
+                .expect("count"),
+            0
+        );
+    }
+
+    /// Grant, credential and tool set writes checked against the server's
+    /// owner and visibility under the same write. `server` is owned by `team`
+    /// and visible to it only; `toolset_id` already holds `tool_id`.
+    async fn exercise_mcp_ownership_guards<S>(
+        store: &S,
+        server: &gateway_core::ExternalMcpServerRecord,
+        tool_id: Uuid,
+        team_id: Uuid,
+        toolset_id: Uuid,
+    ) where
+        S: gateway_core::McpAccessRepository + gateway_core::McpUpstreamCredentialRepository + Sync,
+    {
+        use gateway_core::{McpServerOwnershipGuard, McpServerVisibility};
+
+        let now = OffsetDateTime::now_utc();
+        let current = McpServerOwnershipGuard {
+            mcp_server_id: server.mcp_server_id,
+            owner_team_id: Some(team_id),
+            visibility: McpServerVisibility::Team,
+            server_url: None,
+            auth_settings: None,
+        };
+        // As a check made before a transfer to the team would have seen it.
+        let stale = McpServerOwnershipGuard {
+            owner_team_id: None,
+            visibility: McpServerVisibility::Organisation,
+            ..current.clone()
+        };
+        let subject_id = Uuid::new_v4();
+        let grant = |expected_server| gateway_core::UpsertMcpToolGrantRecord {
+            subject_kind: gateway_core::McpToolGrantSubjectKind::User,
+            subject_id,
+            target_kind: gateway_core::McpToolGrantTargetKind::Tool,
+            target_id: tool_id,
+            updated_at: now,
+            expected_server: Some(expected_server),
+            expected_subject_team: None,
+        };
+        let grants_for_subject = || async {
+            store
+                .list_mcp_tool_grants(
+                    Some(gateway_core::McpToolGrantSubjectKind::User),
+                    Some(subject_id),
+                )
+                .await
+                .expect("subject grants")
+                .len()
+        };
+
+        assert!(matches!(
+            store.upsert_mcp_tool_grant(&grant(stale.clone())).await,
+            Err(StoreError::Conflict(_))
+        ));
+        // A guard must name the tool's own server, or a check against one server
+        // could authorize a grant on another's tool.
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_grant(&grant(McpServerOwnershipGuard {
+                    mcp_server_id: Uuid::new_v4(),
+                    ..current.clone()
+                }))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            grants_for_subject().await,
+            0,
+            "a refused grant writes nothing"
+        );
+        // A subject checked in one team and found in another is refused: the
+        // subject here belongs to no team.
+        let mut moved_subject = grant(current.clone());
+        moved_subject.expected_subject_team = Some(Some(team_id));
+        assert!(matches!(
+            store.upsert_mcp_tool_grant(&moved_subject).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(grants_for_subject().await, 0);
+        let mut pinned = grant(current.clone());
+        pinned.expected_subject_team = Some(None);
+        let (_, created) = store
+            .upsert_mcp_tool_grant(&pinned)
+            .await
+            .expect("grant under the current owner");
+        assert!(created);
+        assert_eq!(grants_for_subject().await, 1);
+        // A revoke authorized against a former owner is refused and keeps the grant.
+        assert!(matches!(
+            store
+                .revoke_mcp_tool_grant_guarded(
+                    gateway_core::McpToolGrantSubjectKind::User,
+                    subject_id,
+                    tool_id,
+                    &stale,
+                    now,
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(grants_for_subject().await, 1);
+        // Team-only servers the caller's team does not own.
+        let outside = |team| store.list_team_only_mcp_server_ids_outside(team);
+        assert!(
+            !outside(Some(team_id))
+                .await
+                .expect("outside own team")
+                .contains(&server.mcp_server_id)
+        );
+        assert!(
+            outside(None)
+                .await
+                .expect("outside any team")
+                .contains(&server.mcp_server_id)
+        );
+        assert!(
+            outside(Some(Uuid::new_v4()))
+                .await
+                .expect("outside another team")
+                .contains(&server.mcp_server_id)
+        );
+        // The same, as a point lookup for one server.
+        let hidden = |team| store.is_mcp_server_hidden_from(server.mcp_server_id, team);
+        assert!(!hidden(Some(team_id)).await.expect("own team"));
+        assert!(hidden(None).await.expect("no team"));
+        assert!(hidden(Some(Uuid::new_v4())).await.expect("another team"));
+
+        let binding = |expected_server| UpsertMcpUpstreamCredentialBindingRecord {
+            credential_binding_id: None,
+            mcp_server_id: server.mcp_server_id,
+            owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::Team,
+            owner_scope_key: format!("mcp_credential:v1:team:{team_id}"),
+            owner_user_id: None,
+            owner_team_id: Some(team_id),
+            owner_service_account_id: None,
+            material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+            header_name: None,
+            storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+            secret_ciphertext: Some("ciphertext".to_string()),
+            secret_nonce: Some("nonce".to_string()),
+            secret_key_id: Some("key".to_string()),
+            secret_ref: None,
+            expires_at: None,
+            metadata: Map::new(),
+            updated_at: now,
+            expected_server: Some(expected_server),
+            expected_replaced: None,
+        };
+        let bindings_for_server = || async {
+            store
+                .list_mcp_upstream_credential_bindings(
+                    Some(server.mcp_server_id),
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .expect("server bindings")
+                .len()
+        };
+        let before = bindings_for_server().await;
+        assert!(matches!(
+            store
+                .upsert_mcp_upstream_credential_binding(&binding(stale.clone()))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            bindings_for_server().await,
+            before,
+            "a refused binding writes nothing"
+        );
+        store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                current
+                    .clone()
+                    .with_server_url("https://elsewhere.example.com/mcp"),
+            ))
+            .await
+            .map(|_| ())
+            .expect_err("a binding pinned to another URL is refused");
+        assert_eq!(bindings_for_server().await, before);
+        // OAuth writes pin the auth settings too: once they are replaced, a token
+        // bundle or registered client from the old ones is refused.
+        let replaced_settings = McpServerOwnershipGuard {
+            auth_settings: Some((
+                server.auth_mode,
+                Map::from_iter([(
+                    "token_endpoint".to_string(),
+                    json!("https://replaced.example.com/token"),
+                )]),
+            )),
+            ..current.clone()
+        };
+        assert!(matches!(
+            store
+                .upsert_mcp_upstream_credential_binding(&binding(replaced_settings.clone()))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(bindings_for_server().await, before);
+        let client = gateway_core::McpOauthClientRecord {
+            mcp_server_id: server.mcp_server_id,
+            issuer: "https://auth.example.com".to_string(),
+            redirect_uri: "https://gateway.example.com/callback".to_string(),
+            client_id: "stale-client".to_string(),
+            token_endpoint_auth_method: "none".to_string(),
+            secret_ciphertext: None,
+            secret_nonce: None,
+            secret_key_id: None,
+            client_secret_expires_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(matches!(
+            store
+                .insert_mcp_oauth_client_if_absent(&client, Some(&replaced_settings))
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("load OAuth client")
+                .is_none(),
+            "a refused registration stores nothing"
+        );
+        let (kept, _) = store
+            .upsert_mcp_upstream_credential_binding(&binding(
+                current.clone().with_server_url(&server.server_url),
+            ))
+            .await
+            .expect("binding under the current owner");
+        assert_eq!(bindings_for_server().await, before + 1);
+        assert_eq!(
+            store
+                .get_mcp_upstream_credential_binding(kept.credential_binding_id)
+                .await
+                .expect("binding by ID")
+                .map(|binding| binding.credential_binding_id),
+            Some(kept.credential_binding_id)
+        );
+        assert!(
+            store
+                .get_mcp_upstream_credential_binding(Uuid::new_v4())
+                .await
+                .expect("missing binding")
+                .is_none()
+        );
+        // A revoke authorized against a former owner is refused and keeps it.
+        assert!(matches!(
+            store
+                .revoke_mcp_upstream_credential_binding_guarded(
+                    kept.credential_binding_id,
+                    &stale,
+                    now,
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(bindings_for_server().await, before + 1);
+        // A replacement is pinned to the binding it was authorized against: if
+        // that binding changed in between, it is refused and nothing is written.
+        let mut replace = binding(current.clone().with_server_url(&server.server_url));
+        replace.credential_binding_id = Some(kept.credential_binding_id);
+        replace.expected_replaced = Some(Some(gateway_core::McpCredentialBindingPin {
+            mcp_server_id: server.mcp_server_id,
+            owner_scope_key: "mcp_credential:v1:user:someone-else".to_string(),
+            uses_secret_ref: true,
+        }));
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&replace).await,
+            Err(StoreError::Conflict(_))
+        ));
+        // An ID checked as free is refused once a binding has it, so a binding
+        // created with it meanwhile is not overwritten.
+        replace.expected_replaced = Some(None);
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&replace).await,
+            Err(StoreError::Conflict(_))
+        ));
+        replace.expected_replaced = Some(Some(gateway_core::McpCredentialBindingPin {
+            mcp_server_id: kept.mcp_server_id,
+            owner_scope_key: kept.owner_scope_key.clone(),
+            uses_secret_ref: kept.secret_ref.is_some(),
+        }));
+        let (_, replaced) = store
+            .upsert_mcp_upstream_credential_binding(&replace)
+            .await
+            .expect("replacement on the pinned binding");
+        assert!(replaced.is_some());
+        // A binding stays on its server: replacing it by ID onto another one
+        // is refused, whatever guard the write carries.
+        let mut moved = binding(current.clone());
+        moved.credential_binding_id = Some(kept.credential_binding_id);
+        moved.mcp_server_id = Uuid::new_v4();
+        moved.expected_server = None;
+        assert!(matches!(
+            store.upsert_mcp_upstream_credential_binding(&moved).await,
+            Err(StoreError::Conflict(_))
+        ));
+
+        // The tool set picked the tool up while the server was published. Now
+        // that it is team-only, even resaving the same set is refused.
+        assert!(matches!(
+            store
+                .replace_mcp_toolset_tools(toolset_id, &[tool_id], now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        store
+            .replace_mcp_toolset_tools(toolset_id, &[], now)
+            .await
+            .expect("empty the tool set");
+        assert!(matches!(
+            store
+                .replace_mcp_toolset_tools(toolset_id, &[tool_id], now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(
+            store
+                .list_mcp_toolset_tools(toolset_id)
+                .await
+                .expect("tool set tools")
+                .is_empty()
+        );
+    }
+
     async fn exercise_mcp_registry_repository<S>(store: &S)
     where
         S: GatewayStore + McpRegistryRepository + Sync,
@@ -1451,6 +3505,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "github-prod".to_string(),
                 display_name: "GitHub Production".to_string(),
                 description: Some("Production GitHub MCP".to_string()),
@@ -1474,6 +3529,7 @@ pub(crate) mod tests {
 
         let updated = store
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: false,
                 mcp_server_id: server.mcp_server_id,
                 display_name: "GitHub".to_string(),
                 description: None,
@@ -1484,6 +3540,12 @@ pub(crate) mod tests {
                     json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
                 )]),
                 timeout_ms: 45_000,
+                owner_contact: None,
+                visibility: Default::default(),
+                expected_owner_team_id: None,
+                expected_visibility: Default::default(),
+                retarget_owner_credentials_only: false,
+                expected_server: None,
                 updated_at: now + Duration::seconds(1),
                 approve_tool_changes: false,
             })
@@ -1504,6 +3566,7 @@ pub(crate) mod tests {
             schema_set_hash: Some("sha256:first".to_string()),
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let first_tools = store
             .record_external_mcp_discovery_success(
@@ -1556,6 +3619,7 @@ pub(crate) mod tests {
             schema_set_hash: Some("sha256:second".to_string()),
             error_summary: None,
             details: Map::new(),
+            expected_server: None,
         };
         let second_tools = store
             .record_external_mcp_discovery_success(
@@ -1595,6 +3659,7 @@ pub(crate) mod tests {
 
         let invalidated = store
             .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                vouch_for_destinations: false,
                 mcp_server_id: server.mcp_server_id,
                 display_name: "GitHub".to_string(),
                 description: None,
@@ -1605,6 +3670,12 @@ pub(crate) mod tests {
                     json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
                 )]),
                 timeout_ms: 45_000,
+                owner_contact: None,
+                visibility: Default::default(),
+                expected_owner_team_id: None,
+                expected_visibility: Default::default(),
+                retarget_owner_credentials_only: false,
+                expected_server: None,
                 updated_at: now + Duration::seconds(6),
                 approve_tool_changes: false,
             })
@@ -1633,6 +3704,7 @@ pub(crate) mod tests {
                 schema_set_hash: None,
                 error_summary: Some("timeout".to_string()),
                 details: Map::new(),
+                expected_server: None,
             })
             .await
             .expect("record discovery failure");
@@ -1720,6 +3792,7 @@ pub(crate) mod tests {
         S: McpRegistryRepository + Sync,
     {
         let run = ExternalMcpDiscoveryRunRecord {
+            expected_server: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,
@@ -1758,6 +3831,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "notes".to_string(),
                 display_name: "Notes".to_string(),
                 description: None,
@@ -1855,6 +3929,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: Default::default(),
                 server_key: "github-creds".to_string(),
                 display_name: "GitHub Credentials".to_string(),
                 description: None,
@@ -1984,6 +4059,8 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(1)),
                 metadata: Map::from_iter([("source".to_string(), json!("test"))]),
                 updated_at: now,
+                expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create credential binding");
@@ -2015,6 +4092,8 @@ pub(crate) mod tests {
                 expires_at: None,
                 metadata: Map::new(),
                 updated_at: now + Duration::seconds(1),
+                expected_server: None,
+                expected_replaced: None,
             })
             .await;
         assert!(
@@ -2175,6 +4254,8 @@ pub(crate) mod tests {
                 expires_at: None,
                 metadata: Map::new(),
                 updated_at: now + Duration::minutes(11),
+                expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create replacement credential")
@@ -2215,6 +4296,8 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(1)),
                 metadata: Map::from_iter([("grant".to_string(), json!("v1"))]),
                 updated_at: now + Duration::minutes(20),
+                expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("create OAuth credential")
@@ -2270,6 +4353,8 @@ pub(crate) mod tests {
                 expires_at: Some(now + Duration::hours(3)),
                 metadata: Map::from_iter([("grant".to_string(), json!("v3"))]),
                 updated_at: now + Duration::minutes(22),
+                expected_server: None,
+                expected_replaced: None,
             })
             .await
             .expect("reconnect OAuth credential");
@@ -2385,7 +4470,7 @@ pub(crate) mod tests {
             updated_at: now,
         };
         let stored = store
-            .insert_mcp_oauth_client_if_absent(&client)
+            .insert_mcp_oauth_client_if_absent(&client, None)
             .await
             .expect("insert OAuth client");
         assert_eq!(stored.client_id, "first-client");
@@ -2405,7 +4490,7 @@ pub(crate) mod tests {
         };
         assert_eq!(
             store
-                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .insert_mcp_oauth_client_if_absent(&losing_writer, None)
                 .await
                 .expect("insert racing OAuth client")
                 .client_id,
@@ -2425,7 +4510,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store
-                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .insert_mcp_oauth_client_if_absent(&losing_writer, None)
                 .await
                 .expect("insert replacement client")
                 .secret_ciphertext,
@@ -4943,6 +7028,20 @@ pub(crate) mod tests {
             .expect("store");
 
         exercise_mcp_registry_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_server_ownership_round_trip_and_transfer() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_server_ownership_repository(&store).await;
     }
 
     #[tokio::test]
@@ -10414,6 +12513,32 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_mcp_registry_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_server_ownership_round_trip_and_transfer() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres MCP ownership test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_server_ownership_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

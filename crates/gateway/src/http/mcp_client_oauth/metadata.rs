@@ -75,17 +75,27 @@ pub async fn oauth_protected_resource_metadata_server(
     let McpOauthResource::Server(server_key) = &resource else {
         return not_found();
     };
-    let server = match McpGatewayService::new(state.store.clone())
+    // This route is public, so only a server published to the organisation is
+    // named. A team-only server, an inactive one and a missing one all get the
+    // same metadata, named by the key the caller already sent, so the route
+    // never confirms that a hidden server exists. Whether the signed-in user
+    // may reach it is decided at consent and on every request.
+    let resource_name = match McpGatewayService::new(state.store.clone())
         .load_active_server(server_key)
         .await
     {
-        Ok(server) => server,
+        Ok(server)
+            if server.ownership.visibility == gateway_core::McpServerVisibility::Organisation =>
+        {
+            server.display_name
+        }
+        Ok(_) | Err(GatewayError::Store(StoreError::NotFound(_))) => server_key.clone(),
         Err(error) => return lookup_failure(&error),
     };
     Json(protected_resource_metadata(
         settings,
         &resource,
-        server.display_name,
+        resource_name,
     ))
     .into_response()
 }

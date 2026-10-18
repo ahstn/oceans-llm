@@ -26,6 +26,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: server_key.to_string(),
             display_name: server_key.to_string(),
             description: None,
@@ -53,6 +54,7 @@ where
                 schema_set_hash: None,
                 error_summary: None,
                 details: Map::new(),
+                expected_server: None,
             },
             &[UpsertExternalMcpToolRecord {
                 mcp_server_id: server.mcp_server_id,
@@ -112,6 +114,8 @@ where
             target_kind: McpToolGrantTargetKind::Toolset,
             target_id: toolset.toolset_id,
             updated_at: now,
+            expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("toolset grant");
@@ -147,6 +151,8 @@ where
             target_kind: McpToolGrantTargetKind::Tool,
             target_id: drive_search.mcp_tool_id,
             updated_at: now,
+            expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("tool grant");
@@ -155,6 +161,33 @@ where
             .has_mcp_server_grant(&subjects, drive.mcp_server_id)
             .await
             .expect("direct grant check")
+    );
+    // Key grants come back in one query, each row naming its key and server
+    // key; the disabled tool set's tools are gone.
+    let key_access = store
+        .list_mcp_tool_access_for_api_keys(&[subjects[0].subject_id, Uuid::new_v4()], None)
+        .await
+        .expect("key tool access");
+    assert_eq!(
+        key_access
+            .iter()
+            .map(|row| (row.api_key_id, row.mcp_tool_id, row.server_key.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(subjects[0].subject_id, drive_search.mcp_tool_id, "drive")]
+    );
+    assert!(
+        store
+            .list_mcp_tool_access_for_api_keys(&[subjects[0].subject_id], Some(notes.mcp_server_id))
+            .await
+            .expect("filtered key tool access")
+            .is_empty()
+    );
+    assert!(
+        store
+            .list_mcp_tool_access_for_api_keys(&[], None)
+            .await
+            .expect("no keys")
+            .is_empty()
     );
 
     let access = store
@@ -194,6 +227,32 @@ where
         }
     );
     assert_eq!(full.allowed_tools[0].metadata, drive_search.metadata);
+    // Uncounted: the same tools, without a count of the catalog.
+    let uncounted = store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::AccessUncounted)
+        .await
+        .expect("uncounted projection");
+    let counted = store
+        .resolve_mcp_access_for_subjects(&subjects, None, McpToolProjection::Access)
+        .await
+        .expect("counted projection");
+    assert_eq!(
+        uncounted
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>(),
+        counted
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.mcp_tool_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(counted.exposed_tool_count > 0);
+    assert_eq!(
+        (uncounted.exposed_tool_count, uncounted.filtered_tool_count),
+        (0, 0)
+    );
 
     store
         .disable_external_mcp_server(drive.mcp_server_id, now)

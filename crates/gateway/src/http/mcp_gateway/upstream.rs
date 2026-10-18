@@ -9,7 +9,7 @@ use axum::{
 };
 use futures_util::TryStreamExt;
 use gateway_core::{GatewayError, ProviderError};
-use gateway_service::McpGatewayUpstream;
+use gateway_service::{McpGatewayUpstream, McpUpstreamClients};
 use serde_json::{Map, Value};
 use url::Url;
 
@@ -35,14 +35,14 @@ pub(super) struct BufferedMcpResponse {
 }
 
 pub(super) async fn proxy_upstream(
-    client: &reqwest::Client,
+    clients: &McpUpstreamClients,
     method: &Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<Response<Body>, GatewayError> {
     let is_long_lived_receive = method == Method::GET || accepts_event_stream(inbound_headers);
-    let mut request = upstream_request(client, method, inbound_headers, body, upstream)?;
+    let mut request = upstream_request(clients, method, inbound_headers, body, upstream)?;
     if !is_long_lived_receive {
         request = request.timeout(Duration::from_millis(
             upstream.server.timeout_ms.max(1) as u64
@@ -63,13 +63,13 @@ pub(super) async fn proxy_upstream(
 }
 
 pub(super) async fn proxy_buffered(
-    client: &reqwest::Client,
+    clients: &McpUpstreamClients,
     method: &Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<BufferedMcpResponse, GatewayError> {
-    let request = upstream_request(client, method, inbound_headers, body, upstream)?.timeout(
+    let request = upstream_request(clients, method, inbound_headers, body, upstream)?.timeout(
         Duration::from_millis(upstream.server.timeout_ms.max(1) as u64),
     );
 
@@ -90,7 +90,7 @@ pub(super) async fn proxy_buffered(
 }
 
 pub(super) async fn proxy_tools_list(
-    client: &reqwest::Client,
+    clients: &McpUpstreamClients,
     method: &Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
@@ -98,7 +98,7 @@ pub(super) async fn proxy_tools_list(
     granted: &GrantedTools<'_>,
     id: Option<&Value>,
 ) -> Result<Response<Body>, GatewayError> {
-    let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
+    let response = proxy_buffered(clients, method, inbound_headers, body, upstream).await?;
     let filtered_body = if is_event_stream(&response.headers) {
         filter_tools_list_sse(&response.body, granted)?
     } else {
@@ -118,13 +118,13 @@ pub(super) async fn proxy_tools_list(
 /// with no tool to check grants or guardrails against. A client that saw the
 /// capability could start a task and never be able to read its result.
 pub(super) async fn proxy_initialize(
-    client: &reqwest::Client,
+    clients: &McpUpstreamClients,
     method: &Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<Response<Body>, GatewayError> {
-    let response = proxy_buffered(client, method, inbound_headers, body, upstream).await?;
+    let response = proxy_buffered(clients, method, inbound_headers, body, upstream).await?;
     let body = if !response.status.is_success() {
         response.body.to_vec()
     } else if is_event_stream(&response.headers) {
@@ -230,7 +230,7 @@ fn is_event_stream(headers: &HeaderMap) -> bool {
 }
 
 fn upstream_request(
-    client: &reqwest::Client,
+    clients: &McpUpstreamClients,
     method: &Method,
     inbound_headers: &HeaderMap,
     body: Bytes,
@@ -241,7 +241,10 @@ fn upstream_request(
     if let Some(credential) = &upstream.query_credential {
         url = credential.apply(&url);
     }
-    let request = client.request(method.clone(), url).body(body);
+    let request = clients
+        .for_server(&upstream.server)?
+        .request(method.clone(), url)
+        .body(body);
     let request = apply_forwarded_request_headers(request, inbound_headers)?;
     match &upstream.headers {
         Some(headers) => apply_gateway_managed_upstream_headers(request, headers),

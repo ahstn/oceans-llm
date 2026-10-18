@@ -4,6 +4,7 @@ mod guardrails;
 mod json_rpc;
 mod methods;
 mod rate_limits;
+pub mod stream_reach;
 mod upstream;
 
 use std::{error::Error as _, time::Instant};
@@ -162,13 +163,32 @@ async fn dispatch_mcp_request(
         Ok(server) => server,
         Err(error) => return mcp_error_response(error),
     };
+    let access = McpAccess::new(state.store.clone());
+    // A team-only server another team's caller cannot reach does not exist for
+    // them, on every method, including the grant-free lifecycle ones that
+    // never resolve grants: they get the same not-found as a missing server,
+    // and its upstream is never contacted.
+    if server.ownership.visibility == gateway_core::McpServerVisibility::Team {
+        let reachable = match access.subjects_and_team(auth).await {
+            Ok((_, team_id)) => server.ownership.is_reachable_from(team_id),
+            Err(error) => return mcp_error_response(error),
+        };
+        if !reachable {
+            return mcp_error_response(GatewayError::Store(gateway_core::StoreError::NotFound(
+                format!("external MCP server `{}` not found", server.server_key),
+            )));
+        }
+    }
     tracing::Span::current().record("mcp_server_id", server.mcp_server_id.to_string());
     tracing::Span::current().record("upstream_auth_mode", server.auth_mode.as_str());
 
     let rpc_request = parse_mcp_rpc_request(method, &body);
-    let access = McpAccess::new(state.store.clone());
 
-    match rpc_request {
+    // Any response that streams events is bound to the caller's reach, the
+    // POST replies a server may stream as well as the `GET` stream: each ends
+    // once the caller could no longer open it.
+    let caller = stream_reach::StreamCaller::of(auth, &server.server_key, server.mcp_server_id);
+    let response = match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
             // Approval servers serve the stored definition, which needs the
             // title and output schema, so they resolve the full projection.
@@ -235,7 +255,7 @@ async fn dispatch_mcp_request(
                 }
             };
             let outcome = proxy_tools_list(
-                &state.mcp_http_client,
+                &state.mcp_http_clients,
                 method,
                 headers,
                 body,
@@ -352,6 +372,11 @@ async fn dispatch_mcp_request(
                 &rejection.error.to_string(),
             )
         }
+    };
+    if stream_reach::is_event_stream(&response) {
+        stream_reach::bound_to_reach(&state.mcp_stream_reach, caller, response)
+    } else {
+        response
     }
 }
 
@@ -531,7 +556,7 @@ async fn handle_tools_call(
         }
     };
     let outcome =
-        match proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await {
+        match proxy_upstream(&state.mcp_http_clients, method, headers, body, &upstream).await {
             Ok(response) => {
                 enforce_direct_mcp_result(
                     state,
