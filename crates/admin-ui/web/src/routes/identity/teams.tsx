@@ -124,7 +124,6 @@ function TeamAdministration({
           ) : (
             <TeamsList
               teams={teams}
-              users={users}
               canOpenUsers={canOpenUsers}
               onEditTeam={teamEditor.openEdit}
               onAddMembers={addMembers.open}

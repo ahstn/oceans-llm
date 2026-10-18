@@ -69,7 +69,22 @@ const rosterPayload: IdentityTeamsPayload = {
       tags: [],
       member_count: 2,
       admins: [{ id: 'user_1', name: 'Jane Admin', email: 'jane@example.com', status: 'active' }],
-      members: [],
+      members: [
+        {
+          id: 'user_1',
+          name: 'Jane Admin',
+          email: 'jane@example.com',
+          status: 'active',
+          role: 'admin',
+        },
+        {
+          id: 'user_2',
+          name: 'Ben Member',
+          email: 'ben@example.com',
+          status: 'active',
+          role: 'member',
+        },
+      ],
     },
     {
       id: 'team_2',
@@ -204,7 +219,15 @@ describe('TeamsPage', () => {
                 status: 'active',
               },
             ],
-            members: [],
+            members: [
+              {
+                id: 'user_1',
+                name: 'Jane Admin',
+                email: 'jane@example.com',
+                status: 'active',
+                role: 'owner',
+              },
+            ],
           },
         ],
         users: [
@@ -252,10 +275,19 @@ describe('TeamsPage', () => {
   })
 
   it('badges an inactive team and member roles in neutral variants', async () => {
+    const [coreTeam, researchTeam] = rosterPayload.teams
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...rosterPayload,
-        teams: [rosterPayload.teams[0], { ...rosterPayload.teams[1], status: 'inactive' }],
+        teams: [
+          {
+            ...coreTeam,
+            members: coreTeam.members.map((member) =>
+              member.id === 'user_1' ? { ...member, role: 'owner' } : member,
+            ),
+          },
+          { ...researchTeam, status: 'inactive' },
+        ],
         users: rosterPayload.users.map((user) =>
           user.id === 'user_1' ? { ...user, team_role: 'owner' } : user,
         ),

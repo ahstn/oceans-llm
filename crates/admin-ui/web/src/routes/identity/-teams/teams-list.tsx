@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { UnfoldMoreDownIcon, UnfoldMoreUpIcon } from '@hugeicons/core-free-icons'
 import { Link } from '@tanstack/react-router'
 
@@ -10,7 +10,7 @@ import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
-import type { TeamAssignableUserView, TeamManagementView } from '@/types/api'
+import type { TeamManagementView, TeamMemberView } from '@/types/api'
 
 /** What a team's controls open: the team editor, `Add members`, and a member's transfer or removal. */
 export interface TeamListActions {
@@ -22,7 +22,6 @@ export interface TeamListActions {
 
 interface TeamEntryProps {
   team: TeamManagementView
-  members: TeamAssignableUserView[]
   isExpanded: boolean
   canOpenUsers: boolean
   onToggleMembers: (teamId: string) => void
@@ -35,23 +34,13 @@ interface TeamEntryProps {
  */
 export function TeamsList({
   teams,
-  users,
   canOpenUsers,
   ...actions
 }: TeamListActions & {
   teams: TeamManagementView[]
-  users: TeamAssignableUserView[]
   canOpenUsers: boolean
 }) {
   const [expandedTeamIds, setExpandedTeamIds] = useState<ReadonlySet<string>>(() => new Set())
-  const teamMembersByTeam = useMemo(
-    () =>
-      teams.map((team) => ({
-        team,
-        members: users.filter((user) => user.team_id === team.id),
-      })),
-    [teams, users],
-  )
 
   function toggleMembers(teamId: string) {
     setExpandedTeamIds((current) => {
@@ -68,11 +57,10 @@ export function TeamsList({
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 md:hidden">
-        {teamMembersByTeam.map(({ team, members }) => (
+        {teams.map((team) => (
           <TeamCard
             key={team.id}
             team={team}
-            members={members}
             isExpanded={expandedTeamIds.has(team.id)}
             canOpenUsers={canOpenUsers}
             onToggleMembers={toggleMembers}
@@ -85,11 +73,10 @@ export function TeamsList({
         <Table className="text-left">
           <AdminTableHeader columns={['Team', 'Admins', 'Members', 'Status', 'Actions']} />
           <TableBody>
-            {teamMembersByTeam.map(({ team, members }) => (
+            {teams.map((team) => (
               <TeamTableRows
                 key={team.id}
                 team={team}
-                members={members}
                 isExpanded={expandedTeamIds.has(team.id)}
                 canOpenUsers={canOpenUsers}
                 onToggleMembers={toggleMembers}
@@ -103,14 +90,7 @@ export function TeamsList({
   )
 }
 
-function TeamCard({
-  team,
-  members,
-  isExpanded,
-  canOpenUsers,
-  onToggleMembers,
-  actions,
-}: TeamEntryProps) {
+function TeamCard({ team, isExpanded, canOpenUsers, onToggleMembers, actions }: TeamEntryProps) {
   const membersRegionId = `team-members-mobile-${team.id}`
 
   return (
@@ -172,7 +152,7 @@ function TeamCard({
         <div id={membersRegionId} className="mt-4">
           <TeamMemberRoster
             teamId={team.id}
-            members={members}
+            members={team.members}
             onTransferMember={actions.onTransferMember}
             onRemoveMember={actions.onRemoveMember}
           />
@@ -184,7 +164,6 @@ function TeamCard({
 
 function TeamTableRows({
   team,
-  members,
   isExpanded,
   canOpenUsers,
   onToggleMembers,
@@ -243,7 +222,7 @@ function TeamTableRows({
           >
             <TeamMemberRoster
               teamId={team.id}
-              members={members}
+              members={team.members}
               onTransferMember={actions.onTransferMember}
               onRemoveMember={actions.onRemoveMember}
             />
@@ -353,7 +332,7 @@ function TeamMemberRoster({
   onRemoveMember,
 }: {
   teamId: string
-  members: TeamAssignableUserView[]
+  members: TeamMemberView[]
   onTransferMember: (teamId: string, userId: string) => void
   onRemoveMember: (teamId: string, userId: string) => void
 }) {
@@ -382,15 +361,13 @@ function TeamMemberRoster({
               <p className="text-foreground truncate text-sm font-medium">{member.name}</p>
               <p className="text-muted-foreground truncate text-xs">{member.email}</p>
             </div>
-            <Badge variant={member.team_role === 'owner' ? 'secondary' : 'outline'}>
-              {member.team_role ?? 'member'}
-            </Badge>
+            <Badge variant={member.role === 'owner' ? 'secondary' : 'outline'}>{member.role}</Badge>
             <Button
               type="button"
               size="sm"
               variant="secondary"
               onClick={() => onTransferMember(teamId, member.id)}
-              disabled={member.team_role === 'owner'}
+              disabled={member.role === 'owner'}
             >
               Transfer
             </Button>
@@ -399,11 +376,11 @@ function TeamMemberRoster({
               size="sm"
               variant="ghost"
               onClick={() => onRemoveMember(teamId, member.id)}
-              disabled={member.team_role === 'owner'}
+              disabled={member.role === 'owner'}
             >
               Remove
             </Button>
-            {member.team_role === 'owner' ? (
+            {member.role === 'owner' ? (
               <p className="text-muted-foreground basis-full text-xs">
                 Owner memberships cannot be removed or transferred in this slice.
               </p>
