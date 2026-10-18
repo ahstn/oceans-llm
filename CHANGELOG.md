@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.41.0](https://github.com/ahstn/oceans-llm/compare/v0.40.0...v0.41.0) - 2026-10-18
+
+### :rocket: New features
+- *(gateway)* Support MCP-spec OAuth authorization for MCP clients by @ahstn in [#508](https://github.com/ahstn/oceans-llm/pull/508)
+- *(gateway)* Let users disconnect authorized MCP clients and clean up unused ones by @ahstn in [#509](https://github.com/ahstn/oceans-llm/pull/509)
+- *(gateway)* Scope API keys to capabilities and MCP servers by @ahstn in [#528](https://github.com/ahstn/oceans-llm/pull/528)
+- *(gateway)* Add SSRF-safe outbound fetch, Client ID Metadata Documents, and OAuth CORS by @ahstn in [#523](https://github.com/ahstn/oceans-llm/pull/523)
+- *(mcp)* Version tool definitions and require approval for changed tools by @ahstn in [#530](https://github.com/ahstn/oceans-llm/pull/530)
+- *(mcp)* Add tag-based tool grants and admin annotation overrides by @ahstn in [#529](https://github.com/ahstn/oceans-llm/pull/529)
+- *(mcp)* Delegate MCP server ownership to team owners and admins by @ahstn in [#527](https://github.com/ahstn/oceans-llm/pull/527)
+
+### :bug: Bug fixes
+- *(admin-ui)* Redirect the bare /admin path to /admin/ in the gateway by @ahstn in [#518](https://github.com/ahstn/oceans-llm/pull/518)
+- *(admin-ui)* Keep Tailwind from scanning AGENTS.md for class candidates by @ahstn in [#533](https://github.com/ahstn/oceans-llm/pull/533)
+- *(admin-ui)* Clear TypeScript errors and type-check the admin UI in CI by @ahstn in [#535](https://github.com/ahstn/oceans-llm/pull/535)
+- *(pricing)* End the vendored pricing catalog snapshot with a newline by @ahstn in [#537](https://github.com/ahstn/oceans-llm/pull/537)
+
+### Changed
+- *(deps)* Bump ipnet from 2.12.1 to 2.12.2 by @dependabot[bot] in [#510](https://github.com/ahstn/oceans-llm/pull/510)
+- *(deps-dev)* Bump playwright from 1.63.0 to 1.64.0 in /crates/admin-ui/web in the testing group across 1 directory by @dependabot[bot] in [#504](https://github.com/ahstn/oceans-llm/pull/504)
+- *(deps)* Bump millionco/react-doctor from 2.2.9 to 2.4.0 by @dependabot[bot] in [#503](https://github.com/ahstn/oceans-llm/pull/503)
+- *(deps)* Bump jdx/mise-action from 5.1.1 to 5.1.2 by @dependabot[bot] in [#501](https://github.com/ahstn/oceans-llm/pull/501)
+- *(deps-dev)* Bump @types/node from 25.9.7 to 25.9.9 in /crates/admin-ui/web in the build-tools group across 1 directory by @dependabot[bot] in [#502](https://github.com/ahstn/oceans-llm/pull/502)
+- *(deps)* Bump serde_json from 1.0.151 to 1.0.154 in the serialization-and-config group across 1 directory by @dependabot[bot] in [#432](https://github.com/ahstn/oceans-llm/pull/432)
+- *(deps)* Bump the review-agent-tooling group across 1 directory with 7 updates by @dependabot[bot] in [#474](https://github.com/ahstn/oceans-llm/pull/474)
+- *(repo)* Strip agent Co-Authored-By trailers from commit messages by @ahstn in [#522](https://github.com/ahstn/oceans-llm/pull/522)
+- *(deps)* Bump the ui-components-and-assets group across 2 directories with 2 updates by @dependabot[bot] in [#525](https://github.com/ahstn/oceans-llm/pull/525)
+
 ## [0.40.0] - 2026-10-16
 ### :rocket: New features
 - *(gateway)* Record request metrics for the Decisions API by @ahstn in [#482](https://github.com/ahstn/oceans-llm/pull/482)
