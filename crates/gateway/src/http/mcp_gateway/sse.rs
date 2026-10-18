@@ -172,7 +172,9 @@ fn is_id_field(line: &[u8]) -> bool {
 }
 
 /// Whether the event's data is a JSON-RPC response (a result or error for
-/// some request id) rather than a server request or notification.
+/// some request id) rather than a server request or notification. A message
+/// with a `result` or `error` counts even when it also carries `method`: a
+/// permissive client could still take it as a response.
 fn is_json_rpc_response(lines: &[&[u8]]) -> bool {
     let data = lines
         .iter()
@@ -187,10 +189,8 @@ fn is_json_rpc_response(lines: &[&[u8]]) -> bool {
         // Not JSON-RPC at all; a client cannot treat it as a response either.
         return false;
     };
-    let is_response = |message: &Value| {
-        message.get("method").is_none()
-            && (message.get("result").is_some() || message.get("error").is_some())
-    };
+    let is_response =
+        |message: &Value| message.get("result").is_some() || message.get("error").is_some();
     match &value {
         Value::Array(batch) => batch.iter().any(is_response),
         message => is_response(message),
@@ -265,6 +265,7 @@ mod tests {
         let body = concat!(
             "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[]}}\n\n",
             "data: {\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":1,\"message\":\"x\"}}\n\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{},\"method\":null}\n\n",
             "data: {\"jsonrpc\":\"2.0\",\"id\":\"s1\",\"method\":\"roots/list\"}\n\n",
         );
         assert_eq!(
