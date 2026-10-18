@@ -2802,6 +2802,7 @@ pub(crate) mod tests {
             .await
             .expect("underscored tool")
             .remove(0);
+        let mut listed_key_ids = Vec::new();
         for (public_id, listed, counted) in [
             ("mcpwildcard", "fooxbar", 0_u64),
             ("mcpexact", "foo_bar", 1_u64),
@@ -2813,6 +2814,7 @@ pub(crate) mod tests {
                 ))
                 .await
                 .expect("listed key");
+            listed_key_ids.push(key.id);
             store
                 .upsert_mcp_tool_grant(&gateway_core::UpsertMcpToolGrantRecord {
                     subject_kind: Kind::ApiKey,
@@ -2834,6 +2836,19 @@ pub(crate) mod tests {
                 "{listed}"
             );
         }
+        // Keys read back by ID in one query; unknown IDs are skipped.
+        let mut by_ids: Vec<Uuid> = gateway_core::AdminApiKeyRepository::list_api_keys_by_ids(
+            store,
+            &[listed_key_ids[0], Uuid::new_v4(), listed_key_ids[1]],
+        )
+        .await
+        .expect("keys by ID")
+        .into_iter()
+        .map(|key| key.id)
+        .collect();
+        by_ids.sort();
+        listed_key_ids.sort();
+        assert_eq!(by_ids, listed_key_ids);
         // A disabled service account cannot authenticate, so its grant strands
         // nothing either.
         let other_team = store

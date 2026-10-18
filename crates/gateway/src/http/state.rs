@@ -41,6 +41,8 @@ pub struct AppState {
     pub mcp_client_oauth: Option<Arc<McpClientOauthSettings>>,
     /// Ends OAuth callers' MCP event streams when their access stops.
     pub oauth_streams: Arc<OauthStreamWatcher>,
+    /// Ends MCP event streams when their caller can no longer open them.
+    pub mcp_stream_reach: Arc<crate::http::mcp_gateway::stream_reach::McpStreamReachWatcher>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,

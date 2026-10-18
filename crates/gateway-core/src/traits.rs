@@ -100,6 +100,20 @@ pub trait AdminApiKeyRepository: Send + Sync {
     async fn get_api_key_by_id(&self, api_key_id: Uuid)
     -> Result<Option<ApiKeyRecord>, StoreError>;
 
+    /// The keys with these IDs, revoked ones included. Unknown IDs are skipped.
+    async fn list_api_keys_by_ids(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        let mut keys = Vec::with_capacity(api_key_ids.len());
+        for api_key_id in api_key_ids {
+            if let Some(key) = self.get_api_key_by_id(*api_key_id).await? {
+                keys.push(key);
+            }
+        }
+        Ok(keys)
+    }
+
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
 
     async fn get_api_key_secret_material(

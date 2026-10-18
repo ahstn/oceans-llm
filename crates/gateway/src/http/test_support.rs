@@ -43,6 +43,10 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             store.clone(),
             crate::http::mcp_client_oauth::OAUTH_STREAM_RECHECK_INTERVAL,
         ),
+        mcp_stream_reach: crate::http::mcp_gateway::stream_reach::McpStreamReachWatcher::new(
+            store.clone(),
+            crate::http::mcp_gateway::stream_reach::STREAM_REACH_RECHECK_INTERVAL,
+        ),
         identity_token_secret: Arc::new("test-secret".to_string()),
         oidc_public_base_url: Arc::new(None),
         oauth_public_base_url: Arc::new(None),

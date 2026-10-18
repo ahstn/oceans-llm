@@ -136,6 +136,28 @@ impl<R> McpAccess<R>
 where
     R: IdentityRepository + AdminApiKeyRepository + ApiKeyRepository + BudgetRepository,
 {
+    /// The keys with these IDs that can still authenticate, loaded as
+    /// authentication loads them but without their secrets: active, with a
+    /// well-formed owner, and for a service account's key an active account
+    /// with an active budget. The keys are read in one query, for rechecks of
+    /// many open streams at once.
+    pub async fn usable_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, AuthenticatedApiKey>, GatewayError> {
+        let mut usable = std::collections::HashMap::new();
+        for key in self.repo.list_api_keys_by_ids(api_key_ids).await? {
+            match crate::authenticator::ensure_api_key_usable(self.repo.as_ref(), &key).await {
+                Ok(()) => {
+                    usable.insert(key.id, AuthenticatedApiKey::from(key));
+                }
+                Err(GatewayError::Auth(_)) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(usable)
+    }
+
     /// Expands previewed subjects the way runtime resolution would for a
     /// caller: a key brings its owner and team, a user its current team, and a
     /// service account its team. Rules and grants on those subjects then show in

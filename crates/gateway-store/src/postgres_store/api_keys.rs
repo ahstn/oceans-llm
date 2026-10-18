@@ -67,6 +67,25 @@ impl AdminApiKeyRepository for PostgresStore {
         row.as_ref().map(decode_api_key).transpose()
     }
 
+    async fn list_api_keys_by_ids(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        sqlx::query(&format!(
+            "SELECT {API_KEY_COLUMNS} FROM api_keys WHERE id = ANY($1)"
+        ))
+        .bind(api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .iter()
+        .map(decode_api_key)
+        .collect()
+    }
+
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
         validate_api_key_grant_mode(api_key.owner_kind, api_key.model_grant_mode)?;
 

@@ -546,6 +546,13 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, get_api_key_by_id(api_key_id))
     }
 
+    async fn list_api_keys_by_ids(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, list_api_keys_by_ids(api_key_ids))
+    }
+
     async fn create_api_key(
         &self,
         api_key: &gateway_core::NewApiKeyRecord,

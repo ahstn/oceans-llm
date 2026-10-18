@@ -101,6 +101,37 @@ impl AdminApiKeyRepository for LibsqlStore {
         decode_api_key(&row).map(Some)
     }
 
+    async fn list_api_keys_by_ids(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids =
+            serde_json::to_string(&api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "SELECT {API_KEY_COLUMNS} FROM api_keys WHERE id IN (SELECT value FROM json_each(?1))"
+                ),
+                [ids],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let mut keys = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            keys.push(decode_api_key(&row)?);
+        }
+        Ok(keys)
+    }
+
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
         validate_api_key_grant_mode(api_key.owner_kind, api_key.model_grant_mode)?;
 

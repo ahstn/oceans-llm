@@ -318,6 +318,10 @@ async fn run_serve_with_store(
             service.store().clone(),
             OAUTH_STREAM_RECHECK_INTERVAL,
         ),
+        mcp_stream_reach: gateway::http::mcp_gateway::stream_reach::McpStreamReachWatcher::new(
+            service.store().clone(),
+            gateway::http::mcp_gateway::stream_reach::STREAM_REACH_RECHECK_INTERVAL,
+        ),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config

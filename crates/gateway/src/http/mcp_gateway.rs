@@ -4,6 +4,7 @@ mod guardrails;
 mod json_rpc;
 mod methods;
 mod rate_limits;
+pub mod stream_reach;
 mod upstream;
 
 use std::{error::Error as _, time::Instant};

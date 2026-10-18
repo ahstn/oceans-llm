@@ -1353,7 +1353,7 @@ mod stream_reach {
     };
     use gateway_store::GatewayStore;
 
-    use super::super::methods::{StreamCaller, StreamCredential, end_when_reach_ends};
+    use super::super::stream_reach::{McpStreamReachWatcher, StreamCaller, bound_to_reach};
     use super::*;
 
     const STREAMER_KEY: &str = "gwk_streamer.stream-secret";
@@ -1365,6 +1365,8 @@ mod stream_reach {
         user_id: Uuid,
         api_key_id: Uuid,
         caller: StreamCaller,
+        /// Rechecks every 50ms.
+        watcher: std::sync::Arc<McpStreamReachWatcher>,
     }
 
     /// A team member with an API key and a grant on one tool of a server their
@@ -1471,31 +1473,23 @@ mod stream_reach {
             .await
             .unwrap();
         Seeded {
-            state,
             _directory: directory,
             team_id: team.team_id,
             user_id: user.user_id,
             api_key_id: key.id,
-            caller: StreamCaller {
-                auth,
-                credential: StreamCredential::ApiKey(STREAMER_KEY.to_string()),
-                server_key: "team-stream".to_string(),
-                mcp_server_id: server.mcp_server_id,
-            },
+            caller: StreamCaller::of(&auth, "team-stream", server.mcp_server_id),
+            watcher: McpStreamReachWatcher::new(state.store.clone(), Duration::from_millis(50)),
+            state,
         }
     }
 
-    /// Opens an upstream event stream that never ends on its own, rechecked
-    /// every 50ms, and returns the task reading it.
-    fn open(
-        state: &AppState,
-        caller: StreamCaller,
-    ) -> tokio::task::JoinHandle<Result<Bytes, axum::Error>> {
+    /// Opens an upstream event stream that never ends on its own, watched by
+    /// `seeded`'s watcher, and returns the task reading it.
+    fn open(seeded: &Seeded) -> tokio::task::JoinHandle<Result<Bytes, axum::Error>> {
         let upstream = Response::new(Body::from_stream(futures_util::stream::pending::<
             Result<Bytes, std::io::Error>,
         >()));
-        let response =
-            end_when_reach_ends(state.clone(), caller, upstream, Duration::from_millis(50));
+        let response = bound_to_reach(&seeded.watcher, seeded.caller.clone(), upstream);
         tokio::spawn(to_bytes(response.into_body(), usize::MAX))
     }
 
@@ -1510,7 +1504,7 @@ mod stream_reach {
     #[tokio::test]
     async fn team_only_streams_end_when_the_member_leaves_the_team() {
         let seeded = seed(McpServerVisibility::Team).await;
-        let reading = open(&seeded.state, seeded.caller);
+        let reading = open(&seeded);
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(!reading.is_finished(), "a member's stream stays open");
 
@@ -1526,7 +1520,7 @@ mod stream_reach {
     #[tokio::test]
     async fn organisation_streams_end_when_their_api_key_is_revoked() {
         let seeded = seed(McpServerVisibility::Organisation).await;
-        let reading = open(&seeded.state, seeded.caller);
+        let reading = open(&seeded);
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(!reading.is_finished(), "a live key's stream stays open");
 
@@ -1541,16 +1535,46 @@ mod stream_reach {
     }
 
     #[tokio::test]
-    async fn streams_without_a_known_credential_end_at_the_first_recheck() {
+    async fn streams_end_when_their_key_loses_the_mcp_scope() {
         let seeded = seed(McpServerVisibility::Organisation).await;
-        let reading = open(
-            &seeded.state,
-            StreamCaller {
-                credential: StreamCredential::Unknown,
-                ..seeded.caller
-            },
+        let reading = open(&seeded);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !reading.is_finished(),
+            "an MCP-scoped key's stream stays open"
         );
+
+        seeded
+            .state
+            .store
+            .replace_api_key_access(
+                seeded.api_key_id,
+                &gateway_core::ApiKeyAccess::new(Some(vec!["inference".to_string()]), None)
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_ends(reading).await;
+    }
+
+    #[tokio::test]
+    async fn many_streams_of_one_caller_cost_one_check_per_recheck() {
+        let seeded = seed(McpServerVisibility::Team).await;
+        let readings: Vec<_> = (0..20).map(|_| open(&seeded)).collect();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(readings.iter().all(|reading| !reading.is_finished()));
+        assert_eq!(seeded.watcher.last_pairs_checked(), 1);
+
+        // One change still ends every one of them.
+        seeded
+            .state
+            .store
+            .remove_team_membership(seeded.team_id, seeded.user_id)
+            .await
+            .unwrap();
+        for reading in readings {
+            assert_ends(reading).await;
+        }
     }
 }
 

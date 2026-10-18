@@ -192,117 +192,12 @@ pub(super) async fn handle_event_stream(
         Ok(false) => return server_not_granted_response(None),
         Err(error) => return mcp_error_response(error),
     }
-    // An API key is authenticated again on each recheck. An OAuth caller's
-    // token is watched by `bound_to_oauth_access`, so its cached identity is
-    // rechecked for reach only.
-    let credential = match (&auth.oauth, super::extract_mcp_bearer_token(headers)) {
-        (Some(_), _) => StreamCredential::OauthToken,
-        (None, Ok(api_key)) => StreamCredential::ApiKey(api_key),
-        (None, Err(_)) => StreamCredential::Unknown,
-    };
-    let caller = StreamCaller {
-        auth: auth.clone(),
-        credential,
-        server_key: server.server_key.to_ascii_lowercase(),
-        mcp_server_id: server.mcp_server_id,
-    };
+    let caller =
+        super::stream_reach::StreamCaller::of(auth, &server.server_key, server.mcp_server_id);
     let response = proxy_lifecycle(state, auth, http_method, headers, body, server, false).await;
-    end_when_reach_ends(
-        state.clone(),
-        caller,
-        response,
-        STREAM_REACH_RECHECK_INTERVAL,
-    )
-}
-
-/// How often an open event stream rechecks that its caller can still reach
-/// the server.
-pub(crate) const STREAM_REACH_RECHECK_INTERVAL: std::time::Duration =
-    std::time::Duration::from_secs(30);
-
-/// Who opened an event stream, as needed to recheck them while it is open.
-pub(crate) struct StreamCaller {
-    pub(crate) auth: AuthenticatedApiKey,
-    pub(crate) credential: StreamCredential,
-    pub(crate) server_key: String,
-    pub(crate) mcp_server_id: Uuid,
-}
-
-/// The credential an event stream was opened with.
-pub(crate) enum StreamCredential {
-    /// A `gwk_` API key, authenticated again on each recheck.
-    ApiKey(String),
-    /// An OAuth access token, whose revocation and expiry
-    /// `bound_to_oauth_access` watches.
-    OauthToken,
-    /// Not found in the request, so the stream ends at its first recheck.
-    Unknown,
-}
-
-impl StreamCaller {
-    /// Whether the caller can still open this stream: their API key still
-    /// authenticates (it is not revoked, and its service account is enabled
-    /// with a budget) and is scoped to the server, and they still hold a grant
-    /// on a server they can see.
-    async fn still_reaches(&self, state: &AppState) -> Result<bool, GatewayError> {
-        let refreshed;
-        let auth = match &self.credential {
-            StreamCredential::ApiKey(api_key) => {
-                match state
-                    .service
-                    .authenticate_bearer_token_for_scope(api_key, gateway_core::SCOPE_MCP_PROXY)
-                    .await
-                {
-                    Ok(auth) => refreshed = auth,
-                    Err(GatewayError::Auth(_)) => return Ok(false),
-                    Err(error) => return Err(error),
-                }
-                &refreshed
-            }
-            StreamCredential::OauthToken => &self.auth,
-            StreamCredential::Unknown => return Ok(false),
-        };
-        if auth.require_mcp_server(&self.server_key).is_err() {
-            return Ok(false);
-        }
-        McpAccess::new(state.store.clone())
-            .has_server_grant(auth, self.mcp_server_id)
-            .await
-    }
-}
-
-/// Ends a long-lived event stream once its caller can no longer open it: their
-/// key was revoked, their team no longer owns a team-only server, the server
-/// was narrowed away from them, or their grants are gone. The check above runs
-/// once, when the stream opens, and the stream could otherwise outlive it by
-/// hours. A recheck that cannot be answered also ends the stream, so an outage
-/// never extends access; the client reconnects and is checked afresh.
-pub(crate) fn end_when_reach_ends(
-    state: AppState,
-    caller: StreamCaller,
-    response: Response<Body>,
-    every: std::time::Duration,
-) -> Response<Body> {
-    use futures_util::StreamExt;
-    let ended = async move {
-        let mut ticker = tokio::time::interval(every);
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        ticker.tick().await;
-        loop {
-            ticker.tick().await;
-            match caller.still_reaches(&state).await {
-                Ok(true) => {}
-                Ok(false) => return,
-                Err(error) => {
-                    tracing::warn!(error = %error, "MCP stream recheck failed; ending the stream");
-                    return;
-                }
-            }
-        }
-    };
-    let (parts, body) = response.into_parts();
-    let body = body.into_data_stream().take_until(Box::pin(ended));
-    Response::from_parts(parts, Body::from_stream(body))
+    // Rechecked with every other open stream by the shared watcher, so the
+    // stream ends once its caller could no longer open it.
+    super::stream_reach::bound_to_reach(&state.mcp_stream_reach, caller, response)
 }
 
 /// Forwards session plumbing that carries no server data. `initialize` is
