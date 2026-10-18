@@ -7,6 +7,41 @@ use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL, for the
+/// include query that joins `mcp_tool_effective_tags et`, `external_mcp_tools
+/// t` and `external_mcp_servers s`: a derived tag selects a tool only when an
+/// admin overrode the tag's own hint to `true`, or approved the served version
+/// on a server with tool approval. The tags and their hints come from
+/// `gateway_core`, so the backends cannot drift from it; each backend gives
+/// only its JSON syntax: the prefix of a hint's path, and how to test that the
+/// override at a path is `true`.
+pub(crate) fn trusted_include_tag_sql(
+    path_prefix: &str,
+    override_is_true: impl Fn(&str) -> String,
+) -> String {
+    use gateway_core::mcp_tool_policy::{DERIVED_TAGS, derived_tag_hint};
+
+    let listed = DERIVED_TAGS
+        .iter()
+        .map(|tag| format!("'{tag}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let paths = DERIVED_TAGS
+        .iter()
+        .filter_map(|tag| {
+            let hint = derived_tag_hint(tag)?;
+            Some(format!("WHEN '{tag}' THEN '{path_prefix}{hint}'"))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "((s.approve_tool_changes = 1 AND EXISTS (SELECT 1 FROM mcp_tool_versions v \
+         WHERE v.mcp_tool_id = t.mcp_tool_id AND v.schema_version = t.approved_schema_version \
+         AND v.reviewed_at IS NOT NULL)) OR et.tag NOT IN ({listed}) OR {})",
+        override_is_true(&format!("CASE et.tag {paths} END"))
+    )
+}
+
 /// An SQL condition, true when the server (`server`) has a recorded discovery
 /// run, of `status` when given, that started after the run `run_id` started
 /// at `started_ms`. Placeholders are passed in, so both backends share it.
