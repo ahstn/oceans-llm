@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
-import { GRAPHIC_CONTRAST_MIN } from './color-roles'
+import { GRAPHIC_CONTRAST_MIN, contrastRatio } from './color-roles'
 
 /** Page band with an anchor, so the header nav can jump to it. */
 export function ShowcaseSection({
@@ -142,19 +142,6 @@ function toRgb(color: string, backdrop: string) {
 
 function toHex(rgb: number[]) {
   return `#${rgb.map((value) => value.toString(16).padStart(2, '0')).join('')}`
-}
-
-function luminance(rgb: number[]) {
-  const [r, g, b] = rgb.map((value) => {
-    const channel = value / 255
-    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrastRatio(a: number[], b: number[]) {
-  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (light + 0.05) / (dark + 0.05)
 }
 
 function wcagLevel(ratio: number) {
