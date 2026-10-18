@@ -267,4 +267,24 @@ async fn registration_has_a_gateway_wide_limit() {
     let (status, headers, _) = harness.register(body).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert!(headers.contains_key("retry-after"));
+
+    // Over the limit, the body is never read: one that fails to arrive
+    // still gets the 429.
+    let unreadable = Body::from_stream(futures_util::stream::iter([Err::<
+        axum::body::Bytes,
+        std::io::Error,
+    >(std::io::Error::other(
+        "the client stalled",
+    ))]));
+    let (status, _, _) = send_with_headers(
+        &harness.router,
+        Request::builder()
+            .method("POST")
+            .uri("/oauth/register")
+            .header("content-type", "application/json")
+            .body(unreadable)
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }
