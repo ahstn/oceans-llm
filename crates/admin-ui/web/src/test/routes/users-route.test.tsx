@@ -752,8 +752,8 @@ describe('UsersPage', () => {
         oauth_provider_key: 'github',
       },
       invitedUser({ global_role: 'user', team_id: 'team_existing', team_role: 'admin' }),
-      [{ key: 'oidc', label: 'OIDC' }],
-      [{ key: 'github', label: 'GitHub' }],
+      [{ id: 'oidc_1', key: 'oidc', label: 'OIDC' }],
+      [{ id: 'github_1', key: 'github', label: 'GitHub' }],
     )
 
     expect(input).toEqual({

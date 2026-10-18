@@ -408,11 +408,14 @@ export async function getBatchResults(
   query: BatchResultsInput = {},
 ): Promise<BatchResultsView> {
   const client = createGatewayApiClient()
-  return unwrapGatewayResponse(
+  const results = unwrapGatewayResponse(
     await client.GET('/api/v1/batches/{batch_id}/results', {
       params: { path: { batch_id: batchId }, query },
     }),
   )
+  // The endpoint can also stream NDJSON; this client only asks for the JSON page.
+  if (typeof results === 'string') throw new Error('Expected JSON batch results')
+  return results
 }
 
 export async function cancelBatch(batchId: string): Promise<BatchView> {

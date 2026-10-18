@@ -3,8 +3,9 @@ import type { Dispatch, SetStateAction } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { FieldGroup } from '@/components/ui/field'
 import { EntityTagsField } from '@/routes/identity/-entity-tags'
+import type { UpdateUserForm } from '@/routes/identity/-user-form'
 import { MembershipFields } from '@/routes/identity/-user-form-fields'
-import type { IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
+import type { IdentityUsersPayload, UserView } from '@/types/api'
 
 export function UserOverviewSection({ user }: { user: UserView }) {
   return (
@@ -32,8 +33,8 @@ export function UserConfigurationSection({
   teams,
 }: {
   user: UserView
-  form: UpdateUserInput
-  setForm: Dispatch<SetStateAction<UpdateUserInput>>
+  form: UpdateUserForm
+  setForm: Dispatch<SetStateAction<UpdateUserForm>>
   teams: IdentityUsersPayload['teams']
 }) {
   return (

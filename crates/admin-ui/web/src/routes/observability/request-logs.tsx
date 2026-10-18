@@ -891,8 +891,8 @@ function formatOccurredAt(occurredAt: string) {
   return formatTimestamp(occurredAt, { seconds: true })
 }
 
-function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
-  if (statusCode === null) {
+function badgeVariant(statusCode: number | null | undefined): 'success' | 'warning' | 'outline' {
+  if (statusCode == null) {
     return 'outline'
   }
 
@@ -916,8 +916,8 @@ function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undef
   return `${cached} of ${formatCount(promptTokens)} prompt tokens cached (${percent}%)`
 }
 
-function formatBasisPoints(value: number | null) {
-  return value === null ? EMPTY_VALUE : `${(value / 100).toFixed(2)}%`
+function formatBasisPoints(value: number | null | undefined) {
+  return value == null ? EMPTY_VALUE : `${(value / 100).toFixed(2)}%`
 }
 
 function OperationDetailRow({ item }: { item: RequestLogView }) {

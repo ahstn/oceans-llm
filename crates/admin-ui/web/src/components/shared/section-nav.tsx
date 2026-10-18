@@ -1,3 +1,5 @@
+import type { IconSvgElement } from '@hugeicons/react'
+
 import { AppIcon } from '@/components/icons/app-icon'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,11 +12,11 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 
-/** One section of a detail dialog. `icon` is a Hugeicons icon. */
+/** One section of a detail dialog. */
 export interface DetailSection<Id extends string> {
   id: Id
   label: string
-  icon: unknown
+  icon: IconSvgElement
 }
 
 interface SectionNavProps<Id extends string> {

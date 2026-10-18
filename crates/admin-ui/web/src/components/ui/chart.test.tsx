@@ -17,7 +17,6 @@ const tooltipItem = {
   name: 'Requests',
   value: 10,
   color: '#000',
-  type: 'line' as const,
   payload: {},
   graphicalItemId: 'requests-series',
 }

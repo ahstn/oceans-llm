@@ -136,6 +136,7 @@ const seedPayload: ReviewAgentOverviewPayload = {
       key: 'review-bot',
       name: 'Review Bot',
       status: 'active',
+      tags: [],
       team_id: 'team_platform',
       team_key: 'platform',
       team_name: 'Platform',

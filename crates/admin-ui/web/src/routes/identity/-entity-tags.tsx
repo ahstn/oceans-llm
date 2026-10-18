@@ -10,18 +10,19 @@ export function EntityTagsField({
   onChange,
 }: {
   label: string
-  tags: EntityTag[]
+  tags: EntityTag[] | null | undefined
   onChange: (tags: EntityTag[]) => void
 }) {
+  const rows = tags ?? []
   function updateTag(index: number, field: 'key' | 'value', value: string) {
-    onChange(tags.map((tag, tagIndex) => (tagIndex === index ? { ...tag, [field]: value } : tag)))
+    onChange(rows.map((tag, tagIndex) => (tagIndex === index ? { ...tag, [field]: value } : tag)))
   }
 
   return (
     <Field>
       <FieldLabel>{label}</FieldLabel>
       <div className="flex flex-col gap-2">
-        {tags.map((tag, index) => (
+        {rows.map((tag, index) => (
           // The API tag shape has no ID, and its array position is its edit identity.
           // oxlint-disable-next-line react/no-array-index-key
           <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -38,7 +39,7 @@ export function EntityTagsField({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onChange(tags.filter((_, tagIndex) => tagIndex !== index))}
+              onClick={() => onChange(rows.filter((_, tagIndex) => tagIndex !== index))}
             >
               Remove
             </Button>
@@ -47,8 +48,8 @@ export function EntityTagsField({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => onChange([...tags, { key: '', value: '' }])}
-          disabled={tags.length >= 5}
+          onClick={() => onChange([...rows, { key: '', value: '' }])}
+          disabled={rows.length >= 5}
         >
           Add tag
         </Button>

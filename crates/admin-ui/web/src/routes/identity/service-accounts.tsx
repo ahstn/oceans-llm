@@ -267,7 +267,7 @@ function buildServiceAccountRows(
   serviceAccounts: ServiceAccountView[],
   apiKeys: ApiKeyView[],
 ): ServiceAccountCredentialRow[] {
-  return serviceAccounts.flatMap((serviceAccount) => {
+  return serviceAccounts.flatMap((serviceAccount): ServiceAccountCredentialRow[] => {
     const attachedApiKeys = apiKeys.filter(
       (apiKey) => apiKey.owner_kind === 'service_account' && apiKey.owner_id === serviceAccount.id,
     )

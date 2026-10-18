@@ -1,5 +1,5 @@
 import { useEffect, useState, useTransition, type FormEvent } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, type SearchSchemaInput } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -11,7 +11,7 @@ import { changeCurrentPassword } from '@/server/admin-data.functions'
 import { signedInAdminHref } from '@/routes/-auth-routing'
 
 export const Route = createFileRoute('/change-password')({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: { redirect?: string } & SearchSchemaInput) => ({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
   }),
   component: ChangePasswordPage,

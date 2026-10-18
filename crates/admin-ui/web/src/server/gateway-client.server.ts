@@ -1,7 +1,7 @@
 import createClient from 'openapi-fetch'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 
-import type { GatewayPaths } from '@/types/live-api'
+import type { GatewayPaths, JsonSafe } from '@/types/live-api'
 
 // Requests that reach this server without `x-forwarded-origin` did not come through the gateway
 // proxy, so they hit the UI port directly and the gateway lives on GATEWAY_PORT of the same host.
@@ -199,9 +199,10 @@ export function unwrapGatewayResponse<TData>(result: {
   data?: TData
   error?: unknown
   response: Response
-}): TData {
+}): JsonSafe<TData> {
   if (result.data !== undefined) {
-    return result.data
+    // Parsed JSON, so free-form `unknown` fields can only hold JSON values.
+    return result.data as JsonSafe<TData>
   }
 
   throw new Error(readGatewayErrorBody(result.error, result.response.status))

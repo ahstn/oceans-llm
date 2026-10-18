@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { toast } from 'sonner'
+import { toast, type Action } from 'sonner'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -596,7 +596,7 @@ describe('ServersTab', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     const [, options] = vi.mocked(toast.error).mock.calls[0]
-    act(() => (options as { action: { onClick: () => void } }).action.onClick())
+    act(() => (options!.action as Action).onClick({} as MouseEvent<HTMLButtonElement>))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "Couldn't reach api.githubcopilot.com. Check the endpoint, then Retry.",
     )
