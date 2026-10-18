@@ -2160,6 +2160,74 @@ pub(crate) mod tests {
         .await;
         exercise_mcp_settings_under_lock(store, server.mcp_server_id).await;
         exercise_mcp_visibility_rule(store, team.team_id).await;
+        exercise_mcp_owner_checked_enable(store, server.mcp_server_id).await;
+    }
+
+    /// An enable names the owner it was authorized against, as a disable does,
+    /// and moves the status revision only when it reactivates the server.
+    async fn exercise_mcp_owner_checked_enable<S>(store: &S, mcp_server_id: Uuid)
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let owner = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("load")
+            .expect("server")
+            .ownership
+            .owner_team_id;
+        store
+            .disable_external_mcp_server_for_owner(mcp_server_id, owner, now)
+            .await
+            .expect("disable as the owner");
+        let revision = store
+            .external_mcp_server_status_revision(mcp_server_id)
+            .await
+            .expect("revision");
+
+        // A team that does not own the server is refused, and nothing changes.
+        assert!(matches!(
+            store
+                .enable_external_mcp_server_for_owner(mcp_server_id, Some(Uuid::new_v4()), now)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let refused = store
+            .get_external_mcp_server(mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        assert_eq!(refused.status, ExternalMcpServerStatus::Disabled);
+        assert_eq!(
+            store
+                .external_mcp_server_status_revision(mcp_server_id)
+                .await
+                .expect("revision"),
+            revision,
+            "a refused enable writes nothing"
+        );
+
+        let (enabled, changed) = store
+            .enable_external_mcp_server_for_owner(mcp_server_id, owner, now)
+            .await
+            .expect("enable as the owner");
+        assert!(changed);
+        assert_eq!(enabled.status, ExternalMcpServerStatus::Active);
+        assert_eq!(enabled.last_discovery_status, None);
+        assert_eq!(
+            store
+                .external_mcp_server_status_revision(mcp_server_id)
+                .await
+                .expect("revision"),
+            revision + 1
+        );
+        // Enabling an active server is not a transition.
+        let (_, changed) = store
+            .enable_external_mcp_server_for_owner(mcp_server_id, owner, now)
+            .await
+            .expect("enable again");
+        assert!(!changed);
     }
 
     /// The store's hidden-server queries are the SQL form of

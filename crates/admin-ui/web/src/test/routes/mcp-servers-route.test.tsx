@@ -1135,11 +1135,31 @@ describe('ServersTab', () => {
       await screen.findByText(/This server is managed by Platform admins\./),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit GitHub' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Disable GitHub' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'More actions for GitHub' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Credentials' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Transfer ownership' })).not.toBeInTheDocument()
     expect(getMcpCredentialBindingsMock).not.toHaveBeenCalled()
+  })
+
+  it('lets a team admin re-enable a server their team owns', async () => {
+    await renderServersTab(
+      'server_team',
+      [{ ...teamServer, status: 'disabled' }, server],
+      teamAdminScope,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for Docs' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Enable server' }))
+
+    await waitFor(() => {
+      expect(enableExternalMcpServerMock).toHaveBeenCalledWith({
+        data: { serverId: 'server_team' },
+      })
+    })
   })
 
   it('registers a team admin server as team only', async () => {

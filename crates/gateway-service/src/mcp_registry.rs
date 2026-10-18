@@ -431,6 +431,24 @@ where
             .map_err(Into::into)
     }
 
+    /// Enables the server only while `expected_owner_team_id` still owns it, so
+    /// a transfer in between cannot let the former team enable it.
+    pub async fn enable_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        let _discovery = lock_discovery(mcp_server_id).await;
+        self.repo
+            .enable_external_mcp_server_for_owner(
+                mcp_server_id,
+                expected_owner_team_id,
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn list_tools(
         &self,
         mcp_server_id: Uuid,

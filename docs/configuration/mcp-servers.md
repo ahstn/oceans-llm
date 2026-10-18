@@ -118,7 +118,7 @@ Every other signed-in user also gets the `mcp` page by default, through the `use
 |---|---|
 | See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, only the URL's origin (`scheme://host[:port]`) is shown, and the auth config and discovery errors are hidden |
 | Register a server | Yes, at an address that resolves and is public. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config, and one a platform admin set stays only while the server URL and every URL in the auth config are unchanged. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
-| Edit, disable, refresh discovery | Their team's servers |
+| Edit, disable, re-enable, refresh discovery | Their team's servers. A disable or re-enable names the owner it was authorized against, so it fails with `409` if the server changed owner meanwhile |
 | Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
 | Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
 | Revoke grants | Any grant on their team's servers' tools |

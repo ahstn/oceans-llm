@@ -1178,6 +1178,21 @@ pub trait McpRegistryRepository: Send + Sync {
         enabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// Like `enable_external_mcp_server`, but only while the server is still
+    /// owned by `expected_owner_team_id` (`None` for the platform). A server that
+    /// has changed owner is a conflict, decided under the same write.
+    async fn enable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        enabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        let _ = (mcp_server_id, expected_owner_team_id, enabled_at);
+        Err(StoreError::Unexpected(
+            "owner-checked MCP server enable is not implemented for this repository".to_string(),
+        ))
+    }
+
     /// How many disable and enable transitions the server has had. Discovery reads it before
     /// loading the server and passes it back in `expected_status_revision`.
     async fn external_mcp_server_status_revision(

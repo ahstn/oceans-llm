@@ -596,7 +596,8 @@ export interface paths {
         put?: never;
         /**
          * Reactivates a disabled server. Its tools and grants apply again as they were before it was
-         *     disabled, and its discovery status resets to not run until discovery is refreshed.
+         *     disabled, and its discovery status resets to not run until discovery is refreshed. Whoever
+         *     can disable a server can enable it again: a team admin for their team's servers.
          */
         post: operations["enable_mcp_server"];
         delete?: never;
@@ -6792,7 +6793,25 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6877,7 +6896,25 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

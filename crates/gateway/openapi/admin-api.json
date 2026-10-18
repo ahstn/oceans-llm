@@ -2029,8 +2029,28 @@
               }
             }
           },
+          "403": {
+            "description": "The caller can see the server but not manage it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The server changed owner since the caller was authorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -2118,7 +2138,7 @@
         "tags": [
           "crate::http::mcp_registry"
         ],
-        "summary": "Reactivates a disabled server. Its tools and grants apply again as they were before it was\ndisabled, and its discovery status resets to not run until discovery is refreshed.",
+        "summary": "Reactivates a disabled server. Its tools and grants apply again as they were before it was\ndisabled, and its discovery status resets to not run until discovery is refreshed. Whoever\ncan disable a server can enable it again: a team admin for their team's servers.",
         "operationId": "enable_mcp_server",
         "parameters": [
           {
@@ -2152,8 +2172,28 @@
               }
             }
           },
+          "403": {
+            "description": "The caller can see the server but not manage it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The server changed owner since the caller was authorized",
             "content": {
               "application/json": {
                 "schema": {

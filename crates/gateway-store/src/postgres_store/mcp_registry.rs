@@ -919,6 +919,39 @@ impl McpRegistryRepository for PostgresStore {
         }
     }
 
+    async fn enable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        enabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // As in the owner-checked disable, the owner check and the enable are one statement.
+        let row = sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET status = 'active', disabled_at = NULL, updated_at = $1,
+                 last_discovery_status = NULL, last_discovery_at = NULL,
+                 last_error_summary = NULL, status_revision = status_revision + 1
+             WHERE mcp_server_id = $2
+               AND status = 'disabled'
+               AND owner_team_id IS NOT DISTINCT FROM $3
+             RETURNING {SERVER_COLUMNS}"
+        ))
+        .bind(enabled_at.unix_timestamp())
+        .bind(mcp_server_id.to_string())
+        .bind(expected_owner_team_id.map(|id| id.to_string()))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if let Some(row) = row {
+            return Ok((decode_server(&row)?, true));
+        }
+        let server = load_server(&self.pool, mcp_server_id).await?;
+        if server.ownership.owner_team_id != expected_owner_team_id {
+            return Err(owner_changed(mcp_server_id));
+        }
+        Ok((server, false))
+    }
+
     async fn external_mcp_server_status_revision(
         &self,
         mcp_server_id: Uuid,
