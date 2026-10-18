@@ -348,8 +348,10 @@ macro_rules! server_columns {
 }
 
 /// Whether a discovery of the server that started after this one already
-/// committed. Reads `external_mcp_discovery_runs_server_status_ms_idx`.
-const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND started_at_ms > ?3)";
+/// committed. Reads `external_mcp_discovery_runs_server_status_ms_idx`. A
+/// gateway older than V72, still serving during a rolling upgrade, records
+/// runs without `started_at_ms`; those compare by their whole-second start.
+const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND (started_at_ms > ?3 OR (started_at_ms IS NULL AND started_at * 1000 > ?3)))";
 
 const SERVER_COLUMNS: &str = server_columns!();
 
@@ -1134,7 +1136,8 @@ impl McpRegistryRepository for LibsqlStore {
             WHERE mcp_server_id = ?4
               AND NOT EXISTS (
                 SELECT 1 FROM external_mcp_discovery_runs
-                WHERE mcp_server_id = ?4 AND status = ?5 AND started_at_ms > ?6
+                WHERE mcp_server_id = ?4 AND status = ?5
+                  AND (started_at_ms > ?6 OR (started_at_ms IS NULL AND started_at * 1000 > ?6))
               )
             "#,
             libsql::params![
@@ -1448,6 +1451,32 @@ mod tests {
             .get(0)
             .expect("value");
         assert!(newer, "the older run was backfilled in milliseconds");
+
+        // A gateway older than V72 records a run without `started_at_ms`.
+        connection
+            .execute(
+                "INSERT INTO external_mcp_discovery_runs \
+                 (discovery_run_id, mcp_server_id, status, started_at, finished_at) \
+                 VALUES ('legacy', 'server', 'success', 1700000100, 1700000101)",
+                (),
+            )
+            .await
+            .expect("legacy run");
+        let mut rows = connection
+            .query(
+                NEWER_DISCOVERY_COMMITTED_SQL,
+                libsql::params!["server", "success", 1_700_000_050_000_i64],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "a run without milliseconds compares by its start");
 
         let mut rows = connection
             .query(

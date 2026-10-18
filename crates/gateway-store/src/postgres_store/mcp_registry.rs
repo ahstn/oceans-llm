@@ -925,7 +925,7 @@ impl McpRegistryRepository for PostgresStore {
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
             let newer_run_committed: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND started_at_ms > $3)",
+                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND (started_at_ms > $3 OR (started_at_ms IS NULL AND started_at * 1000 > $3)))",
             )
             .bind(run.mcp_server_id.to_string())
             .bind(ExternalMcpDiscoveryStatus::Success.as_str())
@@ -1058,7 +1058,8 @@ impl McpRegistryRepository for PostgresStore {
             WHERE mcp_server_id = $4
               AND NOT EXISTS (
                 SELECT 1 FROM external_mcp_discovery_runs
-                WHERE mcp_server_id = $4 AND status = $5 AND started_at_ms > $6
+                WHERE mcp_server_id = $4 AND status = $5
+                  AND (started_at_ms > $6 OR (started_at_ms IS NULL AND started_at * 1000 > $6))
               )
             "#,
         )
