@@ -30,6 +30,8 @@ Database tables:
 
 The estimate cache key includes provider family, model or encoding, server id, tool id/name, schema hash, description hash, MCP protocol version, and serializer version. Unsupported tokenizer families use a conservative low-confidence estimate and do not block requests.
 
+_Changed 2026-10-18 after a review of the MCP gateway epic:_ inference requests no longer wait for the estimate. Before dispatch, a request with an MCP scope records its tool counts on the request log from the caller's tool set, which is cached per API key or OAuth grant for 30 seconds and resolved once for concurrent requests. The estimate and its writes run in a background task, which reads every tool's cached estimate in one query (`get_mcp_tool_token_estimates`). Before, each request resolved the caller's tools, looked up the key's listed servers one at a time, and read each tool's estimate in its own query, about N+10 round trips ahead of guardrails and dispatch. The counts can lag a grant change by up to 30 seconds, and a request's overhead row appears shortly after the request rather than before it.
+
 ## Trade-Offs
 
 Filtering finite SSE `tools/list` responses requires buffering. The gateway fails closed for unsupported or oversized rewrite cases instead of leaking ungranted tools.

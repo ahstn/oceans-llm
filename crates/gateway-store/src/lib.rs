@@ -75,6 +75,7 @@ mod skills_tests;
 pub(crate) mod tests {
     mod mcp_access;
     mod mcp_tag_rules;
+    mod mcp_token_overhead;
     mod mcp_tool_versions;
     mod model_routing;
     mod request_log_list;

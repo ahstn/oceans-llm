@@ -1740,11 +1740,12 @@ pub trait ProviderUserTokenResolver: Send + Sync {
 
 #[async_trait]
 pub trait McpTokenOverheadRepository: Send + Sync {
-    async fn get_mcp_tool_token_estimate(
+    /// The unexpired estimates among `cache_keys`, in one query.
+    async fn get_mcp_tool_token_estimates(
         &self,
-        cache_key: &str,
+        cache_keys: &[String],
         now: OffsetDateTime,
-    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError>;
+    ) -> Result<Vec<McpToolTokenEstimateRecord>, StoreError>;
 
     async fn upsert_mcp_tool_token_estimate(
         &self,

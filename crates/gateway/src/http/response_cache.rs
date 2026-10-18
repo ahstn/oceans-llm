@@ -13,6 +13,9 @@ struct CacheEntry<V> {
     expires_at: tokio::time::Instant,
 }
 
+/// Past this many entries, an insert first drops the expired ones.
+const MAX_ENTRIES_BEFORE_PRUNE: usize = 4096;
+
 pub struct ResponseCache<K, V> {
     ttl: Duration,
     entries: Mutex<HashMap<K, Arc<CacheEntry<V>>>>,
@@ -67,13 +70,21 @@ where
                 return Err((error, CacheStatus::Miss));
             }
         };
-        self.entries.lock().await.insert(
-            key.clone(),
-            Arc::new(CacheEntry {
-                value: value.clone(),
-                expires_at: tokio::time::Instant::now() + self.ttl,
-            }),
-        );
+        {
+            let mut entries = self.entries.lock().await;
+            // Keys that are never read again would otherwise stay forever.
+            if entries.len() >= MAX_ENTRIES_BEFORE_PRUNE {
+                let now = tokio::time::Instant::now();
+                entries.retain(|_, entry| entry.expires_at > now);
+            }
+            entries.insert(
+                key.clone(),
+                Arc::new(CacheEntry {
+                    value: value.clone(),
+                    expires_at: tokio::time::Instant::now() + self.ttl,
+                }),
+            );
+        }
 
         self.remove_load_gate(&key, &load_gate).await;
 

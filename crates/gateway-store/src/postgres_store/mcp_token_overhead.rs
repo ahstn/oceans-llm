@@ -63,21 +63,24 @@ const OVERHEAD_COLUMNS: &str = "request_id, request_log_id, model_key, provider_
 
 #[async_trait]
 impl McpTokenOverheadRepository for PostgresStore {
-    async fn get_mcp_tool_token_estimate(
+    async fn get_mcp_tool_token_estimates(
         &self,
-        cache_key: &str,
+        cache_keys: &[String],
         now: OffsetDateTime,
-    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError> {
+    ) -> Result<Vec<McpToolTokenEstimateRecord>, StoreError> {
+        if cache_keys.is_empty() {
+            return Ok(Vec::new());
+        }
         let sql = format!(
-            "SELECT {ESTIMATE_COLUMNS} FROM mcp_tool_token_estimates WHERE cache_key = $1 AND expires_at > $2"
+            "SELECT {ESTIMATE_COLUMNS} FROM mcp_tool_token_estimates WHERE cache_key = ANY($1) AND expires_at > $2"
         );
-        let row = sqlx::query(&sql)
-            .bind(cache_key)
+        let rows = sqlx::query(&sql)
+            .bind(cache_keys)
             .bind(now.unix_timestamp())
-            .fetch_optional(&self.pool)
+            .fetch_all(&self.pool)
             .await
             .map_err(to_query_error)?;
-        row.as_ref().map(decode_estimate).transpose()
+        rows.iter().map(decode_estimate).collect()
     }
 
     async fn upsert_mcp_tool_token_estimate(
