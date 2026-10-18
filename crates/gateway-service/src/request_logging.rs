@@ -122,6 +122,7 @@ impl RequestLogSummary {
         latency_ms: i64,
         status_code: i64,
         error_code: String,
+        invoked_tools: InvokedToolCounts,
     ) -> Self {
         Self {
             provider_key,
@@ -131,7 +132,7 @@ impl RequestLogSummary {
             error_code: Some(error_code),
             latency_ms,
             usage: UsageSummary::default(),
-            invoked_tools: InvokedToolCounts::default(),
+            invoked_tools,
         }
     }
 }
@@ -493,6 +494,7 @@ where
                 latency_ms,
                 gateway_error.http_status_code().into(),
                 gateway_error.error_code().to_string(),
+                InvokedToolCounts::default(),
             ),
             response_json,
             response_payload_truncated,
@@ -535,6 +537,8 @@ where
                 latency_ms,
                 failure.status_code,
                 failure.error_code,
+                // Calls streamed before the failure still happened.
+                invoked_tools,
             ),
             None => RequestLogSummary::success(
                 provider_key,

@@ -795,6 +795,8 @@ async fn records_stream_failures_with_payload() {
     collector.observe_chunk(
         br#"data: {"delta":"hello"}
 
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"mcp__github__search","arguments":""}}]}}]}
+
 "#,
     );
 
@@ -831,6 +833,13 @@ async fn records_stream_failures_with_payload() {
     assert!(logs[0].metadata.get("fallback_used").is_none());
     assert!(logs[0].metadata.get("attempt_count").is_none());
     assert_eq!(payload[0].response_json["error"]["code"], "stream_error");
+    // Calls streamed before the failure are still counted.
+    assert_eq!(logs[0].tool_cardinality.invoked_tool_count, Some(1));
+    assert_eq!(logs[0].tool_cardinality.invoked_mcp_tool_count, Some(1));
+    assert_eq!(
+        logs[0].tool_cardinality.invoked_distinct_tool_count,
+        Some(1)
+    );
 }
 
 #[tokio::test]

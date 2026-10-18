@@ -934,6 +934,8 @@ fn provider_run_tools_are_not_classified_as_file_operations() {
         }
         let client_mcp = classify_tool_call(input, client_call("mcp__fs__read_file"));
         assert_eq!(client_mcp.kind, InferredObservationKind::FileReadSuspected);
+        let apply_patch = classify_tool_call(input, client_call("apply_patch"));
+        assert_eq!(apply_patch.kind, InferredObservationKind::FileEditSuspected);
     });
 }
 

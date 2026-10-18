@@ -5,7 +5,7 @@ use agent_session_analysis::{
     CohortReference, OBSERVATION_PARSER_VERSION, RequestAttemptFact,
     SESSION_BOUNDARY_POLICY_VERSION, SessionRequestFact, SessionTrace, SessionUsageFact,
     ToolInvocationFact, TraceEvidence,
-    tool_calls::{ToolCall, ToolCallKind, collect_logged_response_tool_calls, tool_server_key},
+    tool_calls::{ToolCall, ToolCallKind, distinct_named_tool_calls, tool_server_key},
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,

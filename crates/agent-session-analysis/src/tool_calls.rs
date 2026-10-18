@@ -6,21 +6,30 @@
 //! - Chat Completions: `choices[].message.tool_calls`, `choices[].delta.tool_calls`,
 //!   and the legacy `function_call`, for both `function` and `custom` tools.
 //! - Responses: every `*_call` output item (`function_call`, `custom_tool_call`,
-//!   `mcp_call`, and hosted tools such as `web_search_call`) in `output`, in
-//!   `response.output` on lifecycle events, and in `item` on output item events.
+//!   `mcp_call`, caller-run built-ins such as `apply_patch_call`, and hosted tools
+//!   such as `web_search_call`) in `output`, in `response.output` on lifecycle
+//!   events, and in `item` on output item events.
 //! - Anthropic Messages: `tool_use`, `server_tool_use`, and `mcp_tool_use` blocks
 //!   in `content` and on `content_block_start` events.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::ControlFlow};
 
 use serde_json::Value;
 
 const MCP_TOOL_NAME_PREFIX: &str = "mcp__";
 const CALL_ID_KEYS: &[&str] = &["id", "call_id", "tool_call_id"];
+/// Responses built-in tools the caller executes, so they act on the caller's files and shell.
+const CALLER_RUN_BUILT_IN_CALLS: &[&str] = &[
+    "apply_patch_call",
+    "shell_call",
+    "local_shell_call",
+    "computer_call",
+];
 
+type Visit<'v, 'a> = dyn FnMut(ToolCall<'a>) -> ControlFlow<()> + 'v;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCallKind {
-    /// A tool the caller defined and runs itself.
+    /// A tool the caller runs: its own functions, or a built-in such as `apply_patch`.
     Client,
     /// An MCP tool the provider calls for the caller (`mcp_call`, `mcp_tool_use`).
     ProviderMcp,
@@ -31,7 +40,7 @@ pub enum ToolCallKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolCall<'a> {
     pub id: Option<&'a str>,
-    /// Hosted Responses tools carry no name, so it comes from the item type
+    /// Responses built-in tools carry no name, so it comes from the item type
     /// (`web_search_call` is `web_search`).
     pub name: Option<&'a str>,
     pub kind: ToolCallKind,
@@ -47,25 +56,47 @@ impl ToolCall<'_> {
     }
 }
 
-/// Appends the tool calls in one response body or one stream event.
+/// Visits the tool calls in one response body or one stream event, stopping when
+/// `visit` breaks.
 ///
 /// Streamed Chat Completions deltas carry the call ID on the delta that opens a
 /// call, so deltas without one are argument continuations and are skipped.
-pub fn collect_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
-    collect_chat_tool_calls(value, calls);
-    collect_responses_tool_calls(value, calls);
-    collect_messages_tool_calls(value, calls);
+fn visit_tool_calls<'a>(value: &'a Value, visit: &mut Visit<'_, 'a>) -> ControlFlow<()> {
+    visit_chat_tool_calls(value, visit)?;
+    visit_responses_tool_calls(value, visit)?;
+    visit_messages_tool_calls(value, visit)
 }
 
-/// Appends the tool calls in a logged response payload: a response body, or a
-/// streamed response captured as `{ "events": [...] }`.
-pub fn collect_logged_response_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
-    match value.get("events").and_then(Value::as_array) {
+/// Named tool calls in a logged response payload (a response body, or a streamed
+/// response captured as `{ "events": [...] }`), each ID kept once, since a streamed
+/// call repeats across events. Stops after `limit` calls and reports whether more
+/// were present, so a large payload never grows the result past the limit.
+#[must_use]
+pub fn distinct_named_tool_calls<'a>(
+    payload: &'a Value,
+    limit: usize,
+) -> (Vec<ToolCall<'a>>, bool) {
+    let mut calls = Vec::new();
+    let mut seen_ids = HashSet::new();
+    let mut truncated = false;
+    let mut visit = |call: ToolCall<'a>| {
+        if call.name.is_none() || call.id.is_some_and(|id| !seen_ids.insert(id)) {
+            return ControlFlow::Continue(());
+        }
+        if calls.len() == limit {
+            truncated = true;
+            return ControlFlow::Break(());
+        }
+        calls.push(call);
+        ControlFlow::Continue(())
+    };
+    let _ = match payload.get("events").and_then(Value::as_array) {
         Some(events) => events
             .iter()
-            .for_each(|event| collect_tool_calls(event, calls)),
-        None => collect_tool_calls(value, calls),
-    }
+            .try_for_each(|event| visit_tool_calls(event, &mut visit)),
+        None => visit_tool_calls(payload, &mut visit),
+    };
+    (calls, truncated)
 }
 
 /// Counts tool calls across a response, removing calls repeated by ID. A
@@ -103,9 +134,7 @@ impl CallIdentities {
 
 impl ToolCallTally {
     pub fn observe(&mut self, value: &Value) {
-        let mut calls = Vec::new();
-        collect_tool_calls(value, &mut calls);
-        for call in calls {
+        let _ = visit_tool_calls(value, &mut |call| {
             if let Some(name) = call.name {
                 self.names.insert(name.to_string());
             }
@@ -113,7 +142,8 @@ impl ToolCallTally {
             if call.is_mcp() {
                 self.mcp.insert(call.id);
             }
-        }
+            ControlFlow::Continue(())
+        });
     }
 
     #[must_use]
@@ -154,13 +184,13 @@ fn mcp_server_from_tool_name(name: &str) -> Option<&str> {
         .filter(|server| !server.is_empty())
 }
 
-fn collect_chat_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn visit_chat_tool_calls<'a>(value: &'a Value, visit: &mut Visit<'_, 'a>) -> ControlFlow<()> {
     let Some(choices) = value.get("choices").and_then(Value::as_array) else {
-        return;
+        return ControlFlow::Continue(());
     };
     for choice in choices {
         if let Some(message) = choice.get("message") {
-            collect_chat_message_tool_calls(message, calls, false);
+            visit_chat_message_tool_calls(message, visit, false)?;
         }
         for delta in [
             choice.get("delta"),
@@ -169,16 +199,17 @@ fn collect_chat_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) 
         .into_iter()
         .flatten()
         {
-            collect_chat_message_tool_calls(delta, calls, true);
+            visit_chat_message_tool_calls(delta, visit, true)?;
         }
     }
+    ControlFlow::Continue(())
 }
 
-fn collect_chat_message_tool_calls<'a>(
+fn visit_chat_message_tool_calls<'a>(
     message: &'a Value,
-    calls: &mut Vec<ToolCall<'a>>,
+    visit: &mut Visit<'_, 'a>,
     is_delta: bool,
-) {
+) -> ControlFlow<()> {
     for tool_call in message
         .get("tool_calls")
         .and_then(Value::as_array)
@@ -195,7 +226,7 @@ fn collect_chat_message_tool_calls<'a>(
                 .get(key)
                 .and_then(|tool| string_field(tool, &["name"]))
         });
-        calls.push(client_call(id, name));
+        visit(client_call(id, name))?;
     }
 
     // The legacy `function_call` has no ID; it names the function once per message,
@@ -203,12 +234,13 @@ fn collect_chat_message_tool_calls<'a>(
     if let Some(function_call) = message.get("function_call") {
         let name = string_field(function_call, &["name"]);
         if !is_delta || name.is_some() {
-            calls.push(client_call(None, name));
+            visit(client_call(None, name))?;
         }
     }
+    ControlFlow::Continue(())
 }
 
-fn collect_responses_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn visit_responses_tool_calls<'a>(value: &'a Value, visit: &mut Visit<'_, 'a>) -> ControlFlow<()> {
     let outputs = [
         value.get("output"),
         value
@@ -221,44 +253,47 @@ fn collect_responses_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'
         .filter_map(Value::as_array)
         .flatten()
     {
-        collect_responses_item_tool_calls(item, calls);
+        visit_responses_item_tool_calls(item, visit)?;
     }
     for key in ["item", "output_item"] {
         if let Some(item) = value.get(key) {
-            collect_responses_item_tool_calls(item, calls);
+            visit_responses_item_tool_calls(item, visit)?;
         }
     }
+    ControlFlow::Continue(())
 }
 
-fn collect_responses_item_tool_calls<'a>(item: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn visit_responses_item_tool_calls<'a>(
+    item: &'a Value,
+    visit: &mut Visit<'_, 'a>,
+) -> ControlFlow<()> {
     if let Some(tool_calls) = item.get("tool_calls").and_then(Value::as_array) {
-        calls.extend(tool_calls.iter().map(|tool_call| {
+        for tool_call in tool_calls {
             let name = tool_call
                 .get("function")
                 .and_then(|function| string_field(function, &["name"]))
                 .or_else(|| string_field(tool_call, &["name"]));
-            client_call(string_field(tool_call, CALL_ID_KEYS), name)
-        }));
-        return;
+            visit(client_call(string_field(tool_call, CALL_ID_KEYS), name))?;
+        }
+        return ControlFlow::Continue(());
     }
     if let Some(function) = item.get("function").filter(|function| function.is_object()) {
-        calls.push(client_call(
+        return visit(client_call(
             string_field(item, CALL_ID_KEYS),
             string_field(function, &["name"]),
         ));
-        return;
     }
 
     let Some(item_type) = string_field(item, &["type"]) else {
-        return;
+        return ControlFlow::Continue(());
     };
     // Every tool call item type ends in `_call`; results end in `_call_output`.
     let Some(tool_type) = item_type.strip_suffix("_call") else {
-        return;
+        return ControlFlow::Continue(());
     };
     let id = string_field(item, CALL_ID_KEYS);
     let name = string_field(item, &["name"]);
-    calls.push(match item_type {
+    visit(match item_type {
         "function_call" | "custom_tool_call" | "tool_call" => client_call(id, name),
         "mcp_call" => ToolCall {
             id,
@@ -266,20 +301,23 @@ fn collect_responses_item_tool_calls<'a>(item: &'a Value, calls: &mut Vec<ToolCa
             kind: ToolCallKind::ProviderMcp,
             mcp_server: string_field(item, &["server_label"]),
         },
+        _ if CALLER_RUN_BUILT_IN_CALLS.contains(&item_type) => {
+            client_call(id, name.or(Some(tool_type)))
+        }
         _ => ToolCall {
             id,
             name: name.or(Some(tool_type)),
             kind: ToolCallKind::ProviderHosted,
             mcp_server: None,
         },
-    });
+    })
 }
 
-fn collect_messages_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn visit_messages_tool_calls<'a>(value: &'a Value, visit: &mut Visit<'_, 'a>) -> ControlFlow<()> {
     if string_field(value, &["type"]) == Some("content_block_start")
         && let Some(block) = value.get("content_block")
     {
-        collect_messages_block_tool_call(block, calls);
+        visit_messages_block_tool_call(block, visit)?;
     }
     for block in value
         .get("content")
@@ -287,28 +325,32 @@ fn collect_messages_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a
         .into_iter()
         .flatten()
     {
-        collect_messages_block_tool_call(block, calls);
+        visit_messages_block_tool_call(block, visit)?;
     }
+    ControlFlow::Continue(())
 }
 
-fn collect_messages_block_tool_call<'a>(block: &'a Value, calls: &mut Vec<ToolCall<'a>>) {
+fn visit_messages_block_tool_call<'a>(
+    block: &'a Value,
+    visit: &mut Visit<'_, 'a>,
+) -> ControlFlow<()> {
     let id = string_field(block, &["id"]);
     let name = string_field(block, &["name"]);
     match string_field(block, &["type"]) {
-        Some("tool_use") => calls.push(client_call(id, name)),
-        Some("mcp_tool_use") => calls.push(ToolCall {
+        Some("tool_use") => visit(client_call(id, name)),
+        Some("mcp_tool_use") => visit(ToolCall {
             id,
             name,
             kind: ToolCallKind::ProviderMcp,
             mcp_server: string_field(block, &["server_name"]),
         }),
-        Some("server_tool_use") => calls.push(ToolCall {
+        Some("server_tool_use") => visit(ToolCall {
             id,
             name,
             kind: ToolCallKind::ProviderHosted,
             mcp_server: None,
         }),
-        _ => {}
+        _ => ControlFlow::Continue(()),
     }
 }
 

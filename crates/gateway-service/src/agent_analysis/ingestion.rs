@@ -599,17 +599,7 @@ pub(super) fn observations_for_response(
                 limitations: Vec::new(),
             });
         }
-        let mut calls = Vec::new();
-        collect_logged_response_tool_calls(response, &mut calls);
-        let mut seen_call_ids = BTreeSet::new();
-        calls.retain(|call| {
-            call.name.is_some()
-                && call
-                    .id
-                    .is_none_or(|id| seen_call_ids.insert(id.to_string()))
-        });
-        let scan_truncated = calls.len() > MAX_INFERRED_TOOL_CALLS;
-        calls.truncate(MAX_INFERRED_TOOL_CALLS);
+        let (calls, scan_truncated) = distinct_named_tool_calls(response, MAX_INFERRED_TOOL_CALLS);
         let first_observation = observations.len();
         observations.extend(
             calls

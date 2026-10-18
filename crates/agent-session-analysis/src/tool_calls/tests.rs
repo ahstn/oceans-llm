@@ -3,9 +3,7 @@ use serde_json::{Value, json};
 use super::*;
 
 fn calls(value: &Value) -> Vec<ToolCall<'_>> {
-    let mut calls = Vec::new();
-    collect_logged_response_tool_calls(value, &mut calls);
-    calls
+    distinct_named_tool_calls(value, usize::MAX).0
 }
 
 fn tally(values: &[Value]) -> (i64, i64) {
@@ -202,4 +200,43 @@ fn tally_counts_mcp_calls_once_across_stream_events() {
 
     assert_eq!(tally.count(), 3);
     assert_eq!(tally.mcp_count(), 2);
+}
+
+#[test]
+fn responses_caller_run_built_ins_are_client_calls() {
+    let response = json!({"output": [
+        {"type": "apply_patch_call", "id": "apc_1", "call_id": "call_1", "operation": {}},
+        {"type": "shell_call", "id": "sh_1", "call_id": "call_2"},
+        {"type": "apply_patch_call_output", "call_id": "call_1"}
+    ]});
+
+    assert_eq!(
+        calls(&response),
+        vec![client("apc_1", "apply_patch"), client("sh_1", "shell")]
+    );
+}
+
+#[test]
+fn distinct_named_tool_calls_stops_at_the_limit() {
+    let events = json!({"stream": true, "events": [
+        {"type": "response.output_item.added",
+         "item": {"type": "function_call", "id": "fc_1", "name": "search"}},
+        {"type": "response.output_item.done",
+         "item": {"type": "function_call", "id": "fc_1", "name": "search"}},
+        {"type": "response.output_item.added",
+         "item": {"type": "function_call", "id": "fc_2", "name": "read"}},
+        {"type": "response.output_item.added",
+         "item": {"type": "function_call", "id": "fc_3", "name": "write"}}
+    ]});
+
+    let (within, truncated) = distinct_named_tool_calls(&events, 3);
+    assert_eq!(within.len(), 3);
+    assert!(!truncated);
+
+    let (capped, truncated) = distinct_named_tool_calls(&events, 2);
+    assert_eq!(
+        capped,
+        vec![client("fc_1", "search"), client("fc_2", "read")]
+    );
+    assert!(truncated);
 }
