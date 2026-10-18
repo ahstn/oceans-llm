@@ -45,6 +45,7 @@
         "name": "web_search_exa",
         "arguments": {
           "query": "Official React documentation for the useState hook",
+          "objective": "Rank the react.dev reference page for useState first and return its summary.",
           "numResults": 1
         }
       }
@@ -62,10 +63,44 @@
         "name": "web_search_exa",
         "arguments": {
           "query": "Official React documentation for the useState hook",
+          "objective": "Rank the react.dev reference page for useState first and return its summary.",
           "numResults": 1
         }
       },
       "expect_tool_error": true
+    },
+    {
+      "key": "reui",
+      "label": "ReUI licensed blocks",
+      "server_url": "https://mcp.reui.io/api/mcp",
+      "auth_mode": "gateway_bearer_token",
+      "auth_config": {
+        "secret_ref": "env/OCEANS_MCP_DISCOVERY_REUI_VERIFY"
+      },
+      "call": {
+        "name": "search",
+        "arguments": {
+          "query": "data grid for audit logs",
+          "type": "block",
+          "free": false,
+          "limit": 2
+        }
+      },
+      "expect_result_markers": [
+        "\"plan\":\"pro\"",
+        "\"free\":false",
+        "\"requiredPlan\":\"pro\""
+      ]
+    },
+    {
+      "key": "reui-invalid",
+      "label": "ReUI invalid license control",
+      "server_url": "https://mcp.reui.io/api/mcp",
+      "auth_mode": "gateway_bearer_token",
+      "auth_config": {
+        "secret_ref": "env/OCEANS_MCP_DISCOVERY_REUI_INVALID_VERIFY"
+      },
+      "expect_discovery_error": true
     }
   ]
 }
