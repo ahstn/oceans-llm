@@ -1490,7 +1490,48 @@ async fn a_failed_team_lookup_follows_the_failure_mode() {
         harness.limiter = Arc::new(limiter.with_team_lookup(Arc::new(FailingTeams)));
         let decision = harness.limiter.check(&subject).await;
         assert_eq!(decision.is_err(), refused, "{mode:?}: {decision:?}");
+        assert!(
+            harness
+                .limiter
+                .member_team_lookups
+                .lock()
+                .unwrap()
+                .is_empty(),
+            "a failed lookup leaves no flight behind"
+        );
     }
+}
+
+/// A team policy whose traffic filter cannot match the request needs no
+/// team, so a failed lookup does not refuse it.
+#[tokio::test]
+async fn team_lookups_are_skipped_for_policies_that_cannot_match() {
+    let other_model = ConfiguredRateLimitPolicy {
+        model_key: Some("slow".to_string()),
+        ..config(
+            "per team on slow",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )
+    };
+    let mut harness = Harness::with_mode(
+        MemoryStore::default(),
+        vec![other_model],
+        RateLimitFailureMode::Closed,
+    );
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(Arc::new(FailingTeams)));
+    let decision = harness
+        .limiter
+        .check(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+        .await;
+    assert!(
+        matches!(decision, Ok(RateLimitDecision::Unlimited)),
+        "{decision:?}"
+    );
 }
 
 #[tokio::test]

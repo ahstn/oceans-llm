@@ -258,26 +258,30 @@ impl ActivePolicy {
         }
     }
 
-    /// The counter this subject shares under this policy, or `None` when the
-    /// policy does not apply to it.
-    fn counter_key(&self, subject: &RateLimitSubject<'_>) -> Option<String> {
+    /// Whether the policy's operation and traffic filters match the request,
+    /// whoever makes it.
+    fn matches_traffic(&self, subject: &RateLimitSubject<'_>) -> bool {
         if self.operation != subject.operation {
-            return None;
+            return false;
         }
         if let Some(model_key) = &self.model_key
             && !subject.model_keys.contains(&model_key.as_str())
         {
-            return None;
+            return false;
         }
-        if let Some(filter) = &self.mcp_server {
-            let (server_id, server_key) = subject.mcp_server?;
-            let matches = match filter {
-                ServerFilter::Id(id) => *id == server_id,
-                ServerFilter::Key(key) => key == server_key,
-            };
-            if !matches {
-                return None;
-            }
+        match (&self.mcp_server, subject.mcp_server) {
+            (None, _) => true,
+            (Some(_), None) => false,
+            (Some(ServerFilter::Id(id)), Some((server_id, _))) => *id == server_id,
+            (Some(ServerFilter::Key(key)), Some((_, server_key))) => key == server_key,
+        }
+    }
+
+    /// The counter this subject shares under this policy, or `None` when the
+    /// policy does not apply to it.
+    fn counter_key(&self, subject: &RateLimitSubject<'_>) -> Option<String> {
+        if !self.matches_traffic(subject) {
+            return None;
         }
         let principal = match self.scope_kind {
             RateLimitScopeKind::Global => None,
@@ -447,6 +451,48 @@ where
     }
 }
 
+type TeamLookupFlights = std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<Option<Uuid>>>>>;
+
+/// A caller's share of one user's team lookup. Dropping it, whether the
+/// lookup succeeded, failed or was cancelled, removes the entry if it is still
+/// this lookup's, so failed lookups leave nothing behind.
+struct TeamLookupFlight<'a> {
+    flights: &'a TeamLookupFlights,
+    user_id: Uuid,
+    cell: Arc<tokio::sync::OnceCell<Option<Uuid>>>,
+}
+
+impl<'a> TeamLookupFlight<'a> {
+    fn join(flights: &'a TeamLookupFlights, user_id: Uuid) -> Self {
+        let cell = flights
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .entry(user_id)
+            .or_default()
+            .clone();
+        Self {
+            flights,
+            user_id,
+            cell,
+        }
+    }
+}
+
+impl Drop for TeamLookupFlight<'_> {
+    fn drop(&mut self) {
+        let mut flights = self
+            .flights
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if flights
+            .get(&self.user_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.cell))
+        {
+            flights.remove(&self.user_id);
+        }
+    }
+}
+
 /// Users whose team is cached at once. Past this the cache starts over.
 const MAX_CACHED_MEMBER_TEAMS: usize = 10_000;
 
@@ -457,7 +503,7 @@ pub struct RateLimiter {
     member_teams: std::sync::Mutex<HashMap<Uuid, (Instant, Option<Uuid>)>>,
     /// Team lookups in flight, so concurrent requests from one uncached user
     /// share a single lookup.
-    member_team_lookups: std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<Option<Uuid>>>>>,
+    member_team_lookups: TeamLookupFlights,
     settings: RateLimitSettings,
     config_policies: Vec<ActivePolicy>,
     cache: RwLock<Option<PolicyCache>>,
@@ -541,27 +587,35 @@ impl RateLimiter {
             .map(|(_, team)| *team)
     }
 
-    /// Whether `subject` needs its user's team looked up for `set`.
-    fn needs_member_team(&self, set: &PolicySet, subject: &RateLimitSubject<'_>) -> bool {
+    /// Whether `subject` needs its user's team looked up for `set`: some
+    /// team policy, of `metric` when given, matches the request's traffic.
+    fn needs_member_team(
+        &self,
+        set: &PolicySet,
+        subject: &RateLimitSubject<'_>,
+        metric: Option<RateLimitMetric>,
+    ) -> bool {
         self.team_lookup.is_some()
             && subject.team_id.is_none()
             && subject.user_id.is_some()
-            && set
-                .for_operation(subject.operation)
-                .iter()
-                .any(|policy| policy.scope_kind == RateLimitScopeKind::Team)
+            && set.for_operation(subject.operation).iter().any(|policy| {
+                policy.scope_kind == RateLimitScopeKind::Team
+                    && metric.is_none_or(|metric| policy.metric == metric)
+                    && policy.matches_traffic(subject)
+            })
     }
 
-    /// `subject` with its user's team filled in, when a team-scoped policy
-    /// for the operation could need it. A failed lookup is an error, which
-    /// callers handle like any other store failure.
+    /// `subject` with its user's team filled in, when a team policy of
+    /// `metric` (any, when `None`) matches the request. A failed lookup is an
+    /// error, which callers handle like any other store failure.
     async fn with_member_team<'a>(
         &self,
         set: &PolicySet,
         subject: &RateLimitSubject<'a>,
+        metric: Option<RateLimitMetric>,
     ) -> Result<RateLimitSubject<'a>, StoreError> {
         let mut subject = *subject;
-        if !self.needs_member_team(set, &subject) {
+        if !self.needs_member_team(set, &subject, metric) {
             return Ok(subject);
         }
         let (Some(lookup), Some(user_id)) = (&self.team_lookup, subject.user_id) else {
@@ -571,38 +625,21 @@ impl RateLimiter {
             subject.team_id = team;
             return Ok(subject);
         }
-        let flight = self
-            .member_team_lookups
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .entry(user_id)
-            .or_default()
-            .clone();
+        let flight = TeamLookupFlight::join(&self.member_team_lookups, user_id);
         // A failed lookup leaves the cell empty, so the next waiter tries
         // again and gets its own error.
         let team = *flight
+            .cell
             .get_or_try_init(|| lookup.team_for_user(user_id))
             .await?;
-        {
-            let mut teams = self
-                .member_teams
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
-                teams.clear();
-            }
-            teams.insert(user_id, (Instant::now(), team));
-        }
-        let mut flights = self
-            .member_team_lookups
+        let mut teams = self
+            .member_teams
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        if flights
-            .get(&user_id)
-            .is_some_and(|current| Arc::ptr_eq(current, &flight))
-        {
-            flights.remove(&user_id);
+        if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
+            teams.clear();
         }
+        teams.insert(user_id, (Instant::now(), team));
         subject.team_id = team;
         Ok(subject)
     }
@@ -615,7 +652,10 @@ impl RateLimiter {
         set: &PolicySet,
         subject: &RateLimitSubject<'a>,
     ) -> RateLimitSubject<'a> {
-        match self.with_member_team(set, subject).await {
+        match self
+            .with_member_team(set, subject, Some(RateLimitMetric::Tokens))
+            .await
+        {
             Ok(subject) => subject,
             Err(error) => {
                 tracing::warn!(error = %error, "could not read the user's team for a token charge");
@@ -657,7 +697,7 @@ impl RateLimiter {
         }
         // Without the team, team policies cannot be checked: `closed` mode
         // refuses the request; `open` mode checks the other policies.
-        let subject = &match self.with_member_team(&set, subject).await {
+        let subject = &match self.with_member_team(&set, subject, None).await {
             Ok(subject) => subject,
             Err(error) if self.settings.failure_mode == RateLimitFailureMode::Closed => {
                 return self.store_failure(subject.operation, error);
@@ -856,7 +896,7 @@ impl RateLimiter {
         // check waits.
         let mut subject = *subject;
         let team_unknown = match &snapshot {
-            Some(set) if self.needs_member_team(set, &subject) => {
+            Some(set) if self.needs_member_team(set, &subject, Some(RateLimitMetric::Tokens)) => {
                 match subject
                     .user_id
                     .and_then(|user| self.cached_member_team(user))
