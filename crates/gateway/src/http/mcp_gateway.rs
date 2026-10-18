@@ -32,7 +32,10 @@ use gateway_guardrails::GuardrailEvaluation;
 use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
 use governance::{GovernedCall, GuardedArguments, Refused};
 use guardrails::{enforce_direct_mcp_result, evaluate_mcp_result, guardrail_decision_metadata};
-use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
+use json_rpc::{
+    McpRpcRequest, mcp_jsonrpc_error_response, mcp_refusal_response, mcp_request_id,
+    parse_mcp_rpc_request,
+};
 use methods::{
     GovernedRequest, deny_unknown_method, handle_event_stream, handle_governed_request,
     proxy_lifecycle,
@@ -443,11 +446,12 @@ async fn handle_tools_call(
                     ),
                 )
                 .await;
-            return mcp_jsonrpc_error_response(
+            return mcp_refusal_response(
                 StatusCode::FORBIDDEN,
                 id.as_ref(),
                 JSON_RPC_POLICY_DENIED,
                 "MCP tool is not granted for this API key",
+                None,
             );
         }
         Err(error) => return mcp_error_response(error),

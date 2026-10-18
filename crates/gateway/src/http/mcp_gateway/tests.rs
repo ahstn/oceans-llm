@@ -1783,6 +1783,17 @@ mod proxy_policy {
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
         assert!(body.get("id").is_none(), "{body}");
+
+        // So is a tools/call notification for a tool that is not granted.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "not-granted", "arguments": {}}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
     }
 
     #[tokio::test]
