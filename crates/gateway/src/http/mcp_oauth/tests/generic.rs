@@ -513,6 +513,7 @@ async fn callback_query(state: &AppState, headers: &HeaderMap, query: &str) -> S
 /// `iss` it returns names that other server, so the code is never sent to the
 /// upstream's token endpoint.
 #[tokio::test]
+#[serial_test::serial]
 async fn codes_from_another_issuer_never_reach_the_token_endpoint() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
@@ -611,6 +612,7 @@ async fn near_expiry_binding(
 /// is cancelled while the refresh is in flight must not lose the new token,
 /// or the next refresh fails with `invalid_grant` and revokes the binding.
 #[tokio::test]
+#[serial_test::serial]
 async fn a_refresh_completes_after_the_request_is_cancelled() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
@@ -671,6 +673,7 @@ async fn a_refresh_completes_after_the_request_is_cancelled() {
 /// A refresh the provider refuses for a reason other than `invalid_grant`
 /// keeps using the access token while it is still valid.
 #[tokio::test]
+#[serial_test::serial]
 async fn a_refused_refresh_keeps_an_unexpired_access_token() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);

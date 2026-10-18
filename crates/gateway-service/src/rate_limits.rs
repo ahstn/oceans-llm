@@ -724,9 +724,16 @@ impl RateLimiter {
                     period: policy.period,
                     limit: policy.limit,
                     remaining: (policy.limit - estimate).max(0),
-                    reset_after_seconds: charge
-                        .window
-                        .quota_reset_after_seconds(now, observation.current),
+                    // A rejected check charged nothing, so its own cost is
+                    // not usage still to slide out.
+                    reset_after_seconds: charge.window.quota_reset_after_seconds(
+                        now,
+                        if result.admitted {
+                            observation.current
+                        } else {
+                            observation.current - charge.cost
+                        },
+                    ),
                     retry_after_seconds,
                 }
             })

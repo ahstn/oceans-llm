@@ -1123,6 +1123,21 @@ pub trait McpRegistryRepository: Send + Sync {
         server_key: &str,
     ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
 
+    /// The servers with any of `server_keys`, active or disabled. Stores read
+    /// them in one query; the default looks each key up.
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let mut servers = Vec::new();
+        for server_key in server_keys {
+            if let Some(server) = self.get_external_mcp_server_by_key(server_key).await? {
+                servers.push(server);
+            }
+        }
+        Ok(servers)
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,
