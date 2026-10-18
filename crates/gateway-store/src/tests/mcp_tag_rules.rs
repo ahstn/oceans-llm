@@ -210,6 +210,55 @@ where
         !created_again,
         "an identical active rule is not created twice"
     );
+    // `files` takes upstream changes without review, so the upstream's own
+    // `readOnlyHint` does not satisfy the rule until an admin vouches for it.
+    assert!(
+        allowed_names(store, &subjects, files.mcp_server_id)
+            .await
+            .is_empty()
+    );
+    let read_id = tool(&tools, "read").mcp_tool_id;
+    store
+        .set_mcp_tool_annotation_overrides(
+            read_id,
+            &McpAnnotationOverrides {
+                read_only: Some(true),
+                ..McpAnnotationOverrides::default()
+            },
+        )
+        .await
+        .expect("vouching override");
+    assert_eq!(
+        allowed_names(store, &subjects, files.mcp_server_id).await,
+        ["read"]
+    );
+    store
+        .set_mcp_tool_annotation_overrides(read_id, &McpAnnotationOverrides::default())
+        .await
+        .expect("clear override");
+
+    // With approval on, served definitions were reviewed, so their hints count.
+    store
+        .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+            mcp_server_id: files.mcp_server_id,
+            display_name: files.display_name.clone(),
+            description: files.description.clone(),
+            server_url: files.server_url.clone(),
+            auth_mode: files.auth_mode,
+            auth_config: files.auth_config.clone(),
+            timeout_ms: files.timeout_ms,
+            owner_contact: None,
+            visibility: files.ownership.visibility,
+            retarget_owner_credentials_only: false,
+            expected_server: None,
+            expected_owner_team_id: files.ownership.owner_team_id,
+            expected_visibility: files.ownership.visibility,
+            vouch_for_destinations: false,
+            updated_at: now,
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("enable approval");
     assert_eq!(
         allowed_names(store, &subjects, files.mcp_server_id).await,
         ["read"]
@@ -227,7 +276,8 @@ where
             .expect("server grant")
     );
 
-    // A tool discovered later matches without a new grant.
+    // A tool discovered later waits for review, then matches without a new
+    // grant.
     let tools_later = discover(
         store,
         &files,
@@ -239,6 +289,20 @@ where
         ],
     )
     .await;
+    assert_eq!(
+        allowed_names(store, &subjects, files.mcp_server_id).await,
+        ["read"]
+    );
+    store
+        .review_mcp_tool_version(
+            tool(&tools_later, "list").mcp_tool_id,
+            1,
+            gateway_core::McpToolReviewDecision::Approve,
+            None,
+            now,
+        )
+        .await
+        .expect("approve list");
     assert_eq!(
         allowed_names(store, &subjects, files.mcp_server_id).await,
         ["list", "read"]
@@ -279,7 +343,6 @@ where
     );
 
     // An admin override changes which rules match, and discovery keeps it.
-    let read_id = tool(&tools_later, "read").mcp_tool_id;
     let overridden = store
         .set_mcp_tool_annotation_overrides(
             read_id,

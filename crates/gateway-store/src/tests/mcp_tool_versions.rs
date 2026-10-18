@@ -474,7 +474,12 @@ where
         McpToolApprovalStatus::Approved
     );
     assert_eq!(delete.review.approved_schema_version, Some(1));
-    assert_eq!(served(store, &subject, server.mcp_server_id).await.len(), 3);
+    // Without approval the upstream's `readOnlyHint` is an unreviewed claim,
+    // so the include rule stops selecting tools; the explicit grant remains.
+    assert_eq!(
+        served(store, &subject, server.mcp_server_id).await,
+        vec![pair("write", "Write a file")]
+    );
 }
 
 /// Review edge cases: a rejected definition coming back while another waits,

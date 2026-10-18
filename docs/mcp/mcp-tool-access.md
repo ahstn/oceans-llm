@@ -139,7 +139,9 @@ Effective access for a caller is resolved in this order:
 1. Explicit tool and toolset grants of every subject (the key, its owner user or
    service account, and the team).
 2. Include rules add every active tool on their server whose tags contain the
-   rule's tag. Tools that discovery adds later match without a new grant.
+   rule's tag. Tools that discovery adds later match without a new grant. On a
+   server without tool approval, an include rule on a derived tag only selects
+   tools whose hint an admin overrode (see [Tags](#tags)).
 3. Exclude rules from any of the caller's subjects remove every matching tool.
    Exclude wins over explicit grants, toolset grants, and include rules, whichever
    subject they came from. An exclude rule on a team also removes a tool granted to
@@ -165,6 +167,15 @@ Every tool has derived tags, computed from its effective annotations:
 These follow the MCP protocol defaults, which fail safe. An include rule for
 `read_only` matches only tools that claim to be read-only. A tool that declares no
 hints counts as `destructive` and `open_world`, so exclude rules catch it.
+
+Hints are claims made by the upstream server. On a server without
+[tool approval](#tool-versions-and-approval), discovery serves whatever the
+upstream declares, so a new tool could otherwise grant itself access by claiming
+`readOnlyHint`. On those servers an include rule on a derived tag selects a tool
+only when an admin [overrode](#annotation-overrides) the tag's own hint to `true`;
+a protocol default does not count either. On servers with approval, served
+definitions were reviewed, so their hints count. Admin-tag include rules and all
+exclude rules use the effective tags on every server.
 
 Admins can also add their own tags to a tool, such as `finance` or `pii:low`.
 Admin tags are 1 to 64 lowercase letters, digits, `_`, `-`, `.`, and `:`, at most

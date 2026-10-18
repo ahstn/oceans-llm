@@ -752,6 +752,127 @@ mod proxy_policy {
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
+    /// Discovers `search` again with an upstream claim of `readOnlyHint`.
+    async fn claim_read_only(state: &AppState, server: &gateway_core::ExternalMcpServerRecord) {
+        let now = OffsetDateTime::now_utc();
+        state
+            .store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: server.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "Search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata {
+                        annotations: json!({"readOnlyHint": true}).as_object().cloned(),
+                        ..Default::default()
+                    },
+                    schema_hash: "search-v2".to_string(),
+                }],
+            )
+            .await
+            .expect("rediscovery");
+    }
+
+    #[tokio::test]
+    async fn upstream_hint_claims_alone_do_not_satisfy_derived_include_rules() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        claim_read_only(&state, &server).await;
+        add_user_rule(
+            &state,
+            &auth,
+            Some(server.mcp_server_id),
+            "read_only",
+            gateway_core::McpTagRuleEffect::Include,
+        )
+        .await;
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+
+        // The server takes upstream changes without review, so the upstream's
+        // own `readOnlyHint` does not grant the tool.
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An admin override vouches for the hint.
+        let search = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool");
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(
+                search.mcp_tool_id,
+                &gateway_core::McpAnnotationOverrides {
+                    read_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("override");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // So does approval on the server: served definitions were reviewed.
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(search.mcp_tool_id, &Default::default())
+            .await
+            .expect("clear override");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        state
+            .store
+            .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: server.description.clone(),
+                server_url: server.server_url.clone(),
+                auth_mode: server.auth_mode,
+                auth_config: server.auth_config.clone(),
+                timeout_ms: server.timeout_ms,
+                owner_contact: None,
+                visibility: server.ownership.visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                expected_owner_team_id: server.ownership.owner_team_id,
+                expected_visibility: server.ownership.visibility,
+                vouch_for_destinations: false,
+                updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("enable approval");
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
     #[tokio::test]
     async fn approval_servers_serve_the_approved_definition_and_withhold_pending_tools() {
         let (_directory, state) = crate::http::test_support::app_state().await;

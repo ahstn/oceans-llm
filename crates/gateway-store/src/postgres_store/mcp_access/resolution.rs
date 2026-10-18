@@ -112,6 +112,11 @@ pub(super) fn subject_arrays(subjects: &[McpGrantSubject]) -> (Vec<String>, Vec<
 /// Whether any subject in the `$2`/`$3` arrays has an active tag rule.
 pub(super) const RULES_EXIST_SQL: &str = "EXISTS (SELECT 1 FROM mcp_tool_tag_rules WHERE is_active = 1 AND (subject_kind, subject_id) IN (SELECT * FROM UNNEST($2::text[], $3::text[])))";
 
+/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL: on a server
+/// without tool approval, a derived tag selects a tool only when an admin
+/// overrode the tag's own hint to `true`.
+const TRUSTED_INCLUDE_TAG_SQL: &str = "(s.approve_tool_changes = 1 OR et.tag NOT IN ('read_only', 'destructive', 'idempotent', 'open_world') OR t.annotation_overrides_json -> (CASE et.tag WHEN 'read_only' THEN 'readOnlyHint' WHEN 'destructive' THEN 'destructiveHint' WHEN 'idempotent' THEN 'idempotentHint' ELSE 'openWorldHint' END) = 'true'::jsonb)";
+
 /// Active, served tools that include rules select, found through the
 /// effective tag index: only matching tool ids are read.
 pub(super) async fn include_rule_matches(
@@ -127,16 +132,17 @@ pub(super) async fn include_rule_matches(
         .iter()
         .map(|(server_id, tag)| (server_id.to_string(), (*tag).to_string()))
         .unzip();
-    let rows = sqlx::query(
-        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE (t.mcp_server_id, et.tag) IN (SELECT * FROM UNNEST($1::text[], $2::text[])) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($3::text IS NULL OR s.server_key = $3) AND ($4::text IS NULL OR t.upstream_name = $4)",
-    )
-    .bind(server_ids)
-    .bind(tags)
-    .bind(server_key)
-    .bind(upstream_name)
-    .fetch_all(pool)
-    .await
-    .map_err(to_query_error)?;
+    let sql = format!(
+        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE (t.mcp_server_id, et.tag) IN (SELECT * FROM UNNEST($1::text[], $2::text[])) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND ($3::text IS NULL OR s.server_key = $3) AND ($4::text IS NULL OR t.upstream_name = $4) AND {TRUSTED_INCLUDE_TAG_SQL}"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(server_ids)
+        .bind(tags)
+        .bind(server_key)
+        .bind(upstream_name)
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
     rows.iter()
         .map(|row| {
             let mcp_tool_id: String = row.try_get(0).map_err(to_query_error)?;

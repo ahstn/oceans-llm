@@ -72,6 +72,21 @@ The access projection now also loads `annotations_json` and the two admin column
 
 Whether the caller's subjects have any rule is a column on queries the resolution already runs (the tool count, and the server grant check), so callers without rules make no extra round trip. Rules are loaded only when that column is true. Each tool's effective tags are kept in `mcp_tool_effective_tags`, indexed by `(tag, mcp_tool_id)`. The store rewrites a tool's rows from `effective_tags` whenever its definition, annotation overrides or admin tags change, so Rust stays the one definition of how tags are derived. An include rule selects its matching tools through that index, by server and tag, and only those tools' full rows are loaded; it never scans a server's tools. Migration V69 backfills the table with the same rules in SQL, and a store test checks the backfill against `effective_tags` on both backends.
 
+#### Derived-tag include rules trust only reviewed or admin-set hints
+
+_Added 2026-10-18 after a review of the MCP gateway epic._
+
+Derived tags come from annotations the upstream declares. On a server without `approve_tool_changes` (the default), discovery approves whatever the upstream serves. A new tool that claimed `readOnlyHint: true` was therefore served at once and selected by any `include read_only` rule on that server. A tool the upstream renamed became a new row, without the old row's overrides and admin tags, so exclude tags and overrides no longer applied to it either. The upstream could grant itself access.
+
+An include rule on a derived tag now selects a tool only when one of these holds:
+
+- The server has `approve_tool_changes` on. Its served definitions were reviewed, or were accepted when an admin turned approval on, and a new or renamed tool waits in **Pending review**.
+- An admin overrode the tag's own hint to `true` (`readOnlyHint` for `read_only`, `destructiveHint` for `destructive`, and so on). A protocol default is not an admin claim, so `include open_world` does not select a tool that simply declares nothing.
+
+Admin tags are set by admins, so admin-tag include rules are unaffected. Exclude rules keep using the effective tags. `gateway_core::mcp_tool_policy::include_rule_selects` holds the rule; both stores apply it in the include query's `WHERE` clause, and the rule preview uses it for include rules. Rules created before this change keep working on approval servers and on tools with overrides, and stop selecting other tools.
+
+The alternatives were to require approval before a derived-tag include rule can be created, or to hold newly discovered tools on servers with such rules. The first breaks admins who already vouch for hints with overrides on servers without approval. The second makes the approval setting depend on which rules exist. Trusting only admin-set or reviewed hints closes the self-grant with neither cost.
+
 The rule preview reads candidates a page at a time and stops after 200 matches or after checking 5,120 tools. It reports `truncated` when it stopped early, so a preview for a rare tag on a large registry is bounded and says it may be incomplete.
 
 ### 3. Overrides are served to clients (#443)
@@ -140,6 +155,8 @@ The new admin handlers check permission through one function, `require_mcp_polic
 - `pending_change` keeps a tool callable while a text change waits. The upstream's behaviour may already have changed with its description. Admins who want every change held can reject text-only changes, which keeps the old text, or disable the server.
 - With approval on, members the gateway does not version, such as `_meta` and `icons`, pass through from the live upstream without review. They are not part of the call contract, so a change to them is not held.
 - Discovery only runs on refresh, so a change made upstream between refreshes is not seen until the next one.
+- On a server without approval, a derived-tag include rule needs an override on each tool it should select. Admins who want claims to count turn on approval instead.
+- Exclude rules on derived tags follow the served hints. On a server without approval, an upstream that flips a hint, such as claiming `readOnlyHint` to leave `destructive`, leaves an exclude rule until an admin overrides the hint back. Approval or an override pins it.
 
 ## Follow-up
 

@@ -11,7 +11,8 @@ use gateway_core::{
     McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionQuery, McpToolVersionRecord, StoreError,
     Updated,
     mcp_tool_policy::{
-        effective_tags, has_effective_tag, normalize_admin_tags, normalize_rule_tag,
+        effective_tags, has_effective_tag, include_rule_selects, normalize_admin_tags,
+        normalize_rule_tag,
     },
 };
 use time::OffsetDateTime;
@@ -215,9 +216,17 @@ where
                 "an include rule must name a server".to_string(),
             ));
         }
-        if let Some(server_id) = mcp_server_id {
-            self.rule_server(server_id).await?;
-        }
+        let server = match mcp_server_id {
+            Some(server_id) => Some(self.rule_server(server_id).await?),
+            None => None,
+        };
+        // Include rules apply the same trust rule as runtime resolution.
+        let selects = |tool: &ExternalMcpToolRecord| match (&server, effect) {
+            (Some(server), McpTagRuleEffect::Include) => {
+                include_rule_selects(tool, &tag, server.approve_tool_changes)
+            }
+            _ => has_effective_tag(tool, &tag),
+        };
         // Active tools on active servers, the same candidates runtime
         // resolution reads, read a page at a time until the cap is passed.
         // A disabled server yields nothing.
@@ -242,7 +251,7 @@ where
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
             let mut full = false;
             for tool in page {
-                if !has_effective_tag(&tool, &tag) {
+                if !selects(&tool) {
                     continue;
                 }
                 if matched.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
