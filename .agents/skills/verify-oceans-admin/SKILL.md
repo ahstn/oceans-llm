@@ -32,7 +32,7 @@ export OCEANS_VERIFY_UI_PORT=33010
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin launch
 ```
 
-`launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory.
+`launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory. A listener counts as this run's only when its working directory belongs to this checkout's git root, so a stack from another worktree that takes a selected port during startup fails the launch instead of being adopted. The launch also fails as soon as the dev stack exits, for example when its gateway cannot bind the port.
 
 The instance is ready when `launch` prints `ready` and both `/readyz` and `/api/v1/health` answer. The sign-in URL is `http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT/admin/login`. Protected feature routes remain under `/admin/*`.
 
@@ -59,7 +59,7 @@ Run the read-only doctor check before browser work and whenever the UI looks sta
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin doctor
 ```
 
-Doctor confirms that the selected gateway and UI ports are still owned by their recorded listener PIDs, checks `/readyz`, and records the gateway service version from `/api/v1/health`. The short-lived launcher PID can exit after mise has started both listeners. A failed ownership check means this instance is not safe to drive.
+Doctor confirms that the selected gateway and UI ports are still owned by their recorded listener PIDs and that those processes run from this checkout, checks `/readyz`, and records the gateway service version from `/api/v1/health`. The short-lived launcher PID can exit after mise has started both listeners. A failed ownership check means this instance is not safe to drive.
 
 ## Drive
 
@@ -228,7 +228,7 @@ Always run cleanup after success and after each failed attempt:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin cleanup
 ```
 
-Cleanup sends termination only to the process IDs recorded by this run and checks port ownership before it signals a remaining listener. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`. For an opt-in Skills run, it also removes the run-specific RustFS object prefix and private database/config/token, then stops RustFS only if this run started the recorded process. RustFS credentials, its data directory, and other object prefixes remain intact.
+Cleanup sends termination only to the process IDs recorded by this run, and only when the process still owns its port and runs from this checkout. It reports and skips a recorded listener from another checkout. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`. For an opt-in Skills run, it also removes the run-specific RustFS object prefix and private database/config/token, then stops RustFS only if this run started the recorded process. RustFS credentials, its data directory, and other object prefixes remain intact.
 
 Confirm that proof survived teardown:
 
