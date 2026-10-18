@@ -46,6 +46,7 @@ export async function registerServer(ui, candidate) {
     const current = (await adminJson(page, "/api/v1/admin/mcp/servers")).items.find((item) => item.id === server.id);
     return current?.last_discovery_at ? current : null;
   }, "completed MCP discovery");
+  if (candidate.expect_discovery_error) return verifyRejectedDiscovery(ui, candidate, manage, discovered);
   if (discovered.last_discovery_status !== "success") throw new Error("MCP discovery did not succeed");
   await manage.getByRole("button", { name: "Tools", exact: true }).filter({ visible: true }).click();
   const tools = (await adminJson(page, `/api/v1/admin/mcp/servers/${server.id}/tools?include_inactive=true`)).items;
@@ -169,6 +170,21 @@ async function addServer(ui, candidate) {
   const manage = page.getByRole("dialog", { name: "Manage MCP server", exact: true });
   await manage.waitFor();
   return { server, displayName, manage };
+}
+
+// A control whose upstream refuses `initialize` without a valid credential. The gateway's error
+// summary holds only the HTTP status, never the upstream body.
+async function verifyRejectedDiscovery(ui, candidate, manage, server) {
+  const { page, expect, adminJson, actions, capture } = ui;
+  const status = /\bHTTP (40[13])\b/.exec(server.last_error_summary ?? "")?.[1];
+  if (server.last_discovery_status !== "failed" || !status) throw new Error("Control discovery was not rejected by upstream authentication");
+  const tools = (await adminJson(page, `/api/v1/admin/mcp/servers/${server.id}/tools?include_inactive=true`)).items;
+  if (tools.length !== 0) throw new Error("Rejected control discovered tools");
+  await expect(manage.getByRole("alert").filter({ hasText: "Discovery failed" })).toContainText(server.last_error_summary);
+  await capture(page, `03-${candidate.key}-discovery-rejected`);
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  actions.push({ action: `Register ${candidate.key} control and refresh discovery`, result: `Upstream rejected discovery with HTTP ${status}; no tools stored` });
+  return { ...candidate, server, tool: null, toolCount: 0, discoveryRejected: true, upstreamHttpStatus: Number(status) };
 }
 
 export async function verifyWorkbench(ui, candidates) {

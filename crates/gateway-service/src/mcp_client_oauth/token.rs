@@ -12,7 +12,9 @@ use super::{
     ClientLookup, McpClientOauthService,
     error::OauthError,
     redirect::redirect_uri_is_registered,
-    secrets::{generate_token, oauth_token_hash, pkce_s256_matches, run_argon2},
+    secrets::{
+        client_secret_matches, generate_token, oauth_token_hash, pkce_s256_matches, run_argon2,
+    },
 };
 use crate::authenticator::verify_gateway_key_secret;
 
@@ -133,10 +135,15 @@ where
                 .client_secret_hash
                 .as_deref()
                 .ok_or_else(|| OauthError::invalid_client("client authentication failed"))?;
-            let (secret, hash) = (secret.clone(), hash.to_string());
-            let matches = run_argon2(move || verify_gateway_key_secret(&secret, &hash))
-                .await?
-                .map_err(|error| OauthError::server_error(error.to_string()))?;
+            let matches = match client_secret_matches(secret, hash) {
+                Some(matches) => matches,
+                None => {
+                    let (secret, hash) = (secret.clone(), hash.to_string());
+                    run_argon2(move || verify_gateway_key_secret(&secret, &hash))
+                        .await?
+                        .map_err(|error| OauthError::server_error(error.to_string()))?
+                }
+            };
             if !matches {
                 return Err(OauthError::invalid_client("client authentication failed"));
             }

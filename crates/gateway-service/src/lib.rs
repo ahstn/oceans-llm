@@ -98,7 +98,8 @@ pub use mcp_client_oauth::{
     AuthorizationParams, AuthorizationRejection, AuthorizedClients, ClientCredentials,
     ClientMetadataDocumentSource, ClientMetadataDocuments, ClientRegistrationRequest,
     ClientRegistrationResponse, FetchedDocument, McpClientOauthService, McpClientOauthSettings,
-    McpClientOauthSettingsError, OauthError, PendingAuthorization, TokenRequest, TokenResponse,
+    McpClientOauthSettingsError, OauthError, PendingAuthorization, SourceRateLimits, TokenRequest,
+    TokenResponse,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
@@ -152,7 +153,7 @@ pub use provider_credentials::{
 };
 pub use rate_limits::{
     ConfiguredRateLimitPolicy, RateLimitDecision, RateLimitFailureMode, RateLimitPolicySource,
-    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimiter,
+    RateLimitSettings, RateLimitStatus, RateLimitSubject, RateLimitTeamLookup, RateLimiter,
 };
 pub use redaction::{
     MAX_INLINE_REQUEST_BYTES, PayloadPath, PayloadSecretRedactor, RequestLogPayloadCaptureMode,

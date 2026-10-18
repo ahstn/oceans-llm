@@ -32,6 +32,7 @@ const OAUTH_OBO_FIELDS: &[&str] = &[
     "client_id",
     "client_secret_ref",
     "token_endpoint_auth_method",
+    "authorization_response_iss_parameter_supported",
 ];
 const SERVER_OAUTH_FIELDS: &[&str] = &[
     "issuer",
@@ -108,6 +109,9 @@ pub struct McpServerOauthEndpoints {
     pub registration_endpoint: Option<String>,
     pub registration: McpOauthClientRegistration,
     pub token_endpoint_auth_method: Option<McpOauthTokenEndpointAuthMethod>,
+    /// RFC 9207: the authorization server always returns `iss` with the
+    /// authorization response, so a response without it is refused.
+    pub authorization_response_iss_parameter_supported: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,6 +316,16 @@ fn server_oauth_endpoints(
             })
         })
         .transpose()?;
+    let authorization_response_iss_parameter_supported =
+        match auth_config.get("authorization_response_iss_parameter_supported") {
+            None => false,
+            Some(value) => value.as_bool().ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "auth_config.authorization_response_iss_parameter_supported must be a boolean"
+                        .to_string(),
+                )
+            })?,
+        };
     Ok(Some(McpServerOauthEndpoints {
         issuer: issuer.to_string(),
         authorization_endpoint: authorization_endpoint.to_string(),
@@ -319,6 +333,7 @@ fn server_oauth_endpoints(
         registration_endpoint: registration_endpoint.map(ToOwned::to_owned),
         registration,
         token_endpoint_auth_method,
+        authorization_response_iss_parameter_supported,
     }))
 }
 

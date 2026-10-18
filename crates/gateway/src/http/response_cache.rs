@@ -1,4 +1,10 @@
-use std::{collections::HashMap, future::Future, hash::Hash, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    hash::Hash,
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::sync::Mutex;
 
@@ -13,10 +19,82 @@ struct CacheEntry<V> {
     expires_at: tokio::time::Instant,
 }
 
+/// Most entries kept. At this size an insert first drops the entry that
+/// expires soonest, which is an expired one when there is any.
+const MAX_ENTRIES: usize = 4096;
+
+/// The cached values, and their keys in the order they expire. Every entry
+/// lives for the same TTL, so that is the order they were inserted in, and
+/// eviction pops from the front instead of scanning the map.
+struct Entries<K, V> {
+    map: HashMap<K, Arc<CacheEntry<V>>>,
+    /// May hold keys since replaced or removed; those are skipped, and the
+    /// queue is compacted once it grows past twice the cap.
+    expiry_order: VecDeque<(K, tokio::time::Instant)>,
+}
+
+impl<K: Clone + Eq + Hash, V> Entries<K, V> {
+    fn insert(&mut self, key: K, entry: CacheEntry<V>) {
+        if !self.map.contains_key(&key) {
+            while self.map.len() >= MAX_ENTRIES {
+                let Some((oldest, expires_at)) = self.expiry_order.pop_front() else {
+                    break;
+                };
+                if self
+                    .map
+                    .get(&oldest)
+                    .is_some_and(|current| current.expires_at == expires_at)
+                {
+                    self.map.remove(&oldest);
+                }
+            }
+        }
+        self.expiry_order.push_back((key.clone(), entry.expires_at));
+        self.map.insert(key, Arc::new(entry));
+        if self.expiry_order.len() > 2 * MAX_ENTRIES {
+            let map = &self.map;
+            self.expiry_order.retain(|(key, expires_at)| {
+                map.get(key)
+                    .is_some_and(|current| current.expires_at == *expires_at)
+            });
+        }
+    }
+}
+
 pub struct ResponseCache<K, V> {
     ttl: Duration,
-    entries: Mutex<HashMap<K, Arc<CacheEntry<V>>>>,
-    load_gates: Mutex<HashMap<K, Arc<Mutex<()>>>>,
+    entries: Mutex<Entries<K, V>>,
+    /// Held only to look up or remove a gate, never across an await, so a
+    /// share can leave it from `Drop`.
+    load_gates: LoadGates<K>,
+}
+
+type LoadGates<K> = std::sync::Mutex<HashMap<K, Arc<Mutex<()>>>>;
+
+/// A caller's share of a key's load gate. Dropping the last share removes the
+/// gate, whether the load finished, failed or the caller was cancelled, so
+/// abandoned loads leave no gates behind.
+struct LoadGateShare<'a, K: Eq + Hash> {
+    gates: &'a LoadGates<K>,
+    key: K,
+    gate: Arc<Mutex<()>>,
+}
+
+impl<K: Eq + Hash> Drop for LoadGateShare<'_, K> {
+    fn drop(&mut self) {
+        let mut gates = self
+            .gates
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        // The map holds one reference and this share the other.
+        if gates
+            .get(&self.key)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.gate))
+            && Arc::strong_count(&self.gate) == 2
+        {
+            gates.remove(&self.key);
+        }
+    }
 }
 
 impl<K, V> ResponseCache<K, V>
@@ -28,8 +106,11 @@ where
     pub fn new(ttl: Duration) -> Self {
         Self {
             ttl,
-            entries: Mutex::new(HashMap::new()),
-            load_gates: Mutex::new(HashMap::new()),
+            entries: Mutex::new(Entries {
+                map: HashMap::new(),
+                expiry_order: VecDeque::new(),
+            }),
+            load_gates: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -46,58 +127,48 @@ where
             return Ok((value, CacheStatus::Hit));
         }
 
-        let load_gate = {
-            let mut load_gates = self.load_gates.lock().await;
-            load_gates
-                .entry(key.clone())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
+        let share = {
+            let mut load_gates = self
+                .load_gates
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            LoadGateShare {
+                gates: &self.load_gates,
+                key: key.clone(),
+                gate: load_gates
+                    .entry(key.clone())
+                    .or_insert_with(|| Arc::new(Mutex::new(())))
+                    .clone(),
+            }
         };
-        let _load_guard = load_gate.lock().await;
+        let _load_guard = share.gate.lock().await;
 
         if let Some(value) = self.get_fresh(&key).await {
-            self.remove_load_gate(&key, &load_gate).await;
             return Ok((value, CacheStatus::Hit));
         }
 
         let value = match loader().await {
             Ok(value) => value,
-            Err(error) => {
-                self.remove_load_gate(&key, &load_gate).await;
-                return Err((error, CacheStatus::Miss));
-            }
+            Err(error) => return Err((error, CacheStatus::Miss)),
         };
         self.entries.lock().await.insert(
             key.clone(),
-            Arc::new(CacheEntry {
+            CacheEntry {
                 value: value.clone(),
                 expires_at: tokio::time::Instant::now() + self.ttl,
-            }),
+            },
         );
 
-        self.remove_load_gate(&key, &load_gate).await;
-
         Ok((value, CacheStatus::Miss))
-    }
-
-    async fn remove_load_gate(&self, key: &K, load_gate: &Arc<Mutex<()>>) {
-        let mut load_gates = self.load_gates.lock().await;
-        if load_gates
-            .get(key)
-            .is_some_and(|current| Arc::ptr_eq(current, load_gate))
-            && Arc::strong_count(load_gate) == 2
-        {
-            load_gates.remove(key);
-        }
     }
 
     async fn get_fresh(&self, key: &K) -> Option<V> {
         let entry = {
             let mut entries = self.entries.lock().await;
-            match entries.get(key) {
+            match entries.map.get(key) {
                 Some(entry) if entry.expires_at > tokio::time::Instant::now() => Arc::clone(entry),
                 Some(_) => {
-                    entries.remove(key);
+                    entries.map.remove(key);
                     return None;
                 }
                 None => return None,
@@ -129,6 +200,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fresh_entries_stay_within_the_bound() {
+        let cache = ResponseCache::new(Duration::from_secs(30));
+        for key in 0..=MAX_ENTRIES {
+            cache
+                .get_or_load(key, || async { Ok::<_, ()>(key) })
+                .await
+                .expect("response");
+        }
+        let entries = cache.entries.lock().await;
+        assert_eq!(entries.map.len(), MAX_ENTRIES);
+        // The first key, the soonest to expire, made room for the last.
+        assert!(!entries.map.contains_key(&0));
+        assert!(entries.map.contains_key(&MAX_ENTRIES));
+    }
+
+    #[tokio::test]
+    async fn cancelled_loads_leave_no_load_gate() {
+        let cache = ResponseCache::new(Duration::from_secs(30));
+        let cancelled = tokio::time::timeout(
+            Duration::from_millis(10),
+            cache.get_or_load(1, || async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                Ok::<_, ()>(1)
+            }),
+        )
+        .await;
+        assert!(cancelled.is_err());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn expired_values_are_reloaded() {
         let cache = ResponseCache::new(Duration::ZERO);
         let first = cache
@@ -153,7 +255,7 @@ mod tests {
             .await;
 
         assert_eq!(result, Err(("load failed", CacheStatus::Miss)));
-        assert!(cache.load_gates.lock().await.is_empty());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -201,7 +303,7 @@ mod tests {
         second.await.expect("second task");
         third.await.expect("third task");
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
-        assert!(cache.load_gates.lock().await.is_empty());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
     }
 
     async fn load(
@@ -243,7 +345,7 @@ mod tests {
                 let holder_count = cache
                     .load_gates
                     .lock()
-                    .await
+                    .unwrap()
                     .get("7d")
                     .map_or(0, Arc::strong_count);
                 if holder_count >= minimum {

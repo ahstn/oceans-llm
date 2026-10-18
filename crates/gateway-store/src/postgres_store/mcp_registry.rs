@@ -5,12 +5,13 @@ use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
     HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
-    reuse_historical_versions, review_ops, reviewable_version, tool_write_ops,
+    reuse_historical_versions, review_ops, reviewable_version, stale_discovery_check,
+    tool_write_ops, unix_millis,
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
-    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json, stranded_grants,
-    stranded_toolset, team_only_toolset_tool, unix_to_datetime,
+    grants_outside_team_sql, json_object_from_str, newer_discovery_run_sql, parse_uuid,
+    serialize_json, stranded_grants, stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     ExternalMcpServerUpdate, McpAnnotationOverrides, McpServerGuardRow, McpServerOwnership,
@@ -511,6 +512,26 @@ impl McpRegistryRepository for PostgresStore {
             .transpose()
     }
 
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if server_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE server_key = ANY($1) ORDER BY server_key"
+        );
+        sqlx::query(&sql)
+            .bind(server_keys)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .iter()
+            .map(decode_server)
+            .collect()
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,
@@ -997,25 +1018,45 @@ impl McpRegistryRepository for PostgresStore {
         // the snapshot below and the writes planned from it. The server is
         // locked `FOR UPDATE` before the guard's `FOR SHARE` read: taking the
         // share lock first and upgrading it later deadlocks two discoveries.
-        let approve_tool_changes = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
+        let server = sqlx::query(&format!("{SERVER_SELECT_BY_ID} FOR UPDATE"))
             .bind(run.mcp_server_id.to_string())
             .fetch_optional(&mut *tx)
             .await
             .map_err(to_query_error)?
             .as_ref()
             .map(decode_server)
-            .transpose()?
+            .transpose()?;
+        let approve_tool_changes = server
+            .as_ref()
             .is_some_and(|server| server.approve_tool_changes);
         ensure_discovery_status_unchanged(&mut tx, run).await?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
+            let newer_run_committed: bool = sqlx::query_scalar(&format!(
+                "SELECT {}",
+                newer_discovery_run_sql("$1", Some("$2"), "$3", "$4")
+            ))
+            .bind(run.mcp_server_id.to_string())
+            .bind(ExternalMcpDiscoveryStatus::Success.as_str())
+            .bind(unix_millis(run.started_at))
+            .bind(run.discovery_run_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+            stale_discovery_check(
+                server
+                    .as_ref()
+                    .is_some_and(|server| server.status == ExternalMcpServerStatus::Active),
+                newer_run_committed,
+            )?;
         }
         sqlx::query(
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
             "#,
         )
         .bind(run.discovery_run_id.to_string())
@@ -1028,6 +1069,7 @@ impl McpRegistryRepository for PostgresStore {
         .bind(run.schema_set_hash.as_deref())
         .bind(run.error_summary.as_deref())
         .bind(details_json)
+        .bind(unix_millis(run.started_at))
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -1057,19 +1099,23 @@ impl McpRegistryRepository for PostgresStore {
             .await?;
         }
 
-        sqlx::query(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = $1, last_discovery_at = $2,
-                last_successful_discovery_at = $2, last_error_summary = NULL,
-                last_tool_count = $3, updated_at = $2
-            WHERE mcp_server_id = $4
-            "#,
-        )
+        // A newer run of any status, such as a failure that committed while
+        // this one ran, stays the server's last discovery.
+        let newer = newer_discovery_run_sql("$4", None, "$5", "$6");
+        sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET last_successful_discovery_at = $2, last_tool_count = $3, updated_at = $2,
+                 last_discovery_status = CASE WHEN {newer} THEN last_discovery_status ELSE $1 END,
+                 last_discovery_at = CASE WHEN {newer} THEN last_discovery_at ELSE $2 END,
+                 last_error_summary = CASE WHEN {newer} THEN last_error_summary ELSE NULL END
+             WHERE mcp_server_id = $4"
+        ))
         .bind(run.status.as_str())
         .bind(run.finished_at.unix_timestamp())
         .bind(run.active_tool_count)
         .bind(run.mcp_server_id.to_string())
+        .bind(unix_millis(run.started_at))
+        .bind(run.discovery_run_id.to_string())
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -1100,8 +1146,9 @@ impl McpRegistryRepository for PostgresStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
             "#,
         )
         .bind(run.discovery_run_id.to_string())
@@ -1114,21 +1161,25 @@ impl McpRegistryRepository for PostgresStore {
         .bind(run.schema_set_hash.as_deref())
         .bind(run.error_summary.as_deref())
         .bind(details_json)
+        .bind(unix_millis(run.started_at))
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
-        sqlx::query(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = $1, last_discovery_at = $2,
-                last_error_summary = $3, updated_at = $2
-            WHERE mcp_server_id = $4
-            "#,
-        )
+        // The run stays in the history, but a run of any status that started
+        // later remains the server's last discovery.
+        sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET last_discovery_status = $1, last_discovery_at = $2,
+                 last_error_summary = $3, updated_at = $2
+             WHERE mcp_server_id = $4 AND NOT {}",
+            newer_discovery_run_sql("$4", None, "$5", "$6")
+        ))
         .bind(run.status.as_str())
         .bind(run.finished_at.unix_timestamp())
         .bind(run.error_summary.as_deref())
         .bind(run.mcp_server_id.to_string())
+        .bind(unix_millis(run.started_at))
+        .bind(run.discovery_run_id.to_string())
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -1196,6 +1247,30 @@ impl McpRegistryRepository for PostgresStore {
             |tool| tool.policy.annotation_overrides == *overrides,
         )
         .await
+    }
+
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        if versions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (tool_ids, schema_versions): (Vec<String>, Vec<i64>) = versions
+            .iter()
+            .map(|(mcp_tool_id, schema_version)| (mcp_tool_id.to_string(), *schema_version))
+            .unzip();
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT mcp_tool_id, schema_version FROM mcp_tool_versions WHERE reviewed_at IS NOT NULL AND (mcp_tool_id, schema_version) IN (SELECT * FROM UNNEST($1::text[], $2::bigint[]))",
+        )
+        .bind(tool_ids)
+        .bind(schema_versions)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.into_iter()
+            .map(|(mcp_tool_id, schema_version)| Ok((parse_uuid(&mcp_tool_id)?, schema_version)))
+            .collect()
     }
 
     async fn list_mcp_tool_versions(

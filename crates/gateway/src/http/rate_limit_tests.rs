@@ -278,7 +278,9 @@ async fn requests_over_the_limit_get_429_with_headers_until_the_window_slides() 
     assert_eq!(first.status, StatusCode::OK, "{}", first.body);
     assert_eq!(first.header("x-ratelimit-limit"), Some("2"));
     assert_eq!(first.header("x-ratelimit-remaining"), Some("1"));
-    assert_eq!(first.header("x-ratelimit-reset"), Some("50"));
+    // Reset is when the whole limit is free again: the end of the next minute,
+    // once this window has slid out. `Retry-After` below is when one more fits.
+    assert_eq!(first.header("x-ratelimit-reset"), Some("110"));
     assert_eq!(first.header("retry-after"), None);
     let second = harness.chat().await;
     assert_eq!(second.status, StatusCode::OK);

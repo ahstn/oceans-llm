@@ -477,6 +477,8 @@ pub(super) fn decode_mcp_oauth_state_record(
         resource: row.try_get(6).map_err(to_query_error)?,
         scopes: serde_json::from_value(scopes_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        expected_issuer: row.try_get(11).map_err(to_query_error)?,
+        issuer_required: row.try_get(12).map_err(to_query_error)?,
         expires_at: unix_to_datetime(expires_at)?,
         consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
         created_at: unix_to_datetime(created_at)?,

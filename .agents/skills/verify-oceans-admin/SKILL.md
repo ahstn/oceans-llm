@@ -32,7 +32,7 @@ export OCEANS_VERIFY_UI_PORT=33010
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin launch
 ```
 
-`launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory.
+`launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory. A listener counts as this run's only when its working directory belongs to this checkout's git root, so a stack from another worktree that takes a selected port during startup fails the launch instead of being adopted. The launch also fails as soon as the dev stack exits, for example when its gateway cannot bind the port.
 
 The refresh never recreates `gateway.db`, so rows that earlier runs created stay: onboarding users, audit entries, and the disabled servers every MCP proof leaves behind (servers have no delete API, so cleanup disables them). For a clean database, such as before capturing docs screenshots, run `mise run //crates/gateway:reset-local-demo` or move `gateway.db` aside before launch.
 
@@ -61,7 +61,7 @@ Run the read-only doctor check before browser work and whenever the UI looks sta
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin doctor
 ```
 
-Doctor confirms that the selected gateway and UI ports are still owned by their recorded listener PIDs, checks `/readyz`, and records the gateway service version from `/api/v1/health`. The short-lived launcher PID can exit after mise has started both listeners. A failed ownership check means this instance is not safe to drive.
+Doctor confirms that the selected gateway and UI ports are still owned by their recorded listener PIDs and that those processes run from this checkout, checks `/readyz`, and records the gateway service version from `/api/v1/health`. The short-lived launcher PID can exit after mise has started both listeners. A failed ownership check means this instance is not safe to drive.
 
 ## Drive
 
@@ -208,7 +208,7 @@ The Backend Gateway proof produces:
 The MCP proof produces:
 
 - Screenshots and ARIA snapshots for sign-in, discovery, the failed-discovery overview and toast, the menu disable and enable, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
-- `mcp-proof.json` with one check per candidate plus discovery-feedback, menu-disable, menu-enable, workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, the authentication-error control, and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
+- `mcp-proof.json` with one check per candidate plus discovery-feedback, menu-disable, menu-enable, workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, result-marker counts, the negative-auth controls (an authentication error on a tool call, or discovery rejected with its HTTP status), and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
 - No raw key, authorization header, tool arguments, or tool-result payload in the proof JSON. Invocation detail is inspected in memory and is not captured.
 
 An optional candidate failure does not change the verdict but remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.
@@ -230,7 +230,7 @@ Always run cleanup after success and after each failed attempt:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin cleanup
 ```
 
-Cleanup sends termination only to the process IDs recorded by this run and checks port ownership before it signals a remaining listener. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`. For an opt-in Skills run, it also removes the run-specific RustFS object prefix and private database/config/token, then stops RustFS only if this run started the recorded process. RustFS credentials, its data directory, and other object prefixes remain intact.
+Cleanup sends termination only to the process IDs recorded by this run, and only when the process still owns its port and runs from this checkout. It reports and skips a recorded listener from another checkout. It removes the run's control files and checkout lock. It does not remove `evidence/` or `stack.log`, and it does not delete `gateway.db`. For an opt-in Skills run, it also removes the run-specific RustFS object prefix and private database/config/token, then stops RustFS only if this run started the recorded process. RustFS credentials, its data directory, and other object prefixes remain intact.
 
 Confirm that proof survived teardown:
 
@@ -261,7 +261,7 @@ control-oceans-admin report [--plan [base-ref]]
 control-oceans-admin cleanup
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), [scripts/drive-profile.mjs](./scripts/drive-profile.mjs), and [scripts/drive-skills.mjs](./scripts/drive-skills.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs). `plan` runs [scripts/plan-verification.mjs](./scripts/plan-verification.mjs). `record`, `evidence`, and `report` run [scripts/proof-cli.mjs](./scripts/proof-cli.mjs) over the envelope in [scripts/proof.mjs](./scripts/proof.mjs).
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), [scripts/drive-profile.mjs](./scripts/drive-profile.mjs), and [scripts/drive-skills.mjs](./scripts/drive-skills.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs), and validates its candidate file with [scripts/mcp-candidates.mjs](./scripts/mcp-candidates.mjs). `plan` runs [scripts/plan-verification.mjs](./scripts/plan-verification.mjs). `record`, `evidence`, and `report` run [scripts/proof-cli.mjs](./scripts/proof-cli.mjs) over the envelope in [scripts/proof.mjs](./scripts/proof.mjs).
 
 Offline regression tests (no stack, no upstream calls):
 

@@ -20,7 +20,9 @@ pub struct McpTokenOverheadInput {
     pub model_key: Option<String>,
     pub provider_family: String,
     pub model_or_encoding: String,
-    pub tools: Vec<ExternalMcpToolRecord>,
+    /// Shared, so a caller that caches the tool set passes it without
+    /// copying every tool's schema.
+    pub tools: Arc<[ExternalMcpToolRecord]>,
     pub context_window_tokens: Option<i64>,
     pub protocol_version: Option<String>,
     pub occurred_at: OffsetDateTime,
@@ -58,19 +60,30 @@ where
         let mut cache_hit_count = 0_i64;
         let mut cache_miss_count = 0_i64;
 
-        for tool in &input.tools {
-            let cache_key = cache_key(
-                &input.provider_family,
-                &input.model_or_encoding,
-                tool,
-                &protocol_version,
-            )?;
-            if let Some(estimate) = self
-                .repo
-                .get_mcp_tool_token_estimate(&cache_key, input.occurred_at)
-                .await?
-            {
-                definition_tokens += estimate.estimated_tokens;
+        let cache_keys = input
+            .tools
+            .iter()
+            .map(|tool| {
+                cache_key(
+                    &input.provider_family,
+                    &input.model_or_encoding,
+                    tool,
+                    &protocol_version,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        // One query for every tool's cached estimate; only misses are written.
+        let cached = self
+            .repo
+            .get_mcp_tool_token_estimates(&cache_keys, input.occurred_at)
+            .await?
+            .into_iter()
+            .map(|estimate| (estimate.cache_key, estimate.estimated_tokens))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        for (tool, cache_key) in input.tools.iter().zip(cache_keys) {
+            if let Some(estimated_tokens) = cached.get(&cache_key) {
+                definition_tokens += estimated_tokens;
                 cache_hit_count += 1;
                 continue;
             }
@@ -252,6 +265,95 @@ mod tests {
         .expect("full estimate");
 
         assert!(full - plain >= output_schema_bytes / 4);
+    }
+
+    /// Counts estimate lookups and keeps what is written.
+    #[derive(Default)]
+    struct CountingRepo {
+        lookups: std::sync::atomic::AtomicUsize,
+        estimates: std::sync::Mutex<std::collections::HashMap<String, McpToolTokenEstimateRecord>>,
+    }
+
+    #[async_trait::async_trait]
+    impl McpTokenOverheadRepository for CountingRepo {
+        async fn get_mcp_tool_token_estimates(
+            &self,
+            cache_keys: &[String],
+            _now: OffsetDateTime,
+        ) -> Result<Vec<McpToolTokenEstimateRecord>, gateway_core::StoreError> {
+            self.lookups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let estimates = self.estimates.lock().unwrap();
+            Ok(cache_keys
+                .iter()
+                .filter_map(|key| estimates.get(key).cloned())
+                .collect())
+        }
+
+        async fn upsert_mcp_tool_token_estimate(
+            &self,
+            estimate: &McpToolTokenEstimateRecord,
+        ) -> Result<(), gateway_core::StoreError> {
+            self.estimates
+                .lock()
+                .unwrap()
+                .insert(estimate.cache_key.clone(), estimate.clone());
+            Ok(())
+        }
+
+        async fn upsert_request_mcp_token_overhead(
+            &self,
+            _overhead: &RequestMcpTokenOverheadRecord,
+        ) -> Result<(), gateway_core::StoreError> {
+            Ok(())
+        }
+
+        async fn get_request_mcp_token_overhead(
+            &self,
+            _request_id: &str,
+        ) -> Result<Option<RequestMcpTokenOverheadRecord>, gateway_core::StoreError> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn every_tool_estimate_is_read_in_one_query() {
+        let repo = Arc::new(CountingRepo::default());
+        let overhead = McpTokenOverhead::new(repo.clone());
+        let tools = (0..5)
+            .map(|index| {
+                let mut tool = tool(McpToolMetadata::default());
+                tool.mcp_tool_id = Uuid::new_v4();
+                tool.upstream_name = format!("tool_{index}");
+                tool
+            })
+            .collect::<Vec<_>>();
+        let input = McpTokenOverheadInput {
+            request_id: "request-1".to_string(),
+            request_log_id: None,
+            model_key: None,
+            provider_family: "openai".to_string(),
+            model_or_encoding: "o200k".to_string(),
+            tools: tools.into(),
+            context_window_tokens: None,
+            protocol_version: None,
+            occurred_at: OffsetDateTime::now_utc(),
+        };
+        let first = overhead
+            .record_request_overhead(input.clone())
+            .await
+            .expect("first");
+        assert_eq!(first.cache_miss_count, 5);
+        let second = overhead
+            .record_request_overhead(input)
+            .await
+            .expect("second");
+        assert_eq!(second.cache_hit_count, 5);
+        assert_eq!(
+            repo.lookups.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "one lookup per request, not one per tool"
+        );
     }
 
     #[test]

@@ -63,6 +63,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         mcp_organisation_publishing: gateway_service::McpOrganisationPublishing::default(),
         leaderboard_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
         harness_usage_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
+        mcp_telemetry_cache: Arc::new(ResponseCache::new(Duration::from_secs(30))),
         count_tokens_limiter: Arc::default(),
         trusted_proxies: crate::http::client_ip::TrustedProxies::default(),
     };
@@ -166,6 +167,7 @@ pub fn install_rate_limits(
             ..Default::default()
         },
     )
+    .with_team_lookup(state.store.clone())
     .with_clock(move || *reader.0.lock().unwrap());
     state.service = Arc::new(
         GatewayService::new(

@@ -2587,8 +2587,20 @@ async fn the_member_catalog_applies_tag_rules_on_their_keys() {
     let listed = || list_member_servers(&context.state, member, Some(context.team_a), &query);
     let (_, body) = read(listed().await).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0);
-    // The discovered tool declares no hints, so it is tagged destructive, and
-    // an include rule on the member's key reaches it.
+    // The discovered tool declares no hints, so it is tagged destructive. The
+    // server takes upstream changes without review, so an include rule on a
+    // derived tag needs an admin to vouch for the hint; then the member's key
+    // reaches it.
+    gateway_core::McpRegistryRepository::set_mcp_tool_annotation_overrides(
+        context.state.store.as_ref(),
+        server.tool_id,
+        &gateway_core::McpAnnotationOverrides {
+            destructive: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let (status, body) = rule("include").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let (_, body) = read(listed().await).await;

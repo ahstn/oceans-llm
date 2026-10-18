@@ -33,6 +33,10 @@ struct MockAuthorizationServer {
     refreshable: bool,
     registrations: Vec<Value>,
     token_requests: Vec<(Option<String>, HashMap<String, String>)>,
+    /// Delays refresh responses, after the request is recorded.
+    refresh_delay_ms: u64,
+    /// Answers refresh requests with this status and an `invalid_client` body.
+    refresh_failure_status: Option<u16>,
 }
 
 type SharedMock = Arc<Mutex<MockAuthorizationServer>>;
@@ -74,6 +78,32 @@ async fn token(
     MockState(mock): MockState<SharedMock>,
     headers: MockHeaders,
     Form(form): Form<HashMap<String, String>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let refresh = form.get("grant_type").map(String::as_str) == Some("refresh_token");
+    let (delay, failure) = {
+        let mock = mock.lock().expect("mock");
+        (mock.refresh_delay_ms, mock.refresh_failure_status)
+    };
+    if refresh && let Some(status) = failure {
+        return (
+            StatusCode::from_u16(status).expect("status"),
+            Json(json!({"error": "invalid_client"})),
+        )
+            .into_response();
+    }
+    let response = token_response(&mock, &headers, form);
+    if refresh && delay > 0 {
+        // The provider has rotated the refresh token before it answers.
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    }
+    response.into_response()
+}
+
+fn token_response(
+    mock: &SharedMock,
+    headers: &MockHeaders,
+    form: HashMap<String, String>,
 ) -> Json<Value> {
     let mut mock = mock.lock().expect("mock");
     let authorization = headers
@@ -166,6 +196,7 @@ async fn callback(state: &AppState, headers: &HeaderMap, raw_state: &str) -> Str
             code: Some("auth-code".to_string()),
             state: Some(raw_state.to_string()),
             error: None,
+            iss: None,
         }),
     )
     .await
@@ -299,7 +330,7 @@ async fn dynamic_registration_code_flow_and_refresh() {
     );
     let refreshed = state
         .mcp_oauth_runtime
-        .refresh_binding(state.store.as_ref(), near_expiry, &server)
+        .refresh_binding(state.store.clone(), near_expiry, &server)
         .await
         .expect("refresh");
     assert!(
@@ -403,6 +434,8 @@ async fn generic_servers_get_a_connect_url_and_their_own_callback() {
             redirect_to: DEFAULT_CONNECTION_REDIRECT.to_string(),
             resource: server.server_url.clone(),
             scopes: Vec::new(),
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -451,4 +484,225 @@ async fn manual_clients_use_the_admin_secret_and_configured_auth_method() {
     assert_eq!(authorization, &None);
     assert_eq!(form["client_id"], "admin-client");
     assert_eq!(form["client_secret"], "admin-secret");
+}
+
+/// Runs the server callback with a raw query string, as the browser sends it.
+async fn callback_query(state: &AppState, headers: &HeaderMap, query: &str) -> String {
+    let uri: axum::http::Uri = format!("/api/v1/mcp/oauth/callback?{query}")
+        .parse()
+        .expect("callback URI");
+    let query = Query::<McpOauthCallbackQuery>::try_from_uri(&uri).expect("callback query");
+    let response = mcp_oauth_server_callback(
+        State(state.clone()),
+        headers.clone(),
+        crate::http::audit::AuditRequestMeta::default(),
+        query,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("callback: {}", error.0));
+    response
+        .headers()
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+        .expect("redirect")
+        .to_string()
+}
+
+/// RFC 9207: an upstream whose metadata sends the browser to another
+/// authorization server gets that server's code at the shared callback. The
+/// `iss` it returns names that other server, so the code is never sent to the
+/// upstream's token endpoint.
+#[tokio::test]
+#[serial_test::serial]
+async fn codes_from_another_issuer_never_reach_the_token_endpoint() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    let (origin, mock) = start_mock(false).await;
+    let server = server(
+        &state,
+        &origin,
+        json!({
+            "client_registration": "metadata_document",
+            "resource_indicator": false,
+            "authorization_response_iss_parameter_supported": true,
+        }),
+    )
+    .await;
+    let (_user, headers) = oauth_session(&state).await;
+    let encode =
+        |value: &str| url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
+
+    let query = start(&state, &headers, &server).await;
+    let location = callback_query(
+        &state,
+        &headers,
+        &format!(
+            "code=auth-code&state={}&iss={}",
+            encode(&query["state"]),
+            encode("https://honest-as.example")
+        ),
+    )
+    .await;
+    assert_eq!(
+        location,
+        "/admin/account/connections?oauth_error=issuer_mismatch"
+    );
+
+    // The server advertises `iss`, so a response without it is refused too.
+    let query = start(&state, &headers, &server).await;
+    let location = callback_query(
+        &state,
+        &headers,
+        &format!("code=auth-code&state={}", encode(&query["state"])),
+    )
+    .await;
+    assert_eq!(
+        location,
+        "/admin/account/connections?oauth_error=issuer_mismatch"
+    );
+    // Issuers compare as exact strings: a trailing `/` names another issuer.
+    let query = start(&state, &headers, &server).await;
+    let location = callback_query(
+        &state,
+        &headers,
+        &format!(
+            "code=auth-code&state={}&iss={}",
+            encode(&query["state"]),
+            encode(&format!("{origin}/"))
+        ),
+    )
+    .await;
+    assert_eq!(
+        location,
+        "/admin/account/connections?oauth_error=issuer_mismatch"
+    );
+    assert!(mock.lock().expect("mock").token_requests.is_empty());
+
+    let query = start(&state, &headers, &server).await;
+    let location = callback_query(
+        &state,
+        &headers,
+        &format!(
+            "code=auth-code&state={}&iss={}",
+            encode(&query["state"]),
+            encode(&origin)
+        ),
+    )
+    .await;
+    assert_eq!(location, "/admin/account/connections?oauth=connected");
+    assert_eq!(mock.lock().expect("mock").token_requests.len(), 1);
+}
+
+/// Connects `server` through the code flow, then replaces the binding with one
+/// whose access token expires in a minute and whose refresh token is
+/// `refresh-1`, so the next use refreshes it.
+async fn near_expiry_binding(
+    state: &AppState,
+    server: &ExternalMcpServerRecord,
+    origin: &str,
+) -> gateway_core::McpUpstreamCredentialBindingRecord {
+    let (user, headers) = oauth_session(state).await;
+    let query = start(state, &headers, server).await;
+    callback(state, &headers, &query["state"]).await;
+    let grant = gateway_service::McpOauthTokenGrant {
+        bundle: gateway_service::McpOauthTokenBundle {
+            version: 1,
+            access_token: "access-near-expiry".to_string(),
+            refresh_token: Some("refresh-1".to_string()),
+            token_type: "Bearer".to_string(),
+            provider_key: MCP_SERVER_OAUTH_PROVIDER_KEY.to_string(),
+            resource: format!("{origin}/mcp"),
+            granted_scopes: vec!["files:read".to_string()],
+            issuer: Some(origin.to_string()),
+        },
+        expires_at: Some(OffsetDateTime::now_utc() + Duration::seconds(60)),
+    };
+    McpCredentialService::new(state.store.clone())
+        .upsert_oauth_user_binding(server.mcp_server_id, user.user_id, grant, None)
+        .await
+        .expect("near-expiry binding");
+    user_binding(state, server, user.user_id).await
+}
+
+/// The provider rotates the refresh token when it answers. A request that
+/// is cancelled while the refresh is in flight must not lose the new token,
+/// or the next refresh fails with `invalid_grant` and revokes the binding.
+#[tokio::test]
+#[serial_test::serial]
+async fn a_refresh_completes_after_the_request_is_cancelled() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    let (origin, mock) = start_mock(true).await;
+    let server = server(&state, &origin, json!({"client_registration": "dynamic"})).await;
+    let near_expiry = near_expiry_binding(&state, &server, &origin).await;
+    mock.lock().expect("mock").refresh_delay_ms = 300;
+
+    let refresh =
+        state
+            .mcp_oauth_runtime
+            .refresh_binding(state.store.clone(), near_expiry.clone(), &server);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), refresh)
+            .await
+            .is_err(),
+        "the caller gives up while the provider is still answering"
+    );
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let refreshed = loop {
+        let binding = state
+            .store
+            .get_active_mcp_upstream_credential_binding(
+                server.mcp_server_id,
+                &near_expiry.owner_scope_key,
+            )
+            .await
+            .expect("binding lookup")
+            .expect("binding");
+        if binding.expires_at > near_expiry.expires_at {
+            break binding;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the rotated token was never stored"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert!(
+        refreshed.expires_at.expect("expiry") > OffsetDateTime::now_utc() + Duration::minutes(30)
+    );
+    // The lease was released, so the next refresh can start at once.
+    assert!(
+        state
+            .store
+            .try_acquire_mcp_oauth_refresh_lease(
+                refreshed.credential_binding_id,
+                Uuid::new_v4(),
+                OffsetDateTime::now_utc(),
+                OffsetDateTime::now_utc() + Duration::seconds(90),
+            )
+            .await
+            .expect("lease")
+    );
+}
+
+/// A refresh the provider refuses for a reason other than `invalid_grant`
+/// keeps using the access token while it is still valid.
+#[tokio::test]
+#[serial_test::serial]
+async fn a_refused_refresh_keeps_an_unexpired_access_token() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    let (origin, mock) = start_mock(true).await;
+    let server = server(&state, &origin, json!({"client_registration": "dynamic"})).await;
+    let near_expiry = near_expiry_binding(&state, &server, &origin).await;
+    mock.lock().expect("mock").refresh_failure_status = Some(401);
+
+    let current = state
+        .mcp_oauth_runtime
+        .refresh_binding(state.store.clone(), near_expiry.clone(), &server)
+        .await
+        .expect("the unexpired token is kept");
+    assert_eq!(current.expires_at, near_expiry.expires_at);
+    assert_eq!(current.revoked_at, None);
 }

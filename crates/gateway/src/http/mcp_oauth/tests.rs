@@ -77,6 +77,8 @@ async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state(
             redirect_to: DEFAULT_CONNECTION_REDIRECT.to_string(),
             resource: server.server_url.clone(),
             scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -95,6 +97,7 @@ async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state(
                 code: Some("unused-code".to_string()),
                 state: Some(raw_state.clone()),
                 error: None,
+                iss: None,
             }),
         )
         .await
@@ -118,6 +121,7 @@ async fn oauth_callback_rejects_wrong_owner_or_provider_without_consuming_state(
                     code: None,
                     state: Some(raw_state.clone()),
                     error: Some("access_denied".to_string()),
+                    iss: None,
                 }),
             )
             .await
@@ -242,6 +246,8 @@ fn oauth_callback_rejects_expired_state_before_exchange() {
         redirect_to: DEFAULT_CONNECTION_REDIRECT.to_string(),
         resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
         scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+        expected_issuer: None,
+        issuer_required: false,
         expires_at: now - Duration::seconds(1),
         consumed_at: Some(now),
         created_at: now - Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),

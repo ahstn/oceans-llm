@@ -129,6 +129,7 @@ pub(super) fn map_openai_chat_request(
             "model".to_string(),
             Value::String(context.upstream_model.clone()),
         );
+        crate::openai_compat::normalize_anthropic_messages_for_openai(object)?;
         for (key, value) in &context.extra_body {
             object.insert(key.clone(), value.clone());
         }

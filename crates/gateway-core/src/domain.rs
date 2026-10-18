@@ -714,6 +714,11 @@ pub struct McpOauthStateRecord {
     pub redirect_to: String,
     pub resource: String,
     pub scopes: Vec<String>,
+    /// The issuer the authorization response must come from (RFC 9207), for
+    /// an authorization server configured on the server row.
+    pub expected_issuer: Option<String>,
+    /// Whether the authorization response must carry `iss`.
+    pub issuer_required: bool,
     pub expires_at: OffsetDateTime,
     pub consumed_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,

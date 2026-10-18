@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { registerServer, verifyDiscoveryFailure, disableFromMenu, enableFromMenu, verifyWorkbench, createAccess, attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 import { runMcpCanaries, verifyNoMcpGrant, testRevokedKey } from "./mcp-canary.mjs";
+import { validateCandidates } from "./mcp-candidates.mjs";
 import { createProofRecorder } from "./proof.mjs";
 
 const repoRoot = process.env.OCEANS_VERIFY_REPO_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -24,7 +25,7 @@ const runId = requiredEnv("OCEANS_VERIFY_RUN_ID");
 // Replaces any earlier proof with a failing placeholder before any fallible setup.
 const recorder = createProofRecorder({ evidenceDir, file: "mcp-proof.json", featureIds: ["mcp"] });
 const config = JSON.parse(await fs.readFile(requiredEnv("OCEANS_VERIFY_MCP_CANDIDATES_FILE"), "utf8"));
-validateConfig(config);
+validateCandidates(config);
 const actions = [];
 const failures = [];
 const owned = { servers: [], toolsets: [], grants: [], apiKeyId: null, apiKeyName: null, rawKey: null };
@@ -77,6 +78,11 @@ try {
     }
     try {
       const registered = await registerServer(ui, candidate);
+      if (registered.discoveryRejected) {
+        Object.assign(result, { discovery: "rejected as expected", serverId: registered.server.id, toolCount: 0, upstreamHttpStatus: registered.upstreamHttpStatus });
+        recorder.pass(`candidate-${candidate.key}`, { required: result.required, note: `upstream rejected discovery with HTTP ${registered.upstreamHttpStatus}` });
+        continue;
+      }
       ready.push(registered);
       Object.assign(result, { discovery: "passed", serverId: registered.server.id, toolCount: registered.toolCount, selectedTool: registered.tool.upstream_name });
       recorder.pass(`candidate-${candidate.key}`, { required: result.required, observed: registered.toolCount });
@@ -205,24 +211,4 @@ function requiredEnv(name) {
 
 function safeLocation(error) {
   return [...(error.stack ?? "").matchAll(/\b(?:drive-mcp|mcp-browser|mcp-canary)\.mjs:\d+:\d+/g)].slice(0, 3).map((match) => match[0]);
-}
-
-function validateConfig(value) {
-  if (!Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > 4) throw new Error("Supply one to four MCP candidates, including any negative-auth control");
-  if (!value.candidates.some((candidate) => candidate.required !== false)) throw new Error("At least one MCP candidate must be required");
-  const seen = new Set();
-  for (const candidate of value.candidates) {
-    if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(candidate.key) || seen.has(candidate.key)) throw new Error("Candidate key must be unique and URL-safe");
-    seen.add(candidate.key);
-    if (typeof candidate.label !== "string" || !candidate.label.trim()) throw new Error("Candidate label is required");
-    const url = new URL(candidate.server_url);
-    if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("Candidate endpoint must be HTTPS without URL credentials");
-    if ([...url.searchParams.keys()].some((key) => /key|token|secret|auth/i.test(key))) throw new Error("Do not place credentials in the MCP URL");
-    if (!["none", "gateway_static_header", "gateway_bearer_token"].includes(candidate.auth_mode)) throw new Error("This proof supports public or gateway-authenticated discovery only");
-    const auth = candidate.auth_config ?? {};
-    if (Object.keys(auth).some((key) => !["secret_ref", "header_name", "value_template", "query_param"].includes(key))) throw new Error("Auth config must contain only an environment reference and an optional header name, value template, or query parameter name");
-    if (candidate.auth_mode !== "none" && !/^env\/OCEANS_MCP_DISCOVERY_[A-Z0-9_]+$/.test(auth.secret_ref ?? "")) throw new Error("Auth secret_ref must use env/OCEANS_MCP_DISCOVERY_*");
-    if (candidate.expect_tool_error && candidate.auth_mode === "none") throw new Error("Negative-auth control requires an authenticated server mode");
-    if (!candidate.call || typeof candidate.call.name !== "string" || !candidate.call.arguments || Array.isArray(candidate.call.arguments) || typeof candidate.call.arguments !== "object") throw new Error("Supply a reviewed read-only tool call and synthetic arguments");
-  }
 }

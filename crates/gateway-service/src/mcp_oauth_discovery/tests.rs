@@ -156,6 +156,7 @@ async fn falls_back_to_well_known_resource_metadata_and_oidc_discovery() {
                     "token_endpoint": format!("{origin}/token"),
                     "code_challenge_methods_supported": ["S256"],
                     "client_id_metadata_document_supported": true,
+                    "authorization_response_iss_parameter_supported": true,
                 })),
             )
     })
@@ -176,6 +177,9 @@ async fn falls_back_to_well_known_resource_metadata_and_oidc_discovery() {
         "metadata_document"
     );
     assert!(discovery.client_id_metadata_document_supported);
+    // The issuer is the metadata's own string, trailing `/` included, since
+    // callbacks compare `iss` with it exactly.
+    assert_eq!(discovery.issuer, format!("{origin}/"));
     // RFC 8414 defaults to client_secret_basic when methods are not listed.
     assert_eq!(
         discovery.token_endpoint_auth_methods_supported,
@@ -184,6 +188,18 @@ async fn falls_back_to_well_known_resource_metadata_and_oidc_discovery() {
     let config = discovery.suggested_auth_config();
     assert!(!config.contains_key("registration_endpoint"));
     assert!(!config.contains_key("token_endpoint_auth_method"));
+    // RFC 9207 support carries into the config, so callbacks require `iss`.
+    assert_eq!(
+        config["authorization_response_iss_parameter_supported"],
+        json!(true)
+    );
+    assert!(
+        crate::mcp_upstream_auth::mcp_oauth_server_config(&config)
+            .expect("suggested config parses")
+            .server_oauth
+            .expect("server OAuth")
+            .authorization_response_iss_parameter_supported
+    );
 }
 
 #[tokio::test]

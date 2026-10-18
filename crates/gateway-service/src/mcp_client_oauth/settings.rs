@@ -4,7 +4,10 @@ use gateway_core::McpOauthResource;
 use time::Duration;
 use url::Url;
 
-use super::metadata_document::ClientMetadataDocuments;
+use super::{
+    metadata_document::ClientMetadataDocuments,
+    source_limits::{SourceRateLimiter, SourceRateLimits},
+};
 
 pub const DEFAULT_ACCESS_TOKEN_TTL_SECONDS: i64 = 60 * 60;
 pub const MAX_ACCESS_TOKEN_TTL_SECONDS: i64 = 24 * 60 * 60;
@@ -13,6 +16,11 @@ pub const MAX_REFRESH_TOKEN_TTL_SECONDS: i64 = 90 * 24 * 60 * 60;
 pub const DEFAULT_UNUSED_CLIENT_RETENTION_DAYS: i64 = 7;
 pub const MAX_UNUSED_CLIENT_RETENTION_DAYS: i64 = 365;
 const MIN_TOKEN_TTL_SECONDS: i64 = 60;
+/// Registrations allowed per minute, per source and across the gateway.
+pub const DEFAULT_REGISTRATION_RATE_LIMITS: SourceRateLimits = SourceRateLimits {
+    per_source_per_minute: 10,
+    per_minute: 100,
+};
 
 /// Runtime settings for the gateway's OAuth authorization server.
 ///
@@ -27,6 +35,7 @@ pub struct McpClientOauthSettings {
     unused_client_retention: Duration,
     /// Set when clients may use an https URL as their `client_id`.
     client_id_metadata_documents: Option<Arc<ClientMetadataDocuments>>,
+    registration_limiter: Arc<SourceRateLimiter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -49,6 +58,8 @@ pub enum McpClientOauthSettingsError {
         "unused_client_retention_days must be between 1 and {MAX_UNUSED_CLIENT_RETENTION_DAYS}"
     )]
     UnusedClientRetention,
+    #[error("rate limits must allow at least one request per minute")]
+    RateLimit,
 }
 
 impl McpClientOauthSettings {
@@ -76,6 +87,9 @@ impl McpClientOauthSettings {
             dynamic_client_registration,
             unused_client_retention: Duration::days(DEFAULT_UNUSED_CLIENT_RETENTION_DAYS),
             client_id_metadata_documents: None,
+            registration_limiter: Arc::new(SourceRateLimiter::new(
+                DEFAULT_REGISTRATION_RATE_LIMITS,
+            )),
         })
     }
 
@@ -89,6 +103,21 @@ impl McpClientOauthSettings {
     #[must_use]
     pub fn client_id_metadata_documents(&self) -> Option<&ClientMetadataDocuments> {
         self.client_id_metadata_documents.as_deref()
+    }
+
+    /// Limits open registration per source and across the gateway.
+    pub fn with_registration_rate_limits(
+        mut self,
+        limits: SourceRateLimits,
+    ) -> Result<Self, McpClientOauthSettingsError> {
+        validate_rate_limits(limits)?;
+        self.registration_limiter = Arc::new(SourceRateLimiter::new(limits));
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn registration_limiter(&self) -> &SourceRateLimiter {
+        &self.registration_limiter
     }
 
     /// How long a dynamically registered client may go without a grant
@@ -197,6 +226,16 @@ pub(crate) fn is_loopback_host(url: &Url) -> bool {
         Some(url::Host::Ipv6(address)) => IpAddr::V6(address).is_loopback(),
         None => false,
     }
+}
+
+/// Both limits must allow at least one request a minute.
+pub(super) fn validate_rate_limits(
+    limits: SourceRateLimits,
+) -> Result<(), McpClientOauthSettingsError> {
+    if limits.per_source_per_minute == 0 || limits.per_minute == 0 {
+        return Err(McpClientOauthSettingsError::RateLimit);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

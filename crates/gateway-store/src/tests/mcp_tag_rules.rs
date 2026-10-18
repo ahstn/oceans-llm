@@ -161,6 +161,69 @@ fn rule(
     }
 }
 
+/// Every derived tag, on both stores, with the same matrix: an upstream's
+/// own claim of the tag's hint selects nothing for an include rule on a
+/// server without approval, and an admin override of that hint selects the
+/// tool. Behavioural parity with `gateway_core::mcp_tool_policy`, so a tag the
+/// store SQL misses fails here rather than only in the SQL text check.
+async fn exercise_derived_tag_trust<S>(store: &S)
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    use gateway_core::mcp_tool_policy::{DERIVED_TAGS, derived_tag_hint};
+
+    let now = OffsetDateTime::now_utc();
+    let server = create_server(store, "derived").await;
+    let claims = DERIVED_TAGS
+        .iter()
+        .map(|tag| {
+            let hint = derived_tag_hint(tag).expect("hint");
+            (*tag, json!({ hint: true }))
+        })
+        .collect::<Vec<_>>();
+    let tools = discover(store, &server, &claims).await;
+    for tag in DERIVED_TAGS {
+        let subjects = [McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: Uuid::new_v4(),
+        }];
+        store
+            .upsert_mcp_tool_tag_rule(
+                &rule(&subjects[0], Some(&server), tag, McpTagRuleEffect::Include),
+                now,
+            )
+            .await
+            .expect("include rule");
+        assert!(
+            allowed_names(store, &subjects, server.mcp_server_id)
+                .await
+                .is_empty(),
+            "an upstream claim alone selects nothing for {tag}"
+        );
+        let mut overrides = McpAnnotationOverrides::default();
+        *match tag {
+            "read_only" => &mut overrides.read_only,
+            "destructive" => &mut overrides.destructive,
+            "idempotent" => &mut overrides.idempotent,
+            _ => &mut overrides.open_world,
+        } = Some(true);
+        let target = tool(&tools, tag).mcp_tool_id;
+        store
+            .set_mcp_tool_annotation_overrides(target, &overrides)
+            .await
+            .expect("override");
+        assert_eq!(
+            allowed_names(store, &subjects, server.mcp_server_id).await,
+            [tag],
+            "an admin override selects the tool for {tag}"
+        );
+        store
+            .set_mcp_tool_annotation_overrides(target, &McpAnnotationOverrides::default())
+            .await
+            .expect("clear override");
+    }
+}
+
 async fn exercise_tag_rules<S>(store: &S)
 where
     S: McpAccessRepository + McpRegistryRepository + Sync,
@@ -211,6 +274,71 @@ where
         !created_again,
         "an identical active rule is not created twice"
     );
+    // `files` takes upstream changes without review, so the upstream's own
+    // `readOnlyHint` does not satisfy the rule until an admin vouches for it.
+    assert!(
+        allowed_names(store, &subjects, files.mcp_server_id)
+            .await
+            .is_empty()
+    );
+    let read_id = tool(&tools, "read").mcp_tool_id;
+    store
+        .set_mcp_tool_annotation_overrides(
+            read_id,
+            &McpAnnotationOverrides {
+                read_only: Some(true),
+                ..McpAnnotationOverrides::default()
+            },
+        )
+        .await
+        .expect("vouching override");
+    assert_eq!(
+        allowed_names(store, &subjects, files.mcp_server_id).await,
+        ["read"]
+    );
+    store
+        .set_mcp_tool_annotation_overrides(read_id, &McpAnnotationOverrides::default())
+        .await
+        .expect("clear override");
+
+    // Turning approval on does not vouch for definitions discovery approved
+    // before it; only reviewed versions and overrides count.
+    store
+        .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+            mcp_server_id: files.mcp_server_id,
+            display_name: files.display_name.clone(),
+            description: files.description.clone(),
+            server_url: files.server_url.clone(),
+            auth_mode: files.auth_mode,
+            auth_config: files.auth_config.clone(),
+            timeout_ms: files.timeout_ms,
+            owner_contact: None,
+            visibility: files.ownership.visibility,
+            retarget_owner_credentials_only: false,
+            expected_server: None,
+            expected_owner_team_id: files.ownership.owner_team_id,
+            expected_visibility: files.ownership.visibility,
+            vouch_for_destinations: false,
+            updated_at: now,
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("enable approval");
+    assert!(
+        allowed_names(store, &subjects, files.mcp_server_id)
+            .await
+            .is_empty()
+    );
+    store
+        .set_mcp_tool_annotation_overrides(
+            read_id,
+            &McpAnnotationOverrides {
+                read_only: Some(true),
+                ..McpAnnotationOverrides::default()
+            },
+        )
+        .await
+        .expect("vouching override");
     assert_eq!(
         allowed_names(store, &subjects, files.mcp_server_id).await,
         ["read"]
@@ -228,7 +356,8 @@ where
             .expect("server grant")
     );
 
-    // A tool discovered later matches without a new grant.
+    // A tool discovered later waits for review, then matches without a new
+    // grant.
     let tools_later = discover(
         store,
         &files,
@@ -240,6 +369,20 @@ where
         ],
     )
     .await;
+    assert_eq!(
+        allowed_names(store, &subjects, files.mcp_server_id).await,
+        ["read"]
+    );
+    store
+        .review_mcp_tool_version(
+            tool(&tools_later, "list").mcp_tool_id,
+            1,
+            gateway_core::McpToolReviewDecision::Approve,
+            None,
+            now,
+        )
+        .await
+        .expect("approve list");
     assert_eq!(
         allowed_names(store, &subjects, files.mcp_server_id).await,
         ["list", "read"]
@@ -280,7 +423,6 @@ where
     );
 
     // An admin override changes which rules match, and discovery keeps it.
-    let read_id = tool(&tools_later, "read").mcp_tool_id;
     let overridden = store
         .set_mcp_tool_annotation_overrides(
             read_id,
@@ -496,6 +638,7 @@ async fn libsql_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+    exercise_derived_tag_trust(&store).await;
 
     // The index the writes maintain, and the migration's backfill run again
     // from scratch, both hold exactly `effective_tags` for every tool.
@@ -570,6 +713,7 @@ async fn postgres_mcp_tag_rules_include_exclude_and_overrides() {
         .await
         .expect("store");
     exercise_tag_rules(&store).await;
+    exercise_derived_tag_trust(&store).await;
 
     let expected = expected_effective_tags(&store).await;
     let read = || async {

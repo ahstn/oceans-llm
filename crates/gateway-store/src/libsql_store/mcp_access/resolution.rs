@@ -138,6 +138,14 @@ pub(super) fn id_placeholders(count: usize) -> String {
         .join(", ")
 }
 
+/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL; see
+/// [`crate::shared::trusted_include_tag_sql`].
+static TRUSTED_INCLUDE_TAG_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    crate::shared::trusted_include_tag_sql("$.", |path| {
+        format!("json_type(t.annotation_overrides_json, {path}) = 'true'")
+    })
+});
+
 /// Active, served tools that include rules select, found through the
 /// effective tag index: only matching tool ids are read.
 pub(super) async fn include_rule_matches(
@@ -159,7 +167,8 @@ pub(super) async fn include_rule_matches(
     let key_param = selectors.len() * 2 + 1;
     let name_param = key_param + 1;
     let sql = format!(
-        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE ({pairs}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param}) AND (?{name_param} IS NULL OR t.upstream_name = ?{name_param})"
+        "SELECT DISTINCT t.mcp_tool_id FROM mcp_tool_effective_tags et JOIN external_mcp_tools t ON t.mcp_tool_id = et.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE ({pairs}) AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active' AND (?{key_param} IS NULL OR s.server_key = ?{key_param}) AND (?{name_param} IS NULL OR t.upstream_name = ?{name_param}) AND {trusted}",
+        trusted = TRUSTED_INCLUDE_TAG_SQL.as_str()
     );
     let mut params = selectors
         .iter()

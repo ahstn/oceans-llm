@@ -122,7 +122,7 @@ where
         server: &ExternalMcpServerRecord,
     ) -> Result<ResolvedMcpCredential, GatewayError>
     where
-        R: IdentityRepository,
+        R: IdentityRepository + Send + Sync + 'static,
     {
         let mut expired_candidate_seen = false;
         for owner_scope_key in credential_lookup_order(self.repo.as_ref(), auth).await? {
@@ -138,7 +138,7 @@ where
                 && let Some(runtime) = self.oauth_runtime.as_ref()
             {
                 match runtime
-                    .refresh_binding(self.repo.as_ref(), binding, server)
+                    .refresh_binding(self.repo.clone(), binding, server)
                     .await
                 {
                     Ok(refreshed) => binding = refreshed,

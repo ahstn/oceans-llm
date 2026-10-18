@@ -526,7 +526,7 @@ models:
     description: OpenAI OSS on AWS Bedrock
     routes:
       - provider: bedrock-us-east-1
-        upstream_model: gpt-oss-120b
+        upstream_model: openai.gpt-oss-120b-1:0
         capabilities:
           responses: false
           json_schema: false

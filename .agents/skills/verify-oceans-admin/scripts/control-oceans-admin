@@ -80,6 +80,41 @@ listener_pid() {
   lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1
 }
 
+# Prints the checkout that holds a process's working directory: the nearest ancestor of its
+# canonical path that contains a `.git` entry. Walking the filesystem instead of asking Git
+# keeps the answer independent of Git configuration and environment (a foreign checkout's
+# `core.worktree` or an inherited GIT_DIR cannot redirect it), and a nested worktree still
+# resolves to its own root because it carries its own `.git` file.
+process_checkout() {
+  local cwd dir
+  cwd="$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+  [[ -n "$cwd" ]] || return 1
+  dir="$(cd "$cwd" 2>/dev/null && pwd -P)" || return 1
+  while [[ -n "$dir" ]]; do
+    if [[ -e "$dir/.git" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    [[ "$dir" != / ]] || return 1
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+repo_root_physical="$(cd "$repo_root" && pwd -P)"
+
+# Another checkout's stack can bind the selected ports between the in-use check and readiness,
+# so only a listener started from this checkout may be recorded, trusted, or signalled.
+listener_owned_by_checkout() {
+  [[ -n "$1" && "$(process_checkout "$1" || true)" == "$repo_root_physical" ]]
+}
+
+describe_listener() {
+  local owner
+  owner="$(process_checkout "$1" || true)"
+  printf 'PID %s from %s' "$1" "${owner:-an unknown working directory}"
+}
+
 gateway_uses_this_checkout() {
   lsof -a -c gateway -d cwd -Fn 2>/dev/null | awk -v root="$repo_root" '
     /^p/ { pid=substr($0, 2) }
@@ -283,7 +318,11 @@ cleanup() {
     stored="$(<"$pid_file")"
     current="$(listener_pid "$port" || true)"
     if [[ -n "$current" && "$current" == "$stored" ]]; then
-      kill -TERM "$stored" 2>/dev/null || true
+      if listener_owned_by_checkout "$stored"; then
+        kill -TERM "$stored" 2>/dev/null || true
+      else
+        echo "Not stopping $(describe_listener "$stored") on port $port; it belongs to another checkout." >&2
+      fi
     fi
   done
 
@@ -409,40 +448,37 @@ launch() {
   printf '%s\n' "$start_time" >"$stack_start_file"
   record_lock_owner "$pid"
 
+  local ready=false spec port listener
   for _ in {1..600}; do
     current_gateway="$(listener_pid "$gateway_port" || true)"
     current_ui="$(listener_pid "$ui_port" || true)"
+    for spec in "$gateway_port:$current_gateway" "$ui_port:$current_ui"; do
+      port="${spec%%:*}"
+      listener="${spec#*:}"
+      if [[ -n "$listener" ]] && ! listener_owned_by_checkout "$listener"; then
+        echo "Port $port was taken by $(describe_listener "$listener") while this stack started. See $log_file" >&2
+        exit 1
+      fi
+    done
     [[ -z "$current_gateway" ]] || printf '%s\n' "$current_gateway" >"$gateway_pid_file"
     [[ -z "$current_ui" ]] || printf '%s\n' "$current_ui" >"$ui_pid_file"
 
-    if ! kill -0 "$pid" 2>/dev/null && [[ -z "$current_gateway" && -z "$current_ui" ]]; then
+    # dev-stack runs the gateway in the foreground, so its exit means the stack is gone.
+    if ! kill -0 "$pid" 2>/dev/null; then
       echo "The dev stack exited before it became ready. See $log_file" >&2
       exit 1
     fi
-    if [[ -n "$current_ui" ]] && curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
+    if [[ -n "$current_gateway" && -n "$current_ui" ]] && curl --silent --fail --max-time 5 "$base_url/readyz" >/dev/null 2>&1; then
+      ready=true
       break
     fi
     sleep 0.5
   done
 
-  if ! curl --silent --fail "$base_url/readyz" >/dev/null; then
+  if [[ "$ready" != true ]]; then
     echo "The dev stack did not become ready. See $log_file" >&2
     exit 1
   fi
-
-  pid="$(listener_pid "$gateway_port" || true)"
-  if [[ -z "$pid" ]]; then
-    echo "Ready endpoint answered, but no gateway listener owns port $gateway_port." >&2
-    exit 1
-  fi
-  printf '%s\n' "$pid" >"$gateway_pid_file"
-
-  pid="$(listener_pid "$ui_port" || true)"
-  if [[ -z "$pid" ]]; then
-    echo "Gateway is ready, but no admin UI listener owns port $ui_port." >&2
-    exit 1
-  fi
-  printf '%s\n' "$pid" >"$ui_pid_file"
 
   doctor
   trap - EXIT INT TERM
@@ -450,7 +486,7 @@ launch() {
 }
 
 doctor() {
-  local recorded_gateway current_gateway recorded_ui current_ui health version
+  local recorded_gateway current_gateway recorded_ui current_ui health version pid
   [[ -f "$gateway_pid_file" && -f "$ui_pid_file" ]] || {
     echo "No launched verification instance is recorded for run $run_id." >&2
     exit 1
@@ -467,6 +503,12 @@ doctor() {
     echo "Port $ui_port is not owned by recorded UI PID $recorded_ui." >&2
     exit 1
   }
+  for pid in "$recorded_gateway" "$recorded_ui"; do
+    listener_owned_by_checkout "$pid" || {
+      echo "Recorded $(describe_listener "$pid") does not belong to $repo_root_physical." >&2
+      exit 1
+    }
+  done
   if [[ -f "$run_dir/rustfs-listener.pid" ]]; then
     local rustfs_port recorded_rustfs
     rustfs_port="$(<"$run_dir/rustfs-port")"
@@ -477,8 +519,8 @@ doctor() {
     }
     curl --silent --fail --max-time 2 "$(<"$run_dir/skills-endpoint")/health/ready" >/dev/null
   fi
-  curl --silent --fail "$base_url/readyz" | grep -q '"status":"ready"'
-  health="$(curl --silent --fail "$base_url/api/v1/health")"
+  curl --silent --fail --max-time 5 "$base_url/readyz" | grep -q '"status":"ready"'
+  health="$(curl --silent --fail --max-time 5 "$base_url/api/v1/health")"
   version="$(printf '%s' "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
   [[ -n "$version" ]] || {
     echo "Gateway health did not include a version: $health" >&2

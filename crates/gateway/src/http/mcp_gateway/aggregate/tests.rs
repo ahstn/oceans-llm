@@ -169,11 +169,14 @@ async fn tag_rules_govern_aggregate_search_describe_and_call() {
         )
         .await
         .expect("include rule");
+    // The server takes upstream changes without review, so an admin override
+    // vouches for `readOnlyHint` before the include rule selects the tool.
     state
         .store
         .set_mcp_tool_annotation_overrides(
             search.mcp_tool_id,
             &gateway_core::McpAnnotationOverrides {
+                read_only: Some(true),
                 open_world: Some(true),
                 ..Default::default()
             },
