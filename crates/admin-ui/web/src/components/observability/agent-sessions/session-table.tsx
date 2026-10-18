@@ -47,26 +47,11 @@ export function SessionTable({
         <table className="w-full min-w-[960px] text-sm">
           <thead className="bg-muted/40 text-muted-foreground text-left">
             <tr>
-              {[
-                'Started',
-                'Harness',
-                'Model',
-                'State',
-                'Score',
-                'Cost',
-                'Active time',
-                'Requests',
-                'Tool calls',
-                'MCP calls',
-                'Data quality',
-              ].map((label) => (
+              {sessionColumns.map(({ label, numeric }) => (
                 <th
                   key={label}
                   scope="col"
-                  className={cn(
-                    'h-9 px-3 font-semibold',
-                    numericColumns.has(label) && 'text-right',
-                  )}
+                  className={cn('h-9 px-3 font-semibold', numeric && 'text-right')}
                 >
                   {label}
                 </th>
@@ -211,14 +196,20 @@ function StateBadge({ value }: { value: string }) {
   )
 }
 
-const numericColumns = new Set([
-  'Score',
-  'Cost',
-  'Active time',
-  'Requests',
-  'Tool calls',
-  'MCP calls',
-])
+// Numeric columns are right-aligned (DESIGN.md "Numbers and time"); their cells match.
+const sessionColumns = [
+  { label: 'Started', numeric: false },
+  { label: 'Harness', numeric: false },
+  { label: 'Model', numeric: false },
+  { label: 'State', numeric: false },
+  { label: 'Score', numeric: true },
+  { label: 'Cost', numeric: true },
+  { label: 'Active time', numeric: true },
+  { label: 'Requests', numeric: true },
+  { label: 'Tool calls', numeric: true },
+  { label: 'MCP calls', numeric: true },
+  { label: 'Data quality', numeric: false },
+] as const
 
 function formatCost(value?: number | null) {
   // Session cost is a total, so the column keeps two decimals.

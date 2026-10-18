@@ -449,6 +449,24 @@ describe('AgentSessionsPage', () => {
     expect(sessionRow).toHaveTextContent('2')
   })
 
+  it('right-aligns numeric columns in both the header and the cells', () => {
+    render(<AgentSessionsPage />)
+
+    const headers = screen.getAllByRole('columnheader')
+    const cells = within(screen.getByRole('row', { name: /Opencode/ })).getAllByRole('cell')
+    const rightAligned = (element: HTMLElement) => element.classList.contains('text-right')
+
+    expect(headers.filter(rightAligned).map((header) => header.textContent)).toEqual([
+      'Score',
+      'Cost',
+      'Active time',
+      'Requests',
+      'Tool calls',
+      'MCP calls',
+    ])
+    expect(cells.map(rightAligned)).toEqual(headers.map(rightAligned))
+  })
+
   it('explains missing call metrics from an outdated gateway contract', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
