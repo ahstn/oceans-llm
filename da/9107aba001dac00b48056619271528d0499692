@@ -1,0 +1,16 @@
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 1880-1886,1900-1901,1936-1942,1952
+docs/adr/2026-06-09-mcp-tool-grants-and-token-overhead.md
+  h_2f452a9c375069 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da9107aba001dac00b48056619271528d0499692",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
