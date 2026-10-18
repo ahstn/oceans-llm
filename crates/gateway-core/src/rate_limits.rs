@@ -430,7 +430,8 @@ impl RateLimitCounterCharge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitCounterObservation {
     pub previous: i64,
-    /// Including this request's cost when it was charged.
+    /// Including this request's cost, also when the check was rejected and
+    /// nothing was charged.
     pub current: i64,
     pub admitted: bool,
 }

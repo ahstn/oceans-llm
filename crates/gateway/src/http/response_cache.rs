@@ -13,8 +13,9 @@ struct CacheEntry<V> {
     expires_at: tokio::time::Instant,
 }
 
-/// Past this many entries, an insert first drops the expired ones.
-const MAX_ENTRIES_BEFORE_PRUNE: usize = 4096;
+/// Most entries kept. At this size an insert first drops the expired ones,
+/// then, if every entry is still fresh, the one that expires soonest.
+const MAX_ENTRIES: usize = 4096;
 
 pub struct ResponseCache<K, V> {
     ttl: Duration,
@@ -73,9 +74,17 @@ where
         {
             let mut entries = self.entries.lock().await;
             // Keys that are never read again would otherwise stay forever.
-            if entries.len() >= MAX_ENTRIES_BEFORE_PRUNE {
+            if entries.len() >= MAX_ENTRIES && !entries.contains_key(&key) {
                 let now = tokio::time::Instant::now();
                 entries.retain(|_, entry| entry.expires_at > now);
+                if entries.len() >= MAX_ENTRIES
+                    && let Some(oldest) = entries
+                        .iter()
+                        .min_by_key(|(_, entry)| entry.expires_at)
+                        .map(|(key, _)| key.clone())
+                {
+                    entries.remove(&oldest);
+                }
             }
             entries.insert(
                 key.clone(),
@@ -137,6 +146,18 @@ mod tests {
         assert_eq!(first.expect("first response").0, 42);
         assert_eq!(second.expect("second response").0, 42);
         assert_eq!(load_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn fresh_entries_stay_within_the_bound() {
+        let cache = ResponseCache::new(Duration::from_secs(30));
+        for key in 0..=MAX_ENTRIES {
+            cache
+                .get_or_load(key, || async { Ok::<_, ()>(key) })
+                .await
+                .expect("response");
+        }
+        assert_eq!(cache.entries.lock().await.len(), MAX_ENTRIES);
     }
 
     #[tokio::test]

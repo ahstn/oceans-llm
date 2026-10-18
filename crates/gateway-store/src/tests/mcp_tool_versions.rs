@@ -311,6 +311,14 @@ where
         McpToolApprovalStatus::Approved
     );
     assert_eq!(served(store, &subject, server.mcp_server_id).await.len(), 2);
+    // `write` was reviewed; `read`'s served version was approved unreviewed.
+    assert_eq!(
+        store
+            .reviewed_mcp_tool_versions(&[(read.mcp_tool_id, 2), (write.mcp_tool_id, 1)])
+            .await
+            .expect("reviewed versions"),
+        [(write.mcp_tool_id, 1)]
+    );
     let conflict = store
         .review_mcp_tool_version(
             write.mcp_tool_id,

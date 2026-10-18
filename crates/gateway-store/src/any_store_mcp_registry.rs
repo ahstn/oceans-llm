@@ -353,6 +353,16 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.reviewed_mcp_tool_versions(versions).await,
+            Self::Postgres(store) => store.reviewed_mcp_tool_versions(versions).await,
+        }
+    }
+
     async fn review_mcp_tool_version(
         &self,
         mcp_tool_id: Uuid,

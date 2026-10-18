@@ -3,7 +3,7 @@
 //! `gateway_core::mcp_tool_policy`; this service
 //! validates admin input and previews which tools a rule selects.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
     ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError, McpAccessRepository,
@@ -201,24 +201,32 @@ where
             .await?)
     }
 
-    /// Whether an admin approved the version the tool serves, as opposed to
-    /// discovery approving it while the server took changes unreviewed.
-    async fn served_version_reviewed(
+    /// The tools in `page` whose hints only an admin review of their served
+    /// version could vouch for, and that have one, in one query. Discovery
+    /// approving a version while the server took changes unreviewed does
+    /// not count.
+    async fn reviewed_candidates(
         &self,
-        tool: &ExternalMcpToolRecord,
-    ) -> Result<bool, GatewayError> {
-        let Some(version) = tool.review.approved_schema_version else {
-            return Ok(false);
-        };
+        page: &[ExternalMcpToolRecord],
+        tag: &str,
+    ) -> Result<HashSet<Uuid>, GatewayError> {
+        let candidates = page
+            .iter()
+            .filter(|tool| {
+                !include_rule_selects(tool, tag, false) && include_rule_selects(tool, tag, true)
+            })
+            .filter_map(|tool| Some((tool.mcp_tool_id, tool.review.approved_schema_version?)))
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Ok(HashSet::new());
+        }
         Ok(self
             .repo
-            .list_mcp_tool_versions(
-                tool.mcp_tool_id,
-                &McpToolVersionQuery::Versions(vec![version]),
-            )
+            .reviewed_mcp_tool_versions(&candidates)
             .await?
-            .first()
-            .is_some_and(|version| version.reviewed_at.is_some()))
+            .into_iter()
+            .map(|(mcp_tool_id, _)| mcp_tool_id)
+            .collect())
     }
 
     /// The active tools a rule with this tag would select on one server, or on
@@ -262,15 +270,18 @@ where
             after = page
                 .last()
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
+            let reviewed = match (&server, effect) {
+                (Some(server), McpTagRuleEffect::Include) if server.approve_tool_changes => {
+                    self.reviewed_candidates(&page, &tag).await?
+                }
+                _ => HashSet::new(),
+            };
             let mut full = false;
             for tool in page {
                 // Include rules apply the same trust rule as runtime resolution.
                 let selected = match (&server, effect) {
-                    (Some(server), McpTagRuleEffect::Include) => {
-                        include_rule_selects(&tool, &tag, false)
-                            || (server.approve_tool_changes
-                                && include_rule_selects(&tool, &tag, true)
-                                && self.served_version_reviewed(&tool).await?)
+                    (Some(_), McpTagRuleEffect::Include) => {
+                        include_rule_selects(&tool, &tag, reviewed.contains(&tool.mcp_tool_id))
                     }
                     _ => has_effective_tag(&tool, &tag),
                 };

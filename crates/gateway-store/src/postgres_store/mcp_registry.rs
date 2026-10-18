@@ -925,7 +925,7 @@ impl McpRegistryRepository for PostgresStore {
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
             let newer_run_committed: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND started_at_ms > $3)",
+                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND (started_at_ms > $3 OR (started_at_ms IS NULL AND started_at * 1000 > $3)))",
             )
             .bind(run.mcp_server_id.to_string())
             .bind(ExternalMcpDiscoveryStatus::Success.as_str())
@@ -1058,7 +1058,8 @@ impl McpRegistryRepository for PostgresStore {
             WHERE mcp_server_id = $4
               AND NOT EXISTS (
                 SELECT 1 FROM external_mcp_discovery_runs
-                WHERE mcp_server_id = $4 AND status = $5 AND started_at_ms > $6
+                WHERE mcp_server_id = $4 AND status = $5
+                  AND (started_at_ms > $6 OR (started_at_ms IS NULL AND started_at * 1000 > $6))
               )
             "#,
         )
@@ -1135,6 +1136,30 @@ impl McpRegistryRepository for PostgresStore {
             |tool| tool.policy.annotation_overrides == *overrides,
         )
         .await
+    }
+
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        if versions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (tool_ids, schema_versions): (Vec<String>, Vec<i64>) = versions
+            .iter()
+            .map(|(mcp_tool_id, schema_version)| (mcp_tool_id.to_string(), *schema_version))
+            .unzip();
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT mcp_tool_id, schema_version FROM mcp_tool_versions WHERE reviewed_at IS NOT NULL AND (mcp_tool_id, schema_version) IN (SELECT * FROM UNNEST($1::text[], $2::bigint[]))",
+        )
+        .bind(tool_ids)
+        .bind(schema_versions)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.into_iter()
+            .map(|(mcp_tool_id, schema_version)| Ok((parse_uuid(&mcp_tool_id)?, schema_version)))
+            .collect()
     }
 
     async fn list_mcp_tool_versions(

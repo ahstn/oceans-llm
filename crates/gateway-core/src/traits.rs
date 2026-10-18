@@ -1279,6 +1279,28 @@ pub trait McpRegistryRepository: Send + Sync {
         query: &crate::mcp_tool_review::McpToolVersionQuery,
     ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
 
+    /// The `(mcp_tool_id, schema_version)` pairs, of those given, that an
+    /// admin reviewed. Stores answer in one query per batch; this default
+    /// reads each version.
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        let mut reviewed = Vec::new();
+        for &(mcp_tool_id, schema_version) in versions {
+            let query = crate::mcp_tool_review::McpToolVersionQuery::Versions(vec![schema_version]);
+            if self
+                .list_mcp_tool_versions(mcp_tool_id, &query)
+                .await?
+                .first()
+                .is_some_and(|version| version.reviewed_at.is_some())
+            {
+                reviewed.push((mcp_tool_id, schema_version));
+            }
+        }
+        Ok(reviewed)
+    }
+
     /// Approves or rejects the tool's pending version. Fails with `Conflict`
     /// when that version is not pending, so two reviews cannot both apply.
     async fn review_mcp_tool_version(
