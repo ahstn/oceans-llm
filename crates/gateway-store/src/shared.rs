@@ -7,6 +7,41 @@ use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL, for the
+/// include query that joins `mcp_tool_effective_tags et`, `external_mcp_tools
+/// t` and `external_mcp_servers s`: a derived tag selects a tool only when an
+/// admin overrode the tag's own hint to `true`, or approved the served version
+/// on a server with tool approval. The tags and their hints come from
+/// `gateway_core`, so the backends cannot drift from it; each backend gives
+/// only its JSON syntax: the prefix of a hint's path, and how to test that the
+/// override at a path is `true`.
+pub(crate) fn trusted_include_tag_sql(
+    path_prefix: &str,
+    override_is_true: impl Fn(&str) -> String,
+) -> String {
+    use gateway_core::mcp_tool_policy::{DERIVED_TAGS, derived_tag_hint};
+
+    let listed = DERIVED_TAGS
+        .iter()
+        .map(|tag| format!("'{tag}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let paths = DERIVED_TAGS
+        .iter()
+        .filter_map(|tag| {
+            let hint = derived_tag_hint(tag)?;
+            Some(format!("WHEN '{tag}' THEN '{path_prefix}{hint}'"))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "((s.approve_tool_changes = 1 AND EXISTS (SELECT 1 FROM mcp_tool_versions v \
+         WHERE v.mcp_tool_id = t.mcp_tool_id AND v.schema_version = t.approved_schema_version \
+         AND v.reviewed_at IS NOT NULL)) OR et.tag NOT IN ({listed}) OR {})",
+        override_is_true(&format!("CASE et.tag {paths} END"))
+    )
+}
+
 /// An SQL condition, true when the server (`server`) has a recorded discovery
 /// run, of `status` when given, that started after the run `run_id` started
 /// at `started_ms`. Placeholders are passed in, so both backends share it.
@@ -16,7 +51,8 @@ use uuid::Uuid;
 /// is the newer. A gateway older than V72, still serving during a rolling
 /// upgrade, records runs without `started_at_ms`; such a run counts as newer
 /// when it started in the same second or later, since its milliseconds are
-/// unknown. The run itself never counts.
+/// unknown. The run itself never counts: its start is not after its own, and
+/// its id is not greater than its own.
 pub(crate) fn newer_discovery_run_sql(
     server: &str,
     status: Option<&str>,
@@ -26,12 +62,24 @@ pub(crate) fn newer_discovery_run_sql(
     let status = status
         .map(|status| format!(" AND r.status = {status}"))
         .unwrap_or_default();
+    // One EXISTS per case, so each seeks
+    // `external_mcp_discovery_runs_server_started_ms_idx` by server and start
+    // instead of scanning the server's history for an OR.
+    let newer = |condition: String| {
+        format!(
+            "EXISTS (SELECT 1 FROM external_mcp_discovery_runs r \
+             WHERE r.mcp_server_id = {server}{status} AND {condition})"
+        )
+    };
     format!(
-        "EXISTS (SELECT 1 FROM external_mcp_discovery_runs r WHERE r.mcp_server_id = {server}{status} \
-         AND r.discovery_run_id <> {run_id} \
-         AND (r.started_at_ms > {started_ms} \
-              OR (r.started_at_ms = {started_ms} AND r.discovery_run_id > {run_id}) \
-              OR (r.started_at_ms IS NULL AND (r.started_at + 1) * 1000 > {started_ms})))"
+        "({} OR {} OR {})",
+        newer(format!("r.started_at_ms > {started_ms}")),
+        newer(format!(
+            "r.started_at_ms = {started_ms} AND r.discovery_run_id > {run_id}"
+        )),
+        newer(format!(
+            "r.started_at_ms IS NULL AND (r.started_at + 1) * 1000 > {started_ms}"
+        )),
     )
 }
 
