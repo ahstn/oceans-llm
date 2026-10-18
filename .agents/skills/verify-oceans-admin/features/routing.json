@@ -228,6 +228,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/leaderboard.tsx",
+        "crates/admin-ui/web/src/routes/observability/-bucket-axis.ts",
         "crates/gateway/src/http/observability.rs",
         "crates/gateway-store/src/libsql_store/budgets.rs",
         "crates/gateway/src/local_demo_seed/usage.rs",
@@ -242,6 +243,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx",
+        "crates/admin-ui/web/src/routes/observability/-bucket-axis.ts",
         "crates/admin-ui/web/src/components/icons/**",
         "crates/gateway/src/http/observability.rs",
         "crates/gateway-service/src/request_logging/harness.rs",
