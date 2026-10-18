@@ -165,7 +165,14 @@ fn connection_redirect_rejects_raw_control_characters() {
 }
 
 async fn oauth_session(state: &AppState) -> (gateway_core::UserRecord, HeaderMap) {
-    use gateway_core::{AuthMode, GlobalRole, UserStatus};
+    session_with_role(state, gateway_core::GlobalRole::User).await
+}
+
+async fn session_with_role(
+    state: &AppState,
+    role: gateway_core::GlobalRole,
+) -> (gateway_core::UserRecord, HeaderMap) {
+    use gateway_core::{AuthMode, UserStatus};
 
     let email = format!("{}@example.test", Uuid::new_v4());
     let user = state
@@ -174,7 +181,7 @@ async fn oauth_session(state: &AppState) -> (gateway_core::UserRecord, HeaderMap
             "OAuth user",
             &email,
             &email,
-            GlobalRole::User,
+            role,
             AuthMode::Password,
             UserStatus::Active,
         )

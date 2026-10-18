@@ -17,10 +17,13 @@ use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
 use crate::mcp_credentials::{decrypt_binding_secret, decrypt_credential_secret, encrypt_secret};
-use crate::mcp_oauth_discovery::{McpOauthDiscovery, discover_mcp_oauth, register_oauth_client};
+use crate::mcp_oauth_discovery::{
+    McpOauthDiscovery, discover_mcp_oauth, register_oauth_client, verify_published_endpoints,
+};
 use crate::mcp_upstream_auth::{
     McpOauthClientRegistration, McpOauthServerConfig, McpOauthTokenEndpointAuthMethod,
-    McpServerOauthEndpoints, is_loopback_http_url, mcp_oauth_server_config, resolve_secret_ref,
+    McpServerOauthEndpoints, changed_server_oauth_endpoints, is_loopback_http_url,
+    mcp_oauth_server_config, resolve_secret_ref,
 };
 use crate::outbound_fetch::{
     DEFAULT_OUTBOUND_MAX_BODY_BYTES, DEFAULT_OUTBOUND_TIMEOUT, InvalidDomainName,
@@ -443,6 +446,31 @@ impl McpOauthRuntime {
             .discovery_fetchers
             .for_scope(crate::outbound_fetch::OutboundAddressScope::Public);
         discover_mcp_oauth(fetcher, server_url).await
+    }
+
+    /// Checks, before a server's settings are saved, that the authorization
+    /// server its `auth_config` names publishes the endpoints the config sets.
+    /// It runs only when the issuer or an endpoint differs from `previous`, so
+    /// an unrelated edit fetches nothing, and reaches addresses as discovery
+    /// does: public ones only for `public_only`, the address class of
+    /// `server_url` otherwise.
+    pub async fn verify_server_oauth_endpoints(
+        &self,
+        server_url: &str,
+        public_only: bool,
+        auth_config: &Map<String, serde_json::Value>,
+        previous: Option<&Map<String, serde_json::Value>>,
+    ) -> Result<(), GatewayError> {
+        let Some(endpoints) = changed_server_oauth_endpoints(auth_config, previous) else {
+            return Ok(());
+        };
+        let fetcher = if public_only {
+            self.discovery_fetchers
+                .for_scope(crate::outbound_fetch::OutboundAddressScope::Public)
+        } else {
+            self.discovery_fetchers.for_trusted_url(server_url.trim())
+        };
+        verify_published_endpoints(fetcher, &endpoints).await
     }
 
     fn require_public_base_url(&self) -> Result<&str, GatewayError> {
