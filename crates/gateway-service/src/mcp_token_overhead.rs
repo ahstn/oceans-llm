@@ -20,7 +20,9 @@ pub struct McpTokenOverheadInput {
     pub model_key: Option<String>,
     pub provider_family: String,
     pub model_or_encoding: String,
-    pub tools: Vec<ExternalMcpToolRecord>,
+    /// Shared, so a caller that caches the tool set passes it without
+    /// copying every tool's schema.
+    pub tools: Arc<[ExternalMcpToolRecord]>,
     pub context_window_tokens: Option<i64>,
     pub protocol_version: Option<String>,
     pub occurred_at: OffsetDateTime,
@@ -332,7 +334,7 @@ mod tests {
             model_key: None,
             provider_family: "openai".to_string(),
             model_or_encoding: "o200k".to_string(),
-            tools,
+            tools: tools.into(),
             context_window_tokens: None,
             protocol_version: None,
             occurred_at: OffsetDateTime::now_utc(),

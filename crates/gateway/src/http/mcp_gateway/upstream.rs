@@ -55,6 +55,7 @@ pub(super) async fn proxy_upstream(
     let response = request.send().await.map_err(map_reqwest_error)?;
     let status = response.status();
     let headers = response.headers().clone();
+    refuse_get_without_event_stream(method, status, &headers)?;
     let stream = response
         .bytes_stream()
         .map_err(|error| io::Error::other(error.without_url().to_string()));
@@ -65,6 +66,30 @@ pub(super) async fn proxy_upstream(
         Body::from_stream(stream)
     };
     Ok(response_from_parts(status, &headers, body))
+}
+
+/// The standalone `GET` stream may carry only an event stream, whose JSON-RPC
+/// responses the sanitizer drops. A successful answer in any other format is
+/// refused rather than passed through, since a client could read a response
+/// from it outside the governed `POST`. A bodiless `202` or `204` is harmless.
+fn refuse_get_without_event_stream(
+    method: &Method,
+    status: StatusCode,
+    headers: &HeaderMap,
+) -> Result<(), GatewayError> {
+    if method == Method::GET
+        && status.is_success()
+        && status != StatusCode::ACCEPTED
+        && status != StatusCode::NO_CONTENT
+        && !is_event_stream(headers)
+    {
+        return Err(ProviderError::UpstreamHttp {
+            status: StatusCode::BAD_GATEWAY.as_u16(),
+            body: "the MCP server answered the GET stream without text/event-stream".to_string(),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 pub(super) async fn proxy_buffered(
@@ -79,6 +104,7 @@ pub(super) async fn proxy_buffered(
     );
 
     let response = request.send().await.map_err(map_reqwest_error)?;
+    refuse_get_without_event_stream(method, response.status(), response.headers())?;
     if response.content_length().unwrap_or(0) > MAX_MCP_REWRITE_BODY_BYTES {
         return Err(GatewayError::PayloadTooLarge {
             limit_bytes: MAX_MCP_REWRITE_BODY_BYTES as usize,

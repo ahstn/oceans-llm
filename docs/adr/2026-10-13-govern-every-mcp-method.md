@@ -58,7 +58,7 @@ The gateway now refuses resumption instead of governing replays:
 
 - `Last-Event-ID` is no longer forwarded upstream.
 - Every upstream SSE body, streamed or buffered, loses its `id` field, so clients have no event id to resume from. An event that held only an `id` is dropped.
-- On the standalone `GET` stream, the gateway drops JSON-RPC responses (messages with `result` or `error` and no `method`). The transport allows only server requests and notifications there, so a compliant upstream loses nothing.
+- On the standalone `GET` stream, the gateway drops JSON-RPC responses (any message with `result` or `error`). The transport allows only server requests and notifications there, so a compliant upstream loses nothing. A successful `GET` answer that is not `text/event-stream` is refused with a gateway error rather than passed through unexamined.
 
 Governing replays would mean tracking which request each upstream event id belongs to, across replicas, and re-running the original request's grant check and guardrails on delivery. Resumption is optional in the transport, and a client that loses a stream can repeat the request.
 

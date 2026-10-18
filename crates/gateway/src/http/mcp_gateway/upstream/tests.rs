@@ -494,10 +494,13 @@ async fn buffered_bodies_enforce_the_limit_with_and_without_content_length() {
 #[tokio::test]
 async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_streams() {
     let router = Router::new().fallback(any(|| async {
-        Body::from_stream(futures_util::stream::once(async {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            Ok::<_, io::Error>(Bytes::from_static(b"complete"))
-        }))
+        (
+            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(futures_util::stream::once(async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                Ok::<_, io::Error>(Bytes::from_static(b"data: complete\n\n"))
+            })),
+        )
     }));
     let mut server = TestUpstream::start(router).await;
     server.upstream.server.timeout_ms = 100;
@@ -528,7 +531,10 @@ async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_stream
                 .await
                 .expect("body terminates");
         if receive_stream {
-            assert_eq!(body.expect("receive stream stays open"), "complete");
+            assert_eq!(
+                body.expect("receive stream stays open"),
+                "data: complete\n\n"
+            );
         } else {
             let error = body.expect_err("finite response times out").to_string();
             assert!(!error.contains("upstream-secret"));
@@ -548,4 +554,64 @@ async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_stream
         result,
         Err(GatewayError::Provider(ProviderError::Timeout))
     ));
+}
+
+#[tokio::test]
+async fn a_get_stream_answered_without_an_event_stream_is_refused() {
+    let router = Router::new().fallback(any(|| async {
+        (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"jsonrpc":"2.0","id":1,"result":{"content":[]}}"#,
+        )
+    }));
+    let server = TestUpstream::start(router).await;
+    let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("HTTP client"),
+    );
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+    let streamed = proxy_upstream(
+        &client,
+        &Method::GET,
+        &headers,
+        Bytes::new(),
+        &server.upstream,
+    )
+    .await;
+    assert!(matches!(
+        streamed,
+        Err(GatewayError::Provider(ProviderError::UpstreamHttp {
+            status: 502,
+            ..
+        }))
+    ));
+    let buffered = proxy_buffered(
+        &client,
+        &Method::GET,
+        &headers,
+        Bytes::new(),
+        &server.upstream,
+    )
+    .await;
+    assert!(matches!(
+        buffered,
+        Err(GatewayError::Provider(ProviderError::UpstreamHttp {
+            status: 502,
+            ..
+        }))
+    ));
+    // A POST answer in JSON is the normal case and passes through.
+    let posted = proxy_upstream(
+        &client,
+        &Method::POST,
+        &headers,
+        Bytes::new(),
+        &server.upstream,
+    )
+    .await
+    .expect("POST response");
+    assert_eq!(posted.status(), StatusCode::OK);
 }

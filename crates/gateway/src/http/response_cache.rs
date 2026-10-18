@@ -1,4 +1,10 @@
-use std::{collections::HashMap, future::Future, hash::Hash, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    hash::Hash,
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::sync::Mutex;
 
@@ -13,13 +19,51 @@ struct CacheEntry<V> {
     expires_at: tokio::time::Instant,
 }
 
-/// Most entries kept. At this size an insert first drops the expired ones,
-/// then, if every entry is still fresh, the one that expires soonest.
+/// Most entries kept. At this size an insert first drops the entry that
+/// expires soonest, which is an expired one when there is any.
 const MAX_ENTRIES: usize = 4096;
+
+/// The cached values, and their keys in the order they expire. Every entry
+/// lives for the same TTL, so that is the order they were inserted in, and
+/// eviction pops from the front instead of scanning the map.
+struct Entries<K, V> {
+    map: HashMap<K, Arc<CacheEntry<V>>>,
+    /// May hold keys since replaced or removed; those are skipped, and the
+    /// queue is compacted once it grows past twice the cap.
+    expiry_order: VecDeque<(K, tokio::time::Instant)>,
+}
+
+impl<K: Clone + Eq + Hash, V> Entries<K, V> {
+    fn insert(&mut self, key: K, entry: CacheEntry<V>) {
+        if !self.map.contains_key(&key) {
+            while self.map.len() >= MAX_ENTRIES {
+                let Some((oldest, expires_at)) = self.expiry_order.pop_front() else {
+                    break;
+                };
+                if self
+                    .map
+                    .get(&oldest)
+                    .is_some_and(|current| current.expires_at == expires_at)
+                {
+                    self.map.remove(&oldest);
+                }
+            }
+        }
+        self.expiry_order.push_back((key.clone(), entry.expires_at));
+        self.map.insert(key, Arc::new(entry));
+        if self.expiry_order.len() > 2 * MAX_ENTRIES {
+            let map = &self.map;
+            self.expiry_order.retain(|(key, expires_at)| {
+                map.get(key)
+                    .is_some_and(|current| current.expires_at == *expires_at)
+            });
+        }
+    }
+}
 
 pub struct ResponseCache<K, V> {
     ttl: Duration,
-    entries: Mutex<HashMap<K, Arc<CacheEntry<V>>>>,
+    entries: Mutex<Entries<K, V>>,
     /// Held only to look up or remove a gate, never across an await, so a
     /// share can leave it from `Drop`.
     load_gates: LoadGates<K>,
@@ -62,7 +106,10 @@ where
     pub fn new(ttl: Duration) -> Self {
         Self {
             ttl,
-            entries: Mutex::new(HashMap::new()),
+            entries: Mutex::new(Entries {
+                map: HashMap::new(),
+                expiry_order: VecDeque::new(),
+            }),
             load_gates: std::sync::Mutex::new(HashMap::new()),
         }
     }
@@ -104,29 +151,13 @@ where
             Ok(value) => value,
             Err(error) => return Err((error, CacheStatus::Miss)),
         };
-        {
-            let mut entries = self.entries.lock().await;
-            // Keys that are never read again would otherwise stay forever.
-            if entries.len() >= MAX_ENTRIES && !entries.contains_key(&key) {
-                let now = tokio::time::Instant::now();
-                entries.retain(|_, entry| entry.expires_at > now);
-                if entries.len() >= MAX_ENTRIES
-                    && let Some(oldest) = entries
-                        .iter()
-                        .min_by_key(|(_, entry)| entry.expires_at)
-                        .map(|(key, _)| key.clone())
-                {
-                    entries.remove(&oldest);
-                }
-            }
-            entries.insert(
-                key.clone(),
-                Arc::new(CacheEntry {
-                    value: value.clone(),
-                    expires_at: tokio::time::Instant::now() + self.ttl,
-                }),
-            );
-        }
+        self.entries.lock().await.insert(
+            key.clone(),
+            CacheEntry {
+                value: value.clone(),
+                expires_at: tokio::time::Instant::now() + self.ttl,
+            },
+        );
 
         Ok((value, CacheStatus::Miss))
     }
@@ -134,10 +165,10 @@ where
     async fn get_fresh(&self, key: &K) -> Option<V> {
         let entry = {
             let mut entries = self.entries.lock().await;
-            match entries.get(key) {
+            match entries.map.get(key) {
                 Some(entry) if entry.expires_at > tokio::time::Instant::now() => Arc::clone(entry),
                 Some(_) => {
-                    entries.remove(key);
+                    entries.map.remove(key);
                     return None;
                 }
                 None => return None,
@@ -177,7 +208,11 @@ mod tests {
                 .await
                 .expect("response");
         }
-        assert_eq!(cache.entries.lock().await.len(), MAX_ENTRIES);
+        let entries = cache.entries.lock().await;
+        assert_eq!(entries.map.len(), MAX_ENTRIES);
+        // The first key, the soonest to expire, made room for the last.
+        assert!(!entries.map.contains_key(&0));
+        assert!(entries.map.contains_key(&MAX_ENTRIES));
     }
 
     #[tokio::test]

@@ -1889,7 +1889,7 @@ static MCP_TELEMETRY_PERMITS: tokio::sync::Semaphore =
 pub struct McpTelemetrySnapshot {
     referenced_server_count: i64,
     filtered_tool_count: i64,
-    tools: Vec<gateway_core::ExternalMcpToolRecord>,
+    tools: Arc<[gateway_core::ExternalMcpToolRecord]>,
 }
 
 /// Records the caller's MCP tool counts on the request log and estimates
@@ -1971,7 +1971,7 @@ pub(crate) async fn mcp_telemetry_snapshot(
             Ok(Arc::new(McpTelemetrySnapshot {
                 referenced_server_count: resolution.referenced_server_count,
                 filtered_tool_count: resolution.filtered_tool_count,
-                tools: resolution.allowed_tools,
+                tools: resolution.allowed_tools.into(),
             }))
         })
         .await
