@@ -414,10 +414,14 @@ pub async fn discover_mcp_oauth(
 #[must_use]
 pub fn issuer_matches(expected: &str, iss: &str) -> bool {
     let ends_path = |issuer: &str| !issuer.contains(['?', '#']);
+    // `longer` is `shorter` plus one `/`, and `shorter` has none to lose.
+    let one_slash_more = |longer: &str, shorter: &str| {
+        longer.strip_suffix('/') == Some(shorter) && !shorter.ends_with('/')
+    };
     expected == iss
         || (ends_path(expected)
             && ends_path(iss)
-            && (expected.strip_suffix('/') == Some(iss) || iss.strip_suffix('/') == Some(expected)))
+            && (one_slash_more(expected, iss) || one_slash_more(iss, expected)))
 }
 
 /// Reads the RFC 8414 metadata of the authorization server `issuer`, falling

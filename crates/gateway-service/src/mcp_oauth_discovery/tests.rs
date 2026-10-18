@@ -479,6 +479,14 @@ fn issuers_match_exactly_or_by_one_trailing_slash() {
     ] {
         assert!(!issuer_matches("https://as.example", other), "{other}");
     }
+    // Exactly one `/`, in either direction.
+    for (expected, other) in [
+        ("https://as.example/", "https://as.example//"),
+        ("https://as.example//", "https://as.example/"),
+        ("https://as.example/t/", "https://as.example/t//"),
+    ] {
+        assert!(!issuer_matches(expected, other), "{expected} {other}");
+    }
     // Only a `/` that ends the path is tolerated.
     for (expected, other) in [
         ("https://as.example/t?name=", "https://as.example/t?name=/"),
