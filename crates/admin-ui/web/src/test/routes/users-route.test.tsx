@@ -229,6 +229,32 @@ describe('UsersPage', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
   })
 
+  it('clears a created user from the form when the dialog is dismissed', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: basePayload })
+    createIdentityUserMock.mockResolvedValue({
+      data: {
+        kind: 'password_invite',
+        invite_url: 'http://example.test/invite/user-1',
+        expires_at: '2026-03-14T12:00:00Z',
+        user: { ...basePayload.users[0], id: 'user_new', email: 'jane@example.com' },
+      },
+    })
+
+    render(<UsersPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Jane Operator' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jane@example.com' } })
+    fireEvent.submit(screen.getByRole('button', { name: 'Create user' }).closest('form')!)
+    await screen.findByLabelText('Generated URL')
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }))
+
+    expect(screen.getByLabelText('Name')).toHaveValue('')
+    expect(screen.getByLabelText('Email')).toHaveValue('')
+  })
+
   it('locks owner membership controls and invited-only auth mode edits', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
@@ -392,6 +418,28 @@ describe('UsersPage', () => {
 
     await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument())
+  })
+
+  it('blocks reset onboarding while an invited SSO user has no provider chosen', () => {
+    // An OAuth invite with no provider on record; two providers, so none is preselected.
+    const user = invitedUser({ auth_mode: 'oauth', onboarding: null })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        oauth_providers: [
+          { key: 'github', label: 'GitHub' },
+          { key: 'gitlab', label: 'GitLab' },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+
+    render(<UsersPage />)
+
+    // The reset would first save the auth change, which has no provider to save.
+    expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
   it('renders an OAuth reset onboarding URL', async () => {

@@ -4,6 +4,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { GeneratedUrlInput, OnboardingResultSummary } from '@/routes/identity/-onboarding-result'
 import type { OnboardingReset } from '@/routes/identity/-users/use-onboarding-reset'
 import type { UserDetails } from '@/routes/identity/-users/use-user-details'
+import { isSsoProviderMissing } from '@/routes/identity/-user-form'
 import { AuthMethodSelect, SsoProviderField } from '@/routes/identity/-user-form-fields'
 import type { IdentityUsersPayload, UserView } from '@/types/api'
 
@@ -94,12 +95,23 @@ export function UserAuthSection({
         details={details}
         onboarding={onboarding}
         isPending={isPending}
+        // An invited user's auth change is saved before the reset, so it needs a provider.
+        resetBlocked={isInvited && isSsoProviderMissing(updateForm, oidcProviders, oauthProviders)}
       />
     </div>
   )
 }
 
-function UserLifecycleActions({ user, details, onboarding, isPending }: LifecycleProps) {
+function UserLifecycleActions({
+  user,
+  details,
+  onboarding,
+  isPending,
+  resetBlocked,
+}: LifecycleProps & {
+  /** Reset would first save an auth change that has no provider. */
+  resetBlocked: boolean
+}) {
   const { onboardingResult } = onboarding
 
   return (
@@ -137,7 +149,9 @@ function UserLifecycleActions({ user, details, onboarding, isPending }: Lifecycl
           type="button"
           variant="ghost"
           onClick={onboarding.resetOnboarding}
-          disabled={isPending || (user.status !== 'invited' && user.status !== 'disabled')}
+          disabled={
+            isPending || (user.status !== 'invited' && user.status !== 'disabled') || resetBlocked
+          }
         >
           Reset onboarding
         </Button>

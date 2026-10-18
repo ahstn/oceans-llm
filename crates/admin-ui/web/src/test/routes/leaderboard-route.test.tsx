@@ -229,14 +229,13 @@ describe('ObservabilityLeaderboardPage', () => {
       },
     })
 
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
-
     const view = render(<ObservabilityLeaderboardPage />)
     const scope = within(view.container)
 
+    // The chart loads lazily, so wait for it rather than relying on an earlier test's load.
     // 12-hour buckets: only the midnight buckets get a tick, so no day repeats.
     expect(
-      within(scope.getByTestId('x-axis'))
+      within(await scope.findByTestId('x-axis'))
         .getAllByText(/./)
         .map((tick) => tick.textContent),
     ).toEqual(['Mar 2', 'Mar 3'])

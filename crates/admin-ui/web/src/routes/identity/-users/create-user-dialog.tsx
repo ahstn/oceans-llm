@@ -24,8 +24,8 @@ import { isSsoProviderMissing, type UserFormOptions } from '@/routes/identity/-u
 import type { CreateUserResult } from '@/types/api'
 
 /**
- * The `Add user` dialog. Its form stays filled when the dialog is dismissed, and Cancel or Close
- * clears it.
+ * The `Add user` dialog. An unsent draft stays filled when the dialog is dismissed; Cancel, Close,
+ * or dismissing it after the user is created clears it.
  */
 export function CreateUserDialog({
   open,
@@ -51,8 +51,9 @@ export function CreateUserDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
-        if (!nextOpen) {
-          createUser.clearResult()
+        // Reopening a created user's form would invite a second create for the same email.
+        if (!nextOpen && createUser.result) {
+          createUser.reset()
         }
       }}
     >

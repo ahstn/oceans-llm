@@ -44,14 +44,10 @@ export function useCreateUser({
     })
   }
 
-  function clearResult() {
-    setResult(null)
-  }
-
   function reset() {
     setForm(initialCreateUserForm)
     setResult(null)
   }
 
-  return { form, setForm, result, setAuthMode, submit, clearResult, reset }
+  return { form, setForm, result, setAuthMode, submit, reset }
 }
