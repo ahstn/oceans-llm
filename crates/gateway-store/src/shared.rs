@@ -15,9 +15,10 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 /// placeholders for the server and team IDs. Each subject's team follows the
 /// same precedence as the service's subject lookup, so both agree on who is
 /// inside the team. An API key that is revoked, has no MCP scope, or whose
-/// server list leaves this server out holds no access, as at runtime, and nor
-/// does a service account that is disabled or has no active budget, or a key
-/// it owns: authentication refuses every key of such an account.
+/// server list leaves this server out holds no access, as at runtime. Nor does
+/// a grant on an inactive tool, which is not callable, or one held by a service
+/// account that is disabled or has no active budget, or by a key it owns:
+/// authentication refuses every key of such an account.
 pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
     format!(
         r#"
@@ -69,6 +70,8 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
             LEFT JOIN users ku ON ku.user_id = k.owner_user_id
             LEFT JOIN team_memberships km ON km.user_id = k.owner_user_id
             WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = {server}
+              -- An inactive tool is not callable, as at runtime.
+              AND t.is_active = 1
               -- A disabled server exposes nothing, and cannot be enabled again.
               AND srv.status = 'active'
         ) resolved

@@ -792,11 +792,13 @@ pub async fn refresh_mcp_server_discovery(
             // write and every other read: a transfer, or the caller leaving the
             // team, since the discovery write must not hand the new owner's
             // settings and tool schemas to the former team's admin.
+            let current = state.store.get_external_mcp_server(server_id).await?;
+            // The caller is read last, so a role or team change during the
+            // server reload is seen.
             let current_scope = require_mcp_admin_scope(&state, &headers)
                 .await
                 .ok()
                 .map(|(_, scope)| scope);
-            let current = state.store.get_external_mcp_server(server_id).await?;
             let unchanged = matches!(
                 (current_scope, current.as_ref()),
                 (Some(now), Some(current))
@@ -1629,10 +1631,12 @@ pub async fn preview_mcp_effective_access(
     let allowed_tools: Vec<_> = tools.into_values().collect();
     // Checked again after every read: a team admin who lost their role or
     // team, or whose server moved, during the preview gets none of it.
-    recheck_admin_scope(&state, &headers, &scope).await?;
     if let (Some(_), Some(server_id)) = (scope.managed_team_id(), query.server_id) {
         ownership(&state).managed_server(&scope, server_id).await?;
     }
+    // The caller is read last, so a role or team change during the server
+    // read is seen.
+    recheck_admin_scope(&state, &headers, &scope).await?;
     Ok(Json(envelope(McpEffectiveAccessPayload {
         referenced_server_count: allowed_tools
             .iter()

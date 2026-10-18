@@ -2902,6 +2902,28 @@ pub(crate) mod tests {
             2,
             "a funded account counts"
         );
+        // A tool discovery no longer finds is inactive and not callable, so
+        // grants on it strand nothing either.
+        store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 0,
+                    active_tool_count: 0,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[],
+            )
+            .await
+            .expect("tool no longer discovered");
+        assert_eq!(outside().await.expect("count"), 0, "inactive tool");
         // A disabled server exposes nothing and cannot be enabled again, so its
         // grants strand nothing.
         store
