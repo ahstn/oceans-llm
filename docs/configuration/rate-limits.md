@@ -18,7 +18,7 @@ A policy counts one kind of traffic for one scope over one window.
 | `period` | `minute`, `hour`, `day`, `month` | See [Windows](#windows). |
 | `limit` | positive integer | |
 
-A `user` scope applies to user keys and OAuth callers; a service-account key has no user. A `team` scope applies to a service-account key's team, and to a user who belongs to a team, whether they use their own key or an OAuth client, so every member counts against the team's counter. The gateway reads a user's team when a team policy could apply and keeps it for the policy refresh interval (10 seconds by default).
+A `user` scope applies to user keys and OAuth callers; a service-account key has no user. A `team` scope applies to a service-account key's team, and to a user who belongs to a team, whether they use their own key or an OAuth client, so every member counts against the team's counter. The gateway reads a user's team when a team policy could apply and keeps it for the policy refresh interval (10 seconds by default). If that read fails, `failure_mode: closed` rejects the request with `503`; `open` checks the other policies.
 
 An `api_key` scope counts the credential a request presents. For an MCP client that signed in with OAuth, that is its grant: each authorized client has its own counter, as each key does. Use a `user` scope to limit a person across all their keys and clients.
 

@@ -6,7 +6,7 @@ use crate::mcp_tool_review::{
     HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
     reuse_historical_versions, review_ops, reviewable_version, stale_discovery_check,
-    tool_write_ops,
+    tool_write_ops, unix_millis,
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
@@ -905,11 +905,11 @@ impl McpRegistryRepository for PostgresStore {
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
             let newer_run_committed: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND started_at > $3)",
+                "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = $1 AND status = $2 AND COALESCE(started_at_ms, started_at * 1000) > $3)",
             )
             .bind(run.mcp_server_id.to_string())
             .bind(ExternalMcpDiscoveryStatus::Success.as_str())
-            .bind(run.started_at.unix_timestamp())
+            .bind(unix_millis(run.started_at))
             .fetch_one(&mut *tx)
             .await
             .map_err(to_query_error)?;
@@ -924,8 +924,9 @@ impl McpRegistryRepository for PostgresStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
             "#,
         )
         .bind(run.discovery_run_id.to_string())
@@ -938,6 +939,7 @@ impl McpRegistryRepository for PostgresStore {
         .bind(run.schema_set_hash.as_deref())
         .bind(run.error_summary.as_deref())
         .bind(details_json)
+        .bind(unix_millis(run.started_at))
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -1009,8 +1011,9 @@ impl McpRegistryRepository for PostgresStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
             "#,
         )
         .bind(run.discovery_run_id.to_string())
@@ -1023,6 +1026,7 @@ impl McpRegistryRepository for PostgresStore {
         .bind(run.schema_set_hash.as_deref())
         .bind(run.error_summary.as_deref())
         .bind(details_json)
+        .bind(unix_millis(run.started_at))
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;

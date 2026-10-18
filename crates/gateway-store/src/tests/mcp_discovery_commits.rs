@@ -140,11 +140,16 @@ where
     S: McpRegistryRepository + Sync,
 {
     let server = create_server(store).await;
-    let t0 = OffsetDateTime::now_utc() - time::Duration::minutes(10);
-    for (offset, hash) in [(0, "first"), (5, "newer")] {
+    // On a whole second, so the same-second case below stays in one second.
+    let t0 = OffsetDateTime::from_unix_timestamp(
+        (OffsetDateTime::now_utc() - time::Duration::minutes(10)).unix_timestamp(),
+    )
+    .expect("timestamp");
+    let newer_start = t0 + time::Duration::minutes(5) + time::Duration::milliseconds(400);
+    for (started_at, hash) in [(t0, "first"), (newer_start, "newer")] {
         store
             .record_external_mcp_discovery_success(
-                &guarded_run(&server, t0 + time::Duration::minutes(offset)),
+                &guarded_run(&server, started_at),
                 &[tool(&server, hash)],
             )
             .await
@@ -158,6 +163,18 @@ where
         )
         .await;
     assert!(matches!(older, Err(StoreError::Conflict(_))), "{older:?}");
+    // Starts are ordered to the millisecond: one that started earlier in the
+    // same second is refused too.
+    let same_second = store
+        .record_external_mcp_discovery_success(
+            &guarded_run(&server, t0 + time::Duration::minutes(5)),
+            &[tool(&server, "same-second")],
+        )
+        .await;
+    assert!(
+        matches!(same_second, Err(StoreError::Conflict(_))),
+        "{same_second:?}"
+    );
     assert_eq!(read_tool(store, &server).await, ("newer".to_string(), true));
 
     // An admin disables the server while a discovery is in flight.

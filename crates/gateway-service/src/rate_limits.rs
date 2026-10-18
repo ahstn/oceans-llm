@@ -549,40 +549,53 @@ impl RateLimiter {
     }
 
     /// `subject` with its user's team filled in, when a team-scoped policy
-    /// for the operation could need it. A failed lookup leaves it out.
+    /// for the operation could need it. A failed lookup is an error, which
+    /// callers handle like any other store failure.
     async fn with_member_team<'a>(
         &self,
         set: &PolicySet,
         subject: &RateLimitSubject<'a>,
-    ) -> RateLimitSubject<'a> {
+    ) -> Result<RateLimitSubject<'a>, StoreError> {
         let mut subject = *subject;
         if !self.needs_member_team(set, &subject) {
-            return subject;
+            return Ok(subject);
         }
         let (Some(lookup), Some(user_id)) = (&self.team_lookup, subject.user_id) else {
-            return subject;
+            return Ok(subject);
         };
         if let Some(team) = self.cached_member_team(user_id) {
             subject.team_id = team;
-            return subject;
+            return Ok(subject);
         }
-        match lookup.team_for_user(user_id).await {
-            Ok(team) => {
-                let mut teams = self
-                    .member_teams
-                    .lock()
-                    .unwrap_or_else(|poison| poison.into_inner());
-                if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
-                    teams.clear();
-                }
-                teams.insert(user_id, (Instant::now(), team));
-                subject.team_id = team;
-            }
+        let team = lookup.team_for_user(user_id).await?;
+        let mut teams = self
+            .member_teams
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
+            teams.clear();
+        }
+        teams.insert(user_id, (Instant::now(), team));
+        subject.team_id = team;
+        Ok(subject)
+    }
+
+    /// [`Self::with_member_team`] for a token charge. A failed lookup charges
+    /// the other counters and marks token counters stale, as a failed usage
+    /// write does, so `closed` mode refuses token checks it can no longer trust.
+    async fn charge_subject<'a>(
+        &self,
+        set: &PolicySet,
+        subject: &RateLimitSubject<'a>,
+    ) -> RateLimitSubject<'a> {
+        match self.with_member_team(set, subject).await {
+            Ok(subject) => subject,
             Err(error) => {
-                tracing::warn!(error = %error, "could not read the user's team for rate limits");
+                tracing::warn!(error = %error, "could not read the user's team for a token charge");
+                self.mark_token_write_failed();
+                *subject
             }
         }
-        subject
     }
 
     /// Replaces the clock, so tests can move between windows.
@@ -615,7 +628,18 @@ impl RateLimiter {
                 StoreError::Unavailable("rate limit policies could not be loaded".to_string()),
             );
         }
-        let subject = &self.with_member_team(&set, subject).await;
+        // Without the team, team policies cannot be checked: `closed` mode
+        // refuses the request; `open` mode checks the other policies.
+        let subject = &match self.with_member_team(&set, subject).await {
+            Ok(subject) => subject,
+            Err(error) if self.settings.failure_mode == RateLimitFailureMode::Closed => {
+                return self.store_failure(subject.operation, error);
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "could not read the user's team for rate limits");
+                *subject
+            }
+        };
         let now = (self.clock)();
         let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = set
             .for_operation(subject.operation)
@@ -843,7 +867,7 @@ impl RateLimiter {
                 Some(set) => set,
                 None => limiter.policies().await,
             };
-            let subject = limiter.with_member_team(&set, &subject).await;
+            let subject = limiter.charge_subject(&set, &subject).await;
             limiter
                 .charge_tokens(&set, &subject, total_tokens, finished_at)
                 .await;
@@ -890,7 +914,7 @@ impl RateLimiter {
         finished_at: OffsetDateTime,
     ) {
         let set = self.policies().await;
-        let subject = self.with_member_team(&set, subject).await;
+        let subject = self.charge_subject(&set, subject).await;
         self.charge_tokens(&set, &subject, total_tokens, finished_at)
             .await;
     }

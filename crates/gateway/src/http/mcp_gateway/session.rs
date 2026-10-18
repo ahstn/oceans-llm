@@ -2,7 +2,8 @@
 //!
 //! The per-server proxy never shows the upstream session id as is. It hands
 //! the client `<upstream id, base64url>.<tag>`, where the tag is an HMAC over
-//! the server, the authenticated credential and its owner. A request whose
+//! the server, the authenticated credential and its owner, keyed with
+//! [`AppState::mcp_session_signing_key`](crate::http::state::AppState). A request whose
 //! session id does not verify for its own caller is refused with `404`, which
 //! MCP clients treat as an expired session, and never reaches the upstream.
 //! Without this, on a server that uses one shared credential, any caller who
@@ -27,27 +28,22 @@ const SESSION_NOT_FOUND_CODE: i64 = gateway_mcp::server::JSON_RPC_INVALID_PARAMS
 
 /// Signs and checks session ids for one caller on one server.
 pub(super) struct SessionBinding<'a> {
-    secret: &'a str,
+    key: &'a [u8],
     auth: &'a AuthenticatedApiKey,
     server: &'a ExternalMcpServerRecord,
 }
 
 impl<'a> SessionBinding<'a> {
     pub(super) fn new(
-        secret: &'a str,
+        key: &'a [u8],
         auth: &'a AuthenticatedApiKey,
         server: &'a ExternalMcpServerRecord,
     ) -> Self {
-        Self {
-            secret,
-            auth,
-            server,
-        }
+        Self { key, auth, server }
     }
 
     fn tag(&self, upstream_session_id: &[u8]) -> String {
-        let mut mac =
-            HmacSha256::new_from_slice(self.secret.as_bytes()).expect("HMAC accepts any key");
+        let mut mac = HmacSha256::new_from_slice(self.key).expect("HMAC accepts any key");
         let optional = |id: Option<uuid::Uuid>| id.map(|id| id.to_string()).unwrap_or_default();
         for part in [
             "oceans-mcp-upstream-session:v1".to_string(),
@@ -205,26 +201,26 @@ mod tests {
         let server = server();
         let other_server = self::server();
         let (alice, bob) = (auth(Uuid::new_v4()), auth(Uuid::new_v4()));
-        let issued = SessionBinding::new("secret", &alice, &server).bind(b"upstream-1");
+        let issued = SessionBinding::new(b"secret", &alice, &server).bind(b"upstream-1");
         assert!(!issued.contains("upstream-1"));
         assert_eq!(
-            SessionBinding::new("secret", &alice, &server).unbind(&issued),
+            SessionBinding::new(b"secret", &alice, &server).unbind(&issued),
             Some(b"upstream-1".to_vec())
         );
         assert_eq!(
-            SessionBinding::new("secret", &bob, &server).unbind(&issued),
+            SessionBinding::new(b"secret", &bob, &server).unbind(&issued),
             None
         );
         assert_eq!(
-            SessionBinding::new("secret", &alice, &other_server).unbind(&issued),
+            SessionBinding::new(b"secret", &alice, &other_server).unbind(&issued),
             None
         );
         assert_eq!(
-            SessionBinding::new("rotated", &alice, &server).unbind(&issued),
+            SessionBinding::new(b"rotated", &alice, &server).unbind(&issued),
             None
         );
         assert_eq!(
-            SessionBinding::new("secret", &alice, &server).unbind("upstream-1"),
+            SessionBinding::new(b"secret", &alice, &server).unbind("upstream-1"),
             None
         );
     }
