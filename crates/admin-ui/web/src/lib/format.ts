@@ -12,15 +12,19 @@ export const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 })
 
 /**
- * A dollar total for a column of totals: two decimals, and `<$0.01` for a non-zero amount that
- * would otherwise round to `$0.00`, so a small real cost is never shown as nothing.
+ * A dollar total for a column of totals: two decimals. An amount too small for two decimals keeps
+ * its sign and reads `<$0.01` (or `-<$0.01` for a small credit), so a real amount is never `$0.00`.
  */
 export function formatUsdTotal(amountUsd: number | null | undefined) {
   if (amountUsd == null) {
     return EMPTY_VALUE
   }
-  if (amountUsd > 0 && amountUsd < 0.005) {
-    return '<$0.01'
+  if (amountUsd === 0) {
+    // Also normalises -0, which Intl would print as `-$0.00`.
+    return CURRENCY_FORMATTER.format(0)
+  }
+  if (Math.abs(amountUsd) < 0.005) {
+    return amountUsd > 0 ? '<$0.01' : '-<$0.01'
   }
   return CURRENCY_FORMATTER.format(amountUsd)
 }

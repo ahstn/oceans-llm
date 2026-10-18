@@ -42,6 +42,10 @@ describe('shared number and time formats', () => {
     expect(formatUsdTotal(0.0031)).toBe('<$0.01')
     expect(formatUsdTotal(0.007)).toBe('$0.01')
     expect(formatUsdTotal(0)).toBe('$0.00')
+    expect(formatUsdTotal(-0)).toBe('$0.00')
+    expect(formatUsdTotal(-0.0031)).toBe('-<$0.01')
+    expect(formatUsdTotal(-0.24)).toBe('-$0.24')
+    expect(formatUsd10000(-31)).toBe('-<$0.01')
     expect(formatUsdTotal(null)).toBe('—')
   })
 
