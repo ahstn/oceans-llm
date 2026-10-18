@@ -24,20 +24,20 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
-import { ProviderConfiguration } from '@/routes/identity/-provider-configuration'
+import { ProviderConfiguration } from '@/routes/identity/-users/provider-configuration'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
-import { useOnboardingReset } from '@/routes/identity/-use-onboarding-reset'
-import type { ProviderCredentials } from '@/routes/identity/-use-provider-credentials'
-import { useUserDetails, type UserDetails } from '@/routes/identity/-use-user-details'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
-import { UserAuthSection } from '@/routes/identity/-user-auth-section'
+import { useOnboardingReset } from '@/routes/identity/-users/use-onboarding-reset'
+import type { ProviderCredentials } from '@/routes/identity/-users/use-provider-credentials'
+import { useUserDetails, type UserDetails } from '@/routes/identity/-users/use-user-details'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
+import { UserAuthSection } from '@/routes/identity/-users/user-auth-section'
 import {
   UserConfigurationSection,
   UserOverviewSection,
   UserUsageSection,
-} from '@/routes/identity/-user-details-sections'
+} from '@/routes/identity/-users/user-details-sections'
 import { isSsoProviderMissing, type UserFormOptions } from '@/routes/identity/-user-form'
-import { userDetailsSections, type UserDetailsSection } from '@/routes/identity/-users-search'
+import { userDetailsSections, type UserDetailsSection } from '@/routes/identity/-users/users-search'
 import type { IdentityUsersPayload, UserView } from '@/types/api'
 
 /** The `Manage user` dialog, open while the URL selects a user, with sidebar section navigation. */
@@ -53,7 +53,7 @@ export function UserDetailsDialog({
   user: UserView | null
   section: UserDetailsSection
   copilotUserProviders: IdentityUsersPayload['copilot_user_providers']
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const details = useUserDetails({ user, oidcProviders, oauthProviders, transition })
 
@@ -252,7 +252,7 @@ function UserDetailsForm({
   user: UserView
   section: UserDetailsSection
   details: UserDetails
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const { isPending } = transition
   const onboarding = useOnboardingReset({

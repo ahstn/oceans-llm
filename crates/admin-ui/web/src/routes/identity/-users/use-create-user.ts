@@ -7,7 +7,7 @@ import {
   sanitizeCreateUserForm,
   withAuthMode,
 } from '@/routes/identity/-user-form'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { CreateUserInput, CreateUserResult, IdentityUsersPayload } from '@/types/api'
 
 export type CreateUserState = ReturnType<typeof useCreateUser>
@@ -20,7 +20,7 @@ export function useCreateUser({
 }: {
   oidcProviders: IdentityUsersPayload['oidc_providers']
   oauthProviders: IdentityUsersPayload['oauth_providers']
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [form, setForm] = useState<CreateUserInput>(initialCreateUserForm)
   const [result, setResult] = useState<CreateUserResult | null>(null)
@@ -40,7 +40,7 @@ export function useCreateUser({
           ? 'Password invite created'
           : 'SSO sign-in URL created',
       )
-      await transition.refreshUsers()
+      await transition.refresh()
     })
   }
 

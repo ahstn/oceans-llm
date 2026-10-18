@@ -16,18 +16,18 @@ import {
 } from '@/components/ui/empty'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getTeams, getTeamDirectory } from '@/server/admin-data.functions'
-import { AddMembersDialog } from '@/routes/identity/-add-members-dialog'
+import { AddMembersDialog } from '@/routes/identity/-teams/add-members-dialog'
 import {
   RemoveMemberDialog,
   TransferMemberDialog,
-} from '@/routes/identity/-membership-change-dialogs'
+} from '@/routes/identity/-teams/membership-change-dialogs'
 import { ReadOnlyTeamsDirectory } from '@/routes/identity/-read-only-directory'
-import { TeamEditorDialog } from '@/routes/identity/-team-editor-dialog'
-import { TeamsList } from '@/routes/identity/-teams-list'
-import { useAddMembers } from '@/routes/identity/-use-add-members'
-import { useMembershipChange } from '@/routes/identity/-use-membership-change'
-import { useTeamEditor } from '@/routes/identity/-use-team-editor'
-import { useUsersTransition } from '@/routes/identity/-use-users-transition'
+import { TeamEditorDialog } from '@/routes/identity/-teams/team-editor-dialog'
+import { TeamsList } from '@/routes/identity/-teams/teams-list'
+import { useAddMembers } from '@/routes/identity/-teams/use-add-members'
+import { useMembershipChange } from '@/routes/identity/-teams/use-membership-change'
+import { useTeamEditor } from '@/routes/identity/-teams/use-team-editor'
+import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { IdentityDirectoryTeamsPayload, IdentityTeamsPayload } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
@@ -82,7 +82,7 @@ function TeamAdministration({
   data: IdentityTeamsPayload | undefined
   canOpenUsers: boolean
 }) {
-  const transition = useUsersTransition()
+  const transition = useIdentityTransition()
   const { teams, users, oidcProviders, oauthProviders } = adminPayload(data)
   const teamEditor = useTeamEditor({ teams, transition })
   const addMembers = useAddMembers({ teams, oidcProviders, oauthProviders, transition })

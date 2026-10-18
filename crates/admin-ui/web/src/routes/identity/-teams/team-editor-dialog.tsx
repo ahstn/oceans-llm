@@ -12,9 +12,9 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { EntityTagsField } from '@/routes/identity/-entity-tags'
-import { adminOptionsFor } from '@/routes/identity/-team-form'
-import type { TeamEditor } from '@/routes/identity/-use-team-editor'
-import { UserMultiSelectField } from '@/routes/identity/-user-multi-select-field'
+import { adminOptionsFor } from '@/routes/identity/-teams/team-form'
+import type { TeamEditor } from '@/routes/identity/-teams/use-team-editor'
+import { UserMultiSelectField } from '@/routes/identity/-teams/user-multi-select-field'
 import type { TeamAssignableUserView } from '@/types/api'
 
 /** The `Add team` and `Edit team` dialog: the team's name, its admins, and its tags. */

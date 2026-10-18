@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { resetIdentityUserOnboarding, updateIdentityUser } from '@/server/admin-data.functions'
-import { getErrorMessage, type UsersTransition } from '@/routes/identity/-use-users-transition'
+import {
+  getErrorMessage,
+  type IdentityTransition,
+} from '@/routes/identity/-use-identity-transition'
 import { onboardingAuthChanged, sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
 import type { CreateUserResult, IdentityUsersPayload, UpdateUserInput, UserView } from '@/types/api'
 
@@ -23,7 +26,7 @@ export function useOnboardingReset({
   updateForm: UpdateUserInput
   oidcProviders: IdentityUsersPayload['oidc_providers']
   oauthProviders: IdentityUsersPayload['oauth_providers']
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [onboardingResult, setOnboardingResult] = useState<CreateUserResult | null>(null)
 
@@ -48,11 +51,11 @@ export function useOnboardingReset({
             ? 'Password invite regenerated'
             : 'SSO sign-in URL regenerated',
         )
-        await transition.refreshUsers()
+        await transition.refresh()
       },
       async (error) => {
         if (savedOnboardingAuth) {
-          await transition.refreshUsers()
+          await transition.refresh()
         }
         toast.error(
           savedOnboardingAuth

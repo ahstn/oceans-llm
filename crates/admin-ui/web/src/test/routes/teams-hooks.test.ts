@@ -12,11 +12,11 @@ import {
   sanitizeInviteForm,
   sanitizeTeamForm,
   sanitizeTransferForm,
-} from '@/routes/identity/-team-form'
-import { useAddMembers } from '@/routes/identity/-use-add-members'
-import { useMembershipChange } from '@/routes/identity/-use-membership-change'
-import { useTeamEditor } from '@/routes/identity/-use-team-editor'
-import { useUsersTransition } from '@/routes/identity/-use-users-transition'
+} from '@/routes/identity/-teams/team-form'
+import { useAddMembers } from '@/routes/identity/-teams/use-add-members'
+import { useMembershipChange } from '@/routes/identity/-teams/use-membership-change'
+import { useTeamEditor } from '@/routes/identity/-teams/use-team-editor'
+import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { IdentityTeamsPayload, TeamAssignableUserView, TeamManagementView } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
@@ -218,7 +218,7 @@ describe('team form helpers', () => {
 describe('useTeamEditor', () => {
   function renderTeamEditor() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useTeamEditor({ teams, transition })
     })
   }
@@ -301,7 +301,7 @@ describe('useTeamEditor', () => {
 describe('useAddMembers', () => {
   function renderAddMembers() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useAddMembers({ teams, oidcProviders, oauthProviders, transition })
     })
   }
@@ -422,7 +422,7 @@ describe('useAddMembers', () => {
 describe('useMembershipChange', () => {
   function renderMembershipChange() {
     return renderHook(() => {
-      const transition = useUsersTransition()
+      const transition = useIdentityTransition()
       return useMembershipChange({ teams, users, transition })
     })
   }

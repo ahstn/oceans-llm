@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 
 import { createIdentityTeam, updateIdentityTeam } from '@/server/admin-data.functions'
-import { initialTeamForm, sanitizeTeamForm } from '@/routes/identity/-team-form'
-import type { UsersTransition } from '@/routes/identity/-use-users-transition'
+import { initialTeamForm, sanitizeTeamForm } from '@/routes/identity/-teams/team-form'
+import type { IdentityTransition } from '@/routes/identity/-use-identity-transition'
 import type { CreateTeamInput, TeamManagementView } from '@/types/api'
 
 type TeamEditorTarget = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
@@ -19,7 +19,7 @@ export function useTeamEditor({
   transition,
 }: {
   teams: TeamManagementView[]
-  transition: UsersTransition
+  transition: IdentityTransition
 }) {
   const [target, setTarget] = useState<TeamEditorTarget>({ mode: 'closed' })
   const [form, setForm] = useState<CreateTeamInput>(initialTeamForm)
@@ -61,7 +61,7 @@ export function useTeamEditor({
         await createIdentityTeam({ data: sanitizeTeamForm(form) })
         toast.success('Team created')
       }
-      await transition.refreshUsers()
+      await transition.refresh()
       close()
     })
   }

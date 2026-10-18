@@ -2,14 +2,14 @@ import { useTransition } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-export type UsersTransition = ReturnType<typeof useUsersTransition>
+export type IdentityTransition = ReturnType<typeof useIdentityTransition>
 
 /**
- * Every create, save, and lifecycle action on the users page runs in one transition, so a pending
- * action disables the others until the refreshed user list arrives. The teams page uses it the
- * same way, and `refreshUsers` reloads its teams along with their users.
+ * Every create, save, and lifecycle action on an identity page (users or teams) runs in one
+ * transition, so a pending action disables the others until the refreshed data arrives. `refresh`
+ * reloads the page's loader: the user list, or the teams with their members.
  */
-export function useUsersTransition() {
+export function useIdentityTransition() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -27,11 +27,11 @@ export function useUsersTransition() {
     })
   }
 
-  async function refreshUsers() {
+  async function refresh() {
     await router.invalidate()
   }
 
-  return { isPending, run, refreshUsers }
+  return { isPending, run, refresh }
 }
 
 export function getErrorMessage(error: unknown) {

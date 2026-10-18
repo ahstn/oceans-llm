@@ -13,11 +13,11 @@ import {
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { GeneratedUrlInput } from '@/routes/identity/-onboarding-result'
-import { existingMemberOptionsFor } from '@/routes/identity/-team-form'
-import type { AddMembers } from '@/routes/identity/-use-add-members'
+import { existingMemberOptionsFor } from '@/routes/identity/-teams/team-form'
+import type { AddMembers } from '@/routes/identity/-teams/use-add-members'
 import { AuthMethodSelect, SsoProviderField } from '@/routes/identity/-user-form-fields'
 import { isSsoProviderMissing } from '@/routes/identity/-user-form'
-import { UserMultiSelectField } from '@/routes/identity/-user-multi-select-field'
+import { UserMultiSelectField } from '@/routes/identity/-teams/user-multi-select-field'
 import type {
   CreateUserResult,
   IdentityTeamsPayload,
