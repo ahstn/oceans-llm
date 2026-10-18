@@ -5820,6 +5820,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "iss",
+            "in": "query",
+            "description": "RFC 9207: the authorization server that issued the response.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5948,6 +5957,15 @@
           {
             "name": "error",
             "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iss",
+            "in": "query",
+            "description": "RFC 9207: the authorization server that issued the response.",
             "required": false,
             "schema": {
               "type": "string"
