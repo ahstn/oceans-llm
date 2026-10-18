@@ -14570,11 +14570,15 @@
                 "minimum": 0
               },
               "error_kind": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/McpDiscoveryErrorKindView",
+                    "description": "Why a `failed` discovery failed. Absent for other statuses."
+                  }
+                ]
               },
               "error_summary": {
                 "type": [
@@ -16982,6 +16986,22 @@
           }
         }
       },
+      "McpDiscoveryErrorKindView": {
+        "type": "string",
+        "description": "Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's\nerror. Clients branch on it.",
+        "enum": [
+          "transport",
+          "timeout",
+          "http",
+          "json_rpc",
+          "invalid_response",
+          "invalid_url",
+          "invalid_header",
+          "invalid_auth_config",
+          "response_too_large",
+          "invalid_tool_schema"
+        ]
+      },
       "McpDiscoveryRefreshPayload": {
         "type": "object",
         "required": [
@@ -17000,11 +17020,15 @@
             "minimum": 0
           },
           "error_kind": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/McpDiscoveryErrorKindView",
+                "description": "Why a `failed` discovery failed. Absent for other statuses."
+              }
+            ]
           },
           "error_summary": {
             "type": [

@@ -10,7 +10,7 @@ use gateway_core::{
     ExternalMcpTransport, GlobalRole, McpRegistryRepository, NewExternalMcpServerRecord,
     UpsertExternalMcpToolRecord, UserStatus,
 };
-use gateway_service::{mcp_oauth_server_config, supports_public_discovery};
+use gateway_service::{McpDiscoveryErrorKind, mcp_oauth_server_config, supports_public_discovery};
 use gateway_store::GatewayStore;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -410,4 +410,24 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
     let returned: BTreeSet<String> =
         serde_json::from_value(body["data"]["tool_ids"].clone()).expect("membership IDs");
     assert_eq!(returned, tool_ids.iter().map(Uuid::to_string).collect());
+}
+
+#[test]
+fn the_api_reports_each_discovery_error_kind_by_its_stable_name() {
+    use McpDiscoveryErrorKind::*;
+    for kind in [
+        Transport,
+        Timeout,
+        Http,
+        JsonRpc,
+        InvalidResponse,
+        InvalidUrl,
+        InvalidHeader,
+        InvalidAuthConfig,
+        ResponseTooLarge,
+        InvalidToolSchema,
+    ] {
+        let reported = serde_json::to_value(McpDiscoveryErrorKindView::from(kind)).unwrap();
+        assert_eq!(reported, kind.as_str(), "{kind:?}");
+    }
 }

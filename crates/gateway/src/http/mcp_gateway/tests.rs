@@ -919,7 +919,10 @@ mod proxy_policy {
             gateway_core::ExternalMcpDiscoveryStatus::Failed
         );
         let error = result.error.expect("failure kind");
-        assert_eq!(error.kind, "transport");
+        assert_eq!(
+            error.kind,
+            gateway_service::McpDiscoveryErrorKind::Transport
+        );
         assert_eq!(error.http_status, None);
     }
 

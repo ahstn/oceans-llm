@@ -8,7 +8,8 @@ use gateway_core::{
     McpToolsetRecord, McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
 };
 use gateway_service::{
-    McpDiscoveryResult, RecommendedMcpServerCatalogEntry, RedactedMcpCredentialBinding,
+    McpDiscoveryErrorKind, McpDiscoveryResult, RecommendedMcpServerCatalogEntry,
+    RedactedMcpCredentialBinding,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -191,13 +192,45 @@ pub struct McpDiscoveryRefreshPayload {
     status: String,
     /// Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`.
     error_summary: Option<String>,
-    /// Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
-    /// `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
-    /// `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
-    error_kind: Option<String>,
+    /// Why a `failed` discovery failed. Absent for other statuses.
+    error_kind: Option<McpDiscoveryErrorKindView>,
     /// The upstream HTTP status when `error_kind` is `http`.
     error_http_status: Option<u16>,
     tools: Vec<McpToolView>,
+}
+
+/// Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's
+/// error. Clients branch on it.
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpDiscoveryErrorKindView {
+    Transport,
+    Timeout,
+    Http,
+    JsonRpc,
+    InvalidResponse,
+    InvalidUrl,
+    InvalidHeader,
+    InvalidAuthConfig,
+    ResponseTooLarge,
+    InvalidToolSchema,
+}
+
+impl From<McpDiscoveryErrorKind> for McpDiscoveryErrorKindView {
+    fn from(kind: McpDiscoveryErrorKind) -> Self {
+        match kind {
+            McpDiscoveryErrorKind::Transport => Self::Transport,
+            McpDiscoveryErrorKind::Timeout => Self::Timeout,
+            McpDiscoveryErrorKind::Http => Self::Http,
+            McpDiscoveryErrorKind::JsonRpc => Self::JsonRpc,
+            McpDiscoveryErrorKind::InvalidResponse => Self::InvalidResponse,
+            McpDiscoveryErrorKind::InvalidUrl => Self::InvalidUrl,
+            McpDiscoveryErrorKind::InvalidHeader => Self::InvalidHeader,
+            McpDiscoveryErrorKind::InvalidAuthConfig => Self::InvalidAuthConfig,
+            McpDiscoveryErrorKind::ResponseTooLarge => Self::ResponseTooLarge,
+            McpDiscoveryErrorKind::InvalidToolSchema => Self::InvalidToolSchema,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -723,7 +756,7 @@ pub(super) fn map_discovery_result(
         server: map_server(result.server).for_viewer(owner_team_name, true),
         status: result.status.as_str().to_string(),
         error_summary: result.error_summary,
-        error_kind: result.error.map(|error| error.kind.to_string()),
+        error_kind: result.error.map(|error| error.kind.into()),
         error_http_status: result.error.and_then(|error| error.http_status),
         tools: result.tools.into_iter().map(map_tool).collect(),
     }

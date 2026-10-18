@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import type { McpDiscoveryErrorKind } from '@/types/api'
+
 import { describeDiscoveryResult, type DiscoveryRefreshResult } from './server-discovery'
 
 const server = {
@@ -15,8 +17,11 @@ const failed = (fields: Partial<DiscoveryRefreshResult>): DiscoveryRefreshResult
   ...fields,
 })
 
+// A newer gateway can send a kind this build's contract doesn't list.
+const unlistedKind = 'a_kind_the_ui_has_not_seen' as unknown as McpDiscoveryErrorKind
+
 describe('describeDiscoveryResult', () => {
-  it.each([
+  it.each<[McpDiscoveryErrorKind | null, number | null, string]>([
     ['transport', null, "Couldn't reach unreachable.invalid. Check the endpoint, then Retry."],
     [
       'timeout',
@@ -59,7 +64,7 @@ describe('describeDiscoveryResult', () => {
       "The gateway couldn't load this server's credentials. Check the auth config, then Retry.",
     ],
     [
-      'a_kind_the_ui_has_not_seen',
+      unlistedKind,
       null,
       "Discovery didn't complete for unreachable.invalid. Check the endpoint and auth config, then Retry.",
     ],
