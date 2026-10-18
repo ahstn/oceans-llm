@@ -266,6 +266,17 @@ pub async fn create_mcp_server(
         &state.mcp_http_clients,
     )
     .await?;
+    // The callback's issuer check binds a code only to its issuer, so the
+    // endpoints must be the ones that issuer publishes.
+    state
+        .mcp_oauth_runtime
+        .verify_server_oauth_endpoints(
+            &effective_url,
+            !scope.is_platform_admin(),
+            &effective_auth_config,
+            None,
+        )
+        .await?;
     let ownership = ownership(&state)
         .new_server_ownership(
             &scope,
@@ -356,6 +367,15 @@ pub async fn update_mcp_server(
         &state.mcp_http_clients,
     )
     .await?;
+    state
+        .mcp_oauth_runtime
+        .verify_server_oauth_endpoints(
+            &request.server_url,
+            !scope.is_platform_admin(),
+            &request.auth_config,
+            Some(&existing.auth_config),
+        )
+        .await?;
     let visibility = request
         .visibility
         .as_deref()

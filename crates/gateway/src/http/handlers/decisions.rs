@@ -211,7 +211,7 @@ async fn execute_decisions(
     )
     .await
     {
-        Ok(()) => {
+        Ok(rate_limit_team) => {
             dispatch_decisions(
                 &state,
                 &headers,
@@ -220,6 +220,7 @@ async fn execute_decisions(
                 ResolvedDecisions {
                     request_id,
                     request_started_at,
+                    rate_limit_team,
                     core_request,
                     resolved,
                 },
@@ -259,6 +260,8 @@ const fn metric_request_format(format: DecisionsWireFormat) -> &'static str {
 struct ResolvedDecisions {
     request_id: String,
     request_started_at: Instant,
+    /// The team the request's rate-limit check counted.
+    rate_limit_team: RateLimitMemberTeam,
     core_request: CoreDecisionsRequest,
     resolved: gateway_service::ResolvedGatewayRequest,
 }
@@ -276,6 +279,7 @@ async fn dispatch_decisions(
     let ResolvedDecisions {
         request_id,
         request_started_at,
+        rate_limit_team,
         mut core_request,
         mut resolved,
     } = request;
@@ -424,6 +428,7 @@ async fn dispatch_decisions(
                     state,
                     UsageAccountingContext {
                         auth,
+                        rate_limit_team,
                         model: &resolved.selection.execution_model,
                         route: &route,
                         request_id: &request_id,
@@ -472,6 +477,7 @@ async fn dispatch_decisions(
         state,
         UsageAccountingContext {
             auth,
+            rate_limit_team,
             model: &resolved.selection.execution_model,
             route: &route,
             request_id: &request_id,

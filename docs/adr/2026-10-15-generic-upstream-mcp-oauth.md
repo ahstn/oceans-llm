@@ -75,7 +75,7 @@ The connect URL from [the connect URL ADR](./2026-10-13-mcp-credential-connect-u
 
 ### 4a. Authorization responses must come from the expected issuer
 
-_Added 2026-10-18 after a review of the MCP gateway epic._
+_Added 2026-10-18 after a review of the MCP gateway epic. Updated the same day: the callback tolerates one trailing `/` for servers saved by v0.41.0, and saves check endpoints against the issuer's metadata._
 
 Server-level clients share one callback URI, and `metadata_document` clients share one client ID. A malicious registered server can publish authorization server metadata whose `authorization_endpoint` is an honest authorization server and whose `token_endpoint` is its own. The honest server accepts the shared client ID and returns its code to the shared callback with the malicious server's `state`, and Oceans then sent that code and the PKCE verifier to the malicious token endpoint, which could redeem them at the honest server.
 
@@ -83,7 +83,10 @@ Oceans now implements RFC 9207:
 
 - Discovery records `authorization_response_iss_parameter_supported` from the authorization server metadata into the suggested `auth_config`.
 - `mcp_oauth_states` stores the expected issuer and whether `iss` is required (migration `V72__mcp_oauth_state_issuer`).
-- The callback compares a present `iss` with the expected issuer as an exact string, as RFC 9207 requires, and requires `iss` when the server's config says the authorization server sends it. Discovery records the issuer exactly as the authorization server's metadata states it, so the two match byte for byte; a server configured by hand must use that exact string. A mismatch redirects with `oauth_error=issuer_mismatch` before any token request.
+- The callback compares a present `iss` with the expected issuer, and requires `iss` when the server's config says the authorization server sends it. A mismatch redirects with `oauth_error=issuer_mismatch` before any token request.
+- Discovery records the issuer exactly as the authorization server's metadata states it, so the two match byte for byte, as RFC 9207's simple string comparison expects. The callback also accepts an `iss` that differs from the stored issuer only by one trailing `/`. v0.41.0 discovery accepted metadata whose issuer differed from the protected resource's `authorization_servers` entry, or the server origin, by a trailing `/`, and saved that entry rather than the metadata's string. Without the tolerance those servers would fail every connection after an upgrade, and re-running discovery to fix them changes the auth settings, which revokes every user's connection. The tolerance gives a malicious server nothing: both forms name the same host and path, so they resolve to the same metadata, and only the authorization server at that address issues codes with either `iss`.
+- Saving a server checks its endpoints against the issuer's metadata. The `iss` check only proves which authorization server sent a code; it protects the code only while the token endpoint it goes to belongs to that server. A team admin can edit their own server's auth config, so without this check they could save an honest `issuer` and `authorization_endpoint` with their own `token_endpoint`, and receive the honest server's codes and PKCE verifiers. When a create or update sets a new `issuer`, `authorization_endpoint`, `token_endpoint` or `registration_endpoint`, the admin handler fetches the issuer's RFC 8414 or OpenID Connect metadata with discovery's fetcher and address scope (public addresses only for a team admin), and refuses the save unless each configured endpoint equals the published one. Edits that leave those fields unchanged fetch nothing.
+- An issuer that publishes no metadata is refused. Discovery already required metadata, so the only configs this refuses were typed by hand, and the `iss` check could not vouch for them. An authorization server without metadata is configured as an `oauth2` provider instead, whose endpoints are gateway configuration.
 - The code exchange also fails when the server's issuer changed during the flow, as it already did for the provider key and resource.
 
 Configured providers are not checked: their endpoints are gateway configuration and each has its own callback path.
@@ -111,6 +114,8 @@ The query value is never stored in `server_url`. The gateway adds it with `McpQu
 - Oceans does not use the registration access token yet. It stores it encrypted so a later change can update or delete the registration.
 - Discovery follows only the first listed authorization server and warns when there are more.
 - The mix-up defence depends on the honest authorization server sending `iss`. Registering an MCP server remains a trust decision: a malicious server can still phish codes from an authorization server that does not implement RFC 9207.
+- Saving server-level OAuth endpoints now needs the issuer's metadata to be reachable. An authorization server that moves an endpoint makes later edits to those fields fail until discovery is run again.
+- The endpoint check runs at save time only. Servers saved before it existed are not rechecked until their endpoints change, and the gateway does not refetch metadata on the connection path.
 
 ## Follow-ups
 

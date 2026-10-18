@@ -237,6 +237,8 @@ async fn servers_without_registration_need_an_admin_client_id() {
 async fn rejects_metadata_for_another_issuer_or_without_s256() {
     for (issuer_suffix, methods, expected) in [
         ("/other", json!(["S256"]), "does not match issuer"),
+        // One trailing `/` names the same issuer; two do not.
+        ("//", json!(["S256"]), "does not match issuer"),
         ("", json!(["plain"]), "S256"),
     ] {
         let origin = serve(move |origin| {
@@ -456,4 +458,104 @@ async fn dynamic_registration_falls_back_to_a_public_client_and_reports_rejectio
     assert!(!error.to_string().contains("private-detail"));
 
     assert!(register("/no-secret").await.is_err());
+}
+
+#[test]
+fn issuers_match_exactly_or_by_one_trailing_slash() {
+    assert!(issuer_matches("https://as.example", "https://as.example"));
+    // Servers saved before discovery recorded the metadata's own issuer.
+    assert!(issuer_matches("https://as.example", "https://as.example/"));
+    assert!(issuer_matches("https://as.example/", "https://as.example"));
+    assert!(issuer_matches(
+        "https://as.example/t",
+        "https://as.example/t/"
+    ));
+    for other in [
+        "https://as.example//",
+        "https://as.example/t",
+        "https://as.example.evil",
+        "https://evil.example",
+        "",
+    ] {
+        assert!(!issuer_matches("https://as.example", other), "{other}");
+    }
+}
+
+/// An authorization server at `origin` that publishes RFC 8414 metadata
+/// naming `issuer`.
+fn published_metadata(origin: &str, issuer: &str) -> Router {
+    Router::new().route(
+        "/.well-known/oauth-authorization-server",
+        json_route(json!({
+            "issuer": issuer,
+            "authorization_endpoint": format!("{origin}/authorize"),
+            "token_endpoint": format!("{origin}/token"),
+            "registration_endpoint": format!("{origin}/register"),
+        })),
+    )
+}
+
+fn configured_endpoints(issuer: &str, origin: &str) -> McpServerOauthEndpoints {
+    McpServerOauthEndpoints {
+        issuer: issuer.to_string(),
+        authorization_endpoint: format!("{origin}/authorize"),
+        token_endpoint: format!("{origin}/token"),
+        registration_endpoint: Some(format!("{origin}/register")),
+        registration: crate::mcp_upstream_auth::McpOauthClientRegistration::MetadataDocument,
+        token_endpoint_auth_method: None,
+        authorization_response_iss_parameter_supported: true,
+    }
+}
+
+/// The RFC 9207 check binds a code to its issuer, so a server's endpoints
+/// must be the ones that issuer publishes: an admin cannot pair an honest
+/// issuer with a token endpoint they control.
+#[tokio::test]
+async fn configured_endpoints_must_be_the_ones_the_issuer_publishes() {
+    let honest = serve(|origin| published_metadata(&origin, &format!("{origin}/"))).await;
+    // Matching endpoints pass, whichever trailing-slash form names the issuer.
+    for issuer in [honest.clone(), format!("{honest}/")] {
+        verify_published_endpoints(&http(), &configured_endpoints(&issuer, &honest))
+            .await
+            .unwrap_or_else(|error| panic!("{issuer}: {error}"));
+    }
+
+    let evil = "http://127.0.0.1:9";
+    let mut stolen_code = configured_endpoints(&honest, &honest);
+    stolen_code.token_endpoint = format!("{evil}/token");
+    let mut phished = configured_endpoints(&honest, &honest);
+    phished.authorization_endpoint = format!("{evil}/authorize");
+    let mut registered = configured_endpoints(&honest, &honest);
+    registered.registration_endpoint = Some(format!("{evil}/register"));
+    for (endpoints, field) in [
+        (stolen_code, "token_endpoint"),
+        (phished, "authorization_endpoint"),
+        (registered, "registration_endpoint"),
+    ] {
+        let error = verify_published_endpoints(&http(), &endpoints)
+            .await
+            .expect_err("a foreign endpoint must be refused")
+            .to_string();
+        assert!(
+            error.contains(&format!("auth_config.{field} is not the {field}")),
+            "{error}"
+        );
+    }
+
+    // An issuer without metadata cannot vouch for any endpoint.
+    let silent = serve(|_| Router::new()).await;
+    let error = verify_published_endpoints(&http(), &configured_endpoints(&silent, &silent))
+        .await
+        .expect_err("an issuer without metadata must be refused")
+        .to_string();
+    assert!(error.contains("publishes no OAuth"), "{error}");
+    assert!(error.contains("oauth2"), "{error}");
+
+    // Metadata served for another issuer does not count either.
+    let impostor = serve(|origin| published_metadata(&origin, "https://honest.example")).await;
+    let error = verify_published_endpoints(&http(), &configured_endpoints(&impostor, &impostor))
+        .await
+        .expect_err("metadata for another issuer must be refused")
+        .to_string();
+    assert!(error.contains("does not match issuer"), "{error}");
 }

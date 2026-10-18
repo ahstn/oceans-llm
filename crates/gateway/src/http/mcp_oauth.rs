@@ -14,7 +14,8 @@ use gateway_core::{
 };
 use gateway_service::{
     AuditEvent, MCP_SERVER_OAUTH_PROVIDER_KEY, McpCredentialService, McpOauthServerConfig,
-    admin_audit::actions, credential_owner_scope_key, mcp_oauth_server_config,
+    admin_audit::actions, credential_owner_scope_key, mcp_oauth_discovery::issuer_matches,
+    mcp_oauth_server_config,
 };
 use gateway_store::GatewayStore;
 use openidconnect::{CsrfToken, PkceCodeChallenge};
@@ -758,17 +759,18 @@ fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
 }
 
-/// RFC 9207 §2.4: an `iss` that is present must equal the expected issuer, by
-/// simple string comparison (a trailing `/` makes a different issuer), and
-/// it must be present when the authorization server advertises it. Without an
-/// expected issuer (a configured provider, whose endpoints are gateway
-/// configuration) there is nothing to compare.
+/// RFC 9207 §2.4: an `iss` that is present must name the expected issuer, and
+/// it must be present when the authorization server advertises it. A single
+/// trailing `/` is tolerated for servers saved before discovery recorded the
+/// metadata's exact issuer (see [`issuer_matches`]). Without an expected
+/// issuer (a configured provider, whose endpoints are gateway configuration)
+/// there is nothing to compare.
 fn callback_issuer_matches(transaction: &McpOauthStateRecord, iss: Option<&str>) -> bool {
     let Some(expected) = transaction.expected_issuer.as_deref() else {
         return true;
     };
     match iss {
-        Some(iss) => iss == expected,
+        Some(iss) => issuer_matches(expected, iss),
         None => !transaction.issuer_required,
     }
 }

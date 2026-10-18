@@ -309,7 +309,7 @@ https://gateway.example.com/api/v1/mcp/oauth/callback
    - the protected-resource metadata (RFC 9728) named by the `WWW-Authenticate` challenge, or at `/.well-known/oauth-protected-resource`
    - the authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, falling back to OpenID Connect discovery
 3. Review what discovery found: the resource, the authorization server, its endpoints, the default scopes, how Oceans will get a client, and any warnings.
-4. Select **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. Edit it to override any value, such as the scopes, then save.
+4. Select **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. Edit it to override any value, such as the scopes, then save. The `issuer` and endpoints must stay the ones the authorization server publishes, as the next section explains.
 
 Discovery only reads metadata. It stores nothing until you save the server. Metadata URLs must use HTTPS. Plain HTTP is accepted only when both the MCP server and the metadata are on a loopback host, for local development. Every metadata, registration, and token request for the server reaches public addresses only, unless you entered the server by IP address (its own kind of address applies), as `localhost`, or by a host listed under `mcp.oauth.private_network_hosts`. A server on a private network registered by hostname needs that entry. No server can reach link-local or cloud metadata addresses. Requests do not follow redirects or use an HTTP proxy. See [ADR: SSRF-safe outbound fetch](../adr/2026-10-17-ssrf-safe-outbound-fetch.md). Oceans refuses an authorization server that lists PKCE methods without `S256`.
 
@@ -333,13 +333,15 @@ A discovered server's auth config looks like this:
 | --- | --- |
 | `resource` | The protected resource. It must share an origin with the server URL. |
 | `resource_indicator` | Whether authorization and token requests send the RFC 8707 `resource` parameter. Discovery sets it to `true` when the server publishes protected-resource metadata. Defaults to `true`. |
-| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. |
+| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. The endpoints, and `registration_endpoint` when set, must be the ones the issuer's metadata publishes. |
 | `scopes` | Scopes to request and require. Discovery fills them from the challenge's `scope`, then from the resource's `scopes_supported`. Omit them to let the authorization server choose. |
 | `client_registration` | How Oceans gets its OAuth client: `dynamic`, `metadata_document`, or `manual`. |
 | `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post`, or `none`. |
 | `authorization_response_iss_parameter_supported` | Whether the authorization server returns `iss` with every authorization response (RFC 9207). Discovery copies it from the authorization server metadata. When `true`, a callback without `iss` is refused. Defaults to `false`. |
 
-Every connection to a server with its own authorization server records the expected issuer. If the callback carries an `iss` that names a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code is never sent to the token endpoint. This stops an upstream whose metadata sends users to another authorization server from receiving that server's codes (a mix-up attack), because all these servers share one callback URI and, with `metadata_document`, one client ID.
+Every connection to a server with its own authorization server records the expected issuer. If the callback carries an `iss` that names a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code is never sent to the token endpoint. This stops an upstream whose metadata sends users to another authorization server from receiving that server's codes (a mix-up attack), because all these servers share one callback URI and, with `metadata_document`, one client ID. The issuers must match exactly, except that one trailing `/` is ignored, so servers saved before discovery recorded the issuer exactly as the metadata states it keep connecting.
+
+The issuer check only proves which authorization server sent a code, so the code must also go to that server's own token endpoint. When a save creates a server with its own authorization server, or changes its `issuer`, `authorization_endpoint`, `token_endpoint` or `registration_endpoint`, Oceans reads the issuer's metadata, as discovery does, and refuses the save with `400` unless each configured endpoint is the one the metadata publishes. An issuer that publishes no metadata is refused; use a [configured `oauth2` provider](#a-configured-oauth2-provider) for it. Edits that leave these fields as they are fetch nothing, so a server saved before this check keeps working until its endpoints change.
 
 ### Client registration
 

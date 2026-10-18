@@ -337,6 +337,27 @@ fn server_oauth_endpoints(
     }))
 }
 
+/// The authorization server `auth_config` sets on the server, when its issuer
+/// or an endpoint differs from the one in `previous` (`None` for a new
+/// server). A config that does not parse yields `None`, since saving it fails
+/// validation anyway.
+#[must_use]
+pub fn changed_server_oauth_endpoints(
+    auth_config: &Map<String, Value>,
+    previous: Option<&Map<String, Value>>,
+) -> Option<McpServerOauthEndpoints> {
+    let endpoints = server_oauth_endpoints(auth_config).ok().flatten()?;
+    let unchanged = previous
+        .and_then(|previous| server_oauth_endpoints(previous).ok().flatten())
+        .is_some_and(|previous| {
+            previous.issuer == endpoints.issuer
+                && previous.authorization_endpoint == endpoints.authorization_endpoint
+                && previous.token_endpoint == endpoints.token_endpoint
+                && previous.registration_endpoint == endpoints.registration_endpoint
+        });
+    (!unchanged).then_some(endpoints)
+}
+
 /// OAuth URLs must use https. Plain http is accepted only for loopback hosts so
 /// a local authorization server can be used in development and tests.
 fn validate_oauth_url(value: &str, field: &str) -> Result<(), GatewayError> {
@@ -1161,6 +1182,59 @@ mod tests {
                 config.get(field)
             );
         }
+    }
+
+    #[test]
+    fn only_a_changed_authorization_server_needs_checking() {
+        let config = Map::from_iter([
+            ("resource".to_string(), json!("https://mcp.example/mcp")),
+            ("issuer".to_string(), json!("https://auth.example")),
+            (
+                "authorization_endpoint".to_string(),
+                json!("https://auth.example/authorize"),
+            ),
+            (
+                "token_endpoint".to_string(),
+                json!("https://auth.example/token"),
+            ),
+            (
+                "client_registration".to_string(),
+                json!("metadata_document"),
+            ),
+        ]);
+        assert!(changed_server_oauth_endpoints(&config, None).is_some());
+        assert!(changed_server_oauth_endpoints(&config, Some(&config)).is_none());
+
+        // Scopes and registration settings do not move where codes go.
+        let mut rescoped = config.clone();
+        rescoped.insert("scopes".to_string(), json!(["read"]));
+        rescoped.insert("client_registration".to_string(), json!("manual"));
+        rescoped.insert("client_id".to_string(), json!("admin-client"));
+        assert!(changed_server_oauth_endpoints(&rescoped, Some(&config)).is_none());
+
+        for (field, value) in [
+            ("issuer", "https://other.example"),
+            ("authorization_endpoint", "https://auth.example/other"),
+            ("token_endpoint", "https://evil.example/token"),
+            ("registration_endpoint", "https://auth.example/register"),
+        ] {
+            let mut changed = config.clone();
+            changed.insert(field.to_string(), json!(value));
+            assert!(
+                changed_server_oauth_endpoints(&changed, Some(&config)).is_some(),
+                "{field}"
+            );
+        }
+
+        // A configured provider, or a config that fails validation, has none.
+        let provider = Map::from_iter([
+            ("provider_key".to_string(), json!("google")),
+            ("resource".to_string(), json!("https://mcp.example/mcp")),
+        ]);
+        assert!(changed_server_oauth_endpoints(&provider, None).is_none());
+        let mut incomplete = config;
+        incomplete.remove("token_endpoint");
+        assert!(changed_server_oauth_endpoints(&incomplete, None).is_none());
     }
 
     fn server_record(

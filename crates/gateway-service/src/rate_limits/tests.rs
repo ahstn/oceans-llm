@@ -273,6 +273,7 @@ fn user_subject(user_id: Uuid, key_id: Uuid) -> RateLimitSubject<'static> {
         api_key_id: key_id,
         user_id: Some(user_id),
         team_id: None,
+        team_resolved: false,
         model_keys: &["fast", "fast-v2"],
         mcp_server: None,
     }
@@ -461,6 +462,7 @@ async fn mcp_policies_match_by_server_and_skip_other_operations() {
         api_key_id: key_id,
         user_id: None,
         team_id: None,
+        team_resolved: false,
         model_keys: &[],
         mcp_server: Some((server_id, server_key)),
     };
@@ -1642,4 +1644,224 @@ async fn a_rejected_request_does_not_count_its_own_cost_in_the_reset() {
         panic!("expected rejection");
     };
     assert_eq!(rejected.reset_after_seconds, 60);
+}
+
+/// A closed-mode limiter whose policies and cached teams expire after
+/// `refresh`, with team and per-user token limits, and usage writes held
+/// until `gate` gets a permit.
+fn team_token_limiter(
+    store: &Arc<MemoryStore>,
+    teams: Arc<dyn RateLimitTeamLookup>,
+    refresh: Duration,
+) -> Arc<RateLimiter> {
+    let tokens = |name: &str, scope_kind| {
+        config(
+            name,
+            RateLimitOperation::Inference,
+            scope_kind,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )
+    };
+    Arc::new(
+        RateLimiter::new(
+            store.clone(),
+            RateLimitSettings {
+                failure_mode: RateLimitFailureMode::Closed,
+                policy_refresh: refresh,
+                config_policies: vec![
+                    tokens("team tokens", RateLimitScopeKind::Team),
+                    tokens("user tokens", RateLimitScopeKind::User),
+                ],
+            },
+        )
+        .with_team_lookup(teams),
+    )
+}
+
+fn pending_keys(limiter: &RateLimiter) -> Vec<String> {
+    limiter
+        .pending_charges
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// Tokens charged to counters whose key names `principal`.
+fn charged_to(store: &MemoryStore, principal: Uuid) -> i64 {
+    let principal = principal.to_string();
+    store
+        .counters
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|((key, _), _)| key.ends_with(&principal))
+        .map(|(_, amount)| amount)
+        .sum()
+}
+
+/// A request that outlasts the cached team still charges the team its check
+/// counted, and marks only that charge's counters pending, so other callers'
+/// token checks do not wait on it.
+#[tokio::test]
+async fn a_charge_after_the_cached_team_expires_uses_the_team_its_check_resolved() {
+    let (alice, bob, team) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let store = Arc::new(MemoryStore {
+        add_gate: Some(gate.clone()),
+        ..MemoryStore::default()
+    });
+    let limiter = team_token_limiter(
+        &store,
+        Arc::new(Teams(HashMap::from([(alice, team)]))),
+        Duration::from_millis(200),
+    );
+    let alice_subject = user_subject(alice, Uuid::new_v4());
+    let (_, alice_team) = limiter.check_with_team(&alice_subject).await.unwrap();
+
+    // Alice's request runs past the cache; Bob's check reloads the policies
+    // meanwhile, as any other caller's does.
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    let bob_subject = user_subject(bob, Uuid::new_v4());
+    limiter.check(&bob_subject).await.unwrap();
+    let charge = limiter
+        .record_tokens_detached(&alice_subject.with_member_team(alice_team), 400)
+        .unwrap();
+
+    let pending = pending_keys(&limiter);
+    assert!(
+        !pending.contains(&ANY_PENDING_COUNTER.to_string()),
+        "{pending:?}"
+    );
+    assert!(
+        pending.iter().any(|key| key.ends_with(&team.to_string())),
+        "{pending:?}"
+    );
+    // Alice's charge is stuck; in `closed` mode Bob's check would refuse him
+    // after the pending-charge wait if it had to wait on it.
+    let started = std::time::Instant::now();
+    assert!(matches!(
+        limiter.check(&bob_subject).await,
+        Ok(RateLimitDecision::Admitted(_))
+    ));
+    assert!(started.elapsed() < Duration::from_millis(500));
+
+    gate.add_permits(1);
+    charge.await.unwrap();
+    assert_eq!(charged_to(&store, team), 400);
+    assert_eq!(charged_to(&store, alice), 400);
+}
+
+/// Without a resolved team, a charge whose cached team has expired cannot
+/// know its counters: it marks every token counter pending and looks the team
+/// up itself, so it still charges the right team.
+#[tokio::test]
+async fn a_charge_without_a_resolved_team_looks_it_up_and_holds_every_token_check() {
+    let (alice, team) = (Uuid::new_v4(), Uuid::new_v4());
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let store = Arc::new(MemoryStore {
+        add_gate: Some(gate.clone()),
+        ..MemoryStore::default()
+    });
+    let limiter = team_token_limiter(
+        &store,
+        Arc::new(Teams(HashMap::from([(alice, team)]))),
+        Duration::from_millis(200),
+    );
+    let alice_subject = user_subject(alice, Uuid::new_v4());
+    limiter.check(&alice_subject).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    limiter
+        .check(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+        .await
+        .unwrap();
+
+    let charge = limiter.record_tokens_detached(&alice_subject, 400).unwrap();
+    assert_eq!(
+        pending_keys(&limiter),
+        vec![ANY_PENDING_COUNTER.to_string()]
+    );
+
+    gate.add_permits(1);
+    charge.await.unwrap();
+    assert_eq!(charged_to(&store, team), 400);
+    assert!(pending_keys(&limiter).is_empty());
+}
+
+/// A token charge that cannot read the user's team still charges the other
+/// token counters, and marks token counters stale so `closed` mode stops
+/// trusting them.
+#[tokio::test]
+async fn a_charge_that_cannot_read_the_team_charges_the_rest_and_marks_tokens_stale() {
+    let alice = Uuid::new_v4();
+    let store = Arc::new(MemoryStore::default());
+    let limiter = team_token_limiter(&store, Arc::new(FailingTeams), Duration::from_secs(60));
+
+    limiter
+        .record_tokens(&user_subject(alice, Uuid::new_v4()), 400)
+        .await;
+
+    assert_eq!(charged_to(&store, alice), 400);
+    assert_eq!(store.counters.lock().unwrap().len(), 1);
+    assert_ne!(limiter.token_write_failed_at.load(Ordering::SeqCst), 0);
+}
+
+/// A check that resolves no team (none needed, or the lookup failed) leaves
+/// the charge to resolve it.
+#[tokio::test]
+async fn a_check_that_needs_no_team_leaves_it_unresolved() {
+    let store = Arc::new(MemoryStore::default());
+    let limiter = team_token_limiter(
+        &store,
+        Arc::new(Teams(HashMap::new())),
+        Duration::from_secs(60),
+    );
+    let team_key = RateLimitSubject {
+        team_id: Some(Uuid::new_v4()),
+        ..user_subject(Uuid::new_v4(), Uuid::new_v4())
+    };
+    let (_, team) = limiter.check_with_team(&team_key).await.unwrap();
+    assert_eq!(team, RateLimitMemberTeam::default());
+
+    // A member of no team is resolved too: the charge must not look again.
+    let (_, team) = limiter
+        .check_with_team(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+        .await
+        .unwrap();
+    assert_ne!(team, RateLimitMemberTeam::default());
+}
+
+/// A full team cache drops expired entries before starting over, so the
+/// users still being served keep theirs.
+#[tokio::test]
+async fn a_full_team_cache_keeps_fresh_entries() {
+    let (alice, bob, team) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let store = Arc::new(MemoryStore::default());
+    let limiter = team_token_limiter(
+        &store,
+        Arc::new(Teams(HashMap::from([(bob, team)]))),
+        Duration::from_secs(60),
+    );
+    let expired = std::time::Instant::now()
+        .checked_sub(Duration::from_secs(120))
+        .expect("monotonic clock past two minutes");
+    {
+        let mut teams = limiter.member_teams.lock().unwrap();
+        for _ in 1..member_teams::MAX_CACHED_MEMBER_TEAMS {
+            teams.insert(Uuid::new_v4(), (expired, None));
+        }
+        teams.insert(alice, (std::time::Instant::now(), Some(team)));
+    }
+
+    limiter
+        .check(&user_subject(bob, Uuid::new_v4()))
+        .await
+        .unwrap();
+
+    let teams = limiter.member_teams.lock().unwrap();
+    assert_eq!(teams.len(), 2);
+    assert!(teams.contains_key(&alice) && teams.contains_key(&bob));
 }

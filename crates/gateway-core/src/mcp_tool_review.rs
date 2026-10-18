@@ -18,7 +18,8 @@ pub enum McpToolApprovalStatus {
     /// Served; nothing waits for review.
     #[default]
     Approved,
-    /// Served as the last approved version while a text-only change waits.
+    /// Served as the last approved version while a change that keeps its call
+    /// contract waits: new text, or metadata a pre-V58 row never stored.
     PendingChange,
     /// Not served: a new tool, or a change to its contract, waits for review.
     PendingReview,
@@ -202,6 +203,24 @@ pub struct StoredToolForReview<'a> {
     pub rejected: &'a [McpToolDefinitionKey],
     /// The highest version number the tool has.
     pub latest_version: i64,
+    /// False for a row from before V58, which never stored the title,
+    /// annotations or output schema.
+    pub metadata_captured: bool,
+}
+
+impl StoredToolForReview<'_> {
+    /// Whether `discovered` keeps the call contract of the row's definition.
+    /// A pre-V58 row never stored annotations or an output schema, so their
+    /// absence there is unknown, not a contract the upstream changed. Only
+    /// the input schema is compared for such a row; otherwise the first
+    /// refresh after an upgrade would withhold every tool that declares them.
+    fn keeps_contract(&self, discovered: &McpToolDefinition) -> bool {
+        if self.metadata_captured {
+            self.current.same_contract(discovered)
+        } else {
+            self.current.input_schema == discovered.input_schema
+        }
+    }
 }
 
 /// What discovery does with one discovered definition.
@@ -288,7 +307,7 @@ pub fn decide_discovery(
         // Rejected definitions do not reopen review, but the tool must reflect
         // what the upstream serves now: a waiting version is gone, and a
         // rejected contract change is withheld again.
-        let status = if served && stored.current.same_contract(discovered) {
+        let status = if served && stored.keeps_contract(discovered) {
             McpToolApprovalStatus::Approved
         } else {
             McpToolApprovalStatus::Rejected
@@ -298,7 +317,7 @@ pub fn decide_discovery(
         }
         return DiscoveryDecision::Unchanged;
     }
-    let status = if served && stored.current.same_contract(discovered) {
+    let status = if served && stored.keeps_contract(discovered) {
         McpToolApprovalStatus::PendingChange
     } else {
         McpToolApprovalStatus::PendingReview
@@ -373,6 +392,7 @@ mod tests {
             pending_version: pending.map(|_| 2),
             rejected,
             latest_version: if pending.is_some() { 2 } else { 1 },
+            metadata_captured: true,
         }
     }
 
@@ -577,6 +597,50 @@ mod tests {
             ..served.clone()
         };
         assert!(!served.same_contract(&hint_changed));
+    }
+
+    #[test]
+    fn metadata_a_legacy_row_never_stored_keeps_the_tool_served() {
+        let legacy = definition("h1", "Search", json!({"type": "object"}));
+        let state = StoredToolForReview {
+            metadata_captured: false,
+            ..stored(&legacy, McpToolApprovalStatus::Approved, Some(1), None, &[])
+        };
+        let captured = McpToolDefinition {
+            schema_hash: "h2".to_string(),
+            annotations: json!({"readOnlyHint": true}).as_object().cloned(),
+            output_schema: Some(json!({"type": "object"})),
+            ..legacy.clone()
+        };
+        assert_eq!(
+            decide_discovery(Some(&state), &captured, true),
+            DiscoveryDecision::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingChange
+            }
+        );
+        // A changed input schema is still a contract change.
+        let reshaped = McpToolDefinition {
+            input_schema: json!({"type": "object", "required": ["q"]}),
+            ..captured.clone()
+        };
+        assert_eq!(
+            decide_discovery(Some(&state), &reshaped, true),
+            DiscoveryDecision::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingReview
+            }
+        );
+        // Rejected captured metadata leaves the approved definition served.
+        let rejected = [captured.key()];
+        let state = StoredToolForReview {
+            rejected: &rejected,
+            ..state
+        };
+        assert_eq!(
+            decide_discovery(Some(&state), &captured, true),
+            DiscoveryDecision::Unchanged
+        );
     }
 
     #[test]
