@@ -250,11 +250,11 @@ once as before. When it is on:
 | A new tool | **Pending review**. Not listed, searchable, or callable. |
 | A change to the description or title only | **Change pending**. The previous approved version keeps being served and callable. Clients never see the new text until it is approved. |
 | A change to the input schema, output schema, or annotations | **Pending review**. The tool is withheld, because the approved definition no longer describes what the upstream accepts or claims. |
-| A title, annotations or output schema on a tool discovered before Oceans stored them | **Change pending**, unless the input schema changed too. The tool keeps being served on its approved definition, without the new hints, until an admin approves them. |
+| The first title, annotations or output schema captured for a tool discovered before Oceans stored them | **Change pending**, unless the input schema changed too. The tool keeps being served on its approved definition, without the new hints, until an admin approves them. Once that capture is approved, later changes to annotations or the output schema are **Pending review** like any other. |
 | The approved definition again | The waiting version is superseded and the tool is served as approved. |
 | An older definition an admin approved | Its earlier version is served again, without a new version or review. A definition discovery approved on its own while approval was off waits for review instead. |
 | An older definition that was superseded before review | It waits for review again under its earlier version number. |
-| A definition an admin already rejected | Rejected definitions do not reopen review. Any newer waiting version is dropped, and the tool is served as approved only when the rejected change was to the description or title. |
+| A definition an admin already rejected | Rejected definitions do not reopen review. Any newer waiting version is dropped, and the tool is served as approved only when the rejected change was to the description or title, or was the first metadata captured for a tool discovered before Oceans stored it. |
 
 Waiting and rejected tools are excluded from every grant: explicit tool and
 toolset grants as well as [tag rules](#tag-rules). On approval servers, direct
@@ -272,8 +272,10 @@ every section that changed, from the served version to the waiting one, with
 **Approve** and **Reject**:
 
 - **Approve** serves the waiting version.
-- **Reject** keeps a description-only change on the previous version, and keeps
-  a new tool or a contract change withheld until a later definition is approved.
+- **Reject** keeps a description-only change, or the first metadata captured
+  for a tool discovered before Oceans stored it, on the previous version. It
+  keeps a new tool or a contract change withheld until a later definition is
+  approved.
 
 A version can be reviewed once. A second review, or a review of a version a newer
 discovery has replaced, returns HTTP 409. Turning the setting off approves the
