@@ -80,7 +80,7 @@ Oceans sits between MCP clients and the MCP servers they use. Admins register a 
 
 - **Schema drift detection**: Every discovered tool definition is hashed. A client can send the hash it read with `call_tool`, and the gateway refuses the call if the tool has changed since.
 
-- **Tool versions and approval**: Every definition a server serves for a tool is kept as a version. With approval turned on, new tools and changed tools wait for an admin to review the change, and the last approved definition keeps being served. A server can't quietly change a tool's description or schema after it was reviewed. See [Tool versions and approval](mcp/mcp-tool-access.md#tool-versions-and-approval).
+- **Tool versions and approval**: Every definition a server serves for a tool is kept as a version. With approval turned on, changes wait for an admin to review them. A changed description or title waits while the last approved definition keeps being served. A new tool, or a change to its schemas or annotations, is withheld until it's approved. A server can't quietly change a tool's description or schema after it was reviewed. See [Tool versions and approval](mcp/mcp-tool-access.md#tool-versions-and-approval).
 
 #### Traffic and Audit
 
