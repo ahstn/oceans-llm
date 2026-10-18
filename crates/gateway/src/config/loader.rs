@@ -314,6 +314,7 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
             merged = document;
         }
     }
+    ensure_render_matches_load(&collections, &loaded.sources)?;
     for collection in FRAGMENT_COLLECTIONS {
         if let Some(entries) = collections.remove(collection) {
             merged.insert(
@@ -478,6 +479,36 @@ fn take_collections(
     Ok(())
 }
 
+/// Render rebuilds the keyed collections from raw YAML, while the load deserializes them into
+/// typed entries. Both use [`keyed_entries`] and the same documents, but a change to either path
+/// could still make them disagree, so render fails rather than print a config that was not loaded.
+fn ensure_render_matches_load(
+    collections: &BTreeMap<&'static str, Mapping>,
+    sources: &[ConfigEntitySource],
+) -> anyhow::Result<()> {
+    for collection in FRAGMENT_COLLECTIONS {
+        let rendered: Vec<&str> = collections
+            .get(collection)
+            .into_iter()
+            .flat_map(Mapping::keys)
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .collect();
+        let loaded: Vec<&str> = sources
+            .iter()
+            .filter(|source| source.collection == collection)
+            .map(|source| source.id.as_str())
+            .collect();
+        if rendered != loaded {
+            bail!(
+                "rendered {collection} {rendered:?} differ from the loaded {collection} {loaded:?}; \
+                 this is a gateway bug"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
     // A comment-only or `---`-only main file is valid; fragments like that were never recorded.
     if is_blank_yaml(raw) {
@@ -489,5 +520,38 @@ fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
         Value::Mapping(mapping) => Ok(mapping),
         Value::Null => Ok(Mapping::new()),
         _ => bail!("`{}` must contain a YAML mapping", path.display()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(collection: &'static str, id: &str) -> ConfigEntitySource {
+        ConfigEntitySource {
+            collection,
+            id: id.to_string(),
+            path: PathBuf::from("gateway.yaml"),
+        }
+    }
+
+    #[test]
+    fn render_fails_when_its_collections_differ_from_the_load() {
+        let mut collections = BTreeMap::new();
+        let mut models = Mapping::new();
+        models.insert(
+            Value::String("fast".to_string()),
+            Value::Mapping(Mapping::new()),
+        );
+        collections.insert("models", models);
+
+        let matching = [source("models", "fast")];
+        ensure_render_matches_load(&collections, &matching).expect("same ids");
+
+        let dropped = [source("models", "fast"), source("models", "smart")];
+        let error = ensure_render_matches_load(&collections, &dropped)
+            .expect_err("render dropped a loaded model")
+            .to_string();
+        assert!(error.contains("smart"), "{error}");
     }
 }
