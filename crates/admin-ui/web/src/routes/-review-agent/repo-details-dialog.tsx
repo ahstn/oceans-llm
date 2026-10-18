@@ -29,7 +29,7 @@ import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { formatTimestamp } from '@/lib/format'
+import { formatTimestamp, formatCount } from '@/lib/format'
 import {
   disableReviewAgentRepo,
   reactivateReviewAgentRepo,
@@ -446,7 +446,7 @@ function LifecycleActions({
   onReactivate: () => void
 }) {
   return (
-    <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
+    <section className="border-border flex flex-col gap-3 border-t pt-4">
       <div className="flex flex-col gap-1">
         <h3 className="text-foreground text-sm font-semibold">Lifecycle actions</h3>
         <p className="text-subtle-foreground text-sm">
@@ -486,6 +486,10 @@ function WorkflowSetupSection({
     }
 
     event.preventDefault()
+    // The button is disabled meanwhile; an older response must not replace a newer one.
+    if (isPending) {
+      return
+    }
     void generate(form)
   }
 
@@ -620,8 +624,8 @@ function RepoOverviewSection({
 
       <div>
         <h3 className="text-foreground text-sm font-semibold">Recent activity</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <section className="border-border rounded-lg border p-4">
+        <div className="divide-border border-border mt-4 grid divide-y border-y md:grid-cols-3 md:divide-x md:divide-y-0">
+          <section className="py-4 md:px-4 md:first:pl-0">
             <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Last review
             </p>
@@ -632,21 +636,23 @@ function RepoOverviewSection({
               {lastRun ? formatTimestamp(runTimestamp(lastRun)) : 'No runs reported yet.'}
             </p>
           </section>
-          <section className="border-border rounded-lg border p-4">
+          <section className="py-4 md:px-4">
             <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Recent runs
             </p>
-            <p className="text-foreground mt-2 text-lg font-semibold">{runs.length}</p>
+            <p className="text-foreground mt-2 text-lg font-semibold tabular-nums">
+              {formatCount(runs.length)}
+            </p>
             <p className="text-subtle-foreground mt-1 text-sm">
-              {commentsPosted} inline comments posted across recent runs.
+              {formatCount(commentsPosted)} inline comments posted across recent runs.
             </p>
           </section>
-          <section className="border-border rounded-lg border p-4">
+          <section className="py-4 md:px-4">
             <p className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
               Lines reviewed
             </p>
-            <p className="text-foreground mt-2 text-lg font-semibold">
-              {linesReviewed.toLocaleString()}
+            <p className="text-foreground mt-2 text-lg font-semibold tabular-nums">
+              {formatCount(linesReviewed)}
             </p>
             <p className="text-subtle-foreground mt-1 text-sm">
               Changed lines covered by recent review runs.

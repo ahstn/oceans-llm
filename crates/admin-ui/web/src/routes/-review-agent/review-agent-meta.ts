@@ -1,3 +1,4 @@
+import { formatCount } from '@/lib/format'
 import {
   Configuration01Icon,
   SourceCodeIcon,
@@ -96,7 +97,8 @@ export function repoStatusVariant(status: string) {
   if (status === 'active') {
     return 'success' as const
   }
-  return status === 'disabled' ? ('warning' as const) : ('default' as const)
+  // Disabled is inactive, not pending, as for users and service accounts.
+  return 'secondary' as const
 }
 
 export function runStatusVariant(status: string) {
@@ -121,7 +123,7 @@ export function formatLineDelta(run: ReviewAgentRunView) {
   if (run.additions == null && run.deletions == null) {
     return '—'
   }
-  return `+${run.additions ?? 0} / −${run.deletions ?? 0}`
+  return `+${formatCount(run.additions ?? 0)} / −${formatCount(run.deletions ?? 0)}`
 }
 
 export function getErrorMessage(error: unknown) {

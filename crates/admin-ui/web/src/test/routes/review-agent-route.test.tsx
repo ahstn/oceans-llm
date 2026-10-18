@@ -184,7 +184,10 @@ describe('ReviewAgentPage', () => {
 
     expect(screen.getAllByText('ahstn/oceans-llm').length).toBeGreaterThan(0)
     expect(screen.getAllByText('ahstn/dotfiles').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('disabled').length).toBeGreaterThan(0)
+    // Disabled is inactive, not pending: neutral, never the warning a queued run takes.
+    for (const badge of screen.getAllByText('disabled')) {
+      expect(badge).toHaveAttribute('data-variant', 'secondary')
+    }
     expect(screen.getAllByText('3 of 5 enabled').length).toBeGreaterThan(0)
 
     expect(screen.getByText('abc1234')).toBeInTheDocument()
@@ -258,5 +261,20 @@ describe('ReviewAgentPage', () => {
 
     await waitFor(() => expect(renderWorkflowMock).toHaveBeenCalledTimes(1))
     expect(updateRepoMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores Enter in setup inputs while a workflow request is pending', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: seedPayload })
+    routeMock.useSearch.mockReturnValue({ repo_id: 'repo_oceans', repo_section: 'setup' })
+    // The first render's request never settles, so the workflow stays pending.
+    renderWorkflowMock.mockReturnValue(new Promise(() => {}))
+
+    render(<ReviewAgentPage />)
+
+    await waitFor(() => expect(renderWorkflowMock).toHaveBeenCalledTimes(1))
+    fireEvent.keyDown(screen.getByLabelText('Action ref'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Action ref'), { key: 'Enter' })
+
+    expect(renderWorkflowMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
-import { formatDuration, formatTimestamp } from '@/lib/format'
+import { formatCount, formatDuration, formatTimestamp } from '@/lib/format'
 import { RepoDetailsDialog } from '@/routes/-review-agent/repo-details-dialog'
 import {
   formatFeatureSummary,
@@ -605,10 +605,10 @@ function RecentReviewsCard({
                   'Status',
                   'Commit',
                   'Model',
-                  'Files',
-                  'Lines',
-                  'Comments',
-                  'Duration',
+                  { label: 'Files', align: 'right' },
+                  { label: 'Lines', align: 'right' },
+                  { label: 'Comments', align: 'right' },
+                  { label: 'Duration', align: 'right' },
                   'When',
                 ]}
               />
@@ -627,16 +627,16 @@ function RecentReviewsCard({
                     <TableCell className="text-subtle-foreground px-3 py-3">
                       {run.model_key ?? '—'}
                     </TableCell>
-                    <TableCell className="text-subtle-foreground px-3 py-3">
-                      {run.files_changed ?? '—'}
+                    <TableCell className="text-subtle-foreground px-3 py-3 text-right tabular-nums">
+                      {formatCount(run.files_changed)}
                     </TableCell>
-                    <TableCell className="text-subtle-foreground px-3 py-3">
+                    <TableCell className="text-subtle-foreground px-3 py-3 text-right tabular-nums">
                       {formatLineDelta(run)}
                     </TableCell>
-                    <TableCell className="text-subtle-foreground px-3 py-3">
-                      {run.inline_comments_created ?? '—'}
+                    <TableCell className="text-subtle-foreground px-3 py-3 text-right tabular-nums">
+                      {formatCount(run.inline_comments_created)}
                     </TableCell>
-                    <TableCell className="text-subtle-foreground px-3 py-3">
+                    <TableCell className="text-subtle-foreground px-3 py-3 text-right tabular-nums">
                       {formatDuration(run.duration_ms)}
                     </TableCell>
                     <TableCell className="text-subtle-foreground px-3 py-3">
