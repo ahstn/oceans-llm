@@ -10,8 +10,8 @@ use crate::mcp_tool_review::{
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
-    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json, stranded_grants,
-    stranded_toolset, team_only_toolset_tool, unix_to_datetime,
+    grants_outside_team_sql, json_object_from_str, newer_discovery_run_sql, parse_uuid,
+    serialize_json, stranded_grants, stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     ExternalMcpServerUpdate, McpAnnotationOverrides, McpServerGuardRow, McpServerOwnership,
@@ -347,13 +347,15 @@ macro_rules! server_columns {
     };
 }
 
-/// Whether a discovery of the server that started after this one already
-/// committed. Reads `external_mcp_discovery_runs_server_status_ms_idx`. A
-/// gateway older than V72, still serving during a rolling upgrade, records
-/// runs without `started_at_ms`; those compare by their whole-second start.
-/// Runs that start in the same millisecond are ordered by run id (`?4`), so
-/// of two concurrent refreshes exactly one is the newer.
-const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND (started_at_ms > ?3 OR (started_at_ms = ?3 AND discovery_run_id > ?4) OR (started_at_ms IS NULL AND started_at * 1000 > ?3)))";
+/// Whether a successful discovery of the server (`?1`, status `?2`) that
+/// started after this one (`?3` ms, run `?4`) already committed. Reads
+/// `external_mcp_discovery_runs_server_status_ms_idx`.
+fn newer_discovery_committed_sql() -> String {
+    format!(
+        "SELECT {}",
+        newer_discovery_run_sql("?1", Some("?2"), "?3", "?4")
+    )
+}
 
 const SERVER_COLUMNS: &str = server_columns!();
 
@@ -1009,7 +1011,7 @@ impl McpRegistryRepository for LibsqlStore {
             let server = load_server(&tx, run.mcp_server_id).await?;
             let mut rows = tx
                 .query(
-                    NEWER_DISCOVERY_COMMITTED_SQL,
+                    &newer_discovery_committed_sql(),
                     libsql::params![
                         run.mcp_server_id.to_string(),
                         ExternalMcpDiscoveryStatus::Success.as_str(),
@@ -1074,19 +1076,25 @@ impl McpRegistryRepository for LibsqlStore {
             apply_tool_write(&tx, run.finished_at, plan.tool, plan.existing, &plan.write).await?;
         }
 
+        // A newer run of any status, such as a failure that committed while
+        // this one ran, stays the server's last discovery.
+        let newer = newer_discovery_run_sql("?4", None, "?5", "?6");
         tx.execute(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = ?1, last_discovery_at = ?2,
-                last_successful_discovery_at = ?2, last_error_summary = NULL,
-                last_tool_count = ?3, updated_at = ?2
-            WHERE mcp_server_id = ?4
-            "#,
+            &format!(
+                "UPDATE external_mcp_servers
+                 SET last_successful_discovery_at = ?2, last_tool_count = ?3, updated_at = ?2,
+                     last_discovery_status = CASE WHEN {newer} THEN last_discovery_status ELSE ?1 END,
+                     last_discovery_at = CASE WHEN {newer} THEN last_discovery_at ELSE ?2 END,
+                     last_error_summary = CASE WHEN {newer} THEN last_error_summary ELSE NULL END
+                 WHERE mcp_server_id = ?4"
+            ),
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.active_tool_count,
                 run.mcp_server_id.to_string(),
+                unix_millis(run.started_at),
+                run.discovery_run_id.to_string(),
             ],
         )
         .await
@@ -1129,27 +1137,21 @@ impl McpRegistryRepository for LibsqlStore {
         )
         .await
         .map_err(to_query_error)?;
-        // The run stays in the history, but a success that started later
-        // remains the server's last discovery.
+        // The run stays in the history, but a run of any status that started
+        // later remains the server's last discovery.
         tx.execute(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = ?1, last_discovery_at = ?2,
-                last_error_summary = ?3, updated_at = ?2
-            WHERE mcp_server_id = ?4
-              AND NOT EXISTS (
-                SELECT 1 FROM external_mcp_discovery_runs
-                WHERE mcp_server_id = ?4 AND status = ?5
-                  AND (started_at_ms > ?6 OR (started_at_ms = ?6 AND discovery_run_id > ?7)
-                       OR (started_at_ms IS NULL AND started_at * 1000 > ?6))
-              )
-            "#,
+            &format!(
+                "UPDATE external_mcp_servers
+                 SET last_discovery_status = ?1, last_discovery_at = ?2,
+                     last_error_summary = ?3, updated_at = ?2
+                 WHERE mcp_server_id = ?4 AND NOT {}",
+                newer_discovery_run_sql("?4", None, "?5", "?6")
+            ),
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.error_summary.as_deref(),
                 run.mcp_server_id.to_string(),
-                ExternalMcpDiscoveryStatus::Success.as_str(),
                 unix_millis(run.started_at),
                 run.discovery_run_id.to_string(),
             ],
@@ -1400,7 +1402,7 @@ impl LibsqlStore {
 mod tests {
     use tempfile::tempdir;
 
-    use super::NEWER_DISCOVERY_COMMITTED_SQL;
+    use super::newer_discovery_committed_sql;
     use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
 
     #[tokio::test]
@@ -1443,8 +1445,8 @@ mod tests {
 
         let mut rows = connection
             .query(
-                NEWER_DISCOVERY_COMMITTED_SQL,
-                libsql::params!["server", "success", 1_699_999_999_500_i64, "run"],
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_699_999_999_500_i64, "probe"],
             )
             .await
             .expect("stale check");
@@ -1469,8 +1471,8 @@ mod tests {
             .expect("legacy run");
         let mut rows = connection
             .query(
-                NEWER_DISCOVERY_COMMITTED_SQL,
-                libsql::params!["server", "success", 1_700_000_050_000_i64, "run"],
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_700_000_050_000_i64, "probe"],
             )
             .await
             .expect("stale check");
@@ -1483,10 +1485,28 @@ mod tests {
             .expect("value");
         assert!(newer, "a run without milliseconds compares by its start");
 
+        // Its milliseconds are unknown, so a run without them counts as newer
+        // than any run that started in the same second.
         let mut rows = connection
             .query(
-                &format!("EXPLAIN QUERY PLAN {NEWER_DISCOVERY_COMMITTED_SQL}"),
-                libsql::params!["server", "success", 0_i64, "run"],
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_700_000_100_900_i64, "probe"],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "a same-second run without milliseconds is newer");
+
+        let mut rows = connection
+            .query(
+                &format!("EXPLAIN QUERY PLAN {}", newer_discovery_committed_sql()),
+                libsql::params!["server", "success", 0_i64, "probe"],
             )
             .await
             .expect("query plan");
