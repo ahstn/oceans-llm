@@ -2,7 +2,7 @@ import { useEffect, useState, useTransition, type FormEvent } from 'react'
 import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
 import googleIcon from '@lobehub/icons-static-svg/icons/google-color.svg'
 import { ViewIcon, ViewOffSlashIcon } from '@hugeicons/core-free-icons'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, type SearchSchemaInput } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -24,7 +24,7 @@ import { ssoErrorMessage } from '@/routes/-login-messages'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: { redirect?: string; sso_error?: string } & SearchSchemaInput) => ({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
     sso_error: typeof search.sso_error === 'string' ? search.sso_error : undefined,
   }),

@@ -76,13 +76,6 @@ const basePayload: ApiKeysPayload = {
       email: 'jane@example.com',
     },
   ],
-  teams: [
-    {
-      id: 'team_1',
-      name: 'Core Platform',
-      key: 'core-platform',
-    },
-  ],
   service_accounts: [
     {
       id: 'service_account_1',
@@ -463,7 +456,7 @@ describe('ApiKeysPage', () => {
   })
 
   it('keeps create actions disabled until the mutation resolves', async () => {
-    let resolveCreate: ((value: unknown) => void) | null = null
+    let resolveCreate: (value: unknown) => void = () => {}
     createGatewayApiKeyMock.mockReturnValue(
       new Promise((resolve) => {
         resolveCreate = resolve
@@ -487,7 +480,7 @@ describe('ApiKeysPage', () => {
     await waitFor(() => expect(createGatewayApiKeyMock).toHaveBeenCalledTimes(1))
     expect(within(dialog).getByRole('button', { name: 'Creating...' })).toBeDisabled()
 
-    resolveCreate?.({
+    resolveCreate({
       data: {
         api_key: {
           id: 'api_key_2',

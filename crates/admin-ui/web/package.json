@@ -12,6 +12,7 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
+    "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "test:watch": "vitest",
     "playwright:install": "playwright install chromium",

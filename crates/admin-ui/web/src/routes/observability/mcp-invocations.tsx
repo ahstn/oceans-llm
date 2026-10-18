@@ -629,8 +629,8 @@ function formatPolicyResult(policyResult: string) {
   return policyResult.replaceAll('_', ' ')
 }
 
-function formatLatency(latencyMs: number | null) {
-  return latencyMs === null ? 'n/a' : `${latencyMs}ms`
+function formatLatency(latencyMs: number | null | undefined) {
+  return latencyMs == null ? 'n/a' : `${latencyMs}ms`
 }
 
 function payloadState(redacted: boolean, truncated: boolean) {

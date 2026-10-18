@@ -122,7 +122,7 @@ function DirectoryDetail({ label, value }: { label: string; value: string }) {
   )
 }
 
-function formatRole(value: string | null) {
+function formatRole(value: string | null | undefined) {
   if (!value) return 'None'
   return value.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase())
 }

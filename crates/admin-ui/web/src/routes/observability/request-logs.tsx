@@ -633,7 +633,7 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
         ) : null}
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
@@ -641,6 +641,10 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
           <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
           <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
           <DetailRow label="Tool Calls" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow
+            label="MCP Tool Calls"
+            value={formatToolCount(counts.invoked_mcp_tool_count)}
+          />
           <DetailRow
             label="Distinct Tools Called"
             value={formatToolCount(counts.invoked_distinct_tool_count)}
@@ -859,8 +863,8 @@ function formatOccurredAt(occurredAt: string) {
   return occurredAt.replace('T', ' ').slice(0, 19)
 }
 
-function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
-  if (statusCode === null) {
+function badgeVariant(statusCode: number | null | undefined): 'success' | 'warning' | 'outline' {
+  if (statusCode == null) {
     return 'outline'
   }
 
@@ -871,12 +875,12 @@ function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'out
   return status === 'success' ? 'success' : status.endsWith('error') ? 'warning' : 'outline'
 }
 
-function formatLatency(latencyMs: number | null) {
-  return latencyMs === null ? 'n/a' : `${latencyMs}ms`
+function formatLatency(latencyMs: number | null | undefined) {
+  return latencyMs == null ? 'n/a' : `${latencyMs}ms`
 }
 
-function formatTokenCount(totalTokens: number | null) {
-  return totalTokens === null ? 'n/a' : String(totalTokens)
+function formatTokenCount(totalTokens: number | null | undefined) {
+  return totalTokens == null ? 'n/a' : String(totalTokens)
 }
 
 function formatRequestCost(costUsd10000: number | null | undefined) {
@@ -892,8 +896,8 @@ function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undef
   return `${cached} of ${promptTokens.toLocaleString('en-US')} prompt tokens cached (${percent}%)`
 }
 
-function formatBasisPoints(value: number | null) {
-  return value === null ? 'n/a' : `${(value / 100).toFixed(2)}%`
+function formatBasisPoints(value: number | null | undefined) {
+  return value == null ? 'n/a' : `${(value / 100).toFixed(2)}%`
 }
 
 function formatToolCount(value: number | null | undefined) {

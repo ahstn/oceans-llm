@@ -3,6 +3,9 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+/* AGENTS.md quotes class names Tailwind would otherwise emit as invalid CSS. */
+@source not '../../AGENTS.md';
+
 @font-face {
   font-family: 'Geist Variable';
   font-style: normal;

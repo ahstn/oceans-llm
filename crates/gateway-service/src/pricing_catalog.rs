@@ -545,7 +545,11 @@ pub async fn fetch_vendored_snapshot(
 }
 
 pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow::Result<String> {
-    serde_json::to_string_pretty(snapshot).context("failed serializing vendored pricing catalog")
+    let mut json = serde_json::to_string_pretty(snapshot)
+        .context("failed serializing vendored pricing catalog")?;
+    // The repository's end-of-file-fixer hook rejects a commit of the file without it.
+    json.push('\n');
+    Ok(json)
 }
 
 fn pricing_catalog_http_client() -> Client {

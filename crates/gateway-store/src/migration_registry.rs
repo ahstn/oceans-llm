@@ -437,10 +437,19 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 71,
+        name: "request_log_invoked_mcp_tool_count",
+        checksum: "V71__request_log_invoked_mcp_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V71__request_log_invoked_mcp_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V71__request_log_invoked_mcp_tool_count.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 72,
         name: "batch_jobs_route_index",
-        checksum: "V71__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V71__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V71__batch_jobs_route_index.sql"),
+        checksum: "V72__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V72__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V72__batch_jobs_route_index.sql"),
     },
 ];
 

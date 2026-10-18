@@ -1,3 +1,4 @@
+import type { IconSvgElement } from '@hugeicons/react'
 import {
   useEffect,
   useRef,
@@ -60,7 +61,7 @@ type FilterFieldKey = Exclude<FilterParam, 'tag_key' | 'tag_value'> | 'tag'
 interface FilterFieldDefinition {
   key: FilterFieldKey
   label: string
-  icon: unknown
+  icon: IconSvgElement
   placeholder: string
 }
 

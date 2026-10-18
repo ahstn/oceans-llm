@@ -72,7 +72,7 @@ export function AgentSessionsPage() {
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [detailRetry, setDetailRetry] = useState(0)
-  const showScore = session.capabilities.calibrated_score_visible
+  const showScore = session?.capabilities.calibrated_score_visible ?? false
 
   useEffect(() => {
     if (!selectedSessionId) {
@@ -222,7 +222,7 @@ export function AgentSessionsPage() {
                 key={selectedDetail.session.session_id}
                 detail={selectedDetail}
                 showScore={showScore}
-                canAccessRequestLogs={session.capabilities.platform_admin}
+                canAccessRequestLogs={session?.capabilities.platform_admin ?? false}
               />
             ) : null}
           </div>

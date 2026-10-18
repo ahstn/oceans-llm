@@ -148,6 +148,8 @@ const modelPage: ModelPageView = {
     {
       id: 'fast',
       resolved_model_key: 'fast',
+      model_id: 'fast',
+      pricing_varies_by_route: false,
       alias_of: null,
       aliases: ['backup-fast'],
       description: 'Gemini via OpenRouter',
@@ -188,6 +190,8 @@ const modelPage: ModelPageView = {
     {
       id: 'claude-sonnet',
       resolved_model_key: 'claude-sonnet',
+      model_id: 'claude-sonnet',
+      pricing_varies_by_route: false,
       alias_of: null,
       aliases: [],
       description: 'Claude Sonnet via Anthropic',
@@ -285,6 +289,8 @@ const modelPage: ModelPageView = {
     {
       id: 'vertex-fast',
       resolved_model_key: 'vertex-fast',
+      model_id: 'vertex-fast',
+      pricing_varies_by_route: false,
       alias_of: null,
       aliases: [],
       description: 'Gemini fallback on Vertex',
@@ -1313,7 +1319,7 @@ describe('ModelsPage search and pagination', () => {
     const pageSize = within(pagination).getByRole('combobox', { name: 'Rows per page' })
     expect(pageSize).toHaveTextContent('1')
     fireEvent.click(pageSize)
-    fireEvent.click(screen.getByRole('option', { name: '50', exact: true }))
+    fireEvent.click(screen.getByRole('option', { name: '50' }))
     expect(navigateMock.mock.lastCall![0].search(latestSearch)).toEqual({
       page: 1,
       page_size: 50,
