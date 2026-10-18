@@ -147,6 +147,11 @@ fn read_main_file(sources: &ConfigSources) -> anyhow::Result<(GatewayConfig, Opt
     }
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed reading config file `{}`", path.display()))?;
+    // An empty, comment-only, or `---`-only main file is the default config, so a deployment
+    // can keep everything in fragments behind a placeholder main file.
+    if is_blank_yaml(&raw) {
+        return Ok((GatewayConfig::default(), Some(raw)));
+    }
     // Typed config is parsed straight from the text so errors keep line and column numbers.
     let config = serde_yaml::from_str(&raw)
         .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;

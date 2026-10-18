@@ -251,48 +251,6 @@ impl LibsqlStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
-        // Only routes a batch job references survive the per-model delete below. Load those of
-        // the configured models once, so a renamed route reuses its surviving row instead of
-        // inserting a second row that the (model, provider, upstream, priority) unique key rejects.
-        let configured_model_ids = model_ids
-            .values()
-            .map(|model_id| libsql::Value::Text(model_id.to_string()))
-            .collect::<Vec<_>>();
-        let mut survivors_by_model =
-            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
-        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
-        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
-        const SURVIVOR_QUERY_CHUNK: usize = 500;
-        for chunk in configured_model_ids.chunks(SURVIVOR_QUERY_CHUNK) {
-            let placeholders = (1..=chunk.len())
-                .map(|index| format!("?{index}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let mut survivor_rows = self
-                .connection
-                .query(
-                    &format!(
-                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders}) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)"
-                    ),
-                    libsql::params::Params::Positional(chunk.to_vec()),
-                )
-                .await
-                .map_err(to_query_error)?;
-            while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
-                let id: String = row.get(0).map_err(to_query_error)?;
-                let model_id: String = row.get(1).map_err(to_query_error)?;
-                let provider_key: String = row.get(2).map_err(to_query_error)?;
-                let upstream_model: String = row.get(3).map_err(to_query_error)?;
-                let priority: i64 = row.get(4).map_err(to_query_error)?;
-                survivors_by_model.entry(model_id).or_default().insert(
-                    parse_uuid(&id)?,
-                    provider_key,
-                    upstream_model,
-                    priority,
-                );
-            }
-        }
-
         // Insert model rows first with a null alias target so config order does not
         // matter for self-referential alias foreign keys.
         for model in models {
@@ -390,7 +348,56 @@ impl LibsqlStore {
                         .map_err(to_query_error)?;
                 }
             }
+        }
 
+        // Every model's delete has run, so the routes left for configured models are exactly the
+        // batch-referenced survivors. Loading them now, in one query, means the snapshot cannot
+        // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
+        // of inserting a second row that the (model, provider, upstream, priority) unique key
+        // rejects.
+        let configured_model_ids = model_ids
+            .values()
+            .map(|model_id| libsql::Value::Text(model_id.to_string()))
+            .collect::<Vec<_>>();
+        let mut survivors_by_model =
+            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
+        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
+        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
+        const SURVIVOR_QUERY_CHUNK: usize = 500;
+        for chunk in configured_model_ids.chunks(SURVIVOR_QUERY_CHUNK) {
+            let placeholders = (1..=chunk.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut survivor_rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders})"
+                    ),
+                    libsql::params::Params::Positional(chunk.to_vec()),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = survivor_rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                let model_id: String = row.get(1).map_err(to_query_error)?;
+                let provider_key: String = row.get(2).map_err(to_query_error)?;
+                let upstream_model: String = row.get(3).map_err(to_query_error)?;
+                let priority: i64 = row.get(4).map_err(to_query_error)?;
+                survivors_by_model.entry(model_id).or_default().insert(
+                    parse_uuid(&id)?,
+                    provider_key,
+                    upstream_model,
+                    priority,
+                );
+            }
+        }
+
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before route upserts");
             // Each survivor is used at most once, so two configured routes sharing the unique key
             // still fail instead of overwriting each other.
             let mut survivors = survivors_by_model

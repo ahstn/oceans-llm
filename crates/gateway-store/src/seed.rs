@@ -52,7 +52,8 @@ impl RouteSurvivors {
     /// whose priority changes, or an unclaimed row sitting on a configured route's target, could
     /// block another route; two routes swapping priorities would block each other. Parked rows
     /// take priorities below every existing and configured priority of their provider and
-    /// upstream group, so they cannot collide. Claimed rows then get their real priority from
+    /// upstream group, or above it when the group already reaches `i32::MIN`, so they cannot
+    /// collide. Claimed rows then get their real priority from
     /// the upsert; unclaimed ones stay parked as disabled history.
     pub(crate) fn parking_plan(
         &self,
@@ -66,17 +67,20 @@ impl RouteSurvivors {
             .iter()
             .map(|(_, key)| key)
             .collect::<std::collections::HashSet<_>>();
-        let mut floors = std::collections::HashMap::<(&str, &str), i64>::new();
+        // The (lowest, highest) priority in use per provider and upstream group, across
+        // survivors and configured targets.
+        let mut bounds = std::collections::HashMap::<(&str, &str), (i64, i64)>::new();
         for (provider, upstream, priority) in self
             .all
             .iter()
             .map(|(_, key)| key)
             .chain(claimed.iter().map(|(_, key)| key))
         {
-            let floor = floors
+            let (low, high) = bounds
                 .entry((provider.as_str(), upstream.as_str()))
-                .or_insert(*priority);
-            *floor = (*floor).min(*priority);
+                .or_insert((*priority, *priority));
+            *low = (*low).min(*priority);
+            *high = (*high).max(*priority);
         }
 
         let mut blocking = self
@@ -91,11 +95,17 @@ impl RouteSurvivors {
         blocking
             .into_iter()
             .map(|(id, (provider, upstream, _))| {
-                let floor = floors
+                let (low, high) = bounds
                     .get_mut(&(provider.as_str(), upstream.as_str()))
-                    .expect("every survivor has a floor");
-                *floor -= 1;
-                (*id, *floor)
+                    .expect("every survivor has bounds");
+                // Park below the group, or above it when that would leave the i32 column range.
+                if *low > i64::from(i32::MIN) {
+                    *low -= 1;
+                    (*id, *low)
+                } else {
+                    *high += 1;
+                    (*id, *high)
+                }
             })
             .collect()
     }
@@ -1068,5 +1078,36 @@ fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole
     match (user.team_id, user.membership_role) {
         (Some(team_id), Some(role)) => Some((team_id, role)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod route_survivor_tests {
+    use uuid::Uuid;
+
+    use super::RouteSurvivors;
+
+    fn key(priority: i64) -> (String, String, i64) {
+        ("openai".to_string(), "gpt".to_string(), priority)
+    }
+
+    #[test]
+    fn parks_above_the_group_when_below_would_leave_the_i32_range() {
+        let route = Uuid::from_u128(1);
+        let mut survivors = RouteSurvivors::default();
+        survivors.insert(route, "openai".to_string(), "gpt".to_string(), 10);
+
+        // The route moves to i32::MIN, so it must be parked before its upsert, but nothing fits
+        // below the group.
+        let targets = vec![(route, key(i64::from(i32::MIN)))];
+        let claimed = survivors
+            .claim_all(&targets)
+            .into_iter()
+            .zip(targets.into_iter().map(|(_, key)| key))
+            .collect::<Vec<_>>();
+        let plan = survivors.parking_plan(&claimed);
+
+        assert_eq!(plan, vec![(route, 11)]);
+        assert!(i32::try_from(plan[0].1).is_ok());
     }
 }

@@ -251,31 +251,6 @@ impl PostgresStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
-        // Only routes a batch job references survive the per-model delete below. Load those of
-        // the configured models once, so a renamed route reuses its surviving row instead of
-        // inserting a second row that the (model, provider, upstream, priority) unique key rejects.
-        let configured_model_ids = model_ids
-            .values()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
-        let survivor_rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = ANY($1) AND EXISTS (SELECT 1 FROM batch_jobs WHERE batch_jobs.route_id = model_routes.id)",
-        )
-        .bind(&configured_model_ids)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        let mut survivors_by_model =
-            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
-        for (id, model_id, provider_key, upstream_model, priority) in survivor_rows {
-            survivors_by_model.entry(model_id).or_default().insert(
-                parse_uuid(&id)?,
-                provider_key,
-                upstream_model,
-                i64::from(priority),
-            );
-        }
-
         // Insert model rows first with a null alias target so config order does not
         // matter for self-referential alias foreign keys.
         for model in models {
@@ -368,7 +343,39 @@ impl PostgresStore {
                     .map_err(to_query_error)?;
                 }
             }
+        }
 
+        // Every model's delete has run, so the routes left for configured models are exactly the
+        // batch-referenced survivors. Loading them now, in one query, means the snapshot cannot
+        // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
+        // of inserting a second row that the (model, provider, upstream, priority) unique key
+        // rejects.
+        let configured_model_ids = model_ids
+            .values()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let survivor_rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
+            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = ANY($1)",
+        )
+        .bind(&configured_model_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        let mut survivors_by_model =
+            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
+        for (id, model_id, provider_key, upstream_model, priority) in survivor_rows {
+            survivors_by_model.entry(model_id).or_default().insert(
+                parse_uuid(&id)?,
+                provider_key,
+                upstream_model,
+                i64::from(priority),
+            );
+        }
+
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before route upserts");
             // Each survivor is used at most once, so two configured routes sharing the unique key
             // still fail instead of overwriting each other.
             let mut survivors = survivors_by_model

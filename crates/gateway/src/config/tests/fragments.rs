@@ -400,3 +400,20 @@ fn rendered_config_loads_back_to_the_same_models_and_providers() {
     assert_eq!(model_seeds(&reloaded.config), model_seeds(&loaded.config));
     assert_eq!(providers(&reloaded.config), providers(&loaded.config));
 }
+
+#[test]
+fn a_blank_main_file_is_the_default_config() {
+    let tmp = tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        "conf.d/models/openai.yaml",
+        "providers:\n  openai-prod:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  gpt-5:\n    route: { provider: openai-prod, upstream_model: gpt-5 }\n",
+    );
+    for main in ["", "# fragments hold everything\n", "---\n"] {
+        write(tmp.path(), "gateway.yaml", main);
+        let loaded = GatewayConfig::load(&sources(tmp.path()))
+            .unwrap_or_else(|error| panic!("blank main {main:?}: {error:#}"));
+        assert_eq!(loaded.config.models.len(), 1, "blank main {main:?}");
+        render_config(&sources(tmp.path()), false).expect("render with a blank main file");
+    }
+}
