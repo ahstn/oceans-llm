@@ -265,15 +265,15 @@ impl PostgresStore {
         .fetch_all(&self.pool)
         .await
         .map_err(to_query_error)?;
-        let mut survivors_by_model = std::collections::HashMap::<
-            String,
-            std::collections::HashMap<(String, String, i32), String>,
-        >::new();
+        let mut survivors_by_model =
+            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
         for (id, model_id, provider_key, upstream_model, priority) in survivor_rows {
-            survivors_by_model
-                .entry(model_id)
-                .or_default()
-                .insert((provider_key, upstream_model, priority), id);
+            survivors_by_model.entry(model_id).or_default().insert(
+                parse_uuid(&id)?,
+                provider_key,
+                upstream_model,
+                i64::from(priority),
+            );
         }
 
         // Insert model rows first with a null alias target so config order does not
@@ -376,22 +376,20 @@ impl PostgresStore {
                 .unwrap_or_default();
 
             for (route_index, route) in model.routes.iter().enumerate() {
-                let survivor = survivors.remove(&(
-                    route.provider_key.clone(),
-                    route.upstream_model.clone(),
+                let own_id = route_uuid(
+                    &model.model_key,
+                    route.route_key.as_deref(),
+                    &route.provider_key,
+                    &route.upstream_model,
                     route.priority,
-                ));
-                let route_id = match survivor {
-                    Some(raw) => parse_uuid(&raw)?,
-                    None => route_uuid(
-                        &model.model_key,
-                        route.route_key.as_deref(),
-                        &route.provider_key,
-                        &route.upstream_model,
-                        route.priority,
-                        route_index,
-                    ),
-                };
+                    route_index,
+                );
+                let route_id = survivors.claim(
+                    own_id,
+                    &route.provider_key,
+                    &route.upstream_model,
+                    i64::from(route.priority),
+                );
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;

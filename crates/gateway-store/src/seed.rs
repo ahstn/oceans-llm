@@ -22,6 +22,57 @@ use uuid::Uuid;
 
 use crate::GatewayStore;
 
+/// Batch-referenced route rows of one model that survived the reseed delete, by id and by
+/// `(provider, upstream, priority)` key.
+#[derive(Default)]
+pub(crate) struct RouteSurvivors {
+    by_key: std::collections::HashMap<(String, String, i64), Uuid>,
+    by_id: std::collections::HashMap<Uuid, (String, String, i64)>,
+}
+
+impl RouteSurvivors {
+    pub(crate) fn insert(
+        &mut self,
+        id: Uuid,
+        provider_key: String,
+        upstream_model: String,
+        priority: i64,
+    ) {
+        let key = (provider_key, upstream_model, priority);
+        self.by_key.insert(key.clone(), id);
+        self.by_id.insert(id, key);
+    }
+
+    /// The row id a configured route should upsert. A route whose own deterministic id
+    /// survived keeps it, even when its priority changed. Otherwise a survivor with the same
+    /// `(provider, upstream, priority)` is reused, which covers a renamed route. Each survivor is
+    /// claimed once, so two configured routes never share a row.
+    pub(crate) fn claim(
+        &mut self,
+        own_id: Uuid,
+        provider_key: &str,
+        upstream_model: &str,
+        priority: i64,
+    ) -> Uuid {
+        if let Some(key) = self.by_id.remove(&own_id) {
+            self.by_key.remove(&key);
+            return own_id;
+        }
+        let key = (
+            provider_key.to_string(),
+            upstream_model.to_string(),
+            priority,
+        );
+        match self.by_key.remove(&key) {
+            Some(id) => {
+                self.by_id.remove(&id);
+                id
+            }
+            None => own_id,
+        }
+    }
+}
+
 pub(crate) fn model_uuid(model_key: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,

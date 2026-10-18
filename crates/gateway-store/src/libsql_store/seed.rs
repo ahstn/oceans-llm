@@ -258,10 +258,8 @@ impl LibsqlStore {
             .values()
             .map(|model_id| libsql::Value::Text(model_id.to_string()))
             .collect::<Vec<_>>();
-        let mut survivors_by_model = std::collections::HashMap::<
-            String,
-            std::collections::HashMap<(String, String, i64), String>,
-        >::new();
+        let mut survivors_by_model =
+            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
         // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
         // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
         const SURVIVOR_QUERY_CHUNK: usize = 500;
@@ -286,10 +284,12 @@ impl LibsqlStore {
                 let provider_key: String = row.get(2).map_err(to_query_error)?;
                 let upstream_model: String = row.get(3).map_err(to_query_error)?;
                 let priority: i64 = row.get(4).map_err(to_query_error)?;
-                survivors_by_model
-                    .entry(model_id)
-                    .or_default()
-                    .insert((provider_key, upstream_model, priority), id);
+                survivors_by_model.entry(model_id).or_default().insert(
+                    parse_uuid(&id)?,
+                    provider_key,
+                    upstream_model,
+                    priority,
+                );
             }
         }
 
@@ -398,22 +398,20 @@ impl LibsqlStore {
                 .unwrap_or_default();
 
             for (route_index, route) in model.routes.iter().enumerate() {
-                let survivor = survivors.remove(&(
-                    route.provider_key.clone(),
-                    route.upstream_model.clone(),
+                let own_id = route_uuid(
+                    &model.model_key,
+                    route.route_key.as_deref(),
+                    &route.provider_key,
+                    &route.upstream_model,
+                    route.priority,
+                    route_index,
+                );
+                let route_id = survivors.claim(
+                    own_id,
+                    &route.provider_key,
+                    &route.upstream_model,
                     i64::from(route.priority),
-                ));
-                let route_id = match survivor {
-                    Some(raw) => parse_uuid(&raw)?,
-                    None => route_uuid(
-                        &model.model_key,
-                        route.route_key.as_deref(),
-                        &route.provider_key,
-                        &route.upstream_model,
-                        route.priority,
-                        route_index,
-                    ),
-                };
+                );
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;
