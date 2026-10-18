@@ -1,0 +1,9 @@
+# Rendered output and local working files (render checks, audio premixes, frame builders, Studio thumbnails).
+renders/
+.scratch/
+.thumbnails/
+# HyperFrames local state (project-history id, stamp cache, preview builds) and Studio's waveform cache.
+.hyperframes/
+.waveform-cache/
+# The score is rebuilt byte-for-byte by scripts/score.mjs (1-2 s); npm run dev, check, render and publish run it first.
+assets/audio/score.wav

@@ -37,6 +37,36 @@ const SETS = {
     { name: 'batches', path: '/admin/batches' },
   ],
   profile: [{ name: 'profile', path: '/admin/profile' }],
+  // Needs a Skills-enabled stack (OCEANS_VERIFY_SKILLS=true) with a seeded catalog.
+  skills: [{ name: 'skills', path: '/admin/skills' }],
+  // Open dialogs and sheets so the flight stops land on a single, legible detail.
+  refined: [
+    { name: 'model-routing-opus', path: '/admin/models', prepare: (page) => openModelRouting(page, 'claude-opus-4-7') },
+    { name: 'model-routing-astra', path: '/admin/models', prepare: (page) => openModelRouting(page, 'gpt-6-astra') },
+    {
+      name: 'spend-increase',
+      path: '/admin/spend-controls',
+      prepare: async (page) => {
+        await page.getByRole('row').filter({ hasText: 'Grace' }).getByRole('button', { name: 'Increase budget' }).click()
+        await page.getByRole('dialog').waitFor()
+      },
+    },
+    {
+      name: 'request-inspect',
+      path: '/admin/observability/request-logs',
+      prepare: async (page) => {
+        await page.getByRole('button', { name: 'Inspect' }).first().click()
+        await page.getByRole('dialog').waitFor()
+      },
+    },
+    { name: 'mcp-invocations', path: '/admin/observability/mcp-invocations' },
+  ],
+}
+
+async function openModelRouting(page, modelId) {
+  await page.getByRole('row').filter({ hasText: modelId }).getByRole('button', { name: 'Info' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Routing' }).click()
 }
 
 async function signIn(page) {
@@ -76,7 +106,14 @@ try {
   for (const shot of SETS[shotSet]) {
     await page.goto(`${baseURL}${shot.path}`, { waitUntil: 'domcontentloaded' })
     await settle(page)
-    if (shot.prepare) await shot.prepare(page)
+    if (shot.prepare) {
+      try {
+        await shot.prepare(page)
+        await page.waitForTimeout(600) // let dialog enter transitions finish
+      } catch (error) {
+        console.log(`prepare failed for ${shot.name}: ${error.message.split('\n')[0]}`)
+      }
+    }
     const file = path.join(outDir, `${shot.name}.png`)
     await page.screenshot({ path: file })
     console.log(`captured ${shot.name} -> ${path.relative(projectDir, file)}`)

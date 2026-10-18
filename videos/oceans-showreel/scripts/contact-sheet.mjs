@@ -1,5 +1,6 @@
 // Tiles PNGs into one labelled contact sheet (ffmpeg-free; uses the admin UI's Playwright).
 // Usage: node scripts/contact-sheet.mjs <out.png> <columns> <thumbWidth> <image...>
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -29,12 +30,16 @@ const html = `<!doctype html><style>
   figcaption { padding: 4px 2px 0; }
 </style><main>${cells}</main>`
 
+// about:blank can't load file:// images, so serve the sheet from a file beside the output.
+const htmlFile = `${path.resolve(out)}.html`
+await fs.writeFile(htmlFile, html)
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: columns * (thumbWidth + 12) + 12, height: 400 } })
-  await page.setContent(html, { waitUntil: 'load' })
+  await page.goto(pathToFileURL(htmlFile).href, { waitUntil: 'load' })
   await page.screenshot({ path: path.resolve(out), fullPage: true })
   console.log(`wrote ${out}`)
 } finally {
   await browser.close()
+  await fs.rm(htmlFile, { force: true })
 }

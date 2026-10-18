@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx --yes hyperframes@0.8.151 preview",
-    "check": "npx --yes hyperframes@0.8.151 check",
-    "render": "npx --yes hyperframes@0.8.151 render",
-    "publish": "npx --yes hyperframes@0.8.151 publish"
+    "score": "node scripts/score.mjs",
+    "dev": "node scripts/score.mjs && npx --yes hyperframes@0.8.144 preview",
+    "check": "node scripts/score.mjs && npx --yes hyperframes@0.8.144 check",
+    "render": "node scripts/score.mjs && npx --yes hyperframes@0.8.144 render",
+    "publish": "node scripts/score.mjs && npx --yes hyperframes@0.8.144 publish"
   }
 }

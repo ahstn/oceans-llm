@@ -1,0 +1,432 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Geist";
+      src: url("../../assets/fonts/geist-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      /* Official JetBrains Mono 2.304 webfont. Rules that use it turn ligatures off, so it renders as JetBrains Mono NL. */
+      src: url("../../assets/fonts/jetbrains-mono-regular.woff2") format("woff2");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Geist", sans-serif;
+      font-weight: 500;
+      color: oklch(0.985 0.004 226);
+      --f3-fg: oklch(0.985 0.004 226);
+      --f3-mfg: oklch(0.708 0.018 230);
+      --f3-border-strong: oklch(0.985 0.004 226 / 16%);
+      --f3-primary: oklch(0.513 0.112 237.173);
+      --f3-wave: #0b83ad;
+      --f3-mist: #b7dde4;
+    }
+    #f3-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 70% 70% at 50% 45%, oklch(0.18 0.02 238) 0%, oklch(0.145 0.012 238) 55%, oklch(0.115 0.01 238) 100%);
+    }
+    #f3-stage {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    #f3-fx {
+      position: absolute;
+      width: 0;
+      height: 0;
+    }
+    #f3-optics {
+      position: absolute;
+      inset: 0;
+      filter: url(#f3-mb);
+    }
+    #f3-lens {
+      position: absolute;
+      inset: 0;
+      perspective: 1000px;
+      perspective-origin: 50% 50%;
+    }
+    .f3-rig {
+      position: absolute;
+      inset: 0;
+      transform-style: preserve-3d;
+    }
+    .f3-tile {
+      position: absolute;
+      left: 960px;
+      top: 540px;
+      width: 560px;
+      height: 315px;
+      margin-left: -280px;
+      margin-top: -157.5px;
+      border-radius: 10px;
+      background-color: oklch(0.205 0.016 238);
+      background-size: 100% 100%;
+      box-shadow: 0 0 0 1px oklch(1 0 0 / 9%), 0 28px 56px -12px oklch(0.06 0.01 238 / 0.6);
+      backface-visibility: hidden;
+    }
+    #f3-tile-0 { background-image: url("../../assets/wall/agent-sessions.jpg"); }
+    #f3-tile-1 { background-image: url("../../assets/wall/api-keys.jpg"); }
+    #f3-tile-2 { background-image: url("../../assets/wall/teams.jpg"); }
+    #f3-tile-3 { background-image: url("../../assets/wall/batches.jpg"); }
+    #f3-tile-4 { background-image: url("../../assets/wall/users.jpg"); }
+    #f3-tile-5 { background-image: url("../../assets/wall/usage-costs.jpg"); }
+    #f3-tile-6 { background-image: url("../../assets/wall/request-logs.jpg"); }
+    #f3-tile-7 { background-image: url("../../assets/wall/model-routing-astra.jpg"); }
+    #f3-tile-8 { background-image: url("../../assets/wall/guardrails-settings.jpg"); }
+    #f3-tile-9 { background-image: url("../../assets/wall/leaderboard.jpg"); }
+    #f3-tile-10 { background-image: url("../../assets/wall/spend-increase.jpg"); }
+    #f3-tile-11 { background-image: url("../../assets/wall/mcp-invocations.jpg"); }
+    #f3-tile-12 { background-image: url("../../assets/wall/agent-harnesses.jpg"); }
+    #f3-tile-13 { background-image: url("../../assets/wall/models.jpg"); }
+    #f3-tile-14 { background-image: url("../../assets/wall/request-inspect.jpg"); }
+    #f3-tile-15 { background-image: url("../../assets/wall/spend-controls.jpg"); }
+    .f3-flash {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 2px var(--f3-mist), inset 0 0 28px oklch(0.75 0.09 220 / 0.35);
+      opacity: 0;
+    }
+    #f3-shade {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 1040px 500px at 50% 48.8%, oklch(0.1 0.01 238 / 0.66) 0%, oklch(0.1 0.01 238 / 0.34) 55%, oklch(0.1 0.01 238 / 0) 100%),
+        oklch(0.115 0.012 238 / 0.36);
+      opacity: 0;
+    }
+    /* Same scrim as Frame 2: rgba twins of oklch(0.1 0.01 238) and oklch(0.115 0.012 238) so the
+       layout audit scores real alpha, and the caption pool boxed to the ellipse it paints. */
+    #f3-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 80% at 50% 45%, rgba(2, 4, 5, 0) 60%, rgba(2, 4, 5, 0.5) 100%);
+    }
+    #f3-pool {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 1060px;
+      height: 400px;
+      background: radial-gradient(ellipse 1060px 400px at 0% 100%, rgba(2, 6, 8, 0.86) 0%, rgba(2, 6, 8, 0.55) 45%, rgba(2, 6, 8, 0) 100%);
+    }
+    #f3-rail {
+      position: absolute;
+      left: 120px;
+      top: 790px;
+      height: 80px;
+      overflow: hidden;
+    }
+    .f3-line {
+      height: 80px;
+      line-height: 80px;
+      font-size: 64px;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      color: var(--f3-fg);
+    }
+    .f3-w { display: inline-block; }
+    .f3-every { color: var(--f3-wave); }
+    #f3-glow {
+      position: absolute;
+      left: 210px;
+      top: 77px;
+      width: 1500px;
+      height: 900px;
+      border-radius: 50%;
+      background: radial-gradient(closest-side, oklch(0.42 0.13 240) 0%, oklch(0.36 0.12 241 / 0.55) 42%, oklch(0.3 0.1 242 / 0) 100%);
+      opacity: 0;
+    }
+    #f3-row {
+      position: absolute;
+      left: 590.15px;
+      top: 364px;
+      width: 739.71px;
+      height: 132px;
+    }
+    #f3-mark {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 132px;
+      height: 132px;
+    }
+    #f3-rings {
+      position: absolute;
+      left: 640px;
+      top: 110px;
+      width: 640px;
+      height: 640px;
+      overflow: visible;
+    }
+    .f3-rp {
+      fill: none;
+      stroke: var(--f3-mist);
+      opacity: 0;
+    }
+    #f3-logo {
+      position: absolute;
+      inset: 0;
+      width: 132px;
+      height: 132px;
+      display: block;
+      opacity: 0;
+    }
+    #f3-word-mask {
+      position: absolute;
+      left: 152px;
+      top: -14px;
+      width: 603.71px;
+      height: 123px;
+      overflow: hidden;
+    }
+    #f3-word {
+      position: absolute;
+      left: 16px;
+      top: 13.92px;
+      width: 571.71px;
+      height: 132px;
+      font-size: 104px;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      color: var(--f3-fg);
+    }
+    .f3-wl {
+      position: absolute;
+      top: 0;
+      height: 132px;
+      line-height: 132px;
+    }
+    #f3-tag {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 540px;
+      height: 47.5px;
+      line-height: 47.5px;
+      font-size: 38px;
+      letter-spacing: -0.02em;
+      text-align: center;
+      white-space: nowrap;
+      color: var(--f3-fg);
+    }
+    #f3-tag span { display: inline-block; }
+    #f3-tag .f3-every { letter-spacing: -0.03em; }
+    #f3-tag-every { opacity: 0; }
+    #f3-fly {
+      position: absolute;
+      left: 244px;
+      top: 790px;
+      height: 80px;
+      line-height: 80px;
+      font-size: 64px;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+      color: var(--f3-wave);
+      transform-origin: 0 0;
+      opacity: 0;
+    }
+    #f3-pills {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 632px;
+      height: 58px;
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+    }
+    .f3-pill {
+      position: relative;
+      height: 58px;
+      padding: 0 28px;
+      border-radius: 29px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+      opacity: 0;
+    }
+    #f3-pill-url {
+      overflow: hidden;
+      background: var(--f3-primary);
+      color: var(--f3-fg);
+      font-family: "JetBrains Mono", monospace;
+      font-variant-ligatures: none;
+      font-weight: 400;
+      font-size: 26px;
+    }
+    #f3-sheen {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -40%;
+      width: 40%;
+      background: linear-gradient(100deg, oklch(1 0 0 / 0) 0%, oklch(1 0 0 / 0.3) 50%, oklch(1 0 0 / 0) 100%);
+    }
+    #f3-pill-oss {
+      background: oklch(0.165 0.014 238 / 0.72);
+      box-shadow: inset 0 0 0 1.5px var(--f3-border-strong);
+      color: var(--f3-fg);
+      font-size: 24px;
+    }
+    .f3-gh { width: 24px; height: 24px; color: var(--f3-fg); }
+    .f3-dot, .f3-lic { color: var(--f3-mfg); }
+    .f3-lic { font-family: "JetBrains Mono", monospace; font-variant-ligatures: none; font-weight: 400; font-size: 23px; }
+  </style>
+
+  <div id="root" data-composition-id="f3-lockup" data-width="1920" data-height="1080">
+    <div id="f3-bg" class="clip" data-start="0" data-duration="3.8" data-track-index="0"></div>
+
+    <div id="f3-stage" class="clip" data-start="0" data-duration="3.8" data-track-index="1">
+      <svg id="f3-fx" width="0" height="0" aria-hidden="true" focusable="false">
+        <filter id="f3-mb" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+          <feGaussianBlur id="f3-mbg" stdDeviation="22 22" />
+        </filter>
+      </svg>
+      <div id="f3-optics">
+        <div id="f3-lens">
+          <div id="f3-cam" class="f3-rig" style="transform:translate3d(0px,0px,150px)">
+            <div id="f3-pitch" class="f3-rig" style="transform:rotateX(8deg)">
+              <div id="f3-yaw" class="f3-rig" style="transform:rotateY(-4deg)">
+                <div id="f3-roll" class="f3-rig" style="transform:rotate(2deg)">
+                  <div id="f3-wall" class="f3-rig" data-layout-allow-overflow>
+                    <div id="f3-tile-0" class="f3-tile" style="transform:translate3d(-1112px,-689px,300px) rotate(0deg) rotateY(30deg) rotateX(0deg)"><div class="f3-flash f3-fr2"></div></div>
+                    <div id="f3-tile-1" class="f3-tile" style="transform:translate3d(-446px,-656px,-191px) rotate(-7deg) rotateY(-22deg) rotateX(18deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-2" class="f3-tile" style="transform:translate3d(400px,-739px,177px) rotate(-1deg) rotateY(3deg) rotateX(-26deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-3" class="f3-tile" style="transform:translate3d(1224px,-650px,-313px) rotate(7deg) rotateY(18deg) rotateX(21deg)"><div class="f3-flash f3-fr2"></div></div>
+                    <div id="f3-tile-4" class="f3-tile" style="transform:translate3d(-1251px,-239px,-436px) rotate(2deg) rotateY(-30deg) rotateX(-5deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-5" class="f3-tile" style="transform:translate3d(-335px,-257px,55px) rotate(-6deg) rotateY(25deg) rotateX(-14deg)"><div class="f3-flash f3-fr0"></div></div>
+                    <div id="f3-tile-6" class="f3-tile" style="transform:translate3d(376px,-182px,-559px) rotate(-4deg) rotateY(-8deg) rotateX(25deg)"><div class="f3-flash f3-fr0"></div></div>
+                    <div id="f3-tile-7" class="f3-tile" style="transform:translate3d(1150px,-274px,-68px) rotate(6deg) rotateY(-14deg) rotateX(-23deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-8" class="f3-tile" style="transform:translate3d(-1116px,247px,116px) rotate(5deg) rotateY(28deg) rotateX(9deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-9" class="f3-tile" style="transform:translate3d(-459px,249px,-375px) rotate(-5deg) rotateY(-28deg) rotateX(10deg)"><div class="f3-flash f3-fr0"></div></div>
+                    <div id="f3-tile-10" class="f3-tile" style="transform:translate3d(424px,185px,239px) rotate(-5deg) rotateY(13deg) rotateX(-24deg)"><div class="f3-flash f3-fr0"></div></div>
+                    <div id="f3-tile-11" class="f3-tile" style="transform:translate3d(1203px,278px,-252px) rotate(4deg) rotateY(9deg) rotateX(25deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-12" class="f3-tile" style="transform:translate3d(-1242px,664px,-620px) rotate(6deg) rotateY(-26deg) rotateX(-13deg)"><div class="f3-flash f3-fr2"></div></div>
+                    <div id="f3-tile-13" class="f3-tile" style="transform:translate3d(-326px,679px,-129px) rotate(-3deg) rotateY(29deg) rotateX(-6deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-14" class="f3-tile" style="transform:translate3d(354px,730px,-497px) rotate(-7deg) rotateY(-17deg) rotateX(21deg)"><div class="f3-flash f3-fr1"></div></div>
+                    <div id="f3-tile-15" class="f3-tile" style="transform:translate3d(1173px,640px,-7px) rotate(2deg) rotateY(-4deg) rotateX(-26deg)"><div class="f3-flash f3-fr2"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="f3-shade"></div>
+    </div>
+
+    <div id="f3-hud" class="clip" data-start="0" data-duration="3.8" data-track-index="2">
+      <div id="f3-vignette"></div>
+      <div id="f3-pool"></div>
+      <div id="f3-rail">
+        <div id="f3-rail-strip" data-layout-allow-overflow>
+          <div class="f3-line" data-layout-allow-occlusion>Share <span class="f3-every" data-layout-allow-occlusion>every</span> skill.</div>
+          <div class="f3-line"><span id="f3-rail-v" class="f3-w" data-layout-allow-occlusion>See</span> <span id="f3-every-src" class="f3-w f3-every">every</span> <span id="f3-rail-n" class="f3-w" data-layout-allow-occlusion>request.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="f3-lockup" class="clip" data-start="0" data-duration="3.8" data-track-index="3">
+      <div id="f3-glow"></div>
+      <svg id="f3-rings" viewBox="-320 -320 640 640" aria-hidden="true" focusable="false">
+        <circle id="f3-rp0" class="f3-rp" r="58" stroke-width="2" />
+        <circle id="f3-rp1" class="f3-rp" r="58" stroke-width="1.5" />
+      </svg>
+      <div id="f3-row">
+        <div id="f3-mark">
+          <img id="f3-logo" src="../../assets/brand/oceans-icon.png" alt="Oceans" />
+        </div>
+        <div id="f3-word-mask"><div id="f3-word" aria-label="Oceans LLM" data-layout-allow-overflow><span class="f3-wl" style="left:0px" data-layout-allow-occlusion>O</span><span class="f3-wl" style="left:76.21px" data-layout-allow-occlusion>c</span><span class="f3-wl" style="left:130.62px" data-layout-allow-occlusion>e</span><span class="f3-wl" style="left:187.51px" data-layout-allow-occlusion>a</span><span class="f3-wl" style="left:242.9px" data-layout-allow-occlusion>n</span><span class="f3-wl" style="left:299.95px" data-layout-allow-occlusion>s</span><span class="f3-wl" style="left:374.77px" data-layout-allow-occlusion>L</span><span class="f3-wl" style="left:429.37px" data-layout-allow-occlusion>L</span><span class="f3-wl" style="left:482.3px" data-layout-allow-occlusion>M</span></div></div>
+      </div>
+      <div id="f3-tag"><span class="f3-tw">One</span> <span class="f3-tw">governed</span> <span class="f3-tw">gateway</span> <span class="f3-tw">for</span> <span id="f3-tag-every" class="f3-every">every</span> <span class="f3-tw">agent</span> <span class="f3-tw">and</span> <span class="f3-tw f3-every">every</span> <span class="f3-tw">model.</span></div>
+      <div id="f3-fly">every</div>
+      <div id="f3-pills">
+        <div id="f3-pill-url" class="f3-pill"><div id="f3-sheen" data-layout-allow-overflow></div>oceans-llm.com</div>
+        <div id="f3-pill-oss" class="f3-pill"><svg class="f3-gh" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 0c6.63 0 12 5.276 12 11.79-.001 5.067-3.29 9.567-8.175 11.187-.6.118-.825-.25-.825-.56 0-.398.015-1.665.015-3.242 0-1.105-.375-1.813-.81-2.181 2.67-.295 5.475-1.297 5.475-5.822 0-1.297-.465-2.344-1.23-3.169.12-.295.54-1.503-.12-3.125 0 0-1.005-.324-3.3 1.209a11.32 11.32 0 00-3-.398c-1.02 0-2.04.133-3 .398-2.295-1.518-3.3-1.209-3.3-1.209-.66 1.622-.24 2.83-.12 3.125-.765.825-1.23 1.887-1.23 3.169 0 4.51 2.79 5.527 5.46 5.822-.345.294-.66.81-.765 1.577-.69.31-2.415.81-3.495-.973-.225-.354-.9-1.223-1.845-1.209-1.005.015-.405.56.015.781.51.28 1.095 1.327 1.23 1.666.24.663 1.02 1.93 4.035 1.385 0 .988.015 1.916.015 2.196 0 .31-.225.664-.825.56C3.303 21.374-.003 16.867 0 11.791 0 5.276 5.37 0 12 0z"></path></svg><span>Open source</span><span class="f3-dot">·</span><span class="f3-lic">AGPL-3.0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f3-mbg", {"attr":{"stdDeviation":"22 22"}}, {"attr":{"stdDeviation":"0 0"},"duration":0.3,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-cam", {"x":0,"y":0,"z":150}, {"x":-150,"y":-80,"z":-620,"duration":3.8,"ease":"expo.out"}, 0);
+      tl.fromTo("#f3-pitch", {"rotationX":8}, {"rotationX":22,"duration":3.8,"ease":"expo.out"}, 0);
+      tl.fromTo("#f3-yaw", {"rotationY":-4}, {"rotationY":-15,"duration":3.8,"ease":"expo.out"}, 0);
+      tl.fromTo("#f3-roll", {"rotation":2}, {"rotation":6,"duration":3.8,"ease":"expo.out"}, 0);
+      tl.fromTo("#f3-tile-0", {"x":-1112,"y":-689,"z":300,"rotationX":0,"rotationY":30,"rotation":0}, {"x":-882,"y":-514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.3,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-1", {"x":-446,"y":-656,"z":-191,"rotationX":18,"rotationY":-22,"rotation":-7}, {"x":-294,"y":-514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-2", {"x":400,"y":-739,"z":177,"rotationX":-26,"rotationY":3,"rotation":-1}, {"x":294,"y":-514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-3", {"x":1224,"y":-650,"z":-313,"rotationX":21,"rotationY":18,"rotation":7}, {"x":882,"y":-514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.3,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-4", {"x":-1251,"y":-239,"z":-436,"rotationX":-5,"rotationY":-30,"rotation":2}, {"x":-882,"y":-171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-5", {"x":-335,"y":-257,"z":55,"rotationX":-14,"rotationY":25,"rotation":-6}, {"x":-294,"y":-171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-6", {"x":376,"y":-182,"z":-559,"rotationX":25,"rotationY":-8,"rotation":-4}, {"x":294,"y":-171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-7", {"x":1150,"y":-274,"z":-68,"rotationX":-23,"rotationY":-14,"rotation":6}, {"x":882,"y":-171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-8", {"x":-1116,"y":247,"z":116,"rotationX":9,"rotationY":28,"rotation":5}, {"x":-882,"y":171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-9", {"x":-459,"y":249,"z":-375,"rotationX":10,"rotationY":-28,"rotation":-5}, {"x":-294,"y":171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-10", {"x":424,"y":185,"z":239,"rotationX":-24,"rotationY":13,"rotation":-5}, {"x":294,"y":171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-11", {"x":1203,"y":278,"z":-252,"rotationX":25,"rotationY":9,"rotation":4}, {"x":882,"y":171.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-12", {"x":-1242,"y":664,"z":-620,"rotationX":-13,"rotationY":-26,"rotation":6}, {"x":-882,"y":514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.3,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-13", {"x":-326,"y":679,"z":-129,"rotationX":-6,"rotationY":29,"rotation":-3}, {"x":-294,"y":514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-14", {"x":354,"y":730,"z":-497,"rotationX":21,"rotationY":-17,"rotation":-7}, {"x":294,"y":514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.15,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-tile-15", {"x":1173,"y":640,"z":-7,"rotationX":-26,"rotationY":-4,"rotation":2}, {"x":882,"y":514.5,"z":0,"rotationX":0,"rotationY":0,"rotation":0,"duration":1.3,"ease":"power3.out"}, 0);
+      tl.fromTo("#f3-rail-strip", {"y":0}, {"y":-80,"duration":0.5,"ease":"back.out(1.4)"}, 0.12);
+      tl.set("#f3-optics", {"filter":"none"}, 0.3);
+      tl.fromTo(".f3-fr0", {"opacity":0}, {"opacity":1,"duration":0.079,"ease":"power1.out"}, 0.55);
+      tl.fromTo(".f3-fr0", {"opacity":1}, {"opacity":0,"duration":0.5,"ease":"power2.out","immediateRender":false}, 0.63);
+      tl.fromTo(".f3-fr1", {"opacity":0}, {"opacity":1,"duration":0.079,"ease":"power1.out"}, 0.63);
+      tl.fromTo(".f3-fr1", {"opacity":1}, {"opacity":0,"duration":0.5,"ease":"power2.out","immediateRender":false}, 0.71);
+      tl.fromTo(".f3-fr2", {"opacity":0}, {"opacity":1,"duration":0.079,"ease":"power1.out"}, 0.71);
+      tl.fromTo(".f3-fr2", {"opacity":1}, {"opacity":0,"duration":0.5,"ease":"power2.out","immediateRender":false}, 0.79);
+      tl.set("#f3-optics", {"filter":"url(#f3-mb)"}, 1.15);
+      tl.fromTo("#f3-mbg", {"attr":{"stdDeviation":"0 0"}}, {"attr":{"stdDeviation":"6 6"},"duration":0.6,"ease":"power2.out","immediateRender":false}, 1.15);
+      tl.fromTo("#f3-shade", {"opacity":0}, {"opacity":1,"duration":0.6,"ease":"power2.out"}, 1.15);
+      tl.fromTo("#f3-wall", {"x":0,"y":0}, {"x":-36,"y":-14,"duration":2.65,"ease":"power1.in"}, 1.15);
+      tl.fromTo("#f3-logo", {"scale":0.3,"rotation":-14}, {"scale":1,"rotation":0,"duration":0.6,"ease":"back.out(1.5)"}, 1.2);
+      tl.fromTo("#f3-logo", {"opacity":0}, {"opacity":1,"duration":0.2,"ease":"power2.out","immediateRender":false}, 1.2);
+      tl.fromTo("#f3-glow", {"opacity":0,"scale":0.8}, {"opacity":0.38,"scale":1,"duration":0.699,"ease":"power2.out"}, 1.2);
+      tl.set("#f3-rp0", {"opacity":0.75}, 1.25);
+      tl.fromTo("#f3-rp0", {"attr":{"r":58}}, {"attr":{"r":320},"duration":0.6,"ease":"power2.out"}, 1.25);
+      tl.fromTo("#f3-rp0", {"opacity":0.75}, {"opacity":0,"duration":0.6,"ease":"power1.out","immediateRender":false}, 1.25);
+      tl.set("#f3-rp1", {"opacity":0.5}, 1.36);
+      tl.fromTo("#f3-rp1", {"attr":{"r":58}}, {"attr":{"r":230},"duration":0.55,"ease":"power2.out"}, 1.36);
+      tl.fromTo("#f3-rp1", {"opacity":0.5}, {"opacity":0,"duration":0.55,"ease":"power1.out","immediateRender":false}, 1.36);
+      tl.fromTo("#f3-row", {"x":303.86}, {"x":0,"duration":0.62,"ease":"power3.inOut"}, 1.42);
+      tl.fromTo(".f3-wl", {"yPercent":100}, {"yPercent":0,"duration":0.6,"ease":"power4.out","stagger":0.035}, 1.48);
+      tl.fromTo("#f3-rail-v", {"y":0}, {"y":84,"duration":0.26,"ease":"power2.in"}, 1.6);
+      tl.fromTo("#f3-rail-n", {"y":0}, {"y":84,"duration":0.26,"ease":"power2.in"}, 1.66);
+      tl.set("#f3-every-src", {"opacity":0}, 1.66);
+      tl.set("#f3-fly", {"opacity":1}, 1.66);
+      tl.fromTo("#f3-fly", {"x":0,"scale":1}, {"x":698,"scale":0.594,"duration":0.55,"ease":"power3.inOut"}, 1.66);
+      tl.fromTo("#f3-fly", {"y":0}, {"y":-250,"duration":0.55,"ease":"sine.inOut","immediateRender":false}, 1.66);
+      tl.fromTo("#f3-glow", {"scale":1}, {"scale":1.06,"duration":1.9,"ease":"sine.inOut","immediateRender":false}, 1.9);
+      tl.fromTo(".f3-tw", {"y":20,"opacity":0}, {"y":0,"opacity":1,"duration":0.5,"ease":"power3.out","stagger":{"each":0.045,"from":"center"}}, 2.13);
+      tl.fromTo("#f3-pill-url", {"y":16,"scale":0.7}, {"y":0,"scale":1,"duration":0.5,"ease":"back.out(1.6)"}, 2.38);
+      tl.fromTo("#f3-pill-url", {"opacity":0}, {"opacity":1,"duration":0.2,"ease":"power2.out","immediateRender":false}, 2.38);
+      tl.fromTo("#f3-pill-oss", {"y":16,"scale":0.7}, {"y":0,"scale":1,"duration":0.5,"ease":"back.out(1.6)"}, 2.46);
+      tl.fromTo("#f3-pill-oss", {"opacity":0}, {"opacity":1,"duration":0.2,"ease":"power2.out","immediateRender":false}, 2.46);
+      tl.fromTo("#f3-sheen", {"xPercent":0}, {"xPercent":360,"duration":0.7,"ease":"power2.inOut"}, 3);
+
+      tl.set({}, {}, 3.8);
+      window.__timelines['f3-lockup'] = tl;
+    })();
+  </script>
+</template>
