@@ -199,43 +199,30 @@ impl CatalogInvocation<'_> {
         }
     }
 
-    /// Records why the governance steps refused the call. A call refused for
-    /// want of a credential logs the arguments as sent, since no guarded
-    /// arguments were ever used.
+    /// Records why the governance steps refused the call. A refusal after
+    /// argument guardrails changed the arguments logs what they produced, as
+    /// the per-server route does, so a redaction is never undone in the log.
+    /// Otherwise it logs the arguments as sent; a credential refusal keeps
+    /// absent arguments absent.
     fn refused(
         &mut self,
         refusal: Refusal,
         guarded: Option<GuardedArguments>,
         original_arguments: Value,
     ) -> CatalogCallError {
-        let sent_none = original_arguments.is_null();
-        self.arguments = if sent_none {
-            json!({})
-        } else {
-            original_arguments
-        };
         if let Some(guarded) = &guarded {
             self.metadata.insert(
                 "guardrail_call".to_string(),
                 Value::Object(guardrail_decision_metadata(&guarded.evaluation)),
             );
         }
-        match &refusal {
-            Refusal::Credential(
-                GatewayError::McpCredentialRequired { .. }
-                | GatewayError::McpCredentialExpired { .. },
-            ) => {
-                if sent_none {
-                    self.arguments = Value::Null;
-                }
+        self.arguments = match guarded {
+            Some(guarded) if guarded.transformed() => guarded.value,
+            _ if original_arguments.is_null() && !matches!(refusal, Refusal::Credential(_)) => {
+                json!({})
             }
-            Refusal::Credential(_) => {
-                if let Some(guarded) = guarded {
-                    self.arguments = guarded.value;
-                }
-            }
-            _ => {}
-        }
+            _ => original_arguments,
+        };
         CatalogCallError::Refused(refusal)
     }
 
