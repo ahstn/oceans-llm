@@ -32,7 +32,7 @@ pub async fn v1_embeddings(
     )
     .await
     {
-        Ok(()) => {
+        Ok(rate_limit_team) => {
             dispatch_embeddings(
                 &state,
                 &headers,
@@ -40,6 +40,7 @@ pub async fn v1_embeddings(
                 ResolvedEmbeddings {
                     request_id,
                     request_started_at,
+                    rate_limit_team,
                     request,
                     resolved,
                 },
@@ -70,6 +71,8 @@ pub async fn v1_embeddings(
 struct ResolvedEmbeddings {
     request_id: String,
     request_started_at: Instant,
+    /// The team the request's rate-limit check counted.
+    rate_limit_team: RateLimitMemberTeam,
     request: EmbeddingsRequest,
     resolved: gateway_service::ResolvedGatewayRequest,
 }
@@ -86,6 +89,7 @@ async fn dispatch_embeddings(
     let ResolvedEmbeddings {
         request_id,
         request_started_at,
+        rate_limit_team,
         mut request,
         resolved,
     } = request;
@@ -242,6 +246,7 @@ async fn dispatch_embeddings(
                     state,
                     UsageAccountingContext {
                         auth,
+                        rate_limit_team,
                         model: &resolved.selection.execution_model,
                         route: &route,
                         request_id: &request_id,
@@ -285,6 +290,7 @@ async fn dispatch_embeddings(
         state,
         UsageAccountingContext {
             auth,
+            rate_limit_team,
             model: &resolved.selection.execution_model,
             route: &route,
             request_id: &request_id,

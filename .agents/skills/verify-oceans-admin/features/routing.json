@@ -539,6 +539,7 @@
         "crates/gateway/src/http/mcp_gateway/aggregate/execution.rs",
         "crates/gateway-core/src/rate_limits.rs",
         "crates/gateway-service/src/rate_limits.rs",
+        "crates/gateway-service/src/rate_limits/member_teams.rs",
         "crates/gateway-store/src/rate_limits.rs",
         "crates/gateway-store/src/any_store_rate_limits.rs",
         "crates/gateway-store/src/libsql_store/rate_limits.rs",

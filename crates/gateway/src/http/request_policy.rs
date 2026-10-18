@@ -24,7 +24,9 @@ use axum::{
     response::Response,
 };
 use gateway_core::GatewayError;
-use gateway_service::{RateLimitDecision, RateLimitStatus, RateLimitSubject};
+use gateway_service::{
+    RateLimitDecision, RateLimitStatus, RateLimitSubject, rate_limits::RateLimitMemberTeam,
+};
 
 use super::{client_ip::resolve_client_ip, state::AppState};
 
@@ -107,9 +109,21 @@ pub async fn check_rate_limits(
     context: &RequestPolicyContext,
     subject: &RateLimitSubject<'_>,
 ) -> Result<Option<RateLimitStatus>, GatewayError> {
+    Ok(check_rate_limits_with_team(state, context, subject)
+        .await?
+        .0)
+}
+
+/// [`check_rate_limits`], also returning the user's team as the check
+/// resolved it, for the request's token charge.
+async fn check_rate_limits_with_team(
+    state: &AppState,
+    context: &RequestPolicyContext,
+    subject: &RateLimitSubject<'_>,
+) -> Result<(Option<RateLimitStatus>, RateLimitMemberTeam), GatewayError> {
     let operation = subject.operation.as_str();
-    let decision = match state.service.rate_limiter().check(subject).await {
-        Ok(decision) => decision,
+    let (decision, team) = match state.service.rate_limiter().check_with_team(subject).await {
+        Ok(checked) => checked,
         Err(error) => {
             state
                 .metrics
@@ -125,7 +139,7 @@ pub async fn check_rate_limits(
     if let Some(status) = decision.status() {
         context.record(status);
     }
-    Ok(match decision {
+    let rejected = match decision {
         RateLimitDecision::Rejected(status) => {
             tracing::info!(
                 client_ip = ?context.client_ip,
@@ -136,17 +150,20 @@ pub async fn check_rate_limits(
             Some(status)
         }
         _ => None,
-    })
+    };
+    Ok((rejected, team))
 }
 
-/// [`check_rate_limits`] as a `429 rate_limited` error.
+/// [`check_rate_limits`] as a `429 rate_limited` error. Returns the user's
+/// team as the check resolved it, which the request's token charge must use
+/// (see [`RateLimitSubject::with_member_team`]).
 pub async fn enforce_rate_limits(
     state: &AppState,
     context: &RequestPolicyContext,
     subject: &RateLimitSubject<'_>,
-) -> Result<(), GatewayError> {
-    match check_rate_limits(state, context, subject).await? {
-        Some(rejected) => Err(rejected.to_error()),
-        None => Ok(()),
+) -> Result<RateLimitMemberTeam, GatewayError> {
+    match check_rate_limits_with_team(state, context, subject).await? {
+        (Some(rejected), _) => Err(rejected.to_error()),
+        (None, team) => Ok(team),
     }
 }
