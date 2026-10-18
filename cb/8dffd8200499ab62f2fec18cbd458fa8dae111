@@ -1,0 +1,24 @@
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 1282-1303
+crates/gateway-service/src/mcp_tool_policy.rs
+  h_2f452a9c375069 6,204-208,210-222,225,227-229,273-278,283-284
+crates/gateway-store/src/any_store_mcp_registry.rs
+  h_2f452a9c375069 356-365
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  h_2f452a9c375069 1217-1257
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  h_2f452a9c375069 1140-1163
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  h_2f452a9c375069 314-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb8dffd8200499ab62f2fec18cbd458fa8dae111",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
