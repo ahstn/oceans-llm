@@ -8,7 +8,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Empty,
@@ -34,7 +34,7 @@ export function FeedbackSection() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ShowcaseBlock
           title="Alert"
-          description="Default for notices, destructive for blocking errors."
+          description="Default for notices, destructive for blocking errors. AlertAction holds the one action that clears it."
         >
           <Alert>
             <HugeiconsIcon icon={InformationCircleIcon} />
@@ -47,6 +47,11 @@ export function FeedbackSection() {
             <AlertDescription>
               Requests to this model fail until the key is rotated.
             </AlertDescription>
+            <AlertAction>
+              <Button size="sm" variant="outline">
+                Rotate key
+              </Button>
+            </AlertAction>
           </Alert>
         </ShowcaseBlock>
 

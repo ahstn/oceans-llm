@@ -116,7 +116,7 @@ Three sources make up the palette, each with one job:
 
 The logo's ocean blue survives in the brand tile, the auth illustration and the glow behind the content panel.
 
-The living reference is `/admin/design-system` (`crates/admin-ui/web/src/routes/design-system/`). It renders every token and installed component from the live theme, measures contrast in the browser and pins hover, focus, active and disabled states side by side. This file is the written source; the page is how you check it.
+The living reference is `/admin/design-system` (`crates/admin-ui/web/src/routes/design-system/`). From the live theme it renders every token, every installed component and every part of one that the app uses. It measures contrast in the browser and pins hover, focus, active and disabled states side by side. This file is the written source; the page is how you check it.
 
 This system rejects decorative SaaS dashboards, glossy vanity-metric cards and consumer-friendly simplification that hides operational detail. The interface earns trust by showing real state clearly and keeping mutations scoped, legible and reversible where possible.
 
