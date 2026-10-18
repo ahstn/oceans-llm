@@ -1,0 +1,21 @@
+crates/gateway-service/src/rate_limits.rs
+  s_327fe9b27426f4::t_cc9ef8cf4258ae 454-458,466,633-635,637-645
+crates/gateway-service/src/rate_limits/tests.rs
+  s_327fe9b27426f4::t_50e5a1967b2909 1462-1505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3fde3d83230fea79f88eb1696fb570e8eb49d225",
+  "prompts": {},
+  "sessions": {
+    "s_327fe9b27426f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14258-b3f9-7a50-9987-4a60f71f58c8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
