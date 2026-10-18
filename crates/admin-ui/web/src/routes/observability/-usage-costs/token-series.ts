@@ -16,13 +16,14 @@ const OTHER_SERIES_COLOR = 'var(--chart-other)'
 
 const percent = (fraction: number) => `${Math.round(fraction * 100)}%`
 
-/** Hit rates at or above this read as healthy and switch from the warm scale to primary blue. */
+/** Hit rates at or above this read as healthy and switch from the warm scale to the hero blue. */
 const HEALTHY_HIT_RATE = 0.5
 
 /**
  * Bar colour for a cache hit rate. Below 50% it warms from danger red to warning amber; from 50%
- * it is the primary colour, deepening from a softer tint to full strength. Blending warning straight
- * into primary muddies the middle, so the scale switches families at the threshold instead.
+ * it is the hero data colour that ranked meters use, deepening from a softer tint to full strength.
+ * Blending amber straight into blue passes through green, so the scale switches families at the
+ * threshold instead. It never takes the lilac primary, which marks actions.
  */
 export function hitRateColor(rate: number): string {
   const clamped = Math.min(1, Math.max(0, rate))
@@ -31,7 +32,7 @@ export function hitRateColor(rate: number): string {
     return `color-mix(in oklch, var(--color-warning) ${percent(warmth)}, var(--color-danger))`
   }
   const strength = (clamped - HEALTHY_HIT_RATE) / (1 - HEALTHY_HIT_RATE)
-  return `color-mix(in oklab, var(--color-primary) ${percent(0.55 + 0.45 * strength)}, transparent)`
+  return `color-mix(in oklab, var(--chart-hero) ${percent(0.55 + 0.45 * strength)}, transparent)`
 }
 
 /** Input tokens whose provider reported a cache split; the hit-rate denominator. */
