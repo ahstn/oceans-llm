@@ -1,0 +1,59 @@
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  s_b8e52ffc321bb1::t_332f9c0c045a32 5,7-8,11
+crates/admin-ui/web/src/test/routes/account-ready-route.test.tsx
+  s_b8e52ffc321bb1::t_0d8339608781cf 3,5-6,8,27
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_b8e52ffc321bb1::t_0d1723373dbc68 4,8-9,11,99,168
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_b8e52ffc321bb1::t_b273697726bb67 5,7-8,12,152,163,293,333,676
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  s_b8e52ffc321bb1::t_54a69083493c25 5,48,53,63,68,99
+crates/admin-ui/web/src/test/routes/batches-route.test.tsx
+  s_b8e52ffc321bb1::t_42b0995bd35d94 192
+crates/admin-ui/web/src/test/routes/leaderboard-route.test.tsx
+  s_b8e52ffc321bb1::t_b4f09f2af24d57 4,8-9,11,114,163
+crates/admin-ui/web/src/test/routes/login-route.test.tsx
+  s_b8e52ffc321bb1::t_ad51cfa2fa4de2 3-4,6-7,10,44,50,58,88
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_b8e52ffc321bb1::t_183df864d5c358 5,10-11,14,69,177
+crates/admin-ui/web/src/test/routes/mcp-navigation.test.tsx
+  s_b8e52ffc321bb1::t_1f6d91b13f330e 4-5,25-30,97,113,129,137,164,175
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_b8e52ffc321bb1::t_70b06af15a9f5f 5-6,52
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_b8e52ffc321bb1::t_74c13e5de066e4 11,169,183
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  s_b8e52ffc321bb1::t_bb750e47676ceb 7,151,255,268,275,296,304,320,335,386,416,441,457,483,498,520,555,565,584,651,662,674,690,712,736
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  s_b8e52ffc321bb1::t_5368fbe9849417 5,7-8,11,64,78,96,146,161
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  s_b8e52ffc321bb1::t_3a73d0c8dd6c7d 6,9-10,13,88-89,103-104,113-114,132,136,148-149,160-161,170,174,184,186,196-197,214,216,226,229
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  s_b8e52ffc321bb1::t_186b69d8967a77 12
+crates/admin-ui/web/src/test/routes/review-agent-route.test.tsx
+  s_b8e52ffc321bb1::t_07a713e1cdb04e 9,11-12,15,167,180,195
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  s_b8e52ffc321bb1::t_c55ee897ef581b 7,9-10,13,134,149,156,163,175
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_b8e52ffc321bb1::t_4bfcd366c3769f 7,9-10,13,67,105,119
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_b8e52ffc321bb1::t_52458bcf5266f1 11,13-14,17,101,204,237,268
+crates/admin-ui/web/src/test/routes/users-route.test.tsx
+  s_b8e52ffc321bb1::t_77b64e1901e1f5 5-6,8-9,13,123,173,232,682
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1c063410867e9f49278146b9fc83593e10d4acb",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
