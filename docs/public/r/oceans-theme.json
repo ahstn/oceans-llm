@@ -149,6 +149,7 @@
     },
     "@layer base": {
       ".dark": {
+        "color-scheme": "dark",
         "--color-bg": "var(--background)",
         "--color-bg-accent": "color-mix(in oklch, var(--background) 74%, var(--primary) 26%)",
         "--color-surface": "color-mix(in oklch, var(--card) 90%, var(--background) 10%)",

@@ -89,11 +89,16 @@ for (const [name, value] of Object.entries(theme)) {
 const keyframes = block(themeBlock, '@keyframes page-in').body
 const fromRules = rules(block(keyframes, 'from').body)
 
+// The app's :root sets color-scheme, so native controls and scrollbars render dark. A consumer's dark
+// mode is the .dark class, so the packaged rule carries it there.
+const colorScheme = rules(block(css, '\n:root').body)['color-scheme']
+if (!colorScheme) throw new Error('globals.css :root sets no color-scheme')
+
 const cssRules = {
   '@keyframes page-in': { from: fromRules },
   '@layer base': {
-    // Under .dark, where the tokens they reference are defined.
-    '.dark': aliases,
+    // Under .dark, where the tokens the aliases reference are defined.
+    '.dark': { 'color-scheme': colorScheme, ...aliases },
     '@media (prefers-reduced-motion: reduce)': {
       '*, ::before, ::after': rules(block(css, '@media (prefers-reduced-motion: reduce)').body.replace(/^[\s\S]*?\{/, '').replace(/\}\s*$/, '')),
     },
