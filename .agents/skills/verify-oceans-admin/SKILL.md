@@ -34,6 +34,8 @@ export OCEANS_VERIFY_UI_PORT=33010
 
 `launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory.
 
+The refresh never recreates `gateway.db`, so rows that earlier runs created stay: onboarding users, audit entries, and the disabled servers every MCP proof leaves behind (servers have no delete API, so cleanup disables them). For a clean database, such as before capturing docs screenshots, run `mise run //crates/gateway:reset-local-demo` or move `gateway.db` aside before launch.
+
 The instance is ready when `launch` prints `ready` and both `/readyz` and `/api/v1/health` answer. The sign-in URL is `http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT/admin/login`. Protected feature routes remain under `/admin/*`.
 
 For Skills storage, set `OCEANS_VERIFY_SKILLS=true` before launch. The harness starts native RustFS through the `rustfs` mise profile and creates a private run-local configuration, database, and synthetic service-account key. See [features/skills.md](./features/skills.md) for the full recipe. This option leaves `gateway.db` unchanged.
