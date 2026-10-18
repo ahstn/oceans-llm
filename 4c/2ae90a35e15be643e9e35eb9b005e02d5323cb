@@ -1,0 +1,19 @@
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_a446d7f1de5beb::t_b92a95c21e72e0 86-90,97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c2ae90a35e15be643e9e35eb9b005e02d5323cb",
+  "prompts": {},
+  "sessions": {
+    "s_a446d7f1de5beb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1424cdc0f7a02ef4",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
