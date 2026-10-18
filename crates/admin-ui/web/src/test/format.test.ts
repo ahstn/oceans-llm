@@ -4,6 +4,7 @@ import {
   formatCompactCount,
   formatCount,
   formatDuration,
+  isCompactCount,
   formatTimestamp,
   formatUsd10000,
   formatUsd10000Precise,
@@ -17,12 +18,18 @@ describe('shared number and time formats', () => {
     expect(formatCompactCount(99_999)).toBe('99,999')
     expect(formatCompactCount(100_000)).toBe('100K')
     expect(formatCompactCount(34_356_226)).toBe('34.4M')
+    expect(isCompactCount(99_999)).toBe(false)
+    expect(isCompactCount(100_000)).toBe(true)
+    expect(isCompactCount(null)).toBe(false)
     expect(formatCount(null)).toBe('—')
   })
 
   it('gives durations a unit that scales with size', () => {
     expect(formatDuration(810)).toBe('810 ms')
     expect(formatDuration(3964)).toBe('3.96 s')
+    // 1.13 * 100 is 112.99999999999999 in floating point; truncating milliseconds avoids it.
+    expect(formatDuration(1130)).toBe('1.13 s')
+    expect(formatDuration(10_000)).toBe('10.0 s')
     expect(formatDuration(12_450)).toBe('12.4 s')
     expect(formatDuration(59_999)).toBe('59.9 s')
     expect(formatDuration(92_000)).toBe('1 min 32 s')

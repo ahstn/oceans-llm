@@ -63,12 +63,17 @@ export function formatCount(value: number | null | undefined) {
   return value == null ? EMPTY_VALUE : COUNT_FORMATTER.format(value)
 }
 
+/** Whether a count is large enough to show compact, with the exact count on hover. */
+export function isCompactCount(value: number | null | undefined): value is number {
+  return value != null && Math.abs(value) >= COMPACT_COUNT_THRESHOLD
+}
+
 /** A count for a table cell: grouped below 100,000 (`9,812`), compact from there (`34.4M`). */
 export function formatCompactCount(value: number | null | undefined) {
   if (value == null) {
     return EMPTY_VALUE
   }
-  return Math.abs(value) >= COMPACT_COUNT_THRESHOLD
+  return isCompactCount(value)
     ? COMPACT_COUNT_FORMATTER.format(value)
     : COUNT_FORMATTER.format(value)
 }
@@ -84,9 +89,9 @@ export function formatDuration(milliseconds: number | null | undefined) {
   }
   if (ms < 60_000) {
     // Three significant figures: 3.96 s, 12.4 s, 59.9 s.
-    const seconds = ms / 1_000
-    const digits = seconds < 10 ? 2 : 1
-    return `${(Math.floor(seconds * 10 ** digits) / 10 ** digits).toFixed(digits)} s`
+    // Truncate whole milliseconds, not seconds * 10^n, which float error can push below the step.
+    const digits = ms < 10_000 ? 2 : 1
+    return `${(Math.floor(ms / 10 ** (3 - digits)) / 10 ** digits).toFixed(digits)} s`
   }
   const totalSeconds = Math.floor(ms / 1_000)
   if (totalSeconds < 3_600) {

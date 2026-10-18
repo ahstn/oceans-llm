@@ -1,12 +1,12 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPACT_COUNT_THRESHOLD, formatCompactCount, formatCount } from '@/lib/format'
+import { formatCompactCount, formatCount, isCompactCount } from '@/lib/format'
 
 /**
  * A table count: grouped below 100,000 (`9,812`), compact from there (`34.4M`) with the exact count
  * in a tooltip. `unit` labels the tooltip, e.g. `34,356,226 tokens`.
  */
 export function CompactCount({ value, unit }: { value: number | null | undefined; unit?: string }) {
-  if (value == null || Math.abs(value) < COMPACT_COUNT_THRESHOLD) {
+  if (!isCompactCount(value)) {
     return <>{formatCount(value)}</>
   }
 
