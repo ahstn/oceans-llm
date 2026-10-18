@@ -3,6 +3,7 @@
 - Date: 2026-10-05
 - Status: Accepted
 - Supersedes: GitHub release creation and distribution workflow ownership in [the release versioning ADR](2026-03-06-release-versioning-and-ghcr-publishing.md).
+- Superseded in part: Cocogitto's version and tag ownership moved to git-cliff and a release script in [git-cliff release versioning and a pull-request changelog](2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md).
 
 ## Context
 

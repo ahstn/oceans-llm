@@ -41,8 +41,7 @@ bun = "1.4.3"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
-git-cliff = "latest"
-cocogitto = "latest"
+git-cliff = "2.14.2"
 cargo-dist = "0.33.0"
 cargo-release = "1.1.6"
 actionlint = "1.7.12"
@@ -215,12 +214,12 @@ run = "node scripts/copilot-installation-canary.mjs"
 
 [tasks.release]
 description = "Prepare a release and push its source for CI publication"
-depends = ["//crates/gateway:sync-pricing-catalog"]
+# Refresh the vendored pricing and Artificial Analysis snapshots so the release commit carries them.
+depends = ["//crates/gateway:sync-pricing-catalog", "//crates/gateway:sync-model-benchmarks"]
 env = { GITHUB_TOKEN = { required = true } }
 run = '''
-cog bump --auto --skip-untracked
-tag="$(cog --verbose get-version --tag)"
-git push --atomic origin main "$tag"
+scripts/release.sh
+git push --atomic origin main "$(git describe --tags --exact-match)"
 '''
 
 [tasks.dist-generate]
@@ -234,7 +233,7 @@ run = [
   # Check generated shell commands without applying repository shell style rules.
   "actionlint -shellcheck= .github/workflows/release.yml",
   "actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml",
-  "shellcheck scripts/check-cli-release.sh",
+  "shellcheck scripts/check-cli-release.sh scripts/release.sh",
 ]
 
 [tasks.dist-plan]
