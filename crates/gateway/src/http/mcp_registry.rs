@@ -1744,8 +1744,9 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
 ///
 /// `server_id` limits the result to one server. Each MCP-capable key is
 /// resolved with its owner and team, as a request made with it would be, so
-/// tag rules on any of them apply; a user's keys are few, and each resolution
-/// skips rule loading when none of its subjects has a rule.
+/// tag rules on any of them apply. A user's keys are few, they resolve
+/// concurrently, and each resolution skips rule loading when none of its
+/// subjects has a rule.
 struct MemberAccess {
     tool_ids: Vec<Uuid>,
     servers: Vec<gateway_core::ExternalMcpServerRecord>,
@@ -1792,26 +1793,37 @@ async fn member_access(
     // Each key is resolved as runtime resolves a request made with it: the key,
     // its owner and their team together, so tag rules on any of them, include
     // and exclude alike, apply to what the key reaches.
-    let mut key_tools: Vec<(Uuid, Uuid, Uuid)> = Vec::new();
-    for key_id in keys.keys() {
-        let mut key_subjects = subjects.clone();
-        key_subjects.push(McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::ApiKey,
-            subject_id: *key_id,
-        });
-        for tool in state
-            .store
-            .resolve_mcp_access_for_subjects(
-                &key_subjects,
-                server_id,
-                McpToolProjection::AccessUncounted,
-            )
-            .await?
-            .allowed_tools
-        {
-            key_tools.push((*key_id, tool.mcp_tool_id, tool.mcp_server_id));
-        }
-    }
+    // The keys resolve concurrently, so the page waits on the slowest one,
+    // not their sum.
+    let key_tools: Vec<(Uuid, Uuid, Uuid)> =
+        futures_util::future::try_join_all(keys.keys().map(|key_id| {
+            let mut key_subjects = subjects.clone();
+            key_subjects.push(McpGrantSubject {
+                subject_kind: McpToolGrantSubjectKind::ApiKey,
+                subject_id: *key_id,
+            });
+            async move {
+                let access = state
+                    .store
+                    .resolve_mcp_access_for_subjects(
+                        &key_subjects,
+                        server_id,
+                        McpToolProjection::AccessUncounted,
+                    )
+                    .await?;
+                Ok::<_, GatewayError>(
+                    access
+                        .allowed_tools
+                        .into_iter()
+                        .map(|tool| (*key_id, tool.mcp_tool_id, tool.mcp_server_id))
+                        .collect::<Vec<_>>(),
+                )
+            }
+        }))
+        .await?
+        .into_iter()
+        .flatten()
+        .collect();
     let referenced: Vec<Uuid> = tool_servers
         .values()
         .copied()
