@@ -4,7 +4,9 @@ use axum::{
     extract::State,
     http::{
         HeaderMap, HeaderValue, StatusCode,
-        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, PRAGMA, WWW_AUTHENTICATE},
+        header::{
+            AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, PRAGMA, RETRY_AFTER, WWW_AUTHENTICATE,
+        },
     },
     response::{IntoResponse, Response},
 };
@@ -13,16 +15,17 @@ use gateway_service::{ClientCredentials, OauthError, TokenRequest};
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::{form::parse_unique_pairs, oauth_service};
+use super::{ClientSource, form::parse_unique_pairs, oauth_service_for};
 use crate::http::state::AppState;
 
 /// `POST /oauth/token`
 pub async fn oauth_token(
     State(state): State<AppState>,
+    source: ClientSource,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let Some(service) = oauth_service(&state) else {
+    let Some(service) = oauth_service_for(&state, source) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let used_basic = headers.contains_key(AUTHORIZATION);
@@ -162,6 +165,11 @@ pub(super) fn oauth_error_response(error: &OauthError, used_basic: bool) -> Resp
         })),
     )
         .into_response();
+    if let Some(seconds) = error.retry_after_seconds {
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, HeaderValue::from(seconds));
+    }
     if status == StatusCode::UNAUTHORIZED && used_basic {
         response.headers_mut().insert(
             WWW_AUTHENTICATE,

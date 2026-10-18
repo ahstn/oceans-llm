@@ -189,6 +189,20 @@ function expectedAuthenticationFailure(response) {
   return result;
 }
 
+/**
+ * Counts the candidate's expected markers in a successful tool result. Matching happens in
+ * memory; the content never enters evidence. Text items are matched as returned, so a marker
+ * like `"plan":"pro"` matches JSON carried inside a text block.
+ */
+export function matchResultMarkers(result, markers = []) {
+  const text = [
+    ...(result.content ?? []).filter((item) => item?.type === "text").map((item) => item.text),
+    JSON.stringify(result.structuredContent ?? null),
+  ].join("\n");
+  requireCondition(markers.every((marker) => text.includes(marker)), "result_marker_missing");
+  return markers.length;
+}
+
 async function listedTools(connection) {
   const tools = [];
   let cursor;
@@ -270,9 +284,11 @@ async function candidateCanary(options, candidate) {
       const directCall = await direct.send("tools/call", candidate.call);
       const directResult = successfulResult(directCall);
       requireCondition(Array.isArray(directResult.content) && directResult.content.length > 0, "empty_tool_result");
+      const directMarkers = matchResultMarkers(directResult, candidate.expect_result_markers);
       proof.direct = await invocationProof({ page, adminJson, candidate, apiKeyId, requestId: directCall.requestId });
       proof.direct.transport = directCall.transport;
       proof.direct.contentCount = directResult.content.length;
+      proof.direct.resultMarkersMatched = directMarkers;
       actions.push({ action: "direct MCP tool call and invocation record", result: `${candidate.key}: success` });
     }
 
@@ -300,6 +316,7 @@ async function candidateCanary(options, candidate) {
       ? expectedAuthenticationFailure(aggregateCall)
       : successfulResult(aggregateCall);
     requireCondition(Array.isArray(aggregateResult.content) && aggregateResult.content.length > 0, "empty_tool_result");
+    const aggregateMarkers = candidate.expect_tool_error ? 0 : matchResultMarkers(aggregateResult, candidate.expect_result_markers);
     proof.aggregate = await invocationProof({
       page, adminJson, candidate, apiKeyId, requestId: aggregateCall.requestId,
       expectedStatus: candidate.expect_tool_error ? "upstream_error" : "success",
@@ -307,6 +324,7 @@ async function candidateCanary(options, candidate) {
     if (candidate.expect_tool_error) proof.aggregate.authenticationErrorObserved = true;
     proof.aggregate.transport = aggregateCall.transport;
     proof.aggregate.contentCount = aggregateResult.content.length;
+    proof.aggregate.resultMarkersMatched = aggregateMarkers;
     proof.aggregateVisibleToolCount = search.items.length;
     proof.aggregateBuiltinCount = builtins.length;
     proof.ui = await verifyInvocationUi({ page, baseURL, proof: proof.aggregate, capture, name: `mcp-${candidate.key}-invocation` });

@@ -8671,6 +8671,8 @@ export interface operations {
                 code?: string;
                 state?: string;
                 error?: string;
+                /** @description RFC 9207: the authorization server that issued the response. */
+                iss?: string;
             };
             header?: never;
             path?: never;
@@ -8756,6 +8758,8 @@ export interface operations {
                 code?: string;
                 state?: string;
                 error?: string;
+                /** @description RFC 9207: the authorization server that issued the response. */
+                iss?: string;
             };
             header?: never;
             path: {

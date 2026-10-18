@@ -100,6 +100,16 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_external_mcp_servers_by_keys(server_keys).await,
+            Self::Postgres(store) => store.list_external_mcp_servers_by_keys(server_keys).await,
+        }
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,
@@ -340,6 +350,16 @@ impl McpRegistryRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
             Self::Postgres(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+        }
+    }
+
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.reviewed_mcp_tool_versions(versions).await,
+            Self::Postgres(store) => store.reviewed_mcp_tool_versions(versions).await,
         }
     }
 

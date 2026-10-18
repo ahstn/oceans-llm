@@ -122,6 +122,15 @@ impl AppState {
     pub fn client_ip_signing_key(&self) -> Arc<[u8]> {
         client_ip_signing_key_for(&self.identity_token_secret)
     }
+
+    /// Key for the MCP proxy's signed session ids. The same rule applies: the
+    /// public development fallback is never a key, since anyone could then
+    /// sign a session id for their own credential. The session MAC carries
+    /// its own domain prefix, so sharing the key with client addresses is safe.
+    #[must_use]
+    pub fn mcp_session_signing_key(&self) -> Arc<[u8]> {
+        client_ip_signing_key_for(&self.identity_token_secret)
+    }
 }
 
 /// The fallback used when `GATEWAY_IDENTITY_TOKEN_SECRET` is unset. It is public.

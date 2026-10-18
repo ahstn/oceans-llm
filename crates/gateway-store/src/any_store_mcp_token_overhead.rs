@@ -9,14 +9,14 @@ use crate::store::AnyStore;
 
 #[async_trait]
 impl McpTokenOverheadRepository for AnyStore {
-    async fn get_mcp_tool_token_estimate(
+    async fn get_mcp_tool_token_estimates(
         &self,
-        cache_key: &str,
+        cache_keys: &[String],
         now: OffsetDateTime,
-    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError> {
+    ) -> Result<Vec<McpToolTokenEstimateRecord>, StoreError> {
         match self {
-            Self::Libsql(store) => store.get_mcp_tool_token_estimate(cache_key, now).await,
-            Self::Postgres(store) => store.get_mcp_tool_token_estimate(cache_key, now).await,
+            Self::Libsql(store) => store.get_mcp_tool_token_estimates(cache_keys, now).await,
+            Self::Postgres(store) => store.get_mcp_tool_token_estimates(cache_keys, now).await,
         }
     }
 

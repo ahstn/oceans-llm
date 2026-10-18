@@ -99,6 +99,26 @@ fn dummy_context(upstream_model: &str) -> ProviderRequestContext {
     context
 }
 
+fn bearer_provider() -> CopilotProvider {
+    CopilotProvider::new(CopilotProviderConfig::new(
+        "github_copilot".to_string(),
+        CopilotAuthConfig::Bearer {
+            token: "test-token".to_string(),
+        },
+    ))
+    .unwrap()
+}
+
+fn request_body_json(request: &reqwest::Request) -> Value {
+    serde_json::from_slice(
+        request
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .expect("JSON request body"),
+    )
+    .unwrap()
+}
+
 fn messages_context(upstream_model: &str) -> ProviderRequestContext {
     let mut context = dummy_context(upstream_model);
     context
@@ -714,13 +734,7 @@ async fn builds_claude_messages_request_with_authoritative_contract() {
 }
 #[tokio::test]
 async fn applies_openai_compatibility_to_chat_requests() {
-    let provider = CopilotProvider::new(CopilotProviderConfig::new(
-        "github_copilot".to_string(),
-        CopilotAuthConfig::Bearer {
-            token: "test-token".to_string(),
-        },
-    ))
-    .unwrap();
+    let provider = bearer_provider();
     let mut request = CoreChatRequest {
         model: "gpt-4o".to_string(),
         messages: vec![CoreChatMessage {
@@ -750,13 +764,7 @@ async fn applies_openai_compatibility_to_chat_requests() {
         )
         .await
         .unwrap();
-    let body: Value = serde_json::from_slice(
-        built
-            .body()
-            .and_then(reqwest::Body::as_bytes)
-            .expect("JSON request body"),
-    )
-    .unwrap();
+    let body = request_body_json(&built);
 
     assert_eq!(body["messages"][0]["role"], "system");
     assert_eq!(body["max_tokens"], 128);
@@ -765,14 +773,69 @@ async fn applies_openai_compatibility_to_chat_requests() {
 }
 
 #[tokio::test]
+async fn translates_anthropic_messages_tool_exchange_for_chat_completions() {
+    let provider = bearer_provider();
+    let message = |role: &str, content: Value| CoreChatMessage {
+        role: role.to_string(),
+        content,
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    let request = CoreChatRequest {
+        model: "gpt-4o".to_string(),
+        messages: vec![
+            message("user", json!("weather in Paris?")),
+            message(
+                "assistant",
+                json!([{"type":"tool_use","id":"toolu_1","name":"weather","input":{"city":"Paris"}}]),
+            ),
+            message(
+                "user",
+                json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"18C"}]),
+            ),
+        ],
+        stream: false,
+        extra: BTreeMap::from([
+            (
+                "tools".to_string(),
+                json!([{"name":"weather","input_schema":{"type":"object","properties":{}}}]),
+            ),
+            ("tool_choice".to_string(), json!({"type":"auto"})),
+        ]),
+    };
+
+    let built = provider
+        .build_chat_request(
+            &request,
+            &dummy_context("gpt-4o"),
+            GitHubCopilotChatApi::ChatCompletions,
+            false,
+        )
+        .await
+        .unwrap();
+    let body = request_body_json(&built);
+
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["function"]["name"], "weather");
+    assert_eq!(body["tool_choice"], "auto");
+    assert_eq!(
+        body["messages"][1]["tool_calls"][0]["function"],
+        json!({"name":"weather","arguments":"{\"city\":\"Paris\"}"})
+    );
+    assert_eq!(
+        body["messages"][2],
+        json!({"role":"tool","tool_call_id":"toolu_1","content":"18C"})
+    );
+    assert_eq!(
+        built.headers()["x-initiator"],
+        "agent",
+        "a tool-result turn is agent-initiated"
+    );
+}
+
+#[tokio::test]
 async fn normalizes_responses_replay_ids() {
-    let provider = CopilotProvider::new(CopilotProviderConfig::new(
-        "github_copilot".to_string(),
-        CopilotAuthConfig::Bearer {
-            token: "test-token".to_string(),
-        },
-    ))
-    .unwrap();
+    let provider = bearer_provider();
     let request = CoreResponsesRequest {
         model: "gpt-5.4".to_string(),
         input: json!([
@@ -802,13 +865,7 @@ async fn normalizes_responses_replay_ids() {
         .build_responses_request(&request, &dummy_context("gpt-5.4"), false)
         .await
         .unwrap();
-    let body: Value = serde_json::from_slice(
-        built
-            .body()
-            .and_then(reqwest::Body::as_bytes)
-            .expect("JSON request body"),
-    )
-    .unwrap();
+    let body = request_body_json(&built);
 
     let function_call_id = body["input"][0]["id"].as_str().unwrap();
     let call_id = body["input"][0]["call_id"].as_str().unwrap();
@@ -819,13 +876,7 @@ async fn normalizes_responses_replay_ids() {
 
 #[tokio::test]
 async fn rejects_operations_missing_from_route_metadata() {
-    let provider = CopilotProvider::new(CopilotProviderConfig::new(
-        "github_copilot".to_string(),
-        CopilotAuthConfig::Bearer {
-            token: "test-token".to_string(),
-        },
-    ))
-    .unwrap();
+    let provider = bearer_provider();
     let mut context = dummy_context("gpt-5");
     let compatibility = context
         .compatibility

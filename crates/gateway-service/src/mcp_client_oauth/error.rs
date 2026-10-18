@@ -6,6 +6,9 @@ use gateway_core::GatewayError;
 pub struct OauthError {
     pub error: &'static str,
     pub description: String,
+    /// Set when a request limit refused the request: the response is `429`
+    /// with this `Retry-After`.
+    pub retry_after_seconds: Option<u64>,
 }
 
 impl OauthError {
@@ -13,6 +16,15 @@ impl OauthError {
         Self {
             error,
             description: description.into(),
+            retry_after_seconds: None,
+        }
+    }
+
+    /// A request over a per-source or gateway-wide limit.
+    pub fn rate_limited(description: impl Into<String>, retry_after_seconds: u64) -> Self {
+        Self {
+            retry_after_seconds: Some(retry_after_seconds.max(1)),
+            ..Self::temporarily_unavailable(description)
         }
     }
 
@@ -71,6 +83,9 @@ impl OauthError {
     /// HTTP status for a token-endpoint response.
     #[must_use]
     pub fn status_code(&self) -> u16 {
+        if self.retry_after_seconds.is_some() {
+            return 429;
+        }
         match self.error {
             "invalid_client" => 401,
             "server_error" => 500,

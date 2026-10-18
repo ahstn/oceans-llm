@@ -705,8 +705,9 @@ impl PostgresStore {
             r#"
             INSERT INTO mcp_oauth_states (
                 state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
-                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at,
+                expected_issuer, issuer_required
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
             "#,
         )
         .bind(&state.state_hash)
@@ -720,6 +721,8 @@ impl PostgresStore {
         .bind(state.expires_at.unix_timestamp())
         .bind(state.consumed_at.map(|value| value.unix_timestamp()))
         .bind(state.created_at.unix_timestamp())
+        .bind(state.expected_issuer.as_deref())
+        .bind(state.issuer_required)
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
@@ -749,8 +752,9 @@ impl PostgresStore {
             r#"
             INSERT INTO mcp_oauth_states (
                 state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
-                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at,
+                expected_issuer, issuer_required
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
             "#,
         )
         .bind(&state.state_hash)
@@ -764,6 +768,8 @@ impl PostgresStore {
         .bind(state.expires_at.unix_timestamp())
         .bind(state.consumed_at.map(|value| value.unix_timestamp()))
         .bind(state.created_at.unix_timestamp())
+        .bind(state.expected_issuer.as_deref())
+        .bind(state.issuer_required)
         .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
@@ -809,7 +815,8 @@ impl PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
-                   redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+                   redirect_to, resource, scopes_json, expires_at, consumed_at, created_at,
+                   expected_issuer, issuer_required
             FROM mcp_oauth_states WHERE state_hash = $1 LIMIT 1
             "#,
         )

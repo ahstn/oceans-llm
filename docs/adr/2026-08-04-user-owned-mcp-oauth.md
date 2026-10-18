@@ -18,6 +18,8 @@ A signed-in user starts one connection per server. Oceans creates a one-use stat
 
 Execution refreshes the token five minutes before expiry. A local lock and short database lease serialize refreshes per binding across gateway replicas. A rotated refresh token replaces the prior value. An `invalid_grant` response revokes the binding and requires user consent again.
 
+_Changed 2026-10-18 after a review of the MCP gateway epic:_ the lease, the token request, and the compare-and-swap write now run in a detached task that holds the local lock. The request waits for it, but a client that disconnects mid-refresh no longer cancels it. Before, a cancelled request could drop the provider's response after the provider had rotated the refresh token. The new token was lost, the lease stayed held until it expired, and the next refresh got `invalid_grant` and revoked the binding. While the access token is still valid, any refresh failure other than `invalid_grant` now keeps using it and logs a warning; before, only transport failures and `429`/`5xx` responses did, and a refused refresh failed the request minutes before the token expired.
+
 Public discovery is allowed only when the server declares `discovery_auth: none`. Discovery does not borrow a user's token. Direct proxy responses do not forward upstream authentication challenges to the client.
 
 ## Consequences

@@ -493,7 +493,7 @@ models:
     description: OpenAI OSS on AWS Bedrock
     route:
       provider: bedrock-us-east-1
-      upstream_model: gpt-oss-120b
+      upstream_model: openai.gpt-oss-120b-1:0
       compatibility:
         aws_bedrock:
           api_style: runtime_openai_chat

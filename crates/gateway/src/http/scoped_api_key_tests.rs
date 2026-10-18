@@ -885,3 +885,41 @@ async fn store_replaces_access_only_when_it_changes() {
     let stored = store.get_api_key_by_id(api_key_id).await.unwrap().unwrap();
     assert_eq!(stored.access, proxy);
 }
+
+/// Inference requests reuse the credential's MCP tool set for a short while
+/// instead of resolving it, and listing its servers, on every request.
+#[tokio::test]
+async fn request_telemetry_reuses_the_tool_set_for_a_credential() {
+    let harness = Harness::new().await;
+    let (_, notes_only) = harness
+        .create_key(json!(["inference", "mcp:aggregate"]), json!(["notes"]))
+        .await;
+    let auth = harness
+        .state
+        .service
+        .authenticate_bearer_token_for_scope(&notes_only, "inference")
+        .await
+        .unwrap();
+    let first = crate::http::handlers::mcp_telemetry_snapshot(&harness.state, &auth)
+        .await
+        .unwrap();
+    // Disabling the listed server would change a fresh resolution.
+    let notes = harness
+        .state
+        .store
+        .get_external_mcp_server_by_key("notes")
+        .await
+        .unwrap()
+        .unwrap();
+    gateway_core::McpRegistryRepository::disable_external_mcp_server(
+        harness.state.store.as_ref(),
+        notes.mcp_server_id,
+        time::OffsetDateTime::now_utc(),
+    )
+    .await
+    .unwrap();
+    let second = crate::http::handlers::mcp_telemetry_snapshot(&harness.state, &auth)
+        .await
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+}

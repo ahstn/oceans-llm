@@ -5,12 +5,13 @@ use crate::mcp_tool_policy::tool_policy_from_json;
 use crate::mcp_tool_review::{
     HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
-    reuse_historical_versions, review_ops, reviewable_version, tool_write_ops,
+    reuse_historical_versions, review_ops, reviewable_version, stale_discovery_check,
+    tool_write_ops, unix_millis,
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
-    grants_outside_team_sql, json_object_from_str, parse_uuid, serialize_json, stranded_grants,
-    stranded_toolset, team_only_toolset_tool, unix_to_datetime,
+    grants_outside_team_sql, json_object_from_str, newer_discovery_run_sql, parse_uuid,
+    serialize_json, stranded_grants, stranded_toolset, team_only_toolset_tool, unix_to_datetime,
 };
 use gateway_core::{
     ExternalMcpServerUpdate, McpAnnotationOverrides, McpServerGuardRow, McpServerOwnership,
@@ -346,6 +347,16 @@ macro_rules! server_columns {
     };
 }
 
+/// Whether a successful discovery of the server (`?1`, status `?2`) that
+/// started after this one (`?3` ms, run `?4`) already committed. Reads
+/// `external_mcp_discovery_runs_server_started_ms_idx`.
+fn newer_discovery_committed_sql() -> String {
+    format!(
+        "SELECT {}",
+        newer_discovery_run_sql("?1", Some("?2"), "?3", "?4")
+    )
+}
+
 const SERVER_COLUMNS: &str = server_columns!();
 
 const SERVER_SELECT_BY_ID: &str = concat!(
@@ -530,6 +541,29 @@ impl McpRegistryRepository for LibsqlStore {
             .map_err(to_query_error)?
             .map(|row| decode_server(&row))
             .transpose()
+    }
+
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if server_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys = serialize_json(&server_keys)?;
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE server_key IN (SELECT value FROM json_each(?1)) ORDER BY server_key"
+        );
+        let mut rows = self
+            .connection
+            .query(&sql, [keys])
+            .await
+            .map_err(to_query_error)?;
+        let mut servers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            servers.push(decode_server(&row)?);
+        }
+        Ok(servers)
     }
 
     async fn create_external_mcp_server(
@@ -974,13 +1008,38 @@ impl McpRegistryRepository for LibsqlStore {
         let tx = self.begin_transaction().await?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&tx, guard, None).await?;
+            let server = load_server(&tx, run.mcp_server_id).await?;
+            let mut rows = tx
+                .query(
+                    &newer_discovery_committed_sql(),
+                    libsql::params![
+                        run.mcp_server_id.to_string(),
+                        ExternalMcpDiscoveryStatus::Success.as_str(),
+                        unix_millis(run.started_at),
+                        run.discovery_run_id.to_string(),
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let newer_run_committed: i64 = rows
+                .next()
+                .await
+                .map_err(to_query_error)?
+                .ok_or_else(|| StoreError::Unexpected("EXISTS returned no row".to_string()))?
+                .get(0)
+                .map_err(to_query_error)?;
+            stale_discovery_check(
+                server.status == ExternalMcpServerStatus::Active,
+                newer_run_committed != 0,
+            )?;
         }
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             libsql::params![
                 run.discovery_run_id.to_string(),
@@ -993,6 +1052,7 @@ impl McpRegistryRepository for LibsqlStore {
                 run.schema_set_hash.as_deref(),
                 run.error_summary.as_deref(),
                 details_json,
+                unix_millis(run.started_at),
             ],
         )
         .await
@@ -1016,19 +1076,25 @@ impl McpRegistryRepository for LibsqlStore {
             apply_tool_write(&tx, run.finished_at, plan.tool, plan.existing, &plan.write).await?;
         }
 
+        // A newer run of any status, such as a failure that committed while
+        // this one ran, stays the server's last discovery.
+        let newer = newer_discovery_run_sql("?4", None, "?5", "?6");
         tx.execute(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = ?1, last_discovery_at = ?2,
-                last_successful_discovery_at = ?2, last_error_summary = NULL,
-                last_tool_count = ?3, updated_at = ?2
-            WHERE mcp_server_id = ?4
-            "#,
+            &format!(
+                "UPDATE external_mcp_servers
+                 SET last_successful_discovery_at = ?2, last_tool_count = ?3, updated_at = ?2,
+                     last_discovery_status = CASE WHEN {newer} THEN last_discovery_status ELSE ?1 END,
+                     last_discovery_at = CASE WHEN {newer} THEN last_discovery_at ELSE ?2 END,
+                     last_error_summary = CASE WHEN {newer} THEN last_error_summary ELSE NULL END
+                 WHERE mcp_server_id = ?4"
+            ),
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.active_tool_count,
                 run.mcp_server_id.to_string(),
+                unix_millis(run.started_at),
+                run.discovery_run_id.to_string(),
             ],
         )
         .await
@@ -1051,8 +1117,9 @@ impl McpRegistryRepository for LibsqlStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             libsql::params![
                 run.discovery_run_id.to_string(),
@@ -1065,22 +1132,28 @@ impl McpRegistryRepository for LibsqlStore {
                 run.schema_set_hash.as_deref(),
                 run.error_summary.as_deref(),
                 details_json,
+                unix_millis(run.started_at),
             ],
         )
         .await
         .map_err(to_query_error)?;
+        // The run stays in the history, but a run of any status that started
+        // later remains the server's last discovery.
         tx.execute(
-            r#"
-            UPDATE external_mcp_servers
-            SET last_discovery_status = ?1, last_discovery_at = ?2,
-                last_error_summary = ?3, updated_at = ?2
-            WHERE mcp_server_id = ?4
-            "#,
+            &format!(
+                "UPDATE external_mcp_servers
+                 SET last_discovery_status = ?1, last_discovery_at = ?2,
+                     last_error_summary = ?3, updated_at = ?2
+                 WHERE mcp_server_id = ?4 AND NOT {}",
+                newer_discovery_run_sql("?4", None, "?5", "?6")
+            ),
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.error_summary.as_deref(),
                 run.mcp_server_id.to_string(),
+                unix_millis(run.started_at),
+                run.discovery_run_id.to_string(),
             ],
         )
         .await
@@ -1149,6 +1222,47 @@ impl McpRegistryRepository for LibsqlStore {
             |tool| tool.policy.annotation_overrides == *overrides,
         )
         .await
+    }
+
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        let mut reviewed = Vec::new();
+        // 500 pairs bind 1,000 variables, well under SQLite's limit.
+        for batch in versions.chunks(500) {
+            let pairs = (0..batch.len())
+                .map(|index| format!("(?{}, ?{})", 2 * index + 1, 2 * index + 2))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let params = batch
+                .iter()
+                .flat_map(|(mcp_tool_id, schema_version)| {
+                    [
+                        libsql::Value::Text(mcp_tool_id.to_string()),
+                        libsql::Value::Integer(*schema_version),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let mut rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT mcp_tool_id, schema_version FROM mcp_tool_versions WHERE reviewed_at IS NOT NULL AND (mcp_tool_id, schema_version) IN (VALUES {pairs})"
+                    ),
+                    libsql::params_from_iter(params),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                let mcp_tool_id: String = row.get(0).map_err(to_query_error)?;
+                reviewed.push((
+                    parse_uuid(&mcp_tool_id)?,
+                    row.get(1).map_err(to_query_error)?,
+                ));
+            }
+        }
+        Ok(reviewed)
     }
 
     async fn list_mcp_tool_versions(
@@ -1281,5 +1395,154 @@ impl LibsqlStore {
             current,
             previous: Some(existing),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::{newer_discovery_committed_sql, newer_discovery_run_sql};
+    use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
+
+    #[tokio::test]
+    async fn the_stale_discovery_check_reads_backfilled_runs_by_index() {
+        let temporary = tempdir().expect("tempdir");
+        let database_path = temporary.path().join("gateway.db");
+        let database = libsql::Builder::new_local(database_path.to_str().expect("database path"))
+            .build()
+            .await
+            .expect("database");
+        let connection = database.connect().expect("connection");
+        let apply = |below: u32, at_least: u32| {
+            MIGRATION_REGISTRY
+                .iter()
+                .filter(move |migration| migration.version >= at_least && migration.version < below)
+                .map(|migration| migration.sql_for(MigrationBackend::Libsql))
+        };
+        for sql in apply(73, 0) {
+            connection
+                .execute_batch(sql)
+                .await
+                .expect("earlier migration");
+        }
+        connection
+            .execute("PRAGMA foreign_keys = OFF", ())
+            .await
+            .expect("pragma");
+        connection
+            .execute(
+                "INSERT INTO external_mcp_discovery_runs \
+                 (discovery_run_id, mcp_server_id, status, started_at, finished_at) \
+                 VALUES ('run', 'server', 'success', 1700000000, 1700000001)",
+                (),
+            )
+            .await
+            .expect("older run");
+        for sql in apply(74, 73) {
+            connection.execute_batch(sql).await.expect("V73");
+        }
+
+        let mut rows = connection
+            .query(
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_699_999_999_500_i64, "probe"],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "the older run was backfilled in milliseconds");
+
+        // A gateway older than V73 records a run without `started_at_ms`.
+        connection
+            .execute(
+                "INSERT INTO external_mcp_discovery_runs \
+                 (discovery_run_id, mcp_server_id, status, started_at, finished_at) \
+                 VALUES ('legacy', 'server', 'success', 1700000100, 1700000101)",
+                (),
+            )
+            .await
+            .expect("legacy run");
+        let mut rows = connection
+            .query(
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_700_000_050_000_i64, "probe"],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "a run without milliseconds compares by its start");
+
+        // Its milliseconds are unknown, so a run without them counts as newer
+        // than any run that started in the same second.
+        let mut rows = connection
+            .query(
+                &newer_discovery_committed_sql(),
+                libsql::params!["server", "success", 1_700_000_100_900_i64, "probe"],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "a same-second run without milliseconds is newer");
+
+        // Both stale checks, successful runs only and runs of any status, seek
+        // the index by server and start rather than scanning the history.
+        for (sql, params) in [
+            (
+                newer_discovery_committed_sql(),
+                vec![
+                    libsql::Value::from("server"),
+                    libsql::Value::from("success"),
+                    libsql::Value::from(0_i64),
+                    libsql::Value::from("probe"),
+                ],
+            ),
+            (
+                format!("SELECT {}", newer_discovery_run_sql("?1", None, "?2", "?3")),
+                vec![
+                    libsql::Value::from("server"),
+                    libsql::Value::from(0_i64),
+                    libsql::Value::from("probe"),
+                ],
+            ),
+        ] {
+            let mut rows = connection
+                .query(
+                    &format!("EXPLAIN QUERY PLAN {sql}"),
+                    libsql::params_from_iter(params),
+                )
+                .await
+                .expect("query plan");
+            let mut plan = String::new();
+            while let Some(row) = rows.next().await.expect("plan row") {
+                let detail: String = row.get(3).expect("plan detail");
+                plan.push_str(&detail);
+                plan.push('\n');
+            }
+            assert!(
+                plan.contains("external_mcp_discovery_runs_server_started_ms_idx")
+                    && plan.contains("started_at_ms>?")
+                    && !plan.contains("SCAN r"),
+                "plan:\n{plan}"
+            );
+        }
     }
 }

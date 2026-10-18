@@ -85,6 +85,35 @@ pub(crate) enum ToolWrite {
     },
 }
 
+/// Refuses a guarded discovery commit whose results are stale: the server was
+/// disabled while discovery ran, or a discovery that started later (to the
+/// millisecond) has already committed. Committing either would serve tools
+/// for a server an admin turned off, or roll versions back. The ownership
+/// guard covers owner, URL and auth changes.
+pub(crate) fn stale_discovery_check(
+    server_active: bool,
+    newer_run_committed: bool,
+) -> Result<(), StoreError> {
+    if !server_active {
+        return Err(StoreError::Conflict(
+            "the MCP server was disabled while discovery ran; its results were discarded"
+                .to_string(),
+        ));
+    }
+    if newer_run_committed {
+        return Err(StoreError::Conflict(
+            "a newer discovery of this MCP server has already been recorded".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// A discovery start in Unix milliseconds, which orders runs that start in
+/// the same second.
+pub(crate) fn unix_millis(at: OffsetDateTime) -> i64 {
+    (at.unix_timestamp_nanos() / 1_000_000) as i64
+}
+
 pub(crate) fn definition_of(tool: &ExternalMcpToolRecord) -> McpToolDefinition {
     McpToolDefinition {
         description: tool.description.clone(),
@@ -119,8 +148,15 @@ pub(crate) fn plan_tool_write(
             other => unreachable!("a new tool is always inserted, got {other:?}"),
         };
     };
-    // Rows from before V58 kept no metadata. Capturing it is not a change.
-    if !stored.metadata_captured
+    // Rows from before V58 kept no metadata. Without approval, capturing it
+    // is not a change. With approval the captured claims were never reviewed,
+    // and a waiting version must still be resolved, so both go through the
+    // review decision below.
+    let nothing_waiting = stored.tool.review.approval_status == McpToolApprovalStatus::Approved
+        && stored.tool.review.pending_schema_version.is_none();
+    if !approve_tool_changes
+        && nothing_waiting
+        && !stored.metadata_captured
         && stored.tool.input_schema == discovered.input_schema
         && stored.tool.description == discovered.description
         && stored.tool.schema_hash != discovered.schema_hash
@@ -788,6 +824,111 @@ mod tests {
             ],
             "rejecting a text-only change keeps serving the approved version"
         );
+    }
+
+    /// A tool row from before V58: approved at version 1, metadata never
+    /// stored. `pending` adds a waiting text change at version 2.
+    fn legacy_tool(pending: bool) -> StoredTool {
+        let at = OffsetDateTime::UNIX_EPOCH;
+        let mut tool = ExternalMcpToolRecord {
+            mcp_tool_id: Uuid::new_v4(),
+            mcp_server_id: Uuid::new_v4(),
+            upstream_name: "search".to_string(),
+            display_name: "search".to_string(),
+            description: Some("Search".to_string()),
+            input_schema: serde_json::json!({"type": "object"}),
+            metadata: Default::default(),
+            policy: Default::default(),
+            review: Default::default(),
+            schema_hash: "legacy".to_string(),
+            schema_version: 1,
+            is_active: true,
+            first_discovered_at: at,
+            last_discovered_at: at,
+            deactivated_at: None,
+        };
+        tool.review.approved_schema_version = Some(1);
+        let mut versions = Vec::new();
+        if pending {
+            tool.review.approval_status = McpToolApprovalStatus::PendingChange;
+            tool.review.pending_schema_version = Some(2);
+            versions.push(StoredVersion {
+                schema_version: 2,
+                schema_hash: "legacy".to_string(),
+                description: Some("Search, now with an injected note".to_string()),
+                title: None,
+                status: McpToolVersionStatus::Pending,
+            });
+        }
+        StoredTool {
+            tool,
+            metadata_captured: false,
+            latest_version: if pending { 2 } else { 1 },
+            versions,
+        }
+    }
+
+    /// The same input schema and description, now with metadata the upstream
+    /// claims, such as `readOnlyHint`.
+    fn discovered_with_metadata(stored: &StoredTool) -> UpsertExternalMcpToolRecord {
+        UpsertExternalMcpToolRecord {
+            mcp_server_id: stored.tool.mcp_server_id,
+            upstream_name: "search".to_string(),
+            display_name: "search".to_string(),
+            description: stored.tool.description.clone(),
+            input_schema: stored.tool.input_schema.clone(),
+            metadata: gateway_core::McpToolMetadata {
+                title: Some("Search".to_string()),
+                annotations: serde_json::json!({"readOnlyHint": true})
+                    .as_object()
+                    .cloned(),
+                output_schema: None,
+            },
+            schema_hash: "with-metadata".to_string(),
+        }
+    }
+
+    #[test]
+    fn captured_metadata_on_legacy_rows_is_reviewed_when_approval_is_on() {
+        let stored = legacy_tool(false);
+        let discovered = discovered_with_metadata(&stored);
+        // Without approval, metadata an older gateway never stored is captured
+        // into the served version, as it always was.
+        assert_eq!(
+            plan_tool_write(Some(&stored), &discovered, false),
+            ToolWrite::CaptureMetadata { version: 1 }
+        );
+        // With approval, the claims were never reviewed: they wait as a new
+        // version, and the approved definition keeps being served.
+        assert_eq!(
+            plan_tool_write(Some(&stored), &discovered, true),
+            ToolWrite::Hold {
+                version: 2,
+                status: McpToolApprovalStatus::PendingReview,
+                write_definition: false,
+                insert_version: true,
+            }
+        );
+    }
+
+    #[test]
+    fn captured_metadata_does_not_leave_a_stale_pending_version() {
+        let stored = legacy_tool(true);
+        let discovered = discovered_with_metadata(&stored);
+        // The upstream dropped the waiting text change. Without approval the
+        // discovered definition is served and the pending version superseded.
+        assert_eq!(
+            plan_tool_write(Some(&stored), &discovered, false),
+            ToolWrite::Serve {
+                version: 3,
+                insert_version: true,
+            }
+        );
+        // With approval it replaces the pending version for review.
+        assert!(matches!(
+            plan_tool_write(Some(&stored), &discovered, true),
+            ToolWrite::Hold { version: 3, .. }
+        ));
     }
 
     #[test]

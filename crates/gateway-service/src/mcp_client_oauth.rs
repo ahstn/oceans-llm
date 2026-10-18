@@ -11,10 +11,11 @@ mod redirect;
 mod registration;
 mod secrets;
 mod settings;
+pub mod source_limits;
 mod token;
 mod validation;
 
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use gateway_core::{GatewayOauthClientRecord, GatewayOauthRepository};
 use time::OffsetDateTime;
@@ -30,20 +31,35 @@ pub use registration::{ClientRegistrationRequest, ClientRegistrationResponse};
 pub use secrets::oauth_token_hash;
 pub use settings::{
     DEFAULT_ACCESS_TOKEN_TTL_SECONDS, DEFAULT_REFRESH_TOKEN_TTL_SECONDS,
-    DEFAULT_UNUSED_CLIENT_RETENTION_DAYS, McpClientOauthSettings, McpClientOauthSettingsError,
+    DEFAULT_REGISTRATION_RATE_LIMITS, DEFAULT_UNUSED_CLIENT_RETENTION_DAYS, McpClientOauthSettings,
+    McpClientOauthSettingsError,
 };
+pub use source_limits::SourceRateLimits;
 pub use token::{ClientCredentials, TokenRequest, TokenResponse};
 
 #[derive(Clone)]
 pub struct McpClientOauthService<R> {
     repo: Arc<R>,
     settings: Arc<McpClientOauthSettings>,
+    /// The address the request came from, for per-source limits.
+    source: Option<IpAddr>,
 }
 
 impl<R> McpClientOauthService<R> {
     #[must_use]
     pub fn new(repo: Arc<R>, settings: Arc<McpClientOauthSettings>) -> Self {
-        Self { repo, settings }
+        Self {
+            repo,
+            settings,
+            source: None,
+        }
+    }
+
+    /// Sets the request's source address, which per-source limits count.
+    #[must_use]
+    pub fn with_source(mut self, source: Option<IpAddr>) -> Self {
+        self.source = source;
+        self
     }
 
     #[must_use]
@@ -69,7 +85,7 @@ where
             && let Some(documents) = self.settings.client_id_metadata_documents()
         {
             return documents
-                .resolve(self.repo.as_ref(), client_id, now, lookup)
+                .resolve(self.repo.as_ref(), client_id, now, lookup, self.source)
                 .await
                 .map(Some);
         }

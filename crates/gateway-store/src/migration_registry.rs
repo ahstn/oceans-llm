@@ -446,10 +446,24 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 72,
+        name: "mcp_oauth_state_issuer",
+        checksum: "V72__mcp_oauth_state_issuer.sql",
+        libsql_sql: include_str!("../migrations/V72__mcp_oauth_state_issuer.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V72__mcp_oauth_state_issuer.sql"),
+    },
+    MigrationManifest {
+        version: 73,
+        name: "mcp_discovery_run_started_ms",
+        checksum: "V73__mcp_discovery_run_started_ms.sql",
+        libsql_sql: include_str!("../migrations/V73__mcp_discovery_run_started_ms.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V73__mcp_discovery_run_started_ms.sql"),
+    },
+    MigrationManifest {
+        version: 74,
         name: "batch_jobs_route_index",
-        checksum: "V72__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V72__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V72__batch_jobs_route_index.sql"),
+        checksum: "V74__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V74__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V74__batch_jobs_route_index.sql"),
     },
 ];
 

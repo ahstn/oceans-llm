@@ -18,7 +18,7 @@ use axum::{
 use gateway_core::GatewayOauthRepository;
 use gateway_service::{
     ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument, McpClientOauthSettings,
-    outbound_fetch::OutboundFetchError,
+    SourceRateLimits, outbound_fetch::OutboundFetchError,
 };
 use serde_json::{Value, json};
 use url::Url;
@@ -319,6 +319,29 @@ async fn concurrent_requests_share_one_fetch() {
     assert_eq!(fixture.fetches(), 1);
 }
 
+/// Callers waiting on a fetch already in flight cause no fetch of their own,
+/// so they do not count against the fetch limits.
+#[tokio::test]
+async fn joining_a_fetch_in_flight_is_not_rate_limited() {
+    let fixture = Arc::new(Fixture::default());
+    let documents = ClientMetadataDocuments::with_source(Vec::new(), fixture.clone())
+        .expect("documents")
+        .with_fetch_rate_limits(SourceRateLimits {
+            per_source_per_minute: 1,
+            per_minute: 1,
+        })
+        .expect("limits");
+    let harness = Harness::with_settings(settings_with(documents)).await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
+    fixture.delay_ms.store(200, Ordering::SeqCst);
+    let query = harness.authorize_query(CLIENT_ID, &[]);
+    let starts = (0..5).map(|_| harness.authorize(&query));
+    for (status, _) in futures_util::future::join_all(starts).await {
+        assert_eq!(status, StatusCode::SEE_OTHER);
+    }
+    assert_eq!(fixture.fetches(), 1);
+}
+
 #[tokio::test]
 async fn document_fetches_are_capped() {
     let (harness, fixture) = harness_with_fixture(&[]).await;
@@ -343,6 +366,42 @@ async fn document_fetches_are_capped() {
         .count();
     assert!(unavailable >= 8, "{unavailable} requests were turned away");
     assert!(fixture.fetches() <= 32, "{} fetches ran", fixture.fetches());
+}
+
+/// Unique document URLs miss every cache, so fetches are limited per source.
+#[tokio::test]
+async fn document_fetches_are_limited_per_source() {
+    let (harness, fixture) = harness_with_fixture(&[]).await;
+    let authorize =
+        |index: usize, address: [u8; 4]| {
+            let query = harness.authorize_query(
+                &format!("https://editor.example.com/clients/{index}.json"),
+                &[],
+            );
+            let mut request = Request::builder()
+                .uri(format!("/oauth/authorize?{query}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from((address, 40_000)),
+            ));
+            send_with_headers(&harness.router, request)
+        };
+    for index in 0..30 {
+        authorize(index, [192, 0, 2, 9]).await;
+    }
+    assert_eq!(fixture.fetches(), 30);
+    let (status, headers, page) = authorize(30, [192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers.contains_key(header::RETRY_AFTER));
+    assert!(
+        page.as_str()
+            .unwrap_or_default()
+            .contains("temporarily_unavailable")
+    );
+    assert_eq!(fixture.fetches(), 30, "the refused request fetched nothing");
+    authorize(31, [198, 51, 100, 9]).await;
+    assert_eq!(fixture.fetches(), 31, "other sources are unaffected");
 }
 
 #[tokio::test]
@@ -623,6 +682,14 @@ async fn public_endpoints_allow_cross_origin_calls_without_credentials() {
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    // A browser client can read when to retry a rate-limited request.
+    assert!(
+        headers[header::ACCESS_CONTROL_EXPOSE_HEADERS]
+            .to_str()
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains("retry-after")
+    );
 
     // The browser-facing and cookie-authenticated endpoints stay same-origin.
     for uri in [

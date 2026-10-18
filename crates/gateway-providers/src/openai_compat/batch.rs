@@ -11,9 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-use super::{
-    OpenAiBatchDialect, OpenAiCompatProvider, normalize_anthropic_messages_tools_for_openai,
-};
+use super::{OpenAiBatchDialect, OpenAiCompatProvider, normalize_anthropic_messages_for_openai};
 use crate::http::{join_base_url, map_reqwest_error};
 
 #[derive(Serialize)]
@@ -223,7 +221,7 @@ impl OpenAiCompatProvider {
             Value::String(request.upstream_model.clone()),
         );
         if request.endpoint == gateway_core::BatchEndpoint::ChatCompletions {
-            normalize_anthropic_messages_tools_for_openai(object);
+            normalize_anthropic_messages_for_openai(object)?;
         }
         let endpoint_suffix = match request.endpoint {
             gateway_core::BatchEndpoint::ChatCompletions => "chat/completions",

@@ -752,6 +752,158 @@ mod proxy_policy {
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
+    /// Discovers `search` again, as `schema_hash`, with an upstream claim of
+    /// `readOnlyHint`.
+    async fn claim_read_only(
+        state: &AppState,
+        server: &gateway_core::ExternalMcpServerRecord,
+        schema_hash: &str,
+    ) {
+        let now = OffsetDateTime::now_utc();
+        state
+            .store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: server.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "Search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: gateway_core::McpToolMetadata {
+                        annotations: json!({"readOnlyHint": true}).as_object().cloned(),
+                        ..Default::default()
+                    },
+                    schema_hash: schema_hash.to_string(),
+                }],
+            )
+            .await
+            .expect("rediscovery");
+    }
+
+    #[tokio::test]
+    async fn upstream_hint_claims_alone_do_not_satisfy_derived_include_rules() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        claim_read_only(&state, &server, "search-v2").await;
+        add_user_rule(
+            &state,
+            &auth,
+            Some(server.mcp_server_id),
+            "read_only",
+            gateway_core::McpTagRuleEffect::Include,
+        )
+        .await;
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+
+        // The server takes upstream changes without review, so the upstream's
+        // own `readOnlyHint` does not grant the tool.
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An admin override vouches for the hint.
+        let search = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool");
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(
+                search.mcp_tool_id,
+                &gateway_core::McpAnnotationOverrides {
+                    read_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("override");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Turning approval on does not vouch for the definition discovery
+        // approved before it.
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(search.mcp_tool_id, &Default::default())
+            .await
+            .expect("clear override");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        state
+            .store
+            .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: server.description.clone(),
+                server_url: server.server_url.clone(),
+                auth_mode: server.auth_mode,
+                auth_config: server.auth_config.clone(),
+                timeout_ms: server.timeout_ms,
+                owner_contact: None,
+                visibility: server.ownership.visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                expected_owner_team_id: server.ownership.owner_team_id,
+                expected_visibility: server.ownership.visibility,
+                vouch_for_destinations: false,
+                updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("enable approval");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An admin approving the next definition does.
+        claim_read_only(&state, &server, "search-v3").await;
+        let pending = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool")
+            .review
+            .pending_schema_version
+            .expect("pending version");
+        state
+            .store
+            .review_mcp_tool_version(
+                search.mcp_tool_id,
+                pending,
+                gateway_core::McpToolReviewDecision::Approve,
+                None,
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("approve");
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
     #[tokio::test]
     async fn approval_servers_serve_the_approved_definition_and_withhold_pending_tools() {
         let (_directory, state) = crate::http::test_support::app_state().await;
@@ -894,6 +1046,228 @@ mod proxy_policy {
             )
         );
         assert_eq!(upstream.requests.load(Ordering::SeqCst), 0);
+    }
+
+    const LAST_EVENT_ID: &str = "last-event-id";
+
+    /// Requests the session upstream saw: method, `Mcp-Session-Id`, `Last-Event-ID`.
+    type SeenRequests = Arc<std::sync::Mutex<Vec<(Method, Option<String>, Option<String>)>>>;
+
+    /// An upstream that issues a session on `initialize` and, on `GET`, replays
+    /// a tool result with event ids as a resumed stream would.
+    async fn spawn_session_upstream(seen: SeenRequests) -> Upstream {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = axum::Router::new().route(
+            "/mcp",
+            axum::routing::any(move |method: Method, headers: HeaderMap, body: Bytes| {
+                let (counter, seen) = (counter.clone(), seen.clone());
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let header = |name: &str| {
+                        headers
+                            .get(name)
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string)
+                    };
+                    seen.lock().unwrap().push((
+                        method.clone(),
+                        header(MCP_SESSION_ID),
+                        header(LAST_EVENT_ID),
+                    ));
+                    if method == Method::GET {
+                        let replayed = json!({
+                            "jsonrpc": "2.0", "id": 4,
+                            "result": {"content": [{"type": "text", "text": SECRET_TEXT}]},
+                        });
+                        let notice = json!({
+                            "jsonrpc": "2.0", "method": "notifications/message",
+                            "params": {"level": "info", "data": "hello"},
+                        });
+                        return (
+                            [(CONTENT_TYPE, "text/event-stream")],
+                            format!("id: 41\ndata: {replayed}\n\nid: 42\ndata: {notice}\n\n"),
+                        )
+                            .into_response();
+                    }
+                    if method == Method::DELETE {
+                        return StatusCode::OK.into_response();
+                    }
+                    let message: Value = serde_json::from_slice(&body).unwrap_or_default();
+                    (
+                        [(MCP_SESSION_ID, "upstream-session-1")],
+                        Json(json!({"jsonrpc": "2.0", "id": message["id"], "result": {}})),
+                    )
+                        .into_response()
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let url = format!("http://{}/mcp", listener.local_addr().expect("address"));
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("upstream");
+        });
+        Upstream {
+            url,
+            requests,
+            task,
+        }
+    }
+
+    async fn send_raw(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        http_method: Method,
+        extra_headers: &[(&'static str, &str)],
+        body: &str,
+    ) -> Response<Body> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        for (name, value) in extra_headers {
+            headers.insert(*name, HeaderValue::from_str(value).expect("header"));
+        }
+        dispatch_mcp_request(
+            state,
+            &crate::http::request_policy::RequestPolicyContext::default(),
+            auth,
+            "notes",
+            &http_method,
+            &headers,
+            Bytes::from(body.to_string()),
+            Instant::now(),
+        )
+        .await
+    }
+
+    /// A second key for the same user, granted the same tool.
+    async fn second_key(state: &AppState, auth: &AuthenticatedApiKey) -> AuthenticatedApiKey {
+        let now = OffsetDateTime::now_utc();
+        let key = state
+            .store
+            .create_api_key(&NewApiKeyRecord {
+                name: "Second key".to_string(),
+                public_id: "second".to_string(),
+                secret_hash: gateway_core::hash_gateway_key_secret("second-secret")
+                    .expect("hash key"),
+                model_grant_mode: ApiKeyModelGrantMode::All,
+                owner_kind: ApiKeyOwnerKind::User,
+                owner_user_id: auth.owner_user_id,
+                owner_team_id: None,
+                owner_service_account_id: None,
+                access: Default::default(),
+                created_at: now,
+            })
+            .await
+            .expect("API key");
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let search = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool");
+        state
+            .store
+            .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+                subject_kind: McpToolGrantSubjectKind::ApiKey,
+                subject_id: key.id,
+                target_kind: McpToolGrantTargetKind::Tool,
+                target_id: search.mcp_tool_id,
+                updated_at: now,
+                expected_server: None,
+                expected_subject_team: None,
+            })
+            .await
+            .expect("tool grant");
+        AuthenticatedApiKey {
+            id: key.id,
+            public_id: key.public_id,
+            name: key.name,
+            ..auth.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn sessions_are_bound_to_the_caller_and_event_streams_cannot_resume() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let seen = SeenRequests::default();
+        let upstream = spawn_session_upstream(seen.clone()).await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let other = second_key(&state, &auth).await;
+
+        let initialize = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}});
+        let response = send_raw(&state, &auth, Method::POST, &[], &initialize.to_string()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let session = response.headers()[MCP_SESSION_ID]
+            .to_str()
+            .expect("session id")
+            .to_string();
+        assert_ne!(
+            session, "upstream-session-1",
+            "the upstream id stays private"
+        );
+
+        // The stream reaches the upstream with its own session id and without
+        // `Last-Event-ID`; event ids and the replayed result never reach the client.
+        let response = send_raw(
+            &state,
+            &auth,
+            Method::GET,
+            &[(MCP_SESSION_ID, &session), (LAST_EVENT_ID, "40")],
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let stream = String::from_utf8(
+            to_bytes(response.into_body(), 65_536)
+                .await
+                .expect("body")
+                .to_vec(),
+        )
+        .expect("UTF-8");
+        assert!(!stream.contains("id: 4"), "{stream}");
+        assert!(!stream.contains(SECRET_TEXT), "{stream}");
+        assert!(stream.contains("notifications/message"), "{stream}");
+        assert_eq!(
+            seen.lock().unwrap().last().cloned(),
+            Some((Method::GET, Some("upstream-session-1".to_string()), None))
+        );
+
+        // Another credential, or the raw upstream id, cannot use or end the session.
+        let before = upstream.requests.load(Ordering::SeqCst);
+        for (caller, session) in [(&other, session.as_str()), (&auth, "upstream-session-1")] {
+            for method in [Method::DELETE, Method::GET] {
+                let response =
+                    send_raw(&state, caller, method, &[(MCP_SESSION_ID, session)], "").await;
+                assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            }
+        }
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), before);
+
+        let response = send_raw(
+            &state,
+            &auth,
+            Method::DELETE,
+            &[(MCP_SESSION_ID, &session)],
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            seen.lock().unwrap().last().cloned(),
+            Some((Method::DELETE, Some("upstream-session-1".to_string()), None))
+        );
     }
 
     #[tokio::test]
@@ -1342,7 +1716,8 @@ mod proxy_policy {
         assert_eq!(admitted.status(), StatusCode::OK);
         assert_eq!(admitted.headers()["x-ratelimit-limit"], "1");
         assert_eq!(admitted.headers()["x-ratelimit-remaining"], "0");
-        assert_eq!(admitted.headers()["x-ratelimit-reset"], "50");
+        // The sliding window frees the whole limit at the end of the next minute.
+        assert_eq!(admitted.headers()["x-ratelimit-reset"], "110");
         assert!(admitted.headers().get("retry-after").is_none());
 
         let limited = router.oneshot(call(2)).await.unwrap();
@@ -1675,4 +2050,20 @@ fn stored_definitions_are_served_while_approval_is_on_or_a_change_waits() {
     tool.review = McpToolReviewState::default();
     server.approve_tool_changes = true;
     assert!(serves_stored_definition(&server, &tool));
+}
+
+/// Session ids signed with the public development secret could be forged for
+/// any credential, so that secret is never the key.
+#[tokio::test]
+async fn sessions_are_never_signed_with_the_public_development_secret() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    state.identity_token_secret =
+        std::sync::Arc::new(crate::http::audit::DEV_IDENTITY_TOKEN_SECRET.to_string());
+    let key = state.mcp_session_signing_key();
+    assert_ne!(
+        &*key,
+        crate::http::audit::DEV_IDENTITY_TOKEN_SECRET.as_bytes()
+    );
+    state.identity_token_secret = std::sync::Arc::new("a-configured-secret".to_string());
+    assert_eq!(&*state.mcp_session_signing_key(), b"a-configured-secret");
 }

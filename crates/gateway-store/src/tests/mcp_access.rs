@@ -298,3 +298,66 @@ async fn postgres_mcp_server_grants_and_access_projection() {
     drop(store);
     drop_postgres_test_database(&test_db).await;
 }
+
+/// A credential's listed servers are read by key in one query, disabled ones
+/// included, and keys that name no server are ignored.
+async fn exercise_servers_by_keys<S>(store: &S)
+where
+    S: McpRegistryRepository + Sync,
+{
+    let (files, _) = seed_server(store, "files").await;
+    let (notes, _) = seed_server(store, "notes").await;
+    seed_server(store, "wiki").await;
+    store
+        .disable_external_mcp_server(notes.mcp_server_id, OffsetDateTime::now_utc())
+        .await
+        .expect("disable notes");
+    let keys = ["notes", "files", "missing"].map(str::to_string);
+    let found = store
+        .list_external_mcp_servers_by_keys(&keys)
+        .await
+        .expect("servers by key")
+        .into_iter()
+        .map(|server| server.mcp_server_id)
+        .collect::<Vec<_>>();
+    assert_eq!(found, vec![files.mcp_server_id, notes.mcp_server_id]);
+    assert!(
+        store
+            .list_external_mcp_servers_by_keys(&[])
+            .await
+            .expect("no keys")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn libsql_mcp_servers_are_read_by_key() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_servers_by_keys(&store).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_mcp_servers_are_read_by_key() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres MCP server lookup test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_servers_by_keys(&store).await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
+}

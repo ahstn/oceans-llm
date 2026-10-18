@@ -73,6 +73,23 @@ Without a refresh token, the binding lasts until the access token expires, and t
 
 The connect URL from [the connect URL ADR](./2026-10-13-mcp-credential-connect-url.md) now checks availability through the resolved client source. Servers with their own authorization server get a URL whenever `public_base_url` is set.
 
+### 4a. Authorization responses must come from the expected issuer
+
+_Added 2026-10-18 after a review of the MCP gateway epic._
+
+Server-level clients share one callback URI, and `metadata_document` clients share one client ID. A malicious registered server can publish authorization server metadata whose `authorization_endpoint` is an honest authorization server and whose `token_endpoint` is its own. The honest server accepts the shared client ID and returns its code to the shared callback with the malicious server's `state`, and Oceans then sent that code and the PKCE verifier to the malicious token endpoint, which could redeem them at the honest server.
+
+Oceans now implements RFC 9207:
+
+- Discovery records `authorization_response_iss_parameter_supported` from the authorization server metadata into the suggested `auth_config`.
+- `mcp_oauth_states` stores the expected issuer and whether `iss` is required (migration `V72__mcp_oauth_state_issuer`).
+- The callback compares a present `iss` with the expected issuer as an exact string, as RFC 9207 requires, and requires `iss` when the server's config says the authorization server sends it. Discovery records the issuer exactly as the authorization server's metadata states it, so the two match byte for byte; a server configured by hand must use that exact string. A mismatch redirects with `oauth_error=issuer_mismatch` before any token request.
+- The code exchange also fails when the server's issuer changed during the flow, as it already did for the provider key and resource.
+
+Configured providers are not checked: their endpoints are gateway configuration and each has its own callback path.
+
+Per-server callback paths were considered and not adopted. In this attack the user starts the flow for the malicious server, so the `state` and any per-server path both name that server; the attacker builds the authorization request and can choose any redirect URI the shared client ID allows. Only `iss` tells Oceans which authorization server issued the code. An honest authorization server that does not send `iss` therefore remains exposed to a malicious server that the admin registered, which the trade-offs below record.
+
 ### 5. Static credential placement
 
 `gateway_static_header` accepts either of these, plus `secret_ref`:
@@ -93,6 +110,7 @@ The query value is never stored in `server_url`. The gateway adds it with `McpQu
 - The callback URI shared by server-level clients is part of every dynamic registration. Changing `mcp.oauth.public_base_url` causes each dynamic server to register again on its next connection. Existing connections then fail to refresh and need reconnecting.
 - Oceans does not use the registration access token yet. It stores it encrypted so a later change can update or delete the registration.
 - Discovery follows only the first listed authorization server and warns when there are more.
+- The mix-up defence depends on the honest authorization server sending `iss`. Registering an MCP server remains a trust decision: a malicious server can still phish codes from an authorization server that does not implement RFC 9207.
 
 ## Follow-ups
 

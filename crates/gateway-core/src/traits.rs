@@ -1123,6 +1123,21 @@ pub trait McpRegistryRepository: Send + Sync {
         server_key: &str,
     ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
 
+    /// The servers with any of `server_keys`, active or disabled. Stores read
+    /// them in one query; the default looks each key up.
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        let mut servers = Vec::new();
+        for server_key in server_keys {
+            if let Some(server) = self.get_external_mcp_server_by_key(server_key).await? {
+                servers.push(server);
+            }
+        }
+        Ok(servers)
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,
@@ -1263,6 +1278,28 @@ pub trait McpRegistryRepository: Send + Sync {
         mcp_tool_id: Uuid,
         query: &crate::mcp_tool_review::McpToolVersionQuery,
     ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
+
+    /// The `(mcp_tool_id, schema_version)` pairs, of those given, that an
+    /// admin reviewed. Stores answer in one query per batch; this default
+    /// reads each version.
+    async fn reviewed_mcp_tool_versions(
+        &self,
+        versions: &[(Uuid, i64)],
+    ) -> Result<Vec<(Uuid, i64)>, StoreError> {
+        let mut reviewed = Vec::new();
+        for &(mcp_tool_id, schema_version) in versions {
+            let query = crate::mcp_tool_review::McpToolVersionQuery::Versions(vec![schema_version]);
+            if self
+                .list_mcp_tool_versions(mcp_tool_id, &query)
+                .await?
+                .first()
+                .is_some_and(|version| version.reviewed_at.is_some())
+            {
+                reviewed.push((mcp_tool_id, schema_version));
+            }
+        }
+        Ok(reviewed)
+    }
 
     /// Approves or rejects the tool's pending version. Fails with `Conflict`
     /// when that version is not pending, so two reviews cannot both apply.
@@ -1740,11 +1777,12 @@ pub trait ProviderUserTokenResolver: Send + Sync {
 
 #[async_trait]
 pub trait McpTokenOverheadRepository: Send + Sync {
-    async fn get_mcp_tool_token_estimate(
+    /// The unexpired estimates among `cache_keys`, in one query.
+    async fn get_mcp_tool_token_estimates(
         &self,
-        cache_key: &str,
+        cache_keys: &[String],
         now: OffsetDateTime,
-    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError>;
+    ) -> Result<Vec<McpToolTokenEstimateRecord>, StoreError>;
 
     async fn upsert_mcp_tool_token_estimate(
         &self,

@@ -3,7 +3,7 @@
 //! `gateway_core::mcp_tool_policy`; this service
 //! validates admin input and previews which tools a rule selects.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
     ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError, McpAccessRepository,
@@ -11,7 +11,8 @@ use gateway_core::{
     McpToolTagRuleKey, McpToolTagRuleRecord, McpToolVersionQuery, McpToolVersionRecord, StoreError,
     Updated,
     mcp_tool_policy::{
-        effective_tags, has_effective_tag, normalize_admin_tags, normalize_rule_tag,
+        effective_tags, has_effective_tag, include_rule_selects, normalize_admin_tags,
+        normalize_rule_tag,
     },
 };
 use time::OffsetDateTime;
@@ -215,16 +216,26 @@ where
                 "an include rule must name a server".to_string(),
             ));
         }
-        if let Some(server_id) = mcp_server_id {
-            self.rule_server(server_id).await?;
-        }
+        let server = match mcp_server_id {
+            Some(server_id) => Some(self.rule_server(server_id).await?),
+            None => None,
+        };
+        // An include rule on an approval server may also select a tool for
+        // an admin-approved served version. Those tools are held as pending
+        // and checked in one query once the scan ends.
+        let check_reviews = matches!(
+            (&server, effect),
+            (Some(server), McpTagRuleEffect::Include) if server.approve_tool_changes
+        );
         // Active tools on active servers, the same candidates runtime
         // resolution reads, read a page at a time until the cap is passed.
-        // A disabled server yields nothing.
-        let mut matched = Vec::new();
+        // A disabled server yields nothing. The scan stops early only once
+        // more tools match for certain than the preview shows.
+        let mut candidates: Vec<(ExternalMcpToolRecord, bool)> = Vec::new();
+        let mut certain = 0;
         let mut after: Option<(Uuid, String)> = None;
         let mut scanned = 0;
-        let truncated = loop {
+        let stopped_early = loop {
             let page = self
                 .repo
                 .list_active_mcp_tools(
@@ -240,18 +251,28 @@ where
             after = page
                 .last()
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
-            let mut full = false;
             for tool in page {
-                if !has_effective_tag(&tool, &tag) {
-                    continue;
-                }
-                if matched.len() == MAX_TAG_RULE_PREVIEW_MATCHES {
-                    full = true;
-                    break;
-                }
-                matched.push(tool);
+                // Include rules apply the same trust rule as runtime resolution.
+                let pending = match (&server, effect) {
+                    (Some(_), McpTagRuleEffect::Include) => {
+                        if include_rule_selects(&tool, &tag, false) {
+                            false
+                        } else if check_reviews
+                            && tool.review.approved_schema_version.is_some()
+                            && include_rule_selects(&tool, &tag, true)
+                        {
+                            true
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ if has_effective_tag(&tool, &tag) => false,
+                    _ => continue,
+                };
+                certain += usize::from(!pending);
+                candidates.push((tool, pending));
             }
-            if full {
+            if certain > MAX_TAG_RULE_PREVIEW_MATCHES {
                 break true;
             }
             if last_page {
@@ -261,6 +282,28 @@ where
                 break true;
             }
         };
+        let pending = candidates
+            .iter()
+            .filter(|(_, pending)| *pending)
+            .filter_map(|(tool, _)| Some((tool.mcp_tool_id, tool.review.approved_schema_version?)))
+            .collect::<Vec<_>>();
+        let reviewed: HashSet<Uuid> = if pending.is_empty() {
+            HashSet::new()
+        } else {
+            self.repo
+                .reviewed_mcp_tool_versions(&pending)
+                .await?
+                .into_iter()
+                .map(|(mcp_tool_id, _)| mcp_tool_id)
+                .collect()
+        };
+        let mut matched = candidates
+            .into_iter()
+            .filter(|(tool, pending)| !pending || reviewed.contains(&tool.mcp_tool_id))
+            .map(|(tool, _)| tool)
+            .collect::<Vec<_>>();
+        let truncated = stopped_early || matched.len() > MAX_TAG_RULE_PREVIEW_MATCHES;
+        matched.truncate(MAX_TAG_RULE_PREVIEW_MATCHES);
         // The scan reads only the columns tag rules need; the matches are
         // loaded in full, in one query, for the response.
         let ids = matched

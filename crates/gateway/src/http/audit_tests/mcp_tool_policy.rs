@@ -1,8 +1,8 @@
 //! Tool tags, annotation overrides and tag rules through the admin API.
 
 use gateway_core::{
-    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, McpRegistryRepository,
-    McpToolMetadata, UpsertExternalMcpToolRecord,
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, McpAccessRepository,
+    McpRegistryRepository, McpToolMetadata, UpsertExternalMcpToolRecord,
 };
 use serde_json::Map;
 
@@ -588,4 +588,145 @@ async fn previews_match_runtime_resolution() {
         .await;
     assert_eq!(status, StatusCode::OK, "{matched}");
     assert_eq!(matched["data"]["tools"], json!([]));
+}
+
+/// Stores a discovery of `tools`, each claiming `readOnlyHint`, as
+/// `(upstream name, schema hash)`.
+async fn discover_read_only(harness: &Harness, server_id: Uuid, tools: &[(&str, &str)]) {
+    let now = OffsetDateTime::now_utc();
+    harness
+        .state
+        .store
+        .record_external_mcp_discovery_success(
+            &ExternalMcpDiscoveryRunRecord {
+                expected_server: None,
+                discovery_run_id: Uuid::new_v4(),
+                mcp_server_id: server_id,
+                status: ExternalMcpDiscoveryStatus::Success,
+                started_at: now,
+                finished_at: now,
+                discovered_tool_count: tools.len() as i64,
+                active_tool_count: tools.len() as i64,
+                schema_set_hash: None,
+                error_summary: None,
+                details: Map::new(),
+            },
+            &tools
+                .iter()
+                .map(|(name, hash)| UpsertExternalMcpToolRecord {
+                    mcp_server_id: server_id,
+                    upstream_name: (*name).to_string(),
+                    display_name: (*name).to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object"}),
+                    metadata: McpToolMetadata {
+                        title: None,
+                        annotations: json!({"readOnlyHint": true}).as_object().cloned(),
+                        output_schema: None,
+                    },
+                    schema_hash: (*hash).to_string(),
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .expect("discovery");
+}
+
+/// On an approval server, an include preview on a derived tag shows only
+/// tools whose served version an admin approved, as runtime resolution does.
+#[tokio::test]
+#[serial_test::serial]
+async fn include_previews_on_approval_servers_need_a_reviewed_version() {
+    let harness = Harness::new().await;
+    let (server_id, _) = seed_tool(&harness).await;
+    let server_id: Uuid = server_id.parse().expect("uuid");
+    discover_read_only(
+        &harness,
+        server_id,
+        &[("list", "list-v1"), ("stat", "stat-v1")],
+    )
+    .await;
+
+    // Approval goes on after discovery approved both definitions unreviewed.
+    let server = harness
+        .state
+        .store
+        .get_external_mcp_server(server_id)
+        .await
+        .expect("server lookup")
+        .expect("server");
+    harness
+        .state
+        .store
+        .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+            mcp_server_id: server_id,
+            display_name: server.display_name.clone(),
+            description: server.description.clone(),
+            server_url: server.server_url.clone(),
+            auth_mode: server.auth_mode,
+            auth_config: server.auth_config.clone(),
+            timeout_ms: server.timeout_ms,
+            owner_contact: None,
+            visibility: server.ownership.visibility,
+            retarget_owner_credentials_only: false,
+            expected_server: None,
+            expected_owner_team_id: server.ownership.owner_team_id,
+            expected_visibility: server.ownership.visibility,
+            vouch_for_destinations: false,
+            updated_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: true,
+        })
+        .await
+        .expect("enable approval");
+
+    // `list` changes and an admin approves the new version; `stat` does not.
+    discover_read_only(
+        &harness,
+        server_id,
+        &[("list", "list-v2"), ("stat", "stat-v1")],
+    )
+    .await;
+    let list = harness
+        .state
+        .store
+        .get_active_mcp_tool_by_name(server_id, "list")
+        .await
+        .expect("tool lookup")
+        .expect("list");
+    harness
+        .state
+        .store
+        .review_mcp_tool_version(
+            list.mcp_tool_id,
+            list.review.pending_schema_version.expect("pending version"),
+            gateway_core::McpToolReviewDecision::Approve,
+            None,
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("approve");
+
+    let (status, preview) = harness
+        .admin(
+            Method::GET,
+            &format!(
+                "/api/v1/admin/mcp/tag-rules/preview?server_id={server_id}&tag=read_only&effect=include"
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    let names = preview["data"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .map(|tool| {
+            tool["upstream_name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["list"]);
+    assert_eq!(preview["data"]["truncated"], false);
 }
