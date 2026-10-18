@@ -438,6 +438,30 @@ describe('RequestLogsPage detail', () => {
     expect(payloads()).toHaveTextContent('"output": "pong"')
   })
 
+  it('shows error details only for the attempts that recorded one', async () => {
+    const failedAttempt = {
+      ...successAttempt,
+      request_attempt_id: 'attempt_1',
+      status: 'upstream_error',
+      status_code: 503,
+      error_detail: 'upstream returned 503: overloaded',
+      error_detail_truncated: true,
+      terminal: false,
+      produced_final_response: false,
+    }
+    const retried = { ...successAttempt, request_attempt_id: 'attempt_2', attempt_number: 2 }
+    const detail = await openDetail({
+      log: items[0],
+      user_agent_raw: null,
+      payload: null,
+      attempts: [failedAttempt, retried],
+    })
+
+    expect(detail.getByText('Attempt #1 error detail')).toBeInTheDocument()
+    expect(detail.getByText('upstream returned 503: overloaded')).toBeInTheDocument()
+    expect(detail.queryByText('Attempt #2 error detail')).not.toBeInTheDocument()
+  })
+
   it('hides the MCP invocations link from sessions without that page', async () => {
     routeMock.useRouteContext.mockReturnValue({
       session: regularUserSession(['api_keys', 'request_logs']),
