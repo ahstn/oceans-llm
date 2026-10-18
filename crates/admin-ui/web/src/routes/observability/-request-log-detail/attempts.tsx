@@ -10,6 +10,10 @@ import { attemptStatusBadgeVariant } from './format'
 /** Upstream provider attempts in order, with any recorded error detail beneath the table. */
 export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | null | undefined }) {
   const recorded = attempts ?? []
+  const failedAttempts: typeof recorded = []
+  for (const attempt of recorded) {
+    if (attempt.error_detail) failedAttempts.push(attempt)
+  }
 
   if (recorded.length === 0) {
     return (
@@ -77,25 +81,21 @@ export function AttemptsTable({ attempts }: { attempts: RequestAttemptView[] | n
           </TableBody>
         </Table>
       </div>
-      {recorded
-        .filter((attempt) => attempt.error_detail)
-        .map((attempt) => (
-          <div
-            key={`${attempt.request_attempt_id}-error`}
-            className="border-destructive/40 min-w-0 border-l-2 py-1 pl-3"
-          >
-            <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-              <span>Attempt #{attempt.attempt_number} error detail</span>
-              {attempt.error_detail_truncated ? <Badge variant="warning">truncated</Badge> : null}
-            </div>
-            <p className="text-subtle-foreground mt-1 font-mono text-xs break-words">
-              {attempt.error_detail}
-            </p>
-            <p className="text-muted-foreground mt-1 font-mono text-xs">
-              route: {attempt.route_id}
-            </p>
+      {failedAttempts.map((attempt) => (
+        <div
+          key={`${attempt.request_attempt_id}-error`}
+          className="border-destructive/40 min-w-0 border-l-2 py-1 pl-3"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            <span>Attempt #{attempt.attempt_number} error detail</span>
+            {attempt.error_detail_truncated ? <Badge variant="warning">truncated</Badge> : null}
           </div>
-        ))}
+          <p className="text-subtle-foreground mt-1 font-mono text-xs break-words">
+            {attempt.error_detail}
+          </p>
+          <p className="text-muted-foreground mt-1 font-mono text-xs">route: {attempt.route_id}</p>
+        </div>
+      ))}
     </div>
   )
 }
