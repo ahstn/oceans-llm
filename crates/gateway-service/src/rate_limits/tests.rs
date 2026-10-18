@@ -298,7 +298,8 @@ async fn requests_are_rejected_at_the_limit_and_admitted_after_the_window() {
         panic!("expected admit, got {first:?}");
     };
     assert_eq!((status.limit, status.remaining), (2, 1));
-    assert_eq!(status.reset_after_seconds, 50);
+    // The request keeps counting until the next minute has slid past it.
+    assert_eq!(status.reset_after_seconds, 110);
     assert!(matches!(
         harness.limiter.check(&subject).await.unwrap(),
         RateLimitDecision::Admitted(RateLimitStatus { remaining: 0, .. })
@@ -1296,4 +1297,349 @@ async fn a_detached_charge_writes_the_counters_it_marked_pending() {
         charged.iter().all(|key| key.contains(&alpha_id)),
         "{charged:?}"
     );
+}
+
+/// Team membership by user, for team-scoped policies.
+struct Teams(HashMap<Uuid, Uuid>);
+
+#[async_trait]
+impl RateLimitTeamLookup for Teams {
+    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError> {
+        Ok(self.0.get(&user_id).copied())
+    }
+}
+
+#[tokio::test]
+async fn team_policies_count_members_own_keys() {
+    let (alice, bob, team) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )],
+    );
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(
+        limiter.with_team_lookup(Arc::new(Teams(HashMap::from([(alice, team), (bob, team)])))),
+    );
+
+    // Alice's own key is not a team key, but she is a member.
+    let RateLimitDecision::Admitted(status) = harness
+        .limiter
+        .check(&user_subject(alice, Uuid::new_v4()))
+        .await
+        .unwrap()
+    else {
+        panic!("expected admit");
+    };
+    assert_eq!(status.policy_name, "per team");
+    // Bob shares the team's counter.
+    assert!(matches!(
+        harness
+            .limiter
+            .check(&user_subject(bob, Uuid::new_v4()))
+            .await
+            .unwrap(),
+        RateLimitDecision::Rejected(_)
+    ));
+    // A user in no team is not limited by it.
+    assert!(matches!(
+        harness
+            .limiter
+            .check(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+            .await
+            .unwrap(),
+        RateLimitDecision::Unlimited
+    ));
+}
+
+#[tokio::test]
+async fn reset_is_when_a_sliding_window_frees_the_whole_limit() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per key",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            5,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let RateLimitDecision::Admitted(status) = harness.limiter.check(&subject).await.unwrap() else {
+        panic!("expected admit");
+    };
+    // Ten seconds into the minute: this request keeps counting, at a falling
+    // weight, until the end of the next minute.
+    assert_eq!(status.reset_after_seconds, 110);
+}
+
+#[tokio::test]
+async fn the_reported_policy_has_the_smallest_share_left_whatever_its_unit() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![
+            config(
+                "requests",
+                RateLimitOperation::Inference,
+                RateLimitScopeKind::User,
+                RateLimitMetric::Requests,
+                RateLimitPeriod::Day,
+                10,
+            ),
+            config(
+                "tokens",
+                RateLimitOperation::Inference,
+                RateLimitScopeKind::User,
+                RateLimitMetric::Tokens,
+                RateLimitPeriod::Day,
+                1_000,
+            ),
+        ],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    harness
+        .limiter
+        .add_tokens(&subject, 900, harness.now())
+        .await;
+    // Nine requests of ten are left, but only 100 tokens of 1,000.
+    let RateLimitDecision::Admitted(status) = harness.limiter.check(&subject).await.unwrap() else {
+        panic!("expected admit");
+    };
+    assert_eq!(status.policy_name, "tokens");
+    assert_eq!(status.remaining, 100);
+}
+
+/// A slow team lookup that counts its calls.
+#[derive(Default)]
+struct CountingTeams(std::sync::atomic::AtomicUsize);
+
+#[async_trait]
+impl RateLimitTeamLookup for CountingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn concurrent_requests_from_one_user_share_a_team_lookup() {
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+    );
+    let teams = Arc::new(CountingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let decisions = tokio::join!(
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+    );
+    for decision in [decisions.0, decisions.1, decisions.2, decisions.3] {
+        decision.expect("check");
+    }
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// A slow, failing team lookup that counts its calls.
+#[derive(Default)]
+struct CountingFailingTeams(std::sync::atomic::AtomicUsize);
+
+#[async_trait]
+impl RateLimitTeamLookup for CountingFailingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Err(StoreError::Unavailable("identity store down".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn concurrent_requests_share_a_failed_team_lookup() {
+    let mut harness = Harness::with_mode(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+        RateLimitFailureMode::Closed,
+    );
+    let teams = Arc::new(CountingFailingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let decisions = tokio::join!(
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+    );
+    for decision in [decisions.0, decisions.1, decisions.2] {
+        assert!(decision.is_err(), "{decision:?}");
+    }
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(limiter.member_team_lookups.lock().unwrap().is_empty());
+}
+
+/// A waiter that gives up leaves the lookup to the callers still waiting,
+/// so a request arriving meanwhile joins it instead of starting another.
+#[tokio::test]
+async fn a_cancelled_waiter_keeps_the_team_lookup_shared() {
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+    );
+    let teams = Arc::new(CountingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let staying = limiter.check(&subject);
+    let leaving = async {
+        // Gives up partway through the 50 ms lookup.
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            limiter.check(&subject),
+        )
+        .await;
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        limiter.check(&subject).await
+    };
+    let (staying, late) = tokio::join!(staying, leaving);
+    staying.expect("check");
+    late.expect("check");
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(limiter.member_team_lookups.lock().unwrap().is_empty());
+}
+
+struct FailingTeams;
+
+#[async_trait]
+impl RateLimitTeamLookup for FailingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        Err(StoreError::Unavailable("identity store down".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn a_failed_team_lookup_follows_the_failure_mode() {
+    let team_policy = || {
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )]
+    };
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    for (mode, refused) in [
+        (RateLimitFailureMode::Closed, true),
+        (RateLimitFailureMode::Open, false),
+    ] {
+        let mut harness = Harness::with_mode(MemoryStore::default(), team_policy(), mode);
+        let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+        harness.limiter = Arc::new(limiter.with_team_lookup(Arc::new(FailingTeams)));
+        let decision = harness.limiter.check(&subject).await;
+        assert_eq!(decision.is_err(), refused, "{mode:?}: {decision:?}");
+        assert!(
+            harness
+                .limiter
+                .member_team_lookups
+                .lock()
+                .unwrap()
+                .is_empty(),
+            "a failed lookup leaves no flight behind"
+        );
+    }
+}
+
+/// A team policy whose traffic filter cannot match the request needs no
+/// team, so a failed lookup does not refuse it.
+#[tokio::test]
+async fn team_lookups_are_skipped_for_policies_that_cannot_match() {
+    let other_model = ConfiguredRateLimitPolicy {
+        model_key: Some("slow".to_string()),
+        ..config(
+            "per team on slow",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            1,
+        )
+    };
+    let mut harness = Harness::with_mode(
+        MemoryStore::default(),
+        vec![other_model],
+        RateLimitFailureMode::Closed,
+    );
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(Arc::new(FailingTeams)));
+    let decision = harness
+        .limiter
+        .check(&user_subject(Uuid::new_v4(), Uuid::new_v4()))
+        .await;
+    assert!(
+        matches!(decision, Ok(RateLimitDecision::Unlimited)),
+        "{decision:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_rejected_request_does_not_count_its_own_cost_in_the_reset() {
+    let harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per key",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::ApiKey,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Minute,
+            1,
+        )],
+    );
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    assert!(matches!(
+        harness.limiter.check(&subject).await.unwrap(),
+        RateLimitDecision::Admitted(_)
+    ));
+    // At the start of the next minute the previous window still fills the
+    // limit and the current one is empty: the usage frees at this minute's end.
+    harness.advance(50);
+    let RateLimitDecision::Rejected(rejected) = harness.limiter.check(&subject).await.unwrap()
+    else {
+        panic!("expected rejection");
+    };
+    assert_eq!(rejected.reset_after_seconds, 60);
 }

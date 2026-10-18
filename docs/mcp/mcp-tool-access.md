@@ -139,7 +139,9 @@ Effective access for a caller is resolved in this order:
 1. Explicit tool and toolset grants of every subject (the key, its owner user or
    service account, and the team).
 2. Include rules add every active tool on their server whose tags contain the
-   rule's tag. Tools that discovery adds later match without a new grant.
+   rule's tag. Tools that discovery adds later match without a new grant. An
+   include rule on a derived tag only selects tools whose hint an admin
+   overrode, or whose served version an admin approved (see [Tags](#tags)).
 3. Exclude rules from any of the caller's subjects remove every matching tool.
    Exclude wins over explicit grants, toolset grants, and include rules, whichever
    subject they came from. An exclude rule on a team also removes a tool granted to
@@ -165,6 +167,17 @@ Every tool has derived tags, computed from its effective annotations:
 These follow the MCP protocol defaults, which fail safe. An include rule for
 `read_only` matches only tools that claim to be read-only. A tool that declares no
 hints counts as `destructive` and `open_world`, so exclude rules catch it.
+
+Hints are claims made by the upstream server. On a server without
+[tool approval](#tool-versions-and-approval), discovery serves whatever the
+upstream declares, so a new tool could otherwise grant itself access by claiming
+`readOnlyHint`. So an include rule on a derived tag selects a tool only when an
+admin vouched for its hints: by [overriding](#annotation-overrides) the tag's own
+hint to `true`, or by approving the served version on a server with approval. A
+protocol default does not count. Turning approval on does not vouch for
+definitions discovery approved before it; override those hints, or they count
+once the upstream's next change is approved. Admin-tag include rules and all
+exclude rules use the effective tags on every server.
 
 Admins can also add their own tags to a tool, such as `finance` or `pii:low`.
 Admin tags are 1 to 64 lowercase letters, digits, `_`, `-`, `.`, and `:`, at most
@@ -302,11 +315,17 @@ Resources, prompts, and completions can return server data just as tools can, so
 | `ping`, `logging/setLevel`, `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, `notifications/roots/list_changed` (no `id`), client replies to server requests, `DELETE` (end session) | Forwarded. These carry no server data. |
 | `tools/list`, `tools/call` | Filtered and checked per tool, as described above. `tools/list` results lose each tool's `execution.taskSupport`, and a `tools/call` with a `task` param is rejected with HTTP 400. |
 | `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `completion/complete` | Forwarded only when the caller has at least one effective grant on the server. Otherwise the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a policy-denied invocation with error code `mcp_server_not_granted`. |
-| `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. Every 30 seconds while it is open, one shared check covers every open stream: an API key must still authenticate with an MCP scope, and the caller must still hold a grant on a server they can see. The stream ends when either check fails, or when a check cannot be answered, and the client reconnects. The stream is not logged per call. |
+| `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. The gateway drops JSON-RPC responses from this stream, so only server requests and notifications reach the client. Every 30 seconds while it is open, one shared check covers every open stream: an API key must still authenticate with an MCP scope, and the caller must still hold a grant on a server they can see. The stream ends when either check fails, or when a check cannot be answered, and the client reconnects. The stream is not logged per call. |
 | Any other method | Denied with HTTP 403 and JSON-RPC code `-32601`, and logged with error code `mcp_method_not_allowed`. |
 | `POST` with an empty or malformed body, or `GET`/`DELETE` with a body | Rejected with HTTP 400 and JSON-RPC code `-32600`. |
 
 The gateway does not proxy MCP tasks. A task's result comes back through `tasks/result`, which names no tool, so the gateway could not check grants or guardrails on it. `tasks/*` methods fall under "any other method", and the gateway removes the capability and tool hints above so clients call tools directly.
+
+#### Sessions and event streams
+
+The gateway does not support stream resumption. It never forwards `Last-Event-ID`, and it removes the `id` field from every upstream event, so clients have no event id to resume from. A resumed upstream stream would replay results without the grant filtering, approved definitions, result guardrails, and invocation records the original request went through.
+
+The client never sees the upstream `Mcp-Session-Id`. The gateway returns its own session id, signed for the server, the API key or OAuth grant, and the key's owner. A request whose session id was issued to another credential, or that sends the raw upstream id, gets HTTP 404 and is not forwarded; MCP clients treat that as an expired session and start a new one. This matters on servers with a shared or service-account credential, where the upstream cannot tell callers apart. See [Govern every MCP method on the direct proxy](../adr/2026-10-13-govern-every-mcp-method.md#5-sessions-belong-to-their-caller-and-streams-cannot-resume).
 
 Grants are per tool, and resources and prompts have no grant model of their own. A grant on any tool on the server is therefore the minimum bar for reading its resources or prompts. Use the server's tool grants to decide who may use the server at all.
 
@@ -351,4 +370,4 @@ MCP grants decide tool visibility and call permission. They do not create spend 
 
 Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding while another budget policy blocks it. It can also have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](../access/budgets.md).
 
-MCP token-overhead estimates are context-window telemetry. They estimate how many prompt-context tokens granted tool definitions and tool results may consume, but they are not billing truth and do not count toward spend-budget accounting.
+MCP token-overhead estimates are context-window telemetry. They estimate how many prompt-context tokens granted tool definitions and tool results may consume, but they are not billing truth and do not count toward spend-budget accounting. The gateway computes them in the background, from the caller's tool set cached for 30 seconds, so they never delay an inference request and can lag a grant change by that long.

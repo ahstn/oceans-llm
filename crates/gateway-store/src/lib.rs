@@ -74,7 +74,9 @@ mod skills_tests;
 #[cfg(test)]
 pub(crate) mod tests {
     mod mcp_access;
+    mod mcp_discovery_commits;
     mod mcp_tag_rules;
+    mod mcp_token_overhead;
     mod mcp_tool_versions;
     mod model_routing;
     mod request_log_list;
@@ -2348,9 +2350,12 @@ pub(crate) mod tests {
             "a refused run writes nothing"
         );
 
-        // Guarded discoveries of one server can land together: each locks the
+        // Guarded discoveries of one server can run together: each locks the
         // server before checking its guard, so neither waits on the other's
-        // share lock, and both are stored.
+        // share lock and none deadlocks. This server is disabled, so the
+        // successful runs are refused as stale and only the failures land;
+        // `tests::mcp_discovery_commits` lands concurrent successes on an
+        // active server.
         let run = |status, error: Option<&str>| ExternalMcpDiscoveryRunRecord {
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id,
@@ -2375,8 +2380,8 @@ pub(crate) mod tests {
                 store.record_external_mcp_discovery_success(&second, &[]),
                 store.record_external_mcp_discovery_failure(&failed),
             );
-            first.expect("first concurrent discovery");
-            second.expect("second concurrent discovery");
+            assert!(matches!(first, Err(StoreError::Conflict(_))), "{first:?}");
+            assert!(matches!(second, Err(StoreError::Conflict(_))), "{second:?}");
             failure.expect("concurrent failed discovery");
         }
 
@@ -2546,6 +2551,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: current.server_url.clone(),
             scopes: Vec::new(),
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -2596,6 +2603,8 @@ pub(crate) mod tests {
                 redirect_to: "/admin/account/connections".to_string(),
                 resource: current.server_url.clone(),
                 scopes: Vec::new(),
+                expected_issuer: None,
+                issuer_required: false,
                 expires_at: now + Duration::minutes(10),
                 consumed_at: None,
                 created_at: now,
@@ -3964,6 +3973,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
             scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expected_issuer: Some("https://accounts.example.test".to_string()),
+            issuer_required: true,
             expires_at: now + Duration::minutes(10),
             consumed_at: None,
             created_at: now,
@@ -4003,6 +4014,8 @@ pub(crate) mod tests {
         assert_eq!(consumed_state.pkce_verifier, oauth_state.pkce_verifier);
         assert_eq!(consumed_state.resource, oauth_state.resource);
         assert_eq!(consumed_state.scopes, oauth_state.scopes);
+        assert_eq!(consumed_state.expected_issuer, oauth_state.expected_issuer);
+        assert!(consumed_state.issuer_required);
         assert!(
             store
                 .consume_mcp_oauth_state(
@@ -4024,6 +4037,8 @@ pub(crate) mod tests {
             redirect_to: "/admin/account/connections".to_string(),
             resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
             scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+            expected_issuer: None,
+            issuer_required: false,
             expires_at: now - Duration::minutes(1),
             consumed_at: None,
             created_at: now,

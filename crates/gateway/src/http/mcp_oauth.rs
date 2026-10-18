@@ -51,6 +51,8 @@ pub struct McpOauthCallbackQuery {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
+    /// RFC 9207: the authorization server that issued the response.
+    pub iss: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
@@ -271,6 +273,19 @@ pub async fn start_mcp_oauth_connection(
     let authorization_url =
         client.authorization_url(&config, csrf_state.secret(), pkce_challenge.as_str())?;
     let now = OffsetDateTime::now_utc();
+    // All server-level clients share one callback, and metadata-document
+    // clients share one client ID, so only `iss` tells which authorization
+    // server a code came from (RFC 9207).
+    let (expected_issuer, issuer_required) = config
+        .server_oauth
+        .as_ref()
+        .map(|endpoints| {
+            (
+                Some(endpoints.issuer.clone()),
+                endpoints.authorization_response_iss_parameter_supported,
+            )
+        })
+        .unwrap_or_default();
     // Stored only while the server keeps the settings this authorization URL
     // was built from; a settings change deletes its states under the same lock.
     state
@@ -285,6 +300,8 @@ pub async fn start_mcp_oauth_connection(
                 redirect_to,
                 resource: config.resource,
                 scopes: config.scopes,
+                expected_issuer,
+                issuer_required,
                 expires_at: now + Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
                 consumed_at: None,
                 created_at: now,
@@ -367,6 +384,13 @@ async fn complete_oauth_callback(
     };
     if let Some(error) = callback_transaction_error(&transaction, provider_key, user.user_id, now) {
         return Ok(connection_error_redirect(error));
+    }
+    if !callback_issuer_matches(&transaction, query.iss.as_deref()) {
+        tracing::warn!(
+            mcp_server_id = %transaction.mcp_server_id,
+            "MCP OAuth callback came from an unexpected authorization server"
+        );
+        return Ok(connection_error_redirect("issuer_mismatch"));
     }
     if query.error.is_some() {
         return Ok(connection_error_redirect("access_denied"));
@@ -501,7 +525,14 @@ async fn exchange_callback_code(
         ));
     }
     let config = mcp_oauth_server_config(&server.auth_config)?;
-    if config.provider_key != transaction.provider_key || config.resource != transaction.resource {
+    let issuer = config
+        .server_oauth
+        .as_ref()
+        .map(|endpoints| endpoints.issuer.as_str());
+    if config.provider_key != transaction.provider_key
+        || config.resource != transaction.resource
+        || issuer != transaction.expected_issuer.as_deref()
+    {
         return Err(GatewayError::InvalidRequest(
             "MCP server OAuth settings changed during the connection".to_string(),
         ));
@@ -725,6 +756,21 @@ fn connection_error_redirect(code: &str) -> Response {
 
 fn token_hash(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
+}
+
+/// RFC 9207 §2.4: an `iss` that is present must equal the expected issuer, by
+/// simple string comparison (a trailing `/` makes a different issuer), and
+/// it must be present when the authorization server advertises it. Without an
+/// expected issuer (a configured provider, whose endpoints are gateway
+/// configuration) there is nothing to compare.
+fn callback_issuer_matches(transaction: &McpOauthStateRecord, iss: Option<&str>) -> bool {
+    let Some(expected) = transaction.expected_issuer.as_deref() else {
+        return true;
+    };
+    match iss {
+        Some(iss) => iss == expected,
+        None => !transaction.issuer_required,
+    }
 }
 
 fn callback_transaction_error(

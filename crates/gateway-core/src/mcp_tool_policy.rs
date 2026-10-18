@@ -200,6 +200,47 @@ pub fn has_effective_tag(tool: &ExternalMcpToolRecord, tag: &str) -> bool {
         || EffectiveHints::of(tool).derives(tag)
 }
 
+/// The hint a derived tag is named for, or `None` for an admin tag.
+#[must_use]
+pub fn derived_tag_hint(tag: &str) -> Option<&'static str> {
+    match tag {
+        TAG_READ_ONLY => Some(READ_ONLY_HINT),
+        TAG_DESTRUCTIVE => Some(DESTRUCTIVE_HINT),
+        TAG_IDEMPOTENT => Some(IDEMPOTENT_HINT),
+        TAG_OPEN_WORLD => Some(OPEN_WORLD_HINT),
+        _ => None,
+    }
+}
+
+/// Whether an include rule on `tag` selects `tool`.
+///
+/// Derived tags come from hints the upstream declares. On a server that takes
+/// upstream changes without review, those hints are unreviewed claims, and a
+/// new tool (including one the upstream renamed) would grant itself access by
+/// claiming one. So an include rule on a derived tag selects a tool only when
+/// an admin vouched for its hints: by overriding the tag's own hint to `true`,
+/// or by approving the served version on a server with `approve_tool_changes`
+/// (`served_version_reviewed`). Turning approval on does not vouch for
+/// definitions served before it, which discovery approved unreviewed. Admin
+/// tags apply everywhere. Exclude rules always use the effective tags. The
+/// stores' include queries mirror this rule in SQL.
+#[must_use]
+pub fn include_rule_selects(
+    tool: &ExternalMcpToolRecord,
+    tag: &str,
+    served_version_reviewed: bool,
+) -> bool {
+    if !has_effective_tag(tool, tag) {
+        return false;
+    }
+    match derived_tag_hint(tag) {
+        Some(hint) if !served_version_reviewed => {
+            tool.policy.annotation_overrides.get(hint) == Some(true)
+        }
+        _ => true,
+    }
+}
+
 /// Derived tags plus admin tags, sorted.
 #[must_use]
 pub fn effective_tags(tool: &ExternalMcpToolRecord) -> BTreeSet<String> {
@@ -643,5 +684,36 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn include_rules_trust_derived_tags_only_from_admins_or_reviewed_versions() {
+        let server = Uuid::new_v4();
+        let claimed = tool(
+            server,
+            json!({"readOnlyHint": true}),
+            McpToolPolicy::default(),
+        );
+        assert!(!include_rule_selects(&claimed, TAG_READ_ONLY, false));
+        assert!(include_rule_selects(&claimed, TAG_READ_ONLY, true));
+        // Defaults are not a claim an admin made either.
+        let silent = tool(server, Value::Null, McpToolPolicy::default());
+        assert!(has_effective_tag(&silent, TAG_OPEN_WORLD));
+        assert!(!include_rule_selects(&silent, TAG_OPEN_WORLD, false));
+        let vouched = tool(
+            server,
+            Value::Null,
+            McpToolPolicy {
+                tags: vec!["finance".to_string()],
+                annotation_overrides: McpAnnotationOverrides {
+                    read_only: Some(true),
+                    ..Default::default()
+                },
+            },
+        );
+        assert!(include_rule_selects(&vouched, TAG_READ_ONLY, false));
+        assert!(include_rule_selects(&vouched, "finance", false));
+        // An override can only vouch for a tag the tool has.
+        assert!(!include_rule_selects(&vouched, TAG_DESTRUCTIVE, true));
     }
 }

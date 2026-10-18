@@ -348,6 +348,9 @@ async fn run_serve_with_store(
         mcp_organisation_publishing: config.mcp.registry.organisation_publishing,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+        mcp_telemetry_cache: Arc::new(ResponseCache::new(
+            gateway::http::handlers::MCP_TELEMETRY_CACHE_TTL,
+        )),
         count_tokens_limiter: Arc::default(),
         trusted_proxies: TrustedProxies::new(config.server.trusted_proxy_networks()?),
     };
@@ -766,10 +769,10 @@ fn build_gateway_service(
     let payload_policy = config
         .request_log_payload_policy()
         .context("failed to build request log payload policy")?;
-    let rate_limiter = Arc::new(RateLimiter::new(
-        store.clone(),
-        config.rate_limits.settings(),
-    ));
+    let rate_limiter = Arc::new(
+        RateLimiter::new(store.clone(), config.rate_limits.settings())
+            .with_team_lookup(store.clone()),
+    );
     Ok(Arc::new(
         GatewayService::new_with_budget_alert_sender_and_payload_policy(
             store,

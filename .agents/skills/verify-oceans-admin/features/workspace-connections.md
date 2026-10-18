@@ -29,7 +29,7 @@ Preconditions:
 - **Empty state.** The `No OAuth servers are available` alert is visible, and no `Connect` button renders.
 - **API parity.** From the browser context, fetch `/api/v1/mcp/oauth/connections`. It returns an empty list, which matches the empty state.
 - **Non-admin reach.** In a new browser context, sign in as `ben@platform.local` with `localdemo123` and open `/admin/account/connections`. The same empty state renders, so the page is not gated by permissions.
-- **Error callback.** Open `/admin/account/connections?oauth_error=access_denied`. An error toast appears and the page stays on the empty state.
+- **Error callback.** Open `/admin/account/connections?oauth_error=access_denied`. An error toast appears and the page stays on the empty state. `?oauth_error=issuer_mismatch` shows `The response came from a different authorization server than this connection uses.`
 - **Metadata document.** Fetch `/api/v1/mcp/oauth/client-metadata.json` without a session. The default stack sets no `mcp.oauth.public_base_url`, so it returns 404.
 - **Connect link, unknown server.** Open `/admin/account/connections?connect=google_drive`. The toast `No workspace connection is available for MCP server google_drive.` appears, the URL drops the `connect` parameter, and the browser does not leave the page.
 - **Connect, connect link and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a registered oauth_obo server, and interactive consent at the upstream. A Google server also needs a Google entry under `mcp.oauth.providers`. Report them as skipped and name that unmet precondition.

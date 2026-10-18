@@ -127,7 +127,7 @@ User-added MCP servers are stored in:
 
 Delete semantics are disable/archive semantics. There is no hard delete endpoint. Disabled servers are omitted from normal list views unless `include_disabled=true` is requested.
 
-Rediscovery marks previously active tools inactive before upserting the newly discovered set. Existing tools keep their stable `mcp_tool_id` when the upstream tool name is unchanged. A changed input schema increments `schema_version`; unchanged schemas keep their current version.
+Rediscovery marks previously active tools inactive before upserting the newly discovered set. A refresh commits only if the server still has the owner, URL and auth settings it fetched with, is still active, and no refresh that started later has committed; otherwise it returns a conflict and writes nothing. Existing tools keep their stable `mcp_tool_id` when the upstream tool name is unchanged. A changed input schema increments `schema_version`; unchanged schemas keep their current version.
 
 ## Gateway Data Plane
 

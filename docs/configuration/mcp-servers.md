@@ -337,6 +337,9 @@ A discovered server's auth config looks like this:
 | `scopes` | Scopes to request and require. Discovery fills them from the challenge's `scope`, then from the resource's `scopes_supported`. Omit them to let the authorization server choose. |
 | `client_registration` | How Oceans gets its OAuth client: `dynamic`, `metadata_document`, or `manual`. |
 | `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post`, or `none`. |
+| `authorization_response_iss_parameter_supported` | Whether the authorization server returns `iss` with every authorization response (RFC 9207). Discovery copies it from the authorization server metadata. When `true`, a callback without `iss` is refused. Defaults to `false`. |
+
+Every connection to a server with its own authorization server records the expected issuer. If the callback carries an `iss` that names a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code is never sent to the token endpoint. This stops an upstream whose metadata sends users to another authorization server from receiving that server's codes (a mix-up attack), because all these servers share one callback URI and, with `metadata_document`, one client ID.
 
 ### Client registration
 

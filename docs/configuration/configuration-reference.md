@@ -647,9 +647,15 @@ mcp:
     refresh_token_ttl_seconds: 2592000
     dynamic_client_registration: true
     unused_client_retention_days: 7
+    registration_rate_limit:
+      per_source_per_minute: 10
+      per_minute: 100
     client_id_metadata_documents:
       enabled: true
       allowed_domains: []
+      fetch_rate_limit:
+        per_source_per_minute: 30
+        per_minute: 300
 ```
 
 - `enabled` defaults to `false`. When it is `false`, the metadata, authorization, token, registration, and revocation endpoints return `404`, and MCP routes accept only `gwk_` keys.
@@ -660,6 +666,9 @@ mcp:
 - `unused_client_retention_days` defaults to 7 and must be between 1 and 365. An hourly cleanup deletes clients that never received a grant: dynamically registered ones older than this, and metadata document clients whose document was last fetched longer ago than this. It also deletes authorization requests and tokens that expired more than a day ago.
 - `client_id_metadata_documents.enabled` defaults to `true`. Clients may then use the https URL of a Client ID Metadata Document as their `client_id`, and the metadata advertises `client_id_metadata_document_supported: true`. Oceans fetches those documents from public addresses only. When it is `false`, such clients are refused.
 - `client_id_metadata_documents.allowed_domains` defaults to `[]`, which allows any public host. Otherwise only the listed hosts and their subdomains may publish documents. Each entry is a bare domain, such as `example.com`, without a scheme, port, or wildcard.
+- `registration_rate_limit` limits `/oauth/register`: `per_source_per_minute` from one client address (default 10) and `per_minute` across the gateway (default 100). Over a limit, the gateway returns `429` with `Retry-After` and a `temporarily_unavailable` error, before it reads the request or stores a client.
+- `client_id_metadata_documents.fetch_rate_limit` limits document fetches the same way (defaults 30 and 300). Requests answered from the document cache, or waiting on a fetch of the same document already in flight, do not count. Over a limit, `/oauth/authorize` shows an error page with `429`, and the token and revocation endpoints return `429`.
+- Both limits must be at least 1. The client address is the connection's address, or the `X-Forwarded-For` client when the connection comes from a trusted proxy. IPv6 addresses are counted by `/64`. Each replica counts its own requests, so the effective gateway-wide limit is the per-replica value times the number of replicas.
 
 For client setup, see [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in).
 

@@ -1,6 +1,5 @@
 use gateway_core::{
     GatewayOauthClientAuthMethod, GatewayOauthClientRecord, GatewayOauthRepository,
-    hash_gateway_key_secret,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -11,7 +10,7 @@ use super::{
     McpClientOauthService,
     error::OauthError,
     redirect::validate_redirect_uri,
-    secrets::{generate_token, run_argon2},
+    secrets::{generate_token, hash_client_secret},
 };
 
 pub(super) const MAX_REDIRECT_URIS: usize = 10;
@@ -63,6 +62,24 @@ pub struct ClientRegistrationResponse {
     pub software_version: Option<String>,
 }
 
+impl<R> McpClientOauthService<R> {
+    /// Counts one registration against the per-source and gateway-wide
+    /// limits. Callers check before reading the request, so a refused
+    /// registration costs no parsing or storage.
+    pub fn check_registration_limit(&self) -> Result<(), OauthError> {
+        self.settings
+            .registration_limiter()
+            .check(self.source, std::time::Instant::now())
+            .map_err(|limited| {
+                tracing::warn!(source = ?self.source, "MCP OAuth client registration rate limited");
+                OauthError::rate_limited(
+                    "too many client registrations; try again later",
+                    limited.retry_after_seconds(),
+                )
+            })
+    }
+}
+
 impl<R> McpClientOauthService<R>
 where
     R: GatewayOauthRepository,
@@ -99,14 +116,7 @@ where
 
         let client_secret = (auth_method != GatewayOauthClientAuthMethod::None)
             .then(|| generate_token(CLIENT_SECRET_PREFIX));
-        let client_secret_hash = match client_secret.clone() {
-            Some(secret) => Some(
-                run_argon2(move || hash_gateway_key_secret(&secret))
-                    .await?
-                    .map_err(OauthError::from)?,
-            ),
-            None => None,
-        };
+        let client_secret_hash = client_secret.as_deref().map(hash_client_secret);
         let record = GatewayOauthClientRecord {
             client_id: Uuid::new_v4().to_string(),
             registration_kind: "dynamic".to_string(),

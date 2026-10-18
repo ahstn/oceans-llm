@@ -65,24 +65,36 @@ const OVERHEAD_COLUMNS: &str = "request_id, request_log_id, model_key, provider_
 
 #[async_trait]
 impl McpTokenOverheadRepository for LibsqlStore {
-    async fn get_mcp_tool_token_estimate(
+    async fn get_mcp_tool_token_estimates(
         &self,
-        cache_key: &str,
+        cache_keys: &[String],
         now: OffsetDateTime,
-    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError> {
-        let sql = format!(
-            "SELECT {ESTIMATE_COLUMNS} FROM mcp_tool_token_estimates WHERE cache_key = ?1 AND expires_at > ?2"
-        );
-        let mut rows = self
-            .connection
-            .query(&sql, libsql::params![cache_key, now.unix_timestamp()])
-            .await
-            .map_err(to_query_error)?;
-        rows.next()
-            .await
-            .map_err(to_query_error)?
-            .map(|row| decode_estimate(&row))
-            .transpose()
+    ) -> Result<Vec<McpToolTokenEstimateRecord>, StoreError> {
+        let mut estimates = Vec::new();
+        // Chunked to stay well under SQLite's bound-parameter limit.
+        for chunk in cache_keys.chunks(500) {
+            let placeholders = (2..chunk.len() + 2)
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT {ESTIMATE_COLUMNS} FROM mcp_tool_token_estimates WHERE expires_at > ?1 AND cache_key IN ({placeholders})"
+            );
+            let mut params = Vec::with_capacity(chunk.len() + 1);
+            params.push(libsql::Value::Integer(now.unix_timestamp()));
+            for key in chunk {
+                params.push(libsql::Value::Text(key.clone()));
+            }
+            let mut rows = self
+                .connection
+                .query(&sql, libsql::params_from_iter(params))
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                estimates.push(decode_estimate(&row)?);
+            }
+        }
+        Ok(estimates)
     }
 
     async fn upsert_mcp_tool_token_estimate(

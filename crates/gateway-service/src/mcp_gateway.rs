@@ -79,7 +79,12 @@ where
 
 impl<R> McpGatewayService<R>
 where
-    R: McpRegistryRepository + McpUpstreamCredentialRepository + IdentityRepository,
+    R: McpRegistryRepository
+        + McpUpstreamCredentialRepository
+        + IdentityRepository
+        + Send
+        + Sync
+        + 'static,
 {
     pub async fn prepare_upstream_for_auth(
         &self,

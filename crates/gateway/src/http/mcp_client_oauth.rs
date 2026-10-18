@@ -16,7 +16,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{
         HeaderMap, HeaderName, HeaderValue, Method,
-        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER, WWW_AUTHENTICATE},
     },
     routing::{get, post},
 };
@@ -96,6 +96,8 @@ pub(crate) fn public_router() -> Router<AppState> {
             CONTENT_TYPE,
             HeaderName::from_static("mcp-protocol-version"),
         ])
+        // Rate-limited registration and token requests say when to retry.
+        .expose_headers([RETRY_AFTER])
         .max_age(Duration::from_secs(24 * 60 * 60));
     Router::new()
         .route(
@@ -145,6 +147,37 @@ fn oauth_service(state: &AppState) -> Option<McpClientOauthService<AnyStore>> {
         .mcp_client_oauth
         .clone()
         .map(|settings| McpClientOauthService::new(state.store.clone(), settings))
+}
+
+/// The address an unauthenticated OAuth request came from, resolved through
+/// the configured trusted proxies, for per-source limits.
+pub struct ClientSource(pub Option<std::net::IpAddr>);
+
+impl axum::extract::FromRequestParts<AppState> for ClientSource {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|axum::extract::ConnectInfo(address)| address.ip());
+        Ok(Self(crate::http::client_ip::resolve_client_ip(
+            peer,
+            &parts.headers,
+            &state.trusted_proxies,
+        )))
+    }
+}
+
+/// [`oauth_service`] for a request from `source`.
+fn oauth_service_for(
+    state: &AppState,
+    ClientSource(source): ClientSource,
+) -> Option<McpClientOauthService<AnyStore>> {
+    oauth_service(state).map(|service| service.with_source(source))
 }
 
 /// The `WWW-Authenticate` value for an MCP auth failure on `resource`, or

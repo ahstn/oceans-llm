@@ -673,14 +673,22 @@ impl McpOauthRuntime {
         Ok(grant)
     }
 
+    /// Refreshes an OAuth binding that is close to expiry.
+    ///
+    /// The provider usually rotates the refresh token when it answers, so the
+    /// refresh and the write of its result run as a detached task that
+    /// finishes even if the caller's request is cancelled. Otherwise a client
+    /// that disconnects mid-refresh would lose the new refresh token, leave
+    /// the lease held, and the next refresh would revoke the binding on
+    /// `invalid_grant`.
     pub async fn refresh_binding<R>(
         &self,
-        repo: &R,
+        repo: Arc<R>,
         binding: McpUpstreamCredentialBindingRecord,
         server: &ExternalMcpServerRecord,
     ) -> Result<McpUpstreamCredentialBindingRecord, GatewayError>
     where
-        R: McpUpstreamCredentialRepository + ?Sized,
+        R: McpUpstreamCredentialRepository + Send + Sync + 'static,
     {
         let lock = {
             let mut locks = self.refresh_locks.lock().map_err(|_| {
@@ -698,11 +706,35 @@ impl McpOauthRuntime {
                 lock
             }
         };
-        let _guard = match lock.try_lock() {
+        let guard = match lock.clone().try_lock_owned() {
             Ok(guard) => guard,
             Err(_) if has_unexpired_access_token(&binding) => return Ok(binding),
-            Err(_) => lock.lock().await,
+            Err(_) => lock.lock_owned().await,
         };
+        let runtime = self.clone();
+        let server = server.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            runtime
+                .refresh_binding_detached(repo.as_ref(), binding, &server)
+                .await
+        })
+        .await
+        .map_err(|error| {
+            GatewayError::Internal(format!("MCP OAuth refresh task failed: {error}"))
+        })?
+    }
+
+    /// The lease, refresh and write, run by [`Self::refresh_binding`]'s task.
+    async fn refresh_binding_detached<R>(
+        &self,
+        repo: &R,
+        binding: McpUpstreamCredentialBindingRecord,
+        server: &ExternalMcpServerRecord,
+    ) -> Result<McpUpstreamCredentialBindingRecord, GatewayError>
+    where
+        R: McpUpstreamCredentialRepository + ?Sized,
+    {
         let (current, lease_token) = match acquire_refresh_lease(repo, &binding, server).await? {
             RefreshLease::Current(current) => return Ok(current),
             RefreshLease::Acquired {
@@ -753,15 +785,30 @@ impl McpOauthRuntime {
                 server_key: server.server_key.clone(),
             });
         };
+        // Until the access token expires, a failed refresh other than
+        // `invalid_grant` keeps using it; the failure is logged so a broken
+        // configuration is still visible.
+        let keep_current = |error: GatewayError| {
+            if has_unexpired_access_token(&current) {
+                tracing::warn!(
+                    credential_binding_id = %current.credential_binding_id,
+                    error = %error,
+                    "using unexpired access token after OAuth refresh failure"
+                );
+                Ok(current.clone())
+            } else {
+                Err(error)
+            }
+        };
         let config = mcp_oauth_server_config(&server.auth_config)
             .map_err(|_| credential_required(server))?;
-        let client = self
-            .resolve_client(repo, server, &config, false)
-            .await
-            .map_err(|error| match error {
-                GatewayError::McpCredentialRequired { .. } => credential_required(server),
-                error => error,
-            })?;
+        let client = match self.resolve_client(repo, server, &config, false).await {
+            Ok(client) => client,
+            Err(GatewayError::McpCredentialRequired { .. }) => {
+                return keep_current(credential_required(server));
+            }
+            Err(error) => return keep_current(error),
+        };
         let mut form = vec![
             ("grant_type", "refresh_token".to_string()),
             ("refresh_token", refresh_token.clone()),
@@ -771,13 +818,7 @@ impl McpOauthRuntime {
         }
         let (status, body) = match self.send_token_request(&client, form).await {
             Ok(response) => response,
-            // Only an unreachable endpoint keeps the current token; a refused
-            // one is a configuration problem and surfaces as one.
-            Err(error) if is_transport_error(&error) && has_unexpired_access_token(&current) => {
-                tracing::warn!(error = %error, "using unexpired access token after OAuth refresh transport failure");
-                return Ok(current);
-            }
-            Err(error) => return Err(error),
+            Err(error) => return keep_current(error),
         };
         if !status.is_success() {
             let error_code = serde_json::from_slice::<TokenResponse>(&body)
@@ -800,16 +841,9 @@ impl McpOauthRuntime {
                 }
                 return current_binding_after_refresh_race(repo, &current, server).await;
             }
-            if is_transient_oauth_status(status) && has_unexpired_access_token(&current) {
-                tracing::warn!(
-                    status = status.as_u16(),
-                    "using unexpired access token after transient OAuth refresh failure"
-                );
-                return Ok(current);
-            }
-            return Err(oauth_endpoint_error(status));
+            return keep_current(oauth_endpoint_error(status));
         }
-        let mut grant = parse_token_response(
+        let mut grant = match parse_token_response(
             status,
             &body,
             &bundle.provider_key,
@@ -817,7 +851,10 @@ impl McpOauthRuntime {
             &bundle.granted_scopes,
             Some(refresh_token),
             client.google,
-        )?;
+        ) {
+            Ok(grant) => grant,
+            Err(error) => return keep_current(error),
+        };
         grant.bundle.issuer = bundle.issuer;
         persist_refreshed_binding(repo, current, grant, server).await
     }
@@ -1134,6 +1171,7 @@ fn oauth_fetch_error(error: OutboundFetchError) -> GatewayError {
     }
 }
 
+#[cfg(test)]
 fn is_transport_error(error: &GatewayError) -> bool {
     matches!(error, GatewayError::Provider(ProviderError::Transport(_)))
 }

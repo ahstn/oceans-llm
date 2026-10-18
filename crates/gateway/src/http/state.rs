@@ -11,7 +11,7 @@ use gateway_store::AnyStore;
 use crate::http::{
     admin_contract::{HarnessUsageView, LeaderboardView},
     client_ip::TrustedProxies,
-    handlers::CountTokensLimiter,
+    handlers::{CountTokensLimiter, McpTelemetrySnapshot},
     mcp_client_oauth::OauthStreamWatcher,
     response_cache::ResponseCache,
 };
@@ -56,5 +56,8 @@ pub struct AppState {
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
     pub count_tokens_limiter: Arc<CountTokensLimiter>,
+    /// Each credential's MCP tool set for inference request telemetry, by
+    /// API key or OAuth grant id, kept briefly so requests skip re-resolving it.
+    pub mcp_telemetry_cache: Arc<ResponseCache<uuid::Uuid, Arc<McpTelemetrySnapshot>>>,
     pub trusted_proxies: TrustedProxies,
 }

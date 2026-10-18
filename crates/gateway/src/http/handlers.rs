@@ -55,7 +55,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tower_http::request_id::RequestId;
-use tracing::{Span, field};
+use tracing::{Instrument as _, Span, field};
 
 use crate::http::{
     anthropic_stream::anthropic_messages_stream_from_openai,
@@ -1873,6 +1873,32 @@ async fn best_effort_log_stream_result(
     }
 }
 
+/// How long a credential's MCP tool set is reused for request telemetry.
+/// A grant change shows in the counts within this long.
+pub const MCP_TELEMETRY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Token-overhead estimates running at once. They are best effort, so when
+/// the store falls behind, a request past this records its counts without
+/// one instead of queueing more work.
+const MCP_TELEMETRY_TASKS: usize = 64;
+static MCP_TELEMETRY_PERMITS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MCP_TELEMETRY_TASKS);
+
+/// A credential's MCP tool set, as inference request telemetry counts it.
+#[derive(Debug)]
+pub struct McpTelemetrySnapshot {
+    referenced_server_count: i64,
+    filtered_tool_count: i64,
+    tools: Arc<[gateway_core::ExternalMcpToolRecord]>,
+}
+
+/// Records the caller's MCP tool counts on the request log and estimates
+/// the tokens their definitions would take.
+///
+/// This runs before dispatch on every inference request, so it stays cheap:
+/// the tool set is cached per credential for [`MCP_TELEMETRY_CACHE_TTL`], and
+/// the token-overhead estimate and its writes run in a background task, at
+/// most [`MCP_TELEMETRY_TASKS`] at once.
 #[tracing::instrument(
     name = "gateway.mcp.telemetry",
     skip_all,
@@ -1891,12 +1917,8 @@ async fn best_effort_record_mcp_request_telemetry(
     {
         return;
     }
-    let access = McpAccess::new(state.store.clone());
-    let resolution = match access
-        .effective_tools_for_api_key(auth, None, McpToolProjection::Full)
-        .await
-    {
-        Ok(resolution) => resolution,
+    let snapshot = match mcp_telemetry_snapshot(state, auth).await {
+        Ok(snapshot) => snapshot,
         Err(error) => {
             tracing::warn!(
                 request_id = %context.request_id,
@@ -1906,32 +1928,75 @@ async fn best_effort_record_mcp_request_telemetry(
             return;
         }
     };
-    let resolution = match restrict_to_listed_servers(state, auth, resolution).await {
-        Ok(resolution) => resolution,
-        Err(error) => {
-            tracing::warn!(
-                request_id = %context.request_id,
-                error = %error,
-                "failed applying the key's MCP server list for request telemetry"
-            );
-            return;
-        }
+
+    context.tool_cardinality.referenced_mcp_server_count = Some(snapshot.referenced_server_count);
+    context.tool_cardinality.exposed_tool_count = Some(snapshot.tools.len() as i64);
+    context.tool_cardinality.filtered_tool_count = Some(snapshot.filtered_tool_count);
+
+    let Ok(permit) = MCP_TELEMETRY_PERMITS.try_acquire() else {
+        tracing::debug!(
+            request_id = %context.request_id,
+            "skipping the MCP token-overhead estimate: too many in flight"
+        );
+        return;
     };
+    let state = state.clone();
+    let request_id = context.request_id.clone();
+    let model_key = context.resolved_model_key.clone();
+    let route = route.clone();
+    let provider = provider.cloned();
+    tokio::spawn(
+        async move {
+            record_mcp_token_overhead(&state, request_id, model_key, &route, provider, snapshot)
+                .await;
+            drop(permit);
+        }
+        .in_current_span(),
+    );
+}
 
-    context.tool_cardinality.referenced_mcp_server_count = Some(resolution.referenced_server_count);
-    context.tool_cardinality.exposed_tool_count = Some(resolution.allowed_tools.len() as i64);
-    context.tool_cardinality.filtered_tool_count = Some(resolution.filtered_tool_count);
+/// The credential's tool set, from the cache or resolved once for
+/// concurrent requests.
+pub(crate) async fn mcp_telemetry_snapshot(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+) -> Result<Arc<McpTelemetrySnapshot>, GatewayError> {
+    state
+        .mcp_telemetry_cache
+        .get_or_load(auth.id, || async {
+            let resolution = McpAccess::new(state.store.clone())
+                .effective_tools_for_api_key(auth, None, McpToolProjection::Full)
+                .await?;
+            let resolution = restrict_to_listed_servers(state, auth, resolution).await?;
+            Ok(Arc::new(McpTelemetrySnapshot {
+                referenced_server_count: resolution.referenced_server_count,
+                filtered_tool_count: resolution.filtered_tool_count,
+                tools: resolution.allowed_tools.into(),
+            }))
+        })
+        .await
+        .map(|(snapshot, _)| snapshot)
+        .map_err(|(error, _)| error)
+}
 
+async fn record_mcp_token_overhead(
+    state: &AppState,
+    request_id: String,
+    model_key: String,
+    route: &gateway_core::ModelRoute,
+    provider: Option<ResolvedProviderConnection>,
+    snapshot: Arc<McpTelemetrySnapshot>,
+) {
     let occurred_at = OffsetDateTime::now_utc();
     let context_window_tokens = match state
         .service
-        .resolve_route_metadata_with_provider(route, provider, occurred_at)
+        .resolve_route_metadata_with_provider(route, provider.as_ref(), occurred_at)
         .await
     {
         Ok(metadata) => metadata.limits.context,
         Err(error) => {
             tracing::warn!(
-                request_id = %context.request_id,
+                request_id = %request_id,
                 route_id = %route.id,
                 error = %error,
                 "failed resolving effective context for MCP request telemetry"
@@ -1943,14 +2008,14 @@ async fn best_effort_record_mcp_request_telemetry(
     let overhead = McpTokenOverhead::new(state.store.clone());
     if let Err(error) = overhead
         .record_request_overhead(McpTokenOverheadInput {
-            request_id: context.request_id.clone(),
+            request_id: request_id.clone(),
             request_log_id: None,
-            model_key: Some(context.resolved_model_key.clone()),
+            model_key: Some(model_key),
             provider_family: provider
-                .map(|provider| provider.provider_type.clone())
+                .map(|provider| provider.provider_type)
                 .unwrap_or_else(|| route.provider_key.clone()),
             model_or_encoding: route.upstream_model.clone(),
-            tools: resolution.allowed_tools,
+            tools: snapshot.tools.clone(),
             context_window_tokens,
             protocol_version: None,
             occurred_at,
@@ -1958,7 +2023,7 @@ async fn best_effort_record_mcp_request_telemetry(
         .await
     {
         tracing::warn!(
-            request_id = %context.request_id,
+            request_id = %request_id,
             error = %error,
             "failed recording MCP token-overhead telemetry"
         );
@@ -1975,17 +2040,15 @@ pub(crate) async fn restrict_to_listed_servers(
     let Some(server_keys) = auth.access.mcp_server_keys.as_deref() else {
         return Ok(resolution);
     };
-    let mut listed = std::collections::HashSet::new();
-    for server_key in server_keys {
-        if let Some(server) = gateway_core::McpRegistryRepository::get_external_mcp_server_by_key(
-            state.store.as_ref(),
-            server_key,
-        )
-        .await?
-        {
-            listed.insert(server.mcp_server_id);
-        }
-    }
+    // One query for the listed keys, rather than one per key.
+    let listed = gateway_core::McpRegistryRepository::list_external_mcp_servers_by_keys(
+        state.store.as_ref(),
+        server_keys,
+    )
+    .await?
+    .into_iter()
+    .map(|server| server.mcp_server_id)
+    .collect::<std::collections::HashSet<_>>();
     resolution
         .allowed_tools
         .retain(|tool| listed.contains(&tool.mcp_server_id));

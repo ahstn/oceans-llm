@@ -20,6 +20,7 @@ gateway-providers.workspace = true
 gateway-service.workspace = true
 gateway-skills = { workspace = true, features = ["openapi"] }
 gateway-store.workspace = true
+hmac = "0.12"
 chrono.workspace = true
 clap.workspace = true
 cron.workspace = true
