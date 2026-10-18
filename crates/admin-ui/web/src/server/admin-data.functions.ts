@@ -713,18 +713,21 @@ export const enableExternalMcpServer = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }: { data: { serverId: string } }) => enableMcpServer(data.serverId))
 
-export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      serverId: string
-      include_inactive?: boolean
+type McpServerToolsInput = { serverId: string; include_inactive?: boolean }
+
+export const getMcpServerTools = createServerFn({ method: 'GET' })
+  .validator((data: McpServerToolsInput) => {
+    if (typeof data?.serverId !== 'string' || !data.serverId) {
+      throw new Error('serverId is required')
     }
-  }) => {
-    return listMcpServerTools(data.serverId, { include_inactive: data.include_inactive })
-  },
-)
+    if (data.include_inactive !== undefined && typeof data.include_inactive !== 'boolean') {
+      throw new Error('include_inactive must be a boolean')
+    }
+    return data
+  })
+  .handler(async ({ data }: { data: McpServerToolsInput }) =>
+    listMcpServerTools(data.serverId, { include_inactive: data.include_inactive }),
+  )
 
 export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { serverId: string } }) => {
