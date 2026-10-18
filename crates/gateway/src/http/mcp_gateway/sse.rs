@@ -26,6 +26,9 @@ pub(super) const MAX_SSE_EVENT_BYTES: usize = super::MAX_MCP_REWRITE_BODY_BYTES 
 pub(super) struct SseSanitizer {
     /// Normalised bytes not yet emitted: line endings are `\n` only.
     pending: Vec<u8>,
+    /// Bytes of `pending` already searched for an event end, so a large event
+    /// arriving in many chunks is not rescanned from its start each time.
+    scanned: usize,
     /// A trailing `\r` that may be the first half of `\r\n`.
     carried_cr: bool,
     /// Set until the first bytes show whether the stream opens with a BOM.
@@ -40,6 +43,7 @@ impl SseSanitizer {
     pub(super) fn new(drop_responses: bool) -> Self {
         Self {
             pending: Vec::new(),
+            scanned: 0,
             carried_cr: false,
             at_start: true,
             head: Vec::new(),
@@ -65,10 +69,14 @@ impl SseSanitizer {
             self.normalise_into_pending(chunk);
         }
         let mut out = Vec::new();
-        while let Some(end) = find_event_end(&self.pending) {
+        // The last byte already searched may be the first half of `\n\n`.
+        let mut from = self.scanned.saturating_sub(1);
+        while let Some(end) = find_event_end(&self.pending[from..]).map(|end| from + end) {
             let event: Vec<u8> = self.pending.drain(..end + 2).collect();
             self.write_event(&event[..end], &mut out);
+            from = 0;
         }
+        self.scanned = self.pending.len();
         if self.pending.len() > MAX_SSE_EVENT_BYTES {
             return Err(io::Error::other(format!(
                 "upstream SSE event exceeds {MAX_SSE_EVENT_BYTES} bytes"
@@ -88,6 +96,7 @@ impl SseSanitizer {
             self.pending.push(b'\n');
         }
         let rest = std::mem::take(&mut self.pending);
+        self.scanned = 0;
         let mut out = Vec::new();
         let trimmed = rest.strip_suffix(b"\n").unwrap_or(&rest);
         if !trimmed.is_empty() {
@@ -319,5 +328,17 @@ mod tests {
             1,
             "nothing of the oversized event was forwarded"
         );
+    }
+
+    #[test]
+    fn an_event_end_split_across_chunks_is_found_after_the_resumed_search() {
+        let mut sanitizer = SseSanitizer::new(false);
+        assert!(sanitizer.push(b"data: {\"a\":1}").unwrap().is_empty());
+        assert!(sanitizer.push(b"\n").unwrap().is_empty());
+        assert_eq!(
+            sanitizer.push(b"\ndata: {}").unwrap(),
+            Bytes::from_static(b"data: {\"a\":1}\n\n")
+        );
+        assert_eq!(sanitizer.finish(), Bytes::from_static(b"data: {}\n\n"));
     }
 }
