@@ -10,6 +10,11 @@ pub struct AdminUiConfig {
     pub request_timeout_ms: u64,
     /// Archive limit plus multipart framing overhead, enforced before proxy buffering.
     pub max_multipart_body_bytes: usize,
+    /// Key that signs the browser's address into `x-oceans-client-ip`. Without it the
+    /// proxy forwards no client address and audit entries record the direct peer.
+    pub client_ip_signing_key: Option<std::sync::Arc<[u8]>>,
+    /// Proxies in front of the gateway whose `X-Forwarded-For` names the browser.
+    pub trusted_proxies: gateway_client_ip::TrustedProxies,
 }
 
 impl Default for AdminUiConfig {
@@ -20,6 +25,8 @@ impl Default for AdminUiConfig {
             connect_timeout_ms: 750,
             request_timeout_ms: 10_000,
             max_multipart_body_bytes: 10 * 1024 * 1024 + 64 * 1024,
+            client_ip_signing_key: None,
+            trusted_proxies: gateway_client_ip::TrustedProxies::default(),
         }
     }
 }

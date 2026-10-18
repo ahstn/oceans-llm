@@ -1,7 +1,7 @@
 # Oceans LLM Gateway
 
 <p align="center">
-<img height="400" alt="oceans_llm_logo_v2" src="https://github.com/user-attachments/assets/37d617f1-3eb9-4774-bd38-7b7dd495eab4" />
+<img width="1200" alt="Oceans LLM Gateway — layered blue ocean wave" src="docs/public/images/oceans-readme-banner.jpg" />
 </p>
 
 Rust-first LLM gateway workspace with an embedded TanStack Start admin control plane.

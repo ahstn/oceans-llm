@@ -29,12 +29,13 @@ pub(crate) async fn reconcile_human_budget_defaults<S: GatewayStore + ?Sized>(
     deactivate_stale_defaults(store, defaults, now).await
 }
 
+/// Returns `true` when a default budget was created or its settings changed.
 pub(crate) async fn apply_human_budget_defaults_for_user<S: BudgetRepository + ?Sized>(
     store: &S,
     defaults: &SeedHumanBudgetDefaults,
     user_id: Uuid,
     now: OffsetDateTime,
-) -> Result<(), StoreError> {
+) -> Result<bool, StoreError> {
     apply_defaults(store, defaults, &BTreeSet::from([user_id]), now).await
 }
 
@@ -43,13 +44,14 @@ async fn apply_defaults<S: BudgetRepository + ?Sized>(
     defaults: &SeedHumanBudgetDefaults,
     user_ids: &BTreeSet<Uuid>,
     now: OffsetDateTime,
-) -> Result<(), StoreError> {
+) -> Result<bool, StoreError> {
+    let mut changed = false;
     if let Some(default) = &defaults.default_user_budget {
         let scopes = user_ids
             .iter()
             .map(|&user_id| BudgetScope::User { user_id })
             .collect();
-        apply_default_scopes(
+        changed |= apply_default_scopes(
             store,
             scopes,
             &budget_settings(default),
@@ -68,7 +70,7 @@ async fn apply_defaults<S: BudgetRepository + ?Sized>(
                 },
             })
             .collect();
-        apply_default_scopes(
+        changed |= apply_default_scopes(
             store,
             scopes,
             &budget_settings(&default.budget),
@@ -77,7 +79,7 @@ async fn apply_defaults<S: BudgetRepository + ?Sized>(
         )
         .await?;
     }
-    Ok(())
+    Ok(changed)
 }
 
 async fn apply_default_scopes<S: BudgetRepository + ?Sized>(
@@ -86,7 +88,7 @@ async fn apply_default_scopes<S: BudgetRepository + ?Sized>(
     settings: &BudgetSettings,
     source: &BudgetSource,
     now: OffsetDateTime,
-) -> Result<(), StoreError> {
+) -> Result<bool, StoreError> {
     let keys = scopes
         .iter()
         .map(BudgetScope::scope_key)
@@ -122,9 +124,16 @@ async fn apply_default_scopes<S: BudgetRepository + ?Sized>(
             })
         })
         .collect::<Vec<_>>();
+    // Re-applying unchanged settings rewrites the row but changes nothing.
+    let changed = writes.iter().any(|write| {
+        active
+            .get(write.scope.scope_key().as_str())
+            .is_none_or(|budget| budget.settings != *settings)
+    });
     store
         .upsert_active_budgets_with_source_guard(&writes, now)
-        .await
+        .await?;
+    Ok(changed)
 }
 
 async fn deactivate_stale_defaults<S: BudgetRepository + ?Sized>(

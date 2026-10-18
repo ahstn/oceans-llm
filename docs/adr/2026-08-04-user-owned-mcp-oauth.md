@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Extended by [Generic Upstream MCP OAuth with Discovery and Dynamic Client Registration](./2026-10-15-generic-upstream-mcp-oauth.md), which adds `oauth2` providers, server-level authorization servers, and optional refresh tokens.
 
 ## Context
 
@@ -35,8 +35,9 @@ OAuth state rows cannot be consumed after ten minutes. An abandoned row can rema
 ## Follow-ups
 
 - Run a deployed Google Drive and Google Docs canary that covers consent, callback session binding, refresh, reconnect, disconnect, read-tool discovery, read calls, and audit attribution.
-- Extract MCP OAuth configuration from `config.rs` when another provider type or a wider provider policy makes the current cohesive block harder to maintain.
+- ~~Extract MCP OAuth configuration from `config.rs` when another provider type or a wider provider policy makes the current cohesive block harder to maintain.~~ Done: it lives in `config/mcp.rs`, and the `oauth2` provider type was added there.
 
 ## See Also
 
 - [MCP upstream credential bindings and execution](./2026-06-09-mcp-upstream-credential-bindings-and-execution.md)
+- [Generic upstream MCP OAuth](./2026-10-15-generic-upstream-mcp-oauth.md)

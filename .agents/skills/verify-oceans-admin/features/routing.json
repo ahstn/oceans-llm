@@ -11,6 +11,7 @@
         "**/*_tests.rs",
         "**/tests.rs",
         "**/tests/**",
+        "**/audit_tests/**",
         "**/test_support.rs",
         "crates/admin-ui/web/e2e/**",
         "crates/admin-ui/web/src/test/**",
@@ -70,7 +71,8 @@
         ".claude/skills/**",
         ".claude/skills/*",
         ".gitignore",
-        ".gitattributes"
+        ".gitattributes",
+        "scripts/strip-ai-coauthors.sh"
       ]
     },
     {
@@ -94,6 +96,7 @@
         "scripts/*sync-model-metadata.py",
         "scripts/copilot-*",
         "scripts/mock-openai-upstream.mjs",
+        "scripts/register-e2e-mcp-server.mjs",
         "scripts/start-e2e-stack.sh"
       ]
     }
@@ -125,6 +128,7 @@
         "crates/admin-ui/web/*.{json,ts,lock}",
         "crates/admin-ui/src/**",
         "crates/admin-ui/Cargo.toml",
+        "crates/gateway-client-ip/**",
         "crates/gateway/src/http/mod.rs",
         "crates/gateway/src/http/state.rs",
         "crates/gateway/src/http/error.rs",
@@ -167,6 +171,8 @@
         "crates/gateway-service/src/{service,route_planner,model_resolution,model_access,authenticator}.rs",
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/inference.rs",
+        "crates/gateway/src/http/handlers/decisions.rs",
+        "crates/gateway/src/http/handlers/embeddings.rs",
         "crates/gateway/src/http/request_body.rs",
         "crates/gateway/src/http/request_tracing.rs",
         "crates/gateway/src/http/response_cache.rs",
@@ -272,7 +278,10 @@
         "crates/admin-ui/web/src/routes/api-keys.tsx",
         "crates/admin-ui/web/src/routes/api-keys/**",
         "crates/gateway/src/http/api_keys.rs",
+        "crates/gateway/src/http/api_keys/**",
         "crates/gateway-service/src/admin_api_keys.rs",
+        "crates/gateway-service/src/admin_api_keys/**",
+        "crates/gateway-core/src/credential_scopes.rs",
         "crates/gateway-service/src/model_access.rs",
         "crates/gateway-service/src/secret_storage.rs",
         "crates/gateway-store/src/libsql_store/api_keys.rs",
@@ -342,6 +351,7 @@
         "crates/gateway-store/src/libsql_store/provider_user_credentials.rs",
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
         "crates/gateway/src/http/handlers/routing.rs",
+        "crates/gateway/src/http/handlers/count_tokens.rs",
         "crates/gateway-service/src/{routing,client_session}.rs",
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",
@@ -378,8 +388,12 @@
         "crates/gateway/src/http/mcp_*/**",
         "crates/gateway-mcp/**",
         "crates/gateway-service/src/mcp_*.rs",
+        "crates/gateway-service/src/mcp_*/**",
+        "crates/gateway-core/src/mcp_*.rs",
         "crates/gateway-store/src/libsql_store/mcp_*.rs",
+        "crates/gateway-store/src/libsql_store/mcp_*/**",
         "crates/gateway-store/src/any_store_mcp_*.rs",
+        "crates/gateway-store/src/mcp_*.rs",
         ".agents/skills/verify-oceans-admin/scripts/{drive-mcp,mcp-browser,mcp-canary}.mjs",
         ".agents/skills/verify-oceans-admin/examples/**",
         "crates/gateway-service/data/recommended_mcp_servers.json"
@@ -407,11 +421,41 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/guardrails.tsx",
+        "crates/admin-ui/web/src/routes/guardrails.tsx",
         "crates/admin-ui/web/src/components/guardrails/**",
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
-        "crates/gateway-store/src/any_store_guardrail_decisions.rs"
+        "crates/gateway-store/src/any_store_guardrail_decisions.rs",
+        "crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx",
+        "crates/admin-ui/web/src/components/shared/{inner-panel,search-field}.{ts,tsx}"
+      ]
+    },
+    {
+      "id": "audit-log",
+      "file": "audit-log.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/observability/audit-log.tsx",
+        "crates/admin-ui/web/src/components/audit/**",
+        "crates/gateway/src/http/audit.rs",
+        "crates/gateway/src/http/identity_audit.rs",
+        "crates/gateway/src/http/{api_keys,identity,mcp_oauth,mcp_registry,models,provider_credentials,rate_limit_policies,review_agent,spend,spend_budget_increases,client_ip}.rs",
+        "crates/gateway/src/http/mcp_registry/views.rs",
+        "crates/gateway/src/http/api_keys/scopes.rs",
+        "crates/gateway-service/src/admin_api_keys.rs",
+        "crates/admin-ui/src/proxy.rs",
+        "crates/gateway-client-ip/**",
+        "crates/gateway-service/src/admin_audit.rs",
+        "crates/gateway-core/src/audit.rs",
+        "crates/gateway-store/src/audit_logs.rs",
+        "crates/gateway-store/src/any_store_audit_logs.rs",
+        "crates/gateway-store/src/libsql_store/audit_logs.rs",
+        "crates/gateway-store/migrations/V61__admin_audit_log.sql",
+        "crates/gateway-store/migrations/postgres/V61__admin_audit_log.sql",
+        "crates/admin-ui/web/src/components/shared/{inner-panel,search-field}.{ts,tsx}"
       ]
     },
     {
@@ -455,6 +499,38 @@
       ]
     },
     {
+      "id": "rate-limits",
+      "file": "rate-limits.md",
+      "proof": {
+        "manual": true
+      },
+      "paid": true,
+      "paths": [
+        "crates/admin-ui/web/src/routes/rate-limits.tsx",
+        "crates/admin-ui/web/src/routes/rate-limits/**",
+        "crates/gateway/src/http/rate_limit_policies.rs",
+        "crates/gateway/src/http/rate_limit_policies/**",
+        "crates/gateway/src/http/request_policy.rs",
+        "crates/gateway/src/http/client_ip.rs",
+        "crates/gateway/src/main.rs",
+        "crates/gateway/src/http/mod.rs",
+        "crates/gateway/src/config/rate_limits.rs",
+        "crates/gateway-service/src/service.rs",
+        "crates/gateway/src/http/mcp_gateway/rate_limits.rs",
+        "crates/gateway/src/http/handlers.rs",
+        "crates/gateway/src/http/handlers/{inference,embeddings,decisions,count_tokens}.rs",
+        "crates/gateway/src/http/mcp_gateway.rs",
+        "crates/gateway/src/http/mcp_gateway/aggregate.rs",
+        "crates/gateway/src/http/mcp_gateway/aggregate/execution.rs",
+        "crates/gateway-core/src/rate_limits.rs",
+        "crates/gateway-service/src/rate_limits.rs",
+        "crates/gateway-store/src/rate_limits.rs",
+        "crates/gateway-store/src/any_store_rate_limits.rs",
+        "crates/gateway-store/src/libsql_store/rate_limits.rs",
+        "crates/gateway-store/migrations/**/V60__rate_limits.sql"
+      ]
+    },
+    {
       "id": "identity",
       "file": "identity.md",
       "proof": {
@@ -465,7 +541,8 @@
         "crates/gateway/src/http/{identity,identity_lifecycle,identity_views,provider_credentials}.rs",
         "crates/gateway-store/src/libsql_store/{identity,provider_user_credentials}.rs",
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
-        "crates/gateway/src/local_demo_seed/{users,teams}.rs"
+        "crates/gateway/src/local_demo_seed/{users,teams}.rs",
+        "crates/gateway/src/http/identity_audit.rs"
       ]
     },
     {
@@ -509,7 +586,34 @@
         "crates/admin-ui/web/src/routes/account/**",
         "crates/gateway/src/http/mcp_oauth.rs",
         "crates/gateway/src/http/mcp_oauth/**",
-        "crates/gateway-service/src/mcp_oauth.rs"
+        "crates/gateway/src/http/mcp_gateway/credentials.rs",
+        "crates/gateway/src/http/mcp_gateway/credentials/**",
+        "crates/gateway-service/src/mcp_oauth.rs",
+        "crates/gateway-service/src/mcp_oauth_discovery.rs",
+        "crates/gateway-service/src/mcp_oauth_discovery/**",
+        "crates/gateway-service/src/outbound_fetch.rs",
+        "crates/gateway-service/src/outbound_fetch/**"
+      ]
+    },
+    {
+      "id": "mcp-client-oauth",
+      "file": "mcp-client-oauth.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/oauth/**",
+        "crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx",
+        "crates/gateway/src/http/mcp_client_oauth.rs",
+        "crates/gateway/src/http/mcp_client_oauth/**",
+        "crates/gateway-service/src/mcp_client_oauth.rs",
+        "crates/gateway-service/src/mcp_client_oauth/**",
+        "crates/gateway-store/src/any_store_gateway_oauth.rs",
+        "crates/gateway-store/src/libsql_store/gateway_oauth.rs",
+        "crates/gateway-store/src/postgres_store/gateway_oauth.rs",
+        "crates/gateway-store/migrations/**/V66__gateway_oauth_metadata_document_clients.sql",
+        "crates/gateway-service/src/outbound_fetch.rs",
+        "crates/gateway-service/src/outbound_fetch/**"
       ]
     },
     {

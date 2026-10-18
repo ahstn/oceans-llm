@@ -66,11 +66,7 @@ pub(super) async fn create_budget_increase(
 ) -> Result<(), StoreError> {
     // IMMEDIATE takes the write lock up front, so the basis check below and the
     // supersede-and-insert see the same state.
-    let tx = store
-        .connection
-        .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-        .await
-        .map_err(to_query_error)?;
+    let tx = store.begin_transaction().await?;
     let mut rows = tx
         .query(
             "SELECT is_active, cadence, amount_10000, hard_limit, timezone FROM budgets WHERE budget_id = ?1",

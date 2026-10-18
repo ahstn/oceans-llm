@@ -19,6 +19,7 @@ use super::{
     normalize_converse_response,
 };
 
+mod count_tokens;
 mod endpoint;
 mod eventstream;
 mod provider_requests;

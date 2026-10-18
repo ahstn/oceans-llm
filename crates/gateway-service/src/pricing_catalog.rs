@@ -21,6 +21,8 @@ use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::admin_audit::AuditProgress;
+
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
 const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
@@ -34,11 +36,14 @@ const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
 pub mod metadata;
 mod target;
 
+#[cfg(test)]
+use target::normalize_bedrock_pricing_model_id;
 use target::{PricingTarget, pricing_target_for_route};
 pub use target::{SUPPORTED_PRICING_PROVIDER_IDS, is_supported_pricing_provider_id};
-pub(crate) use target::{catalog_metadata_target_for_route, catalog_pricing_supported_for_route};
-#[cfg(test)]
-use target::{normalize_bedrock_pricing_model_id, normalize_vertex_pricing_model_id};
+pub(crate) use target::{
+    catalog_metadata_target_for_route, catalog_model_id_fallback,
+    catalog_pricing_supported_for_route,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefreshMode {
@@ -133,9 +138,20 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
+        self.refresh_now_and_sync_tracked(&AuditProgress::default())
+            .await
+    }
+
+    /// Like [`Self::refresh_now_and_sync`]; `progress` is marked once the fetched
+    /// catalog is cached, so an audit entry can record a refresh whose sync fails.
+    pub async fn refresh_now_and_sync_tracked(
+        &self,
+        progress: &AuditProgress,
+    ) -> Result<(), GatewayError> {
         let current = self.load_stored_cache().await?;
         self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
             .await?;
+        progress.landed();
         self.sync_latest_snapshot_with_retry().await
     }
 
@@ -243,10 +259,13 @@ where
             }
         };
 
-        let Some(record) = self
-            .repo
-            .resolve_model_pricing_at(&pricing_provider_id, &model_id, occurred_at)
-            .await?
+        let Some(record) = resolve_catalog_pricing_record(
+            self.repo.as_ref(),
+            &pricing_provider_id,
+            &model_id,
+            occurred_at,
+        )
+        .await?
         else {
             return Ok(PricingResolution::Unpriced {
                 reason: PricingUnpricedReason::ModelNotFound,
@@ -461,6 +480,35 @@ where
             .await?;
         Ok(())
     }
+}
+
+/// Resolve the effective catalog pricing row for a target, preferring the exact id over
+/// its [`catalog_model_id_fallback`] in a single repository lookup.
+pub(crate) async fn resolve_catalog_pricing_record<R>(
+    repo: &R,
+    pricing_provider_id: &str,
+    pricing_model_id: &str,
+    occurred_at: OffsetDateTime,
+) -> Result<Option<ModelPricingRecord>, GatewayError>
+where
+    R: PricingCatalogRepository + Send + Sync + ?Sized,
+{
+    let record = match catalog_model_id_fallback(pricing_provider_id, pricing_model_id) {
+        Some(fallback_model_id) => {
+            repo.resolve_model_pricing_with_fallback_at(
+                pricing_provider_id,
+                pricing_model_id,
+                &fallback_model_id,
+                occurred_at,
+            )
+            .await?
+        }
+        None => {
+            repo.resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
+                .await?
+        }
+    };
+    Ok(record)
 }
 
 pub async fn fetch_vendored_snapshot(

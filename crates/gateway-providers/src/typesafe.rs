@@ -3,13 +3,14 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use gateway_core::{
     CoreChatRequest, CoreDecisionsRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    DecisionsWireFormat, ProviderCapabilities, ProviderClient, ProviderDecisionsResponse,
+    ProviderError, ProviderRequestContext, ProviderStream,
 };
 use serde_json::Value;
 
 use crate::decisions::{
     base_decisions_request_body, base_root_and_host, decisions_request_builder,
-    validate_decisions_response,
+    parse_decisions_response,
 };
 use crate::http::{execute_json_request, join_base_url, map_reqwest_error};
 
@@ -58,7 +59,7 @@ impl TypeSafeProvider {
         request: &CoreDecisionsRequest,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
-        let body = base_decisions_request_body(request, context)?;
+        let body = base_decisions_request_body(DecisionsWireFormat::SystemOne, request, context)?;
         let mut builder = decisions_request_builder(
             &self.client,
             self.systemone_url()?,
@@ -171,7 +172,7 @@ impl ProviderClient for TypeSafeProvider {
         &self,
         request: &CoreDecisionsRequest,
         context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
         let http_request = self.build_decisions_request(request, context)?;
         let value = execute_json_request(
             &self.client,
@@ -180,8 +181,7 @@ impl ProviderClient for TypeSafeProvider {
             &self.config.provider_key,
         )
         .await?;
-        validate_decisions_response(&value, request)?;
-        Ok(value)
+        parse_decisions_response(DecisionsWireFormat::SystemOne, value, request)
     }
 }
 
@@ -190,7 +190,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post};
-    use gateway_core::CoreDecisionQuestion;
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
 
@@ -219,18 +218,7 @@ mod tests {
             request_timeout_ms: 10_000,
         })
         .expect("provider");
-        let request = CoreDecisionsRequest {
-            model: "jev".to_string(),
-            state: json!("state"),
-            questions: BTreeMap::from([(
-                "is_urgent".to_string(),
-                CoreDecisionQuestion::Noul {
-                    instructions: json!("urgent?"),
-                    criteria: None,
-                },
-            )]),
-            extra: BTreeMap::new(),
-        };
+        let request = crate::decisions::system_one_test_request();
         let context = ProviderRequestContext {
             request_id: "req-1".to_string(),
             model_key: "jev".to_string(),
@@ -282,7 +270,11 @@ mod tests {
                 assert_eq!(body["model"], json!("jev-latest"));
                 Json(json!({
                     "model": "jev-1.13.0",
-                    "answers": {"is_urgent": {"type": "noul", "noul": 0.9}},
+                    "answers": {
+                        "is_urgent": {"type": "noul", "noul": 0.9},
+                        "department": {"type": "choice", "choice": "billing"},
+                        "frustration": {"type": "score", "score": 1.0}
+                    },
                     "usage": {"input_tokens": 10, "output_tokens": 20}
                 }))
                 .into_response()
@@ -302,18 +294,7 @@ mod tests {
             request_timeout_ms: 10_000,
         })
         .expect("provider");
-        let request = CoreDecisionsRequest {
-            model: "jev".to_string(),
-            state: json!("state"),
-            questions: BTreeMap::from([(
-                "is_urgent".to_string(),
-                CoreDecisionQuestion::Noul {
-                    instructions: json!("urgent?"),
-                    criteria: None,
-                },
-            )]),
-            extra: BTreeMap::new(),
-        };
+        let request = crate::decisions::system_one_test_request();
         let context = ProviderRequestContext {
             request_id: "req-1".to_string(),
             model_key: "jev".to_string(),
@@ -326,10 +307,11 @@ mod tests {
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
         };
-        let value = provider
+        let response = provider
             .decisions(&request, &context)
             .await
             .expect("decisions");
-        assert_eq!(value["answers"]["is_urgent"]["noul"], json!(0.9));
+        assert_eq!(response.format, DecisionsWireFormat::SystemOne);
+        assert_eq!(response.body["answers"]["is_urgent"]["noul"], json!(0.9));
     }
 }

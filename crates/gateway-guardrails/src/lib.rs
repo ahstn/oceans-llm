@@ -14,6 +14,7 @@ mod selectors;
 
 pub use evaluation::{
     DeterministicEvaluator, EvaluationError, GuardrailEngine, ManagedEvaluator, ManagedOutcome,
+    UninspectedContent, uninspected_content_decision,
 };
 pub use managed::{
     BearerTokenProvider, BedrockApplyGuardrail, BedrockApplyGuardrailConfig, BedrockAuth,

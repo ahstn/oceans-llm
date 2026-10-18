@@ -17,8 +17,13 @@ import type {
   CreateApiKeyResult,
   CreateMcpServerInput,
   CreateMcpToolsetInput,
+  RateLimitPoliciesView,
+  RateLimitPolicyInput,
+  RateLimitPolicyView,
   UpdateApiKeyInput,
   UpdateApiKeyResult,
+  UpdateApiKeyScopesInput,
+  UpdateApiKeyScopesResult,
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
@@ -38,6 +43,9 @@ import type {
   HarnessUsageRange,
   HarnessUsageView,
   LogoutResult,
+  AuditLogFiltersInput,
+  AuditLogPageView,
+  AuditLogView,
   GuardrailDecisionFiltersInput,
   GuardrailDecisionPageView,
   GuardrailPoliciesView,
@@ -46,8 +54,13 @@ import type {
   McpInvocationPageView,
   McpOauthConnectionView,
   McpOauthStartResponse,
+  AuthorizedMcpClientsView,
+  RevokeAuthorizedMcpClientsResponse,
+  OauthAuthorizationDecisionResponse,
+  OauthAuthorizationRequestView,
   McpConnectionInfoPayload,
   McpDiscoveryRefreshPayload,
+  McpOauthDiscoveryPayload,
   McpCredentialBindingPayload,
   McpCredentialBindingsPayload,
   McpCredentialBindingsQuery,
@@ -174,6 +187,19 @@ export async function updateApiKey(
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.PATCH('/api/v1/admin/api-keys/{api_key_id}', {
+      params: { path: { api_key_id: apiKeyId } },
+      body: input,
+    }),
+  )
+}
+
+export async function updateApiKeyScopes(
+  apiKeyId: string,
+  input: UpdateApiKeyScopesInput,
+): Promise<ApiEnvelope<UpdateApiKeyScopesResult>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/api-keys/{api_key_id}/scopes', {
       params: { path: { api_key_id: apiKeyId } },
       body: input,
     }),
@@ -426,6 +452,26 @@ export async function getGuardrailPolicies(): Promise<ApiEnvelope<GuardrailPolic
   return unwrapGatewayResponse(await client.GET('/api/v1/admin/guardrails/policies'))
 }
 
+export async function listAuditLogs(
+  filters: AuditLogFiltersInput = {},
+): Promise<ApiEnvelope<AuditLogPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/audit-logs', {
+      params: { query: filters },
+    }),
+  )
+}
+
+export async function getAuditLog(auditLogId: string): Promise<ApiEnvelope<AuditLogView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/audit-logs/{audit_log_id}', {
+      params: { path: { audit_log_id: auditLogId } },
+    }),
+  )
+}
+
 export async function listGuardrailDecisions(
   filters: GuardrailDecisionFiltersInput = {},
 ): Promise<ApiEnvelope<GuardrailDecisionPageView>> {
@@ -532,6 +578,17 @@ export async function refreshMcpServerDiscovery(
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/mcp/servers/{server_id}/discovery-refresh', {
       params: { path: { server_id: serverId } },
+    }),
+  )
+}
+
+export async function discoverMcpServerOauth(
+  serverUrl: string,
+): Promise<ApiEnvelope<McpOauthDiscoveryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/oauth-discovery', {
+      body: { server_url: serverUrl },
     }),
   )
 }
@@ -683,7 +740,49 @@ export async function startMcpOauthConnection(serverId: string): Promise<McpOaut
   return unwrapGatewayResponse(
     await client.POST('/api/v1/mcp/servers/{server_id}/oauth/start', {
       params: { path: { server_id: serverId } },
-      body: { redirect_to: '/admin/account/connections' },
+      // The callback appends `oauth=connected`; `server` names the card to confirm.
+      body: { redirect_to: `/admin/account/connections?server=${encodeURIComponent(serverId)}` },
+    }),
+  )
+}
+
+export async function listAuthorizedMcpClients(): Promise<AuthorizedMcpClientsView> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/me/authorized-mcp-clients'))
+}
+
+export async function revokeAuthorizedMcpClient(
+  grantId: string,
+): Promise<RevokeAuthorizedMcpClientsResponse> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.DELETE('/api/v1/me/authorized-mcp-clients/{grant_id}', {
+      params: { path: { grant_id: grantId } },
+    }),
+  )
+}
+
+/** `null` when the request is unknown, expired, or already decided. */
+export async function getOauthAuthorizationRequest(
+  requestId: string,
+): Promise<OauthAuthorizationRequestView | null> {
+  const client = createGatewayApiClient()
+  const result = await client.GET('/api/v1/oauth/authorization-requests/{request_id}', {
+    params: { path: { request_id: requestId } },
+  })
+  if (result.response.status === 404 || result.response.status === 409) return null
+  return unwrapGatewayResponse(result)
+}
+
+export async function decideOauthAuthorizationRequest(
+  requestId: string,
+  approve: boolean,
+): Promise<OauthAuthorizationDecisionResponse> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/oauth/authorization-requests/{request_id}/decision', {
+      params: { path: { request_id: requestId } },
+      body: { approve },
     }),
   )
 }
@@ -992,6 +1091,42 @@ export async function completeInvitation(
     await client.POST('/api/v1/auth/invitations/{token}/password', {
       params: { path: { token } },
       body: { password },
+    }),
+  )
+}
+
+export async function listRateLimitPolicies(): Promise<ApiEnvelope<RateLimitPoliciesView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/rate-limits'))
+}
+
+export async function createRateLimitPolicy(
+  input: RateLimitPolicyInput,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.POST('/api/v1/admin/rate-limits', { body: input }))
+}
+
+export async function updateRateLimitPolicy(
+  policyId: string,
+  input: RateLimitPolicyInput,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/rate-limits/{policy_id}', {
+      params: { path: { policy_id: policyId } },
+      body: input,
+    }),
+  )
+}
+
+export async function deleteRateLimitPolicy(
+  policyId: string,
+): Promise<ApiEnvelope<RateLimitPolicyView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.DELETE('/api/v1/admin/rate-limits/{policy_id}', {
+      params: { path: { policy_id: policyId } },
     }),
   )
 }

@@ -12,7 +12,8 @@ The page supports filters for:
 
 - request id
 - MCP server display key/name
-- tool display key/name
+- target: the tool, resource URI, or prompt name
+- JSON-RPC method
 - API key id
 - user id
 - team id
@@ -20,7 +21,7 @@ The page supports filters for:
 - policy result
 - time range
 
-The list shows owner context, server/tool identity, status, policy result, latency, error code, and payload redaction/truncation flags. The detail view shows sanitized arguments and sanitized result payloads when the MCP invocation payload policy captures them.
+The list shows owner context, server, JSON-RPC method, target, status, policy result, latency, error code, and payload redaction/truncation flags. The detail view shows sanitized arguments and sanitized result payloads when the MCP invocation payload policy captures them.
 
 ## API Contract
 
@@ -36,6 +37,7 @@ Expected list filters:
 - `server_display_name`
 - `tool_display_key`
 - `tool_display_name`
+- `mcp_method`
 - `api_key_id`
 - `user_id`
 - `team_id`
@@ -72,12 +74,15 @@ Each invocation record should carry:
 - outcome: status, error code, latency, and policy result
 - payload state: `has_payload`, argument/result redaction flags, and argument/result truncation flags
 - occurrence time
+- tool version: for `tools/call`, the served schema version of the called tool (`tool_schema_version`, shown as **Tool version** in the detail view). It is set when the client saw the gateway's stored definition: on aggregate `call_tool`, and on direct calls to servers that require approval or to a tool whose change still waits. A direct call that passes the live upstream definition through records none, because the upstream may have changed since the last discovery. See [Tool versions and approval](mcp-tool-access.md#tool-versions-and-approval).
 
 The gateway must redact and bound arguments and results before persistence. It must never store sensitive headers, tokens, provider credentials, OAuth material, or API keys in MCP invocation payloads.
 
 `server_id` and `tool_id` are nullable so admins can still audit policy-denied, unknown, or inactive tool names. Successful registry-backed `tools/call` executions populate stable server and tool ids.
 
 Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operations and do not create MCP invocation rows. Aggregate `call_tool` and direct `/mcp/{server_key}` mediated `tools/call` executions create invocation rows.
+
+A call rejected by a [rate limit](../configuration/rate-limits.md) is recorded with status `policy_denied`, policy result `denied`, and error code `rate_limited`. Its `metadata.rate_limit` names the policy, scope kind, metric, period, limit, and retry delay. Grant denials (`mcp_tool_not_granted`) and guardrail denials (`guardrail_policy_denied`) use the same status, so filter by error code to tell them apart.
 
 ## Relationship to Request Logs
 

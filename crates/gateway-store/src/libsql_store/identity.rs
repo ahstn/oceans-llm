@@ -1,5 +1,8 @@
 use super::*;
 
+/// The service account columns `decode_service_account_record` reads, in order.
+const SERVICE_ACCOUNT_RETURNING: &str = "service_account_id, team_id, service_account_key, service_account_name, status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at";
+
 impl LibsqlStore {
     pub async fn has_platform_admin(&self) -> Result<bool, StoreError> {
         let mut rows = self
@@ -317,14 +320,19 @@ impl LibsqlStore {
         let service_account_id = Uuid::new_v4();
         let created_at = created_at.unix_timestamp();
         let tags_json = crate::shared::serialize_json(tags)?;
-        self.connection
-            .execute(
-                r#"
+        // `RETURNING` gives the row this insert wrote, before any later update.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    r#"
                 INSERT INTO service_accounts (
                     service_account_id, team_id, service_account_key, service_account_name,
                     status, model_access_mode, metadata_json, tags_json, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?6, ?6)
-                "#,
+                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{{}}', ?5, ?6, ?6)
+                RETURNING {SERVICE_ACCOUNT_RETURNING}
+                "#
+                ),
                 libsql::params![
                     service_account_id.to_string(),
                     team_id.to_string(),
@@ -336,10 +344,12 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-
-        self.get_service_account_by_id(service_account_id)
-            .await?
-            .ok_or_else(|| StoreError::NotFound("created service account missing".to_string()))
+        let row = rows
+            .next()
+            .await
+            .map_err(to_write_error)?
+            .ok_or_else(|| StoreError::Unexpected("insert returned no row".to_string()))?;
+        decode_service_account_record(&row)
     }
 
     pub async fn update_service_account_name(
@@ -403,57 +413,93 @@ impl LibsqlStore {
         Ok(())
     }
 
+    /// Renames or retags an active service account. Returns the account as it was
+    /// before the save, read under the same write lock, or `None` when it already
+    /// had this name and these tags and nothing was written.
     pub async fn update_service_account_profile(
         &self,
         service_account_id: Uuid,
         service_account_name: &str,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        let updated = self
-            .connection
-            .execute(
+        let tx = self.begin_transaction().await?;
+        let mut rows = tx
+            .query(
                 r#"
-                UPDATE service_accounts
-                SET service_account_name = ?1, tags_json = ?2, updated_at = ?3
-                WHERE service_account_id = ?4 AND status = 'active'
+                SELECT service_account_id, team_id, service_account_key, service_account_name,
+                       status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
+                FROM service_accounts
+                WHERE service_account_id = ?1 AND status = 'active'
+                LIMIT 1
                 "#,
-                libsql::params![
-                    service_account_name,
-                    tags_json,
-                    updated_at.unix_timestamp(),
-                    service_account_id.to_string(),
-                ],
+                [service_account_id.to_string()],
             )
             .await
-            .map_err(to_write_error)?;
-        if updated == 0 {
+            .map_err(to_query_error)?;
+        let previous = rows
+            .next()
+            .await
+            .map_err(to_query_error)?
+            .map(|row| decode_service_account_record(&row))
+            .transpose()?;
+        while rows.next().await.map_err(to_query_error)?.is_some() {}
+        let Some(previous) = previous else {
             return Err(StoreError::NotFound(
                 "active service account not found".to_string(),
             ));
+        };
+        if previous.service_account_name == service_account_name && previous.tags == tags {
+            tx.commit().await.map_err(to_write_error)?;
+            return Ok(None);
         }
-        Ok(())
+        tx.execute(
+            r#"
+            UPDATE service_accounts
+            SET service_account_name = ?1, tags_json = ?2, updated_at = ?3
+            WHERE service_account_id = ?4
+            "#,
+            libsql::params![
+                service_account_name,
+                tags_json,
+                updated_at.unix_timestamp(),
+                service_account_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(Some(previous))
     }
 
+    /// Disables an active service account and returns it as disabled, or `None`
+    /// when it was not active.
     pub async fn disable_service_account(
         &self,
         service_account_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let result = self
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let mut rows = self
             .connection
-            .execute(
+            .query(
                 r#"
                 UPDATE service_accounts
                 SET status = 'disabled', updated_at = ?1, disabled_at = ?1
                 WHERE service_account_id = ?2 AND status = 'active'
+                RETURNING service_account_id, team_id, service_account_key, service_account_name,
+                          status, model_access_mode, metadata_json, tags_json, created_at,
+                          updated_at, disabled_at
                 "#,
                 libsql::params![disabled_at.unix_timestamp(), service_account_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(result > 0)
+        rows.next()
+            .await
+            .map_err(to_write_error)?
+            .map(|row| decode_service_account_record(&row))
+            .transpose()
     }
 
     pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
@@ -896,20 +942,22 @@ impl LibsqlStore {
         team_id: Uuid,
         team_name: &str,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE teams
                 SET team_name = ?1,
                     updated_at = ?2
                 WHERE team_id = ?3
+                  AND team_name IS NOT ?1
                 "#,
                 libsql::params![team_name, updated_at.unix_timestamp(), team_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn update_team_tags(
@@ -917,21 +965,23 @@ impl LibsqlStore {
         team_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        self.connection
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE teams
                 SET tags_json = ?1,
                     updated_at = ?2
                 WHERE team_id = ?3
+                  AND tags_json IS NOT ?1
                 "#,
                 libsql::params![tags_json, updated_at.unix_timestamp(), team_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn create_identity_user(
@@ -999,12 +1049,8 @@ impl LibsqlStore {
         global_role: GlobalRole,
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+    ) -> Result<bool, StoreError> {
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1051,25 +1097,27 @@ impl LibsqlStore {
             }
         }
 
-        tx.execute(
-            r#"
+        let changed = tx
+            .execute(
+                r#"
             UPDATE users
             SET global_role = ?1,
                 auth_mode = ?2,
                 updated_at = ?3
             WHERE user_id = ?4
+              AND (global_role IS NOT ?1 OR auth_mode IS NOT ?2)
             "#,
-            libsql::params![
-                global_role.as_str(),
-                auth_mode.as_str(),
-                updated_at.unix_timestamp(),
-                user_id.to_string(),
-            ],
-        )
-        .await
-        .map_err(to_write_error)?;
+                libsql::params![
+                    global_role.as_str(),
+                    auth_mode.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn update_user_tags(
@@ -1077,33 +1125,33 @@ impl LibsqlStore {
         user_id: Uuid,
         tags: &[RequestTag],
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         let tags_json = crate::shared::serialize_json(tags)?;
-        self.connection
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE users
                 SET tags_json = ?1,
                     updated_at = ?2
                 WHERE user_id = ?3
+                  AND tags_json IS NOT ?1
                 "#,
                 libsql::params![tags_json, updated_at.unix_timestamp(), user_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
+    /// Disables the user. Returns the status it replaced, read under the same
+    /// write lock.
     pub async fn deactivate_identity_user(
         &self,
         user_id: Uuid,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+    ) -> Result<UserStatus, StoreError> {
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1121,6 +1169,7 @@ impl LibsqlStore {
         };
         let current_role: String = row.get(0).map_err(to_query_error)?;
         let current_status: String = row.get(1).map_err(to_query_error)?;
+        drop(rows);
         if current_status == UserStatus::Disabled.as_str() {
             return Err(StoreError::Conflict("user is already disabled".to_string()));
         }
@@ -1152,35 +1201,63 @@ impl LibsqlStore {
             }
         }
 
-        tx.execute(
-            r#"
-            UPDATE users
-            SET status = ?1,
-                updated_at = ?2
-            WHERE user_id = ?3
-            "#,
-            libsql::params![
-                UserStatus::Disabled.as_str(),
-                updated_at.unix_timestamp(),
-                user_id.to_string(),
-            ],
-        )
-        .await
-        .map_err(to_write_error)?;
+        // The status guard keeps a concurrent deactivation from writing the same
+        // transition twice; the loser sees the same conflict as the read above.
+        let changed = tx
+            .execute(
+                r#"
+                UPDATE users
+                SET status = ?1,
+                    updated_at = ?2
+                WHERE user_id = ?3
+                  AND status <> ?1
+                "#,
+                libsql::params![
+                    UserStatus::Disabled.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if changed == 0 {
+            return Err(StoreError::Conflict("user is already disabled".to_string()));
+        }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        UserStatus::from_db(&current_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown user status `{current_status}`"))
+        })
     }
 
     pub async fn remove_team_membership(
         &self,
         team_id: Uuid,
         user_id: Uuid,
-    ) -> Result<bool, StoreError> {
+    ) -> Result<Option<MembershipRole>, StoreError> {
         let mut rows = self
             .connection
             .query(
                 r#"
-                SELECT role
+                DELETE FROM team_memberships
+                WHERE team_id = ?1
+                  AND user_id = ?2
+                  AND role <> 'owner'
+                RETURNING role
+                "#,
+                libsql::params![team_id.to_string(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let role: String = row.get(0).map_err(to_query_error)?;
+            return decode_removed_role(&role).map(Some);
+        }
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT 1
                 FROM team_memberships
                 WHERE team_id = ?1
                   AND user_id = ?2
@@ -1190,30 +1267,16 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_query_error)?;
-        let Some(row) = rows.next().await.map_err(to_query_error)? else {
-            return Ok(false);
-        };
-        let current_role: String = row.get(0).map_err(to_query_error)?;
-        if current_role == MembershipRole::Owner.as_str() {
+        if rows.next().await.map_err(to_query_error)?.is_some() {
             return Err(StoreError::Conflict(
                 "owner memberships cannot be removed or transferred".to_string(),
             ));
         }
-
-        self.connection
-            .execute(
-                r#"
-                DELETE FROM team_memberships
-                WHERE team_id = ?1
-                  AND user_id = ?2
-                "#,
-                libsql::params![team_id.to_string(), user_id.to_string()],
-            )
-            .await
-            .map_err(to_write_error)?;
-        Ok(true)
+        Ok(None)
     }
 
+    /// Moves the membership to another team. Returns the role it had before the
+    /// move, read under the same write lock.
     pub async fn transfer_team_membership(
         &self,
         user_id: Uuid,
@@ -1221,12 +1284,8 @@ impl LibsqlStore {
         to_team_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction()
-            .await
-            .map_err(to_query_error)?;
+    ) -> Result<MembershipRole, StoreError> {
+        let tx = self.begin_transaction().await?;
         let mut rows = tx
             .query(
                 r#"
@@ -1246,33 +1305,42 @@ impl LibsqlStore {
             ));
         };
         let existing_role: String = row.get(0).map_err(to_query_error)?;
+        drop(rows);
         if existing_role == MembershipRole::Owner.as_str() {
             return Err(StoreError::Conflict(
                 "owner memberships cannot be removed or transferred".to_string(),
             ));
         }
 
-        tx.execute(
-            r#"
-            UPDATE team_memberships
-            SET team_id = ?1,
-                role = ?2,
-                updated_at = ?3
-            WHERE user_id = ?4
-              AND team_id = ?5
-            "#,
-            libsql::params![
-                to_team_id.to_string(),
-                role.as_str(),
-                updated_at.unix_timestamp(),
-                user_id.to_string(),
-                from_team_id.to_string(),
-            ],
-        )
-        .await
-        .map_err(to_write_error)?;
+        let moved = tx
+            .execute(
+                r#"
+                UPDATE team_memberships
+                SET team_id = ?1,
+                    role = ?2,
+                    updated_at = ?3
+                WHERE user_id = ?4
+                  AND team_id = ?5
+                "#,
+                libsql::params![
+                    to_team_id.to_string(),
+                    role.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string(),
+                    from_team_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        // A concurrent transfer may have moved the user after the read above; then
+        // this update matches nothing and the transfer did not happen.
+        if moved == 0 {
+            return Err(StoreError::Conflict(
+                "user is no longer a member of the source team".to_string(),
+            ));
+        }
         tx.commit().await.map_err(to_query_error)?;
-        Ok(())
+        decode_moved_role(&existing_role)
     }
 
     pub async fn get_user_password_auth(
@@ -1332,8 +1400,9 @@ impl LibsqlStore {
         user_id: Uuid,
         role: MembershipRole,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE team_memberships
@@ -1341,6 +1410,7 @@ impl LibsqlStore {
                     updated_at = ?2
                 WHERE team_id = ?3
                   AND user_id = ?4
+                  AND role IS NOT ?1
                 "#,
                 libsql::params![
                     role.as_str(),
@@ -1351,7 +1421,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn find_active_password_invitation_for_user(
@@ -1388,8 +1458,9 @@ impl LibsqlStore {
         &self,
         user_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let revoked = self
+            .connection
             .execute(
                 r#"
                 UPDATE password_invitations
@@ -1402,7 +1473,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(revoked > 0)
     }
 
     pub async fn create_password_invitation(
@@ -1461,23 +1532,64 @@ impl LibsqlStore {
         decode_password_invitation_record(&row).map(Some)
     }
 
-    pub async fn mark_password_invitation_consumed(
+    pub async fn redeem_password_invitation(
         &self,
         invitation_id: Uuid,
-        consumed_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+        user_id: Uuid,
+        password_hash: &str,
+        redeemed_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        // Dropping the transaction without committing rolls every write back.
+        let tx = self.begin_transaction().await?;
+        let claimed = tx
             .execute(
                 r#"
                 UPDATE password_invitations
                 SET consumed_at = ?1
                 WHERE invitation_id = ?2
+                  AND user_id = ?3
+                  AND consumed_at IS NULL
+                  AND revoked_at IS NULL
                 "#,
-                libsql::params![consumed_at.unix_timestamp(), invitation_id.to_string()],
+                libsql::params![
+                    redeemed_at.unix_timestamp(),
+                    invitation_id.to_string(),
+                    user_id.to_string()
+                ],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        if claimed == 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            r#"
+            INSERT INTO user_password_auth (user_id, password_hash, password_updated_at)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(user_id) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                password_updated_at = excluded.password_updated_at
+            "#,
+            libsql::params![
+                user_id.to_string(),
+                password_hash,
+                redeemed_at.unix_timestamp()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.execute(
+            "UPDATE users SET status = ?1, updated_at = ?2 WHERE user_id = ?3",
+            libsql::params![
+                UserStatus::Active.as_str(),
+                redeemed_at.unix_timestamp(),
+                user_id.to_string()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(true)
     }
 
     pub async fn store_user_password(
@@ -1506,19 +1618,44 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn transition_user_status(
+        &self,
+        user_id: Uuid,
+        from: UserStatus,
+        to: UserStatus,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE users SET status = ?1, updated_at = ?2 WHERE user_id = ?3 AND status = ?4",
+                libsql::params![
+                    to.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string(),
+                    from.as_str()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(changed > 0)
+    }
+
     pub async fn update_user_status(
         &self,
         user_id: Uuid,
         status: UserStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE users
                 SET status = ?1,
                     updated_at = ?2
                 WHERE user_id = ?3
+                  AND status IS NOT ?1
                 "#,
                 libsql::params![
                     status.as_str(),
@@ -1528,7 +1665,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn update_user_must_change_password(
@@ -1644,6 +1781,18 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
+        // The session first, then its grants: a grant created concurrently
+        // either sees the revoked session and is refused, or exists in time
+        // for this update to revoke it.
+        self.connection
+            .execute(
+                "UPDATE gateway_oauth_grants
+                 SET revoked_at = ?1, updated_at = ?1, revoked_reason = 'session_ended'
+                 WHERE user_id = ?2 AND revoked_at IS NULL",
+                libsql::params![revoked_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         Ok(())
     }
 
@@ -1651,8 +1800,9 @@ impl LibsqlStore {
         &self,
         session_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let revoked = self
+            .connection
             .execute(
                 r#"
                 UPDATE user_sessions
@@ -1664,7 +1814,19 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        // The session first, then its grants: a grant created concurrently
+        // either sees the revoked session and is refused, or exists in time
+        // for this update to revoke it.
+        self.connection
+            .execute(
+                "UPDATE gateway_oauth_grants
+                 SET revoked_at = ?1, updated_at = ?1, revoked_reason = 'session_ended'
+                 WHERE user_session_id = ?2 AND revoked_at IS NULL",
+                libsql::params![revoked_at.unix_timestamp(), session_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(revoked > 0)
     }
 
     pub async fn get_user_oidc_auth(
@@ -1754,8 +1916,9 @@ impl LibsqlStore {
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 INSERT INTO user_oidc_links (user_id, oidc_provider_id, created_at)
@@ -1763,6 +1926,7 @@ impl LibsqlStore {
                 ON CONFLICT(user_id) DO UPDATE SET
                     oidc_provider_id = excluded.oidc_provider_id,
                     created_at = excluded.created_at
+                WHERE user_oidc_links.oidc_provider_id IS NOT excluded.oidc_provider_id
                 "#,
                 libsql::params![
                     user_id.to_string(),
@@ -1772,18 +1936,19 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
-    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
-        self.connection
+    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 "DELETE FROM user_oidc_links WHERE user_id = ?1",
                 [user_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn get_user_oauth_auth(
@@ -1873,8 +2038,9 @@ impl LibsqlStore {
         user_id: Uuid,
         oauth_provider_id: &str,
         created_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 INSERT INTO user_oauth_links (user_id, oauth_provider_id, created_at)
@@ -1882,6 +2048,7 @@ impl LibsqlStore {
                 ON CONFLICT(user_id) DO UPDATE SET
                     oauth_provider_id = excluded.oauth_provider_id,
                     created_at = excluded.created_at
+                WHERE user_oauth_links.oauth_provider_id IS NOT excluded.oauth_provider_id
                 "#,
                 libsql::params![
                     user_id.to_string(),
@@ -1891,37 +2058,40 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
-    pub async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
-        self.connection
+    pub async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 "DELETE FROM user_oauth_links WHERE user_id = ?1",
                 [user_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
-    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
-        self.connection
+    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 "DELETE FROM user_password_auth WHERE user_id = ?1",
                 [user_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     pub async fn delete_user_oidc_auth(
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let deleted = self
+            .connection
             .execute(
                 r#"
                 DELETE FROM user_oidc_auth
@@ -1932,15 +2102,16 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
     pub async fn delete_user_oauth_auth(
         &self,
         user_id: Uuid,
         oauth_provider_id: &str,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let deleted = self
+            .connection
             .execute(
                 r#"
                 DELETE FROM user_oauth_auth
@@ -1951,7 +2122,7 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
     pub async fn find_invited_oidc_user(
@@ -2205,4 +2376,13 @@ impl IdentityRepository for LibsqlStore {
 
         Ok(memberships)
     }
+}
+
+fn decode_removed_role(role: &str) -> Result<MembershipRole, StoreError> {
+    MembershipRole::from_db(role)
+        .ok_or_else(|| StoreError::Serialization(format!("unsupported membership role `{role}`")))
+}
+
+fn decode_moved_role(role: &str) -> Result<MembershipRole, StoreError> {
+    decode_removed_role(role)
 }

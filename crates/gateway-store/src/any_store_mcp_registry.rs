@@ -54,7 +54,7 @@ impl McpRegistryRepository for AnyStore {
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
+    ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
         match self {
             Self::Libsql(store) => store.update_external_mcp_server(input).await,
             Self::Postgres(store) => store.update_external_mcp_server(input).await,
@@ -65,7 +65,7 @@ impl McpRegistryRepository for AnyStore {
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError> {
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
@@ -125,6 +125,101 @@ impl McpRegistryRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.record_external_mcp_discovery_failure(run).await,
             Self::Postgres(store) => store.record_external_mcp_discovery_failure(run).await,
+        }
+    }
+
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+            Self::Postgres(store) => store.get_external_mcp_tool(mcp_tool_id).await,
+        }
+    }
+
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.get_external_mcp_tools(mcp_tool_ids).await,
+            Self::Postgres(store) => store.get_external_mcp_tools(mcp_tool_ids).await,
+        }
+    }
+
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.set_mcp_tool_tags(mcp_tool_id, tags).await,
+            Self::Postgres(store) => store.set_mcp_tool_tags(mcp_tool_id, tags).await,
+        }
+    }
+
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &gateway_core::McpAnnotationOverrides,
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .set_mcp_tool_annotation_overrides(mcp_tool_id, overrides)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .set_mcp_tool_annotation_overrides(mcp_tool_id, overrides)
+                    .await
+            }
+        }
+    }
+
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &gateway_core::McpToolVersionQuery,
+    ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+            Self::Postgres(store) => store.list_mcp_tool_versions(mcp_tool_id, query).await,
+        }
+    }
+
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: gateway_core::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .review_mcp_tool_version(
+                        mcp_tool_id,
+                        schema_version,
+                        decision,
+                        reviewed_by_user_id,
+                        reviewed_at,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .review_mcp_tool_version(
+                        mcp_tool_id,
+                        schema_version,
+                        decision,
+                        reviewed_by_user_id,
+                        reviewed_at,
+                    )
+                    .await
+            }
         }
     }
 }

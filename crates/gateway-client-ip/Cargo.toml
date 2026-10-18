@@ -1,0 +1,10 @@
+[package]
+name = "gateway-client-ip"
+version = "0.40.0"
+edition = "2024"
+
+[dependencies]
+hmac = "0.12"
+http.workspace = true
+ipnet.workspace = true
+sha2.workspace = true

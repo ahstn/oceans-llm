@@ -115,6 +115,7 @@ impl TestContext {
                 owner_user_id: Some(user_id),
                 owner_team_id: None,
                 owner_service_account_id: None,
+                access: Default::default(),
                 created_at: OffsetDateTime::now_utc(),
             })
             .await
@@ -136,6 +137,7 @@ impl TestContext {
         let response = create_budget_increase(
             State(self.state.clone()),
             headers,
+            crate::http::audit::AuditRequestMeta::default(),
             Json(CreateBudgetIncreaseRequest {
                 user_id: user_id.to_string(),
                 amount_usd: amount_usd.to_string(),

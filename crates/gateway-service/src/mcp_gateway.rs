@@ -9,13 +9,17 @@ use gateway_core::{
 use crate::McpOauthRuntime;
 use crate::mcp_credentials::McpCredentialService;
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_mcp_server_auth_destination,
+    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, normalize_mcp_server_key,
+    validate_mcp_server_auth_destination,
 };
+use gateway_mcp::McpQueryCredential;
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {
     pub server: ExternalMcpServerRecord,
     pub headers: Option<BTreeMap<String, String>>,
+    /// A gateway-managed API key for the URL query. Its `Debug` is redacted.
+    pub query_credential: Option<McpQueryCredential>,
 }
 
 #[derive(Clone)]
@@ -48,7 +52,12 @@ where
     ) -> Result<McpGatewayUpstream, GatewayError> {
         let server = self.load_active_server(server_key).await?;
         let headers = gateway_mcp_upstream_headers(&server)?;
-        Ok(McpGatewayUpstream { server, headers })
+        let query_credential = gateway_mcp_upstream_query(&server)?;
+        Ok(McpGatewayUpstream {
+            server,
+            headers,
+            query_credential,
+        })
     }
 
     pub async fn load_active_server(
@@ -94,7 +103,12 @@ where
                 credentials.resolve_for_auth(auth, &server).await?.headers
             }),
         };
-        Ok(McpGatewayUpstream { server, headers })
+        let query_credential = gateway_mcp_upstream_query(&server)?;
+        Ok(McpGatewayUpstream {
+            server,
+            headers,
+            query_credential,
+        })
     }
 
     pub async fn prepare_upstream_for_key_and_auth(
@@ -167,6 +181,55 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for SingleServerRepo {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tool(
+            &self,
+            _mcp_tool_id: Uuid,
+        ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tools(
+            &self,
+            _mcp_tool_ids: &[Uuid],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_tags(
+            &self,
+            _mcp_tool_id: Uuid,
+            _tags: &[String],
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_annotation_overrides(
+            &self,
+            _mcp_tool_id: Uuid,
+            _overrides: &gateway_core::McpAnnotationOverrides,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_external_mcp_servers(
             &self,
             _include_disabled: bool,
@@ -198,7 +261,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
             unimplemented!()
         }
 
@@ -206,7 +269,7 @@ mod tests {
             &self,
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
-        ) -> Result<ExternalMcpServerRecord, StoreError> {
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             unimplemented!()
         }
 
@@ -258,6 +321,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

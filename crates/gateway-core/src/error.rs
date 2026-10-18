@@ -1,7 +1,10 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::domain::Money4;
+use crate::{
+    budgets::{BudgetExceededStatus, BudgetScopeKind},
+    domain::{BudgetCadence, Money4},
+};
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -35,6 +38,18 @@ pub enum AuthError {
     ServiceAccountBudgetRequired,
     #[error("api key hash verification failed: {0}")]
     HashVerification(String),
+    #[error("oauth access tokens are only accepted on MCP routes")]
+    OauthTokenNotAccepted,
+    #[error("oauth access token is invalid, expired, or revoked")]
+    OauthTokenInvalid,
+    #[error("oauth access token was not issued for this MCP resource")]
+    OauthTokenWrongResource,
+    #[error("credential lacks the `{required}` scope")]
+    InsufficientScope { required: String },
+    #[error("this route needs an api key with full access; scoped keys cannot call it")]
+    FullAccessRequired,
+    #[error("api key is not scoped to this MCP server")]
+    McpServerNotInScope,
 }
 
 #[derive(Debug, Error)]
@@ -114,13 +129,20 @@ pub enum GatewayError {
     Route(#[from] RouteError),
     #[error(transparent)]
     Provider(#[from] ProviderError),
+    /// The message names only the caller's own scope kind and cadence; the
+    /// scope key stays out of it so it can be logged without echoing ids.
     #[error(
-        "budget exceeded for ownership scope `{ownership_scope}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
+        "{} {} budget exhausted: spent ${projected_cost_usd} of the ${limit_usd} limit. Retrying will not succeed until the budget window resets or an administrator raises the limit",
+        .cadence.as_str(),
+        .scope_kind.label()
     )]
     BudgetExceeded {
         ownership_scope: String,
+        scope_kind: BudgetScopeKind,
+        cadence: BudgetCadence,
         projected_cost_usd: Money4,
         limit_usd: Money4,
+        status: BudgetExceededStatus,
     },
     #[error("request_id `{request_id}` has already been recorded for this owner")]
     DuplicateUsageRecord { request_id: String },
@@ -134,6 +156,8 @@ pub enum GatewayError {
     UnprocessableEntity(String),
     #[error("request body exceeds {limit_bytes} bytes")]
     PayloadTooLarge { limit_bytes: usize },
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     #[error("guardrail policy denied the operation ({reason_code}, decision {decision_id})")]
     GuardrailDenied {
         decision_id: String,
@@ -164,12 +188,21 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeyRevoked)
             | Self::Auth(AuthError::ApiKeySecretMismatch)
             | Self::Auth(AuthError::InvalidApiKeyFormat)
-            | Self::Auth(AuthError::ConflictingApiKeyHeaders) => 401,
+            | Self::Auth(AuthError::ConflictingApiKeyHeaders)
+            | Self::Auth(AuthError::OauthTokenNotAccepted)
+            | Self::Auth(AuthError::OauthTokenInvalid)
+            | Self::Auth(AuthError::OauthTokenWrongResource) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::ServiceAccountBudgetRequired)
-            | Self::Auth(AuthError::InsufficientPrivileges) => 403,
-            Self::BudgetExceeded { .. } => 429,
+            | Self::Auth(AuthError::InsufficientPrivileges)
+            | Self::Auth(
+                AuthError::InsufficientScope { .. }
+                | AuthError::FullAccessRequired
+                | AuthError::McpServerNotInScope,
+            ) => 403,
+            Self::BudgetExceeded { status, .. } => status.as_u16(),
+            Self::RateLimited(_) => 429,
             Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => 400,
             Self::BatchUsageConflict { .. } => 500,
@@ -212,6 +245,7 @@ impl GatewayError {
         match self {
             Self::Auth(_) => "authentication_error",
             Self::BudgetExceeded { .. } => "budget_error",
+            Self::RateLimited(_) => "rate_limit_error",
             Self::IdentityConstraint(_) => "identity_error",
             Self::InvalidRequest(_)
             | Self::UnprocessableEntity(_)
@@ -258,6 +292,14 @@ impl GatewayError {
                 "service_account_budget_required"
             }
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
+            Self::Auth(AuthError::OauthTokenNotAccepted) => "oauth_token_not_accepted",
+            Self::Auth(AuthError::OauthTokenInvalid) => "invalid_token",
+            Self::Auth(AuthError::OauthTokenWrongResource) => "invalid_token_resource",
+            Self::Auth(
+                AuthError::InsufficientScope { .. }
+                | AuthError::FullAccessRequired
+                | AuthError::McpServerNotInScope,
+            ) => "insufficient_scope",
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
             Self::Store(StoreError::NotFound(_)) => "not_found",
@@ -288,6 +330,7 @@ impl GatewayError {
             Self::BatchUsageConflict { .. } => "batch_usage_conflict",
             Self::UnprocessableEntity(_) => "validation_failed",
             Self::PayloadTooLarge { .. } => "request_body_too_large",
+            Self::RateLimited(_) => "rate_limited",
             Self::GuardrailDenied { .. } => "guardrail_policy_denied",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
@@ -301,6 +344,55 @@ impl GatewayError {
 #[cfg(test)]
 mod tests {
     use super::{AuthError, GatewayError};
+    use crate::{BudgetCadence, BudgetExceededStatus, BudgetScopeKind, Money4};
+
+    fn budget_exceeded(status: BudgetExceededStatus) -> GatewayError {
+        GatewayError::BudgetExceeded {
+            ownership_scope: "budget:v1:user:00000000-0000-0000-0000-000000000001:model:x"
+                .to_string(),
+            scope_kind: BudgetScopeKind::UserModel,
+            cadence: BudgetCadence::Weekly,
+            projected_cost_usd: Money4::from_scaled(400_000),
+            limit_usd: Money4::from_scaled(400_000),
+            status,
+        }
+    }
+
+    #[test]
+    fn budget_exceeded_defaults_to_422_and_differs_from_validation_errors() {
+        let budget = budget_exceeded(BudgetExceededStatus::default());
+        let validation = GatewayError::UnprocessableEntity("bad".to_string());
+
+        assert_eq!(budget.http_status_code(), 422);
+        assert_eq!(validation.http_status_code(), 422);
+        assert_eq!(budget.error_type(), "budget_error");
+        assert_eq!(budget.error_code(), "budget_exceeded");
+        assert_ne!(budget.error_type(), validation.error_type());
+        assert_ne!(budget.error_code(), validation.error_code());
+    }
+
+    #[test]
+    fn budget_exceeded_uses_the_configured_status() {
+        for status in [
+            BudgetExceededStatus::PaymentRequired,
+            BudgetExceededStatus::TooManyRequests,
+        ] {
+            assert_eq!(budget_exceeded(status).http_status_code(), status.as_u16());
+        }
+    }
+
+    #[test]
+    fn budget_exceeded_message_names_scope_and_cadence_without_ids() {
+        let message = budget_exceeded(BudgetExceededStatus::default()).to_string();
+
+        assert!(
+            message.starts_with("weekly user+model budget exhausted"),
+            "{message}"
+        );
+        assert!(message.contains("$40.0000"), "{message}");
+        assert!(!message.contains("budget:v1"), "{message}");
+        assert!(!message.contains("00000000-0000"), "{message}");
+    }
 
     #[test]
     fn service_account_budget_required_is_auth_forbidden() {
@@ -309,5 +401,14 @@ mod tests {
         assert_eq!(error.http_status_code(), 403);
         assert_eq!(error.error_type(), "authentication_error");
         assert_eq!(error.error_code(), "service_account_budget_required");
+    }
+
+    #[test]
+    fn rate_limited_is_too_many_requests() {
+        let error = GatewayError::RateLimited("too many counts".to_string());
+
+        assert_eq!(error.http_status_code(), 429);
+        assert_eq!(error.error_type(), "rate_limit_error");
+        assert_eq!(error.error_code(), "rate_limited");
     }
 }

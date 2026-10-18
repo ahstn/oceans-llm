@@ -71,6 +71,15 @@ impl BudgetRepository for CountingRepository {
     ) -> Result<BudgetRecord, StoreError> {
         panic!("unexpected per-scope repository call")
     }
+
+    async fn set_manual_budget(
+        &self,
+        _scope: &BudgetScope,
+        _settings: &BudgetSettings,
+        _updated_at: OffsetDateTime,
+    ) -> Result<gateway_core::ManualBudgetSave, StoreError> {
+        unimplemented!()
+    }
     async fn upsert_active_budget_with_source(
         &self,
         _scope: &BudgetScope,
@@ -97,6 +106,14 @@ impl BudgetRepository for CountingRepository {
     ) -> Result<bool, StoreError> {
         panic!("unexpected per-scope repository call")
     }
+    async fn deactivate_active_budget_returning(
+        &self,
+        _scope: &BudgetScope,
+        _updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
+        panic!("unexpected per-scope repository call")
+    }
+
     async fn deactivate_active_budget_by_source(
         &self,
         _scope: &BudgetScope,

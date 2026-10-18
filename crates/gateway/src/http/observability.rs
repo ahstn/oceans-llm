@@ -419,6 +419,7 @@ pub async fn list_mcp_tool_invocations(
             query.occurred_at_end.as_deref(),
             "occurred_at_end",
         )?,
+        mcp_method: empty_to_none(query.mcp_method),
     };
 
     let page = state.service.list_mcp_tool_invocations(&query).await?;
@@ -519,6 +520,8 @@ fn mcp_invocation_summary_view(
         tool_id: invocation.tool_id.map(|value| value.to_string()),
         tool_display_key: invocation.tool_display_key.clone(),
         tool_display_name: invocation.tool_display_name.clone(),
+        mcp_method: invocation.mcp_method.clone(),
+        tool_schema_version: invocation.tool_schema_version,
         status: invocation.status.as_str().to_string(),
         policy_result: invocation.policy_result.as_str().to_string(),
         latency_ms: invocation.latency_ms,

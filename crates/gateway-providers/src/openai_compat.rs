@@ -6,8 +6,8 @@ use gateway_core::{
     CoreResponsesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    core_chat_request_to_openai, core_embeddings_request_to_openai,
+    ProviderClient, ProviderDecisionsResponse, ProviderError, ProviderRequestContext,
+    ProviderStream, core_chat_request_to_openai, core_embeddings_request_to_openai,
     core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
@@ -824,23 +824,15 @@ impl ProviderClient for OpenAiCompatProvider {
         &self,
         request: &CoreDecisionsRequest,
         context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
-        if !route_selects_decisions_api(context) && self.config.decisions_url.is_none() {
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
+        let Some(format) = decisions::route_decisions_wire_format(&self.config, context) else {
             return Err(ProviderError::NotImplemented(format!(
                 "{} does not support decisions for this route",
                 self.provider_type()
             )));
-        }
-        self.decisions_impl(request, context).await
+        };
+        self.decisions_impl(format, request, context).await
     }
-}
-
-fn route_selects_decisions_api(context: &ProviderRequestContext) -> bool {
-    context
-        .compatibility
-        .openrouter
-        .as_ref()
-        .is_some_and(|openrouter| openrouter.api.is_decisions())
 }
 
 fn is_event_stream_content_type(value: &str) -> bool {

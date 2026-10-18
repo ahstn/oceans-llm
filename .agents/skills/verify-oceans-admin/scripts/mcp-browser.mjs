@@ -1,11 +1,48 @@
 // Real UI mutations with production API reads as the saved-state authority.
-const authLabels = { none: "None", gateway_static_header: "Gateway static header", gateway_bearer_token: "Gateway bearer token" };
+import fs from "node:fs/promises";
+
+const authLabels = { none: "None", gateway_static_header: "Gateway static credential", gateway_bearer_token: "Gateway bearer token" };
+
+/**
+ * Names this driver attempt's records. Cleanup disables rather than deletes them, so a retry
+ * in the same run needs keys of its own. `key` stays within 30 URL-safe characters.
+ */
+export function attemptScope(runId, now = Date.now()) {
+  const attempt = now.toString(36).slice(-5);
+  return {
+    key: `${runId.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(-24)}-${attempt}`,
+    label: `${runId.slice(-8)} ${attempt}`,
+  };
+}
+
+/** The aggregate MCP endpoint the gateway generates for a client base URL (see `normalize_gateway_base_url`). */
+export function mcpEndpointFor(baseUrl) {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  return `${trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed}/mcp`;
+}
+
+/**
+ * Reads what `launch` resolved for the gateway: which OCEANS_MCP_DISCOVERY_* aliases were set
+ * and the client configuration base URL. Without a launch record, falls back to this process.
+ */
+export async function loadStackEnv(file, env = process.env) {
+  if (file) {
+    try {
+      const saved = JSON.parse(await fs.readFile(file, "utf8"));
+      return { source: "launch", aliases: new Set(saved.mcpDiscoveryAliases), clientConfigBaseUrl: saved.clientConfigBaseUrl ?? null };
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  const aliases = Object.keys(env).filter((name) => name.startsWith("OCEANS_MCP_DISCOVERY_") && env[name]);
+  return { source: "driver", aliases: new Set(aliases), clientConfigBaseUrl: env.GATEWAY_CLIENT_CONFIG_BASE_URL ?? null };
+}
 
 export async function registerServer(ui, candidate) {
-  const { page, baseURL, expect, adminJson, poll, owned, actions, capture, runId } = ui;
-  const serverKey = `verify-${runId.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(-30)}-${candidate.key}`;
-  const displayName = `Verification ${candidate.label} ${runId.slice(-8)}`;
-  if ((await adminJson(page, "/api/v1/admin/mcp/servers?include_disabled=true")).items.some((item) => item.server_key === serverKey)) throw new Error("Verification server key already exists; use a new run ID");
+  const { page, baseURL, expect, adminJson, poll, owned, actions, capture, scope } = ui;
+  const serverKey = `verify-${scope.key}-${candidate.key}`;
+  const displayName = `Verification ${candidate.label} ${scope.label}`;
+  if ((await adminJson(page, "/api/v1/admin/mcp/servers?include_disabled=true")).items.some((item) => item.server_key === serverKey)) throw new Error("Verification server key already exists; rerun the driver for a new attempt scope");
   await page.goto(`${baseURL}/admin/mcp?tab=servers`, { waitUntil: "networkidle" });
   const dialog = page.getByRole("dialog", { name: "Add MCP server", exact: true });
   await expect(async () => {
@@ -49,7 +86,7 @@ export async function registerServer(ui, candidate) {
 }
 
 export async function verifyWorkbench(ui, candidates) {
-  const { page, baseURL, expect, adminJson, poll, actions, capture, config } = ui;
+  const { page, baseURL, expect, adminJson, poll, actions, capture, expectedGatewayUrl } = ui;
   await page.goto(`${baseURL}/admin/mcp/toolsets`, { waitUntil: "networkidle" });
   const primary = await createSet(ui, "live");
   for (const candidate of candidates) await toolCheckbox(page, candidate.tool).check();
@@ -108,7 +145,7 @@ export async function verifyWorkbench(ui, candidates) {
   await page.getByRole("button", { name: "Connection Info", exact: true }).click();
   const connection = page.getByTestId("toolset-connection-dialog");
   const info = await adminJson(page, "/api/v1/admin/mcp/connection-info");
-  if (config.expected_gateway_url && info.endpoint !== config.expected_gateway_url) throw new Error("Generated MCP endpoint differs from configured public gateway URL");
+  if (info.endpoint !== expectedGatewayUrl) throw new Error("Generated MCP endpoint differs from the launched client configuration URL");
   if (!new URL(info.endpoint).pathname.endsWith("/mcp")) throw new Error("Generated endpoint is not aggregate MCP");
   await expect(connection.getByTestId("toolset-connection-panel")).toContainText(info.endpoint);
   for (const client of info.client_configurations) {
@@ -136,14 +173,14 @@ export async function verifyWorkbench(ui, candidates) {
 }
 
 export async function createAccess(ui, primary, candidates, verifyNoMcpGrant) {
-  const { page, baseURL, expect, adminJson, poll, owned, runId, actions, capture } = ui;
+  const { page, baseURL, expect, adminJson, poll, owned, scope, actions, capture } = ui;
   await page.goto(`${baseURL}/admin/api-keys`, { waitUntil: "networkidle" });
   const catalog = await adminJson(page, "/api/v1/admin/api-keys");
   const owner = catalog.users.find((item) => item.email === "admin@local") ?? catalog.users[0];
-  const model = catalog.models.find((item) => item.key === "deepseek-v4-flash-0731") ?? catalog.models[0];
+  const model = catalog.models.find((item) => item.key === "deepseek-v4.1-flash") ?? catalog.models[0];
   if (!owner || !model) throw new Error("No owner or constrained model is available for temporary key");
-  const keyName = `MCP verification ${runId}`;
-  if (catalog.items.some((item) => item.name === keyName)) throw new Error("Verification API key name already exists; use a new run ID");
+  const keyName = `MCP verification ${scope.key}`;
+  if (catalog.items.some((item) => item.name === keyName)) throw new Error("Verification API key name already exists; rerun the driver for a new attempt scope");
   owned.apiKeyName = keyName;
   await page.getByRole("button", { name: "Create API key", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Create API key", exact: true });
@@ -190,10 +227,10 @@ export async function createAccess(ui, primary, candidates, verifyNoMcpGrant) {
 }
 
 async function createSet(ui, suffix) {
-  const { page, adminJson, poll, owned, runId } = ui;
-  const toolsetKey = `verify-${runId.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(-30)}-${suffix}`;
-  const name = `MCP verification ${suffix} ${runId.slice(-8)}`;
-  if ((await adminJson(page, "/api/v1/admin/mcp/toolsets?include_disabled=true")).items.some((item) => item.toolset_key === toolsetKey)) throw new Error("Verification tool set key already exists; use a new run ID");
+  const { page, adminJson, poll, owned, scope } = ui;
+  const toolsetKey = `verify-${scope.key}-${suffix}`;
+  const name = `MCP verification ${suffix} ${scope.label}`;
+  if ((await adminJson(page, "/api/v1/admin/mcp/toolsets?include_disabled=true")).items.some((item) => item.toolset_key === toolsetKey)) throw new Error("Verification tool set key already exists; rerun the driver for a new attempt scope");
   await page.getByRole("button", { name: "New tool set", exact: true }).first().click();
   const dialog = page.getByRole("dialog", { name: "New tool set", exact: true });
   await dialog.getByLabel("Key", { exact: true }).fill(toolsetKey);

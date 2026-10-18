@@ -21,7 +21,7 @@ export const Route = createFileRoute('/api-keys')({
 
 export function ApiKeysPage() {
   const {
-    data: { items, users, service_accounts, models },
+    data: { items, users, service_accounts, models, available_scopes, mcp_servers },
   } = Route.useLoaderData() as { data: ApiKeysPayload }
   const { session } = Route.useRouteContext()
   const canCreate = canPerformAdminAction(session, 'create_api_key')
@@ -71,8 +71,10 @@ export function ApiKeysPage() {
 
       {canCreate ? (
         <CreateApiKeyDialog
+          availableScopes={available_scopes}
           form={state.form}
           isPending={state.isPending}
+          mcpServers={mcp_servers}
           modelOptions={models}
           open={state.isCreateOpen}
           ownerLabel={state.selectedOwnerLabel}
@@ -85,6 +87,7 @@ export function ApiKeysPage() {
           onOpenChange={(open) => (!open ? state.actions.closeCreateDialog() : undefined)}
           onOwnerKindChange={state.actions.updateOwnerKind}
           onOwnerSelectionChange={state.actions.updateOwnerSelection}
+          onScopesChange={state.actions.updateScopes}
           onSubmit={state.actions.handleCreateApiKey}
         />
       ) : null}
@@ -92,11 +95,14 @@ export function ApiKeysPage() {
       {canManage ? (
         <ManageApiKeyDialog
           actions={session.permissions.actions}
+          availableScopes={available_scopes}
           form={state.manageForm}
           isPending={state.isPending}
+          mcpServers={mcp_servers}
           modelOptions={models}
           open={state.manageDialog.mode === 'open'}
           revealedKey={state.revealedManageKey}
+          scopes={state.manageScopes}
           submitDisabled={state.isManageDisabled}
           target={state.manageTarget}
           onModelGrantModeChange={state.actions.updateManageModelGrantMode}
@@ -105,6 +111,7 @@ export function ApiKeysPage() {
           onReveal={state.actions.handleRevealManageApiKey}
           onRevoke={state.actions.handleRevokeApiKey}
           onCopy={state.actions.handleCopy}
+          onScopesChange={state.actions.updateManageScopes}
           onSubmit={state.actions.handleUpdateApiKey}
         />
       ) : null}

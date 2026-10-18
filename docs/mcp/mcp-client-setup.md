@@ -37,7 +37,7 @@ Direct per-server proxying remains available when a client should talk to one up
 https://<gateway-origin>/mcp/{server_key}
 ```
 
-Use an Oceans API key for inbound auth. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
+Clients authenticate with an Oceans API key, or with an OAuth access token from the gateway when [OAuth sign-in](#oauth-sign-in) is enabled. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
 
 ## Connection info in the admin UI
 
@@ -60,7 +60,9 @@ Ask an admin to confirm:
 For Google Drive or Google Docs, the user who owns the Oceans API key must also connect the matching server under `/admin/account/connections`. This browser consent is separate from Google sign-in to Oceans. A client harness does not perform Google OAuth. The recommended Google entries request read-only scopes and keep only the matching read tools active during discovery. Write tools require a separate scope and tool-policy decision.
 
 If any of those steps are missing, the client may connect successfully but see no
-matching tools, or receive `credential_required` when it tries to execute one.
+matching tools, or receive `credential_required` when it tries to execute one. That
+error links to the connection page when the user can fix it themselves; see
+[Connecting from an error](#connecting-from-an-error).
 
 ## Inbound Auth
 
@@ -79,6 +81,92 @@ x-oceans-api-key: <oceans-api-key>
 If both headers are present, they must contain the same raw Oceans key after Bearer extraction. The gateway rejects a malformed `Authorization` header even when `x-oceans-api-key` is valid.
 
 Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers with gateway-managed credentials or principal-bound upstream credential bindings.
+
+### Scoped API keys
+
+Give an MCP client its own key, limited to MCP. Then a leaked key can't call models or spend budget. Under **API keys**, set **Capabilities** to **Limited** and choose:
+
+| Scope | Allows |
+| --- | --- |
+| `mcp:aggregate` | `/mcp` and its `search_tools`, `describe_tool`, and `call_tool` |
+| `mcp:proxy` | `/mcp/{server_key}` |
+| `inference` | Model routes, batches, and guardrail checks. Leave it off for an MCP-only key |
+
+To limit the key further, set **MCP servers** to **Selected servers** and pick the servers it may reach. The key then never sees a server outside its list, even when its owner holds grants there. A listed server still needs a grant before any tool shows up.
+
+A refused request gets `403` with a JSON-RPC error. Its `id` is `null`, because the gateway refuses before it reads the request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": null,
+  "error": {
+    "code": -32001,
+    "message": "credential lacks the `mcp:aggregate` scope",
+    "data": {"error": "insufficient_scope", "required_scope": "mcp:aggregate"}
+  }
+}
+```
+
+A per-server request for a server outside the key's list gets the same error without `required_scope`. Unknown servers get the same answer, so the error doesn't reveal which servers exist. On `/mcp`, a tool on an unlisted server reads as `MCP tool address is not granted`, the same as a tool with no grant.
+
+Keys created before scopes existed keep full access until an admin edits them. Scope edits apply to the key's next request, without reissuing it. See [API key scopes](../access/identity-and-access.md#api-key-scopes) for the full route list.
+
+## OAuth sign-in
+
+Clients that follow the MCP authorization specification can connect without an API key. A platform admin enables `mcp.client_oauth` (see the [configuration reference](../configuration/configuration-reference.md)). Users then add only the MCP URL to their client:
+
+```text
+https://gateway.example.com/mcp
+https://gateway.example.com/mcp/{server_key}
+```
+
+The client handles the rest:
+
+1. Its first request gets `401` with `WWW-Authenticate: Bearer resource_metadata="https://gateway.example.com/.well-known/oauth-protected-resource/mcp", scope="mcp:aggregate"`. A per-server URL names its own metadata document and `scope="mcp:proxy"`.
+2. It reads the protected-resource metadata, then the authorization-server metadata at `/.well-known/oauth-authorization-server`.
+3. It identifies itself in one of two ways. The metadata advertises `client_id_metadata_document_supported: true`, so a client that publishes a Client ID Metadata Document uses that document's https URL as its `client_id` and skips registration. Other clients register at `/oauth/register` (RFC 7591 Dynamic Client Registration).
+4. It opens `/oauth/authorize` in the browser with PKCE (`S256`) and `resource` set to the MCP URL. The user signs in to Oceans the usual way, with a password, OIDC, or GitHub, and sees the consent page at `/admin/oauth/consent`. It names the client, the host it returns to, and the MCP access requested. The user chooses `Allow` or `Deny`.
+5. It exchanges the code at `/oauth/token` for an `oat_` access token (one hour by default) and, when it registered for refresh, an `ort_` refresh token.
+6. It sends `Authorization: Bearer oat_…` on every MCP request and refreshes when the token expires.
+
+What the token can do:
+
+- It acts as the user who approved it. User and team grants apply exactly as they do for that user's API keys. Grants made to one specific API key do not apply.
+- Its scopes are the [scoped API key](#scoped-api-keys) names, checked the same way. A token for `https://gateway.example.com/mcp` with `mcp:aggregate` reaches the aggregate endpoint. Add `mcp:proxy` to also reach every per-server route. A token for `https://gateway.example.com/mcp/{server_key}` reaches only that server.
+- It works only on `/mcp` routes, only in the `Authorization` header. Model, admin, batch, and Skills routes reject it with `oauth_token_not_accepted`.
+- MCP invocation records show the user, with `auth_method`, `oauth_client_id`, and `oauth_grant_id` in their metadata.
+
+When access ends:
+
+- The user disconnects it under `/admin/account/connections`, in the `Authorized MCP clients` card.
+- A platform admin revokes it through `POST /api/v1/admin/mcp/authorized-clients/revoke`.
+- Signing out of the admin UI ends every client that session approved.
+- Deactivating the user revokes all of their grants.
+- The client can revoke its tokens at `/oauth/revoke`.
+- Reusing a refresh token that was already rotated revokes the grant.
+- Tokens never outlive the session that approved them. Expect to sign in again when that session expires (30 days).
+
+Consent is asked every time a client signs in. When the code goes to a loopback redirect URI, the consent page shows a warning, because Oceans cannot verify who published the client.
+
+### Client ID Metadata Documents
+
+A client that uses a metadata document passes its URL, such as `https://editor.example.com/oauth/client.json`, as `client_id`. Oceans fetches that URL and checks the document before it shows the consent page:
+
+- `client_id` in the document must equal the URL exactly.
+- `client_name` and `redirect_uris` are required. Redirect URIs follow the registration rules: HTTPS, or `http` on `localhost`, `127.0.0.1`, or `[::1]`, with no fragment.
+- `token_endpoint_auth_method` must be `none` or left out, and the document must not contain a client secret.
+- The URL must be HTTPS with a path, with no fragment, user information, or dot segments. A path of just `/` works but is not recommended. Oceans compares it as sent, so `https://editor.example.com:443/client.json` and `https://editor.example.com/client.json` are different clients.
+
+Oceans fetches documents only from public addresses. It refuses hosts that are, or resolve to, private, loopback, link-local, or cloud metadata addresses, and it does not follow redirects. A fetch has 5 seconds and 64 KiB. Oceans keeps a document for as long as its `Cache-Control` allows, less any `Age` a cache added, up to 24 hours, or 10 minutes without one. It checks the document again when the client exchanges a code, refreshes, or revokes, so a removed document stops new sign-ins and refreshes once the cached copy expires.
+
+The consent page shows the host that published the document, marked `Unverified`. Oceans checked only that this host serves the document, not who runs the client. A platform admin can limit which hosts may publish documents, or turn them off, under `mcp.client_oauth.client_id_metadata_documents` in the [configuration reference](../configuration/configuration-reference.md).
+
+### Browser-based clients
+
+The MCP URLs and the metadata, token, registration, and revocation endpoints answer CORS requests from any origin, so a client that runs in a web page can read the `401` challenge, complete sign-in, and then call MCP with its token. They send no credentials-allowing CORS headers and read no cookies. `/oauth/authorize` opens as a normal page, not a cross-origin call.
+
+API keys keep working on the same URLs. Clients that support custom headers can use either method.
 
 ## Claude Code
 
@@ -163,4 +251,49 @@ disablement, active-tool filtering, and upstream credential separation.
 
 Oceans API keys are never forwarded upstream. For servers that need caller-specific credentials, platform admins create MCP credential bindings for a user, team, or service account. User-owned keys use a user binding first and then an allowed team binding. Service-account keys use a service-account binding first and then the owning-team binding. A service account never borrows a user's credential.
 
-Missing upstream credentials return a structured `credential_required` tool error from aggregate `call_tool`, or a normal gateway error from direct `/mcp/{server_key}` proxying. Oceans refreshes configured OAuth bundles before expiry. A revoked or non-refreshable grant returns `credential_required`. Direct proxy responses do not forward the upstream server's `WWW-Authenticate` challenge because the client must reconnect through Oceans.
+Oceans refreshes configured OAuth bundles before expiry. A revoked or non-refreshable grant returns `credential_required`. A binding whose expiry has passed returns `credential_expired`. Direct proxy responses do not forward the upstream server's `WWW-Authenticate` challenge because the client must reconnect through Oceans.
+
+### Connecting from an error
+
+When a call fails with `credential_required` or `credential_expired`, the error says what to do next.
+
+- **The user can connect the server.** The response includes a `connect_url` when all of these hold:
+  - the server uses user OAuth (`oauth_obo`)
+  - its OAuth provider is configured
+  - `mcp.oauth.public_base_url` is set
+  - the Oceans API key is user-owned
+
+  The URL has this form:
+
+  ```text
+  {public_base_url}/admin/account/connections?connect={server_key}
+  ```
+
+  Opening it in a browser starts the provider consent flow for that server, after Oceans sign-in if needed. The flow returns to the same page with a toast naming the connected server. The user then retries the call. The URL contains only the gateway origin and the server key. It carries no API key, token, or OAuth state.
+- **Only an administrator can fix it.** For example, the server uses admin-managed bindings (`user_passthrough`), or the caller is a service account. Here the message says to contact an Oceans administrator, and no `connect_url` is returned.
+
+Where the guidance appears depends on the route and method:
+
+| Route and method | Response |
+| --- | --- |
+| Aggregate `call_tool` | A tool result with `isError: true`. The text holds the message and URL. `structuredContent` has `error_code`, `server_key`, `address`, and `connect_url`. |
+| Direct `tools/call` | HTTP 200 with a tool result with `isError: true`. The text holds the message and URL. `structuredContent` has `error_code`, `server_key`, and `connect_url`. |
+| Direct `initialize`, `tools/list`, and other methods | HTTP 403. The error envelope has `code`, `message`, and `connect_url`. |
+
+The direct route needs an upstream credential before `initialize` succeeds, so a client without one fails while connecting. Most clients show the 403 message, which includes the URL. Tool results are used for `tools/call` so that clients which only show tool output still show the next step to the model and the user. A worked example of the aggregate result:
+
+```json
+{
+  "isError": true,
+  "content": [{
+    "type": "text",
+    "text": "MCP credential is required for server `google_drive`. Connect your account at https://gateway.example.com/admin/account/connections?connect=google_drive, then retry the call."
+  }],
+  "structuredContent": {
+    "address": "mcp://google_drive/tools/search",
+    "server_key": "google_drive",
+    "connect_url": "https://gateway.example.com/admin/account/connections?connect=google_drive",
+    "error_code": "credential_required"
+  }
+}
+```

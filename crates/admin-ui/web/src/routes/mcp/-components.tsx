@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -40,15 +41,25 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
+import { OauthDiscoveryPanel } from './-oauth-discovery'
+import { ToolPolicyEditor } from './-tool-policy'
 import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
 
 const AUTH_MODES = [
   { value: 'none', label: 'None' },
-  { value: 'gateway_static_header', label: 'Gateway static header' },
+  { value: 'gateway_static_header', label: 'Gateway static credential' },
   { value: 'gateway_bearer_token', label: 'Gateway bearer token' },
   { value: 'user_passthrough', label: 'User passthrough' },
   { value: 'oauth_obo', label: 'OAuth on-behalf-of' },
 ] as const
+
+const AUTH_CONFIG_HINTS: Record<string, string> = {
+  gateway_static_header:
+    'Send the secret as header_name, optionally wrapped by value_template (for example "Token {{api_key}}"), or as a query_param such as "api_key". secret_ref names an env/OCEANS_MCP_DISCOVERY_* variable.',
+  gateway_bearer_token: 'secret_ref names an env/OCEANS_MCP_DISCOVERY_* variable.',
+  oauth_obo:
+    "Use provider_key for a configured provider, or discover the server's own authorization server above. scopes is optional when the provider has defaults.",
+}
 
 export function ServerOverviewPanel({
   server,
@@ -118,6 +129,7 @@ export function ServerToolsPanel({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onToolUpdated,
 }: {
   tools: McpToolView[]
   toolsPending: boolean
@@ -126,6 +138,7 @@ export function ServerToolsPanel({
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
   onAddToToolset: () => void
+  onToolUpdated: (tool: McpToolView) => void
 }) {
   const selected = new Set(selectedToolIds)
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
@@ -200,6 +213,7 @@ export function ServerToolsPanel({
               selected={selected.has(tool.id)}
               expanded={expandedToolIds.has(tool.id)}
               onToggleExpanded={() => toggleExpanded(tool.id)}
+              onToolUpdated={onToolUpdated}
               onToggleTool={() => {
                 if (tool.is_active) {
                   onToggleTool(tool.id)
@@ -219,12 +233,14 @@ function ToolDisclosureRow({
   expanded,
   onToggleExpanded,
   onToggleTool,
+  onToolUpdated,
 }: {
   tool: McpToolView
   selected: boolean
   expanded: boolean
   onToggleExpanded: () => void
   onToggleTool: () => void
+  onToolUpdated: (tool: McpToolView) => void
 }) {
   const schema = formatToolSchema(tool.input_schema)
   const description = tool.description?.trim()
@@ -252,9 +268,7 @@ function ToolDisclosureRow({
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
-          <Badge variant={tool.is_active ? 'success' : 'secondary'}>
-            {tool.is_active ? 'Active' : 'Inactive'}
-          </Badge>
+          <ToolStatusBadge tool={tool} />
           <CollapsibleTrigger asChild>
             <Button
               type="button"
@@ -289,7 +303,22 @@ function ToolDisclosureRow({
                 <dt className="text-subtle-foreground text-xs font-medium">Version</dt>
                 <dd className="mt-1">{tool.schema_version}</dd>
               </div>
+              {tool.title ? (
+                <div className="min-w-0 md:col-span-3">
+                  <dt className="text-subtle-foreground text-xs font-medium">Title</dt>
+                  <dd className="mt-1 truncate">{tool.title}</dd>
+                </div>
+              ) : null}
+              {toolAnnotationBadges(tool.annotations).length > 0 ? (
+                <div className="min-w-0 md:col-span-3">
+                  <dt className="text-subtle-foreground text-xs font-medium">Upstream hints</dt>
+                  <dd className="mt-1">
+                    <ToolAnnotationBadges tool={tool} />
+                  </dd>
+                </div>
+              ) : null}
             </dl>
+            <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} />
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (
@@ -310,10 +339,96 @@ function ToolDisclosureRow({
                 </div>
               )}
             </div>
+            <ToolOutputSchema schema={tool.output_schema} />
           </div>
         </CollapsibleContent>
       </div>
     </Collapsible>
+  )
+}
+
+const reviewBadges: Record<string, { label: string; variant: 'warning' | 'destructive' }> = {
+  pending_change: { label: 'Change pending', variant: 'warning' },
+  pending_review: { label: 'Pending review', variant: 'warning' },
+  rejected: { label: 'Rejected', variant: 'destructive' },
+}
+
+/**
+ * Active state, or the review state when a change waits or was rejected. Status badges never take
+ * the default (lilac) variant, which reads as an action (DESIGN.md's Status Rule).
+ */
+function ToolStatusBadge({ tool }: { tool: McpToolView }) {
+  const review = tool.is_active ? reviewBadges[tool.approval_status] : undefined
+  if (review) {
+    return <Badge variant={review.variant}>{review.label}</Badge>
+  }
+  return (
+    <Badge variant={tool.is_active ? 'success' : 'secondary'}>
+      {tool.is_active ? 'Active' : 'Inactive'}
+    </Badge>
+  )
+}
+
+function ToolOutputSchema({ schema }: { schema: McpToolView['output_schema'] }) {
+  const formatted = schema ? formatToolSchema(schema) : null
+  if (!formatted) {
+    return null
+  }
+  return (
+    <div className="mt-4 max-w-full min-w-0">
+      <div className="text-subtle-foreground mb-2 text-xs font-medium">Output schema</div>
+      <div className="bg-muted max-w-full min-w-0 overflow-hidden rounded-md border">
+        <pre
+          className="max-h-72 max-w-full overflow-x-auto overflow-y-auto p-3 text-xs leading-relaxed"
+          data-testid="mcp-tool-output-schema-code"
+        >
+          <code className="block min-w-max">{formatted}</code>
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+// Badges show only hints the upstream declared. A destructive hint is
+// meaningless on a read-only tool, so it is hidden there. Omitted destructive
+// and open-world hints default to true, so an explicit false gets its own badge.
+function toolAnnotationBadges(annotations: McpToolView['annotations']) {
+  const badges: { label: string; variant: 'success' | 'destructive' | 'outline' }[] = []
+  if (annotations.read_only_hint === true) {
+    badges.push({ label: 'Read-only', variant: 'success' })
+  } else if (annotations.destructive_hint === true) {
+    badges.push({ label: 'Destructive', variant: 'destructive' })
+  } else if (annotations.destructive_hint === false) {
+    badges.push({ label: 'Non-destructive', variant: 'outline' })
+  }
+  if (annotations.idempotent_hint === true) {
+    badges.push({ label: 'Idempotent', variant: 'outline' })
+  }
+  if (annotations.open_world_hint === true) {
+    badges.push({ label: 'Open world', variant: 'outline' })
+  } else if (annotations.open_world_hint === false) {
+    badges.push({ label: 'Closed world', variant: 'outline' })
+  }
+  return badges
+}
+
+function ToolAnnotationBadges({ tool }: { tool: McpToolView }) {
+  const badges = toolAnnotationBadges(tool.annotations)
+  if (badges.length === 0) {
+    return null
+  }
+  return (
+    <span
+      className="flex flex-wrap items-center gap-1"
+      data-testid="mcp-tool-annotations"
+      title="Hints declared by the upstream server"
+    >
+      {badges.map((badge) => (
+        <Badge key={badge.label} variant={badge.variant}>
+          {badge.label}
+        </Badge>
+      ))}
+    </span>
   )
 }
 
@@ -721,6 +836,18 @@ export function ServerFormFields({
           required
         />
       </Field>
+      <div className="min-w-0 md:col-span-2">
+        <OauthDiscoveryPanel
+          serverUrl={form.server_url}
+          onApply={(authConfig) =>
+            onFormChange({
+              ...form,
+              auth_mode: 'oauth_obo',
+              auth_config: JSON.stringify(authConfig, null, 2),
+            })
+          }
+        />
+      </div>
       <Field>
         <FieldLabel>Auth mode</FieldLabel>
         <Select
@@ -761,8 +888,38 @@ export function ServerFormFields({
           onChange={(event) => onFormChange({ ...form, auth_config: event.target.value })}
           rows={5}
         />
+        {AUTH_CONFIG_HINTS[form.auth_mode] ? (
+          <FieldDescription>{AUTH_CONFIG_HINTS[form.auth_mode]}</FieldDescription>
+        ) : null}
       </Field>
+      <ApproveToolChangesField
+        checked={form.approve_tool_changes}
+        onCheckedChange={(approve_tool_changes) => onFormChange({ ...form, approve_tool_changes })}
+      />
     </FieldGroup>
+  )
+}
+
+function ApproveToolChangesField({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <Field orientation="horizontal" className="md:col-span-2">
+      <Switch id="mcp-approve-tool-changes" checked={checked} onCheckedChange={onCheckedChange} />
+      <div className="flex flex-col gap-1">
+        <FieldLabel htmlFor="mcp-approve-tool-changes">
+          Require approval for tool changes
+        </FieldLabel>
+        <FieldDescription>
+          New tools and changed definitions wait in Reviews until an admin approves them. A
+          description-only change keeps the approved version served meanwhile.
+        </FieldDescription>
+      </div>
+    </Field>
   )
 }
 

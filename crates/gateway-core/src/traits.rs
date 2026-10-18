@@ -21,7 +21,7 @@ use crate::{
     },
     budgets::{
         BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind,
-        BudgetSettings, BudgetSource,
+        BudgetSettings, BudgetSource, ManualBudgetSave,
     },
     domain::{
         ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
@@ -31,22 +31,23 @@ use crate::{
         GatewayModel, GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
         HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
         McpAccessResolution, McpAggregateSessionRecord, McpCatalogAccessResolution,
-        McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolTokenEstimateRecord,
-        McpToolsetRecord, McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
-        McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
-        NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
-        ProviderUserCredentialStatusRecord, RefreshMcpOauthCredentialBindingRecord,
-        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
-        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
-        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
-        SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
+        McpGrantSubject, McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
+        ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
+        NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
+        NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, ProviderUserCredentialRecord, ProviderUserCredentialStatusRecord,
+        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
+        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
+        SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
         UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
         UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
@@ -54,7 +55,14 @@ use crate::{
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::core::{ChatRequest, DecisionsRequest, EmbeddingsRequest, ResponsesRequest},
+    protocol::{
+        core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
+        decisions::{DecisionsRequest, ProviderDecisionsResponse},
+    },
+    rate_limits::{
+        RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
+        RateLimitPolicyRecord,
+    },
 };
 
 #[async_trait]
@@ -124,12 +132,24 @@ pub trait AdminApiKeyRepository: Send + Sync {
         ))
     }
 
+    /// Replaces the key's grant mode and model grants. Returns the access it
+    /// replaced, read under the same lock, or `None` when the key already had this
+    /// access and nothing was written.
     async fn replace_api_key_model_access(
         &self,
         api_key_id: Uuid,
         model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
-    ) -> Result<(), StoreError>;
+    ) -> Result<Option<crate::domain::ApiKeyModelAccess>, StoreError>;
+
+    /// Replaces the key's scopes and MCP server list. Returns the access it
+    /// replaced, read under the same lock, or `None` when the key already had
+    /// this access and nothing was written. Revoked keys are refused.
+    async fn replace_api_key_access(
+        &self,
+        api_key_id: Uuid,
+        access: &crate::credential_scopes::ApiKeyAccess,
+    ) -> Result<Option<crate::credential_scopes::ApiKeyAccess>, StoreError>;
 
     async fn revoke_api_key(
         &self,
@@ -173,17 +193,27 @@ pub trait ReviewAgentRepository: Send + Sync {
         input: &NewReviewAgentRepositoryRecord,
     ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
 
+    /// Updates the repository. Nothing is written when its settings already match.
     async fn update_review_agent_repository(
         &self,
         input: &UpdateReviewAgentRepositoryRecord,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<ReviewAgentRepositoryRecord>, StoreError>;
 
+    /// Sets the status. Returns the repository and the status it replaced, read
+    /// under the same write lock, or `None` when the repository already had this
+    /// status and nothing was written.
     async fn set_review_agent_repository_status(
         &self,
         repository_id: Uuid,
         status: ReviewAgentRepositoryStatus,
         updated_at: OffsetDateTime,
-    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+    ) -> Result<
+        (
+            ReviewAgentRepositoryRecord,
+            Option<ReviewAgentRepositoryStatus>,
+        ),
+        StoreError,
+    >;
 
     async fn upsert_review_agent_pull_request(
         &self,
@@ -432,6 +462,15 @@ pub trait BudgetRepository: Send + Sync {
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError>;
+
+    /// Sets a manual budget for the scope. The budget it replaced is read under the
+    /// same write lock, so it is the row this save overwrote.
+    async fn set_manual_budget(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        updated_at: OffsetDateTime,
+    ) -> Result<ManualBudgetSave, StoreError>;
     async fn upsert_active_budget_with_source(
         &self,
         scope: &BudgetScope,
@@ -452,6 +491,14 @@ pub trait BudgetRepository: Send + Sync {
         scope: &BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+    /// Like [`BudgetRepository::deactivate_active_budget`], returning the budget
+    /// this call deactivated as it was just before, with its settings and source,
+    /// read under the same write lock, or `None` when none was active.
+    async fn deactivate_active_budget_returning(
+        &self,
+        scope: &BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError>;
     async fn deactivate_active_budget_by_source(
         &self,
         scope: &BudgetScope,
@@ -995,16 +1042,19 @@ pub trait McpRegistryRepository: Send + Sync {
         input: &NewExternalMcpServerRecord,
     ) -> Result<ExternalMcpServerRecord, StoreError>;
 
+    /// Updates the server's settings. Nothing is written when they already match.
     async fn update_external_mcp_server(
         &self,
         input: &UpdateExternalMcpServerRecord,
-    ) -> Result<ExternalMcpServerRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<ExternalMcpServerRecord>, StoreError>;
 
+    /// Disables the server. The flag is `false` when it was already disabled,
+    /// in which case nothing is written.
     async fn disable_external_mcp_server(
         &self,
         mcp_server_id: Uuid,
         disabled_at: OffsetDateTime,
-    ) -> Result<ExternalMcpServerRecord, StoreError>;
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
     async fn list_external_mcp_tools(
         &self,
@@ -1022,6 +1072,52 @@ pub trait McpRegistryRepository: Send + Sync {
         &self,
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError>;
+
+    /// Loads one tool, including an inactive one.
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// Loads several tools with every column, including inactive ones, in no
+    /// particular order. Unknown ids are skipped.
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's admin tags. Nothing is written when they already match.
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's annotation overrides. Nothing is written when they
+    /// already match. Overrides never change the schema hash or version.
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Versions of the tool, newest first: named ones or one page.
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &crate::mcp_tool_review::McpToolVersionQuery,
+    ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
+
+    /// Approves or rejects the tool's pending version. Fails with `Conflict`
+    /// when that version is not pending, so two reviews cannot both apply.
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: crate::mcp_tool_review::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -1031,15 +1127,22 @@ pub trait McpAccessRepository: Send + Sync {
         include_disabled: bool,
     ) -> Result<Vec<McpToolsetRecord>, StoreError>;
 
+    /// Loads one tool set, including a disabled one.
+    async fn get_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Option<McpToolsetRecord>, StoreError>;
+
     async fn create_mcp_toolset(
         &self,
         input: &NewMcpToolsetRecord,
     ) -> Result<McpToolsetRecord, StoreError>;
 
+    /// Updates the tool set's details. Nothing is written when they already match.
     async fn update_mcp_toolset(
         &self,
         input: &UpdateMcpToolsetRecord,
-    ) -> Result<McpToolsetRecord, StoreError>;
+    ) -> Result<crate::audit::Updated<McpToolsetRecord>, StoreError>;
 
     async fn disable_mcp_toolset(
         &self,
@@ -1047,23 +1150,28 @@ pub trait McpAccessRepository: Send + Sync {
         disabled_at: OffsetDateTime,
     ) -> Result<McpToolsetRecord, StoreError>;
 
+    /// Replaces the tool set's tools. Nothing is written when the set already matches.
     async fn replace_mcp_toolset_tools(
         &self,
         toolset_id: Uuid,
         tool_ids: &[Uuid],
         updated_at: OffsetDateTime,
-    ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
+    ) -> Result<crate::audit::Updated<Vec<McpToolsetToolRecord>>, StoreError>;
 
     async fn list_mcp_toolset_tools(
         &self,
         toolset_id: Uuid,
     ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
 
+    /// Grants access. The flag is `true` when this call created the active grant,
+    /// and `false` when an identical grant was already active.
     async fn upsert_mcp_tool_grant(
         &self,
         grant: &UpsertMcpToolGrantRecord,
-    ) -> Result<McpToolGrantRecord, StoreError>;
+    ) -> Result<(McpToolGrantRecord, bool), StoreError>;
 
+    /// Revokes the active grant and returns its id, or `None` when no matching
+    /// grant was active.
     async fn revoke_mcp_tool_grant(
         &self,
         subject_kind: McpToolGrantSubjectKind,
@@ -1071,7 +1179,7 @@ pub trait McpAccessRepository: Send + Sync {
         target_kind: McpToolGrantTargetKind,
         target_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<Uuid>, StoreError>;
 
     async fn list_mcp_tool_grants(
         &self,
@@ -1083,7 +1191,26 @@ pub trait McpAccessRepository: Send + Sync {
         &self,
         subjects: &[McpGrantSubject],
         mcp_server_id: Option<Uuid>,
+        projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError>;
+
+    /// The tool with this upstream name on the server, when the subjects may
+    /// call it with tag rules applied. It reads only that tool, so a
+    /// `tools/call` does not resolve the caller's whole access set.
+    async fn resolve_mcp_tool_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// Whether any subject holds an active grant on at least one active tool of
+    /// the server, directly or through an active toolset.
+    async fn has_mcp_server_grant(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+    ) -> Result<bool, StoreError>;
 
     async fn resolve_mcp_catalog_access_for_subjects(
         &self,
@@ -1096,6 +1223,46 @@ pub trait McpAccessRepository: Send + Sync {
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// One page of served tools (active, and approved or with only a text
+    /// change waiting) on active servers, on one server or every server,
+    /// ordered by server id then upstream name. `after` is the last
+    /// `(mcp_server_id, upstream_name)` of the previous page. Tag rule
+    /// previews read their candidates from it, so rows carry only the columns
+    /// tag rules read: no description, title or schemas.
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Creates the rule. The flag is `true` when this call created the active
+    /// rule, and `false` when an identical rule was already active.
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &crate::mcp_tool_policy::McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(crate::mcp_tool_policy::McpToolTagRuleRecord, bool), StoreError>;
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Revokes the active rule and returns it as it was, or `None` when no
+    /// active rule has that id.
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -1134,10 +1301,19 @@ pub trait McpAggregateSessionRepository: Send + Sync {
 
 #[async_trait]
 pub trait McpUpstreamCredentialRepository: Send + Sync {
+    /// Updates the binding when `credential_binding_id` names an existing one,
+    /// otherwise inserts it. Returns the written binding and, for an update, the
+    /// binding as it was just before, read in the same transaction.
     async fn upsert_mcp_upstream_credential_binding(
         &self,
         input: &UpsertMcpUpstreamCredentialBindingRecord,
-    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError>;
+    ) -> Result<
+        (
+            McpUpstreamCredentialBindingRecord,
+            Option<McpUpstreamCredentialBindingRecord>,
+        ),
+        StoreError,
+    >;
 
     async fn get_active_mcp_upstream_credential_binding(
         &self,
@@ -1165,11 +1341,13 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         include_revoked: bool,
     ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError>;
 
+    /// Revokes an active binding and returns it as revoked, or `None` when it was
+    /// missing or already revoked.
     async fn revoke_mcp_upstream_credential_binding(
         &self,
         credential_binding_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError>;
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
 
     async fn touch_mcp_upstream_credential_binding_last_used(
         &self,
@@ -1189,6 +1367,26 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         &self,
         credential_binding_id: Uuid,
         lease_token: Uuid,
+    ) -> Result<bool, StoreError>;
+
+    async fn get_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<McpOauthClientRecord>, StoreError>;
+
+    /// Stores a registered client unless the server already has one, and
+    /// returns the row that is stored afterwards. Concurrent registrations
+    /// therefore converge on a single client.
+    async fn insert_mcp_oauth_client_if_absent(
+        &self,
+        record: &McpOauthClientRecord,
+    ) -> Result<McpOauthClientRecord, StoreError>;
+
+    /// Deletes the registered client only when it is still `client_id`.
+    async fn delete_mcp_oauth_client(
+        &self,
+        mcp_server_id: Uuid,
+        client_id: &str,
     ) -> Result<bool, StoreError>;
 }
 
@@ -1294,6 +1492,86 @@ pub trait PricingCatalogRepository: Send + Sync {
         pricing_model_id: &str,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<ModelPricingRecord>, StoreError>;
+    /// Resolve `pricing_model_id`, or `fallback_model_id` when the exact id has no
+    /// effective row. Stores override this to answer with a single query.
+    async fn resolve_model_pricing_with_fallback_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError> {
+        if let Some(record) = self
+            .resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
+            .await?
+        {
+            return Ok(Some(record));
+        }
+        self.resolve_model_pricing_at(pricing_provider_id, fallback_model_id, occurred_at)
+            .await
+    }
+}
+
+/// Rate-limit policies and their shared counters. Counters must be correct
+/// across gateway replicas, so `consume_rate_limits` is one atomic check.
+#[async_trait]
+pub trait RateLimitRepository: Send + Sync {
+    async fn list_rate_limit_policies(&self) -> Result<Vec<RateLimitPolicyRecord>, StoreError>;
+
+    /// Enabled policies only, for the request-path cache, so paused rows
+    /// never cost a refresh anything.
+    async fn list_enabled_rate_limit_policies(
+        &self,
+    ) -> Result<Vec<RateLimitPolicyRecord>, StoreError> {
+        let mut policies = self.list_rate_limit_policies().await?;
+        policies.retain(|policy| policy.enabled);
+        Ok(policies)
+    }
+
+    async fn get_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError>;
+
+    /// Fails with `StoreError::Conflict` when the name is taken.
+    async fn insert_rate_limit_policy(
+        &self,
+        policy: &RateLimitPolicyRecord,
+    ) -> Result<(), StoreError>;
+
+    /// Saves the policy, or writes nothing when its settings already match.
+    /// Returns `None` when the policy does not exist.
+    async fn update_rate_limit_policy(
+        &self,
+        policy: &RateLimitPolicyRecord,
+    ) -> Result<Option<crate::audit::Updated<RateLimitPolicyRecord>>, StoreError>;
+
+    /// Returns `false` when the policy does not exist.
+    /// Deletes the policy and returns it as it was, or `None` when it was missing.
+    async fn delete_rate_limit_policy(
+        &self,
+        policy_id: Uuid,
+    ) -> Result<Option<RateLimitPolicyRecord>, StoreError>;
+
+    /// Charges every counter if all of them admit the request, and none of
+    /// them otherwise. Observations are returned in `charges` order.
+    async fn consume_rate_limits(
+        &self,
+        charges: &[RateLimitCounterCharge],
+    ) -> Result<RateLimitConsumeResult, StoreError>;
+
+    /// Adds usage that is only known after a request finishes.
+    async fn add_rate_limit_usage(
+        &self,
+        increments: &[RateLimitCounterIncrement],
+    ) -> Result<(), StoreError>;
+
+    /// Deletes up to `limit` counter rows that expired before `now` (unix seconds).
+    async fn purge_expired_rate_limit_counters(
+        &self,
+        now: i64,
+        limit: i64,
+    ) -> Result<u64, StoreError>;
 }
 
 #[async_trait]
@@ -1386,11 +1664,27 @@ pub trait ProviderClient: Send + Sync {
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError>;
 
+    /// Count the input tokens of a Messages-shaped request without generating output.
+    ///
+    /// Returns `{"input_tokens": N}`. Providers without an upstream token-count API
+    /// keep this default, so callers get a typed error instead of an estimate.
+    async fn count_tokens(
+        &self,
+        request: &ChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let _ = (request, context);
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support token counting",
+            self.provider_type()
+        )))
+    }
+
     async fn decisions(
         &self,
         request: &DecisionsRequest,
         context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
         let _ = (request, context);
         Err(ProviderError::NotImplemented(format!(
             "{} does not support decisions",

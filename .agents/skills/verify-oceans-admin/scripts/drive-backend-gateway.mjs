@@ -16,8 +16,8 @@ const evidenceDir = requiredEnv("OCEANS_VERIFY_EVIDENCE_DIR");
 requiredEnv("OCEANS_VERIFY_GATEWAY_VERSION"); // recorded in the proof envelope
 const email = requiredEnv("OCEANS_VERIFY_ADMIN_EMAIL");
 const password = requiredEnv("OCEANS_VERIFY_ADMIN_PASSWORD");
-const model = "deepseek-v4-flash-0731";
-const upstreamModel = "deepseek/deepseek-v4-flash-0731";
+const model = "deepseek-v4.1-flash";
+const upstreamModel = "deepseek/deepseek-v4.1-flash";
 const syntheticCommand = "rm -rf /tmp/oceans-verify";
 const gatewayRequestTimeoutMs = 30_000;
 const actions = [];
@@ -137,8 +137,9 @@ try {
         },
       ],
       tool_choice: { type: "function", function: { name: "bash" } },
-      // deepseek-v4-flash reasons before the tool call; 32 tokens truncated the arguments to {}.
-      max_tokens: 128,
+      // DeepSeek Flash reasons before the tool call; 32 tokens truncated the arguments to {}.
+      // Canaries may use up to 4096; 1024 leaves room to reason without a long answer.
+      max_tokens: 1024,
     }),
   });
   const requestId = liveResponse.headers.get("x-request-id");

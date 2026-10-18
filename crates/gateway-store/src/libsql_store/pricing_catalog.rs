@@ -202,11 +202,7 @@ impl PricingCatalogRepository for LibsqlStore {
         changes: &ModelPricingSyncChanges,
         effective_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let tx = self.begin_transaction().await?;
 
         let mut rows = tx
             .query(
@@ -348,6 +344,41 @@ impl PricingCatalogRepository for LibsqlStore {
         pricing_model_id: &str,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<ModelPricingRecord>, StoreError> {
+        self.query_model_pricing_at(
+            pricing_provider_id,
+            pricing_model_id,
+            pricing_model_id,
+            occurred_at,
+        )
+        .await
+    }
+
+    async fn resolve_model_pricing_with_fallback_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError> {
+        self.query_model_pricing_at(
+            pricing_provider_id,
+            pricing_model_id,
+            fallback_model_id,
+            occurred_at,
+        )
+        .await
+    }
+}
+
+impl LibsqlStore {
+    /// Effective pricing row for `pricing_model_id`, else `fallback_model_id`.
+    async fn query_model_pricing_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        fallback_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError> {
         let mut rows = self
             .connection
             .query(
@@ -365,15 +396,16 @@ impl PricingCatalogRepository for LibsqlStore {
                     provenance_fetched_at, created_at, updated_at
                 FROM model_pricing
                 WHERE pricing_provider_id = ?1
-                  AND pricing_model_id = ?2
-                  AND effective_start_at <= ?3
-                  AND (effective_end_at IS NULL OR effective_end_at > ?3)
-                ORDER BY effective_start_at DESC
+                  AND pricing_model_id IN (?2, ?3)
+                  AND effective_start_at <= ?4
+                  AND (effective_end_at IS NULL OR effective_end_at > ?4)
+                ORDER BY pricing_model_id = ?2 DESC, effective_start_at DESC
                 LIMIT 1
                 "#,
                 libsql::params![
                     pricing_provider_id,
                     pricing_model_id,
+                    fallback_model_id,
                     occurred_at.unix_timestamp()
                 ],
             )

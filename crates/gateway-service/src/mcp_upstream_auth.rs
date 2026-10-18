@@ -4,16 +4,124 @@ use std::{
 };
 
 use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerRecord, GatewayError};
+use gateway_mcp::McpQueryCredential;
 use serde_json::{Map, Value};
 use url::Url;
 
 const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
+/// The placeholder a static header `value_template` must contain once.
+pub const API_KEY_TEMPLATE_PLACEHOLDER: &str = "{{api_key}}";
+/// The provider key of OAuth flows whose authorization server is configured on
+/// the MCP server row instead of in `mcp.oauth.providers`.
+pub const MCP_SERVER_OAUTH_PROVIDER_KEY: &str = "mcp_server";
+
+const OAUTH_OBO_FIELDS: &[&str] = &[
+    "token_exchange",
+    "token_type",
+    "provider_key",
+    "resource",
+    "resource_indicator",
+    "scopes",
+    "discovery_auth",
+    "discovery_tool_allowlist",
+    "issuer",
+    "authorization_endpoint",
+    "token_endpoint",
+    "registration_endpoint",
+    "client_registration",
+    "client_id",
+    "client_secret_ref",
+    "token_endpoint_auth_method",
+];
+const SERVER_OAUTH_FIELDS: &[&str] = &[
+    "issuer",
+    "authorization_endpoint",
+    "token_endpoint",
+    "registration_endpoint",
+    "client_registration",
+    "client_id",
+    "client_secret_ref",
+    "token_endpoint_auth_method",
+];
+
+/// How a client authenticates to an OAuth token endpoint (RFC 7591 §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpOauthTokenEndpointAuthMethod {
+    ClientSecretBasic,
+    ClientSecretPost,
+    None,
+}
+
+impl McpOauthTokenEndpointAuthMethod {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ClientSecretBasic => "client_secret_basic",
+            Self::ClientSecretPost => "client_secret_post",
+            Self::None => "none",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "client_secret_basic" => Some(Self::ClientSecretBasic),
+            "client_secret_post" => Some(Self::ClientSecretPost),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+/// How Oceans obtains its OAuth client for a server-level authorization server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpOauthClientRegistration {
+    /// RFC 7591 dynamic client registration on first use.
+    Dynamic,
+    /// The gateway-hosted Client ID Metadata Document URL is the client ID.
+    MetadataDocument,
+    /// An admin-supplied client ID and optional secret reference.
+    Manual {
+        client_id: String,
+        client_secret_ref: Option<String>,
+    },
+}
+
+impl McpOauthClientRegistration {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dynamic => "dynamic",
+            Self::MetadataDocument => "metadata_document",
+            Self::Manual { .. } => "manual",
+        }
+    }
+}
+
+/// An authorization server configured on the MCP server row, usually filled in
+/// from OAuth metadata discovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerOauthEndpoints {
+    pub issuer: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub registration_endpoint: Option<String>,
+    pub registration: McpOauthClientRegistration,
+    pub token_endpoint_auth_method: Option<McpOauthTokenEndpointAuthMethod>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpOauthServerConfig {
+    /// A `mcp.oauth.providers` key, or [`MCP_SERVER_OAUTH_PROVIDER_KEY`] when
+    /// `server_oauth` is set.
     pub provider_key: String,
     pub resource: String,
+    /// Scopes the connection must be granted. Empty means the provider's
+    /// default scopes are requested and none are enforced.
     pub scopes: Vec<String>,
+    /// Whether authorization and token requests carry the RFC 8707 `resource`.
+    pub resource_indicator: bool,
+    pub server_oauth: Option<McpServerOauthEndpoints>,
     pub discovery_tool_allowlist: Option<BTreeSet<String>>,
 }
 
@@ -24,8 +132,11 @@ pub fn validate_mcp_auth_config(
     match auth_mode {
         ExternalMcpAuthMode::None => ensure_allowed_auth_fields(auth_config, &[]),
         ExternalMcpAuthMode::GatewayStaticHeader => {
-            ensure_allowed_auth_fields(auth_config, &["header_name", "secret_ref"])?;
-            validate_static_header_name(required_string(auth_config, "header_name")?)?;
+            ensure_allowed_auth_fields(
+                auth_config,
+                &["header_name", "value_template", "query_param", "secret_ref"],
+            )?;
+            static_credential_placement(auth_config)?;
             validate_secret_ref(required_secret_ref(auth_config)?)?;
             Ok(())
         }
@@ -38,18 +149,7 @@ pub fn validate_mcp_auth_config(
             ensure_allowed_auth_fields(auth_config, &["header", "token_type"])
         }
         ExternalMcpAuthMode::OauthObo => {
-            ensure_allowed_auth_fields(
-                auth_config,
-                &[
-                    "token_exchange",
-                    "token_type",
-                    "provider_key",
-                    "resource",
-                    "scopes",
-                    "discovery_auth",
-                    "discovery_tool_allowlist",
-                ],
-            )?;
+            ensure_allowed_auth_fields(auth_config, OAUTH_OBO_FIELDS)?;
             if let Some(discovery_auth) = auth_config.get("discovery_auth")
                 && discovery_auth.as_str() != Some("none")
             {
@@ -57,10 +157,13 @@ pub fn validate_mcp_auth_config(
                     "auth_config.discovery_auth must be `none` when set".to_string(),
                 ));
             }
-            if auth_config.contains_key("provider_key")
-                || auth_config.contains_key("resource")
-                || auth_config.contains_key("scopes")
-            {
+            // `discovery_auth` alone keeps the legacy token-label configuration valid.
+            if auth_config.keys().any(|field| {
+                !matches!(
+                    field.as_str(),
+                    "token_exchange" | "token_type" | "discovery_auth" | "discovery_tool_allowlist"
+                )
+            }) {
                 let _ = mcp_oauth_server_config(auth_config)?;
             }
             Ok(())
@@ -71,48 +174,171 @@ pub fn validate_mcp_auth_config(
 pub fn mcp_oauth_server_config(
     auth_config: &Map<String, Value>,
 ) -> Result<McpOauthServerConfig, GatewayError> {
-    let provider_key = required_string(auth_config, "provider_key")?;
     let resource = required_string(auth_config, "resource")?;
-    let parsed_resource = Url::parse(resource).map_err(|error| {
-        GatewayError::InvalidRequest(format!("auth_config.resource is invalid: {error}"))
-    })?;
-    if parsed_resource.scheme() != "https" || parsed_resource.host().is_none() {
-        return Err(GatewayError::InvalidRequest(
-            "auth_config.resource must be an https URL with a host".to_string(),
-        ));
-    }
-    let scopes = auth_config
-        .get("scopes")
-        .and_then(Value::as_array)
-        .ok_or_else(|| GatewayError::InvalidRequest("auth_config.scopes is required".to_string()))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .filter(|scope| !scope.trim().is_empty() && !scope.chars().any(char::is_whitespace))
-                .map(ToOwned::to_owned)
-                .ok_or_else(|| {
-                    GatewayError::InvalidRequest(
-                        "auth_config.scopes must contain non-empty scope strings".to_string(),
-                    )
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if scopes.is_empty() {
-        return Err(GatewayError::InvalidRequest(
-            "auth_config.scopes cannot be empty".to_string(),
-        ));
-    }
+    validate_oauth_url(resource, "resource")?;
+    let server_oauth = server_oauth_endpoints(auth_config)?;
+    let provider_key = match (auth_config.get("provider_key"), &server_oauth) {
+        (Some(_), Some(_)) => {
+            return Err(GatewayError::InvalidRequest(
+                "auth_config.provider_key cannot be combined with server OAuth endpoints"
+                    .to_string(),
+            ));
+        }
+        (Some(_), None) => {
+            let key = required_string(auth_config, "provider_key")?;
+            if key == MCP_SERVER_OAUTH_PROVIDER_KEY {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "auth_config.provider_key `{MCP_SERVER_OAUTH_PROVIDER_KEY}` is reserved"
+                )));
+            }
+            key.to_string()
+        }
+        (None, Some(_)) => MCP_SERVER_OAUTH_PROVIDER_KEY.to_string(),
+        (None, None) => {
+            return Err(GatewayError::InvalidRequest(
+                "auth_config.provider_key or auth_config.issuer is required".to_string(),
+            ));
+        }
+    };
+    let scopes = match auth_config.get("scopes") {
+        None => Vec::new(),
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest("auth_config.scopes must be an array".to_string())
+            })?
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|scope| {
+                        !scope.trim().is_empty() && !scope.chars().any(char::is_whitespace)
+                    })
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| {
+                        GatewayError::InvalidRequest(
+                            "auth_config.scopes must contain non-empty scope strings".to_string(),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    let resource_indicator = match auth_config.get("resource_indicator") {
+        None => true,
+        Some(value) => value.as_bool().ok_or_else(|| {
+            GatewayError::InvalidRequest(
+                "auth_config.resource_indicator must be a boolean".to_string(),
+            )
+        })?,
+    };
     let discovery_tool_allowlist = auth_config
         .get("discovery_tool_allowlist")
         .map(parse_discovery_tool_allowlist)
         .transpose()?;
     Ok(McpOauthServerConfig {
-        provider_key: provider_key.to_string(),
+        provider_key,
         resource: resource.to_string(),
         scopes,
+        resource_indicator,
+        server_oauth,
         discovery_tool_allowlist,
     })
+}
+
+fn server_oauth_endpoints(
+    auth_config: &Map<String, Value>,
+) -> Result<Option<McpServerOauthEndpoints>, GatewayError> {
+    if !SERVER_OAUTH_FIELDS
+        .iter()
+        .any(|field| auth_config.contains_key(*field))
+    {
+        return Ok(None);
+    }
+    let issuer = required_string(auth_config, "issuer")?;
+    let authorization_endpoint = required_string(auth_config, "authorization_endpoint")?;
+    let token_endpoint = required_string(auth_config, "token_endpoint")?;
+    validate_oauth_url(issuer, "issuer")?;
+    validate_oauth_url(authorization_endpoint, "authorization_endpoint")?;
+    validate_oauth_url(token_endpoint, "token_endpoint")?;
+    let registration_endpoint = optional_string(auth_config, "registration_endpoint")?;
+    if let Some(endpoint) = registration_endpoint {
+        validate_oauth_url(endpoint, "registration_endpoint")?;
+    }
+    let client_id = optional_string(auth_config, "client_id")?;
+    let client_secret_ref = optional_string(auth_config, "client_secret_ref")?;
+    let registration = match required_string(auth_config, "client_registration")? {
+        "dynamic" => {
+            if registration_endpoint.is_none() {
+                return Err(GatewayError::InvalidRequest(
+                    "client_registration `dynamic` requires auth_config.registration_endpoint"
+                        .to_string(),
+                ));
+            }
+            McpOauthClientRegistration::Dynamic
+        }
+        "metadata_document" => McpOauthClientRegistration::MetadataDocument,
+        "manual" => McpOauthClientRegistration::Manual {
+            client_id: client_id
+                .ok_or_else(|| {
+                    GatewayError::InvalidRequest(
+                        "client_registration `manual` requires auth_config.client_id".to_string(),
+                    )
+                })?
+                .to_string(),
+            client_secret_ref: client_secret_ref
+                .map(|secret_ref| validate_secret_ref(secret_ref).map(ToOwned::to_owned))
+                .transpose()?,
+        },
+        other => {
+            return Err(GatewayError::InvalidRequest(format!(
+                "auth_config.client_registration `{other}` must be dynamic, metadata_document, or manual"
+            )));
+        }
+    };
+    if !matches!(registration, McpOauthClientRegistration::Manual { .. })
+        && (client_id.is_some() || client_secret_ref.is_some())
+    {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.client_id and client_secret_ref require client_registration `manual`"
+                .to_string(),
+        ));
+    }
+    let token_endpoint_auth_method = optional_string(auth_config, "token_endpoint_auth_method")?
+        .map(|value| {
+            McpOauthTokenEndpointAuthMethod::parse(value).ok_or_else(|| {
+                GatewayError::InvalidRequest(format!(
+                    "auth_config.token_endpoint_auth_method `{value}` must be client_secret_basic, client_secret_post, or none"
+                ))
+            })
+        })
+        .transpose()?;
+    Ok(Some(McpServerOauthEndpoints {
+        issuer: issuer.to_string(),
+        authorization_endpoint: authorization_endpoint.to_string(),
+        token_endpoint: token_endpoint.to_string(),
+        registration_endpoint: registration_endpoint.map(ToOwned::to_owned),
+        registration,
+        token_endpoint_auth_method,
+    }))
+}
+
+/// OAuth URLs must use https. Plain http is accepted only for loopback hosts so
+/// a local authorization server can be used in development and tests.
+fn validate_oauth_url(value: &str, field: &str) -> Result<(), GatewayError> {
+    let parsed = Url::parse(value).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.{field} is invalid: {error}"))
+    })?;
+    if parsed.host().is_none() || (parsed.scheme() != "https" && !is_loopback_http_url(&parsed)) {
+        return Err(GatewayError::InvalidRequest(format!(
+            "auth_config.{field} must be an https URL with a host"
+        )));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() || parsed.fragment().is_some() {
+        return Err(GatewayError::InvalidRequest(format!(
+            "auth_config.{field} must not contain user information or a fragment"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_discovery_tool_allowlist(value: &Value) -> Result<BTreeSet<String>, GatewayError> {
@@ -182,6 +408,18 @@ pub fn validate_mcp_server_auth_destination(
     auth_config: &Map<String, Value>,
 ) -> Result<(), GatewayError> {
     validate_gateway_managed_server_url(server_url, auth_mode)?;
+    if auth_mode == ExternalMcpAuthMode::GatewayStaticHeader
+        && let StaticCredentialPlacement::Query(name) = static_credential_placement(auth_config)?
+    {
+        let server_url = Url::parse(server_url).map_err(|error| {
+            GatewayError::InvalidRequest(format!("server_url is invalid: {error}"))
+        })?;
+        if server_url.query_pairs().any(|(key, _)| key == name) {
+            return Err(GatewayError::InvalidRequest(format!(
+                "server_url must not already contain the `{name}` query parameter"
+            )));
+        }
+    }
     if auth_mode != ExternalMcpAuthMode::OauthObo || !auth_config.contains_key("resource") {
         return Ok(());
     }
@@ -200,7 +438,7 @@ pub fn validate_mcp_server_auth_destination(
     Ok(())
 }
 
-fn is_loopback_http_url(url: &Url) -> bool {
+pub(crate) fn is_loopback_http_url(url: &Url) -> bool {
     if url.scheme() != "http" {
         return false;
     }
@@ -223,9 +461,17 @@ pub fn gateway_mcp_upstream_headers(
     match server.auth_mode {
         ExternalMcpAuthMode::None => Ok(None),
         ExternalMcpAuthMode::GatewayStaticHeader => {
-            let header_name = required_string(&server.auth_config, "header_name")?;
-            let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
-            Ok(Some(BTreeMap::from([(header_name.to_string(), secret)])))
+            match static_credential_placement(&server.auth_config)? {
+                StaticCredentialPlacement::Header { name, template } => {
+                    let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
+                    let value = match template {
+                        Some(template) => template.replace(API_KEY_TEMPLATE_PLACEHOLDER, &secret),
+                        None => secret,
+                    };
+                    Ok(Some(BTreeMap::from([(name.to_string(), value)])))
+                }
+                StaticCredentialPlacement::Query(_) => Ok(None),
+            }
         }
         ExternalMcpAuthMode::GatewayBearerToken => {
             let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
@@ -236,6 +482,96 @@ pub fn gateway_mcp_upstream_headers(
         }
         ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Ok(None),
     }
+}
+
+/// The gateway-managed API key that goes in the upstream URL query, when the
+/// server's static credential uses `query_param`.
+pub fn gateway_mcp_upstream_query(
+    server: &ExternalMcpServerRecord,
+) -> Result<Option<McpQueryCredential>, GatewayError> {
+    if server.auth_mode != ExternalMcpAuthMode::GatewayStaticHeader {
+        return Ok(None);
+    }
+    validate_mcp_server_auth_destination(
+        &server.server_url,
+        server.auth_mode,
+        &server.auth_config,
+    )?;
+    match static_credential_placement(&server.auth_config)? {
+        StaticCredentialPlacement::Query(name) => {
+            let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
+            Ok(Some(McpQueryCredential::new(name, secret)))
+        }
+        StaticCredentialPlacement::Header { .. } => Ok(None),
+    }
+}
+
+enum StaticCredentialPlacement<'a> {
+    Header {
+        name: &'a str,
+        template: Option<&'a str>,
+    },
+    Query(&'a str),
+}
+
+fn static_credential_placement(
+    auth_config: &Map<String, Value>,
+) -> Result<StaticCredentialPlacement<'_>, GatewayError> {
+    let header_name = optional_string(auth_config, "header_name")?;
+    let query_param = optional_string(auth_config, "query_param")?;
+    let template = optional_string(auth_config, "value_template")?;
+    match (header_name, query_param) {
+        (Some(name), None) => {
+            validate_static_header_name(name)?;
+            if let Some(template) = template {
+                validate_value_template(template)?;
+            }
+            Ok(StaticCredentialPlacement::Header { name, template })
+        }
+        (None, Some(name)) => {
+            if template.is_some() {
+                return Err(GatewayError::InvalidRequest(
+                    "auth_config.value_template only applies to header_name".to_string(),
+                ));
+            }
+            validate_query_param_name(name)?;
+            Ok(StaticCredentialPlacement::Query(name))
+        }
+        _ => Err(GatewayError::InvalidRequest(
+            "exactly one of auth_config.header_name or auth_config.query_param is required"
+                .to_string(),
+        )),
+    }
+}
+
+fn validate_value_template(template: &str) -> Result<(), GatewayError> {
+    if template.matches(API_KEY_TEMPLATE_PLACEHOLDER).count() != 1 {
+        return Err(GatewayError::InvalidRequest(format!(
+            "auth_config.value_template must contain {API_KEY_TEMPLATE_PLACEHOLDER} exactly once"
+        )));
+    }
+    if template.chars().any(char::is_control) || template.trim() != template {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.value_template must not contain control characters or surrounding whitespace"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_query_param_name(name: &str) -> Result<(), GatewayError> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~'))
+    {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.query_param must be 1-64 letters, digits, '-', '_', '.', or '~'"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn normalize_mcp_server_key(value: &str) -> Result<String, GatewayError> {
@@ -281,6 +617,16 @@ fn required_string<'a>(
         .ok_or_else(|| GatewayError::InvalidRequest(format!("auth_config.{field} is required")))
 }
 
+fn optional_string<'a>(
+    auth_config: &'a Map<String, Value>,
+    field: &str,
+) -> Result<Option<&'a str>, GatewayError> {
+    match auth_config.get(field) {
+        None => Ok(None),
+        Some(_) => required_string(auth_config, field).map(Some),
+    }
+}
+
 fn required_secret_ref(auth_config: &Map<String, Value>) -> Result<&str, GatewayError> {
     required_string(auth_config, "secret_ref")
 }
@@ -312,7 +658,7 @@ fn validate_secret_ref(secret_ref: &str) -> Result<&str, GatewayError> {
     Ok(secret_ref)
 }
 
-fn resolve_secret_ref(secret_ref: &str) -> Result<String, GatewayError> {
+pub(crate) fn resolve_secret_ref(secret_ref: &str) -> Result<String, GatewayError> {
     validate_secret_ref(secret_ref)?;
     let env_name = secret_env_name(secret_ref)?;
     std::env::var(env_name).map_err(|_| {
@@ -501,6 +847,8 @@ mod tests {
                 provider_key: "google".to_string(),
                 resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
                 scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
+                resource_indicator: true,
+                server_oauth: None,
                 discovery_tool_allowlist: Some(BTreeSet::from([
                     "get_file_metadata".to_string(),
                     "search_files".to_string(),
@@ -542,14 +890,13 @@ mod tests {
 
     #[test]
     fn oauth_obo_rejects_incomplete_or_credentialed_discovery_config() {
-        let missing_scopes = Map::from_iter([
-            ("provider_key".to_string(), json!("google")),
-            (
-                "resource".to_string(),
-                json!("https://drivemcp.googleapis.com/mcp/v1"),
-            ),
-        ]);
-        assert!(validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &missing_scopes).is_err());
+        let missing_provider = Map::from_iter([(
+            "resource".to_string(),
+            json!("https://drivemcp.googleapis.com/mcp/v1"),
+        )]);
+        assert!(
+            validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &missing_provider).is_err()
+        );
 
         let invalid_discovery = Map::from_iter([("discovery_auth".to_string(), json!("user"))]);
         assert!(
@@ -586,6 +933,221 @@ mod tests {
         assert!(!supports_public_discovery(&server));
     }
 
+    #[test]
+    fn static_header_value_templates_wrap_the_secret() {
+        let _env_guard = EnvVarGuard::set("OCEANS_MCP_DISCOVERY_TEMPLATE_TEST_KEY", "abc123");
+        let config = Map::from_iter([
+            ("header_name".to_string(), json!("Authorization")),
+            ("value_template".to_string(), json!("Token {{api_key}}")),
+            (
+                "secret_ref".to_string(),
+                json!("env/OCEANS_MCP_DISCOVERY_TEMPLATE_TEST_KEY"),
+            ),
+        ]);
+        validate_mcp_auth_config(ExternalMcpAuthMode::GatewayStaticHeader, &config)
+            .expect("valid template");
+        let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
+        let headers = gateway_mcp_upstream_headers(&server)
+            .expect("headers")
+            .expect("some headers");
+        assert_eq!(
+            headers.get("Authorization"),
+            Some(&"Token abc123".to_string())
+        );
+        assert!(
+            gateway_mcp_upstream_query(&server)
+                .expect("query")
+                .is_none()
+        );
+
+        for template in [
+            "Token",
+            "{{api_key}} {{api_key}}",
+            "Token {{api_key}}\r\n",
+            " {{api_key}}",
+        ] {
+            let mut invalid = config.clone();
+            invalid.insert("value_template".to_string(), json!(template));
+            assert!(
+                validate_mcp_auth_config(ExternalMcpAuthMode::GatewayStaticHeader, &invalid)
+                    .is_err(),
+                "accepted template {template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn static_query_parameter_keys_stay_out_of_headers_and_debug_output() {
+        let _env_guard = EnvVarGuard::set("OCEANS_MCP_DISCOVERY_QUERY_TEST_KEY", "query-secret");
+        let config = Map::from_iter([
+            ("query_param".to_string(), json!("api_key")),
+            (
+                "secret_ref".to_string(),
+                json!("env/OCEANS_MCP_DISCOVERY_QUERY_TEST_KEY"),
+            ),
+        ]);
+        validate_mcp_auth_config(ExternalMcpAuthMode::GatewayStaticHeader, &config)
+            .expect("valid query config");
+        let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
+
+        assert!(
+            gateway_mcp_upstream_headers(&server)
+                .expect("headers")
+                .is_none()
+        );
+        let credential = gateway_mcp_upstream_query(&server)
+            .expect("query")
+            .expect("query credential");
+        assert_eq!(credential.name(), "api_key");
+        let url = credential.apply(&Url::parse(&server.server_url).expect("url"));
+        assert_eq!(
+            url.as_str(),
+            "https://example.test/mcp?api_key=query-secret"
+        );
+        assert!(!format!("{credential:?}").contains("query-secret"));
+        // The secret never lands in the stored server URL.
+        assert!(!server.server_url.contains("query-secret"));
+
+        // A server URL that already carries the parameter would send it twice.
+        assert!(
+            validate_mcp_server_auth_destination(
+                "https://example.test/mcp?api_key=inline",
+                ExternalMcpAuthMode::GatewayStaticHeader,
+                &config,
+            )
+            .is_err()
+        );
+
+        for invalid in [
+            Map::from_iter([
+                ("query_param".to_string(), json!("api key")),
+                (
+                    "secret_ref".to_string(),
+                    json!("env/OCEANS_MCP_DISCOVERY_X"),
+                ),
+            ]),
+            Map::from_iter([
+                ("query_param".to_string(), json!("api_key")),
+                ("header_name".to_string(), json!("X-Api-Key")),
+                (
+                    "secret_ref".to_string(),
+                    json!("env/OCEANS_MCP_DISCOVERY_X"),
+                ),
+            ]),
+            Map::from_iter([
+                ("query_param".to_string(), json!("api_key")),
+                ("value_template".to_string(), json!("Token {{api_key}}")),
+                (
+                    "secret_ref".to_string(),
+                    json!("env/OCEANS_MCP_DISCOVERY_X"),
+                ),
+            ]),
+        ] {
+            assert!(
+                validate_mcp_auth_config(ExternalMcpAuthMode::GatewayStaticHeader, &invalid)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn server_level_oauth_config_names_its_authorization_server() {
+        let dynamic = Map::from_iter([
+            (
+                "resource".to_string(),
+                json!("https://mcp.linear.example/mcp"),
+            ),
+            ("issuer".to_string(), json!("https://auth.linear.example")),
+            (
+                "authorization_endpoint".to_string(),
+                json!("https://auth.linear.example/authorize"),
+            ),
+            (
+                "token_endpoint".to_string(),
+                json!("https://auth.linear.example/token"),
+            ),
+            (
+                "registration_endpoint".to_string(),
+                json!("https://auth.linear.example/register"),
+            ),
+            ("client_registration".to_string(), json!("dynamic")),
+        ]);
+        let config = mcp_oauth_server_config(&dynamic).expect("dynamic config");
+        assert_eq!(config.provider_key, MCP_SERVER_OAUTH_PROVIDER_KEY);
+        assert!(config.scopes.is_empty());
+        assert!(config.resource_indicator);
+        let endpoints = config.server_oauth.expect("server OAuth");
+        assert_eq!(endpoints.registration, McpOauthClientRegistration::Dynamic);
+        assert_eq!(endpoints.token_endpoint_auth_method, None);
+
+        let mut manual = dynamic.clone();
+        manual.insert("client_registration".to_string(), json!("manual"));
+        manual.insert("client_id".to_string(), json!("admin-client"));
+        manual.insert(
+            "client_secret_ref".to_string(),
+            json!("env/OCEANS_MCP_DISCOVERY_LINEAR_SECRET"),
+        );
+        manual.insert("resource_indicator".to_string(), json!(false));
+        let config = mcp_oauth_server_config(&manual).expect("manual config");
+        assert!(!config.resource_indicator);
+        assert_eq!(
+            config.server_oauth.expect("server OAuth").registration,
+            McpOauthClientRegistration::Manual {
+                client_id: "admin-client".to_string(),
+                client_secret_ref: Some("env/OCEANS_MCP_DISCOVERY_LINEAR_SECRET".to_string()),
+            }
+        );
+
+        let invalid = [
+            // Dynamic registration needs somewhere to register.
+            (
+                "registration_endpoint",
+                None,
+                Some(("client_registration", json!("dynamic"))),
+            ),
+            // Manual registration needs a client ID.
+            (
+                "client_id",
+                None,
+                Some(("client_registration", json!("manual"))),
+            ),
+            // A client ID only makes sense for manual registration.
+            (
+                "client_id",
+                Some(json!("x")),
+                Some(("client_registration", json!("dynamic"))),
+            ),
+            // A configured provider and a server-level server cannot both apply.
+            ("provider_key", Some(json!("google")), None),
+            (
+                "token_endpoint",
+                Some(json!("http://auth.linear.example/token")),
+                None,
+            ),
+            ("client_registration", Some(json!("implicit")), None),
+            (
+                "token_endpoint_auth_method",
+                Some(json!("private_key_jwt")),
+                None,
+            ),
+        ];
+        for (field, value, extra) in invalid {
+            let mut config = dynamic.clone();
+            match value {
+                Some(value) => config.insert(field.to_string(), value),
+                None => config.remove(field),
+            };
+            if let Some((key, value)) = extra {
+                config.insert(key.to_string(), value);
+            }
+            assert!(
+                validate_mcp_auth_config(ExternalMcpAuthMode::OauthObo, &config).is_err(),
+                "accepted {field}={:?}",
+                config.get(field)
+            );
+        }
+    }
+
     fn server_record(
         auth_mode: ExternalMcpAuthMode,
         auth_config: Map<String, Value>,
@@ -610,6 +1172,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

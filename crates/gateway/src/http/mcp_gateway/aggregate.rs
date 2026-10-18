@@ -11,7 +11,7 @@ use axum::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpAggregateSessionRepository,
-    NewMcpAggregateSessionRecord,
+    McpOauthResource, NewMcpAggregateSessionRecord, SCOPE_MCP_AGGREGATE,
 };
 use gateway_mcp::{
     DEFAULT_PROTOCOL_VERSION, JsonRpcId, MCP_PROTOCOL_VERSION_HEADER, MCP_SESSION_ID_HEADER,
@@ -30,11 +30,12 @@ use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 use super::{
-    MAX_MCP_REQUEST_BODY_BYTES, body_read_exceeded_limit, evaluate_mcp_call, evaluate_mcp_result,
-    extract_mcp_gateway_api_key, guardrail_decision_metadata, mcp_error_response,
+    MAX_MCP_REQUEST_BODY_BYTES, authenticate_mcp_request, body_read_exceeded_limit,
+    evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, mcp_auth_error_response,
+    mcp_error_response,
 };
 
 const AGGREGATE_SERVER_NAME: &str = "oceans-mcp-gateway";
@@ -58,13 +59,11 @@ pub async fn mcp_aggregate_streamable_http(
     if method != axum::http::Method::POST && method != axum::http::Method::DELETE {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
-    let bearer_token = match extract_mcp_gateway_api_key(&headers) {
-        Ok(token) => token,
-        Err(error) => return mcp_error_response(error.into()),
-    };
-    let auth = match state.service.authenticate_bearer_token(&bearer_token).await {
+    let resource = Some(&McpOauthResource::Aggregate);
+    let auth = match authenticate_mcp_request(&state, &headers, resource, SCOPE_MCP_AGGREGATE).await
+    {
         Ok(auth) => auth,
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return mcp_auth_error_response(&state, resource, error),
     };
     if !matches!(
         auth.owner_kind,
@@ -86,6 +85,11 @@ async fn handle_post(
     headers: HeaderMap,
     request: Request<Body>,
 ) -> Response<Body> {
+    let policy = request
+        .extensions()
+        .get::<RequestPolicyContext>()
+        .cloned()
+        .unwrap_or_default();
     let body = match to_bytes(request.into_body(), MAX_MCP_REQUEST_BODY_BYTES).await {
         Ok(body) => body,
         Err(error) if body_read_exceeded_limit(&error) => {
@@ -161,7 +165,7 @@ async fn handle_post(
             name,
             arguments,
         } => match validate_request_session(&state, &auth, &headers, &id).await {
-            Ok(_) => call_builtin_tool(&state, &auth, id, name, arguments).await,
+            Ok(_) => call_builtin_tool(&state, &policy, &auth, id, name, arguments).await,
             Err(response) => *response,
         },
         McpServerMessage::OtherRequest { id, method } => json_rpc_response(
@@ -191,7 +195,8 @@ async fn initialize_session(
     let session = NewMcpAggregateSessionRecord {
         session_id,
         token_hash,
-        api_key_id: auth.id,
+        api_key_id: auth.api_key_id(),
+        gateway_oauth_grant_id: auth.oauth_grant_id(),
         owner_kind: auth.owner_kind,
         owner_user_id: auth.owner_user_id,
         owner_team_id: auth.owner_team_id,
@@ -299,7 +304,8 @@ async fn validate_session(
         }
         Err(error) => return Err(Box::new(mcp_error_response(error.into()))),
     };
-    if session.api_key_id != auth.id
+    if session.api_key_id != auth.api_key_id()
+        || session.gateway_oauth_grant_id != auth.oauth_grant_id()
         || session.owner_kind != auth.owner_kind
         || session.owner_user_id != auth.owner_user_id
         || session.owner_team_id != auth.owner_team_id
@@ -344,6 +350,7 @@ fn list_builtin_tools(id: JsonRpcId) -> Response<Body> {
 
 async fn call_builtin_tool(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     id: JsonRpcId,
     name: String,
@@ -399,7 +406,7 @@ async fn call_builtin_tool(
                     );
                 }
             };
-            return call_catalog_tool(state, auth, id, input).await;
+            return call_catalog_tool(state, policy, auth, id, input).await;
         }
         _ => {
             return json_rpc_response(
@@ -454,6 +461,8 @@ fn search_tools_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        annotations: Some(catalog_read_annotations()),
+        ..McpTool::default()
     }
 }
 
@@ -472,6 +481,8 @@ fn describe_tool_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        annotations: Some(catalog_read_annotations()),
+        ..McpTool::default()
     }
 }
 
@@ -489,7 +500,14 @@ fn call_tool_definition() -> McpTool {
             },
             "additionalProperties": false
         }),
+        ..McpTool::default()
     }
+}
+
+/// `search_tools` and `describe_tool` only read the gateway catalog.
+/// `call_tool` declares no hints because its behaviour depends on the target.
+fn catalog_read_annotations() -> Value {
+    json!({"readOnlyHint": true, "idempotentHint": true, "openWorldHint": false})
 }
 
 fn session_identity(headers: &HeaderMap) -> Option<(Uuid, String)> {

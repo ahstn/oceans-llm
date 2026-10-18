@@ -34,10 +34,10 @@ store = "crates/gateway-store"
 ui = "crates/admin-ui/web"
 
 [tools]
-rust = { version = "1.98.1", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
-"aqua:taiki-e/cargo-llvm-cov" = "0.8.7"
+rust = { version = "1.99.0", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
+"aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
 node = "lts"
-bun = "1.4.2"
+bun = "1.4.3"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
@@ -66,6 +66,8 @@ options.database = "oceans_llm"
 # Local development defaults. Never extend this from a task that can reach real data.
 [task_templates.gateway-local.env]
 OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+# Issuer for MCP client OAuth in gateway.yaml; follows the local gateway port.
+OCEANS_LOCAL_PUBLIC_BASE_URL = "${OCEANS_LOCAL_PUBLIC_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT:-8080}}"
 
 [task_templates.gateway-prod.env]
 GATEWAY_CONFIG = "gateway.prod.yaml"

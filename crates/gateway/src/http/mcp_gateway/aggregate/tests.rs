@@ -62,6 +62,238 @@ async fn aggregate_tools_list_serializes_only_discovery_tools() {
     assert_eq!(tools[2]["inputSchema"]["required"], json!(["address"]));
 }
 
+fn search_tool_metadata() -> gateway_core::McpToolMetadata {
+    gateway_core::McpToolMetadata {
+        title: Some("Search repository".to_string()),
+        annotations: Some(Map::from_iter([
+            ("readOnlyHint".to_string(), json!(true)),
+            ("openWorldHint".to_string(), json!(false)),
+        ])),
+        output_schema: Some(json!({"type": "object", "properties": {"hits": {"type": "array"}}})),
+    }
+}
+
+async fn builtin_tool_result(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    let response = call_builtin_tool(
+        state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        auth,
+        JsonRpcId::Number(5),
+        name.to_string(),
+        arguments,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    body["result"]["structuredContent"].clone()
+}
+
+#[tokio::test]
+async fn describe_and_search_return_declared_tool_metadata() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let auth =
+        seed_authorized_tool(&state, "http://127.0.0.1:9/mcp", ExternalMcpAuthMode::None).await;
+    let expected = search_tool_metadata();
+
+    let described = builtin_tool_result(
+        &state,
+        &auth,
+        "describe_tool",
+        json!({"address": "mcp://repository/tools/search"}),
+    )
+    .await;
+    let tool = &described["tool"];
+    assert_eq!(tool["title"], "Search repository");
+    assert_eq!(tool["annotations"], json!(expected.annotations));
+    assert_eq!(tool["output_schema"], expected.output_schema.unwrap());
+
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    let summary = &searched["items"][0]["tool"];
+    assert_eq!(summary["title"], "Search repository");
+    assert_eq!(summary["annotations"]["readOnlyHint"], true);
+    assert!(summary.get("output_schema").is_none());
+}
+
+#[tokio::test]
+async fn tag_rules_govern_aggregate_search_describe_and_call() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let auth =
+        seed_authorized_tool(&state, "http://127.0.0.1:9/mcp", ExternalMcpAuthMode::None).await;
+    let server = state
+        .store
+        .get_external_mcp_server_by_key("repository")
+        .await
+        .expect("server lookup")
+        .expect("server");
+    let search = state
+        .store
+        .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+        .await
+        .expect("tool lookup")
+        .expect("search tool");
+    // Swap the explicit grant for an include rule on the user.
+    state
+        .store
+        .revoke_mcp_tool_grant(
+            McpToolGrantSubjectKind::ApiKey,
+            auth.id,
+            McpToolGrantTargetKind::Tool,
+            search.mcp_tool_id,
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("revoke grant");
+    let rule = |mcp_server_id, tag: &str, effect| gateway_core::McpToolTagRuleKey {
+        subject_kind: McpToolGrantSubjectKind::User,
+        subject_id: auth.owner_user_id.expect("owner user"),
+        mcp_server_id,
+        tag: tag.to_string(),
+        effect,
+    };
+    state
+        .store
+        .upsert_mcp_tool_tag_rule(
+            &rule(
+                Some(server.mcp_server_id),
+                "read_only",
+                gateway_core::McpTagRuleEffect::Include,
+            ),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("include rule");
+    state
+        .store
+        .set_mcp_tool_annotation_overrides(
+            search.mcp_tool_id,
+            &gateway_core::McpAnnotationOverrides {
+                open_world: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("override");
+
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    assert_eq!(searched["total"], 1);
+    // Clients see the admin's value, not the upstream's `openWorldHint: false`.
+    assert_eq!(
+        searched["items"][0]["tool"]["annotations"]["openWorldHint"],
+        true
+    );
+    let described = builtin_tool_result(
+        &state,
+        &auth,
+        "describe_tool",
+        json!({"address": "mcp://repository/tools/search"}),
+    )
+    .await;
+    assert_eq!(described["tool"]["annotations"]["openWorldHint"], true);
+    assert_eq!(described["tool"]["schema_hash"], "search-v1");
+
+    state
+        .store
+        .upsert_mcp_tool_tag_rule(
+            &rule(None, "open_world", gateway_core::McpTagRuleEffect::Exclude),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .expect("exclude rule");
+    let searched =
+        builtin_tool_result(&state, &auth, "search_tools", json!({"query": "search"})).await;
+    assert_eq!(searched["total"], 0);
+    let response = call_builtin_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(6),
+        "call_tool".to_string(),
+        json!({"address": "mcp://repository/tools/search", "arguments": {}}),
+    )
+    .await;
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body = String::from_utf8_lossy(&bytes);
+    assert!(body.contains("not granted"), "{body}");
+}
+
+#[tokio::test]
+async fn missing_oauth_credential_returns_the_connect_url() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    state.mcp_oauth_runtime = Arc::new(gateway_service::McpOauthRuntime::new(
+        Some("https://gateway.example".to_string()),
+        vec![gateway_service::McpOauthProvider {
+            key: "google".to_string(),
+            provider_type: gateway_service::McpOauthProviderType::Google,
+            client_id: "provider-client".to_string(),
+            client_secret: Some("provider-client-secret".to_string()),
+            authorization_url: "https://accounts.example/authorize".to_string(),
+            token_url: "https://accounts.example/token".to_string(),
+            token_endpoint_auth_method:
+                gateway_service::McpOauthTokenEndpointAuthMethod::ClientSecretPost,
+            scopes: Vec::new(),
+        }],
+    ));
+    let auth_config = serde_json::from_value(json!({
+        "provider_key": "google",
+        "resource": "https://drive.example/mcp",
+        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+    }))
+    .expect("auth config");
+    let auth = seed_authorized_tool_with_config(
+        &state,
+        "https://drive.example/mcp",
+        ExternalMcpAuthMode::OauthObo,
+        auth_config,
+    )
+    .await;
+    let connect_url = "https://gateway.example/admin/account/connections?connect=repository";
+
+    let response = call_catalog_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(9),
+        CallMcpToolInput {
+            address: "mcp://repository/tools/search".to_string(),
+            arguments: json!({}),
+            schema_hash: None,
+        },
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(!text.contains("provider-client-secret"));
+    assert!(!text.contains(&auth.public_id));
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    let result = &body["result"];
+    assert_eq!(result["isError"], true);
+    assert_eq!(
+        result["content"][0]["text"],
+        format!(
+            "MCP credential is required for server `repository`. Connect your account at {connect_url}, then retry the call."
+        )
+    );
+    assert_eq!(
+        result["structuredContent"],
+        json!({
+            "address": "mcp://repository/tools/search",
+            "server_key": "repository",
+            "connect_url": connect_url,
+            "error_code": "credential_required",
+        })
+    );
+}
+
 #[tokio::test]
 async fn preparation_failure_records_authorized_invocation() {
     // This persisted gateway-auth server has no secret reference. Authorization succeeds,
@@ -100,6 +332,7 @@ async fn upstream_success_preserves_result_and_records_one_invocation() {
     let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
     let response = call_catalog_tool(
         &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::Number(23),
         CallMcpToolInput {
@@ -367,6 +600,7 @@ async fn call_with_upstream_reply(
     let auth = seed_authorized_tool(state, &url, ExternalMcpAuthMode::None).await;
     let response = call_catalog_tool(
         state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::Number(23),
         CallMcpToolInput {
@@ -448,6 +682,7 @@ async fn assert_failed_invocation(
     let auth = seed_authorized_tool(&state, server_url, auth_mode).await;
     let response = call_catalog_tool(
         &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
         &auth,
         JsonRpcId::String("failed-call".to_string()),
         CallMcpToolInput {
@@ -490,6 +725,7 @@ async fn assert_failed_invocation(
     assert_eq!(invocation.server_display_key, "repository");
     assert_eq!(invocation.tool_display_key, "search");
     assert_eq!(invocation.metadata["mcp_route"], "aggregate");
+    assert_eq!(invocation.tool_schema_version, Some(1));
     assert!(invocation.metadata.contains_key("guardrail_call"));
 }
 
@@ -497,6 +733,15 @@ async fn seed_authorized_tool(
     state: &AppState,
     server_url: &str,
     auth_mode: ExternalMcpAuthMode,
+) -> AuthenticatedApiKey {
+    seed_authorized_tool_with_config(state, server_url, auth_mode, Map::new()).await
+}
+
+async fn seed_authorized_tool_with_config(
+    state: &AppState,
+    server_url: &str,
+    auth_mode: ExternalMcpAuthMode,
+    auth_config: Map<String, Value>,
 ) -> AuthenticatedApiKey {
     let store = &state.store;
     let now = OffsetDateTime::now_utc();
@@ -521,6 +766,7 @@ async fn seed_authorized_tool(
             owner_user_id: Some(user.user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             created_at: now,
         })
         .await
@@ -533,9 +779,10 @@ async fn seed_authorized_tool(
             transport: ExternalMcpTransport::StreamableHttp,
             server_url: server_url.to_string(),
             auth_mode,
-            auth_config: Map::new(),
+            auth_config,
             timeout_ms: 2_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");
@@ -559,6 +806,7 @@ async fn seed_authorized_tool(
                 display_name: "Search".to_string(),
                 description: None,
                 input_schema: json!({"type": "object"}),
+                metadata: search_tool_metadata(),
                 schema_hash: "search-v1".to_string(),
             }],
         )
@@ -583,5 +831,125 @@ async fn seed_authorized_tool(
         owner_user_id: key.owner_user_id,
         owner_team_id: key.owner_team_id,
         owner_service_account_id: key.owner_service_account_id,
+        access: Default::default(),
+        oauth: None,
     }
+}
+
+#[tokio::test]
+async fn rate_limited_call_tool_returns_a_json_rpc_429_and_is_logged() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    crate::http::test_support::install_rate_limits(
+        &mut state,
+        vec![gateway_service::ConfiguredRateLimitPolicy {
+            name: "user tool calls".to_string(),
+            operation: gateway_core::RateLimitOperation::McpToolCall,
+            scope_kind: gateway_core::RateLimitScopeKind::User,
+            model_key: None,
+            mcp_server_key: None,
+            metric: gateway_core::RateLimitMetric::Requests,
+            period: gateway_core::RateLimitPeriod::Day,
+            limit: 1,
+        }],
+    );
+    let (url, requests, server) = spawn_tools_call_upstream(
+        "result",
+        json!({"content": [{"type": "text", "text": "ok"}]}),
+    )
+    .await;
+    let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
+    let policy = crate::http::request_policy::RequestPolicyContext::default();
+    let call = |id| {
+        call_catalog_tool(
+            &state,
+            &policy,
+            &auth,
+            JsonRpcId::Number(id),
+            CallMcpToolInput {
+                address: "mcp://repository/tools/search".to_string(),
+                arguments: json!({"query": "oceans"}),
+                schema_hash: Some("search-v1".to_string()),
+            },
+        )
+    };
+
+    assert_eq!(call(1).await.status(), StatusCode::OK);
+    let upstream_calls = requests.load(Ordering::SeqCst);
+
+    let response = call(2).await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 16_384).await.expect("body"))
+            .expect("JSON-RPC error");
+    assert_eq!(body["id"], 2);
+    assert_eq!(body["error"]["code"], -32029);
+    assert_eq!(body["error"]["data"]["error_code"], "rate_limited");
+    assert!(
+        body["error"]["data"]["retry_after_seconds"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("User rate limit exceeded: 1 MCP tool calls per calendar day (UTC)")
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), upstream_calls);
+
+    let page = state
+        .store
+        .list_mcp_tool_invocations(&McpToolInvocationQuery {
+            page: 1,
+            page_size: 10,
+            ..Default::default()
+        })
+        .await
+        .expect("invocation log");
+    let denied = page
+        .items
+        .iter()
+        .find(|invocation| invocation.error_code.as_deref() == Some("rate_limited"))
+        .expect("rate-limited invocation");
+    assert_eq!(denied.status, McpToolInvocationStatus::PolicyDenied);
+    assert_eq!(denied.policy_result, McpToolPolicyResult::Denied);
+    assert_eq!(denied.metadata["mcp_route"], "aggregate");
+    assert_eq!(denied.metadata["rate_limit"]["scope_kind"], "user");
+    assert_eq!(denied.metadata["rate_limit"]["policy"], "user tool calls");
+    server.abort();
+}
+
+#[tokio::test]
+async fn closed_rate_limit_failures_return_http_503_on_call_tool() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    crate::http::test_support::install_down_rate_limiter(&mut state);
+    let (url, requests, server) = spawn_tools_call_upstream(
+        "result",
+        json!({"content": [{"type": "text", "text": "ok"}]}),
+    )
+    .await;
+    let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
+    let response = call_catalog_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(7),
+        CallMcpToolInput {
+            address: "mcp://repository/tools/search".to_string(),
+            arguments: json!({"query": "oceans"}),
+            schema_hash: Some("search-v1".to_string()),
+        },
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 16_384).await.expect("body"))
+            .expect("JSON-RPC error");
+    assert_eq!(body["id"], 7);
+    assert_eq!(body["error"]["code"], -32603);
+    assert!(body.get("result").is_none());
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    server.abort();
 }

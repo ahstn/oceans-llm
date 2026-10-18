@@ -3,6 +3,7 @@ members = [
   "crates/agent-session-analysis",
   "crates/admin-ui",
   "crates/gateway-client-config",
+  "crates/gateway-client-ip",
   "crates/gateway-guardrails",
   "crates/gateway",
   "crates/gateway-core",
@@ -21,6 +22,7 @@ admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
 gateway-guardrails = { path = "crates/gateway-guardrails" }
 gateway-client-config = { path = "crates/gateway-client-config" }
+gateway-client-ip = { path = "crates/gateway-client-ip" }
 gateway-mcp = { path = "crates/gateway-mcp" }
 gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }
@@ -48,6 +50,7 @@ futures-util = "0.3"
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
+ipnet = "2.12"
 itertools = "0.14"
 lettre = { version = "0.11", default-features = false, features = [
   "builder",
@@ -71,6 +74,7 @@ opentelemetry_sdk = { version = "0.32", features = [
   "rt-tokio",
   "trace",
 ] }
+httpdate = "1"
 percent-encoding = "2"
 rand = "0.10"
 regex = "1"
@@ -102,7 +106,7 @@ tokio = { version = "1", features = [
 ] }
 toml = "0.8"
 tower = "0.5"
-tower-http = { version = "0.7", features = ["request-id", "trace", "util"] }
+tower-http = { version = "0.7", features = ["cors", "request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = [

@@ -178,10 +178,18 @@ where
         })
     }
 
+    /// Creates or replaces a binding. Returns the written binding and, when an
+    /// existing one was replaced, that binding as it was, both without secrets.
     pub async fn upsert_binding(
         &self,
         input: UpsertMcpCredentialBindingInput,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         validate_credential_input(&input)?;
         let now = OffsetDateTime::now_utc();
         let owner_scope_key = credential_owner_scope_key(
@@ -237,11 +245,11 @@ where
             metadata: input.metadata,
             updated_at: now,
         };
-        Ok(redact_binding(
-            self.repo
-                .upsert_mcp_upstream_credential_binding(&record)
-                .await?,
-        ))
+        let (binding, replaced) = self
+            .repo
+            .upsert_mcp_upstream_credential_binding(&record)
+            .await?;
+        Ok((redact_binding(binding), replaced.map(redact_binding)))
     }
 
     pub async fn upsert_oauth_user_binding(
@@ -249,7 +257,13 @@ where
         mcp_server_id: Uuid,
         user_id: Uuid,
         grant: McpOauthTokenGrant,
-    ) -> Result<RedactedMcpCredentialBinding, GatewayError> {
+    ) -> Result<
+        (
+            RedactedMcpCredentialBinding,
+            Option<RedactedMcpCredentialBinding>,
+        ),
+        GatewayError,
+    > {
         let owner_scope_key = credential_owner_scope_key(
             McpUpstreamCredentialOwnerScopeKind::User,
             Some(user_id),
@@ -274,7 +288,7 @@ where
             header_name: None,
             secret: Some(secret),
             secret_ref: None,
-            expires_at: Some(grant.expires_at),
+            expires_at: grant.expires_at,
             metadata,
         })
         .await
@@ -301,14 +315,20 @@ where
             .collect())
     }
 
-    pub async fn revoke_binding(&self, credential_binding_id: Uuid) -> Result<bool, GatewayError> {
+    /// Revokes the binding and returns it, without secret material, or `None` when
+    /// it was missing or already revoked.
+    pub async fn revoke_binding(
+        &self,
+        credential_binding_id: Uuid,
+    ) -> Result<Option<RedactedMcpCredentialBinding>, GatewayError> {
         Ok(self
             .repo
             .revoke_mcp_upstream_credential_binding(
                 credential_binding_id,
                 OffsetDateTime::now_utc(),
             )
-            .await?)
+            .await?
+            .map(redact_binding))
     }
 }
 
@@ -551,10 +571,22 @@ pub(crate) fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayErr
 pub(crate) fn decrypt_binding_secret(
     binding: &McpUpstreamCredentialBindingRecord,
 ) -> Result<String, GatewayError> {
-    decrypt_secret_with_key(
+    decrypt_credential_secret(
         binding.secret_ciphertext.as_deref().unwrap_or_default(),
         binding.secret_nonce.as_deref().unwrap_or_default(),
         binding.secret_key_id.as_deref().unwrap_or_default(),
+    )
+}
+
+pub(crate) fn decrypt_credential_secret(
+    ciphertext: &str,
+    nonce: &str,
+    key_id: &str,
+) -> Result<String, GatewayError> {
+    decrypt_secret_with_key(
+        ciphertext,
+        nonce,
+        key_id,
         CREDENTIAL_KEY_ENV,
         CREDENTIAL_KEY_ID,
         "MCP credential",
@@ -736,6 +768,8 @@ mod tests {
             owner_user_id: None,
             owner_team_id: Some(team_id),
             owner_service_account_id: Some(service_account_id),
+            access: Default::default(),
+            oauth: None,
         };
 
         let resolved = service
@@ -798,6 +832,8 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         };
 
         let resolved = service
@@ -843,6 +879,8 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         };
 
         let error = service
@@ -877,6 +915,8 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         };
 
         let error = service
@@ -917,6 +957,8 @@ mod tests {
             owner_user_id: Some(user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
+            oauth: None,
         };
 
         let error = service
@@ -1005,7 +1047,13 @@ mod tests {
         async fn upsert_mcp_upstream_credential_binding(
             &self,
             _input: &UpsertMcpUpstreamCredentialBindingRecord,
-        ) -> Result<McpUpstreamCredentialBindingRecord, StoreError> {
+        ) -> Result<
+            (
+                McpUpstreamCredentialBindingRecord,
+                Option<McpUpstreamCredentialBindingRecord>,
+            ),
+            StoreError,
+        > {
             unimplemented!()
         }
 
@@ -1052,7 +1100,7 @@ mod tests {
             &self,
             _credential_binding_id: Uuid,
             _revoked_at: OffsetDateTime,
-        ) -> Result<bool, StoreError> {
+        ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
             unimplemented!()
         }
 
@@ -1080,6 +1128,28 @@ mod tests {
             _lease_token: Uuid,
         ) -> Result<bool, StoreError> {
             Ok(true)
+        }
+
+        async fn get_mcp_oauth_client(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<Option<gateway_core::McpOauthClientRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn insert_mcp_oauth_client_if_absent(
+            &self,
+            record: &gateway_core::McpOauthClientRecord,
+        ) -> Result<gateway_core::McpOauthClientRecord, StoreError> {
+            Ok(record.clone())
+        }
+
+        async fn delete_mcp_oauth_client(
+            &self,
+            _mcp_server_id: Uuid,
+            _client_id: &str,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
         }
     }
 
@@ -1180,6 +1250,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

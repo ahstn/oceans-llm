@@ -474,6 +474,11 @@ function RequestLogDetailBody({ detail }: { detail: RequestLogDetailView }) {
           label="Status"
           value={log.status_code !== null ? String(log.status_code) : EMPTY_VALUE}
         />
+        <DetailRow
+          label="Error Code"
+          value={log.error_code ?? 'none'}
+          mono={Boolean(log.error_code)}
+        />
         <DetailRow label="Latency" value={formatDuration(log.latency_ms)} />
         <DetailRow label="Tokens" value={formatCount(log.total_tokens)} />
         <DetailRow

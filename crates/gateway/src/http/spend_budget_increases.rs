@@ -9,7 +9,7 @@ use gateway_core::{
     AuthError, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetRepository,
     BudgetScope, GatewayError, IdentityRepository, Money4,
 };
-use gateway_service::budget_scopes::limit_with_increase;
+use gateway_service::{AuditEvent, admin_audit::actions, budget_scopes::limit_with_increase};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ use super::{
         BudgetIncreasePeriod, BudgetIncreaseView, CreateBudgetIncreaseRequest,
         CreateBudgetIncreaseResultView, Envelope, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     spend::{budget_to_settings_view, current_window_spend, parse_budget_amount, parse_uuid},
     state::AppState,
@@ -39,6 +40,7 @@ pub(super) const MAX_INCREASE_MULTIPLIER: i64 = 3;
 pub async fn create_budget_increase(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateBudgetIncreaseRequest>,
 ) -> Result<Json<Envelope<CreateBudgetIncreaseResultView>>, AppError> {
     let (actor, scope) = require_spend_controls_scope(&state, &headers).await?;
@@ -89,8 +91,18 @@ pub async fn create_budget_increase(
         active_increase_id: active.map(|active| active.budget_increase_id),
     };
     state
-        .store
-        .create_budget_increase(&increase, &basis)
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            state.store.create_budget_increase(&increase, &basis),
+            |_| {
+                AuditEvent::new(actions::BUDGET_INCREASE_CREATED)
+                    .target(&budget.scope_key)
+                    .meta("budget_id", budget.budget_id)
+                    .meta("user_id", user_id)
+                    .after(budget_increase_to_view(&increase))
+            },
+        )
         .await?;
 
     Ok(Json(envelope(CreateBudgetIncreaseResultView {

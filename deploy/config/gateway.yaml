@@ -78,6 +78,7 @@ permissions:
       - mcp
       - review_agent
       - spend_controls
+      - rate_limits
     default_page: api_keys
 
 guardrails:

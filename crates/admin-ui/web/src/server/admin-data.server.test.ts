@@ -26,6 +26,7 @@ import {
   transferTeamMember,
   updateApiKey,
   updateUser,
+  revokeAuthorizedMcpClient,
 } from '@/server/admin-data.server'
 
 const GET = vi.fn()
@@ -625,6 +626,7 @@ describe('server-side admin data wrappers', () => {
                   tool_id: 'tool_1',
                   tool_display_key: 'create_issue',
                   tool_display_name: 'Create issue',
+                  mcp_method: 'tools/call',
                   status: 'success',
                   policy_result: 'allowed',
                   latency_ms: 120,
@@ -665,6 +667,7 @@ describe('server-side admin data wrappers', () => {
                 tool_id: 'tool_1',
                 tool_display_key: 'create_issue',
                 tool_display_name: 'Create issue',
+                mcp_method: 'tools/call',
                 status: 'success',
                 policy_result: 'allowed',
                 latency_ms: 120,
@@ -772,6 +775,22 @@ describe('server-side admin data wrappers', () => {
       data: { data: { status: 'ok' }, meta: { generated_at: '2026-03-10T11:32:00Z' } },
       response: { status: 200 },
     })
+  })
+
+  it('settles an MCP client disconnect only after the gateway answers', async () => {
+    DELETE.mockResolvedValueOnce({ data: { revoked_count: 1 }, response: { status: 200 } })
+    await expect(revokeAuthorizedMcpClient('grant-1')).resolves.toEqual({ revoked_count: 1 })
+    expect(DELETE).toHaveBeenCalledExactlyOnceWith('/api/v1/me/authorized-mcp-clients/{grant_id}', {
+      params: { path: { grant_id: 'grant-1' } },
+    })
+
+    DELETE.mockResolvedValueOnce({
+      error: { error: { message: 'authorized MCP client was not found' } },
+      response: { status: 404 },
+    })
+    await expect(revokeAuthorizedMcpClient('grant-2')).rejects.toThrow(
+      'authorized MCP client was not found',
+    )
   })
 
   it.each([false, true])(

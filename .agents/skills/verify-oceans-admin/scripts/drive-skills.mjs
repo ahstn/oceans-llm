@@ -56,10 +56,10 @@ try {
   await expect(adminPage.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
   await capture(adminPage, "01-skills-login");
   await fillSignIn(adminPage, adminEmail, adminPassword);
-  await expect(adminPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await expect(adminPage.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
   actions.push({
     action: "open protected Skills page and sign in as platform admin",
-    result: "Skills catalog visible",
+    result: "Agent Skills catalog visible",
   });
   proof.pass("protected-route-sign-in");
 
@@ -72,13 +72,13 @@ try {
   const ownerPage = await ownerContext.newPage();
   currentPage = ownerPage;
   await signIn(ownerPage, owner);
-  await ownerPage.getByRole("link", { name: "Skills", exact: true }).first().click();
-  await expect(ownerPage.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await ownerPage.getByRole("link", { name: "Agent Skills", exact: true }).first().click();
+  await expect(ownerPage.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
   details.catalog = { before: await searchCatalog(ownerPage, owner.namespace) };
   assert.equal(details.catalog.before.apiCount, 0, "New namespace starts with an empty catalog");
   await capture(ownerPage, "02-skills-before");
   actions.push({
-    action: "regular user follows Skills sidebar and searches own namespace",
+    action: "regular user follows Agent Skills sidebar and searches own namespace",
     result: "Empty catalog before upload",
   });
   proof.pass("empty-catalog-before-upload");
@@ -281,7 +281,7 @@ async function createUser(adminApi, label, globalRole = "user") {
 async function signIn(page, user) {
   await page.goto(`${baseURL}/admin/login?redirect=/skills`, { waitUntil: "domcontentloaded" });
   await fillSignIn(page, user.email, user.password);
-  await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent Skills", exact: true })).toBeVisible();
 }
 
 async function fillSignIn(page, email, password) {
@@ -366,8 +366,15 @@ async function verifyCatalogSearch(page, ownerSkill, peerSkill) {
 }
 
 async function uploadFirstThroughUi(page, owner) {
-  await page.getByRole("button", { name: "Upload skill", exact: true }).click();
   const namespace = page.getByRole("dialog", { name: "Choose your skill namespace", exact: true });
+  // Sign-in returns once the SSR heading is visible, so this click can land before
+  // hydration attaches the handler that opens the dialog. Retry until it opens.
+  await expect(async () => {
+    if (!(await namespace.isVisible())) {
+      await page.getByRole("button", { name: "Upload skill", exact: true }).click();
+    }
+    await expect(namespace).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000, intervals: [250, 500, 1_000] });
   await namespace.getByLabel("Namespace", { exact: true }).fill(owner.namespace);
   await namespace.getByRole("button", { name: "Claim namespace", exact: true }).click();
   await uploadDialog(page, "Upload a skill", 1);

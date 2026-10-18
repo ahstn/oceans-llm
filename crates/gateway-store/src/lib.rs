@@ -4,7 +4,9 @@
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
+mod any_store_audit_logs;
 mod any_store_batches;
+mod any_store_gateway_oauth;
 mod any_store_guardrail_decisions;
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
@@ -12,16 +14,21 @@ mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod any_store_provider_user_credentials;
+mod any_store_rate_limits;
 mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
+mod audit_logs;
 mod budget_batch;
 mod budget_increases;
 mod libsql_store;
+mod mcp_tool_policy;
+mod mcp_tool_review;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
 mod pricing_sync;
+mod rate_limits;
 mod routing;
 mod seed;
 mod shared;
@@ -48,13 +55,27 @@ mod agent_analysis_tests;
 mod budget_increase_tests;
 
 #[cfg(test)]
+mod change_report_tests;
+
+#[cfg(test)]
+mod api_key_scope_tests;
+#[cfg(test)]
+mod gateway_oauth_tests;
+
+#[cfg(test)]
 mod budget_reconciliation_tests;
+
+#[cfg(test)]
+mod rate_limit_tests;
 
 #[cfg(test)]
 mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod mcp_access;
+    mod mcp_tag_rules;
+    mod mcp_tool_versions;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;
@@ -420,6 +441,18 @@ pub(crate) mod tests {
             .revoke_api_key(api_key.id, disabled_at)
             .await
             .expect("revoke managed key");
+        // The access replacement rechecks the status under its lock, so a revoke
+        // that lands first leaves the key's grants alone.
+        assert!(matches!(
+            store
+                .replace_api_key_model_access(
+                    api_key.id,
+                    gateway_core::ApiKeyModelGrantMode::Explicit,
+                    &[],
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
 
         store
             .seed_from_inputs(
@@ -1002,7 +1035,7 @@ pub(crate) mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].run_id, run.run_id);
 
-        let disabled = store
+        let (disabled, replaced) = store
             .set_review_agent_repository_status(
                 repository.repository_id,
                 ReviewAgentRepositoryStatus::Disabled,
@@ -1010,6 +1043,16 @@ pub(crate) mod tests {
             )
             .await
             .expect("disable repository");
+        assert_eq!(replaced, Some(ReviewAgentRepositoryStatus::Active));
+        let (_, replaced_again) = store
+            .set_review_agent_repository_status(
+                repository.repository_id,
+                ReviewAgentRepositoryStatus::Disabled,
+                finished_at,
+            )
+            .await
+            .expect("disable repository again");
+        assert_eq!(replaced_again, None, "the same status is not a transition");
         assert_eq!(disabled.status, ReviewAgentRepositoryStatus::Disabled);
 
         let replacement = store
@@ -1238,7 +1281,9 @@ pub(crate) mod tests {
             arguments_payload_redacted: true,
             result_payload_redacted: false,
             metadata: Map::new(),
+            mcp_method: "tools/call".to_string(),
             occurred_at,
+            tool_schema_version: None,
         }
     }
 
@@ -1323,6 +1368,7 @@ pub(crate) mod tests {
             status: McpToolInvocationStatus::Unauthorized,
             policy_result: McpToolPolicyResult::Denied,
             has_payload: false,
+            mcp_method: "resources/read".to_string(),
             occurred_at: occurred_at - Duration::seconds(60),
             ..invocation.clone()
         };
@@ -1352,6 +1398,7 @@ pub(crate) mod tests {
                 policy_result: Some(McpToolPolicyResult::Allowed),
                 occurred_at_start: Some(occurred_at - Duration::seconds(5)),
                 occurred_at_end: Some(occurred_at + Duration::seconds(5)),
+                mcp_method: Some("tools/call".to_string()),
             })
             .await
             .expect("list invocations");
@@ -1372,6 +1419,19 @@ pub(crate) mod tests {
             .expect("list denied invocations");
         assert_eq!(denied_page.total, 1);
         assert_eq!(denied_page.items[0].request_id, "req-mcp-2");
+        assert_eq!(denied_page.items[0].mcp_method, "resources/read");
+
+        let resource_page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                mcp_method: Some("resources/read".to_string()),
+                ..Default::default()
+            })
+            .await
+            .expect("list resource invocations");
+        assert_eq!(resource_page.total, 1);
+        assert_eq!(resource_page.items[0].request_id, "req-mcp-2");
 
         let detail = store
             .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)
@@ -1400,6 +1460,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server");
@@ -1424,9 +1485,11 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(1),
+                approve_tool_changes: false,
             })
             .await
-            .expect("update MCP server");
+            .expect("update MCP server")
+            .current;
         assert_eq!(updated.display_name, "GitHub");
         assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
 
@@ -1455,6 +1518,7 @@ pub(crate) mod tests {
                             "type": "object",
                             "properties": {"title": {"type": "string"}}
                         }),
+                        metadata: gateway_core::McpToolMetadata::default(),
                         schema_hash: "sha256:title".to_string(),
                     },
                     UpsertExternalMcpToolRecord {
@@ -1466,6 +1530,7 @@ pub(crate) mod tests {
                             "type": "object",
                             "properties": {"repo": {"type": "string"}}
                         }),
+                        metadata: gateway_core::McpToolMetadata::default(),
                         schema_hash: "sha256:repo".to_string(),
                     },
                 ],
@@ -1507,6 +1572,7 @@ pub(crate) mod tests {
                             "body": {"type": "string"}
                         }
                     }),
+                    metadata: gateway_core::McpToolMetadata::default(),
                     schema_hash: "sha256:title-body".to_string(),
                 }],
             )
@@ -1540,9 +1606,11 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(6),
+                approve_tool_changes: false,
             })
             .await
-            .expect("invalidate discovery on config update");
+            .expect("invalidate discovery on config update")
+            .current;
         assert_eq!(invalidated.last_discovery_status, None);
         assert_eq!(invalidated.last_tool_count, Some(0));
         assert_eq!(invalidated.last_error_summary, None);
@@ -1579,10 +1647,20 @@ pub(crate) mod tests {
         );
         assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
 
-        let disabled = store
+        let (disabled, changed) = store
             .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(9))
             .await
             .expect("disable server");
+        assert!(changed);
+        let (again, changed_again) = store
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
+            .await
+            .expect("disable server again");
+        assert!(
+            !changed_again,
+            "an already-disabled server is not disabled again"
+        );
+        assert_eq!(again.disabled_at, disabled.disabled_at);
         assert_eq!(disabled.status, ExternalMcpServerStatus::Disabled);
         assert!(disabled.disabled_at.is_some());
         assert!(
@@ -1592,6 +1670,178 @@ pub(crate) mod tests {
                 .expect("list active")
                 .is_empty()
         );
+    }
+
+    /// Discovers one tool with the given hash and annotations and returns the
+    /// stored row.
+    async fn discover_metadata_tool<S>(
+        store: &S,
+        mcp_server_id: Uuid,
+        at: OffsetDateTime,
+        input_schema: serde_json::Value,
+        destructive: bool,
+        schema_hash: &str,
+    ) -> gateway_core::ExternalMcpToolRecord
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let metadata = gateway_core::McpToolMetadata {
+            title: Some("Delete page".to_string()),
+            annotations: Some(Map::from_iter([
+                ("destructiveHint".to_string(), json!(destructive)),
+                ("readOnlyHint".to_string(), json!(false)),
+                ("x-vendor".to_string(), json!({"kept": true})),
+            ])),
+            output_schema: Some(json!({
+                "type": "object",
+                "properties": {"deleted": {"type": "boolean"}}
+            })),
+        };
+        discover_tool_with(
+            store,
+            mcp_server_id,
+            at,
+            input_schema,
+            metadata,
+            schema_hash,
+        )
+        .await
+    }
+
+    async fn discover_tool_with<S>(
+        store: &S,
+        mcp_server_id: Uuid,
+        at: OffsetDateTime,
+        input_schema: serde_json::Value,
+        metadata: gateway_core::McpToolMetadata,
+        schema_hash: &str,
+    ) -> gateway_core::ExternalMcpToolRecord
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: at,
+            finished_at: at,
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: Some(format!("set-{schema_hash}")),
+            error_summary: None,
+            details: Map::new(),
+        };
+        store
+            .record_external_mcp_discovery_success(
+                &run,
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id,
+                    upstream_name: "pages.delete".to_string(),
+                    display_name: "pages.delete".to_string(),
+                    description: None,
+                    input_schema,
+                    metadata,
+                    schema_hash: schema_hash.to_string(),
+                }],
+            )
+            .await
+            .expect("record discovery")
+            .remove(0)
+    }
+
+    /// `mark_legacy` must make the tool row look as if it was discovered before
+    /// tool metadata was stored.
+    async fn exercise_mcp_tool_metadata_repository<S>(store: &S, mark_legacy: impl AsyncFn(Uuid))
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "notes".to_string(),
+                display_name: "Notes".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://mcp.example.com/notes".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                created_at: now,
+                approve_tool_changes: false,
+            })
+            .await
+            .expect("create MCP server");
+        let id = server.mcp_server_id;
+        let schema = json!({"type": "object", "properties": {"page": {"type": "string"}}});
+        let at = |seconds| now + Duration::seconds(seconds);
+
+        let first = discover_metadata_tool(store, id, at(1), schema.clone(), true, "h1").await;
+        assert_eq!(first.schema_version, 1);
+        let listed = store
+            .list_external_mcp_tools(id, false)
+            .await
+            .expect("list tools")
+            .remove(0);
+        assert_eq!(listed.metadata, first.metadata);
+        assert_eq!(listed.metadata.title.as_deref(), Some("Delete page"));
+        assert_eq!(listed.metadata.hint("destructiveHint"), Some(true));
+        assert_eq!(
+            listed.metadata.annotations.as_ref().expect("annotations")["x-vendor"],
+            json!({"kept": true})
+        );
+        assert!(listed.metadata.output_schema.is_some());
+
+        // An annotation change arrives with a new hash and counts as drift.
+        let changed = discover_metadata_tool(store, id, at(2), schema.clone(), false, "h2").await;
+        assert_eq!(changed.schema_version, 2);
+        assert_eq!(changed.metadata.hint("destructiveHint"), Some(false));
+        let unchanged = discover_metadata_tool(store, id, at(3), schema.clone(), false, "h2").await;
+        assert_eq!(unchanged.schema_version, 2);
+
+        // The first capture for a row stored before metadata existed only
+        // moves the hash, so it is not drift.
+        mark_legacy(first.mcp_tool_id).await;
+        let recaptured =
+            discover_metadata_tool(store, id, at(4), schema.clone(), false, "h3").await;
+        assert_eq!(recaptured.schema_version, 2);
+        assert_eq!(recaptured.schema_hash, "h3");
+        assert_eq!(recaptured.metadata.hint("destructiveHint"), Some(false));
+        let after_capture =
+            discover_metadata_tool(store, id, at(5), schema.clone(), true, "h4").await;
+        assert_eq!(after_capture.schema_version, 3);
+
+        // A legacy row whose input schema also changed is still drift.
+        mark_legacy(first.mcp_tool_id).await;
+        let new_schema = json!({"type": "object", "properties": {"page_id": {"type": "string"}}});
+        let drifted = discover_metadata_tool(store, id, at(6), new_schema, true, "h5").await;
+        assert_eq!(drifted.schema_version, 4);
+
+        // A legacy row seen unchanged is marked captured, so metadata the
+        // upstream adds later is a change rather than a capture.
+        let plain_schema = json!({"type": "object", "properties": {"q": {"type": "string"}}});
+        let plain = discover_tool_with(
+            store,
+            id,
+            at(7),
+            plain_schema.clone(),
+            gateway_core::McpToolMetadata::default(),
+            "p1",
+        )
+        .await;
+        assert_eq!(plain.schema_version, 5);
+        mark_legacy(first.mcp_tool_id).await;
+        let unchanged = discover_tool_with(
+            store,
+            id,
+            at(8),
+            plain_schema.clone(),
+            gateway_core::McpToolMetadata::default(),
+            "p1",
+        )
+        .await;
+        assert_eq!(unchanged.schema_version, 5);
+        let annotated = discover_metadata_tool(store, id, at(9), plain_schema, true, "p2").await;
+        assert_eq!(annotated.schema_version, 6);
     }
 
     async fn exercise_mcp_upstream_credential_repository<S>(store: &S)
@@ -1614,6 +1864,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server for credentials");
@@ -1736,6 +1987,8 @@ pub(crate) mod tests {
             })
             .await
             .expect("create credential binding");
+        let (binding, replaced) = binding;
+        assert!(replaced.is_none(), "a new binding is a create");
         assert_eq!(binding.owner_scope_key, scope_key);
         assert_eq!(
             binding.secret_ref.as_deref(),
@@ -1855,15 +2108,16 @@ pub(crate) mod tests {
                 .expect("release refresh lease")
         );
 
-        assert!(
-            store
-                .revoke_mcp_upstream_credential_binding(
-                    binding.credential_binding_id,
-                    now + Duration::minutes(10),
-                )
-                .await
-                .expect("revoke credential")
-        );
+        let revoked = store
+            .revoke_mcp_upstream_credential_binding(
+                binding.credential_binding_id,
+                now + Duration::minutes(10),
+            )
+            .await
+            .expect("revoke credential")
+            .expect("active binding revoked");
+        assert_eq!(revoked.credential_binding_id, binding.credential_binding_id);
+        assert!(revoked.revoked_at.is_some());
         assert!(
             store
                 .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
@@ -1923,7 +2177,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(11),
             })
             .await
-            .expect("create replacement credential");
+            .expect("create replacement credential")
+            .0;
         assert_eq!(
             replacement.material_kind,
             McpUpstreamCredentialMaterialKind::StaticHeader
@@ -1962,7 +2217,8 @@ pub(crate) mod tests {
                 updated_at: now + Duration::minutes(20),
             })
             .await
-            .expect("create OAuth credential");
+            .expect("create OAuth credential")
+            .0;
         let refreshed = store
             .compare_and_swap_mcp_oauth_credential_refresh(
                 &RefreshMcpOauthCredentialBindingRecord {
@@ -2017,6 +2273,12 @@ pub(crate) mod tests {
             })
             .await
             .expect("reconnect OAuth credential");
+        let (reconnected, replaced) = reconnected;
+        let replaced = replaced.expect("reusing an existing id replaces the binding");
+        assert_eq!(
+            replaced.credential_binding_id,
+            oauth_binding.credential_binding_id
+        );
         assert!(
             !store
                 .revoke_mcp_oauth_credential_if_unchanged(
@@ -2099,6 +2361,75 @@ pub(crate) mod tests {
                 .await
                 .expect("reject refresh after disconnect")
                 .is_none()
+        );
+
+        // Registered OAuth clients: one per server, and concurrent writers converge.
+        assert!(
+            store
+                .get_mcp_oauth_client(server.mcp_server_id)
+                .await
+                .expect("get missing OAuth client")
+                .is_none()
+        );
+        let client = gateway_core::McpOauthClientRecord {
+            mcp_server_id: server.mcp_server_id,
+            issuer: "https://auth.example.com".to_string(),
+            redirect_uri: "https://gateway.example.com/api/v1/mcp/oauth/callback".to_string(),
+            client_id: "first-client".to_string(),
+            token_endpoint_auth_method: "client_secret_basic".to_string(),
+            secret_ciphertext: Some("ciphertext".to_string()),
+            secret_nonce: Some("nonce".to_string()),
+            secret_key_id: Some("env/OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY".to_string()),
+            client_secret_expires_at: Some(now + Duration::days(30)),
+            created_at: now,
+            updated_at: now,
+        };
+        let stored = store
+            .insert_mcp_oauth_client_if_absent(&client)
+            .await
+            .expect("insert OAuth client");
+        assert_eq!(stored.client_id, "first-client");
+        assert_eq!(
+            stored
+                .client_secret_expires_at
+                .map(OffsetDateTime::unix_timestamp),
+            Some((now + Duration::days(30)).unix_timestamp())
+        );
+        let losing_writer = gateway_core::McpOauthClientRecord {
+            client_id: "second-client".to_string(),
+            secret_ciphertext: None,
+            secret_nonce: None,
+            secret_key_id: None,
+            token_endpoint_auth_method: "none".to_string(),
+            ..client.clone()
+        };
+        assert_eq!(
+            store
+                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .await
+                .expect("insert racing OAuth client")
+                .client_id,
+            "first-client"
+        );
+        assert!(
+            !store
+                .delete_mcp_oauth_client(server.mcp_server_id, "second-client")
+                .await
+                .expect("delete other client")
+        );
+        assert!(
+            store
+                .delete_mcp_oauth_client(server.mcp_server_id, "first-client")
+                .await
+                .expect("delete stale client")
+        );
+        assert_eq!(
+            store
+                .insert_mcp_oauth_client_if_absent(&losing_writer)
+                .await
+                .expect("insert replacement client")
+                .secret_ciphertext,
+            None
         );
     }
 
@@ -2771,6 +3102,116 @@ pub(crate) mod tests {
         .await
         .expect("insert oidc provider");
         provider_id
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_password_invitation_revoke_reports_whether_it_changed() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "Invitee",
+                "invitee@example.com",
+                "invitee@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Invited,
+            )
+            .await
+            .expect("create user");
+        let now = OffsetDateTime::now_utc();
+        // SSO activation moves an invited user to active once.
+        assert!(
+            store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await
+                .expect("activate")
+        );
+        assert!(
+            !store
+                .transition_user_status(user.user_id, UserStatus::Invited, UserStatus::Active, now)
+                .await
+                .expect("activate again")
+        );
+        store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("invitation");
+        // Audit progress is marked from this flag, so a retry must report false.
+        assert!(
+            store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(user.user_id, now)
+                .await
+                .expect("revoke again")
+        );
+
+        // Redeeming claims an invitation once; a racing second redemption gets
+        // `false` and changes nothing.
+        let invitation = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                user.user_id,
+                "token-hash-2",
+                now + Duration::days(7),
+                now,
+            )
+            .await
+            .expect("second invitation");
+        assert!(
+            store
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "first-hash",
+                    now
+                )
+                .await
+                .expect("redeem")
+        );
+        assert!(
+            !store
+                .redeem_password_invitation(
+                    invitation.invitation_id,
+                    user.user_id,
+                    "second-hash",
+                    now
+                )
+                .await
+                .expect("redeem again")
+        );
+        let redeemed = store
+            .get_user_by_id(user.user_id)
+            .await
+            .expect("load user")
+            .expect("user exists");
+        assert_eq!(redeemed.status, UserStatus::Active);
+        assert_eq!(
+            store
+                .get_user_password_auth(user.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash",
+            "the losing redemption must not replace the password"
+        );
     }
 
     #[tokio::test]
@@ -3966,6 +4407,7 @@ pub(crate) mod tests {
                         reasoning_effort: OpenAiCompatReasoningEffort::ReasoningObject,
                         supports_stream_usage: true,
                         empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
+                        decisions_api: None,
                     }),
                     ..Default::default()
                 },
@@ -4501,6 +4943,30 @@ pub(crate) mod tests {
             .expect("store");
 
         exercise_mcp_registry_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_tool_metadata_round_trip_and_drift() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_tool_metadata_repository(&store, async |mcp_tool_id: Uuid| {
+            store
+                .connection()
+                .execute(
+                    "UPDATE external_mcp_tools SET metadata_captured = 0, title = NULL, annotations_json = NULL, output_schema_json = NULL WHERE mcp_tool_id = ?1",
+                    [mcp_tool_id.to_string()],
+                )
+                .await
+                .expect("mark legacy tool");
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -5730,11 +6196,12 @@ pub(crate) mod tests {
             .expect("platform admin");
         let now = OffsetDateTime::now_utc();
 
-        assert!(
-            !store
+        assert_eq!(
+            store
                 .remove_team_membership(source_team.team_id, member.user_id)
                 .await
-                .expect("remove non-member")
+                .expect("remove non-member"),
+            None
         );
 
         store
@@ -5764,11 +6231,12 @@ pub(crate) mod tests {
         assert_eq!(transferred_membership.team_id, destination_team.team_id);
         assert_eq!(transferred_membership.role, MembershipRole::Member);
 
-        assert!(
+        assert_eq!(
             store
                 .remove_team_membership(destination_team.team_id, member.user_id)
                 .await
-                .expect("remove transferred member")
+                .expect("remove transferred member"),
+            Some(MembershipRole::Member)
         );
         assert!(
             store
@@ -5839,10 +6307,19 @@ pub(crate) mod tests {
             )
             .await
             .expect("create second session");
-        store
-            .revoke_user_session(session.session_id, now)
-            .await
-            .expect("revoke one session");
+        assert!(
+            store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke one session")
+        );
+        // A second logout with the same cookie changes nothing.
+        assert!(
+            !store
+                .revoke_user_session(session.session_id, now)
+                .await
+                .expect("revoke it again")
+        );
         assert!(
             store
                 .get_user_session(session.session_id)
@@ -8700,6 +9177,63 @@ pub(crate) mod tests {
                 .expect("load invitation")
                 .is_some()
         );
+        assert!(
+            store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations")
+        );
+        assert!(
+            !store
+                .revoke_password_invitations_for_user(member.user_id, OffsetDateTime::now_utc())
+                .await
+                .expect("revoke invitations again")
+        );
+        let redeemable = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                member.user_id,
+                "token-hash-2",
+                OffsetDateTime::now_utc() + time::Duration::days(7),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("redeemable invitation");
+        for (hash, expected) in [("first-hash", true), ("second-hash", false)] {
+            assert_eq!(
+                store
+                    .redeem_password_invitation(
+                        redeemable.invitation_id,
+                        member.user_id,
+                        hash,
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await
+                    .expect("redeem invitation"),
+                expected
+            );
+        }
+        assert_eq!(
+            store
+                .get_user_password_auth(member.user_id)
+                .await
+                .expect("load password")
+                .expect("password stored")
+                .password_hash,
+            "first-hash"
+        );
+        // The redeemed user is already active, so SSO activation changes nothing.
+        assert!(
+            !store
+                .transition_user_status(
+                    member.user_id,
+                    UserStatus::Invited,
+                    UserStatus::Active,
+                    OffsetDateTime::now_utc(),
+                )
+                .await
+                .expect("activate redeemed user")
+        );
 
         let cache = PricingCatalogCacheRecord {
             catalog_key: "catalog".to_string(),
@@ -9880,6 +10414,43 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_mcp_registry_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_tool_metadata_round_trip_and_drift() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres MCP tool metadata test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_tool_metadata_repository(&store, async |mcp_tool_id: Uuid| {
+            sqlx::query(
+                "UPDATE external_mcp_tools SET metadata_captured = 0, title = NULL, annotations_json = NULL, output_schema_json = NULL WHERE mcp_tool_id = $1",
+            )
+            .bind(mcp_tool_id.to_string())
+            .execute(store.pool())
+            .await
+            .expect("mark legacy tool");
+        })
+        .await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

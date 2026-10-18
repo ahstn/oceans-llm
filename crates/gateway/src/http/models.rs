@@ -5,8 +5,8 @@ use axum::{
 };
 use gateway_core::GlobalRole;
 use gateway_service::{
-    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, EffectiveMetadataSource,
-    EffectiveMetadataSourceKind,
+    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent, AuditProgress,
+    EffectiveMetadataSource, EffectiveMetadataSourceKind, admin_audit::actions,
 };
 
 use crate::http::{
@@ -18,6 +18,7 @@ use crate::http::{
         GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse,
         RefreshModelPricingCatalogResponse, envelope, format_timestamp,
     },
+    audit::AuditRequestMeta,
     error::AppError,
     state::AppState,
 };
@@ -153,10 +154,25 @@ pub async fn generate_model_client_configs(
 pub async fn refresh_model_pricing_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
 ) -> Result<Json<Envelope<RefreshModelPricingCatalogResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let actor = require_platform_admin(&state, &headers).await?;
 
-    state.service.refresh_pricing_catalog_now().await?;
+    let progress = AuditProgress::default();
+    state
+        .audit()
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            state.service.refresh_pricing_catalog_now_tracked(&progress),
+            |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED),
+            // The fetched catalog was cached, but syncing model pricing failed.
+            |_, error| {
+                AuditEvent::new(actions::PRICING_CATALOG_REFRESHED)
+                    .meta("error", error.error_code())
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(RefreshModelPricingCatalogResponse {
         refreshed: true,

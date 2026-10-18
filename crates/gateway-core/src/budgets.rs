@@ -31,6 +31,63 @@ impl BudgetScopeKind {
             _ => None,
         }
     }
+
+    /// Human-readable scope name for caller-facing messages.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::ServiceAccount => "service account",
+            Self::UserModel => "user+model",
+        }
+    }
+}
+
+/// HTTP status returned when a hard budget rejects a request.
+///
+/// Defaults to 422 so SDK retry policies treat it as final; 429 stays reserved
+/// for rate limits. See `docs/adr/2026-10-14-budget-exceeded-status-code.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u16", into = "u16")]
+pub enum BudgetExceededStatus {
+    PaymentRequired,
+    #[default]
+    UnprocessableEntity,
+    TooManyRequests,
+}
+
+impl BudgetExceededStatus {
+    pub const ALLOWED: [u16; 3] = [402, 422, 429];
+
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        match self {
+            Self::PaymentRequired => 402,
+            Self::UnprocessableEntity => 422,
+            Self::TooManyRequests => 429,
+        }
+    }
+}
+
+impl TryFrom<u16> for BudgetExceededStatus {
+    type Error = String;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            402 => Ok(Self::PaymentRequired),
+            422 => Ok(Self::UnprocessableEntity),
+            429 => Ok(Self::TooManyRequests),
+            other => Err(format!(
+                "exceeded_status_code must be one of 402, 422 or 429, got {other}"
+            )),
+        }
+    }
+}
+
+impl From<BudgetExceededStatus> for u16 {
+    fn from(value: BudgetExceededStatus) -> Self {
+        value.as_u16()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,6 +394,19 @@ pub struct BudgetRecord {
     pub updated_at: OffsetDateTime,
 }
 
+/// The outcome of a manual budget save.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualBudgetSave {
+    /// The active budget after the save.
+    pub budget: BudgetRecord,
+    /// `false` when an active manual budget already had these settings, in which
+    /// case nothing was written.
+    pub changed: bool,
+    /// The active budget the save overwrote, read under the same write lock. `None`
+    /// when the save created the budget or changed nothing.
+    pub replaced: Option<BudgetRecord>,
+}
+
 /// The budget state an increase was validated against. Creating the increase fails
 /// with `StoreError::Conflict` if the budget or its active increase has changed by the
 /// time the store holds the budget's lock.
@@ -395,7 +465,7 @@ pub struct BudgetContact {
 
 #[cfg(test)]
 mod tests {
-    use super::{BudgetModelSelector, BudgetScope};
+    use super::{BudgetExceededStatus, BudgetModelSelector, BudgetScope};
     use uuid::Uuid;
 
     #[test]
@@ -448,5 +518,18 @@ mod tests {
             scope.scope_key(),
             format!("budget:v1:user:{user_id}:upstream_model:gpt-4")
         );
+    }
+
+    #[test]
+    fn budget_exceeded_status_accepts_only_the_allowlist() {
+        assert_eq!(BudgetExceededStatus::default().as_u16(), 422);
+        for code in BudgetExceededStatus::ALLOWED {
+            let status = BudgetExceededStatus::try_from(code).expect("allowlisted code");
+            assert_eq!(status.as_u16(), code);
+        }
+        for code in [200, 400, 403, 409, 428, 500] {
+            assert!(BudgetExceededStatus::try_from(code).is_err(), "{code}");
+        }
+        assert!(serde_json::from_value::<BudgetExceededStatus>(serde_json::json!(503)).is_err());
     }
 }

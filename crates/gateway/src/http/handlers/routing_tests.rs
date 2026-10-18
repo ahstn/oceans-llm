@@ -229,6 +229,7 @@ impl RoutingHarness {
             State(self.state.clone()),
             Some(request_id()),
             headers,
+            Default::default(),
             self.auth().await,
             Json(request),
         )
@@ -248,6 +249,7 @@ impl RoutingHarness {
             State(self.state.clone()),
             Some(request_id()),
             HeaderMap::new(),
+            Default::default(),
             self.auth().await,
             Json(serde_json::from_value(request).unwrap()),
         )

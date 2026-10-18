@@ -4,9 +4,11 @@ use std::{
     time::Duration as StdDuration,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use gateway_core::{
-    ExternalMcpServerRecord, GatewayError, McpUpstreamCredentialBindingRecord,
-    McpUpstreamCredentialRepository, ProviderError, RefreshMcpOauthCredentialBindingRecord,
+    ExternalMcpServerRecord, GatewayError, McpOauthClientRecord,
+    McpUpstreamCredentialBindingRecord, McpUpstreamCredentialRepository, ProviderError,
+    RefreshMcpOauthCredentialBindingRecord,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -14,44 +16,248 @@ use time::{Duration, OffsetDateTime};
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
-use crate::mcp_credentials::{decrypt_binding_secret, encrypt_secret};
-use crate::mcp_upstream_auth::mcp_oauth_server_config;
+use crate::mcp_credentials::{decrypt_binding_secret, decrypt_credential_secret, encrypt_secret};
+use crate::mcp_oauth_discovery::{McpOauthDiscovery, discover_mcp_oauth, register_oauth_client};
+use crate::mcp_upstream_auth::{
+    McpOauthClientRegistration, McpOauthServerConfig, McpOauthTokenEndpointAuthMethod,
+    McpServerOauthEndpoints, is_loopback_http_url, mcp_oauth_server_config, resolve_secret_ref,
+};
+use crate::outbound_fetch::{
+    DEFAULT_OUTBOUND_MAX_BODY_BYTES, DEFAULT_OUTBOUND_TIMEOUT, InvalidDomainName,
+    OutboundFetchError, ScopedOutboundFetchers, normalize_domains,
+};
 
 const REFRESH_EARLY_SECONDS: i64 = 300;
 const REFRESH_LEASE_SECONDS: i64 = 90;
 const REFRESH_LEASE_WAIT_SECONDS: u64 = 65;
+/// The access-token lifetime assumed when a refreshable grant omits `expires_in`.
+const DEFAULT_EXPIRES_IN_SECONDS: i64 = 3600;
+const SERVER_CALLBACK_PATH: &str = "/api/v1/mcp/oauth/callback";
+const CLIENT_METADATA_DOCUMENT_PATH: &str = "/api/v1/mcp/oauth/client-metadata.json";
+const TOKEN_REQUEST_TIMEOUT: StdDuration = StdDuration::from_secs(60);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpOauthProviderType {
+    Google,
+    /// Any OAuth 2.0 authorization server with explicit endpoints.
+    Oauth2,
+}
+
+#[derive(Clone)]
 pub struct McpOauthProvider {
     pub key: String,
+    pub provider_type: McpOauthProviderType,
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: Option<String>,
     pub authorization_url: String,
     pub token_url: String,
+    pub token_endpoint_auth_method: McpOauthTokenEndpointAuthMethod,
+    /// Requested when the MCP server row sets no scopes.
+    pub scopes: Vec<String>,
+}
+
+impl std::fmt::Debug for McpOauthProvider {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("McpOauthProvider")
+            .field("key", &self.key)
+            .field("provider_type", &self.provider_type)
+            .field("client_id", &self.client_id)
+            .field("authorization_url", &self.authorization_url)
+            .field("token_url", &self.token_url)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Who chose a client's token endpoint, which decides whether token requests
+/// go through the SSRF guard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TokenEndpointSource {
+    /// `mcp.oauth.providers`: the gateway's own configuration.
+    GatewayConfig,
+    /// The MCP server row, usually from upstream metadata discovery.
+    Upstream,
+}
+
+/// The OAuth client that a connection uses, from a configured provider or
+/// from the authorization server on the MCP server row.
+#[derive(Clone)]
+pub struct McpOauthClient {
+    pub provider_key: String,
+    pub client_id: String,
+    client_secret: Option<String>,
+    pub authorization_url: String,
+    pub token_url: String,
+    pub token_endpoint_auth_method: McpOauthTokenEndpointAuthMethod,
+    pub redirect_uri: String,
+    /// The issuer bound into token bundles for server-level clients.
+    pub issuer: Option<String>,
+    default_scopes: Vec<String>,
+    google: bool,
+    token_endpoint_source: TokenEndpointSource,
+    /// The admin-entered MCP server URL, which scopes this client's
+    /// registration and token requests. Never a URL an upstream supplied.
+    server_url: String,
+}
+
+impl std::fmt::Debug for McpOauthClient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("McpOauthClient")
+            .field("provider_key", &self.provider_key)
+            .field("client_id", &self.client_id)
+            .field("token_url", &self.token_url)
+            .field("redirect_uri", &self.redirect_uri)
+            .finish_non_exhaustive()
+    }
+}
+
+impl McpOauthClient {
+    /// The scopes to request: the server's own, or the provider defaults.
+    #[must_use]
+    pub fn requested_scopes(&self, config: &McpOauthServerConfig) -> Vec<String> {
+        if config.scopes.is_empty() {
+            self.default_scopes.clone()
+        } else {
+            config.scopes.clone()
+        }
+    }
+
+    /// Builds the browser redirect that starts the authorization code flow.
+    pub fn authorization_url(
+        &self,
+        config: &McpOauthServerConfig,
+        state: &str,
+        pkce_challenge: &str,
+    ) -> Result<String, GatewayError> {
+        let mut url = url::Url::parse(&self.authorization_url)
+            .map_err(|error| GatewayError::Internal(error.to_string()))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("response_type", "code");
+            pairs.append_pair("client_id", &self.client_id);
+            pairs.append_pair("redirect_uri", &self.redirect_uri);
+            let scopes = self.requested_scopes(config);
+            if !scopes.is_empty() {
+                pairs.append_pair("scope", &scopes.join(" "));
+            }
+            pairs.append_pair("state", state);
+            pairs.append_pair("code_challenge", pkce_challenge);
+            pairs.append_pair("code_challenge_method", "S256");
+            if self.google {
+                pairs.append_pair("access_type", "offline");
+                pairs.append_pair("prompt", "consent");
+                pairs.append_pair("include_granted_scopes", "true");
+            }
+            if config.resource_indicator {
+                pairs.append_pair("resource", &config.resource);
+            }
+        }
+        Ok(url.to_string())
+    }
+
+    /// Adds client authentication and the form to a token request.
+    fn token_request(
+        &self,
+        request: reqwest::RequestBuilder,
+        mut form: Vec<(&'static str, String)>,
+    ) -> reqwest::RequestBuilder {
+        match (self.token_endpoint_auth_method, &self.client_secret) {
+            (McpOauthTokenEndpointAuthMethod::ClientSecretBasic, Some(secret)) => {
+                // RFC 6749 §2.3.1: form-encode both parts before Basic encoding.
+                let credentials = format!(
+                    "{}:{}",
+                    form_urlencode(&self.client_id),
+                    form_urlencode(secret)
+                );
+                return request
+                    .header(
+                        reqwest::header::AUTHORIZATION,
+                        format!("Basic {}", BASE64.encode(credentials)),
+                    )
+                    .form(&form);
+            }
+            (McpOauthTokenEndpointAuthMethod::ClientSecretPost, Some(secret)) => {
+                form.push(("client_id", self.client_id.clone()));
+                form.push(("client_secret", secret.clone()));
+            }
+            _ => form.push(("client_id", self.client_id.clone())),
+        }
+        request.form(&form)
+    }
+}
+
+/// The token endpoint, checked where the request is sent: client secrets and
+/// codes travel only over https, or plain http to this machine for local
+/// development. Configuration and discovery check this too.
+fn secure_token_url(raw: &str) -> Result<url::Url, GatewayError> {
+    let url = url::Url::parse(raw).map_err(|error| {
+        GatewayError::InvalidRequest(format!("token endpoint is invalid: {error}"))
+    })?;
+    if url.scheme() == "https" || is_loopback_http_url(&url) {
+        Ok(url)
+    } else {
+        Err(GatewayError::InvalidRequest(
+            "token endpoint must use https".to_string(),
+        ))
+    }
+}
+
+fn discovery_fetchers(private_network_hosts: &[String]) -> ScopedOutboundFetchers {
+    ScopedOutboundFetchers::new(
+        DEFAULT_OUTBOUND_TIMEOUT,
+        DEFAULT_OUTBOUND_MAX_BODY_BYTES,
+        private_network_hosts,
+    )
+}
+
+fn token_fetchers(private_network_hosts: &[String]) -> ScopedOutboundFetchers {
+    ScopedOutboundFetchers::new(
+        TOKEN_REQUEST_TIMEOUT,
+        DEFAULT_OUTBOUND_MAX_BODY_BYTES,
+        private_network_hosts,
+    )
+}
+
+fn form_urlencode(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpOauthTokenBundle {
     pub version: u8,
     pub access_token: String,
-    pub refresh_token: String,
+    /// Absent when the provider issues no refresh token; the connection then
+    /// lasts until the access token expires.
+    #[serde(default)]
+    pub refresh_token: Option<String>,
     pub token_type: String,
     pub provider_key: String,
     pub resource: String,
     pub granted_scopes: Vec<String>,
+    /// The authorization server of a server-level client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct McpOauthTokenGrant {
     pub bundle: McpOauthTokenBundle,
-    pub expires_at: OffsetDateTime,
+    /// `None` when the access token does not expire.
+    pub expires_at: Option<OffsetDateTime>,
 }
 
 #[derive(Clone)]
 pub struct McpOauthRuntime {
     public_base_url: Option<String>,
     providers: BTreeMap<String, McpOauthProvider>,
+    /// Token requests for configured providers, whose endpoints are gateway
+    /// configuration.
     client: reqwest::Client,
+    /// Discovery and registration, scoped to the MCP server's address class.
+    discovery_fetchers: ScopedOutboundFetchers,
+    /// Token requests for server-level clients, scoped the same way.
+    token_fetchers: ScopedOutboundFetchers,
     refresh_locks: Arc<Mutex<HashMap<Uuid, Weak<AsyncMutex<()>>>>>,
 }
 
@@ -65,17 +271,38 @@ impl McpOauthRuntime {
                 .map(|provider| (provider.key.clone(), provider))
                 .collect(),
             client: reqwest::Client::builder()
-                .timeout(StdDuration::from_secs(60))
+                .timeout(TOKEN_REQUEST_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("default MCP OAuth HTTP client configuration must be valid"),
+            discovery_fetchers: discovery_fetchers(&[]),
+            token_fetchers: token_fetchers(&[]),
             refresh_locks: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Lets servers on these hosts, and their subdomains, have discovery,
+    /// registration, and token requests reach private-network addresses.
+    /// Other hostnames reach public addresses only, whatever they resolve to.
+    pub fn with_private_network_hosts(
+        mut self,
+        hosts: Vec<String>,
+    ) -> Result<Self, InvalidDomainName> {
+        let hosts = normalize_domains(hosts)?;
+        self.discovery_fetchers = discovery_fetchers(&hosts);
+        self.token_fetchers = token_fetchers(&hosts);
+        Ok(self)
     }
 
     #[must_use]
     pub fn is_configured(&self) -> bool {
         self.public_base_url.is_some() && !self.providers.is_empty()
+    }
+
+    /// The externally reachable gateway origin, without a trailing slash.
+    #[must_use]
+    pub fn public_base_url(&self) -> Option<&str> {
+        self.public_base_url.as_deref()
     }
 
     #[must_use]
@@ -87,6 +314,279 @@ impl McpOauthRuntime {
         } else {
             None
         }
+    }
+
+    /// Why a user cannot start a connection for this server, if they cannot.
+    #[must_use]
+    pub fn connection_unavailable_reason_for(
+        &self,
+        config: &McpOauthServerConfig,
+    ) -> Option<&'static str> {
+        if config.server_oauth.is_some() {
+            self.public_base_url
+                .is_none()
+                .then_some("public_base_url_not_configured")
+        } else {
+            self.connection_unavailable_reason(&config.provider_key)
+        }
+    }
+
+    /// The redirect URI for a server's connections. Configured providers keep
+    /// their own callback path; server-level clients share one.
+    pub fn callback_url_for(&self, config: &McpOauthServerConfig) -> Result<String, GatewayError> {
+        if config.server_oauth.is_some() {
+            Ok(format!(
+                "{}{SERVER_CALLBACK_PATH}",
+                self.require_public_base_url()?
+            ))
+        } else {
+            self.callback_url(&config.provider_key)
+        }
+    }
+
+    /// The gateway-hosted Client ID Metadata Document URL, which is the
+    /// client ID for servers that use `metadata_document` registration.
+    pub fn client_metadata_document_url(&self) -> Result<String, GatewayError> {
+        Ok(format!(
+            "{}{CLIENT_METADATA_DOCUMENT_PATH}",
+            self.require_public_base_url()?
+        ))
+    }
+
+    /// The Client ID Metadata Document served at
+    /// [`Self::client_metadata_document_url`].
+    #[must_use]
+    pub fn client_metadata_document(&self) -> Option<serde_json::Value> {
+        let base = self.public_base_url.as_deref()?;
+        Some(serde_json::json!({
+            "client_id": format!("{base}{CLIENT_METADATA_DOCUMENT_PATH}"),
+            "client_name": "Oceans LLM Gateway",
+            "client_uri": base,
+            "redirect_uris": [format!("{base}{SERVER_CALLBACK_PATH}")],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        }))
+    }
+
+    /// Runs OAuth metadata discovery against an MCP server URL.
+    pub async fn discover(&self, server_url: &str) -> Result<McpOauthDiscovery, GatewayError> {
+        let fetcher = self.discovery_fetchers.for_trusted_url(server_url);
+        discover_mcp_oauth(fetcher, server_url).await
+    }
+
+    /// Sends a token request and reads the response.
+    ///
+    /// A server-level client's token endpoint came from upstream metadata or
+    /// the server's auth config, so it goes through the SSRF guard, scoped to
+    /// the admin-entered MCP server URL. A configured provider's endpoint is the
+    /// gateway's own configuration and uses the plain client.
+    ///
+    /// A failure to reach the endpoint is a [`ProviderError::Transport`]; an
+    /// endpoint the guard refuses is an invalid request, since retrying will
+    /// not help.
+    async fn send_token_request(
+        &self,
+        client: &McpOauthClient,
+        form: Vec<(&'static str, String)>,
+    ) -> Result<(reqwest::StatusCode, Vec<u8>), GatewayError> {
+        let token_url = secure_token_url(&client.token_url)?;
+        if client.token_endpoint_source == TokenEndpointSource::GatewayConfig {
+            let response = client
+                .token_request(self.client.post(token_url), form)
+                .send()
+                .await
+                .map_err(oauth_transport_error)?;
+            let status = response.status();
+            let body = response.bytes().await.map_err(oauth_transport_error)?;
+            return Ok((status, body.to_vec()));
+        }
+        let fetcher = self.token_fetchers.for_trusted_url(&client.server_url);
+        let request = fetcher
+            .request(reqwest::Method::POST, &token_url)
+            .map_err(oauth_fetch_error)?;
+        let response = fetcher
+            .send(client.token_request(request, form))
+            .await
+            .map_err(oauth_fetch_error)?;
+        let status = response.status();
+        let body = response.body().await.map_err(oauth_fetch_error)?;
+        Ok((status, body))
+    }
+
+    fn require_public_base_url(&self) -> Result<&str, GatewayError> {
+        self.public_base_url.as_deref().ok_or_else(|| {
+            GatewayError::InvalidRequest("mcp.oauth.public_base_url is not configured".to_string())
+        })
+    }
+
+    /// Resolves the OAuth client for a server. A `dynamic` server registers a
+    /// client on first use when `register` is set; refreshes pass `false` so a
+    /// missing client asks the user to reconnect instead of minting a new one.
+    pub async fn resolve_client<R>(
+        &self,
+        repo: &R,
+        server: &ExternalMcpServerRecord,
+        config: &McpOauthServerConfig,
+        register: bool,
+    ) -> Result<McpOauthClient, GatewayError>
+    where
+        R: McpUpstreamCredentialRepository + ?Sized,
+    {
+        let redirect_uri = self.callback_url_for(config)?;
+        let Some(endpoints) = &config.server_oauth else {
+            let provider = self.provider(&config.provider_key)?;
+            return Ok(McpOauthClient {
+                provider_key: provider.key.clone(),
+                client_id: provider.client_id.clone(),
+                client_secret: provider.client_secret.clone(),
+                authorization_url: provider.authorization_url.clone(),
+                token_url: provider.token_url.clone(),
+                token_endpoint_auth_method: provider.token_endpoint_auth_method,
+                redirect_uri,
+                issuer: None,
+                default_scopes: provider.scopes.clone(),
+                google: provider.provider_type == McpOauthProviderType::Google,
+                token_endpoint_source: TokenEndpointSource::GatewayConfig,
+                server_url: server.server_url.clone(),
+            });
+        };
+        let (client_id, client_secret, method) = match &endpoints.registration {
+            McpOauthClientRegistration::Manual {
+                client_id,
+                client_secret_ref,
+            } => {
+                let secret = client_secret_ref
+                    .as_deref()
+                    .map(resolve_secret_ref)
+                    .transpose()?;
+                let method = endpoints
+                    .token_endpoint_auth_method
+                    .unwrap_or(if secret.is_some() {
+                        McpOauthTokenEndpointAuthMethod::ClientSecretBasic
+                    } else {
+                        McpOauthTokenEndpointAuthMethod::None
+                    });
+                (client_id.clone(), secret, method)
+            }
+            McpOauthClientRegistration::MetadataDocument => (
+                self.client_metadata_document_url()?,
+                None,
+                McpOauthTokenEndpointAuthMethod::None,
+            ),
+            McpOauthClientRegistration::Dynamic => {
+                let registered = self
+                    .registered_client(repo, server, config, endpoints, &redirect_uri, register)
+                    .await?;
+                (
+                    registered.client_id,
+                    registered.client_secret,
+                    registered.method,
+                )
+            }
+        };
+        Ok(McpOauthClient {
+            provider_key: config.provider_key.clone(),
+            client_id,
+            client_secret,
+            authorization_url: endpoints.authorization_endpoint.clone(),
+            token_url: endpoints.token_endpoint.clone(),
+            token_endpoint_auth_method: method,
+            redirect_uri,
+            issuer: Some(endpoints.issuer.clone()),
+            default_scopes: Vec::new(),
+            google: false,
+            token_endpoint_source: TokenEndpointSource::Upstream,
+            server_url: server.server_url.clone(),
+        })
+    }
+
+    async fn registered_client<R>(
+        &self,
+        repo: &R,
+        server: &ExternalMcpServerRecord,
+        config: &McpOauthServerConfig,
+        endpoints: &McpServerOauthEndpoints,
+        redirect_uri: &str,
+        register: bool,
+    ) -> Result<StoredClient, GatewayError>
+    where
+        R: McpUpstreamCredentialRepository + ?Sized,
+    {
+        let mcp_server_id = server.mcp_server_id;
+        let now = OffsetDateTime::now_utc();
+        if let Some(stored) = repo.get_mcp_oauth_client(mcp_server_id).await? {
+            let expired = stored
+                .client_secret_expires_at
+                .is_some_and(|expires_at| expires_at <= now);
+            if stored.issuer == endpoints.issuer && stored.redirect_uri == redirect_uri && !expired
+            {
+                return StoredClient::decrypt(stored);
+            }
+            if !register {
+                return Err(GatewayError::McpCredentialRequired {
+                    server_key: String::new(),
+                });
+            }
+            // The authorization server or callback changed, or the secret
+            // expired: replace the stale registration.
+            repo.delete_mcp_oauth_client(mcp_server_id, &stored.client_id)
+                .await?;
+        } else if !register {
+            return Err(GatewayError::McpCredentialRequired {
+                server_key: String::new(),
+            });
+        }
+        let registration_endpoint =
+            endpoints.registration_endpoint.as_deref().ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "dynamic client registration requires a registration_endpoint".to_string(),
+                )
+            })?;
+        let registered = register_oauth_client(
+            self.discovery_fetchers.for_trusted_url(&server.server_url),
+            registration_endpoint,
+            redirect_uri,
+            endpoints
+                .token_endpoint_auth_method
+                .unwrap_or(McpOauthTokenEndpointAuthMethod::ClientSecretBasic),
+            &config.scopes,
+        )
+        .await?;
+        let encrypted = if registered.client_secret.is_some()
+            || registered.registration_access_token.is_some()
+        {
+            let secrets = serde_json::to_string(&StoredClientSecrets {
+                client_secret: registered.client_secret.clone(),
+                registration_access_token: registered.registration_access_token.clone(),
+            })
+            .map_err(|error| GatewayError::Internal(error.to_string()))?;
+            Some(encrypt_secret(&secrets)?)
+        } else {
+            None
+        };
+        let stored = repo
+            .insert_mcp_oauth_client_if_absent(&McpOauthClientRecord {
+                mcp_server_id,
+                issuer: endpoints.issuer.clone(),
+                redirect_uri: redirect_uri.to_string(),
+                client_id: registered.client_id,
+                token_endpoint_auth_method: registered
+                    .token_endpoint_auth_method
+                    .as_str()
+                    .to_string(),
+                secret_ciphertext: encrypted.as_ref().map(|value| value.ciphertext.clone()),
+                secret_nonce: encrypted.as_ref().map(|value| value.nonce.clone()),
+                secret_key_id: encrypted.as_ref().map(|value| value.key_id.to_string()),
+                client_secret_expires_at: registered
+                    .client_secret_expires_at
+                    .and_then(|value| OffsetDateTime::from_unix_timestamp(value).ok()),
+                created_at: now,
+                updated_at: now,
+            })
+            .await?;
+        // A concurrent registration may have won; use whichever row is stored.
+        StoredClient::decrypt(stored)
     }
 
     pub fn provider(&self, key: &str) -> Result<&McpOauthProvider, GatewayError> {
@@ -104,30 +604,33 @@ impl McpOauthRuntime {
 
     pub async fn exchange_code(
         &self,
-        provider_key: &str,
+        client: &McpOauthClient,
+        config: &McpOauthServerConfig,
         code: &str,
-        redirect_uri: &str,
         pkce_verifier: &str,
-        resource: &str,
         required_scopes: &[String],
     ) -> Result<McpOauthTokenGrant, GatewayError> {
-        let provider = self.provider(provider_key)?;
-        let response = self
-            .client
-            .post(&provider.token_url)
-            .form(&[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("client_id", provider.client_id.as_str()),
-                ("client_secret", provider.client_secret.as_str()),
-                ("redirect_uri", redirect_uri),
-                ("code_verifier", pkce_verifier),
-                ("resource", resource),
-            ])
-            .send()
-            .await
-            .map_err(oauth_transport_error)?;
-        parse_token_response(response, provider_key, resource, required_scopes, None).await
+        let mut form = vec![
+            ("grant_type", "authorization_code".to_string()),
+            ("code", code.to_string()),
+            ("redirect_uri", client.redirect_uri.clone()),
+            ("code_verifier", pkce_verifier.to_string()),
+        ];
+        if config.resource_indicator {
+            form.push(("resource", config.resource.clone()));
+        }
+        let (status, body) = self.send_token_request(client, form).await?;
+        let mut grant = parse_token_response(
+            status,
+            &body,
+            &client.provider_key,
+            &config.resource,
+            required_scopes,
+            None,
+            client.google,
+        )?;
+        grant.bundle.issuer.clone_from(&client.issuer);
+        Ok(grant)
     }
 
     pub async fn refresh_binding<R>(
@@ -200,31 +703,44 @@ impl McpOauthRuntime {
                 server_key: server.server_key.clone(),
             })?;
         validate_oauth_bundle_for_server(&bundle, server)?;
-        let provider = self.provider(&bundle.provider_key)?;
-        let response = match self
-            .client
-            .post(&provider.token_url)
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", bundle.refresh_token.as_str()),
-                ("client_id", provider.client_id.as_str()),
-                ("client_secret", provider.client_secret.as_str()),
-                ("resource", bundle.resource.as_str()),
-            ])
-            .send()
+        let Some(refresh_token) = bundle.refresh_token.clone() else {
+            // Without a refresh token the user must connect again once the
+            // access token expires.
+            if has_unexpired_access_token(&current) {
+                return Ok(current);
+            }
+            return Err(GatewayError::McpCredentialExpired {
+                server_key: server.server_key.clone(),
+            });
+        };
+        let config = mcp_oauth_server_config(&server.auth_config)
+            .map_err(|_| credential_required(server))?;
+        let client = self
+            .resolve_client(repo, server, &config, false)
             .await
-        {
+            .map_err(|error| match error {
+                GatewayError::McpCredentialRequired { .. } => credential_required(server),
+                error => error,
+            })?;
+        let mut form = vec![
+            ("grant_type", "refresh_token".to_string()),
+            ("refresh_token", refresh_token.clone()),
+        ];
+        if config.resource_indicator {
+            form.push(("resource", bundle.resource.clone()));
+        }
+        let (status, body) = match self.send_token_request(&client, form).await {
             Ok(response) => response,
-            Err(error) if has_unexpired_access_token(&current) => {
+            // Only an unreachable endpoint keeps the current token; a refused
+            // one is a configuration problem and surfaces as one.
+            Err(error) if is_transport_error(&error) && has_unexpired_access_token(&current) => {
                 tracing::warn!(error = %error, "using unexpired access token after OAuth refresh transport failure");
                 return Ok(current);
             }
-            Err(error) => return Err(oauth_transport_error(error)),
+            Err(error) => return Err(error),
         };
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let error_code = serde_json::from_str::<TokenResponse>(&body)
+        if !status.is_success() {
+            let error_code = serde_json::from_slice::<TokenResponse>(&body)
                 .ok()
                 .and_then(|parsed| parsed.error);
             if error_code.as_deref() == Some("invalid_grant") {
@@ -253,14 +769,16 @@ impl McpOauthRuntime {
             }
             return Err(oauth_endpoint_error(status));
         }
-        let grant = parse_token_response(
-            response,
+        let mut grant = parse_token_response(
+            status,
+            &body,
             &bundle.provider_key,
             &bundle.resource,
             &bundle.granted_scopes,
-            Some(bundle.refresh_token),
-        )
-        .await?;
+            Some(refresh_token),
+            client.google,
+        )?;
+        grant.bundle.issuer = bundle.issuer;
         persist_refreshed_binding(repo, current, grant, server).await
     }
 }
@@ -271,11 +789,57 @@ pub(crate) fn validate_oauth_bundle_for_server(
 ) -> Result<(), GatewayError> {
     let config =
         mcp_oauth_server_config(&server.auth_config).map_err(|_| credential_required(server))?;
-    if bundle.provider_key != config.provider_key || bundle.resource != config.resource {
+    let issuer = config
+        .server_oauth
+        .as_ref()
+        .map(|endpoints| endpoints.issuer.as_str());
+    if bundle.provider_key != config.provider_key
+        || bundle.resource != config.resource
+        || (issuer.is_some() && bundle.issuer.as_deref() != issuer)
+    {
         return Err(credential_required(server));
     }
     ensure_required_scopes(&config.scopes, &bundle.granted_scopes)
         .map_err(|_| credential_required(server))
+}
+
+struct StoredClient {
+    client_id: String,
+    client_secret: Option<String>,
+    method: McpOauthTokenEndpointAuthMethod,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredClientSecrets {
+    client_secret: Option<String>,
+    registration_access_token: Option<String>,
+}
+
+impl StoredClient {
+    fn decrypt(record: McpOauthClientRecord) -> Result<Self, GatewayError> {
+        let method = McpOauthTokenEndpointAuthMethod::parse(&record.token_endpoint_auth_method)
+            .ok_or_else(|| {
+                GatewayError::Internal("stored MCP OAuth client has an unknown auth method".into())
+            })?;
+        let client_secret = match (
+            record.secret_ciphertext.as_deref(),
+            record.secret_nonce.as_deref(),
+            record.secret_key_id.as_deref(),
+        ) {
+            (Some(ciphertext), Some(nonce), Some(key_id)) => {
+                let secrets: StoredClientSecrets =
+                    serde_json::from_str(&decrypt_credential_secret(ciphertext, nonce, key_id)?)
+                        .map_err(|error| GatewayError::Internal(error.to_string()))?;
+                secrets.client_secret
+            }
+            _ => None,
+        };
+        Ok(Self {
+            client_id: record.client_id,
+            client_secret,
+            method,
+        })
+    }
 }
 
 fn credential_required(server: &ExternalMcpServerRecord) -> GatewayError {
@@ -376,7 +940,10 @@ where
             secret_ciphertext: encrypted.ciphertext,
             secret_nonce: encrypted.nonce,
             secret_key_id: encrypted.key_id.to_string(),
-            expires_at: grant.expires_at,
+            // A refreshable grant always has an expiry; see `parse_token_response`.
+            expires_at: grant.expires_at.unwrap_or_else(|| {
+                OffsetDateTime::now_utc() + Duration::seconds(DEFAULT_EXPIRES_IN_SECONDS)
+            }),
             metadata: oauth_bundle_metadata(&grant.bundle),
             updated_at: OffsetDateTime::now_utc(),
         })
@@ -418,7 +985,19 @@ pub(crate) fn oauth_bundle_metadata(
             "granted_scopes".to_string(),
             serde_json::json!(bundle.granted_scopes),
         ),
+        (
+            "refreshable".to_string(),
+            serde_json::json!(bundle.refresh_token.is_some()),
+        ),
     ])
+    .into_iter()
+    .chain(
+        bundle
+            .issuer
+            .as_ref()
+            .map(|issuer| ("oauth_issuer".to_string(), serde_json::json!(issuer))),
+    )
+    .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -431,17 +1010,17 @@ struct TokenResponse {
     error: Option<String>,
 }
 
-async fn parse_token_response(
-    response: reqwest::Response,
+fn parse_token_response(
+    status: reqwest::StatusCode,
+    body: &[u8],
     provider_key: &str,
     resource: &str,
     required_scopes: &[String],
     prior_refresh_token: Option<String>,
+    require_refresh_token: bool,
 ) -> Result<McpOauthTokenGrant, GatewayError> {
-    let status = response.status();
-    let body = response.text().await.map_err(oauth_transport_error)?;
     let parsed: TokenResponse =
-        serde_json::from_str(&body).map_err(|_| ProviderError::UpstreamHttp {
+        serde_json::from_slice(body).map_err(|_| ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: "OAuth token endpoint returned an invalid response".to_string(),
         })?;
@@ -451,20 +1030,25 @@ async fn parse_token_response(
     let access_token = parsed.access_token.ok_or_else(|| {
         GatewayError::Internal("OAuth token response omitted access_token".to_string())
     })?;
-    let refresh_token = parsed
-        .refresh_token
-        .or(prior_refresh_token)
-        .ok_or_else(|| {
-            GatewayError::InvalidRequest(
-                "OAuth provider did not return a refresh token; reconnect with consent".to_string(),
-            )
-        })?;
+    let refresh_token = parsed.refresh_token.or(prior_refresh_token);
+    if require_refresh_token && refresh_token.is_none() {
+        return Err(GatewayError::InvalidRequest(
+            "OAuth provider did not return a refresh token; reconnect with consent".to_string(),
+        ));
+    }
     let granted_scopes = parsed
         .scope
         .map(|scopes| scopes.split_whitespace().map(ToOwned::to_owned).collect())
         .unwrap_or_else(|| required_scopes.to_vec());
     ensure_required_scopes(required_scopes, &granted_scopes)?;
-    let expires_in = parsed.expires_in.filter(|value| *value > 0).unwrap_or(3600);
+    // A refreshable token without `expires_in` is refreshed hourly; a token
+    // that cannot be refreshed and states no lifetime does not expire.
+    let expires_in = parsed
+        .expires_in
+        .filter(|value| *value > 0)
+        .or(refresh_token
+            .is_some()
+            .then_some(DEFAULT_EXPIRES_IN_SECONDS));
     Ok(McpOauthTokenGrant {
         bundle: McpOauthTokenBundle {
             version: 1,
@@ -474,8 +1058,10 @@ async fn parse_token_response(
             provider_key: provider_key.to_string(),
             resource: resource.to_string(),
             granted_scopes,
+            issuer: None,
         },
-        expires_at: OffsetDateTime::now_utc() + Duration::seconds(expires_in),
+        expires_at: expires_in
+            .map(|seconds| OffsetDateTime::now_utc() + Duration::seconds(seconds)),
     })
 }
 
@@ -500,6 +1086,18 @@ fn oauth_transport_error(error: reqwest::Error) -> GatewayError {
     ProviderError::Transport(error.to_string()).into()
 }
 
+fn oauth_fetch_error(error: OutboundFetchError) -> GatewayError {
+    if error.is_transient() {
+        ProviderError::Transport(format!("OAuth token request failed: {error}")).into()
+    } else {
+        GatewayError::InvalidRequest(format!("OAuth token endpoint is not allowed: {error}"))
+    }
+}
+
+fn is_transport_error(error: &GatewayError) -> bool {
+    matches!(error, GatewayError::Provider(ProviderError::Transport(_)))
+}
+
 fn oauth_endpoint_error(status: reqwest::StatusCode) -> GatewayError {
     if is_transient_oauth_status(status) {
         ProviderError::UpstreamHttp {
@@ -517,142 +1115,4 @@ fn is_transient_oauth_status(status: reqwest::StatusCode) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerStatus, ExternalMcpTransport};
-    use serde_json::{Map, json};
-
-    #[test]
-    fn required_scope_check_accepts_superset_and_rejects_missing_scope() {
-        let required = vec![
-            "https://www.googleapis.com/auth/drive.readonly".to_string(),
-            "https://www.googleapis.com/auth/documents.readonly".to_string(),
-        ];
-        let mut granted = required.clone();
-        granted.push("openid".to_string());
-        ensure_required_scopes(&required, &granted).expect("scope superset");
-
-        let error = ensure_required_scopes(&required, &granted[1..])
-            .expect_err("missing Drive scope must fail");
-        assert_eq!(error.error_code(), "invalid_request");
-    }
-
-    #[tokio::test]
-    async fn token_response_errors_do_not_expose_provider_details() {
-        for (status, body, expected_code) in [
-            (
-                400,
-                r#"{"error":"invalid_grant","error_description":"private-refresh-token"}"#,
-                "upstream_transport",
-            ),
-            (
-                200,
-                r#"{"error":"invalid_grant","access_token":"private-access-token"}"#,
-                "upstream_transport",
-            ),
-            (
-                503,
-                r#"{"error":"private-provider-detail"}"#,
-                "upstream_http_error",
-            ),
-            (
-                400,
-                "malformed private-provider-detail",
-                "upstream_http_error",
-            ),
-        ] {
-            let response = axum::http::Response::builder()
-                .status(status)
-                .body(body)
-                .expect("token response")
-                .into();
-            let error = parse_token_response(response, "google", "resource", &[], None)
-                .await
-                .expect_err("provider error must be rejected");
-            assert_eq!(error.error_code(), expected_code);
-            assert!(!error.to_string().contains("private-"));
-            assert!(!error.to_string().contains("invalid_grant"));
-        }
-    }
-
-    #[test]
-    fn transient_oauth_statuses_are_limited_to_rate_limits_and_server_errors() {
-        assert!(is_transient_oauth_status(
-            reqwest::StatusCode::TOO_MANY_REQUESTS
-        ));
-        assert!(is_transient_oauth_status(
-            reqwest::StatusCode::SERVICE_UNAVAILABLE
-        ));
-        assert!(!is_transient_oauth_status(reqwest::StatusCode::BAD_REQUEST));
-        assert!(!is_transient_oauth_status(
-            reqwest::StatusCode::UNAUTHORIZED
-        ));
-    }
-
-    #[test]
-    fn oauth_bundle_must_match_the_current_server_contract() {
-        let server = oauth_server();
-        let bundle = McpOauthTokenBundle {
-            version: 1,
-            access_token: "access".to_string(),
-            refresh_token: "refresh".to_string(),
-            token_type: "Bearer".to_string(),
-            provider_key: "google".to_string(),
-            resource: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
-            granted_scopes: vec!["https://www.googleapis.com/auth/drive.readonly".to_string()],
-        };
-
-        validate_oauth_bundle_for_server(&bundle, &server).expect("matching contract");
-
-        let mut wrong_resource = bundle.clone();
-        wrong_resource.resource = "https://docsmcp.googleapis.com/mcp/v1".to_string();
-        assert_eq!(
-            validate_oauth_bundle_for_server(&wrong_resource, &server)
-                .expect_err("resource mismatch")
-                .error_code(),
-            "credential_required"
-        );
-
-        let mut missing_scope = bundle;
-        missing_scope.granted_scopes.clear();
-        assert_eq!(
-            validate_oauth_bundle_for_server(&missing_scope, &server)
-                .expect_err("scope mismatch")
-                .error_code(),
-            "credential_required"
-        );
-    }
-
-    fn oauth_server() -> ExternalMcpServerRecord {
-        ExternalMcpServerRecord {
-            mcp_server_id: Uuid::new_v4(),
-            server_key: "google_drive".to_string(),
-            display_name: "Google Drive".to_string(),
-            description: None,
-            transport: ExternalMcpTransport::StreamableHttp,
-            server_url: "https://drivemcp.googleapis.com/mcp/v1".to_string(),
-            auth_mode: ExternalMcpAuthMode::OauthObo,
-            auth_config: Map::from_iter([
-                ("provider_key".to_string(), json!("google")),
-                (
-                    "resource".to_string(),
-                    json!("https://drivemcp.googleapis.com/mcp/v1"),
-                ),
-                (
-                    "scopes".to_string(),
-                    json!(["https://www.googleapis.com/auth/drive.readonly"]),
-                ),
-            ]),
-            timeout_ms: 30_000,
-            status: ExternalMcpServerStatus::Active,
-            last_discovery_status: None,
-            last_discovery_at: None,
-            last_successful_discovery_at: None,
-            last_error_summary: None,
-            last_tool_count: None,
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-            disabled_at: None,
-        }
-    }
-}
+mod tests;

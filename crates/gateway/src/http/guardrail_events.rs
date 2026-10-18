@@ -6,6 +6,7 @@ use gateway_guardrails::{
     DecisionAction, DecisionRecord, EffectiveScope, FailureDisposition, GuardPhase,
     GuardrailEvaluation, ManagedService,
 };
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -24,6 +25,18 @@ pub async fn record_guardrail_evaluation(
         &evaluation.decisions,
     )
     .await;
+}
+
+/// The decision-log content hash for content the guard stopped reading before it could
+/// inspect it, such as a stream larger than its buffer. `parts` are the bytes read so far.
+pub fn uninspected_content_hash(parts: &[&[u8]]) -> String {
+    format!(
+        "sha256:{:x}",
+        parts
+            .iter()
+            .fold(Sha256::new(), |hasher, part| hasher.chain_update(part))
+            .finalize()
+    )
 }
 
 /// Persists decisions on a background task, so a slow or unavailable store adds

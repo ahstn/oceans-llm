@@ -73,4 +73,11 @@ describe('admin route capabilities', () => {
     expect(canAccessSignedInPath(member, '/admin/skills/skill-id')).toBe(true)
     expect(canAccessSignedInPath(member, '/admin/skills-other')).toBe(false)
   })
+
+  it('lets any signed-in user answer an MCP client sign-in request', () => {
+    const member = session({})
+    member.permissions.pages = []
+
+    expect(canAccessSignedInPath(member, '/admin/oauth/consent?request_id=abc')).toBe(true)
+  })
 })

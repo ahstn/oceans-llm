@@ -46,6 +46,11 @@ Teardown uses the recorded process IDs:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin cleanup
 ```
 
+### Shared machine state
+
+- **Cargo output.** Root `mise.toml` sets `CARGO_TARGET_DIR=$HOME/.cache/cargo/target/` in `[env]`, and mise applies it over the caller's shell, so exporting `CARGO_TARGET_DIR` before `launch` or `drive` has no effect. Every checkout writes final binaries such as `debug/gateway` and `debug/oceans` there; only intermediate artifacts are per checkout through `CARGO_BUILD_BUILD_DIR`. A build in another checkout can therefore replace the binary the Skills proof imports with. To pin it, build it, copy it out, and export `OCEANS_CLI_BIN=<copy>` before `drive skills`.
+- **pitchfork version warning.** mise supervises daemons through one per-user pitchfork supervisor shared by every checkout. If the `pitchfork` CLI was upgraded since that supervisor started, commands warn about a CLI and supervisor version mismatch. The warning is harmless for verification. Do not restart the supervisor from a verification run, because that stops daemons other checkouts rely on. When nothing else needs them, the user can run `pitchfork supervisor stop` and let the next `mise` daemon command start a current one.
+
 ## Doctor
 
 Run the read-only doctor check before browser work and whenever the UI looks stale:
@@ -90,7 +95,7 @@ Prove backend gateway routing and generated-tool guardrails through OpenRouter:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive backend-gateway
 ```
 
-The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4-flash-0731`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
+The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4.1-flash`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
 
 Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
 
@@ -99,7 +104,7 @@ export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive mcp
 ```
 
-Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
+Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The aliases must be in the launch environment (exported or in `mise.local.toml`); `launch` records their names, and the driver trusts that record rather than its own environment. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
 
 Prove Skills storage and ownership with Oceans and native RustFS:
 
@@ -115,7 +120,7 @@ Read [features/skills.md](./features/skills.md) before launch. This proof drives
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
 
-Use [features/live-llm-requests.md](./features/live-llm-requests.md) for the exact recipe. Prefer `deepseek-v4-flash-0731` through OpenRouter for generic request-path changes. For Bedrock-specific request-path testing, use gateway model `gpt-oss-120b-bedrock`, which routes to Bedrock Mantle model `openai.gpt-oss-120b`. Do not use `openai.gpt-5.6-luna`; it is not enabled for this AWS account. Run both providers only when provider parity is the behavior under test.
+Use [features/live-llm-requests.md](./features/live-llm-requests.md) for the exact recipe. Prefer `deepseek-v4.1-flash` through OpenRouter for generic request-path changes, and `claude-haiku-5.5` through OpenRouter for `/v1/messages` changes. Keep every canary at `max_tokens` 4096 or less. For Bedrock-specific request-path testing, use gateway model `gpt-oss-120b-bedrock`, which routes to Bedrock Mantle model `openai.gpt-oss-120b`. Do not use `openai.gpt-5.6-luna`; it is not enabled for this AWS account. Run both providers only when provider parity is the behavior under test.
 
 Keep each prompt synthetic and small. Limit the output, create a temporary gateway API key with access only to the selected model, and revoke it after the proof. Never print or save raw gateway or provider credentials. For Bedrock Responses requests, set `store: false` unless stored-response behavior is the subject of the test.
 
@@ -201,7 +206,7 @@ The Backend Gateway proof produces:
 The MCP proof produces:
 
 - Screenshots and ARIA snapshots for sign-in, discovery, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
-- `mcp-proof.json` with one check per candidate plus workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, the authentication-error control, and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias is unset is recorded as `blocked` without being registered.
+- `mcp-proof.json` with one check per candidate plus workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, the authentication-error control, and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
 - No raw key, authorization header, tool arguments, or tool-result payload in the proof JSON. Invocation detail is inspected in memory and is not captured.
 
 An optional candidate failure does not change the verdict but remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.

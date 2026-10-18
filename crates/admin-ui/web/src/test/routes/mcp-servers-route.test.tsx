@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
@@ -13,6 +13,9 @@ const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
 const refreshExternalMcpServerDiscoveryMock = vi.fn()
+const discoverExternalMcpServerOauthMock = vi.fn()
+const saveMcpToolTagsMock = vi.fn()
+const saveMcpToolAnnotationOverridesMock = vi.fn()
 
 class ResizeObserverMock {
   observe() {}
@@ -38,6 +41,8 @@ vi.mock('sonner', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   addMcpServer: (...args: unknown[]) => addMcpServerMock(...args),
   disableExternalMcpServer: (...args: unknown[]) => disableExternalMcpServerMock(...args),
+  discoverExternalMcpServerOauth: (...args: unknown[]) =>
+    discoverExternalMcpServerOauthMock(...args),
   getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
@@ -45,6 +50,12 @@ vi.mock('@/server/admin-data.functions', () => ({
   removeMcpCredentialBinding: vi.fn(),
   saveMcpCredentialBinding: vi.fn(),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
+}))
+
+vi.mock('@/server/mcp-policy-data.functions', () => ({
+  saveMcpToolTags: (...args: unknown[]) => saveMcpToolTagsMock(...args),
+  saveMcpToolAnnotationOverrides: (...args: unknown[]) =>
+    saveMcpToolAnnotationOverridesMock(...args),
 }))
 
 const server: McpServerView = {
@@ -66,6 +77,7 @@ const server: McpServerView = {
   created_at: '2026-05-27T08:00:00Z',
   updated_at: '2026-05-27T09:00:00Z',
   disabled_at: null,
+  approve_tool_changes: false,
 }
 
 const tool: McpToolView = {
@@ -73,8 +85,33 @@ const tool: McpToolView = {
   server_id: 'server_1',
   upstream_name: 'create_issue',
   display_name: 'create_issue',
+  title: null,
   description: 'Create issue',
   input_schema: {},
+  output_schema: null,
+  annotations: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  annotation_overrides: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  effective_annotations: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  admin_tags: [],
+  effective_tags: ['destructive', 'open_world'],
+  approval_status: 'approved',
+  approved_schema_version: 2,
+  pending_schema_version: null,
   schema_hash: 'sha256:abc123',
   schema_version: 2,
   is_active: false,
@@ -103,6 +140,7 @@ const activeTool: McpToolView = {
   },
   schema_hash: 'sha256:def456',
   schema_version: 3,
+  approved_schema_version: 3,
   is_active: true,
   deactivated_at: null,
 }
@@ -145,6 +183,13 @@ async function renderServersTab(
 }
 
 describe('ServersTab', () => {
+  // The first import compiles the tab and every MCP module it uses, which can
+  // take longer than one test's timeout on a busy runner. Load it once here so
+  // no test pays for it.
+  beforeAll(async () => {
+    await import('@/routes/mcp/-servers-tab')
+  }, 30_000)
+
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
@@ -237,6 +282,140 @@ describe('ServersTab', () => {
 
     expect(onAddToToolset).toHaveBeenCalledTimes(1)
     expect(onAddToToolset).toHaveBeenCalledWith(['tool_2'])
+  })
+
+  it('shows declared annotation hints, title, and output schema', async () => {
+    const annotatedTools: McpToolView[] = [
+      {
+        ...activeTool,
+        id: 'tool_read',
+        title: 'Query documentation',
+        output_schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        annotations: {
+          read_only_hint: true,
+          destructive_hint: true,
+          idempotent_hint: true,
+          open_world_hint: false,
+        },
+      },
+      {
+        ...activeTool,
+        id: 'tool_delete',
+        upstream_name: 'delete_page',
+        display_name: 'delete_page',
+        annotations: {
+          read_only_hint: false,
+          destructive_hint: true,
+          idempotent_hint: null,
+          open_world_hint: true,
+        },
+      },
+      {
+        ...activeTool,
+        id: 'tool_append',
+        upstream_name: 'append_note',
+        display_name: 'append_note',
+        annotations: {
+          read_only_hint: null,
+          destructive_hint: false,
+          idempotent_hint: null,
+          open_world_hint: null,
+        },
+      },
+      { ...tool, id: 'tool_plain', upstream_name: 'plain', display_name: 'plain' },
+    ]
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: annotatedTools } })
+    await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    // Collapsed rows keep to the name, description and status; hints show when expanded.
+    expect(screen.queryByTestId('mcp-tool-annotations')).not.toBeInTheDocument()
+
+    for (const name of ['query_docs', 'delete_page', 'append_note', 'plain']) {
+      fireEvent.click(screen.getByRole('button', { name: `Show ${name} schema` }))
+    }
+    const [readBadges, deleteBadges, appendBadges] = screen.getAllByTestId('mcp-tool-annotations')
+    expect(within(readBadges).getByText('Read-only')).toBeInTheDocument()
+    expect(within(readBadges).getByText('Idempotent')).toBeInTheDocument()
+    expect(within(readBadges).queryByText('Destructive')).not.toBeInTheDocument()
+    expect(within(readBadges).queryByText('Open world')).not.toBeInTheDocument()
+    expect(within(readBadges).getByText('Closed world')).toBeInTheDocument()
+    expect(within(deleteBadges).getByText('Destructive')).toBeInTheDocument()
+    expect(within(deleteBadges).getByText('Open world')).toBeInTheDocument()
+    expect(within(deleteBadges).queryByText('Closed world')).not.toBeInTheDocument()
+    expect(within(deleteBadges).queryByText('Non-destructive')).not.toBeInTheDocument()
+    expect(within(appendBadges).getByText('Non-destructive')).toBeInTheDocument()
+    expect(within(appendBadges).queryByText('Destructive')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('mcp-tool-annotations')).toHaveLength(3)
+
+    expect(screen.getByText('Query documentation')).toBeInTheDocument()
+    expect(screen.getByText('Output schema')).toBeInTheDocument()
+    expect(screen.getByTestId('mcp-tool-output-schema-code')).toHaveTextContent('answer')
+  })
+
+  it('shows upstream hints next to overrides and saves admin tags', async () => {
+    const readTool: McpToolView = {
+      ...activeTool,
+      annotations: { ...activeTool.annotations, read_only_hint: true },
+      effective_tags: ['open_world', 'read_only'],
+    }
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [readTool] } })
+    saveMcpToolTagsMock.mockResolvedValueOnce({
+      data: {
+        tool: {
+          ...readTool,
+          admin_tags: ['docs', 'finance'],
+          effective_tags: ['docs', 'finance', 'open_world', 'read_only'],
+        },
+      },
+    })
+    saveMcpToolAnnotationOverridesMock.mockResolvedValueOnce({ data: { tool: readTool } })
+    await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    expect(screen.queryByTestId('mcp-tool-policy')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show query_docs schema' }))
+
+    const overrides = screen.getByTestId('mcp-tool-annotation-overrides')
+    expect(within(overrides).getByText('Upstream: Yes')).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('mcp-tool-effective-tags')).getByText('read_only'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save overrides' }))
+    await waitFor(() =>
+      expect(saveMcpToolAnnotationOverridesMock).toHaveBeenCalledWith({
+        data: {
+          serverId: 'server_1',
+          toolId: 'tool_2',
+          annotationOverrides: {
+            read_only_hint: null,
+            destructive_hint: null,
+            idempotent_hint: null,
+            open_world_hint: null,
+          },
+        },
+      }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Admin tags'), {
+      target: { value: 'finance, docs' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
+    await waitFor(() =>
+      expect(saveMcpToolTagsMock).toHaveBeenCalledWith({
+        data: { serverId: 'server_1', toolId: 'tool_2', tags: ['finance', 'docs'] },
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('mcp-tool-effective-tags')).getByText('finance'),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('contains expanded JSON schema overflow inside the tools panel', async () => {
@@ -354,7 +533,8 @@ describe('ServersTab', () => {
       })
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit GitHub' }))
+    // The add dialog stays open, hiding the list, until its transition finishes.
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit GitHub' }))
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'GitHub MCP' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -364,6 +544,82 @@ describe('ServersTab', () => {
           serverId: 'server_1',
           input: expect.objectContaining({ display_name: 'GitHub MCP' }),
         },
+      })
+    })
+  })
+
+  it('fills OAuth settings from discovery and lets the admin edit them before saving', async () => {
+    discoverExternalMcpServerOauthMock.mockResolvedValue({
+      data: {
+        resource: 'https://mcp.linear.example/mcp',
+        resource_metadata_url:
+          'https://mcp.linear.example/.well-known/oauth-protected-resource/mcp',
+        authorization_servers: ['https://auth.linear.example'],
+        issuer: 'https://auth.linear.example',
+        authorization_server_metadata_url:
+          'https://auth.linear.example/.well-known/oauth-authorization-server',
+        authorization_endpoint: 'https://auth.linear.example/authorize',
+        token_endpoint: 'https://auth.linear.example/token',
+        registration_endpoint: 'https://auth.linear.example/register',
+        scopes_supported: ['read', 'write'],
+        default_scopes: ['read'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        code_challenge_methods_supported: ['S256'],
+        client_id_metadata_document_supported: false,
+        recommended_client_registration: 'dynamic',
+        resource_indicator: true,
+        callback_url: 'https://gateway.example/api/v1/mcp/oauth/callback',
+        client_metadata_document_url: null,
+        warnings: ['The server lists 2 authorization servers; Oceans uses the first.'],
+        suggested_auth_config: {
+          resource: 'https://mcp.linear.example/mcp',
+          issuer: 'https://auth.linear.example',
+          client_registration: 'dynamic',
+          scopes: ['read'],
+        },
+      },
+    })
+    await renderServersTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'linear' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Linear' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.linear.example/mcp' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Discover OAuth' }))
+
+    await waitFor(() =>
+      expect(discoverExternalMcpServerOauthMock).toHaveBeenCalledWith({
+        data: { serverUrl: 'https://mcp.linear.example/mcp' },
+      }),
+    )
+    // The panel holds the Discover OAuth button, so it renders before discovery resolves.
+    const panel = screen.getByTestId('mcp-oauth-discovery')
+    expect(await within(panel).findByText('Dynamic client registration')).toBeTruthy()
+    expect(within(panel).getByText('https://auth.linear.example/token')).toBeTruthy()
+    expect(within(panel).getByText(/lists 2 authorization servers/)).toBeTruthy()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Use discovered settings' }))
+    const authConfig = screen.getByLabelText('Auth config JSON') as HTMLTextAreaElement
+    const applied = JSON.parse(authConfig.value) as Record<string, unknown>
+    expect(applied.client_registration).toBe('dynamic')
+    // The admin overrides the discovered scopes before saving.
+    fireEvent.change(authConfig, {
+      target: { value: JSON.stringify({ ...applied, scopes: ['read', 'write'] }) },
+    })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          server_key: 'linear',
+          auth_mode: 'oauth_obo',
+          auth_config: expect.objectContaining({
+            issuer: 'https://auth.linear.example',
+            scopes: ['read', 'write'],
+          }),
+        }),
       })
     })
   })

@@ -478,9 +478,10 @@ async fn optional_api_key(
         (None, None) => None,
     };
     match token {
+        // A batch runs inference and spends the same budget.
         Some(token) => state
             .service
-            .authenticate_bearer_token(token)
+            .authenticate_bearer_token_for_scope(token, gateway_core::SCOPE_INFERENCE)
             .await
             .map(Some)
             .map_err(AppError),

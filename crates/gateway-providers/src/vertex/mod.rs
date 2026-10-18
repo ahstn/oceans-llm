@@ -11,7 +11,9 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    anthropic::{normalize_anthropic_response, normalize_anthropic_stream},
+    anthropic::{
+        normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
+    },
     http::{execute_request, map_reqwest_error},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
@@ -31,7 +33,7 @@ mod google_tools;
 #[cfg(test)]
 mod tests;
 
-use anthropic::map_vertex_anthropic_request;
+use anthropic::{map_vertex_anthropic_count_tokens_request, map_vertex_anthropic_request};
 use embeddings::{
     GoogleEmbeddingOutput, extract_google_embedding_outputs, map_google_embedding_request,
     normalize_google_embedding_outputs, partial_google_embedding_failure,
@@ -288,6 +290,28 @@ impl ProviderClient for VertexProvider {
                 ))
             }
         }
+    }
+
+    async fn count_tokens(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        if family != PublisherFamily::Anthropic {
+            return Err(ProviderError::NotImplemented(format!(
+                "vertex {publisher} models do not support Messages token counting"
+            )));
+        }
+        let body = map_vertex_anthropic_count_tokens_request(
+            request,
+            context,
+            model_id,
+            &self.config.default_headers,
+        )?;
+        let endpoint = self.model_endpoint(publisher, "count-tokens", "rawPredict");
+        let value = self.post_json(&endpoint, &body, context).await?;
+        normalize_count_tokens_response(&value, "input_tokens", PROVIDER_NAMESPACE)
     }
 
     async fn chat_completions_stream(

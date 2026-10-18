@@ -15,12 +15,24 @@ use gateway_mcp::server::{
 use gateway_mcp::{
     JsonRpcErrorObject, JsonRpcId, McpClientError, StreamableHttpClient, ToolsCallResponse,
 };
-use gateway_service::{CallMcpToolInput, McpCatalog, McpGatewayService, McpInvocationLogInput};
+use gateway_service::{
+    CallMcpToolInput, McpCatalog, McpGatewayService, McpInvocationLogInput, RateLimitStatus,
+};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::http::state::AppState;
+use crate::http::{
+    mcp_gateway::{
+        credentials::credential_guidance,
+        rate_limits::{
+            JSON_RPC_INTERNAL_ERROR, RATE_LIMITED_ERROR_CODE, check_tool_call, rejection_body,
+            rejection_metadata,
+        },
+    },
+    request_policy::RequestPolicyContext,
+    state::AppState,
+};
 
 use super::{
     evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, json_rpc_response,
@@ -29,6 +41,7 @@ use super::{
 
 pub(super) async fn call_catalog_tool(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     id: JsonRpcId,
     input: CallMcpToolInput,
@@ -74,6 +87,7 @@ pub(super) async fn call_catalog_tool(
 
     let mut invocation = CatalogInvocation {
         state,
+        policy,
         auth,
         record: &record,
         mcp_tool_invocation_id: Uuid::new_v4(),
@@ -92,12 +106,16 @@ pub(super) async fn call_catalog_tool(
 
 enum CatalogCallError {
     Gateway(GatewayError),
+    RateLimited(RateLimitStatus),
+    /// The limiter could not check the call and `failure_mode` is `closed`.
+    RateLimitUnavailable(GatewayError),
     PolicyDenied(&'static str),
     InvalidTransformation(serde_json::Error),
 }
 
 struct CatalogInvocation<'a> {
     state: &'a AppState,
+    policy: &'a RequestPolicyContext,
     auth: &'a AuthenticatedApiKey,
     record: &'a McpCatalogToolRecord,
     mcp_tool_invocation_id: Uuid,
@@ -116,6 +134,14 @@ impl CatalogInvocation<'_> {
         } else {
             original_arguments.clone()
         };
+        if let Some(rejected) =
+            check_tool_call(self.state, self.policy, self.auth, &self.record.server)
+                .await
+                .map_err(CatalogCallError::RateLimitUnavailable)?
+        {
+            self.metadata.extend(rejection_metadata(&rejected));
+            return Err(CatalogCallError::RateLimited(rejected));
+        }
         let evaluation = evaluate_mcp_call(
             self.state,
             Some(&self.request_id),
@@ -157,7 +183,8 @@ impl CatalogInvocation<'_> {
             &upstream.server.server_url,
             Duration::from_millis(upstream.server.timeout_ms.max(1) as u64),
         )
-        .map_err(|error| CatalogCallError::Gateway(map_mcp_client_error(error)))?;
+        .map_err(|error| CatalogCallError::Gateway(map_mcp_client_error(error)))?
+        .with_query_credential(upstream.query_credential.clone());
         match client
             .call_tool(
                 upstream.headers.as_ref(),
@@ -253,7 +280,7 @@ impl CatalogInvocation<'_> {
         address: &str,
         outcome: Result<ToolsCallResponse, CatalogCallError>,
     ) -> Response<Body> {
-        let error_context =
+        let mut error_context =
             json!({"address": address, "server_key": self.record.server.server_key});
         let (response, status, policy_result, error_code) = match outcome {
             Ok(result) => {
@@ -276,13 +303,46 @@ impl CatalogInvocation<'_> {
             Err(CatalogCallError::Gateway(error)) => {
                 let code = error.error_code().to_string();
                 let status = invocation_status_for_error(&error);
+                let message =
+                    match credential_guidance(self.state, self.auth, &self.record.server, &error) {
+                        Some(guidance) => {
+                            if let Some(url) = guidance.connect_url {
+                                error_context["connect_url"] = json!(url);
+                            }
+                            guidance.message
+                        }
+                        None => error.to_string(),
+                    };
                 (
-                    aggregate_tool_error(id, error.to_string(), &code, error_context),
+                    aggregate_tool_error(id, message, &code, error_context),
                     status,
                     McpToolPolicyResult::Allowed,
                     Some(code),
                 )
             }
+            Err(CatalogCallError::RateLimited(rejected)) => (
+                json_rpc_response(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    rejection_body(serde_json::to_value(&id).unwrap_or(Value::Null), &rejected),
+                    None,
+                ),
+                McpToolInvocationStatus::PolicyDenied,
+                McpToolPolicyResult::Denied,
+                Some(RATE_LIMITED_ERROR_CODE.to_string()),
+            ),
+            // A real HTTP error, like the per-server route's 503, so clients
+            // retry it instead of reading a tool result.
+            Err(CatalogCallError::RateLimitUnavailable(error)) => (
+                json_rpc_response(
+                    StatusCode::from_u16(error.http_status_code())
+                        .unwrap_or(StatusCode::SERVICE_UNAVAILABLE),
+                    json_rpc_error(Some(id), JSON_RPC_INTERNAL_ERROR, error.to_string()),
+                    None,
+                ),
+                McpToolInvocationStatus::GatewayError,
+                McpToolPolicyResult::NotEvaluated,
+                Some(error.error_code().to_string()),
+            ),
             Err(CatalogCallError::PolicyDenied(phase)) => {
                 let code = "guardrail_policy_denied";
                 (
@@ -330,6 +390,7 @@ impl CatalogInvocation<'_> {
                     tool_id: Some(self.record.tool.mcp_tool_id),
                     tool_display_key: self.record.tool.upstream_name.clone(),
                     tool_display_name: self.record.tool.display_name.clone(),
+                    mcp_method: "tools/call".to_string(),
                     status,
                     policy_result,
                     latency_ms: Some(self.started_at.elapsed().as_millis() as i64),
@@ -338,6 +399,7 @@ impl CatalogInvocation<'_> {
                     result_json: self.result_json,
                     metadata,
                     occurred_at: OffsetDateTime::now_utc(),
+                    tool_schema_version: Some(self.record.tool.schema_version),
                 },
             )
             .await;

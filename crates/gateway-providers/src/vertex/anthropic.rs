@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext};
 use serde_json::{Map, Value};
 
-use crate::anthropic::{AnthropicRequestOptions, map_anthropic_request};
+use crate::anthropic::{
+    AnthropicRequestOptions, COUNT_TOKENS_FIELDS, map_anthropic_request, retain_count_tokens_fields,
+};
 
 /// Body field Vertex `rawPredict` requires instead of the `anthropic-version` header.
 const VERTEX_ANTHROPIC_VERSION: &str = "vertex-2023-10-16";
@@ -32,6 +34,31 @@ pub(super) fn map_vertex_anthropic_request(
         apply_body_betas(object, context, default_headers)?;
     }
     Ok(body)
+}
+
+/// Maps a chat request to the body of the Vertex Claude `count-tokens:rawPredict` call.
+///
+/// The count endpoint is a shared model path, so the Claude model travels in the
+/// body. Vertex rejects a versioned id there, so the `@version` suffix is dropped.
+pub(super) fn map_vertex_anthropic_count_tokens_request(
+    request: &CoreChatRequest,
+    context: &ProviderRequestContext,
+    model_id: &str,
+    default_headers: &BTreeMap<String, String>,
+) -> Result<Value, ProviderError> {
+    let mut body = map_vertex_anthropic_request(request, context, false, default_headers)?;
+    if let Some(object) = body.as_object_mut() {
+        let model = model_id
+            .split_once('@')
+            .map_or(model_id, |(model, _)| model);
+        object.insert("model".to_string(), Value::String(model.to_string()));
+    }
+    let fields: Vec<&str> = COUNT_TOKENS_FIELDS
+        .iter()
+        .copied()
+        .chain(["anthropic_version", "anthropic_beta"])
+        .collect();
+    Ok(retain_count_tokens_fields(body, &fields))
 }
 
 fn apply_body_betas(

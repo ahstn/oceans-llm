@@ -4,24 +4,33 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, GatewayError,
-    GlobalRole, IdentityRepository, MembershipRole, UserStatus,
+    API_KEY_SCOPES, AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError,
+    GatewayError, GlobalRole, IdentityRepository, MembershipRole, UserRecord, UserStatus,
 };
 use gateway_service::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
+    AdminApiKeyMcpServerOption, AdminApiKeyModelOption, AdminApiKeyService,
+    AdminApiKeyServiceAccountOwner, AdminApiKeySummary, AdminApiKeyUserOwner,
+    AdminApiKeysPayload as ServiceAdminApiKeysPayload, AuditAction, AuditEvent, AuditProgress,
     CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
-    UpdateAdminApiKeyInput,
+    UpdateAdminApiKeyInput, admin_audit::actions,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+mod scopes;
+
+pub use scopes::{
+    __path_update_api_key_scopes, UpdateApiKeyScopesRequest, UpdateApiKeyScopesResponse,
+    update_api_key_scopes,
+};
 
 use crate::{
     config::{AdminAction, AdminPermissionGroup},
     http::{
         admin_auth::require_authenticated_session,
         admin_contract::{Envelope, envelope, format_timestamp},
+        audit::AuditRequestMeta,
         error::AppError,
         state::AppState,
     },
@@ -33,6 +42,10 @@ pub struct AdminApiKeysPayload {
     users: Vec<AdminApiKeyUserOwnerView>,
     service_accounts: Vec<AdminApiKeyServiceAccountOwnerView>,
     models: Vec<AdminApiKeyModelView>,
+    /// Scopes a key may carry, in display order.
+    available_scopes: Vec<String>,
+    /// Active MCP servers, the options for a key's server list.
+    mcp_servers: Vec<AdminApiKeyMcpServerView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -51,6 +64,10 @@ pub struct AdminApiKeyView {
     owner_service_account_team_key: Option<String>,
     model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
+    /// `null`: full access, as for keys created before scopes existed.
+    scopes: Option<Vec<String>>,
+    /// `null`: every MCP server the owner's grants reach.
+    mcp_server_keys: Option<Vec<String>>,
     created_at: String,
     last_used_at: Option<String>,
     revoked_at: Option<String>,
@@ -74,6 +91,12 @@ pub struct AdminApiKeyServiceAccountOwnerView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminApiKeyMcpServerView {
+    key: String,
+    display_name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyModelView {
     id: String,
     key: String,
@@ -90,6 +113,12 @@ pub struct CreateApiKeyRequest {
     owner_service_account_id: Option<String>,
     model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
+    /// Omit or `null` for full access.
+    #[serde(default)]
+    scopes: Option<Vec<String>>,
+    /// Omit or `null` to reach every server the owner's grants reach.
+    #[serde(default)]
+    mcp_server_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -181,14 +210,25 @@ pub async fn list_api_keys(
 pub async fn create_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<Json<Envelope<CreateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::CreateApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::CreateApiKey).await?;
     authorize_create_api_key(&state, &scope, &request).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let result = service
-        .create_api_key(CreateAdminApiKeyInput {
+    let requested_name = request.name.clone();
+    let requested = serde_json::json!({
+        "owner_kind": request.owner_kind,
+        "model_grant_mode": request.model_grant_mode.as_str(),
+        "model_keys": request.model_keys,
+        "scopes": request.scopes,
+        "mcp_server_keys": request.mcp_server_keys,
+    });
+    let progress = AuditProgress::default();
+    let create = service.create_api_key(
+        CreateAdminApiKeyInput {
             name: request.name,
             owner_kind: request.owner_kind,
             owner_user_id: request.owner_user_id,
@@ -196,7 +236,29 @@ pub async fn create_api_key(
             owner_service_account_id: request.owner_service_account_id,
             model_grant_mode: request.model_grant_mode.as_str().to_string(),
             model_keys: request.model_keys,
-        })
+            scopes: request.scopes,
+            mcp_server_keys: request.mcp_server_keys,
+        },
+        &progress,
+    );
+    let result = state
+        .audit()
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            create,
+            |result| {
+                api_key_event(actions::API_KEY_CREATED, &result.api_key)
+                    .after(map_api_key_summary(result.api_key.clone()))
+            },
+            // The key row exists but a later step failed; the service revokes the key
+            // when its secret material could not be stored.
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_CREATED, progress, error)
+                    .label(requested_name.clone())
+                    .meta("requested", &requested)
+            },
+        )
         .await?;
 
     Ok(Json(envelope(map_create_result(result))))
@@ -213,23 +275,57 @@ pub async fn create_api_key(
 pub async fn update_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<Envelope<UpdateApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::UpdateApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::UpdateApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let api_key = service
-        .update_api_key(
-            api_key_id,
-            UpdateAdminApiKeyInput {
-                model_grant_mode: request.model_grant_mode.as_str().to_string(),
-                model_keys: request.model_keys,
+    let requested = serde_json::json!({
+        "model_grant_mode": request.model_grant_mode.as_str(),
+        "model_keys": request.model_keys,
+    });
+    let progress = AuditProgress::default();
+    let update = service.update_api_key(
+        api_key_id,
+        UpdateAdminApiKeyInput {
+            model_grant_mode: request.model_grant_mode.as_str().to_string(),
+            model_keys: request.model_keys,
+        },
+        &progress,
+    );
+    let result = state
+        .audit()
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            update,
+            // The store reports the access it replaced, read under the write lock, and
+            // writes nothing when the key already has this access, which records nothing.
+            |result| {
+                result.replaced_access.as_ref().map(|(mode, model_keys)| {
+                    api_key_event(actions::API_KEY_UPDATED, &result.api_key)
+                        .before(model_access_summary(
+                            Some(mode.as_str()),
+                            model_keys.clone(),
+                        ))
+                        .after(model_access_summary(
+                            Some(result.api_key.model_grant_mode.as_str()),
+                            result.api_key.model_keys.clone(),
+                        ))
+                })
+            },
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_UPDATED, progress, error)
+                    .meta("requested", &requested)
             },
         )
         .await?;
+    let api_key = result.api_key;
 
     Ok(Json(envelope(UpdateApiKeyResponse {
         api_key: map_api_key_summary(api_key),
@@ -246,17 +342,38 @@ pub async fn update_api_key(
 pub async fn revoke_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevokeApiKeyResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevokeApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::RevokeApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let api_key = service.revoke_api_key(api_key_id).await?;
+    let progress = AuditProgress::default();
+    let result = state
+        .audit()
+        .audited_steps(
+            &meta.user_context(&actor),
+            &progress,
+            service.revoke_api_key(api_key_id, &progress),
+            // Revoking an already-revoked key changes nothing, so it is not recorded.
+            |result| {
+                result.revoked.then(|| {
+                    api_key_event(actions::API_KEY_REVOKED, &result.api_key)
+                        .after(serde_json::json!({ "status": result.api_key.status.as_str() }))
+                })
+            },
+            |progress, error| {
+                partial_api_key_event(actions::API_KEY_REVOKED, progress, error)
+                    .after(serde_json::json!({ "status": "revoked" }))
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(RevokeApiKeyResponse {
-        api_key: map_api_key_summary(api_key),
+        api_key: map_api_key_summary(result.api_key),
     })))
 }
 
@@ -270,14 +387,29 @@ pub async fn revoke_api_key(
 pub async fn reveal_api_key_secret(
     State(state): State<AppState>,
     headers: HeaderMap,
+    meta: AuditRequestMeta,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevealApiKeySecretResponse>>, AppError> {
-    let scope = require_api_key_action_scope(&state, &headers, AdminAction::RevealApiKey).await?;
+    let (actor, scope) =
+        require_api_key_action_scope(&state, &headers, AdminAction::RevealApiKey).await?;
     let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
     authorize_reveal_api_key_secret(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let result = service.reveal_api_key_secret(api_key_id).await?;
+    // The entry records that the secret was shown, never the secret itself.
+    let result = state
+        .audit()
+        .audited(
+            &meta.user_context(&actor),
+            service.reveal_api_key_secret(api_key_id),
+            |result| {
+                AuditEvent::new(actions::API_KEY_SECRET_REVEALED)
+                    .target(api_key_id)
+                    .label(result.name.clone())
+                    .meta("owner_kind", result.owner_kind.as_str())
+            },
+        )
+        .await?;
 
     Ok(Json(envelope(map_reveal_result(result))))
 }
@@ -331,7 +463,7 @@ async fn require_api_key_action_scope(
     state: &AppState,
     headers: &HeaderMap,
     action: AdminAction,
-) -> Result<ApiKeyActionScope, AppError> {
+) -> Result<(UserRecord, ApiKeyActionScope), AppError> {
     let actor = require_authenticated_session(state, headers).await?;
     if actor.status != UserStatus::Active {
         return Err(insufficient_privileges());
@@ -340,11 +472,10 @@ async fn require_api_key_action_scope(
         let permissions = state
             .admin_permissions
             .for_group(AdminPermissionGroup::PlatformAdmins);
-        return permissions
-            .actions
-            .contains(&action)
-            .then_some(ApiKeyActionScope::Platform)
-            .ok_or_else(insufficient_privileges);
+        if !permissions.actions.contains(&action) {
+            return Err(insufficient_privileges());
+        }
+        return Ok((actor, ApiKeyActionScope::Platform));
     }
 
     let membership = state
@@ -371,9 +502,46 @@ async fn require_api_key_action_scope(
         return Err(insufficient_privileges());
     }
 
-    Ok(ApiKeyActionScope::User {
-        user_id: actor.user_id,
-        managed_team_id,
+    let user_id = actor.user_id;
+    Ok((
+        actor,
+        ApiKeyActionScope::User {
+            user_id,
+            managed_team_id,
+        },
+    ))
+}
+
+/// A key change that failed after its first write landed; `progress` holds the key ID.
+fn partial_api_key_event(
+    action: AuditAction,
+    progress: &AuditProgress,
+    error: &GatewayError,
+) -> AuditEvent {
+    let event = AuditEvent::new(action).meta("error", error.error_code());
+    match progress.target_id() {
+        Some(api_key_id) => event.target(api_key_id),
+        None => event,
+    }
+}
+
+fn api_key_event(action: AuditAction, api_key: &AdminApiKeySummary) -> AuditEvent {
+    AuditEvent::new(action)
+        .target(api_key.id)
+        .label(api_key.name.clone())
+        .meta("owner_kind", api_key.owner_kind.as_str())
+        .meta("owner_id", api_key.owner_id)
+}
+
+/// Grant mode and sorted model keys, so summaries compare equal when access is.
+fn model_access_summary(
+    model_grant_mode: Option<&str>,
+    mut model_keys: Vec<String>,
+) -> serde_json::Value {
+    model_keys.sort();
+    serde_json::json!({
+        "model_grant_mode": model_grant_mode,
+        "model_keys": model_keys,
     })
 }
 
@@ -495,6 +663,22 @@ fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {
             .map(map_service_account_owner)
             .collect(),
         models: payload.models.into_iter().map(map_model_option).collect(),
+        available_scopes: API_KEY_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_string())
+            .collect(),
+        mcp_servers: payload
+            .mcp_servers
+            .into_iter()
+            .map(map_mcp_server_option)
+            .collect(),
+    }
+}
+
+fn map_mcp_server_option(server: AdminApiKeyMcpServerOption) -> AdminApiKeyMcpServerView {
+    AdminApiKeyMcpServerView {
+        key: server.key,
+        display_name: server.display_name,
     }
 }
 
@@ -529,6 +713,8 @@ pub(crate) fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyVie
         owner_service_account_team_key: api_key.owner_service_account_team_key,
         model_grant_mode: api_key.model_grant_mode.into(),
         model_keys: api_key.model_keys,
+        scopes: api_key.access.scopes,
+        mcp_server_keys: api_key.access.mcp_server_keys,
         created_at: format_timestamp(api_key.created_at),
         last_used_at: api_key.last_used_at.map(format_timestamp),
         revoked_at: api_key.revoked_at.map(format_timestamp),

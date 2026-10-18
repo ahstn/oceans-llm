@@ -11,7 +11,9 @@ use gateway_core::{
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
-use super::{AppError, v1_chat_completions, v1_responses};
+use super::{
+    AppError, v1_chat_completions, v1_decisions, v1_embeddings, v1_messages_inner, v1_responses,
+};
 use crate::http::{
     state::AppState,
     test_support::{app_state, seed_stream_cancellation_test},
@@ -21,6 +23,9 @@ use crate::http::{
 enum Endpoint {
     Chat,
     Responses,
+    Messages,
+    Embeddings,
+    Decisions,
 }
 
 impl Endpoint {
@@ -45,14 +50,77 @@ impl Endpoint {
                     "stream": stream,
                 }))
                 .unwrap();
-                v1_chat_completions(State(state), request_id, headers, auth, Json(request)).await
+                v1_chat_completions(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
             Self::Responses => {
                 let request = serde_json::from_value(json!({
                     "model": "fast", "input": "hello", "stream": stream,
                 }))
                 .unwrap();
-                v1_responses(State(state), request_id, headers, auth, Json(request)).await
+                v1_responses(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
+            }
+            Self::Messages => {
+                let request = serde_json::from_value(json!({
+                    "model": "fast", "max_tokens": 16, "stream": stream,
+                    "messages": [{"role": "user", "content": "hello"}],
+                }))
+                .unwrap();
+                v1_messages_inner(
+                    state,
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth.0,
+                    request,
+                )
+                .await
+            }
+            Self::Embeddings => {
+                let request = serde_json::from_value(json!({
+                    "model": "fast", "input": "hello",
+                }))
+                .unwrap();
+                v1_embeddings(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
+            }
+            Self::Decisions => {
+                let request = serde_json::from_value(json!({
+                    "model": "fast", "state": {"ticket": "hello"},
+                    "questions": {"urgent": {"type": "noul", "instructions": "Is it urgent?"}},
+                }))
+                .unwrap();
+                v1_decisions(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
             }
         }
     }
@@ -237,7 +305,16 @@ async fn inference_endpoints_log_stream_start_failure_without_charging() {
 
 #[tokio::test]
 async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
-    for endpoint in [Endpoint::Chat, Endpoint::Responses] {
+    for (endpoint, stream) in [
+        (Endpoint::Chat, false),
+        (Endpoint::Chat, true),
+        (Endpoint::Responses, false),
+        (Endpoint::Responses, true),
+        (Endpoint::Messages, false),
+        (Endpoint::Messages, true),
+        (Endpoint::Embeddings, false),
+        (Endpoint::Decisions, false),
+    ] {
         let (_directory, state, provider) = setup().await;
         let auth = state
             .service
@@ -260,18 +337,71 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             )
             .await
             .unwrap();
-        let error = endpoint.call(state.clone(), false).await.unwrap_err();
-        assert_eq!(error.0.error_code(), "budget_exceeded");
-        assert_eq!(error.0.http_status_code(), 429);
-        assert_eq!(state.metrics.test_snapshot().requests, 1);
-        assert!(provider.calls.lock().unwrap().is_empty());
+        let error = endpoint.call(state.clone(), stream).await.unwrap_err();
         assert_eq!(
-            state
-                .metrics
-                .test_snapshot()
-                .request_outcomes
-                .get("budget_error"),
-            Some(&1),
+            error.0.error_code(),
+            "budget_exceeded",
+            "{endpoint:?}: {}",
+            error.0
+        );
+        assert_eq!(error.0.http_status_code(), 422);
+        assert!(provider.calls.lock().unwrap().is_empty());
+        let metrics = state.metrics.test_snapshot();
+        // Decisions and embeddings record their own request metric, never the
+        // chat one.
+        let request_outcomes = match endpoint {
+            Endpoint::Decisions => {
+                assert_eq!(metrics.requests, 0);
+                assert!(metrics.embeddings_requests.is_empty());
+                metrics
+                    .decisions_requests
+                    .iter()
+                    .map(|(request, count)| {
+                        assert_eq!(*count, 1);
+                        request.outcome.as_str()
+                    })
+                    .collect::<Vec<_>>()
+            }
+            Endpoint::Embeddings => {
+                assert_eq!(metrics.requests, 0);
+                assert!(metrics.decisions_requests.is_empty());
+                metrics
+                    .embeddings_requests
+                    .iter()
+                    .map(|(request, count)| {
+                        assert_eq!(*count, 1);
+                        request.outcome.as_str()
+                    })
+                    .collect()
+            }
+            Endpoint::Chat | Endpoint::Responses | Endpoint::Messages => {
+                assert_eq!(metrics.requests, 1);
+                assert!(metrics.decisions_requests.is_empty());
+                assert!(metrics.embeddings_requests.is_empty());
+                metrics
+                    .request_outcomes
+                    .keys()
+                    .map(String::as_str)
+                    .collect()
+            }
+        };
+        assert_eq!(request_outcomes, ["budget_error"], "{endpoint:?}");
+        let detail = request_detail(&state).await;
+        assert_eq!(
+            detail.log.status_code,
+            Some(i64::from(error.0.http_status_code())),
+            "{endpoint:?} logs the returned status"
+        );
+        assert_eq!(detail.log.error_code.as_deref(), Some("budget_exceeded"));
+        assert_eq!(detail.log.provider_key, "vertex");
+        assert_eq!(
+            detail.log.metadata["stream"],
+            Value::Bool(stream),
+            "{endpoint:?} keeps the requested stream flag"
+        );
+        assert!(
+            detail.attempts.is_empty(),
+            "{endpoint:?} budget rejection must not record a provider attempt"
         );
     }
 }

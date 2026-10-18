@@ -1,14 +1,18 @@
 # Workspace connections
 
-Workspace connections lets any signed-in user link or unlink their own account on OAuth-backed MCP servers, such as Google Drive or Google Docs, that a platform administrator has registered. When no such server is configured, the page explains that an administrator must register one first.
+Workspace connections lets any signed-in user link or unlink their own account on OAuth-backed MCP servers that a platform administrator has registered. These include Google Drive and Google Docs, servers that use a configured `oauth2` provider, and servers registered by URL through OAuth discovery. When no such server is configured, the page explains that an administrator must register one first.
 
 ## Sub-features
 
-- `connections-list` shows each available OAuth MCP server with its status and `Requested scopes`.
+- `connections-list` shows each available OAuth MCP server with its status and `Requested scopes`. A server that requests no specific scopes shows `Provider default`. The card description reads `<server_key> · via <provider>`. The provider is the configured key, such as `google`, or the authorization server's host for a server registered through discovery.
 - `connections-empty` shows `No OAuth servers are available` when there is no active oauth_obo server.
 - `connections-connect` starts the provider consent flow with `Connect` or `Reconnect`.
 - `connections-disconnect` removes the user's binding with `Disconnect`.
-- `connections-callback` shows a toast for `?oauth=connected` or `?oauth_error=<code>`.
+- `connections-callback` shows a toast for `?oauth=connected` or `?oauth_error=<code>`. The callback also returns `?server=<server_id>`, and the success toast then names the server, such as `Google Drive connected`.
+- `connections-client-metadata` is the public Client ID Metadata Document at `/api/v1/mcp/oauth/client-metadata.json`. Servers that use `metadata_document` registration send its URL as their client ID. It returns 404 when `mcp.oauth.public_base_url` is not set.
+- `connections-connect-link` handles `?connect=<server_key>`, the `connect_url` that MCP clients receive with `credential_required` and `credential_expired`. It drops the parameter, then starts consent for that server. A connected server shows `<name> is already connected`. A connection that no longer matches the server's provider, resource, or required scopes lists as `Expired`, so the link starts consent again; an unknown server shows `No workspace connection is available for MCP server <key>.`; an unavailable server shows its availability error.
+
+- `connections-authorized-clients` shows the `Authorized MCP clients` card when OAuth sign-in for MCP clients is enabled. It lists each client the user allowed, with its access, last token time, and expiry, and `Disconnect <client>` revokes it. With no clients it reads `No MCP clients are authorized.`
 
 ## How to get to it (user POV)
 
@@ -26,13 +30,19 @@ Preconditions:
 - **API parity.** From the browser context, fetch `/api/v1/mcp/oauth/connections`. It returns an empty list, which matches the empty state.
 - **Non-admin reach.** In a new browser context, sign in as `ben@platform.local` with `localdemo123` and open `/admin/account/connections`. The same empty state renders, so the page is not gated by permissions.
 - **Error callback.** Open `/admin/account/connections?oauth_error=access_denied`. An error toast appears and the page stays on the empty state.
-- **Connect and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a Google entry under `mcp.oauth.providers`, a registered oauth_obo server, and interactive Google consent. Report them as skipped and name that unmet precondition.
+- **Metadata document.** Fetch `/api/v1/mcp/oauth/client-metadata.json` without a session. The default stack sets no `mcp.oauth.public_base_url`, so it returns 404.
+- **Connect link, unknown server.** Open `/admin/account/connections?connect=google_drive`. The toast `No workspace connection is available for MCP server google_drive.` appears, the URL drops the `connect` parameter, and the browser does not leave the page.
+- **Connect, connect link and disconnect (unreachable by default).** These need `mcp.oauth.public_base_url`, a registered oauth_obo server, and interactive consent at the upstream. A Google server also needs a Google entry under `mcp.oauth.providers`. Report them as skipped and name that unmet precondition.
+- **Authorized clients, empty.** The `Authorized MCP clients` card reads `No MCP clients are authorized.`, which matches `/api/v1/me/authorized-mcp-clients` (`enabled: true`, empty `items`).
+- **Authorized clients, disconnect.** Authorize a client through the [MCP client OAuth](./mcp-client-oauth.md) consent flow, then reload the page. The card lists the client by name. Choose `Disconnect <client>`. A `<client> disconnected` toast appears, the row disappears, and the client's access token now gets `401` on `/mcp`.
 - **Proof.** Capture the card, the alert, and the API response.
 
 ## Gotchas
 
-- `Connect` redirects to Google. Never complete consent with a real account during verification.
+- `Connect` redirects to the upstream authorization server. For a server registered by discovery with `dynamic` registration, the first `Connect` also registers Oceans with that server. Never complete consent with a real account during verification.
+- The code flow, refresh, dynamic registration, and metadata-document client for generic servers are proved against a mock authorization server by `http::mcp_oauth::tests::generic`.
 - The list includes only active oauth_obo servers and the user's existing bindings. A registered MCP server without OAuth does not appear.
 - `Disconnect` acts only on the signed-in user's own binding. It is not an admin view of other users.
 - The status badge capitalizes the status from the API, so compare statuses case-insensitively.
 - Do not record the OAuth `state`, codes, or tokens in evidence.
+- The `connect_url` itself is built by the gateway. `http::mcp_gateway::credentials::tests` and `aggregate::tests::missing_oauth_credential_returns_the_connect_url` prove the URL, the message, and that no secrets appear. `src/test/routes/account-connections-route.test.tsx` proves the page side with a stubbed consent redirect.

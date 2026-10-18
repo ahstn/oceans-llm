@@ -6,6 +6,283 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.40.0] - 2026-10-16
+### :rocket: New features
+- *(gateway)* Record request metrics for the Decisions API by @ahstn in [#482](https://github.com/ahstn/oceans-llm/pull/482)
+- *(gateway)* Add Messages count_tokens and unversioned inference aliases by @ahstn in [#475](https://github.com/ahstn/oceans-llm/pull/475)
+- *(store)* Extend audit_logs into the admin audit trail by @ahstn
+- *(service)* Add the AdminAudit boundary for control-plane changes by @ahstn
+- *(admin)* Audit admin mutations and add the audit log API by @ahstn
+- *(admin-ui)* Add the Audit Log page under Observability by @ahstn
+- *(gateway)* Record request metrics for embeddings by @ahstn in [#489](https://github.com/ahstn/oceans-llm/pull/489)
+- *(mcp)* Support generic upstream OAuth via discovery and dynamic client registration by @ahstn in [#496](https://github.com/ahstn/oceans-llm/pull/496)
+- *(audit)* Add a single-entry endpoint and redact credential user agents by @ahstn
+- *(gateway)* Enforce rate limits and quotas on inference and MCP traffic by @ahstn in [#506](https://github.com/ahstn/oceans-llm/pull/506)
+- *(audit)* Record rate-limit policy changes by @ahstn
+- *(admin)* Record audit logs for admin control-plane mutations by @ahstn in [#507](https://github.com/ahstn/oceans-llm/pull/507)
+
+### :bug: Bug fixes
+- *(gateway)* Bound debug Decisions metric samples and defer coverage docs by @ahstn
+- *(config)* Use a valid Bedrock ID for the claude-sonnet-4.6 seed by @ahstn
+- *(gateway)* Guard and sanitize Messages token counts by @ahstn
+- *(gateway)* Normalize count max_tokens and return Anthropic errors for bad JSON by @ahstn
+- *(gateway)* Bound in-flight Messages token counts per API key by @ahstn
+- *(gateway)* Drop all sampling controls and honour budget aliases in counts by @ahstn
+- *(bedrock)* Count inference-profile ARNs against their foundation model by @ahstn
+- *(gateway)* Drop parallel_tool_calls and response_format from counts by @ahstn
+- *(admin-ui)* Label API and MCP target types with their acronyms by @ahstn
+- *(audit)* Keep API key display prefixes and label logout entries by @ahstn
+- *(pricing)* Fall back to @default ids for Vertex Anthropic catalog lookups by @ahstn in [#490](https://github.com/ahstn/oceans-llm/pull/490)
+- *(admin-ui)* Validate the OAuth discovery server function input by @ahstn
+- *(audit)* Sign the browser address instead of trusting X-Forwarded-For by @ahstn
+- *(audit)* Record partial multi-step identity changes and SSO invite redemption by @ahstn
+- *(audit)* Round lower time bounds up, target revoked grants, show acting key by @ahstn
+- *(audit)* Reject extreme client-IP timestamps without overflowing by @ahstn
+- *(audit)* Keep only settings_json key names in Review Agent summaries by @ahstn
+- *(audit)* Redact and cap target labels by @ahstn
+- *(audit)* Strip credentials from MCP auth config URLs by @ahstn
+- *(audit)* Record partial API key changes and JIT provisioning by @ahstn
+- *(audit)* Bound request IDs in audit metadata by @ahstn
+- *(audit)* Never sign client IPs with the public development secret by @ahstn
+- *(audit)* Redact actor labels, tag values and provider tokens by @ahstn
+- *(audit)* Record partial invited SSO activations by @ahstn
+- *(admin-ui)* Gate the Audit Log page on the platform-admin role alone by @ahstn
+- *(audit)* Record partial pricing and discovery refreshes by @ahstn
+- *(audit)* Rename team.member_transferred to user.team_transferred by @ahstn
+- *(audit)* Record partial invite regeneration and sanitize binding secret refs by @ahstn
+- *(audit)* Judge tag keys without the safe-suffix allowance by @ahstn
+- *(audit)* Record partial activation of already-linked invited SSO users by @ahstn
+- *(audit)* Redact URL path tokens, embedded auth schemes and token tag keys by @ahstn
+- *(audit)* Record nothing for no-op revokes, disables and deletes by @ahstn
+- *(admin-ui)* Send page-less platform admins to their profile by @ahstn
+- *(audit)* Redact long alphabetic URL path tokens by @ahstn
+- *(audit)* Classify credential binding upserts by whether the ID exists by @ahstn
+- *(audit)* Decode URL path segments before checking for tokens by @ahstn
+- *(audit)* Skip no-op changes and keep outcome on truncated metadata by @ahstn
+- *(audit)* Skip entries for no-op invite revokes and repository status by @ahstn
+- *(audit)* Redact URL userinfo in free text and numeric path tokens by @ahstn
+- *(audit)* Redact secret-named assignments and short encoded auth values by @ahstn
+- *(gateway)* Address rate-limit review findings by @ahstn
+- *(admin-ui)* Validate rate-limit server function input by @ahstn
+- *(gateway)* Charge tokens before responding and count chat 429s by @ahstn
+- *(gateway)* Close remaining rate-limit accounting gaps by @ahstn
+- *(gateway)* Charge tokens on ledger failure and bound policy counts by @ahstn
+- *(gateway)* Keep token charges and MCP 503s through cancellation by @ahstn
+- *(gateway)* Harden rate-limit counter keys and policy loading by @ahstn
+- *(gateway)* Charge partial usage on failed chat and messages calls by @ahstn
+- *(gateway)* Await token charges and scope pending waits per counter by @ahstn
+- *(gateway)* Drain counter purges and reject config name collisions by @ahstn
+- *(store)* Index enabled rate limit policies by @ahstn
+- *(gateway)* Lock absent previous windows and label limit errors by @ahstn
+- *(gateway)* Charge detached tokens from the pending snapshot by @ahstn
+- *(audit)* Resolve audit IPs through configured trusted proxies by @ahstn
+- *(admin-ui)* Resolve trusted proxies before signing the client IP by @ahstn
+- *(audit)* Trim spaces before a secret assignment's name by @ahstn
+- *(audit)* Record one entry when concurrent logouts revoke a session by @ahstn
+- *(audit)* Check percent-decoded text for credentials by @ahstn
+- *(audit)* Record PATCH status changes as repository transitions by @ahstn
+- *(audit)* Redact quoted secret assignments by @ahstn
+- *(audit)* Record the bounded team summary on team creation by @ahstn
+- *(audit)* Skip repeated MCP disables and lost member-removal races by @ahstn
+- *(audit)* Keep legacy API-key actors when migrating audit_logs by @ahstn
+- *(audit)* Decide MCP server disable transitions in the store update by @ahstn
+- *(audit)* Take credential binding create or replace from the upsert by @ahstn
+- *(audit)* Strip a closing quote before a secret assignment's name by @ahstn
+- *(audit)* Decide review agent repository transitions in the store update by @ahstn
+- *(audit)* Look through nested percent-encoding for credentials by @ahstn
+- *(identity)* Claim a password invitation before redeeming it by @ahstn
+- *(audit)* Skip entries for unchanged service-account saves by @ahstn
+- *(identity)* Redeem a password invitation in one transaction by @ahstn
+- *(audit)* Redact and cap target ids by @ahstn
+- *(audit)* Record MCP grants only when the grant is new by @ahstn
+- *(audit)* Skip entries for unchanged user, team and budget saves by @ahstn
+- *(audit)* Catch camelCase secret names and multiply-encoded path tokens by @ahstn
+- *(audit)* Record SSO invite activation only for the request that activates by @ahstn
+- *(audit)* Check that each event's action belongs to its target type by @ahstn
+- *(audit)* Skip entries for unchanged API key, tool set and repository saves by @ahstn
+- *(audit)* Make user reactivation a conditional status transition by @ahstn
+- *(audit)* Target the grant the revoke actually changed by @ahstn
+- *(audit)* Skip entries for unchanged MCP server and tool set saves by @ahstn
+- *(audit)* Decide unchanged budget saves in the store by @ahstn
+- *(identity)* Guard user deactivation in the status update by @ahstn
+- *(audit)* Redact provider tokens with the guardrail secret rules by @ahstn
+- *(audit)* Scrub reserved metadata kept after truncation by @ahstn
+- *(audit)* Take the created grant from the upsert's own row by @ahstn
+- *(audit)* Return the budget row the save wrote by @ahstn
+- *(audit)* Convert legacy audit timestamps to milliseconds by @ahstn
+- *(audit)* Return the repository row the status transition wrote by @ahstn
+- *(audit)* Return the credential binding the upsert wrote by @ahstn
+- *(identity)* Fail a team transfer that a concurrent transfer beat by @ahstn
+- *(audit)* Check audit actions against the canonical lists in every build by @ahstn
+- *(audit)* Keep legacy non-UUID API key actors readable by @ahstn
+- *(audit)* Record the budget settings the deactivation turned off by @ahstn
+- *(audit)* Record what a credential binding revoke removed by @ahstn
+- *(audit)* Record the rate-limit policy the delete removed by @ahstn
+- *(audit)* Show the budget owner in budget.set summaries by @ahstn
+- *(audit)* Label API key secret reveal entries by @ahstn
+- *(audit)* Record the credential binding a replacement overwrote by @ahstn
+- *(audit)* Skip onboarding resets that changed nothing by @ahstn
+- *(audit)* Snapshot the OAuth binding a reconnect or disconnect replaced by @ahstn
+- *(audit)* Label tool set membership replacements with the tool set key by @ahstn
+- *(audit)* Record the role a team member removal actually removed by @ahstn
+- *(audit)* Record the budget a manual save actually overwrote by @ahstn
+- *(audit)* Decide update no-ops in the store write by @ahstn
+- *(audit)* Run audit-path libSQL transactions on their own connection by @ahstn
+- *(audit)* Read update results inside the write transaction by @ahstn
+- *(audit)* Record the role a team transfer actually moved by @ahstn
+- *(audit)* Label service account disables from the disabled row by @ahstn
+- *(audit)* Keep the budget owner in deactivation entries by @ahstn
+- *(audit)* Write libSQL audit entries on their own connection by @ahstn
+- *(audit)* Redact request headers before capping their length by @ahstn
+- *(audit)* Return the tool set row the create inserted by @ahstn
+- *(audit)* Stop recording repository archival as a reactivation by @ahstn
+- *(audit)* Snapshot created resources from the insert by @ahstn
+- *(audit)* Return the MCP server row the disable wrote by @ahstn
+- *(audit)* Record the repository status a status change replaced by @ahstn
+- *(audit)* Record the user status a deactivation replaced by @ahstn
+- *(audit)* Mark onboarding reset progress only after a write lands by @ahstn
+- *(admin-ui)* Forward the request ID to the gateway by @ahstn
+- *(admin-ui)* Label user actors without claiming a session by @ahstn
+- *(gateway)* Let audit mode release uninspectable inference streams by @ahstn
+- *(gateway)* Persist MCP audit release decisions in the background by @ahstn
+- *(gateway)* Guard each terminal tool-call snapshot under its own name by @ahstn
+- *(gateway)* Treat a failed MCP result body as an upstream error by @ahstn
+- *(gateway)* Rewrite each terminal tool-call snapshot in its own shape by @ahstn
+- *(gateway)* Release uninspectable MCP results in audit mode by @ahstn in [#511](https://github.com/ahstn/oceans-llm/pull/511)
+- *(store)* Wait for the libsql write lock without blocking a worker by @ahstn
+- *(store)* Retry shared-cache lock errors when beginning a transaction by @ahstn
+- *(store)* Keep shared-cache readers from locking out transaction writes by @ahstn
+- *(store)* Run each libsql transaction on its own connection by @ahstn in [#514](https://github.com/ahstn/oceans-llm/pull/514)
+- *(audit)* Redact any auth scheme value in request headers by @ahstn
+- *(audit)* Build the API key update result from this update's grants by @ahstn
+- *(audit)* Recheck an API key's status under the access lock by @ahstn
+- *(audit)* Mark progress inside the team admin and sign-in syncs by @ahstn
+- *(audit)* Decide onboarding reset changes from the status write by @ahstn
+- *(audit)* Show a revoked credential binding as it was before the revoke by @ahstn
+- *(guardrails)* Keep snapshot tool names separate and hash the overflow chunk by @ahstn
+- *(guardrails)* Rewrite each stream snapshot in its own argument encoding by @ahstn
+- *(guardrails)* Cache stream tool-call evaluations per call by @ahstn
+- *(guardrails)* Rewrite added output items that carry the whole call by @ahstn
+- *(guardrails)* Share one evaluation cache across a call's id and call_id by @ahstn
+- *(guardrails)* Record deny decisions for uninspectable streams by @ahstn
+- *(guardrails)* Record deny decisions for uninspectable MCP results by @ahstn
+- *(guardrails)* Hash the chunk that overflows an MCP result buffer by @ahstn
+- *(guardrails)* Stop false denials on streamed tool calls and in audit mode by @ahstn in [#512](https://github.com/ahstn/oceans-llm/pull/512)
+
+### Changed
+- Merge remote-tracking branch 'origin/main' into claude/trusting-visvesvaraya-a7c6d7 by @ahstn
+- *(verify)* Keep token counts out of request-log steps by @ahstn
+- *(audit)* Record the admin audit log ADR and operator docs by @ahstn
+- *(verify)* Match the audit-log recipe to the driven steps by @ahstn
+- *(gateway)* Read the embeddings model without converting the payload by @ahstn
+- *(pricing)* Resolve Vertex Anthropic @default fallback in one query by @ahstn
+- *(verify)* Move live canaries to deepseek-v4.1-flash and Haiku 5.5 by @ahstn in [#492](https://github.com/ahstn/oceans-llm/pull/492)
+- *(verify)* Address guardrails recipe review by @ahstn
+- *(verify)* Match guardrail decision IDs through the detail sheet by @ahstn
+- *(verify)* Describe guardrail filter steps as reloads by @ahstn
+- *(verify)* Match the guardrails recipe to the current decision view by @ahstn in [#494](https://github.com/ahstn/oceans-llm/pull/494)
+- *(deps)* Bump @tanstack/react-query-devtools in /crates/admin-ui/web by @dependabot[bot]
+- *(deps)* Bump @tanstack/react-query-devtools from 5.103.1 to 5.104.2 in /crates/admin-ui/web by @ahstn in [#483](https://github.com/ahstn/oceans-llm/pull/483)
+- *(deps)* Bump @tanstack/react-virtual in /crates/admin-ui/web by @dependabot[bot]
+- *(deps)* Bump @tanstack/react-virtual from 3.14.13 to 3.14.19 in /crates/admin-ui/web by @ahstn in [#485](https://github.com/ahstn/oceans-llm/pull/485)
+- *(deps)* Bump shadcn from 4.21.0 to 4.21.4 in /crates/admin-ui/web by @ahstn in [#487](https://github.com/ahstn/oceans-llm/pull/487)
+- *(deps-dev)* Bump oxlint in /crates/admin-ui/web by @dependabot[bot]
+- *(deps-dev)* Bump oxlint from 1.83.0 to 1.88.0 in /crates/admin-ui/web by @ahstn in [#486](https://github.com/ahstn/oceans-llm/pull/486)
+- *(deps)* Bump uuid by @dependabot[bot]
+- *(deps)* Bump uuid from 1.27.0 to 1.28.0 in the utilities group across 1 directory by @ahstn in [#435](https://github.com/ahstn/oceans-llm/pull/435)
+- *(deps-dev)* Bump postcss in /crates/admin-ui/web by @dependabot[bot]
+- *(deps-dev)* Bump postcss from 8.5.28 to 8.5.30 in /crates/admin-ui/web by @ahstn in [#484](https://github.com/ahstn/oceans-llm/pull/484)
+- *(deps)* Bump tokio from 1.53.2 to 1.53.3 in the async-runtime group by @ahstn in [#488](https://github.com/ahstn/oceans-llm/pull/488)
+- *(deps)* Group admin UI dependency updates by @ahstn in [#495](https://github.com/ahstn/oceans-llm/pull/495)
+- *(mcp)* Document generic upstream OAuth and static credential placement by @ahstn
+- Merge origin/main into claude/admin-audit-log by @ahstn
+- *(audit)* Describe signed client addresses and partial outcomes by @ahstn
+- *(store)* Build the audit list query from the filters in use by @ahstn
+- *(audit)* State that load balancers are recorded until trusted proxies land by @ahstn
+- *(store)* Index actor-plus-action and target-ID-only audit filters by @ahstn
+- *(audit)* Note label redaction and combined-filter indexes by @ahstn
+- *(audit)* Document label and tag redaction and the signing-key fallback by @ahstn
+- *(store)* Index target-type-only audit filters by @ahstn
+- *(audit)* Document the transfer action, type index and page access by @ahstn
+- *(audit)* Document the detail endpoint and new redaction rules by @ahstn
+- *(audit)* Keep the ADR out of admin docs and scope the local IP proof by @ahstn
+- *(audit)* Describe path-token and embedded-scheme redaction by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/gateway-rate-limits by @ahstn
+- *(admin-ui)* Build rate-limit key options in one pass by @ahstn
+- *(gateway)* Note that aggregate MCP catalog reads are not rate limited by @ahstn
+- *(verify)* Route audit event producers to the audit-log proof by @ahstn
+- *(client-ip)* Move the client IP contract into its own crate by @ahstn
+- *(admin-ui)* Move shared filter and panel primitives out of guardrails by @ahstn
+- *(audit)* Look up one tool set for the update's before summary by @ahstn
+- *(store)* Backfill legacy audit rows in one pass by @ahstn
+- *(audit)* Make audit actions a closed type by @ahstn
+- *(audit)* Index an actor's entries by target type by @ahstn
+- *(verify)* Route the E2E MCP server seed script as packaging-only by @ahstn
+- *(adr)* Record audit-mode semantics as an amendment by @ahstn
+- *(adr)* Record that libsql transactions use their own connections by @ahstn
+- *(store)* Share libsql connection setup between helpers by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/admin-audit-log by @ahstn
+- *(guardrails)* Evaluate each streamed tool call once by @ahstn
+- *(guardrails)* Build stream-release decisions in gateway-guardrails by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/oceans-gateway-streaming-bug-b29b64 by @ahstn
+- *(guardrails)* Type the reason for uninspected-content decisions by @ahstn
+
+
+
+
+## [0.39.0] - 2026-10-14
+### :rocket: New features
+- *(mcp)* Keep tool annotations, title and output schema by @ahstn
+- *(mcp)* Return a connect URL for missing or expired MCP credentials by @ahstn
+- *(mcp)* Govern direct proxy methods, keep tool metadata, and link credential errors to the connect page by @ahstn in [#464](https://github.com/ahstn/oceans-llm/pull/464)
+- *(budgets)* [**breaking**] Return 422 instead of 429 when a budget is exhausted by @ahstn in [#473](https://github.com/ahstn/oceans-llm/pull/473)
+- *(gateway)* Accept OpenAI Decisions requests and add /v1/systemone by @ahstn in [#476](https://github.com/ahstn/oceans-llm/pull/476)
+
+### :bug: Bug fixes
+- *(mise)* Keep smoke logs when the gateway exits and drop the stale rust lock entry by @ahstn
+- *(store)* Wait for the smoke gateway to exit before the task returns by @ahstn
+- *(verify-skill)* Match renamed Agent Skills heading and sidebar link by @ahstn in [#461](https://github.com/ahstn/oceans-llm/pull/461)
+- *(verify-skill)* Launch Skills proof with unregistered RustFS daemon by @ahstn
+- *(verify-skill)* Retry Upload skill click until the namespace dialog opens by @ahstn
+- *(verify-skill)* Resolve the mise binary instead of its shell function by @ahstn
+- *(verify-skill)* Stabilise Skills upload click and stop runaway cleanup by @ahstn in [#463](https://github.com/ahstn/oceans-llm/pull/463)
+- *(verify-skill)* Launch Skills proof with an unregistered RustFS daemon by @ahstn in [#466](https://github.com/ahstn/oceans-llm/pull/466)
+- *(mcp)* Govern non-tool methods on the per-server proxy by @ahstn
+- *(mcp)* Address review findings on governed methods, tool metadata and connect links by @ahstn
+- *(mcp)* Forward only the client notifications MCP defines by @ahstn
+- *(mcp)* Reject GET and DELETE bodies on the direct proxy by @ahstn
+- *(mcp)* Reconnect stale OAuth bindings from connect links and show closed-world tools by @ahstn
+- *(mcp)* Negotiate 2025-06-18 for discovery and fall back to annotations.title by @ahstn
+- *(mcp)* Stop advertising tasks the direct proxy cannot complete by @ahstn
+- *(admin-ui)* Show a Non-destructive badge for explicit destructiveHint false by @ahstn
+- *(mcp)* Omit the id when denying an ungranted notification by @ahstn
+- *(mcp)* Echo the request id when rejecting an invalid tools/call by @ahstn
+- *(gateway)* Address Decisions review findings by @ahstn
+- *(decisions)* Tighten upstream answer checks and accept empty input lists by @ahstn
+- *(gateway)* Keep the requested stream flag on pre-provider failure rows by @ahstn
+- *(verify)* Normalize the expected MCP endpoint like the gateway by @ahstn
+- *(verify)* Read MCP aliases from launch, scope driver retries, derive gateway URL by @ahstn in [#480](https://github.com/ahstn/oceans-llm/pull/480)
+- *(gateway)* Log hard-budget rejections as request-log summary rows by @ahstn in [#481](https://github.com/ahstn/oceans-llm/pull/481)
+- *(decisions)* Reject repeated probability entries and document decisions_api by @ahstn
+
+### Changed
+- *(mise)* Move project tasks into monorepo config roots by @ahstn in [#437](https://github.com/ahstn/oceans-llm/pull/437)
+- Replace README logo with ocean wave banner by @ahstn in [#460](https://github.com/ahstn/oceans-llm/pull/460)
+- Merge remote-tracking branch 'origin/main' into claude/clever-knuth-d98a29 by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/strange-cannon-27543c by @ahstn
+- *(verify)* Describe chip-based request log filters by @ahstn in [#465](https://github.com/ahstn/oceans-llm/pull/465)
+- *(admin-ui)* Split MCP invocation filters and table out of the page by @ahstn
+- *(mcp)* Skip tool metadata on authorization paths and check server grants with EXISTS by @ahstn
+- *(budgets)* Address review on budget status ADR and docs by @ahstn
+- *(budgets)* Qualify remaining retry claims to the tested SDK defaults by @ahstn
+- Merge branch 'main' of github.com:ahstn/oceans-llm into claude/exciting-jepsen-9b6f89 by @ahstn
+- Merge remote-tracking branch 'origin/main' into claude/charming-darwin-800190 by @ahstn
+- *(skills)* Update shadcn skill by @ahstn
+- *(version)* V0.39.0 by @ahstn
+
+
+
+
 ## [0.38.0] - 2026-10-13
 ### :rocket: New features
 - *(verify-skill)* Shared proof envelope with verdict-checking evidence and PR report by @ahstn
@@ -96,6 +373,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(spend-controls)* Clarify increase supersession and conflict wording by @ahstn
 - *(spend-controls)* Skip increase lookups while spend is under the base budget by @ahstn
 - *(admin-ui)* Move formatIncreaseLastDay into lib/format by @ahstn
+- *(version)* V0.38.0 by @ahstn
 
 
 
@@ -1290,6 +1568,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.40.0]: https://github.com/ahstn/oceans-llm/compare/v0.39.0...v0.40.0
+[0.39.0]: https://github.com/ahstn/oceans-llm/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/ahstn/oceans-llm/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/ahstn/oceans-llm/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/ahstn/oceans-llm/compare/v0.35.0...v0.36.0

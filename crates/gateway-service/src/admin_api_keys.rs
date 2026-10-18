@@ -4,17 +4,24 @@ use std::{
 };
 
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
-    ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus,
-    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityRepository,
-    IdentityUserRecord, ModelRepository, NewApiKeyRecord, ServiceAccountRecord, StoreError,
-    TeamRecord, UserStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyAccess, ApiKeyModelGrantMode,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind,
+    ApiKeyStatus, BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityRepository,
+    IdentityUserRecord, McpRegistryRepository, ModelRepository, NewApiKeyRecord,
+    ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret, hash_gateway_key_secret,
+    admin_audit::AuditProgress, decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret,
+    hash_gateway_key_secret,
+};
+
+mod scopes;
+
+pub use scopes::{
+    AdminApiKeyMcpServerOption, UpdateAdminApiKeyScopesInput, UpdateAdminApiKeyScopesResult,
 };
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
@@ -30,6 +37,8 @@ pub struct AdminApiKeysPayload {
     pub users: Vec<AdminApiKeyUserOwner>,
     pub service_accounts: Vec<AdminApiKeyServiceAccountOwner>,
     pub models: Vec<AdminApiKeyModelOption>,
+    /// Active MCP servers, the options for a key's server list.
+    pub mcp_servers: Vec<AdminApiKeyMcpServerOption>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +57,7 @@ pub struct AdminApiKeySummary {
     pub owner_service_account_team_key: Option<String>,
     pub model_grant_mode: ApiKeyModelGrantMode,
     pub model_keys: Vec<String>,
+    pub access: ApiKeyAccess,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
@@ -87,12 +97,33 @@ pub struct CreateAdminApiKeyInput {
     pub owner_service_account_id: Option<String>,
     pub model_grant_mode: String,
     pub model_keys: Vec<String>,
+    /// `None` creates a key with full access.
+    pub scopes: Option<Vec<String>>,
+    /// `None` lets the key reach every server its owner's grants reach.
+    pub mcp_server_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CreateAdminApiKeyResult {
     pub api_key: AdminApiKeySummary,
     pub raw_key: String,
+}
+
+/// An API key after an access update, with the access the update replaced.
+#[derive(Debug, Clone)]
+pub struct UpdateAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// The grant mode and model keys before the update, read under the same lock
+    /// as the write, or `None` when the key already had this access and nothing
+    /// was written.
+    pub replaced_access: Option<(ApiKeyModelGrantMode, Vec<String>)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RevokeAdminApiKeyResult {
+    pub api_key: AdminApiKeySummary,
+    /// `false` when the key was already revoked, so nothing changed.
+    pub revoked: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +134,9 @@ pub struct UpdateAdminApiKeyInput {
 
 pub struct RevealAdminApiKeySecretResult {
     pub raw_key: String,
+    /// The key's name and owner kind, for the audit entry; never the secret.
+    pub name: String,
+    pub owner_kind: ApiKeyOwnerKind,
 }
 
 impl<R> AdminApiKeyService<R>
@@ -112,6 +146,7 @@ where
         + IdentityRepository
         + ModelRepository
         + BudgetRepository
+        + McpRegistryRepository
         + Send
         + Sync
         + 'static,
@@ -166,6 +201,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
+            mcp_servers: self.mcp_server_options().await?,
         })
     }
 
@@ -299,12 +335,16 @@ where
                     tags: model.tags,
                 })
                 .collect(),
+            mcp_servers: self.mcp_server_options().await?,
         })
     }
 
+    /// `progress` is marked once the key row is written, so an audit entry can
+    /// record a create that fails afterwards.
     pub async fn create_api_key(
         &self,
         request: CreateAdminApiKeyInput,
+        progress: &AuditProgress,
     ) -> Result<CreateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
@@ -354,6 +394,9 @@ where
             ));
         }
         let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
+        let access = self
+            .validated_access(request.scopes, request.mcp_server_keys)
+            .await?;
 
         let public_id = Uuid::new_v4().simple().to_string();
         let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
@@ -378,9 +421,11 @@ where
                 owner_user_id,
                 owner_team_id,
                 owner_service_account_id,
+                access,
                 created_at: now,
             })
             .await?;
+        progress.landed_on(api_key.id);
         if let Some(encrypted) = secret_material
             && let Err(error) = self
                 .repo
@@ -407,7 +452,13 @@ where
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
 
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        // The summary describes what this request created: the inserted key row and
+        // the access it granted, not a later read a concurrent change could alter.
+        // Sorted as the store lists a key's models.
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
         let api_key =
             build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
@@ -417,15 +468,20 @@ where
     pub async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+        progress: &AuditProgress,
+    ) -> Result<RevokeAdminApiKeyResult, GatewayError> {
         self.repo
             .get_api_key_by_id(api_key_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
 
-        self.repo
+        let revoked = self
+            .repo
             .revoke_api_key(api_key_id, OffsetDateTime::now_utc())
             .await?;
+        if revoked {
+            progress.landed_on(api_key_id);
+        }
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
@@ -438,8 +494,10 @@ where
                 GatewayError::Internal(format!("api key `{api_key_id}` missing after revoke"))
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
+        let api_key =
+            build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        Ok(RevokeAdminApiKeyResult { api_key, revoked })
     }
 
     pub async fn reveal_api_key_secret(
@@ -475,14 +533,19 @@ where
             .touch_api_key_secret_material_retrieved(api_key_id, OffsetDateTime::now_utc())
             .await?;
 
-        Ok(RevealAdminApiKeySecretResult { raw_key })
+        Ok(RevealAdminApiKeySecretResult {
+            raw_key,
+            name: api_key.name,
+            owner_kind: api_key.owner_kind,
+        })
     }
 
     pub async fn update_api_key(
         &self,
         api_key_id: Uuid,
         request: UpdateAdminApiKeyInput,
-    ) -> Result<AdminApiKeySummary, GatewayError> {
+        progress: &AuditProgress,
+    ) -> Result<UpdateAdminApiKeyResult, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
         let service_accounts = self.repo.list_service_accounts().await?;
@@ -512,14 +575,47 @@ where
             .iter()
             .map(|model| model.id)
             .collect::<Vec<_>>();
-        self.repo
+        let replaced = self
+            .repo
             .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
+        if replaced.is_some() {
+            progress.landed_on(api_key.id);
+        }
+        // Grants name models by id; a grant to a model no longer listed keeps its id.
+        let replaced_access = replaced.map(|access| {
+            let model_keys = access
+                .model_ids
+                .iter()
+                .map(|model_id| {
+                    models
+                        .iter()
+                        .find(|model| model.id == *model_id)
+                        .map_or_else(|| model_id.to_string(), |model| model.model_key.clone())
+                })
+                .collect();
+            (access.model_grant_mode, model_keys)
+        });
 
+        // The result describes this update's write: the access it granted, not a
+        // later read a concurrent update could have changed. Sorted as the store
+        // lists a key's models.
         let mut api_key = api_key;
         api_key.model_grant_mode = model_grant_mode;
-        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+        let mut granted_models = granted_models;
+        granted_models.sort_by(|left, right| {
+            (left.rank, &left.model_key).cmp(&(right.rank, &right.model_key))
+        });
+        Ok(UpdateAdminApiKeyResult {
+            api_key: build_api_key_summary(
+                &api_key,
+                &users,
+                &teams,
+                &service_accounts,
+                &granted_models,
+            )?,
+            replaced_access,
+        })
     }
 }
 
@@ -636,6 +732,7 @@ fn build_api_key_summary(
             .filter(|_| api_key.model_grant_mode == ApiKeyModelGrantMode::Explicit)
             .map(|model| model.model_key.clone())
             .collect(),
+        access: api_key.access.clone(),
         created_at: api_key.created_at,
         last_used_at: api_key.last_used_at,
         revoked_at: api_key.revoked_at,
@@ -886,6 +983,7 @@ mod tests {
             owner_user_id: Some(owner_user_id),
             owner_team_id: None,
             owner_service_account_id: None,
+            access: Default::default(),
             created_at: now,
             last_used_at: None,
             revoked_at: None,
