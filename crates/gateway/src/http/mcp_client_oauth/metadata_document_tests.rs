@@ -18,7 +18,8 @@ use axum::{
 use gateway_core::GatewayOauthRepository;
 use gateway_service::{
     ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument, McpClientOauthSettings,
-    SourceRateLimits, outbound_fetch::OutboundFetchError,
+    SourceRateLimits,
+    outbound_fetch::{OutboundAddressScope, OutboundFetchError, OutboundFetcher},
 };
 use serde_json::{Value, json};
 use url::Url;
@@ -68,6 +69,11 @@ impl Fixture {
 
 #[async_trait]
 impl ClientMetadataDocumentSource for Fixture {
+    /// Refuses what the production fetcher refuses without a request.
+    fn check(&self, url: &Url) -> Result<(), OutboundFetchError> {
+        OutboundFetcher::new(OutboundAddressScope::Public).check_url(url)
+    }
+
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
         let delay = self.delay_ms.load(Ordering::SeqCst) as u64;
@@ -434,6 +440,25 @@ async fn client_ids_refused_before_fetching_do_not_count() {
     for client_id in [
         "https://elsewhere.example.net/oauth/client.json",
         "https://editor.example.com",
+    ] {
+        let (status, page) = body_text(&harness, &harness.authorize_query(client_id, &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{client_id}: {page}");
+    }
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1);
+}
+
+/// Without a domain allowlist, an address the fetcher never connects to
+/// must not spend the budget either.
+#[tokio::test]
+async fn blocked_addresses_do_not_count() {
+    let (harness, fixture) = harness_with_fetch_limit(&[], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), None);
+    for client_id in [
+        "https://127.0.0.1/oauth/client.json",
+        "https://10.0.0.1/oauth/client.json",
+        "https://[::1]/oauth/client.json",
     ] {
         let (status, page) = body_text(&harness, &harness.authorize_query(client_id, &[])).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{client_id}: {page}");

@@ -82,11 +82,21 @@ pub struct FetchedDocument {
 /// Where documents come from: the network in production, a fixture in tests.
 #[async_trait]
 pub trait ClientMetadataDocumentSource: Send + Sync {
+    /// Refuses a URL this source would refuse without a request, such as a
+    /// blocked IP literal, so it is refused before the fetch limits count.
+    fn check(&self, _url: &Url) -> Result<(), OutboundFetchError> {
+        Ok(())
+    }
+
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError>;
 }
 
 #[async_trait]
 impl ClientMetadataDocumentSource for OutboundFetcher {
+    fn check(&self, url: &Url) -> Result<(), OutboundFetchError> {
+        self.check_url(url)
+    }
+
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         let response = self.get(url, "application/json").await?;
         let status = response.status().as_u16();
@@ -459,23 +469,18 @@ impl ClientMetadataDocuments {
                 "client metadata documents from this host are not accepted",
             )));
         }
+        self.source
+            .check(&url)
+            .map_err(ResolveFailure::fetch_failed)?;
         if let Err(limited) = self.fetch_limiter.check(requester, Instant::now()) {
             tracing::warn!(?requester, "client metadata document fetch rate limited");
             return Err(ResolveFailure::rate_limited(limited));
         }
-        let fetched = self.source.fetch(&url).await.map_err(|error| {
-            let transient = error.is_transient();
-            let description = format!("client metadata document could not be fetched: {error}");
-            ResolveFailure {
-                error: if transient {
-                    OauthError::temporarily_unavailable(description)
-                } else {
-                    OauthError::invalid_client(description)
-                },
-                transient,
-                document_refused: !transient,
-            }
-        })?;
+        let fetched = self
+            .source
+            .fetch(&url)
+            .await
+            .map_err(ResolveFailure::fetch_failed)?;
         if fetched.status != 200 {
             let description = format!("client metadata document returned HTTP {}", fetched.status);
             // A timeout or rate limit passes like an outage does.
@@ -617,6 +622,22 @@ impl ResolveFailure {
             ),
             transient: true,
             document_refused: false,
+        }
+    }
+
+    /// The source refused or failed the fetch. A passing failure lets a cached
+    /// copy stand in; a refusal means the document cannot be used.
+    fn fetch_failed(error: OutboundFetchError) -> Self {
+        let transient = error.is_transient();
+        let description = format!("client metadata document could not be fetched: {error}");
+        Self {
+            error: if transient {
+                OauthError::temporarily_unavailable(description)
+            } else {
+                OauthError::invalid_client(description)
+            },
+            transient,
+            document_refused: !transient,
         }
     }
 
