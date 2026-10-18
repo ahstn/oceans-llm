@@ -682,6 +682,14 @@ async fn public_endpoints_allow_cross_origin_calls_without_credentials() {
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    // A browser client can read when to retry a rate-limited request.
+    assert!(
+        headers[header::ACCESS_CONTROL_EXPOSE_HEADERS]
+            .to_str()
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains("retry-after")
+    );
 
     // The browser-facing and cookie-authenticated endpoints stay same-origin.
     for uri in [

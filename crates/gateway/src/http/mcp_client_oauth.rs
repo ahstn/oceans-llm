@@ -16,7 +16,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{
         HeaderMap, HeaderName, HeaderValue, Method,
-        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER, WWW_AUTHENTICATE},
     },
     routing::{get, post},
 };
@@ -96,6 +96,8 @@ pub(crate) fn public_router() -> Router<AppState> {
             CONTENT_TYPE,
             HeaderName::from_static("mcp-protocol-version"),
         ])
+        // Rate-limited registration and token requests say when to retry.
+        .expose_headers([RETRY_AFTER])
         .max_age(Duration::from_secs(24 * 60 * 60));
     Router::new()
         .route(
