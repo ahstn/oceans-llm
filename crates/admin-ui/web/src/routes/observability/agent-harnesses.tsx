@@ -26,11 +26,14 @@ import {
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
+import { formatUtcTimestamp } from '@/lib/format'
 import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
 } from '@/server/admin-data.functions'
 import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
+
+import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
   loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
@@ -89,6 +92,7 @@ export function AgentHarnessesPage() {
 
     return row
   })
+  const dayTicks = utcDayTicks(chartData.map((row) => String(row.bucket_start)))
 
   function refreshRange(nextRange: HarnessUsageRange) {
     setIsRefreshing(true)
@@ -171,17 +175,18 @@ export function AgentHarnessesPage() {
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="bucket_start"
+                  ticks={dayTicks}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
-                  tickFormatter={(value) => formatAxisTick(value)}
+                  tickFormatter={formatBucketDay}
                 />
                 <ChartTooltip
                   cursor={false}
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) =>
-                        formatTooltipLabel(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                        formatUtcTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
                       }
                       formatter={(value, name) => (
                         <>
@@ -377,31 +382,6 @@ function HarnessChartSkeleton() {
 
 function HarnessTableSkeleton() {
   return <Skeleton data-testid="harness-table-skeleton" className="h-48 w-full" />
-}
-
-function formatAxisTick(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
-}
-
-function formatTooltipLabel(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
 }
 
 function getErrorMessage(error: unknown) {

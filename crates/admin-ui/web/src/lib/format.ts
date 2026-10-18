@@ -32,3 +32,19 @@ const EXPIRY_FORMATTER = new Intl.DateTimeFormat('en-US', {
 export function formatIncreaseLastDay(expiresAt: Date | string) {
   return EXPIRY_FORMATTER.format(new Date(new Date(expiresAt).getTime() - 1))
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * Formats an instant as `16 Oct 2026, 02:04 UTC`, the DESIGN.md timestamp form. Fixed UTC parts
+ * keep server and browser output identical during hydration, whatever their ICU data.
+ */
+export function formatUtcTimestamp(value: Date | string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '—'
+  }
+  const hours = String(date.getUTCHours()).padStart(2, '0')
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0')
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${hours}:${minutes} UTC`
+}
