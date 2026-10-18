@@ -199,11 +199,10 @@ impl CatalogInvocation<'_> {
         }
     }
 
-    /// Records why the governance steps refused the call. A refusal after
-    /// argument guardrails changed the arguments logs what they produced, as
-    /// the per-server route does, so a redaction is never undone in the log.
-    /// Otherwise it logs the arguments as sent; a credential refusal keeps
-    /// absent arguments absent.
+    /// Records why the governance steps refused the call. As on the per-server
+    /// route, a refusal after argument guardrails changed the arguments logs
+    /// what they produced, so a redaction is never undone in the log;
+    /// otherwise it logs the arguments as sent, absent ones included.
     fn refused(
         &mut self,
         refusal: Refusal,
@@ -218,9 +217,6 @@ impl CatalogInvocation<'_> {
         }
         self.arguments = match guarded {
             Some(guarded) if guarded.transformed() => guarded.value,
-            _ if original_arguments.is_null() && !matches!(refusal, Refusal::Credential(_)) => {
-                json!({})
-            }
             _ => original_arguments,
         };
         CatalogCallError::Refused(refusal)
