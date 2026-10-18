@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactElement } from 'react'
+import { useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react'
 import {
   Alert02Icon,
   ArrowDown01Icon,
@@ -64,10 +64,34 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { McpCredentialBindingView, McpServerView, McpToolView } from '@/types/api'
+import {
+  PLATFORM_OWNER_LABEL,
+  ownerLabel,
+  visibilityLabel,
+} from '@/components/mcp/server-ownership'
+import type {
+  AdminTeamOption,
+  McpCredentialBindingView,
+  McpServerView,
+  McpToolView,
+} from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
 import { ToolPolicyEditor } from './-tool-policy'
-import type { CredentialBindingFormState, ServerFormState } from './-server-forms'
+import type { CredentialBindingFormState, ServerFormState, ServerVisibility } from './-server-forms'
+
+/** What the caller may set on a server's ownership in the server form. */
+export type ServerOwnershipOptions = {
+  canPublish: boolean
+  /** Platform-owned servers are always published to the organisation. */
+  platformOwned: boolean
+  /** Teams a platform admin can register a new server for. */
+  teams?: AdminTeamOption[]
+  /**
+   * Only platform admins review tool changes, so only they can require
+   * approval for them.
+   */
+  canRequireApproval: boolean
+}
 
 const AUTH_MODES = [
   { value: 'none', label: 'None' },
@@ -86,8 +110,49 @@ const AUTH_CONFIG_HINTS: Record<string, string> = {
 }
 
 // The header's icon actions. Disabling cuts callers off from the server's tools at once, so it
-// sits behind the overflow menu rather than beside Close; the same menu enables it again.
+// sits behind the overflow menu rather than beside Close; the same menu enables it again. A
+// caller who can't manage the server gets only Close.
 export function ServerHeaderActions({
+  server,
+  canManage,
+  actionPending,
+  onRefresh,
+  onEdit,
+  onDisable,
+  onEnable,
+}: {
+  server: McpServerView
+  canManage: boolean
+  actionPending: boolean
+  onRefresh: (server: McpServerView) => void
+  onEdit: (server: McpServerView) => void
+  onDisable: (server: McpServerView) => void
+  onEnable: (server: McpServerView) => void
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {canManage ? (
+        <ServerManageActions
+          server={server}
+          actionPending={actionPending}
+          onRefresh={onRefresh}
+          onEdit={onEdit}
+          onDisable={onDisable}
+          onEnable={onEnable}
+        />
+      ) : null}
+      <IconTooltip label="Close">
+        <DialogClose asChild>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
+            <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
+          </Button>
+        </DialogClose>
+      </IconTooltip>
+    </div>
+  )
+}
+
+function ServerManageActions({
   server,
   actionPending,
   onRefresh,
@@ -104,7 +169,7 @@ export function ServerHeaderActions({
 }) {
   const active = server.status === 'active'
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <>
       <IconTooltip label="Refresh tools">
         <Button
           type="button"
@@ -134,14 +199,7 @@ export function ServerHeaderActions({
         onDisable={onDisable}
         onEnable={onEnable}
       />
-      <IconTooltip label="Close">
-        <DialogClose asChild>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
-            <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
-          </Button>
-        </DialogClose>
-      </IconTooltip>
-    </div>
+    </>
   )
 }
 
@@ -222,12 +280,14 @@ export function ServerOverviewPanel({
   refreshing,
   retryDisabled,
   onRetry,
+  ownershipControl,
 }: {
   server: McpServerView
   refreshResult: DiscoveryRefreshResult | null
   refreshing: boolean
   retryDisabled: boolean
   onRetry: () => void
+  ownershipControl?: ReactNode
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -261,9 +321,72 @@ export function ServerOverviewPanel({
           value={server.last_successful_discovery_at ?? 'never'}
         />
         <OverviewDetail label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
+        <OverviewDetail label="Owner" value={ownerLabel(server)} />
+        <OverviewDetail label="Visibility" value={visibilityLabel(server.visibility)} />
+        <OverviewDetail label="Contact" value={server.owner_contact ?? 'none'} />
         <OverviewDetail label="Created" value={server.created_at} />
         <OverviewDetail label="Updated" value={server.updated_at} />
       </dl>
+
+      {server.can_manage ? null : (
+        <p className="text-subtle-foreground text-sm">
+          This server is managed by {ownerLabel(server)}. Ask {server.owner_contact ?? 'its owners'}{' '}
+          to change it or to grant its tools.
+        </p>
+      )}
+      {ownershipControl}
+    </div>
+  )
+}
+
+/** A platform admin's control for moving a server to a team or to the platform. */
+export function ServerOwnershipTransfer({
+  server,
+  teams,
+  pending,
+  onTransfer,
+}: {
+  server: McpServerView
+  teams: AdminTeamOption[]
+  pending: boolean
+  onTransfer: (ownerTeamId: string | null) => void
+}) {
+  const current = server.owner_team_id ?? 'platform'
+  const [owner, setOwner] = useState(current)
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-md border p-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-foreground text-sm font-semibold">Ownership</h3>
+        <p className="text-subtle-foreground text-sm">
+          Move the server to a team, or take it over for the platform. Platform-owned servers are
+          published to the organisation.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Select value={owner} onValueChange={setOwner}>
+          <SelectTrigger aria-label="Owning team" className="w-full sm:w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="platform">{PLATFORM_OWNER_LABEL}</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pending || owner === current}
+          onClick={() => onTransfer(owner === 'platform' ? null : owner)}
+        >
+          Transfer ownership
+        </Button>
+      </div>
     </div>
   )
 }
@@ -345,8 +468,10 @@ export function ServerToolsPanel({
   selectedToolIds: string[]
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
-  onAddToToolset: () => void
-  onToolUpdated: (tool: McpToolView) => void
+  /** Omitted when the caller cannot manage tool sets. */
+  onAddToToolset?: () => void
+  /** Omitted when the caller cannot edit tool policy. */
+  onToolUpdated?: (tool: McpToolView) => void
 }) {
   const selected = new Set(selectedToolIds)
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
@@ -372,13 +497,15 @@ export function ServerToolsPanel({
         <div>
           <h3 className="font-medium">Discovered tools</h3>
           <p className="text-subtle-foreground text-sm">
-            Select tools to bundle into a toolset — no UUID copy-paste required.
+            {onAddToToolset
+              ? 'Select tools to bundle into a toolset — no UUID copy-paste required.'
+              : 'The tools this server offers.'}
           </p>
         </div>
         <Badge variant="secondary">{tools.length}</Badge>
       </div>
 
-      {selectedToolIds.length > 0 ? (
+      {onAddToToolset && selectedToolIds.length > 0 ? (
         <div className="bg-muted flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
           <span className="text-sm font-medium">
             {selectedToolIds.length} tool{selectedToolIds.length === 1 ? '' : 's'} selected
@@ -387,9 +514,11 @@ export function ServerToolsPanel({
             <Button type="button" variant="ghost" size="sm" onClick={onClearSelection}>
               Clear
             </Button>
-            <Button type="button" size="sm" onClick={onAddToToolset}>
-              Add to toolset
-            </Button>
+            {onAddToToolset ? (
+              <Button type="button" size="sm" onClick={onAddToToolset}>
+                Add to toolset
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -422,16 +551,44 @@ export function ServerToolsPanel({
               expanded={expandedToolIds.has(tool.id)}
               onToggleExpanded={() => toggleExpanded(tool.id)}
               onToolUpdated={onToolUpdated}
-              onToggleTool={() => {
-                if (tool.is_active) {
-                  onToggleTool(tool.id)
-                }
-              }}
+              // Selecting only feeds a tool set, so it is offered only with that action.
+              onToggleTool={
+                onAddToToolset
+                  ? () => {
+                      if (tool.is_active) {
+                        onToggleTool(tool.id)
+                      }
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+/** A tool's checkbox, or a spacer that keeps the row's columns when selection is off. */
+function ToolSelectBox({
+  tool,
+  selected,
+  onToggle,
+}: {
+  tool: McpToolView
+  selected: boolean
+  onToggle?: () => void
+}) {
+  if (!onToggle) return <span aria-hidden className="size-4" />
+  return (
+    <input
+      type="checkbox"
+      aria-label={`Select ${tool.display_name}`}
+      className="accent-primary size-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+      checked={selected}
+      disabled={!tool.is_active}
+      onChange={onToggle}
+    />
   )
 }
 
@@ -447,8 +604,8 @@ function ToolDisclosureRow({
   selected: boolean
   expanded: boolean
   onToggleExpanded: () => void
-  onToggleTool: () => void
-  onToolUpdated: (tool: McpToolView) => void
+  onToggleTool?: () => void
+  onToolUpdated?: (tool: McpToolView) => void
 }) {
   const schema = formatToolSchema(tool.input_schema)
   const description = tool.description?.trim()
@@ -462,14 +619,7 @@ function ToolDisclosureRow({
         )}
       >
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3">
-          <input
-            type="checkbox"
-            aria-label={`Select ${tool.display_name}`}
-            className="accent-primary size-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            checked={selected}
-            disabled={!tool.is_active}
-            onChange={onToggleTool}
-          />
+          <ToolSelectBox tool={tool} selected={selected} onToggle={onToggleTool} />
           <div className="min-w-0">
             <div className="truncate font-medium">{tool.display_name}</div>
             {description ? (
@@ -526,7 +676,7 @@ function ToolDisclosureRow({
                 </div>
               ) : null}
             </dl>
-            <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} />
+            {onToolUpdated ? <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} /> : null}
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (
@@ -689,6 +839,7 @@ export function CredentialBindingsPanel({
   form,
   pending,
   error,
+  teamScoped = false,
   onFormChange,
   onSubmit,
   onRevoke,
@@ -697,6 +848,8 @@ export function CredentialBindingsPanel({
   form: CredentialBindingFormState
   pending: boolean
   error: string | null
+  /** Team admins set only team and service-account credentials. */
+  teamScoped?: boolean
   onFormChange: (form: CredentialBindingFormState) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onRevoke: (binding: McpCredentialBindingView) => void
@@ -735,7 +888,7 @@ export function CredentialBindingsPanel({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="user">User</SelectItem>
+                  {teamScoped ? null : <SelectItem value="user">User</SelectItem>}
                   <SelectItem value="team">Team shared</SelectItem>
                   <SelectItem value="service_account">Service account</SelectItem>
                 </SelectGroup>
@@ -782,7 +935,8 @@ export function CredentialBindingsPanel({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="secret">Encrypted secret</SelectItem>
-                  <SelectItem value="secret_ref">Secret reference</SelectItem>
+                  {/* A reference names a gateway-wide variable, so it is platform-only. */}
+                  {teamScoped ? null : <SelectItem value="secret_ref">Secret reference</SelectItem>}
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -952,6 +1106,7 @@ export function ServerFormDialog({
   open,
   pending,
   form,
+  ownership,
   onOpenChange,
   onFormChange,
   onSubmit,
@@ -960,6 +1115,7 @@ export function ServerFormDialog({
   open: boolean
   pending: boolean
   form: ServerFormState
+  ownership?: ServerOwnershipOptions
   onOpenChange: (open: boolean) => void
   onFormChange: (form: ServerFormState) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -977,7 +1133,12 @@ export function ServerFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <ServerFormFields mode={mode} form={form} onFormChange={onFormChange} />
+          <ServerFormFields
+            mode={mode}
+            form={form}
+            ownership={ownership}
+            onFormChange={onFormChange}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -995,10 +1156,12 @@ export function ServerFormDialog({
 export function ServerFormFields({
   mode,
   form,
+  ownership,
   onFormChange,
 }: {
   mode: 'create' | 'edit'
   form: ServerFormState
+  ownership?: ServerOwnershipOptions
   onFormChange: (form: ServerFormState) => void
 }) {
   const isCreate = mode === 'create'
@@ -1056,13 +1219,43 @@ export function ServerFormFields({
           }
         />
       </div>
+      <ServerAuthFields form={form} onFormChange={onFormChange} />
+      {(ownership?.canRequireApproval ?? true) ? (
+        <ApproveToolChangesField
+          checked={form.approve_tool_changes}
+          onCheckedChange={(approve_tool_changes) =>
+            onFormChange({ ...form, approve_tool_changes })
+          }
+        />
+      ) : null}
+      {ownership ? (
+        <ServerOwnershipFields
+          mode={mode}
+          form={form}
+          ownership={ownership}
+          onFormChange={onFormChange}
+        />
+      ) : null}
+    </FieldGroup>
+  )
+}
+
+function ServerAuthFields({
+  form,
+  onFormChange,
+}: {
+  form: ServerFormState
+  onFormChange: (form: ServerFormState) => void
+}) {
+  return (
+    <>
       <Field>
         <FieldLabel>Auth mode</FieldLabel>
         <Select
           value={form.auth_mode}
           onValueChange={(value) => onFormChange({ ...form, auth_mode: value })}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Auth mode">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1100,11 +1293,112 @@ export function ServerFormFields({
           <FieldDescription>{AUTH_CONFIG_HINTS[form.auth_mode]}</FieldDescription>
         ) : null}
       </Field>
-      <ApproveToolChangesField
-        checked={form.approve_tool_changes}
-        onCheckedChange={(approve_tool_changes) => onFormChange({ ...form, approve_tool_changes })}
-      />
-    </FieldGroup>
+    </>
+  )
+}
+
+function OwningTeamField({
+  form,
+  teams,
+  onFormChange,
+}: {
+  form: ServerFormState
+  teams: AdminTeamOption[]
+  onFormChange: (form: ServerFormState) => void
+}) {
+  return (
+    <Field>
+      <FieldLabel>Owning team</FieldLabel>
+      <Select
+        value={form.owner_team_id || 'platform'}
+        onValueChange={(value) =>
+          onFormChange({
+            ...form,
+            owner_team_id: value === 'platform' ? '' : value,
+            // A team-owned server starts team-only; the platform's is published.
+            visibility: value === 'platform' ? 'organisation' : 'team',
+          })
+        }
+      >
+        <SelectTrigger aria-label="Owning team">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="platform">{PLATFORM_OWNER_LABEL}</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={team.id}>
+                {team.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
+  )
+}
+
+function ServerOwnershipFields({
+  mode,
+  form,
+  ownership,
+  onFormChange,
+}: {
+  mode: 'create' | 'edit'
+  form: ServerFormState
+  ownership: ServerOwnershipOptions
+  onFormChange: (form: ServerFormState) => void
+}) {
+  // Publishing needs a platform admin unless the platform lets teams publish.
+  const organisationDisabled = !ownership.canPublish && form.visibility !== 'organisation'
+  const chooseOwner = mode === 'create' && ownership.teams !== undefined
+  // When a platform admin picks the owner, the platform rule follows that choice.
+  const platformOwned = chooseOwner ? form.owner_team_id === '' : ownership.platformOwned
+  return (
+    <>
+      {chooseOwner ? (
+        <OwningTeamField form={form} teams={ownership.teams ?? []} onFormChange={onFormChange} />
+      ) : null}
+      <Field>
+        <FieldLabel>Visibility</FieldLabel>
+        <Select
+          value={form.visibility}
+          disabled={platformOwned}
+          onValueChange={(value) =>
+            onFormChange({ ...form, visibility: value as ServerVisibility })
+          }
+        >
+          <SelectTrigger aria-label="Visibility">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="team">Team only</SelectItem>
+              <SelectItem value="organisation" disabled={organisationDisabled}>
+                Organisation
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>
+          {platformOwned
+            ? 'Platform-owned servers are published to the organisation.'
+            : organisationDisabled
+              ? 'Only a platform admin can publish this server to the organisation.'
+              : 'Team only servers can be granted to your team only.'}
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="mcp-owner-contact">Owner contact</FieldLabel>
+        <Input
+          id="mcp-owner-contact"
+          value={form.owner_contact}
+          maxLength={256}
+          onChange={(event) => onFormChange({ ...form, owner_contact: event.target.value })}
+          placeholder={mode === 'create' ? 'Defaults to your email' : 'Email or channel'}
+        />
+      </Field>
+    </>
   )
 }
 

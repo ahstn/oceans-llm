@@ -1,7 +1,7 @@
 use anyhow::{Context, bail};
 use gateway_service::{
     MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthProvider, McpOauthProviderType, McpOauthRuntime,
-    McpOauthTokenEndpointAuthMethod,
+    McpOauthTokenEndpointAuthMethod, McpOrganisationPublishing,
 };
 use serde::Deserialize;
 
@@ -15,6 +15,19 @@ pub struct McpConfig {
     pub oauth: McpOauthConfig,
     #[serde(default)]
     pub client_oauth: super::McpClientOauthConfig,
+    #[serde(default)]
+    pub registry: McpRegistryConfig,
+}
+
+/// Delegated server ownership. See
+/// `docs/adr/2026-10-17-delegated-mcp-server-ownership.md`.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct McpRegistryConfig {
+    /// Who may publish a server to the organisation: `platform_admins`
+    /// (default) or `team_admins`.
+    #[serde(default)]
+    pub organisation_publishing: McpOrganisationPublishing,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -85,6 +98,14 @@ impl McpOauthConfig {
         };
         let value = resolve_path_reference(value)?;
         normalize_https_origin(value.trim(), "mcp.oauth.public_base_url").map(Some)
+    }
+
+    /// Clients for upstream MCP traffic. A team-owned server on a host listed
+    /// in `private_network_hosts` may reach private-network addresses too.
+    pub fn upstream_clients(&self) -> anyhow::Result<gateway_service::McpUpstreamClients> {
+        let hosts =
+            gateway_service::outbound_fetch::normalize_domains(self.private_network_hosts.clone())?;
+        Ok(gateway_service::McpUpstreamClients::new(&hosts))
     }
 
     pub fn runtime(&self) -> anyhow::Result<McpOauthRuntime> {

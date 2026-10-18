@@ -320,6 +320,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
             auth_mode: ExternalMcpAuthMode::None,
             auth_config: Map::new(),
             timeout_ms: 2_000,
+            ownership: Default::default(),
             created_at: now,
             approve_tool_changes: false,
         })
@@ -339,6 +340,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
                 schema_set_hash: None,
                 error_summary: None,
                 details: Map::new(),
+                expected_server: None,
             },
             &[UpsertExternalMcpToolRecord {
                 mcp_server_id: server.mcp_server_id,
@@ -359,6 +361,8 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
             target_kind: McpToolGrantTargetKind::Tool,
             target_id: tools[0].mcp_tool_id,
             updated_at: now,
+            expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("grant");

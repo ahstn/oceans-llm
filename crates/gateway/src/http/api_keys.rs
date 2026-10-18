@@ -238,6 +238,7 @@ pub async fn create_api_key(
             model_keys: request.model_keys,
             scopes: request.scopes,
             mcp_server_keys: request.mcp_server_keys,
+            viewer_team: api_key_viewer_team(&state, &scope).await?,
         },
         &progress,
     );
@@ -420,6 +421,22 @@ enum ApiKeyActionScope {
         user_id: Uuid,
         managed_team_id: Option<Uuid>,
     },
+}
+
+/// The team whose servers an API key's server list may name: `None` for a
+/// platform admin, otherwise the actor's current team.
+async fn api_key_viewer_team(
+    state: &AppState,
+    scope: &ApiKeyActionScope,
+) -> Result<Option<Option<Uuid>>, AppError> {
+    match scope {
+        ApiKeyActionScope::Platform => Ok(None),
+        ApiKeyActionScope::User { user_id, .. } => Ok(Some(
+            gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, *user_id)
+                .await?
+                .map(|membership| membership.team_id),
+        )),
+    }
 }
 
 enum ApiKeyListScope {

@@ -7,14 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   getMcpTagRulePreview,
   removeMcpTagRule,
   saveMcpTagRule,
@@ -25,6 +17,7 @@ import type {
   McpTagRuleView,
   McpToolView,
 } from '@/types/api'
+import { OptionSelect } from './-option-select'
 import { derivedTags } from './-tool-tags'
 import { EntityComboBox, type ComboOption } from './-tool-picker'
 
@@ -203,7 +196,7 @@ export function TagRulesSection({
         <FieldGroup className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field>
             <FieldLabel>Subject type</FieldLabel>
-            <PlainSelect
+            <OptionSelect
               ariaLabel="Tag rule subject type"
               value={form.subject_kind}
               options={subjectKinds}
@@ -223,7 +216,7 @@ export function TagRulesSection({
           </Field>
           <Field>
             <FieldLabel>Effect</FieldLabel>
-            <PlainSelect
+            <OptionSelect
               ariaLabel="Tag rule effect"
               value={form.effect}
               options={effects}
@@ -335,34 +328,5 @@ export function TagRulesSection({
         </div>
       )}
     </section>
-  )
-}
-
-function PlainSelect({
-  value,
-  options,
-  onChange,
-  ariaLabel,
-}: {
-  value: string
-  options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
-  ariaLabel: string
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger aria-label={ariaLabel}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
   )
 }

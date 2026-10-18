@@ -89,6 +89,7 @@ import {
   updateApiKey,
   updateApiKeyScopes,
   updateMcpServer,
+  transferMcpServerOwnership,
   updateMcpToolset,
   updateTeam,
   updateUser,
@@ -697,6 +698,45 @@ export const saveMcpServer = createServerFn({ method: 'POST' }).handler(
     return updateMcpServer(data.serverId, data.input)
   },
 )
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function requiredUuid(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
+    throw new Error(`${label} must be a UUID`)
+  }
+  return value
+}
+
+/** An ownership transfer: the server, and a team UUID or `null` for the platform. */
+function validateMcpOwnershipTransfer(data: unknown): {
+  serverId: string
+  input: Parameters<typeof transferMcpServerOwnership>[1]
+} {
+  const outer = requireObject(data, 'Ownership transfer')
+  const input = requireObject(outer.input, 'Ownership transfer input')
+  const ownerTeamId =
+    input.owner_team_id === null ? null : requiredUuid(input.owner_team_id, 'owner_team_id')
+  const ownerContact = optionalString(input.owner_contact, 'owner_contact')
+  const visibility = optionalString(input.visibility, 'visibility')
+  if (visibility !== undefined && visibility !== 'team' && visibility !== 'organisation') {
+    throw new Error('visibility must be team or organisation')
+  }
+  return {
+    serverId: requiredUuid(outer.serverId, 'serverId'),
+    input: {
+      owner_team_id: ownerTeamId,
+      ...(ownerContact === undefined ? {} : { owner_contact: ownerContact }),
+      ...(visibility === undefined ? {} : { visibility }),
+    },
+  }
+}
+
+export const transferExternalMcpServerOwnership = createServerFn({ method: 'POST' })
+  .validator(validateMcpOwnershipTransfer)
+  .handler(async ({ data }) => {
+    return transferMcpServerOwnership(data.serverId, data.input)
+  })
 
 type McpServerInput = { serverId: string }
 

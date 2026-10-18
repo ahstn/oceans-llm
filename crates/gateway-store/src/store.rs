@@ -156,6 +156,15 @@ pub trait GatewayStore:
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OauthLoginStateRecord>, StoreError>;
     async fn create_mcp_oauth_state(&self, state: &McpOauthStateRecord) -> Result<(), StoreError>;
+    /// Like [`Self::create_mcp_oauth_state`], but only while the server still
+    /// matches `expected_server`, checked under the lock a settings change
+    /// takes. A change that lands first refuses the state; one that lands
+    /// after it deletes the state, so the flow cannot finish either way.
+    async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError>;
     /// Atomically consumes an unexpired, unused state for its initiating user and provider.
     async fn consume_mcp_oauth_state(
         &self,
@@ -164,6 +173,10 @@ pub trait GatewayStore:
         provider_key: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<McpOauthStateRecord>, StoreError>;
+    /// Whether the state row still exists, consumed or not. A change to the
+    /// server's auth settings deletes its states, so a callback checks this
+    /// after reloading the server.
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError>;
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -533,6 +546,13 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, get_api_key_by_id(api_key_id))
     }
 
+    async fn list_api_keys_by_ids(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, list_api_keys_by_ids(api_key_ids))
+    }
+
     async fn create_api_key(
         &self,
         api_key: &gateway_core::NewApiKeyRecord,
@@ -746,6 +766,10 @@ impl AdminIdentityRepository for AnyStore {
 
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_teams())
+    }
+
+    async fn list_teams_by_ids(&self, team_ids: &[Uuid]) -> Result<Vec<TeamRecord>, StoreError> {
+        dispatch_store!(self, list_teams_by_ids(team_ids))
     }
 
     async fn list_active_service_accounts(
@@ -1502,6 +1526,14 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, create_mcp_oauth_state(state))
     }
 
+    async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, create_mcp_oauth_state_guarded(state, expected_server))
+    }
+
     async fn consume_mcp_oauth_state(
         &self,
         state_hash: &str,
@@ -1513,6 +1545,10 @@ impl GatewayStore for AnyStore {
             self,
             consume_mcp_oauth_state(state_hash, user_id, provider_key, consumed_at)
         )
+    }
+
+    async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        dispatch_store!(self, mcp_oauth_state_exists(state_hash))
     }
 
     async fn get_user_by_email_normalized(

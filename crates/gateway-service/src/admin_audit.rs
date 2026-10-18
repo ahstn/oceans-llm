@@ -147,6 +147,9 @@ pub mod actions {
     pub const MCP_SERVER_ENABLED: AuditAction = AuditAction("mcp_server.enabled");
     pub const MCP_SERVER_DISCOVERY_REFRESHED: AuditAction =
         AuditAction("mcp_server.discovery_refreshed");
+    /// A platform admin moved a server to another team or to the platform.
+    pub const MCP_SERVER_OWNERSHIP_TRANSFERRED: AuditAction =
+        AuditAction("mcp_server.ownership_transferred");
 
     pub const MCP_TOOLSET_CREATED: AuditAction = AuditAction("mcp_toolset.created");
     pub const MCP_TOOLSET_UPDATED: AuditAction = AuditAction("mcp_toolset.updated");
@@ -235,6 +238,7 @@ pub mod actions {
         MCP_SERVER_DISABLED,
         MCP_SERVER_ENABLED,
         MCP_SERVER_DISCOVERY_REFRESHED,
+        MCP_SERVER_OWNERSHIP_TRANSFERRED,
         MCP_TOOLSET_CREATED,
         MCP_TOOLSET_UPDATED,
         MCP_TOOLSET_DISABLED,
@@ -404,6 +408,12 @@ impl AuditEvent {
     #[must_use]
     pub fn action(&self) -> &str {
         &self.action
+    }
+
+    /// The metadata added so far, before redaction.
+    #[must_use]
+    pub fn metadata(&self) -> &Map<String, Value> {
+        &self.metadata
     }
 
     fn into_record(
@@ -580,6 +590,30 @@ where
                 );
                 None
             }
+        }
+    }
+
+    /// Writes one entry per event for a change that has already succeeded, in
+    /// a few multi-row inserts rather than one round trip each. A failed write
+    /// is logged, as in [`Self::record`].
+    pub async fn record_all(&self, context: &AuditContext, events: Vec<AuditEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let at = now_millis();
+        let records: Vec<_> = events
+            .into_iter()
+            .map(|event| event.into_record(context, at))
+            .collect();
+        if let Err(error) = self.repo.insert_audit_logs(&records).await {
+            tracing::error!(
+                audit_action = %records[0].action,
+                audit_entries = records.len(),
+                actor_kind = records[0].actor.kind.as_str(),
+                actor_user_id = ?records[0].actor.user_id,
+                error = %error,
+                "failed to write admin audit entries"
+            );
         }
     }
 }

@@ -31,7 +31,7 @@ Discovered tools are not automatically callable. Configure explicit MCP tool or 
 
 ## Add a Server
 
-Platform admins manage servers in the admin UI:
+Platform admins, and team owners and admins, manage servers in the admin UI:
 
 ```text
 /admin/mcp/servers
@@ -53,6 +53,11 @@ The page supports:
 - refreshing discovery
 - opening a server detail dialog to inspect overview, configuration, discovered
   tools, and credential bindings
+- filtering the registry by owner, and showing each server's owner and visibility
+
+Team owners and admins see their team's servers and the servers published to the
+organisation. They manage only their team's servers. See
+[Ownership and Visibility](#ownership-and-visibility).
 
 Disabling takes effect immediately: callers lose the server's tools, and there is
 no confirmation step. Enabling restores the tools, toolset memberships, and grants
@@ -60,6 +65,103 @@ the server had before. Its discovery status reads **Not discovered** until you
 refresh discovery, so refresh it to pick up upstream changes made while it was off.
 
 The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md).
+
+## Ownership and Visibility
+
+Every server has an owner: a team, or the platform. Servers registered before
+ownership existed are platform-owned and published to the organisation, so their
+access did not change.
+
+| Field | Meaning |
+|---|---|
+| `owner_team_id` | The owning team. `null` means the platform owns the server. |
+| `owner_contact` | Who to ask about the server, such as an email or a chat channel. Up to 256 characters. It defaults to the email of whoever registered the server. |
+| `visibility` | `team` or `organisation`. |
+
+Visibility decides who may be granted the server's tools. It never grants access
+by itself:
+
+- **`team`**, the default for a team-owned server. Its tools can be granted only
+  to the owning team, its members, its service accounts, and API keys they own.
+  This applies to platform admins too. Its tools cannot join a tool set. Other
+  teams' admins do not see the server.
+- **`organisation`**. Every team admin sees the server in the registry, read-only
+  unless their team owns it. Platform admins can grant its tools to anyone and add
+  them to tool sets. A platform-owned server is always `organisation`.
+
+Setting `organisation` publishes the server. By default only platform admins can
+publish. To let team owners and admins publish their own team's servers, set:
+
+```yaml
+mcp:
+  registry:
+    organisation_publishing: team_admins   # default: platform_admins
+```
+
+A team admin can always unpublish their own server. Narrowing a server to `team`,
+or moving a team-only server to another team, fails with `409` while one of its
+tools is in an active tool set or granted to a subject outside the new owning team. Revoke
+those first. A disabled server's tool sets and grants reach no one, so they never
+block a narrowing. An unpublish saved with other settings is one write: when it
+is refused, none of the other settings are saved either. Adding a team-only server's tools to a tool set also fails with `409`.
+A grant or credential binding saved while its server changes owner or visibility
+fails with `409` and writes nothing; reload the server and try again.
+
+### What team owners and admins can do
+
+Team owners and admins reach the MCP area when the `team_admins` permission group
+includes the `mcp` page, which it inherits from the `users` group by default.
+
+Every other signed-in user also gets the `mcp` page by default, through the `users` group. They see, read-only, only the servers they can connect to: those where a grant to them, their team, or one of their own API keys reaches an active tool. Each server shows its owner, its URL's origin and the tools they can call. Every write and the grant, credential and tool set routes stay admin-only. See [MCP Tool Access](../mcp/mcp-tool-access.md) for how grants decide that access.
+
+| Action | Team owner or admin |
+|---|---|
+| See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, only the URL's origin (`scheme://host[:port]`) is shown, and the auth config and discovery errors are hidden |
+| Register a server | Yes, at an address that resolves and is public. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config, and one a platform admin set stays only while the server URL and every URL in the auth config are unchanged. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
+| Edit, disable, re-enable, refresh discovery | Their team's servers. A disable or re-enable names the owner it was authorized against, so it fails with `409` if the server changed owner meanwhile |
+| Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
+| Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
+| Revoke grants | Any grant on their team's servers' tools |
+| Tool sets | No. Tool sets are platform-managed |
+| Credential bindings | On their team's servers: set team and service-account credentials as encrypted secrets (not `secret_ref`), and revoke any binding |
+| Change the owning team | No |
+
+A server they cannot see returns `404`. An action they cannot take on a server
+they can see returns `403`.
+
+A team-owned server's traffic, for discovery and for every call through the
+gateway, reaches public addresses only, checked each time it connects. A URL
+entered by IP address or as `localhost` keeps that address's own kind, and a
+host listed under `mcp.oauth.private_network_hosts` may also reach private
+networks. Only a platform admin can save a URL on a listed host; a team admin's
+attempt returns `400`. A link-local or cloud metadata address is never reached. Its OAuth
+token and registration requests are scoped by each endpoint's own URL the same
+way. A platform admin who registers a server on an internal network for a
+team by hostname lists that host there. This traffic follows no redirects and
+does not use an HTTP proxy. Platform-owned servers are not limited.
+
+A server keeps this guard after a platform admin takes it over, because its
+team may have chosen its URL and auth endpoints. Saving the server's settings as
+a platform admin vouches for them and lifts the guard; the save is recorded in
+the audit log with `destinations_vouched: true`, even when no setting changed.
+
+### Take over a server
+
+Platform admins move a server to another team, or take it over for the
+platform, from the server's **Overview** in the admin UI, or with:
+
+```text
+PUT /api/v1/admin/mcp/servers/{server_id}/owner
+{ "owner_team_id": null }
+```
+
+`owner_team_id` is required: a team ID, or `null` to move the server to the
+platform and publish it to the organisation. The request can also set `owner_contact` and `visibility`. Each
+change is recorded as `mcp_server.ownership_transferred` in the
+[admin audit log](../access/admin-audit-log.md).
+
+See [Delegated MCP Server Ownership](../adr/2026-10-17-delegated-mcp-server-ownership.md)
+for the reasoning behind these rules.
 
 ## View Discovered Tools
 
@@ -246,7 +348,7 @@ A discovered server's auth config looks like this:
 
 Discovery recommends a registration method in this order:
 
-- **`dynamic`**, when the authorization server has a `registration_endpoint`. The first user to connect causes Oceans to register itself (RFC 7591) with the shared callback URI. Oceans stores the issued client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the secret expires. A refresh never registers a new client.
+- **`dynamic`**, when the authorization server has a `registration_endpoint`. The first user to connect causes Oceans to register itself (RFC 7591) with the shared callback URI. Oceans stores the issued client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the secret expires. A refresh never registers a new client. Changing the server's URL, auth mode or auth config drops the registered client and revokes every user's OAuth tokens for the server, so each user connects again.
 - **`metadata_document`**, when the authorization server sets `client_id_metadata_document_supported`. Oceans uses the URL of a Client ID Metadata Document that the gateway hosts as its client ID. It connects as a public client protected by PKCE:
 
   ```text
@@ -309,6 +411,12 @@ Connections behave the same way for every provider. Oceans:
 - serializes refreshes across gateway replicas with the same lease
 - replaces the stored refresh token when the provider rotates it
 - revokes the connection and asks the user to reconnect after `invalid_grant`
+- stores the token, and a dynamically registered client, only while the server
+  still has the URL and auth settings the flow ran against; a settings change
+  in between fails the connection, and the user connects again
+- lists, and lets a user connect to, a team-only server only while their current
+  team owns it, checked again when the provider redirects back; a connection
+  they already hold stays listed so they can disconnect it
 
 Some providers return no refresh token. The connection then lasts until the access token expires, and then the user must reconnect. A token with no refresh token and no `expires_in` does not expire.
 
@@ -366,7 +474,7 @@ Inbound Oceans credentials are always stripped before forwarding upstream. The g
 
 ## Principal-Bound Upstream Credentials
 
-For `user_passthrough`, admins can configure MCP credential bindings in the control plane. For a configured `oauth_obo` server, users should create and revoke their own binding from **Workspace connections**. Bindings are separate from server registry records and grants:
+For `user_passthrough`, admins can configure MCP credential bindings in the control plane. Team owners and admins can set team and service-account bindings on their own team's servers; user bindings stay with each user or a platform admin. For a configured `oauth_obo` server, users should create and revoke their own binding from **Workspace connections**. Bindings are separate from server registry records and grants:
 
 - owner scopes are `user`, `team`, or `service_account`
 - material kinds are `static_header`, `bearer_token`, or `oauth_tokens`

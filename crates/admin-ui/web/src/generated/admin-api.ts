@@ -596,9 +596,30 @@ export interface paths {
         put?: never;
         /**
          * Reactivates a disabled server. Its tools and grants apply again as they were before it was
-         *     disabled, and its discovery status resets to not run until discovery is refreshed.
+         *     disabled, and its discovery status resets to not run until discovery is refreshed. Whoever
+         *     can disable a server can enable it again: a team admin for their team's servers.
          */
         post: operations["enable_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Moves a server to another team, or takes it over for the platform.
+         *     Platform admins only.
+         */
+        put: operations["transfer_mcp_server_ownership"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3305,12 +3326,21 @@ export interface components {
             auth_mode?: string | null;
             description?: string | null;
             display_name?: string | null;
+            /** @description Defaults to the caller's email address. */
+            owner_contact?: string | null;
+            /**
+             * Format: uuid
+             * @description Platform admins only; a team admin always registers for their own team.
+             */
+            owner_team_id?: string | null;
             recommended_catalog_key?: string | null;
             server_key?: string | null;
             server_url?: string | null;
             /** Format: int64 */
             timeout_ms?: number | null;
             transport?: string | null;
+            /** @description `team` or `organisation`. Defaults to `team` for a team-owned server. */
+            visibility?: string | null;
         };
         CreateMcpTagRuleRequest: {
             effect: string;
@@ -3843,6 +3873,8 @@ export interface components {
         };
         Envelope_McpServersPayload: {
             data: {
+                /** @description Whether the caller may set `organisation` visibility on servers they manage. */
+                can_publish_to_organisation: boolean;
                 items: components["schemas"]["McpServerView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -4471,6 +4503,8 @@ export interface components {
                 [key: string]: unknown;
             };
             auth_mode: string;
+            /** @description Whether the caller may edit the server, its grants and its credentials. */
+            can_manage: boolean;
             created_at: string;
             description?: string | null;
             disabled_at?: string | null;
@@ -4482,6 +4516,10 @@ export interface components {
             last_successful_discovery_at?: string | null;
             /** Format: int64 */
             last_tool_count?: number | null;
+            owner_contact?: string | null;
+            /** @description The owning team; `null` for a platform-owned server. */
+            owner_team_id?: string | null;
+            owner_team_name?: string | null;
             server_key: string;
             server_url: string;
             status: string;
@@ -4489,8 +4527,12 @@ export interface components {
             timeout_ms: number;
             transport: string;
             updated_at: string;
+            /** @description `team` or `organisation`. */
+            visibility: string;
         };
         McpServersPayload: {
+            /** @description Whether the caller may set `organisation` visibility on servers they manage. */
+            can_publish_to_organisation: boolean;
             items: components["schemas"]["McpServerView"][];
         };
         McpTagRulePayload: {
@@ -5472,6 +5514,23 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        /** @description A platform admin's ownership transfer. */
+        TransferMcpServerOwnershipRequest: {
+            /** @description Omitted keeps the current contact; an empty string clears it. */
+            owner_contact?: string | null;
+            /**
+             * Format: uuid
+             * @description Required. The new owning team, or `null` to move the server to the
+             *     platform. Omitting it is rejected, so a request that only changes the
+             *     contact cannot take the server away from its team.
+             */
+            owner_team_id: string | null;
+            /**
+             * @description Omitted keeps the current visibility. Platform-owned servers are always
+             *     `organisation`.
+             */
+            visibility?: string | null;
+        };
         TransferTeamMemberRequest: {
             destination_role: string;
             destination_team_id: string;
@@ -5503,9 +5562,13 @@ export interface components {
             auth_mode: string;
             description?: string | null;
             display_name: string;
+            /** @description Omitted keeps the current contact; an empty string clears it. */
+            owner_contact?: string | null;
             server_url: string;
             /** Format: int64 */
             timeout_ms?: number | null;
+            /** @description Omitted keeps the current visibility. */
+            visibility?: string | null;
         };
         UpdateMcpToolsetRequest: {
             description?: string | null;
@@ -6618,6 +6681,8 @@ export interface operations {
         parameters: {
             query?: {
                 include_disabled?: boolean;
+                /** @description `platform` for platform-owned servers, or an owning team id. */
+                owner?: string | null;
             };
             header?: never;
             path?: never;
@@ -6728,7 +6793,25 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6774,7 +6857,7 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
-            /** @description The server was disabled or enabled while discovery ran */
+            /** @description The server was disabled, enabled, transferred or reconfigured while discovery ran */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6813,7 +6896,83 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    transfer_mcp_server_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferMcpServerOwnershipRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

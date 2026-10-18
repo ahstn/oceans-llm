@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
+import type { McpWorkspaceScope } from '@/routes/mcp/-scope'
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
 
 const navigateMock = vi.fn()
@@ -16,6 +17,7 @@ const disableExternalMcpServerMock = vi.fn()
 const enableExternalMcpServerMock = vi.fn()
 const refreshExternalMcpServerDiscoveryMock = vi.fn()
 const discoverExternalMcpServerOauthMock = vi.fn()
+const transferExternalMcpServerOwnershipMock = vi.fn()
 const saveMcpToolTagsMock = vi.fn()
 const saveMcpToolAnnotationOverridesMock = vi.fn()
 
@@ -53,6 +55,8 @@ vi.mock('@/server/admin-data.functions', () => ({
   removeMcpCredentialBinding: vi.fn(),
   saveMcpCredentialBinding: vi.fn(),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
+  transferExternalMcpServerOwnership: (...args: unknown[]) =>
+    transferExternalMcpServerOwnershipMock(...args),
 }))
 
 vi.mock('@/server/mcp-policy-data.functions', () => ({
@@ -80,6 +84,11 @@ const server: McpServerView = {
   created_at: '2026-05-27T08:00:00Z',
   updated_at: '2026-05-27T09:00:00Z',
   disabled_at: null,
+  owner_team_id: null,
+  owner_team_name: null,
+  owner_contact: 'platform@example.test',
+  visibility: 'organisation',
+  can_manage: true,
   approve_tool_changes: false,
 }
 
@@ -160,9 +169,30 @@ const recommended: RecommendedMcpServerView = {
   tags: ['tickets'],
 }
 
+const teamServer: McpServerView = {
+  ...server,
+  id: 'server_team',
+  server_key: 'docs',
+  display_name: 'Docs',
+  server_url: 'https://docs.example.test/mcp',
+  owner_team_id: 'team_a',
+  owner_team_name: 'Team A',
+  owner_contact: '#team-a',
+  visibility: 'team',
+}
+
+const teamAdminScope: McpWorkspaceScope = {
+  platformAdmin: false,
+  canPublish: false,
+  teamId: 'team_a',
+  teams: [],
+  readOnly: false,
+}
+
 async function renderServersTab(
   initialSelectedServerId: string | null = null,
   servers: McpServerView[] = [server],
+  scope?: McpWorkspaceScope,
 ) {
   const { ServersTab } = await import('@/routes/mcp/-servers-tab')
   const onAddToToolset = vi.fn()
@@ -174,6 +204,7 @@ async function renderServersTab(
         servers={servers}
         recommended={[recommended]}
         selectedServerId={selectedServerId}
+        scope={scope}
         onSelectServer={setSelectedServerId}
         onAddToToolset={onAddToToolset}
       />
@@ -1071,5 +1102,210 @@ describe('ServersTab', () => {
     expect(screen.getByLabelText('Server key')).toHaveValue('linear')
     expect(screen.getByLabelText('Display name')).toHaveValue('Linear')
     expect(screen.getByLabelText('Server URL')).toHaveValue('https://mcp.linear.app/mcp')
+  })
+
+  it('shows each server owner and visibility, and filters by owner', async () => {
+    await renderServersTab(null, [server, teamServer])
+
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByText('Platform admins')).toBeInTheDocument()
+    expect(registry.getByText('Team A')).toHaveAttribute('title', '#team-a')
+    expect(registry.getByText('Organisation')).toBeInTheDocument()
+    expect(registry.getByText('Team only')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by owner' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Team A' }))
+
+    await waitFor(() => expect(registry.queryByText('GitHub')).not.toBeInTheDocument())
+    expect(registry.getByText('Docs')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 of 2 servers')).toBeInTheDocument()
+  })
+
+  it('keeps servers a team admin does not manage read-only', async () => {
+    const published = { ...server, can_manage: false }
+    await renderServersTab(null, [published, teamServer], teamAdminScope)
+
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
+    expect(registry.getByRole('button', { name: 'Manage Docs' })).toBeInTheDocument()
+    expect(registry.getByRole('button', { name: 'Refresh GitHub' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    expect(
+      await screen.findByText(/This server is managed by Platform admins\./),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit GitHub' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'More actions for GitHub' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Credentials' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Transfer ownership' })).not.toBeInTheDocument()
+    expect(getMcpCredentialBindingsMock).not.toHaveBeenCalled()
+  })
+
+  it('lets a team admin re-enable a server their team owns', async () => {
+    await renderServersTab(
+      'server_team',
+      [{ ...teamServer, status: 'disabled' }, server],
+      teamAdminScope,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for Docs' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Enable server' }))
+
+    await waitFor(() => {
+      expect(enableExternalMcpServerMock).toHaveBeenCalledWith({
+        data: { serverId: 'server_team' },
+      })
+    })
+  })
+
+  it('registers a team admin server as team only', async () => {
+    await renderServersTab(null, [teamServer], teamAdminScope)
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    expect(
+      screen.getByText('Only a platform admin can publish this server to the organisation.'),
+    ).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'wiki' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Wiki' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://wiki.example.test/mcp' },
+    })
+    fireEvent.change(screen.getByLabelText('Owner contact'), { target: { value: '#wiki' } })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          server_key: 'wiki',
+          visibility: 'team',
+          owner_contact: '#wiki',
+        }),
+      })
+    })
+  })
+
+  it('lets a platform admin move a server to a team', async () => {
+    transferExternalMcpServerOwnershipMock.mockResolvedValue({
+      data: { server: { ...server, owner_team_id: 'team_a', owner_team_name: 'Team A' } },
+    })
+    await renderServersTab('server_1', [server], {
+      platformAdmin: true,
+      canPublish: true,
+      teamId: null,
+      teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
+    })
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Team A' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer ownership' }))
+
+    await waitFor(() => {
+      expect(transferExternalMcpServerOwnershipMock).toHaveBeenCalledWith({
+        data: { serverId: 'server_1', input: { owner_team_id: 'team_a' } },
+      })
+    })
+  })
+
+  it('lets a platform admin register a server for a team', async () => {
+    await renderServersTab(null, [server], {
+      platformAdmin: true,
+      canPublish: true,
+      teamId: null,
+      teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Team A' }))
+    expect(screen.getByRole('combobox', { name: 'Visibility' })).toHaveTextContent('Team only')
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'docs' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Docs' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://docs.example.test/mcp' },
+    })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({ owner_team_id: 'team_a', visibility: 'team' }),
+      })
+    })
+  })
+
+  it('publishes a server again when a platform admin switches the owner back to the platform', async () => {
+    await renderServersTab(null, [server], {
+      platformAdmin: true,
+      canPublish: true,
+      teamId: null,
+      teams: [{ id: 'team_a', name: 'Team A' }],
+      readOnly: false,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Team A' }))
+    expect(screen.getByRole('combobox', { name: 'Visibility' })).toHaveTextContent('Team only')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Owning team' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Platform admins' }))
+    expect(screen.getByRole('combobox', { name: 'Visibility' })).toHaveTextContent('Organisation')
+    fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'docs' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Docs' } })
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://docs.example.test/mcp' },
+    })
+    const addButtons = screen.getAllByRole('button', { name: 'Add server' })
+    fireEvent.click(addButtons[addButtons.length - 1])
+
+    await waitFor(() => {
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({ owner_team_id: null, visibility: 'organisation' }),
+      })
+    })
+  })
+
+  it('shows members the servers they can connect to without admin controls', async () => {
+    await renderServersTab(null, [{ ...server, can_manage: false }], {
+      ...teamAdminScope,
+      readOnly: true,
+    })
+
+    expect(screen.getByText('The MCP servers your access lets you connect to.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add server' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Browse catalog' })).not.toBeInTheDocument()
+    const registry = within(screen.getByTestId('mcp-server-list'))
+    expect(registry.getByRole('button', { name: 'View GitHub' })).toBeInTheDocument()
+  })
+
+  it('offers no tool set action on a team-only server', async () => {
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool] } })
+    await renderServersTab(null, [teamServer])
+    fireEvent.click(
+      within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Open Docs' }),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    expect(screen.queryByRole('checkbox', { name: 'Select query_docs' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to toolset' })).not.toBeInTheDocument()
+  })
+
+  it('offers no tool selection without a tool set action', async () => {
+    await renderServersTab(null, [{ ...server, can_manage: false }], {
+      ...teamAdminScope,
+      readOnly: true,
+    })
+    fireEvent.click(
+      within(screen.getByTestId('mcp-server-list')).getByRole('button', { name: 'Open GitHub' }),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('Create issue')).toBeInTheDocument())
+    expect(screen.getByText('The tools this server offers.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Select create_issue' })).not.toBeInTheDocument()
   })
 })

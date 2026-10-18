@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
 use gateway_service::{
-    GatewayService, McpClientOauthSettings, McpOauthRuntime, SkillService, WeightedRoutePlanner,
+    GatewayService, McpClientOauthSettings, McpOauthRuntime, McpUpstreamClients, SkillService,
+    WeightedRoutePlanner,
 };
 use gateway_store::AnyStore;
 
@@ -32,12 +33,16 @@ pub struct AppState {
     pub guardrail_engine: Arc<GuardrailEngine>,
     pub guardrail_config: Arc<GuardrailConfig>,
     pub metrics: Arc<GatewayMetrics>,
-    pub mcp_http_client: reqwest::Client,
+    /// Clients for upstream MCP traffic; a team-owned server's reach only the
+    /// addresses its URL allows.
+    pub mcp_http_clients: McpUpstreamClients,
     pub mcp_oauth_runtime: Arc<McpOauthRuntime>,
     /// The gateway as an OAuth authorization server for MCP clients; `None` when disabled.
     pub mcp_client_oauth: Option<Arc<McpClientOauthSettings>>,
     /// Ends OAuth callers' MCP event streams when their access stops.
     pub oauth_streams: Arc<OauthStreamWatcher>,
+    /// Ends MCP event streams when their caller can no longer open them.
+    pub mcp_stream_reach: Arc<crate::http::mcp_gateway::stream_reach::McpStreamReachWatcher>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,
@@ -46,6 +51,8 @@ pub struct AppState {
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
+    /// Who may publish an MCP server to the organisation catalog.
+    pub mcp_organisation_publishing: gateway_service::McpOrganisationPublishing,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
     pub count_tokens_limiter: Arc<CountTokensLimiter>,

@@ -29,7 +29,7 @@ Each entry shows:
 | Service accounts | `service_account.created`, `service_account.updated`, `service_account.disabled` |
 | Budgets | `budget.set`, `budget.deactivated`, `budget.increase_created` |
 | Sessions | `session.created` (password, OIDC or OAuth sign-in), `session.revoked` (logout) |
-| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.enabled`, `mcp_server.discovery_refreshed` |
+| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.enabled`, `mcp_server.discovery_refreshed`, `mcp_server.ownership_transferred` |
 | MCP tool sets | `mcp_toolset.created`, `mcp_toolset.updated`, `mcp_toolset.disabled`, `mcp_toolset.tools_replaced` |
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
 | MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tool.version_approved`, `mcp_tool.version_rejected` |
@@ -42,6 +42,8 @@ Each entry shows:
 A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository or MCP server, removing a member another request already removed, signing out twice with the same session, or saving a user, team, budget, API key's access, MCP tool set, MCP tool's tags or annotation overrides, review agent repository, rate-limit policy or service account unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
 
 An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
+
+MCP server, tool set, grant and credential entries also record the actor's scope in **Details**: `actor_access` is `platform_admin` or `team_admin`, and `actor_team_id` and `actor_team_role` name the actor's team and role when they belong to one. A publish or unpublish shows as a `visibility` change in `mcp_server.updated`. See [Delegated MCP Server Ownership](../adr/2026-10-17-delegated-mcp-server-ownership.md).
 
 Not recorded:
 

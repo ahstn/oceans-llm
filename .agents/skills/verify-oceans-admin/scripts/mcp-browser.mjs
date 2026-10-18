@@ -157,7 +157,7 @@ async function addServer(ui, candidate) {
   await dialog.getByLabel("Display name", { exact: true }).fill(displayName);
   await dialog.getByLabel("Description", { exact: true }).fill("Temporary bounded MCP verification");
   await dialog.getByLabel("Server URL", { exact: true }).fill(candidate.server_url);
-  await dialog.getByRole("combobox").click();
+  await dialog.getByRole("combobox", { name: "Auth mode", exact: true }).click();
   await page.getByRole("option", { name: authLabels[candidate.auth_mode], exact: true }).click();
   await dialog.getByLabel("Auth config JSON", { exact: true }).fill(JSON.stringify(candidate.auth_config ?? {}));
   await dialog.getByLabel("Timeout ms", { exact: true }).fill("30000");

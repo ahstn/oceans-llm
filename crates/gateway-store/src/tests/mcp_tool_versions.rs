@@ -72,6 +72,7 @@ where
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
                 expected_status_revision: None,
+                expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Success,
@@ -113,6 +114,13 @@ where
             auth_mode: server.auth_mode,
             auth_config: server.auth_config.clone(),
             timeout_ms: server.timeout_ms,
+            owner_contact: None,
+            visibility: server.ownership.visibility,
+            retarget_owner_credentials_only: false,
+            expected_server: None,
+            expected_owner_team_id: server.ownership.owner_team_id,
+            expected_visibility: server.ownership.visibility,
+            vouch_for_destinations: false,
             updated_at: OffsetDateTime::now_utc(),
             approve_tool_changes: on,
         })
@@ -152,6 +160,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "files".to_string(),
             display_name: "Files".to_string(),
             description: None,
@@ -247,6 +256,8 @@ where
     // An explicit grant does not serve it either.
     store
         .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+            expected_server: None,
+            expected_subject_team: None,
             subject_kind: subject.subject_kind,
             subject_id: subject.subject_id,
             target_kind: McpToolGrantTargetKind::Tool,
@@ -476,6 +487,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "notes".to_string(),
             display_name: "Notes".to_string(),
             description: None,
@@ -600,6 +612,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "wiki".to_string(),
             display_name: "Wiki".to_string(),
             description: None,
@@ -700,6 +713,7 @@ where
 {
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "drive".to_string(),
             display_name: "Drive".to_string(),
             description: None,
@@ -741,6 +755,7 @@ where
     let now = OffsetDateTime::now_utc();
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "archive".to_string(),
             display_name: "Archive".to_string(),
             description: None,
@@ -879,6 +894,7 @@ async fn libsql_mcp_tool_historical_reuse_spans_lookup_batches() {
         .expect("store");
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "bulk".to_string(),
             display_name: "Bulk".to_string(),
             description: None,
