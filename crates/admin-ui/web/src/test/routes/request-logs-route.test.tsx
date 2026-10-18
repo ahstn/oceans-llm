@@ -463,6 +463,36 @@ describe('RequestLogsPage detail', () => {
     expect(detail.queryByText('Attempt #2 error detail')).not.toBeInTheDocument()
   })
 
+  it('renders part of a long payload and copies all of it', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const messages = Array.from({ length: 300 }, (_, index) => ({
+      role: 'user',
+      content: `m${index}`,
+    }))
+    const detail = await openDetail({
+      log: items[0],
+      user_agent_raw: null,
+      payload: { request_json: { messages }, response_json: null },
+      attempts: [],
+    })
+    const full = JSON.stringify({ messages }, null, 2)
+    const lineCount = full.split('\n').length
+
+    expect(
+      detail.getByText(
+        `Showing the first 500 of ${lineCount.toLocaleString('en-US')} lines. Copy copies the whole payload.`,
+      ),
+    ).toBeInTheDocument()
+    const payloadsElement = detail.getByTestId('request-log-payloads')
+    const payloads = within(payloadsElement)
+    expect(payloadsElement.querySelectorAll('[data-slot="code-block-line"]')).toHaveLength(500)
+    expect(payloadsElement.textContent).toContain('"m0"')
+    expect(payloadsElement.textContent).not.toContain('"m299"')
+    fireEvent.click(payloads.getByRole('button', { name: 'Copy request payload' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(full))
+  })
+
   it('hides the MCP invocations link from sessions without that page', async () => {
     routeMock.useRouteContext.mockReturnValue({
       session: regularUserSession(['api_keys', 'request_logs']),
