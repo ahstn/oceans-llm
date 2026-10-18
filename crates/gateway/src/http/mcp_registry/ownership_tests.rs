@@ -2249,3 +2249,42 @@ async fn reads_are_refused_once_the_admin_scope_they_used_is_gone() {
     };
     assert_eq!(error.0.error_code(), "conflict");
 }
+
+#[tokio::test]
+async fn api_key_server_options_follow_the_viewers_team() {
+    let context = TestContext::new().await;
+    context
+        .server(
+            "team-a-private",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    context
+        .server(
+            "team-a-published",
+            context.team_owned(context.team_a, McpServerVisibility::Organisation),
+        )
+        .await;
+    let service = gateway_service::AdminApiKeyService::new(context.state.store.clone());
+    let options = |user_id| {
+        let service = service.clone();
+        async move {
+            let Ok(payload) = service.list_api_keys_for_user_scope(user_id, None).await else {
+                panic!("user key listing");
+            };
+            payload
+                .mcp_servers
+                .into_iter()
+                .map(|server| server.key)
+                .filter(|key| key.starts_with("team-a-"))
+                .collect::<Vec<_>>()
+        }
+    };
+    let member_a = context.member(context.team_a).await;
+    let member_b = context.member(context.team_b).await;
+    assert_eq!(
+        options(member_a).await,
+        vec!["team-a-private", "team-a-published"]
+    );
+    assert_eq!(options(member_b).await, vec!["team-a-published"]);
+}

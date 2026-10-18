@@ -113,13 +113,21 @@ where
         Ok(access)
     }
 
+    /// The servers a key's MCP server list can name. `viewer_team` is the
+    /// viewer's current team, or `None` for a platform admin, who sees every
+    /// server; anyone else sees only servers their team reaches, so another
+    /// team's team-only server is never named to them.
     pub(super) async fn mcp_server_options(
         &self,
+        viewer_team: Option<Option<Uuid>>,
     ) -> Result<Vec<AdminApiKeyMcpServerOption>, GatewayError> {
         let mut servers = self.repo.list_external_mcp_servers(false).await?;
         servers.sort_by(|left, right| left.server_key.cmp(&right.server_key));
         Ok(servers
             .into_iter()
+            .filter(|server| {
+                viewer_team.is_none_or(|team_id| server.ownership.is_reachable_from(team_id))
+            })
             .map(|server| AdminApiKeyMcpServerOption {
                 key: server.server_key,
                 display_name: server.display_name,

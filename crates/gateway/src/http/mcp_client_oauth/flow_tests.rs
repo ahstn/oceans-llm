@@ -543,13 +543,6 @@ async fn authorize_redirects_parameter_errors_with_state_and_issuer() {
             "invalid_target",
         ),
         (
-            harness.authorize_query(
-                "editor",
-                &[("resource", "https://oceans.example.com/mcp/missing")],
-            ),
-            "invalid_target",
-        ),
-        (
             format!(
                 "{}&code_challenge_method=S256",
                 harness.authorize_query("editor", &[])
@@ -870,4 +863,61 @@ async fn token_requests_over_the_body_limit_are_refused() {
         )
         .await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn consent_names_only_servers_the_user_can_reach() {
+    use gateway_core::{
+        ExternalMcpAuthMode, ExternalMcpTransport, McpRegistryRepository, McpServerOwnership,
+        MembershipRole, NewExternalMcpServerRecord,
+    };
+    let harness = Harness::new().await;
+    harness
+        .register_client("editor", GatewayOauthClientAuthMethod::None, None)
+        .await;
+    let store = &harness.state.store;
+    let own = store.create_team("consent-own", "Own").await.unwrap();
+    let other = store.create_team("consent-other", "Other").await.unwrap();
+    store
+        .assign_team_membership(harness.user_id, own.team_id, MembershipRole::Member)
+        .await
+        .unwrap();
+    for (key, team_id) in [("own-notes", own.team_id), ("other-notes", other.team_id)] {
+        store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                ownership: McpServerOwnership::team(team_id, None),
+                server_key: key.to_string(),
+                display_name: format!("{key} display"),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "http://127.0.0.1:9/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: serde_json::Map::new(),
+                timeout_ms: 2_000,
+                created_at: OffsetDateTime::now_utc(),
+            })
+            .await
+            .unwrap();
+    }
+    let start = |key: &str| {
+        harness.authorize_query(
+            "editor",
+            &[("resource", &format!("https://oceans.example.com/mcp/{key}"))],
+        )
+    };
+    // The user's own team's server is shown by name.
+    let request_id = harness.start(&start("own-notes")).await;
+    let (status, view) = harness.consent(&request_id).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["server_display_name"], "own-notes display");
+    // Another team's team-only server and a missing one look the same: the
+    // authorize step does not look either up, and consent finds neither.
+    for key in ["other-notes", "missing"] {
+        let request_id = harness.start(&start(key)).await;
+        let (status, view) = harness.consent(&request_id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{key}: {view}");
+        assert!(!view.to_string().contains("other-notes display"), "{view}");
+        let (status, _) = harness.decide(&request_id, true).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{key}");
+    }
 }

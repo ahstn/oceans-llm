@@ -201,7 +201,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
-            mcp_servers: self.mcp_server_options().await?,
+            mcp_servers: self.mcp_server_options(None).await?,
         })
     }
 
@@ -264,6 +264,13 @@ where
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("user `{user_id}`")))?;
         let users = vec![user];
+        // Server options follow the viewer's current team, whatever the list's
+        // own team scope.
+        let viewer_team = self
+            .repo
+            .get_team_membership_for_user(user_id)
+            .await?
+            .map(|membership| membership.team_id);
         let teams = match team_id {
             Some(team_id) => vec![
                 self.repo
@@ -335,7 +342,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
-            mcp_servers: self.mcp_server_options().await?,
+            mcp_servers: self.mcp_server_options(Some(viewer_team)).await?,
         })
     }
 

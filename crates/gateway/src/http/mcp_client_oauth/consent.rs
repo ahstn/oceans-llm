@@ -90,12 +90,13 @@ pub async fn get_oauth_authorization_request(
     headers: HeaderMap,
     Path(request_id): Path<String>,
 ) -> Result<Json<OauthAuthorizationRequestView>, AppError> {
-    require_active_session(&state, &headers).await?;
+    let (user, _) = require_active_session(&state, &headers).await?;
     let service = oauth_service(&state).ok_or_else(not_enabled)?;
     let request_id = parse_request_id(&request_id)?;
     let pending = service
         .pending_authorization(request_id, OffsetDateTime::now_utc())
         .await?;
+    require_reachable_resource(&state, user.user_id, &pending.resource).await?;
     Ok(Json(authorization_request_view(pending)))
 }
 
@@ -125,6 +126,7 @@ pub async fn decide_oauth_authorization_request(
     let now = OffsetDateTime::now_utc();
     // What the user saw on the consent page, for the audit entry.
     let pending = service.pending_authorization(request_id, now).await?;
+    require_reachable_resource(&state, user.user_id, &pending.resource).await?;
     let redirect_to = service
         .decide_authorization(request_id, user.user_id, session_id, decision.approve, now)
         .await?;
@@ -229,5 +231,40 @@ pub(super) fn scope_description(scope: &str) -> &'static str {
         SCOPE_MCP_AGGREGATE => "Search and call your MCP tools through the aggregate endpoint",
         SCOPE_MCP_PROXY => "Connect directly to MCP servers you have access to",
         _ => "Unknown scope",
+    }
+}
+
+/// A per-server request is shown and decided only for a user who can reach the
+/// server now: it is active, and published to the organisation or owned by the
+/// user's current team. Otherwise the request is not found, exactly as for a
+/// server that does not exist, so the consent page never names another team's
+/// server or lets a token be approved for it.
+async fn require_reachable_resource(
+    state: &AppState,
+    user_id: Uuid,
+    resource: &McpOauthResource,
+) -> Result<(), AppError> {
+    let McpOauthResource::Server(server_key) = resource else {
+        return Ok(());
+    };
+    let server = gateway_core::McpRegistryRepository::get_external_mcp_server_by_key(
+        &*state.store,
+        server_key,
+    )
+    .await?;
+    let team_id =
+        gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
+            .await?
+            .map(|membership| membership.team_id);
+    let reachable = server.is_some_and(|server| {
+        server.status == gateway_core::ExternalMcpServerStatus::Active
+            && server.ownership.is_reachable_from(team_id)
+    });
+    if reachable {
+        Ok(())
+    } else {
+        Err(AppError(GatewayError::Store(StoreError::NotFound(
+            "MCP server is not available".to_string(),
+        ))))
     }
 }
