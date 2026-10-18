@@ -75,17 +75,22 @@ impl SseSanitizer {
             self.normalise_into_pending(chunk);
         }
         let mut out = Vec::new();
+        // Finished events are written in place and removed together once the
+        // chunk is done, so a chunk of many small events is not shifted down
+        // the buffer once per event.
+        let mut start = 0;
         // The last byte already searched may be the first half of `\n\n`.
         let mut from = self.scanned.saturating_sub(1);
         while let Some(end) = find_event_end(&self.pending[from..]).map(|end| from + end) {
             // An event can end in the same chunk that takes it past the cap.
-            if end > MAX_SSE_EVENT_BYTES {
+            if end - start > MAX_SSE_EVENT_BYTES {
                 return Err(oversized_event());
             }
-            let event: Vec<u8> = self.pending.drain(..end + 2).collect();
-            self.write_event(&event[..end], &mut out);
-            from = 0;
+            self.write_event(&self.pending[start..end], &mut out);
+            start = end + 2;
+            from = start;
         }
+        self.pending.drain(..start);
         self.scanned = self.pending.len();
         if self.pending.len() > MAX_SSE_EVENT_BYTES {
             return Err(oversized_event());
@@ -336,6 +341,15 @@ mod tests {
             1,
             "nothing of the oversized event was forwarded"
         );
+    }
+
+    #[test]
+    fn many_events_in_one_chunk_are_each_sanitised() {
+        let chunk = "id: 1\ndata: {}\n\n".repeat(10_000);
+        let mut sanitizer = SseSanitizer::new(false);
+        let out = sanitizer.push(chunk.as_bytes()).unwrap();
+        assert_eq!(out, Bytes::from("data: {}\n\n".repeat(10_000)));
+        assert!(sanitizer.finish().is_empty());
     }
 
     #[test]
