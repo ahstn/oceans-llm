@@ -162,7 +162,7 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
                     "message": {
                         "tool_calls": [
                             {"id": "call_1", "type": "function", "function": {"name": "search"}},
-                            {"id": "call_2", "type": "function", "function": {"name": "search"}}
+                            {"id": "call_2", "type": "function", "function": {"name": "mcp__github__search"}}
                         ]
                     }
                 }],
@@ -207,8 +207,9 @@ async fn logs_service_account_requests_with_payload_and_redaction() {
     assert_eq!(logs[0].tool_cardinality.invoked_tool_count, Some(2));
     assert_eq!(
         logs[0].tool_cardinality.invoked_distinct_tool_count,
-        Some(1)
+        Some(2)
     );
+    assert_eq!(logs[0].tool_cardinality.invoked_mcp_tool_count, Some(1));
 }
 
 #[tokio::test]

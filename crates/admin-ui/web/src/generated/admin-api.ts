@@ -5108,6 +5108,12 @@ export interface components {
              *     requests logged before this was recorded.
              */
             invoked_distinct_tool_count?: number | null;
+            /**
+             * Format: int64
+             * @description Calls among `invoked_tool_count` that target MCP tools: provider-run MCP calls and client
+             *     tools named `mcp__<server>__<tool>`. Null for requests logged before this was recorded.
+             */
+            invoked_mcp_tool_count?: number | null;
             /** Format: int64 */
             invoked_tool_count?: number | null;
             /** Format: int64 */

@@ -633,7 +633,7 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
         ) : null}
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
@@ -641,6 +641,10 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
           <DetailRow label="Request Tools" value={formatToolCount(counts.request_tool_count)} />
           <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
           <DetailRow label="Tool Calls" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow
+            label="MCP Tool Calls"
+            value={formatToolCount(counts.invoked_mcp_tool_count)}
+          />
           <DetailRow
             label="Distinct Tools Called"
             value={formatToolCount(counts.invoked_distinct_tool_count)}

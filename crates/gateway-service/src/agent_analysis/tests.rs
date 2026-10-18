@@ -8,7 +8,7 @@ fn report_artifacts_advance_without_reparsing_retained_observations() {
     assert_eq!(versions.analyzer_version, "session-efficiency-v5");
     assert_eq!(
         versions.observation_parser_version,
-        "passive-observations-v3"
+        "passive-observations-v4"
     );
 }
 
@@ -835,8 +835,10 @@ fn conflicting_or_malformed_lineage_is_not_persisted_as_execution_evidence() {
     assert_eq!(malformed.parent_execution_id, None);
 }
 
-#[test]
-fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
+fn with_passive_record(
+    response_body: Option<&Value>,
+    check: impl FnOnce(&PassiveRequestRecord<'_>),
+) {
     let input = PassiveRequestRecord {
         auth: &AuthenticatedApiKey {
             id: Uuid::nil(),
@@ -872,7 +874,7 @@ fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
             cache_requested: None,
             adapter_version: "unsupported-v1".to_string(),
         },
-        response_body: None,
+        response_body,
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         completed_at: OffsetDateTime::UNIX_EPOCH,
         terminal_success: Some(true),
@@ -882,37 +884,131 @@ fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
         request_tags: json!({}),
         boundary_group_key: "sha256:test",
     };
-    let observation = classify_tool_call(
-        &input,
-        ToolCall {
-            id: None,
-            name: "edit_file",
-            arguments: Some(r#"{"path":"/private/source.rs"}"#),
-        },
+    check(&input);
+}
+
+fn client_call(name: &str) -> ToolCall<'_> {
+    ToolCall {
+        id: None,
+        name: Some(name),
+        kind: ToolCallKind::Client,
+        mcp_server: None,
+    }
+}
+
+#[test]
+fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
+    with_passive_record(None, |input| {
+        let observation = classify_tool_call(input, client_call("edit_file"));
+        assert_eq!(observation.kind, InferredObservationKind::FileEditSuspected);
+        assert!(observation.facts.opaque_file_id.is_none());
+        let overwrite = classify_tool_call(input, client_call("overwrite_file"));
+        assert_eq!(
+            overwrite.kind,
+            InferredObservationKind::FileOverwriteSuspected
+        );
+    });
+}
+
+#[test]
+fn provider_hosted_tools_are_not_classified_as_file_operations() {
+    with_passive_record(None, |input| {
+        let observation = classify_tool_call(
+            input,
+            ToolCall {
+                kind: ToolCallKind::ProviderHosted,
+                ..client_call("web_search")
+            },
+        );
+        assert_eq!(
+            observation.kind,
+            InferredObservationKind::ToolCallClassified
+        );
+        assert_eq!(observation.facts.tool_name.as_deref(), Some("web_search"));
+    });
+}
+
+fn observed_tool_names(response: &Value) -> Vec<(InferredObservationKind, Option<String>)> {
+    let mut observed = Vec::new();
+    with_passive_record(Some(response), |input| {
+        observed = observations_for_response(input)
+            .into_iter()
+            .filter(|observation| {
+                observation.kind != InferredObservationKind::ResponseFinishClassified
+            })
+            .map(|observation| (observation.kind, observation.facts.tool_name))
+            .collect();
+    });
+    observed
+}
+
+#[test]
+fn response_observations_read_tool_calls_from_every_api_format() {
+    let edit = (
+        InferredObservationKind::FileEditSuspected,
+        Some("edit_file".to_string()),
     );
-    assert_eq!(observation.kind, InferredObservationKind::FileEditSuspected);
-    assert!(observation.facts.opaque_file_id.is_none());
-    let overwrite = classify_tool_call(
-        &input,
-        ToolCall {
-            id: None,
-            name: "overwrite_file",
-            arguments: None,
-        },
-    );
+    let chat = json!({
+        "choices": [{"message": {"tool_calls": [
+            {"id": "call_1", "type": "function", "function": {"name": "edit_file"}}
+        ]}}]
+    });
+    let responses_stream = json!({"stream": true, "events": [
+        {"type": "response.output_item.added",
+         "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "edit_file"}},
+        {"type": "response.completed", "response": {"output": [
+            {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "edit_file"}
+        ]}}
+    ]});
+    let messages_stream = json!({"stream": true, "events": [
+        {"type": "content_block_start", "index": 0,
+         "content_block": {"type": "tool_use", "id": "toolu_1", "name": "edit_file", "input": {}}},
+        {"type": "content_block_delta", "index": 0,
+         "delta": {"type": "input_json_delta", "partial_json": "{\"path\":"}}
+    ]});
+
+    for response in [chat, responses_stream, messages_stream] {
+        assert_eq!(
+            observed_tool_names(&response),
+            vec![edit.clone()],
+            "{response}"
+        );
+    }
+}
+
+#[test]
+fn response_observations_ignore_tool_shapes_inside_arguments() {
+    let response = json!({
+        "content": [{"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {
+            "nested": {"type": "function_call", "name": "edit_file"},
+            "function": {"name": "write_file"}
+        }}]
+    });
+
     assert_eq!(
-        overwrite.kind,
-        InferredObservationKind::FileOverwriteSuspected
+        observed_tool_names(&response),
+        vec![(
+            InferredObservationKind::ToolCallClassified,
+            Some("lookup".to_string())
+        )]
     );
 }
-#[test]
-fn tool_call_collection_is_bounded() {
-    let response = Value::Array(vec![
-        json!({"function": {"name": "read_file", "arguments": "{}"}});
-        MAX_INFERRED_TOOL_CALLS + 1
-    ]);
-    let mut calls = Vec::new();
 
-    assert!(collect_tool_calls(&response, &mut calls));
-    assert_eq!(calls.len(), MAX_INFERRED_TOOL_CALLS);
+#[test]
+fn response_observations_bound_tool_calls() {
+    let response = json!({
+        "choices": [{"message": {"tool_calls": vec![
+            json!({"type": "function", "function": {"name": "read_file"}});
+            MAX_INFERRED_TOOL_CALLS + 1
+        ]}}]
+    });
+    with_passive_record(Some(&response), |input| {
+        let observations = observations_for_response(input);
+        assert_eq!(observations.len(), MAX_INFERRED_TOOL_CALLS);
+        assert!(
+            observations[0]
+                .limitations
+                .contains(&LimitationCode::PayloadTruncated)
+        );
+    });
 }

@@ -547,7 +547,9 @@ fn assign_observation_ids(agent_session_id: Uuid, observations: &mut [InferredOb
     }
 }
 
-fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredObservation> {
+pub(super) fn observations_for_response(
+    input: &PassiveRequestRecord<'_>,
+) -> Vec<InferredObservation> {
     let mut observations = Vec::new();
     if input.metadata.message_count.is_some()
         || input.metadata.prompt_bytes.is_some()
@@ -598,13 +600,16 @@ fn observations_for_response(input: &PassiveRequestRecord<'_>) -> Vec<InferredOb
             });
         }
         let mut calls = Vec::new();
-        let scan_truncated = collect_tool_calls(response, &mut calls);
+        collect_logged_response_tool_calls(response, &mut calls);
         let mut seen_call_ids = BTreeSet::new();
         calls.retain(|call| {
-            call.id
-                .map(|id| seen_call_ids.insert(id.to_string()))
-                .unwrap_or(true)
+            call.name.is_some()
+                && call
+                    .id
+                    .is_none_or(|id| seen_call_ids.insert(id.to_string()))
         });
+        let scan_truncated = calls.len() > MAX_INFERRED_TOOL_CALLS;
+        calls.truncate(MAX_INFERRED_TOOL_CALLS);
         let first_observation = observations.len();
         observations.extend(
             calls
@@ -665,74 +670,16 @@ pub(super) fn response_finish_reasons(response: &Value) -> (Option<String>, Opti
     (finish_reason, incomplete_reason)
 }
 
-pub(super) struct ToolCall<'a> {
-    pub(super) id: Option<&'a str>,
-    pub(super) name: &'a str,
-    pub(super) arguments: Option<&'a str>,
-}
-
-pub(super) fn collect_tool_calls<'a>(value: &'a Value, calls: &mut Vec<ToolCall<'a>>) -> bool {
-    let mut remaining_nodes = MAX_TOOL_CALL_SCAN_NODES;
-    collect_tool_calls_bounded(value, calls, 0, &mut remaining_nodes)
-}
-
-fn collect_tool_calls_bounded<'a>(
-    value: &'a Value,
-    calls: &mut Vec<ToolCall<'a>>,
-    depth: usize,
-    remaining_nodes: &mut usize,
-) -> bool {
-    if calls.len() >= MAX_INFERRED_TOOL_CALLS
-        || depth > MAX_TOOL_CALL_SCAN_DEPTH
-        || *remaining_nodes == 0
-    {
-        return true;
-    }
-    *remaining_nodes -= 1;
-    match value {
-        Value::Array(values) => values
-            .iter()
-            .any(|value| collect_tool_calls_bounded(value, calls, depth + 1, remaining_nodes)),
-        Value::Object(object) => {
-            if let Some(function) = object.get("function").and_then(Value::as_object)
-                && let Some(name) = function.get("name").and_then(Value::as_str)
-            {
-                calls.push(ToolCall {
-                    id: object
-                        .get("id")
-                        .or_else(|| object.get("call_id"))
-                        .and_then(Value::as_str),
-                    name,
-                    arguments: function.get("arguments").and_then(Value::as_str),
-                });
-            } else if matches!(
-                object.get("type").and_then(Value::as_str),
-                Some("function_call")
-            ) && let Some(name) = object.get("name").and_then(Value::as_str)
-            {
-                calls.push(ToolCall {
-                    id: object
-                        .get("id")
-                        .or_else(|| object.get("call_id"))
-                        .and_then(Value::as_str),
-                    name,
-                    arguments: object.get("arguments").and_then(Value::as_str),
-                });
-            }
-            object
-                .values()
-                .any(|value| collect_tool_calls_bounded(value, calls, depth + 1, remaining_nodes))
-        }
-        _ => false,
-    }
-}
-
 pub(super) fn classify_tool_call(
     input: &PassiveRequestRecord<'_>,
     call: ToolCall<'_>,
 ) -> InferredObservation {
-    let normalized = call.name.to_ascii_lowercase();
-    let kind = if normalized.contains("search") || normalized.contains("grep") {
+    let name = call.name.unwrap_or_default();
+    let normalized = name.to_ascii_lowercase();
+    // Provider-hosted tools such as `web_search` never touch the caller's files.
+    let kind = if call.kind == ToolCallKind::ProviderHosted {
+        InferredObservationKind::ToolCallClassified
+    } else if normalized.contains("search") || normalized.contains("grep") {
         InferredObservationKind::FileSearchSuspected
     } else if normalized.contains("read") {
         InferredObservationKind::FileReadSuspected
@@ -751,9 +698,8 @@ pub(super) fn classify_tool_call(
     } else {
         InferredObservationKind::ToolCallClassified
     };
-    // Tool arguments may contain sensitive paths. Classify the operation but
-    // never persist a deterministic path-derived identifier.
-    let _arguments = call.arguments;
+    // Tool arguments may contain sensitive paths, so classification reads only
+    // the tool name and never persists a path-derived identifier.
     InferredObservation {
         observation_id: Uuid::nil(),
         kind,
@@ -762,7 +708,7 @@ pub(super) fn classify_tool_call(
         evidence: EvidenceQuality::InferredHigh,
         occurred_at: input.completed_at,
         facts: BoundedObservationFacts {
-            tool_name: Some(call.name.chars().take(128).collect()),
+            tool_name: Some(name.chars().take(MAX_TOOL_NAME_CHARS).collect()),
             ..Default::default()
         },
         limitations: vec![LimitationCode::SemanticVerificationUnavailable],

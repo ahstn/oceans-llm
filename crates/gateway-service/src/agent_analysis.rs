@@ -5,6 +5,7 @@ use agent_session_analysis::{
     CohortReference, OBSERVATION_PARSER_VERSION, RequestAttemptFact,
     SESSION_BOUNDARY_POLICY_VERSION, SessionRequestFact, SessionTrace, SessionUsageFact,
     ToolInvocationFact, TraceEvidence,
+    tool_calls::{ToolCall, ToolCallKind, collect_logged_response_tool_calls, tool_server_key},
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueStatus,
@@ -80,8 +81,8 @@ pub use worker::{
 
 #[cfg(test)]
 use ingestion::{
-    ToolCall, classify_tool_call, collect_tool_calls, response_finish_reasons,
-    scope_file_identifiers, tool_inventory_limitations,
+    classify_tool_call, observations_for_response, response_finish_reasons, scope_file_identifiers,
+    tool_inventory_limitations,
 };
 const SESSION_SOURCE_ID_NAMESPACE: Uuid = Uuid::from_u128(0xc3fc5f3b_56a6_4d1f_99fe_f8ba6d1cc9e1);
 const SESSION_ID_NAMESPACE: Uuid = Uuid::from_u128(0x1674a48a_0679_4983_848a_9f6fb626e40d);
@@ -90,8 +91,6 @@ const OBSERVATION_ID_NAMESPACE: Uuid = Uuid::from_u128(0xbdfc8775_f822_425d_8d0f
 const ANALYSIS_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6e390d51_3f14_4cee_9b85_c0b238fe99a2);
 const QUEUE_ID_NAMESPACE: Uuid = Uuid::from_u128(0x08d4bc47_3379_4137_843c_3e63be6d500d);
 const MAX_INFERRED_TOOL_CALLS: usize = 128;
-const MAX_TOOL_CALL_SCAN_DEPTH: usize = 32;
-const MAX_TOOL_CALL_SCAN_NODES: usize = 4_096;
 
 fn tool_inventory_is_estimated(
     supplied_tool_count: Option<u32>,
