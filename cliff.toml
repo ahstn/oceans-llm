@@ -6,23 +6,31 @@ repo = "oceans-llm"
 conventional_commits = true
 filter_unconventional = false
 split_commits = false
-commit_preprocessors = [{ pattern = '(?m)[ \t]+\((\w+[ \t]+)?#[0-9]+\)[ \t]*$', replace = "" }]
+# The changelog lists pull requests, not individual commits. GitHub ends each pull
+# request's merge commit subject with "(#123)". Commits inside a pull request and
+# commits pushed straight to main have no such suffix, so no parser below matches
+# them and `filter_commits` drops them. The same filter decides the version bump.
 commit_parsers = [
   { footer = '^changelog: ?ignore', skip = true },
-  { message = '^docs\(release\): update changelog for v', skip = true },
-  { message = "^feat", group = "<!-- 0 -->:rocket: New features" },
-  { message = "^fix", group = "<!-- 1 -->:bug: Bug fixes" },
-  { message = "^(perf|refactor|revert|docs|chore)", group = "<!-- 2 -->Changed" },
-  { message = "^(build|ci|style|test)", skip = true },
-  { message = "^.*", group = "<!-- 2 -->Changed" },
+  { message = '^feat[^\n]*\(#[0-9]+\)[ \t]*(\n|$)', group = ":rocket: New features" },
+  { message = '^fix[^\n]*\(#[0-9]+\)[ \t]*(\n|$)', group = ":bug: Bug fixes" },
+  # Breaking pull requests stay visible even when their type is hidden below.
+  { message = '^[^\n]*\(#[0-9]+\)[ \t]*(\n|$)', field = "breaking", pattern = '^true$', group = "Changed" },
+  { message = '^(build|ci|style|test)', skip = true },
+  { message = '^[^\n]*\(#[0-9]+\)[ \t]*(\n|$)', group = "Changed" },
 ]
-protect_breaking_commits = true
-filter_commits = false
+filter_commits = true
+# Breaking commits inside a pull request must not bypass the filter above. Mark the
+# pull request title with `!` instead.
+protect_breaking_commits = false
 fail_on_unmatched_commit = false
 tag_pattern = "v[0-9].*"
 topo_order = false
 sort_commits = "oldest"
-exclude_paths = ["CHANGELOG.md", "README.md"]
+
+[bump]
+features_always_bump_minor = true
+breaking_always_bump_major = true
 
 [changelog]
 header = """
@@ -33,94 +41,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n
 """
-body = """
+body = '''
 {%- macro remote_url() -%}
   https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}
 {%- endmacro -%}
 
-{% if version -%}
-## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% if version and previous.version -%}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+{% elif version -%}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/tree/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else -%}
-## [Unreleased]
+## [Unreleased]({{ self::remote_url() }}/compare/{{ previous.version }}...HEAD)
 {% endif -%}
-
-{% set_global seen_messages = [] -%}
-{% set_global seen_scoped_messages = [] -%}
-{% set_global seen_unscoped_messages = [] -%}
-{% set_global selected_commits = [] -%}
-{% set_global breaking_messages = [] -%}
-{% set_global breaking_scoped_messages = [] -%}
-{% set_global breaking_unscoped_messages = [] -%}
-{% for commit in commits | reverse -%}
-{% set message_key = commit.message | split(pat="\n") | first | lower -%}
-{% if commit.scope -%}
-{% set scope_key = commit.scope | lower -%}
-{% set scoped_message_key = [scope_key, message_key] | json_encode -%}
-{% set is_duplicate = seen_unscoped_messages is containing(message_key) or seen_scoped_messages is containing(scoped_message_key) -%}
-{% else -%}
-{% set is_duplicate = seen_messages is containing(message_key) -%}
-{% endif -%}
-{% if not is_duplicate -%}
-{% set_global seen_messages = seen_messages | concat(with=[message_key]) -%}
-{% if commit.scope -%}
-{% set_global seen_scoped_messages = seen_scoped_messages | concat(with=[scoped_message_key]) -%}
-{% else -%}
-{% set_global seen_unscoped_messages = seen_unscoped_messages | concat(with=[message_key]) -%}
-{% endif -%}
-{% set_global selected_commits = selected_commits | concat(with=[commit.id]) -%}
-{% endif -%}
-{% if commit.breaking -%}
-{% set_global breaking_messages = breaking_messages | concat(with=[message_key]) -%}
-{% if commit.scope -%}
-{% set_global breaking_scoped_messages = breaking_scoped_messages | concat(with=[scoped_message_key]) -%}
-{% else -%}
-{% set_global breaking_unscoped_messages = breaking_unscoped_messages | concat(with=[message_key]) -%}
-{% endif -%}
-{% endif -%}
+{% for entry in commits | commit_groups(groups=commit_parsers_groups) %}
+### {{ entry.group | upper_first }}
+{% for commit in entry.commits -%}
+{# Titles are untrusted: escape link and HTML syntax, keep backticks. -#}
+{% set subject = commit.message | split(pat="\n") | first | trim -%}
+{% set pr_number = subject | replace_regex(from='^.*\(#([0-9]+)\)$', to="$1") -%}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ subject | replace_regex(from='[ \t]*\(#[0-9]+\)$', to="") | replace_regex(from='[\[\]<>]', to='\$0') | upper_first }}
+{%- if commit.remote.pr_author %} by @{{ commit.remote.pr_author }}{% elif commit.remote.username %} by @{{ commit.remote.username }}{% endif %} in [#{{ pr_number }}]({{ self::remote_url() }}/pull/{{ pr_number }})
 {% endfor -%}
-{% for group, commits in commits | group_by(attribute="group") -%}
-{% set_global rendered_heading = false -%}
-{% for commit in commits -%}
-{% if selected_commits is containing(commit.id) -%}
-{% if not rendered_heading -%}
-### {{ group | striptags | trim | upper_first }}
-{% set_global rendered_heading = true -%}
-{% endif -%}
-{% set message_key = commit.message | split(pat="\n") | first | lower -%}
-{% if commit.scope -%}
-{% set scope_key = commit.scope | lower -%}
-{% set scoped_message_key = [scope_key, message_key] | json_encode -%}
-{% set is_breaking = breaking_unscoped_messages is containing(message_key) or breaking_scoped_messages is containing(scoped_message_key) -%}
-{% else -%}
-{% set is_breaking = breaking_messages is containing(message_key) -%}
-{% endif -%}
-- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if is_breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | upper_first | trim }}{% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}{% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}){% endif %}
-{% endif -%}
-{% endfor %}
-{% endfor %}
-
-{% if github %}
-{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
+{% endfor -%}
+{% if github and github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
 ### New Contributors
 {% for contributor in github.contributors | filter(attribute="is_first_time", value=true) -%}
 - @{{ contributor.username }} made their first contribution{% if contributor.pr_number %} in [#{{ contributor.pr_number }}]({{ self::remote_url() }}/pull/{{ contributor.pr_number }}){% endif %}
 {% endfor -%}
-{% endif -%}
-{% endif -%}
-"""
-footer = """
-{% for release in releases -%}
-{% if release.version -%}
-{% if release.previous.version -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ release.previous.version }}...{{ release.version }}
-{% else -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/tree/{{ release.version }}
-{% endif -%}
-{% else -%}
-[unreleased]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ release.previous.version }}...HEAD
-{% endif -%}
-{% endfor %}
-<!-- generated by git-cliff -->
-"""
+{% endif %}
+
+'''
 trim = true
 render_always = true
