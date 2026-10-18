@@ -48,4 +48,17 @@ describe('CodeBlock', () => {
       document.querySelector('[data-copy-error-icon]'),
     )
   })
+
+  it('scrolls long lines by default and soft-wraps them with wrapLines', () => {
+    const { rerender } = render(<CodeBlock code="a long line" language="text" />)
+    const pre = () => screen.getByRole('region', { name: 'text code' }).querySelector('pre')
+    const line = () => document.querySelector('[data-slot="code-block-line"] > span')
+
+    expect(pre()).toHaveClass('min-w-max')
+    expect(line()).toHaveClass('whitespace-pre')
+
+    rerender(<CodeBlock code="a long line" language="text" wrapLines />)
+    expect(pre()).not.toHaveClass('min-w-max')
+    expect(line()).toHaveClass('whitespace-pre-wrap', 'break-words')
+  })
 })

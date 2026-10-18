@@ -334,6 +334,7 @@
         "crates/gateway-store/src/libsql_store/mcp_token_overhead.rs",
         "crates/gateway-store/src/any_store_mcp_token_overhead.rs",
         "crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx",
+        "crates/admin-ui/web/src/routes/observability/-request-log-detail/**",
         "crates/gateway/src/http/observability/**",
         "crates/gateway/src/local_demo_seed/history.rs"
       ]

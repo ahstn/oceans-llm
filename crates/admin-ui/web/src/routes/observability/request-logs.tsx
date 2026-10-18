@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
-import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
@@ -9,52 +9,25 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { canAccessPage } from '@/components/layout/admin-nav'
 import { PageHeader } from '@/components/layout/page-header'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  EMPTY_VALUE,
-  formatCount,
-  formatDuration,
-  formatTimestamp,
-  formatUsd10000Precise,
-} from '@/lib/format'
+import { EMPTY_VALUE, formatCount, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
-import type {
-  RequestAttemptView,
-  RequestLogDetailView,
-  RequestLogFiltersInput,
-  RequestLogView,
-} from '@/types/api'
+import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } from '@/types/api'
 
+import {
+  cacheHitLabel,
+  callerPrimary,
+  callerSecondary,
+  formatOccurredAt,
+  formatRequestCost,
+  statusCodeBadgeVariant,
+} from './-request-log-detail/format'
+import { RequestLogDetail } from './-request-log-detail/request-log-detail'
 import { RequestLogToolbar, type RequestLogFilterValues } from './-request-log-filters'
 
 export const Route = createFileRoute('/observability/request-logs')({
@@ -216,7 +189,7 @@ function RequestLogMobileList({
                   <span className="truncate">{item.model_key}</span>
                 </p>
               </div>
-              <Badge variant={badgeVariant(item.status_code)}>
+              <Badge variant={statusCodeBadgeVariant(item.status_code)}>
                 {item.status_code ?? EMPTY_VALUE}
               </Badge>
             </div>
@@ -370,7 +343,9 @@ function RequestLogDesktopRow({
         ) : null}
       </div>
       <span className="px-3">
-        <Badge variant={badgeVariant(item.status_code)}>{item.status_code ?? EMPTY_VALUE}</Badge>
+        <Badge variant={statusCodeBadgeVariant(item.status_code)}>
+          {item.status_code ?? EMPTY_VALUE}
+        </Badge>
       </span>
       <span className="text-subtle-foreground px-3 text-right tabular-nums">
         {formatRequestCost(item.cost_usd_10000)}
@@ -405,192 +380,24 @@ function RequestLogDesktopRow({
 }
 
 function RequestLogDetailSheet({ detail }: { detail: RequestLogDetailState }) {
+  const { session } = Route.useRouteContext()
+  const canOpenInvocations = Boolean(session && canAccessPage(session, 'mcp_invocations'))
+
   return (
     <Sheet open={detail.isOpen} onOpenChange={(open) => !open && detail.close()}>
       <SheetContent
         side="right"
-        className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
+        data-testid="request-log-detail-sheet"
+        className="gap-0 overflow-hidden data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
       >
-        <SheetHeader className="border-border border-b">
-          <SheetTitle>Request Log Detail</SheetTitle>
-          <SheetDescription>
-            Review summary fields and sanitized request and response payloads.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {detail.error && !detail.pending ? (
-            <Alert variant="destructive">
-              <AlertTitle>Request log detail failed</AlertTitle>
-              <AlertDescription>{detail.error}</AlertDescription>
-            </Alert>
-          ) : detail.selectedDetail && !detail.pending ? (
-            <RequestLogDetailBody detail={detail.selectedDetail} />
-          ) : (
-            <DetailSkeleton />
-          )}
-        </div>
+        <RequestLogDetail
+          detail={detail.selectedDetail}
+          pending={detail.pending}
+          error={detail.error}
+          canOpenInvocations={canOpenInvocations}
+        />
       </SheetContent>
     </Sheet>
-  )
-}
-
-function RequestLogDetailBody({ detail }: { detail: RequestLogDetailView }) {
-  const log = detail.log
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="border-border bg-surface-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 xl:grid-cols-4">
-        <DetailRow label="Request ID" value={log.request_id} mono />
-        <DetailRow label="Request Log ID" value={log.request_log_id} mono />
-        <DetailRow
-          label="API Key"
-          value={log.api_key_name ?? log.api_key_id}
-          mono={!log.api_key_name}
-        />
-        <DetailRow label="Caller" value={callerLabel(log)} />
-        <DetailRow
-          label="Model"
-          value={
-            <span className="inline-flex items-center gap-2">
-              <BrandIcon iconKey={log.model_icon_key} size={16} />
-              <span>{log.model_key}</span>
-            </span>
-          }
-        />
-        <DetailRow
-          label="Resolved Model"
-          value={
-            <span className="inline-flex items-center gap-2">
-              <BrandIcon iconKey={log.model_icon_key} size={16} />
-              <span>{log.resolved_model_key}</span>
-            </span>
-          }
-        />
-        <DetailRow
-          label="Provider"
-          value={
-            <span className="inline-flex items-center gap-2">
-              <BrandIcon iconKey={log.provider_icon_key} size={14} />
-              <span>{log.provider_key}</span>
-            </span>
-          }
-        />
-        <DetailRow label="Occurred At" value={formatOccurredAt(log.occurred_at)} />
-        <DetailRow
-          label="Status"
-          value={log.status_code !== null ? String(log.status_code) : EMPTY_VALUE}
-        />
-        <DetailRow
-          label="Error Code"
-          value={log.error_code ?? 'none'}
-          mono={Boolean(log.error_code)}
-        />
-        <DetailRow label="Latency" value={formatDuration(log.latency_ms)} />
-        <DetailRow label="Tokens" value={formatCount(log.total_tokens)} />
-        <DetailRow
-          label="Cached Tokens"
-          value={
-            log.cache_read_tokens ? cacheHitLabel(log.cache_read_tokens, log.prompt_tokens) : 'none'
-          }
-        />
-        <DetailRow label="Cost" value={formatRequestCost(log.cost_usd_10000)} />
-        <OperationDetailRow item={log} />
-        <DetailRow label="Stream" value={metadataBoolean(log, 'stream') ? 'yes' : 'no'} />
-        <DetailRow label="Agent Harness" value={log.agent_harness_label} />
-        <DetailRow
-          label="User-Agent"
-          value={detail.user_agent_raw ?? EMPTY_VALUE}
-          mono={Boolean(detail.user_agent_raw)}
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <ToolCardinalityCard item={log} />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Request Tags</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <RequestTagBadges item={log} />
-          </CardContent>
-        </Card>
-      </div>
-
-      <McpTokenOverheadCard detail={detail} />
-
-      <AttemptsSection attempts={detail.attempts} />
-
-      <PayloadSection detail={detail} />
-    </div>
-  )
-}
-
-function DetailRow({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: ReactNode
-  mono?: boolean
-}) {
-  return (
-    <div>
-      <dt className="tracking-label text-muted-foreground text-xs font-semibold uppercase">
-        {label}
-      </dt>
-      <dd
-        className={mono ? 'text-foreground font-mono text-sm break-all' : 'text-foreground text-sm'}
-      >
-        {value}
-      </dd>
-    </div>
-  )
-}
-
-function DetailSkeleton() {
-  return (
-    <div className="flex flex-col gap-3">
-      <Skeleton className="h-20 w-full" />
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  )
-}
-
-function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
-  const overhead = detail.mcp_token_overhead
-  if (!overhead) {
-    return null
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>MCP Token Overhead</CardTitle>
-        <CardDescription>Context-window estimate, not spend accounting.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DetailRow
-            label="Definition Tokens"
-            value={formatCount(overhead.estimated_definition_tokens)}
-          />
-          <DetailRow label="Tools" value={formatCount(overhead.exposed_tool_count)} />
-          <DetailRow label="Estimator" value={overhead.estimator_source} mono />
-          <DetailRow label="Confidence" value={overhead.confidence} />
-          <DetailRow label="Cache Hits" value={formatCount(overhead.cache_hit_count)} />
-          <DetailRow label="Cache Misses" value={formatCount(overhead.cache_miss_count)} />
-          <DetailRow label="Context Window" value={formatCount(overhead.context_window_tokens)} />
-          <DetailRow
-            label="Context Share"
-            value={formatBasisPoints(overhead.context_window_percent_bps)}
-          />
-        </dl>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -643,346 +450,6 @@ function ToolUsage({ item }: { item: RequestLogView }) {
     <span className="tabular-nums" data-testid="request-log-tool-usage">
       {formatCount(usedTools)} / {formatCount(counts.request_tool_count)}
     </span>
-  )
-}
-
-function ToolCardinalityCard({ item }: { item: RequestLogView }) {
-  const counts = item.tool_cardinality
-  const { session } = Route.useRouteContext()
-  const canOpenInvocations = session && canAccessPage(session, 'mcp_invocations')
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>MCP &amp; Tools</CardTitle>
-        {canOpenInvocations ? (
-          <CardAction>
-            <Button type="button" variant="outline" size="sm" asChild>
-              <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
-                View MCP Invocations
-              </Link>
-            </Button>
-          </CardAction>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
-          <DetailRow label="MCP Servers" value={formatCount(counts.referenced_mcp_server_count)} />
-          <DetailRow label="Request Tools" value={formatCount(counts.request_tool_count)} />
-          <DetailRow label="Tools Exposed" value={formatCount(counts.exposed_tool_count)} />
-          <DetailRow label="Tool Calls" value={formatCount(counts.invoked_tool_count)} />
-          <DetailRow label="MCP Tool Calls" value={formatCount(counts.invoked_mcp_tool_count)} />
-          <DetailRow
-            label="Distinct Tools Called"
-            value={formatCount(counts.invoked_distinct_tool_count)}
-          />
-          <DetailRow label="Tools Filtered" value={formatCount(counts.filtered_tool_count)} />
-        </dl>
-      </CardContent>
-    </Card>
-  )
-}
-
-function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
-  const recordedAttempts = attempts ?? []
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Provider Attempts</CardTitle>
-        <CardDescription>
-          Ordered upstream provider execution records for this request log.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {recordedAttempts.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>No provider attempts recorded</EmptyTitle>
-              <EmptyDescription>
-                This request log has no persisted upstream provider attempt rows.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Attempt</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Provider</TableHead>
-                <TableHead>Upstream model</TableHead>
-                <TableHead className="text-right">Latency</TableHead>
-                <TableHead>Flags</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recordedAttempts.map((attempt) => (
-                <TableRow key={attempt.request_attempt_id}>
-                  <TableCell className="font-mono">#{attempt.attempt_number}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <Badge variant={attemptStatusBadgeVariant(attempt.status)}>
-                        {attempt.status}
-                      </Badge>
-                      {attempt.error_code ? (
-                        <span className="text-muted-foreground text-xs">{attempt.error_code}</span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono">{attempt.provider_key}</TableCell>
-                  <TableCell className="font-mono">{attempt.upstream_model}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatDuration(attempt.latency_ms)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {attempt.retryable ? <Badge variant="outline">retryable</Badge> : null}
-                      {attempt.terminal ? <Badge variant="outline">terminal</Badge> : null}
-                      {attempt.produced_final_response ? (
-                        <Badge variant="outline">final response</Badge>
-                      ) : null}
-                      {attempt.stream ? <Badge variant="outline">stream</Badge> : null}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-        {recordedAttempts.some((attempt) => attempt.error_detail) ? (
-          <div className="mt-4 flex flex-col gap-3">
-            {recordedAttempts
-              .filter((attempt) => attempt.error_detail)
-              .map((attempt) => (
-                <div
-                  key={`${attempt.request_attempt_id}-error`}
-                  className="border-border rounded-md border p-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-                    <span>Attempt #{attempt.attempt_number} error detail</span>
-                    {attempt.error_detail_truncated ? (
-                      <Badge variant="warning">truncated</Badge>
-                    ) : null}
-                  </div>
-                  <p className="text-subtle-foreground mt-2 font-mono text-xs">
-                    {attempt.error_detail}
-                  </p>
-                  <p className="text-muted-foreground mt-2 font-mono text-xs">
-                    route: {attempt.route_id}
-                  </p>
-                </div>
-              ))}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  )
-}
-
-type PayloadView = 'request' | 'response' | 'split'
-
-function PayloadSection({ detail }: { detail: RequestLogDetailView }) {
-  const [view, setView] = useState<PayloadView>('split')
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-foreground text-sm font-semibold">Payloads</h3>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          aria-label="Payload view"
-          value={view}
-          onValueChange={(value) => {
-            if (value) {
-              setView(value as PayloadView)
-            }
-          }}
-        >
-          <ToggleGroupItem value="request">Request</ToggleGroupItem>
-          <ToggleGroupItem value="response">Response</ToggleGroupItem>
-          <ToggleGroupItem value="split">Split</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-      <div className={cn('grid gap-4', view === 'split' && 'xl:grid-cols-2')}>
-        {view !== 'response' ? (
-          <PayloadCard
-            title="Request Payload"
-            truncated={detail.log.request_payload_truncated}
-            payload={detail.payload?.request_json}
-          />
-        ) : null}
-        {view !== 'request' ? (
-          <PayloadCard
-            title="Response Payload"
-            truncated={detail.log.response_payload_truncated}
-            payload={detail.payload?.response_json}
-          />
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
-function PayloadCard({
-  title,
-  truncated,
-  payload,
-}: {
-  title: string
-  truncated: boolean
-  payload: unknown
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardAction>
-          {truncated ? (
-            <Badge variant="warning">truncated</Badge>
-          ) : (
-            <Badge variant="outline">full</Badge>
-          )}
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {payload ? (
-          <pre className="text-subtle-foreground font-mono text-xs leading-6 break-words whitespace-pre-wrap">
-            {JSON.stringify(payload, null, 2)}
-          </pre>
-        ) : (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>No payload stored</EmptyTitle>
-              <EmptyDescription>
-                Payload capture was disabled or summary-only for this request.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function callerPrimary(item: RequestLogView): string | null {
-  return item.user_name ?? item.service_account_name ?? null
-}
-
-function callerSecondary(item: RequestLogView): string | null {
-  if (item.user_name) {
-    return item.user_email ?? null
-  }
-  return item.service_account_name ? 'service account' : null
-}
-
-function callerLabel(item: RequestLogView): string {
-  const primary = callerPrimary(item)
-  if (!primary) {
-    return 'Unknown'
-  }
-  const secondary = callerSecondary(item)
-  return secondary ? `${primary} · ${secondary}` : primary
-}
-
-function formatOccurredAt(occurredAt: string) {
-  // Seconds matter here: several requests often land within the same minute.
-  return formatTimestamp(occurredAt, { seconds: true })
-}
-
-function badgeVariant(statusCode: number | null | undefined): 'success' | 'warning' | 'outline' {
-  if (statusCode == null) {
-    return 'outline'
-  }
-
-  return statusCode >= 400 ? 'warning' : 'success'
-}
-
-function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'outline' {
-  return status === 'success' ? 'success' : status.endsWith('error') ? 'warning' : 'outline'
-}
-
-function formatRequestCost(costUsd10000: number | null | undefined) {
-  return costUsd10000 == null ? EMPTY_VALUE : formatUsd10000Precise(costUsd10000)
-}
-
-function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undefined) {
-  const cached = formatCount(cachedTokens)
-  if (!promptTokens) {
-    return `${cached} prompt tokens served from cache`
-  }
-  const percent = Math.round((cachedTokens / promptTokens) * 100)
-  return `${cached} of ${formatCount(promptTokens)} prompt tokens cached (${percent}%)`
-}
-
-function formatBasisPoints(value: number | null | undefined) {
-  return value == null ? EMPTY_VALUE : `${(value / 100).toFixed(2)}%`
-}
-
-function OperationDetailRow({ item }: { item: RequestLogView }) {
-  const label = operationLabel(item)
-
-  if (!label) {
-    return null
-  }
-
-  return <DetailRow label="Operation" value={label} />
-}
-
-function operationLabel(item: RequestLogView) {
-  const operation = item.metadata.operation
-  return typeof operation === 'string' && operation.trim().length > 0
-    ? formatOperation(operation)
-    : null
-}
-
-function formatOperation(operation: string) {
-  switch (operation) {
-    case 'chat_completions':
-      return 'Chat Completions'
-    case 'responses':
-      return 'Responses'
-    case 'embeddings':
-      return 'Embeddings'
-    case 'decisions':
-      return 'Decisions'
-    default: {
-      const formatted = operation
-        .split(/[_\s-]+/)
-        .filter((part) => part.length > 0)
-        .map((part) => part[0].toUpperCase() + part.slice(1))
-        .join(' ')
-      return formatted.length > 0 ? formatted : operation
-    }
-  }
-}
-
-function metadataBoolean(item: RequestLogView, key: string) {
-  return item.metadata[key] === true
-}
-
-function RequestTagBadges({ item }: { item: RequestLogView }) {
-  const tags = [
-    item.request_tags.service ? `service:${item.request_tags.service}` : null,
-    item.request_tags.component ? `component:${item.request_tags.component}` : null,
-    item.request_tags.env ? `env:${item.request_tags.env}` : null,
-    ...item.request_tags.bespoke.map((tag) => `${tag.key}:${tag.value}`),
-  ].filter((value): value is string => value !== null)
-
-  if (tags.length === 0) {
-    return <span className="text-muted-foreground text-xs">No caller tags</span>
-  }
-
-  return (
-    <>
-      {tags.map((tag) => (
-        <Badge key={tag} variant="outline">
-          {tag}
-        </Badge>
-      ))}
-    </>
   )
 }
 
