@@ -13,7 +13,10 @@ use gateway_service::{McpGatewayUpstream, McpUpstreamClients};
 use serde_json::{Map, Value};
 use url::Url;
 
-use super::{LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID};
+use super::{
+    MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID,
+    sse::{sanitize_sse_body, sanitize_sse_stream},
+};
 
 /// How direct `tools/list` presents one granted tool.
 #[derive(Debug, Default)]
@@ -55,11 +58,13 @@ pub(super) async fn proxy_upstream(
     let stream = response
         .bytes_stream()
         .map_err(|error| io::Error::other(error.without_url().to_string()));
-    Ok(response_from_parts(
-        status,
-        &headers,
-        Body::from_stream(stream),
-    ))
+    let body = if is_event_stream(&headers) {
+        // Only the standalone GET stream must not carry responses.
+        Body::from_stream(sanitize_sse_stream(Box::pin(stream), method == Method::GET))
+    } else {
+        Body::from_stream(stream)
+    };
+    Ok(response_from_parts(status, &headers, body))
 }
 
 pub(super) async fn proxy_buffered(
@@ -81,7 +86,10 @@ pub(super) async fn proxy_buffered(
     }
     let status = response.status();
     let headers = response.headers().clone();
-    let body = read_limited_response_body(response).await?;
+    let mut body = read_limited_response_body(response).await?;
+    if is_event_stream(&headers) {
+        body = sanitize_sse_body(&body, method == Method::GET);
+    }
     Ok(BufferedMcpResponse {
         status,
         headers,
@@ -445,7 +453,6 @@ fn apply_forwarded_request_headers(
         CONTENT_TYPE.as_str(),
         MCP_PROTOCOL_VERSION,
         MCP_SESSION_ID,
-        LAST_EVENT_ID,
     ] {
         let header_name = HeaderName::from_static(name);
         for value in inbound_headers.get_all(name).iter() {

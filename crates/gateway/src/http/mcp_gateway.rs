@@ -4,6 +4,8 @@ mod guardrails;
 mod json_rpc;
 mod methods;
 mod rate_limits;
+mod session;
+mod sse;
 pub mod stream_reach;
 mod upstream;
 
@@ -37,6 +39,7 @@ use methods::{
     proxy_lifecycle,
 };
 use serde_json::{Map, Value, json};
+use session::SessionBinding;
 use time::OffsetDateTime;
 use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
@@ -50,7 +53,6 @@ use crate::http::{
 const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
-const LAST_EVENT_ID: &str = "last-event-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
 const GUARDRAIL_POLICY_DENIED_CODE: i64 = -32001;
@@ -181,6 +183,14 @@ async fn dispatch_mcp_request(
     }
     tracing::Span::current().record("mcp_server_id", server.mcp_server_id.to_string());
     tracing::Span::current().record("upstream_auth_mode", server.auth_mode.as_str());
+
+    // Upstream sessions are only usable by the caller that started them.
+    let server_for_binding = server.clone();
+    let binding = SessionBinding::new(&state.identity_token_secret, auth, &server_for_binding);
+    let headers = &match binding.inbound_headers(headers) {
+        Ok(headers) => headers,
+        Err(response) => return *response,
+    };
 
     let rpc_request = parse_mcp_rpc_request(method, &body);
 
@@ -373,11 +383,12 @@ async fn dispatch_mcp_request(
             )
         }
     };
-    if stream_reach::is_event_stream(&response) {
+    let response = if stream_reach::is_event_stream(&response) {
         stream_reach::bound_to_reach(&state.mcp_stream_reach, caller, response)
     } else {
         response
-    }
+    };
+    binding.outbound_response(response)
 }
 
 pub use aggregate::mcp_aggregate_streamable_http;

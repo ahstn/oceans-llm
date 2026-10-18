@@ -11,6 +11,9 @@ use uuid::Uuid;
 
 use super::*;
 
+/// Never forwarded: the gateway does not support stream resumption.
+const LAST_EVENT_ID: &str = "last-event-id";
+
 fn granted(names: &[&'static str]) -> GrantedTools<'static> {
     names
         .iter()
@@ -263,14 +266,18 @@ async fn proxy_preserves_protocol_headers_without_forwarding_caller_credentials_
             CONTENT_TYPE.as_str(),
             MCP_PROTOCOL_VERSION,
             MCP_SESSION_ID,
-            LAST_EVENT_ID,
         ] {
             assert_eq!(
                 received[name],
                 headers[name].to_str().expect("inbound header")
             );
         }
-        for name in ["x-oceans-api-key", "cookie", "x-private-header"] {
+        for name in [
+            LAST_EVENT_ID,
+            "x-oceans-api-key",
+            "cookie",
+            "x-private-header",
+        ] {
             assert!(
                 received.get(name).is_none(),
                 "caller {name} must not reach upstream"
