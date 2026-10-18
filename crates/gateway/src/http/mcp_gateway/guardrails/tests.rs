@@ -67,7 +67,7 @@ async fn guarded_json_and_sse_reject_mixed_result_and_error_envelopes() {
             assert!(!String::from_utf8_lossy(&bytes).contains("private-"));
             let error: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(error["id"], 42);
-            assert_eq!(error["error"]["code"], GUARDRAIL_POLICY_DENIED_CODE);
+            assert_eq!(error["error"]["code"], JSON_RPC_POLICY_DENIED);
             assert!(error.get("result").is_none());
         }
     }
@@ -111,7 +111,7 @@ async fn guarded_mcp_sse_rejects_malformed_events_without_forwarding_payloads() 
             .expect("error body");
         let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC error");
         assert_eq!(body["id"], 42);
-        assert_eq!(body["error"]["code"], GUARDRAIL_POLICY_DENIED_CODE);
+        assert_eq!(body["error"]["code"], JSON_RPC_POLICY_DENIED);
         assert_eq!(
             body["error"]["message"],
             "MCP result was not valid guarded SSE"
@@ -338,7 +338,7 @@ async fn assert_denied(response: Response<Body>, status: StatusCode, message: &s
     assert_eq!(response.status(), status);
     let body: Value = serde_json::from_str(&body_text(response).await).expect("JSON-RPC error");
     assert_eq!(body["id"], 7);
-    assert_eq!(body["error"]["code"], GUARDRAIL_POLICY_DENIED_CODE);
+    assert_eq!(body["error"]["code"], JSON_RPC_POLICY_DENIED);
     assert_eq!(body["error"]["message"], message);
 }
 

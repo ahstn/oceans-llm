@@ -14,14 +14,12 @@ use gateway_guardrails::{
     GuardrailEvaluation, McpCall, PolicyResolver, PolicyTarget, UninspectedContent,
     uninspected_content_decision,
 };
+use gateway_mcp::server::JSON_RPC_POLICY_DENIED;
 use serde_json::{Map, Value, json};
 use tokio::time::{Instant, timeout_at};
 use uuid::Uuid;
 
-use super::{
-    GUARDRAIL_POLICY_DENIED_CODE,
-    json_rpc::{mcp_jsonrpc_error_response, mcp_request_id},
-};
+use super::json_rpc::{mcp_jsonrpc_error_response, mcp_refusal_response, mcp_request_id};
 use crate::http::{
     guardrail_events::{
         record_guardrail_decisions, record_guardrail_evaluation, uninspected_content_hash,
@@ -128,11 +126,12 @@ pub(super) fn guardrail_denied_response(
         .find(|decision| decision.action == DecisionAction::Deny)
         .map(|decision| decision.reason_code.as_str())
         .unwrap_or("guardrail.policy_denied");
-    mcp_jsonrpc_error_response(
+    mcp_refusal_response(
         StatusCode::FORBIDDEN,
         id,
-        GUARDRAIL_POLICY_DENIED_CODE,
+        JSON_RPC_POLICY_DENIED,
         &format!("MCP operation denied by guardrail policy ({reason_code})"),
+        None,
     )
 }
 
@@ -235,7 +234,7 @@ pub(super) async fn enforce_direct_mcp_result(
                     mcp_jsonrpc_error_response(
                         StatusCode::FORBIDDEN,
                         id,
-                        GUARDRAIL_POLICY_DENIED_CODE,
+                        JSON_RPC_POLICY_DENIED,
                         if event_stream {
                             "MCP result was not valid guarded SSE"
                         } else {
@@ -297,7 +296,7 @@ impl BufferFailure {
                 "MCP result did not complete within the guardrail buffer timeout",
             ),
         };
-        mcp_jsonrpc_error_response(status, id, GUARDRAIL_POLICY_DENIED_CODE, message)
+        mcp_jsonrpc_error_response(status, id, JSON_RPC_POLICY_DENIED, message)
     }
 }
 

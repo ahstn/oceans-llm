@@ -10,7 +10,11 @@ pub const JSON_RPC_PARSE_ERROR: i64 = -32700;
 pub const JSON_RPC_INVALID_REQUEST: i64 = -32600;
 pub const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
 pub const JSON_RPC_INVALID_PARAMS: i64 = -32602;
+pub const JSON_RPC_INTERNAL_ERROR: i64 = -32603;
+/// The credential, grant or a guardrail does not allow the request.
 pub const JSON_RPC_POLICY_DENIED: i64 = -32001;
+/// An implementation-defined server error for a rate-limited request.
+pub const JSON_RPC_RATE_LIMITED: i64 = -32029;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum McpServerMessage {
@@ -221,15 +225,31 @@ pub fn json_rpc_success<T: Serialize>(
 }
 
 pub fn json_rpc_error(id: Option<JsonRpcId>, code: i64, message: impl Into<String>) -> Value {
-    json!({
+    json_rpc_error_with_id(Some(json!(id)), code, message, None)
+}
+
+/// A JSON-RPC error response that echoes `id` exactly as the request sent
+/// it, which a proxy that forwards raw requests needs. `Value::Null` is the
+/// id of a request whose id could not be read; `None` omits the member, for
+/// an error answering a notification.
+pub fn json_rpc_error_with_id(
+    id: Option<Value>,
+    code: i64,
+    message: impl Into<String>,
+    data: Option<Value>,
+) -> Value {
+    let mut response = json!({
         "jsonrpc": "2.0",
-        "id": id,
         "error": JsonRpcErrorObject {
             code,
             message: message.into(),
-            data: None,
+            data,
         }
-    })
+    });
+    if let Some(id) = id {
+        response["id"] = id;
+    }
+    response
 }
 
 #[cfg(test)]

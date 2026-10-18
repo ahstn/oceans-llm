@@ -15,10 +15,15 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
     OpenAiErrorEnvelope,
 };
-use gateway_mcp::server::call_tool_error_result;
+use gateway_mcp::server::{
+    JSON_RPC_INTERNAL_ERROR, JSON_RPC_POLICY_DENIED, call_tool_error_result,
+};
 use serde_json::{Value, json};
 
-use super::{json_rpc::mcp_jsonrpc_result_response, mcp_error_response};
+use super::{
+    json_rpc::{mcp_jsonrpc_result_response, mcp_refusal_response},
+    mcp_error_response,
+};
 use crate::http::{mcp_oauth::connection_page_url, state::AppState};
 
 pub(super) struct CredentialGuidance {
@@ -76,10 +81,13 @@ pub(super) fn upstream_auth_error_response(
     (StatusCode::FORBIDDEN, Json(body)).into_response()
 }
 
-/// The error response for a failed upstream credential lookup on
-/// `tools/call`. Credential errors become a tool result with `isError: true`,
-/// so clients that only show tool output still show the next step. Other
-/// errors are returned unchanged.
+/// The JSON-RPC response for a failed upstream credential lookup on
+/// `tools/call`, or on any notification. Credential errors on a `tools/call`
+/// become a tool result with `isError: true`, so clients that only show tool
+/// output still show the next step. A notification gets no result, so it gets
+/// the same guidance as a JSON-RPC error without an `id`. Any other failure,
+/// such as an unavailable store, is a JSON-RPC internal error with the
+/// error's HTTP status.
 pub(super) fn tool_call_auth_error_response(
     state: &AppState,
     auth: &AuthenticatedApiKey,
@@ -88,11 +96,28 @@ pub(super) fn tool_call_auth_error_response(
     error: GatewayError,
 ) -> Response<Body> {
     let Some(guidance) = credential_guidance(state, auth, server, &error) else {
-        return mcp_error_response(error);
+        return mcp_refusal_response(
+            StatusCode::from_u16(error.http_status_code())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            id,
+            JSON_RPC_INTERNAL_ERROR,
+            &error.to_string(),
+            Some(json!({"error_code": error.error_code()})),
+        );
     };
     let mut structured = json!({"server_key": server.server_key});
     if let Some(url) = &guidance.connect_url {
         structured["connect_url"] = json!(url);
+    }
+    if id.is_none() {
+        structured["error_code"] = json!(error.error_code());
+        return mcp_refusal_response(
+            StatusCode::FORBIDDEN,
+            None,
+            JSON_RPC_POLICY_DENIED,
+            &guidance.message,
+            Some(structured),
+        );
     }
     let result = call_tool_error_result(guidance.message, error.error_code(), structured);
     mcp_jsonrpc_result_response(id, json!(result))
