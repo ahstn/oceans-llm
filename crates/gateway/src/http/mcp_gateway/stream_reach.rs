@@ -18,7 +18,10 @@ use std::{
     time::Duration,
 };
 
-use axum::{body::Body, http::Response};
+use axum::{
+    body::Body,
+    http::{Response, header::CONTENT_TYPE},
+};
 use gateway_core::{AuthenticatedApiKey, SCOPE_MCP_PROXY};
 use gateway_service::McpAccess;
 use gateway_store::AnyStore;
@@ -230,6 +233,12 @@ impl McpStreamReachWatcher {
             .store(reach.len(), Ordering::Relaxed);
     }
 
+    /// Streams being watched now.
+    #[cfg(test)]
+    pub(crate) fn watched(&self) -> usize {
+        self.lock_streams().len()
+    }
+
     /// Caller and server pairs the last recheck checked.
     #[cfg(test)]
     pub(crate) fn last_pairs_checked(&self) -> usize {
@@ -255,4 +264,14 @@ pub(crate) fn bound_to_reach(
     let (parts, body) = response.into_parts();
     let body = body.into_data_stream().take_until(Box::pin(ended));
     Response::from_parts(parts, Body::from_stream(body))
+}
+
+/// Whether `response` streams events, by its media type, matched without case
+/// as the upstream proxy matches it.
+pub(crate) fn is_event_stream(response: &Response<Body>) -> bool {
+    response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }

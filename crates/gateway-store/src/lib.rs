@@ -2248,6 +2248,10 @@ pub(crate) mod tests {
                 .list_team_only_mcp_server_ids_outside(caller_team)
                 .await
                 .expect("hidden servers");
+            let hidden_among = store
+                .list_mcp_server_ids_hidden_from(&ids, caller_team)
+                .await
+                .expect("hidden among servers");
             for server in &servers {
                 let reachable = server.ownership.is_reachable_from(caller_team);
                 let hidden = store
@@ -2261,6 +2265,12 @@ pub(crate) mod tests {
                 );
                 assert_eq!(
                     outside.contains(&server.mcp_server_id),
+                    !reachable,
+                    "{:?} for {caller_team:?}",
+                    server.ownership
+                );
+                assert_eq!(
+                    hidden_among.contains(&server.mcp_server_id),
                     !reachable,
                     "{:?} for {caller_team:?}",
                     server.ownership
@@ -2928,6 +2938,66 @@ pub(crate) mod tests {
             2,
             "a funded account counts"
         );
+        // A tool waiting for review is not callable, so grants on it strand
+        // nothing: turn on approval and discover a changed input schema.
+        store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                mcp_server_id: underscored.mcp_server_id,
+                display_name: underscored.display_name.clone(),
+                description: underscored.description.clone(),
+                server_url: underscored.server_url.clone(),
+                auth_mode: underscored.auth_mode,
+                auth_config: underscored.auth_config.clone(),
+                timeout_ms: underscored.timeout_ms,
+                owner_contact: None,
+                visibility: underscored.ownership.visibility,
+                retarget_owner_credentials_only: false,
+                expected_server: None,
+                expected_owner_team_id: underscored.ownership.owner_team_id,
+                expected_visibility: underscored.ownership.visibility,
+                vouch_for_destinations: false,
+                updated_at: now,
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("require approval");
+        let changed = store
+            .record_external_mcp_discovery_success(
+                &ExternalMcpDiscoveryRunRecord {
+                    discovery_run_id: Uuid::new_v4(),
+                    mcp_server_id: underscored.mcp_server_id,
+                    status: ExternalMcpDiscoveryStatus::Success,
+                    started_at: now,
+                    finished_at: now,
+                    discovered_tool_count: 1,
+                    active_tool_count: 1,
+                    schema_set_hash: None,
+                    error_summary: None,
+                    details: Map::new(),
+                    expected_server: None,
+                },
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: underscored.mcp_server_id,
+                    upstream_name: "search".to_string(),
+                    display_name: "search".to_string(),
+                    description: None,
+                    input_schema: json!({"type": "object", "required": ["query"]}),
+                    metadata: gateway_core::McpToolMetadata::default(),
+                    schema_hash: "changed-hash".to_string(),
+                }],
+            )
+            .await
+            .expect("changed tool");
+        assert_ne!(
+            changed[0].review.approval_status,
+            gateway_core::McpToolApprovalStatus::Approved,
+            "the changed tool waits for review"
+        );
+        assert_eq!(
+            outside().await.expect("count"),
+            0,
+            "tool waiting for review"
+        );
         // A tool discovery no longer finds is inactive and not callable, so
         // grants on it strand nothing either.
         store
@@ -2965,8 +3035,48 @@ pub(crate) mod tests {
             .await
             .expect("exclude rule");
         assert_eq!(outside().await.expect("count"), 0, "exclude rule");
+        // A guarded write is refused when the server's owner, or the subject's
+        // team, changed since it was checked, and lands when neither did.
+        let server_now = store
+            .get_external_mcp_server(underscored.mcp_server_id)
+            .await
+            .expect("reload")
+            .expect("server");
+        let stale = gateway_core::McpServerOwnershipGuard {
+            owner_team_id: Some(Uuid::new_v4()),
+            ..gateway_core::McpServerOwnershipGuard::of(&server_now)
+        };
+        let include_rule = rule(gateway_core::McpTagRuleEffect::Include);
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_tag_rule_guarded(&include_rule, now, &stale, None)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let current = gateway_core::McpServerOwnershipGuard::of(&server_now);
+        assert!(matches!(
+            store
+                .upsert_mcp_tool_tag_rule_guarded(
+                    &include_rule,
+                    now,
+                    &current,
+                    Some(Some(Uuid::new_v4()))
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            outside().await.expect("count"),
+            0,
+            "a refused rule is not written"
+        );
         let (include, _) = store
-            .upsert_mcp_tool_tag_rule(&rule(gateway_core::McpTagRuleEffect::Include), now)
+            .upsert_mcp_tool_tag_rule_guarded(
+                &include_rule,
+                now,
+                &current,
+                Some(Some(other_team.team_id)),
+            )
             .await
             .expect("include rule");
         assert_eq!(outside().await.expect("count"), 1, "include rule");

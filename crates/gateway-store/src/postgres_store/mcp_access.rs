@@ -248,6 +248,38 @@ async fn subject_team_locked(
     team.as_deref().map(parse_uuid).transpose()
 }
 
+/// Writes one tag rule, or touches the active rule with the same key.
+async fn insert_tag_rule(
+    connection: &mut sqlx::PgConnection,
+    key: &McpToolTagRuleKey,
+    updated_at: OffsetDateTime,
+) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+    let id = Uuid::new_v4();
+    // `RETURNING` gives the row this statement wrote, so `created` cannot be
+    // confused by a concurrent revoke and re-create.
+    let row = sqlx::query(&format!(
+        "INSERT INTO mcp_tool_tag_rules (
+            rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
+        ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
+        DO UPDATE SET updated_at = excluded.updated_at
+        RETURNING {TAG_RULE_COLUMNS}"
+    ))
+    .bind(id.to_string())
+    .bind(key.subject_kind.as_str())
+    .bind(key.subject_id.to_string())
+    .bind(key.server_scope())
+    .bind(key.tag.as_str())
+    .bind(key.effect.as_str())
+    .bind(updated_at.unix_timestamp())
+    .fetch_one(&mut *connection)
+    .await
+    .map_err(to_write_error)?;
+    let record = decode_tag_rule(&row)?;
+    let created = record.rule_id == id;
+    Ok((record, created))
+}
+
 #[async_trait]
 impl McpAccessRepository for PostgresStore {
     async fn list_mcp_toolsets(
@@ -600,6 +632,25 @@ impl McpAccessRepository for PostgresStore {
         .is_some())
     }
 
+    async fn list_mcp_server_ids_hidden_from(
+        &self,
+        mcp_server_ids: &[Uuid],
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT mcp_server_id FROM external_mcp_servers WHERE mcp_server_id = ANY($1) AND visibility = 'team' AND owner_team_id IS DISTINCT FROM $2::text",
+        )
+        .bind(mcp_server_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .bind(team_id.map(|team_id| team_id.to_string()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        ids.iter().map(|id| parse_uuid(id)).collect()
+    }
+
     async fn list_mcp_tool_access_for_api_keys(
         &self,
         key_ids: &[Uuid],
@@ -826,30 +877,33 @@ impl McpAccessRepository for PostgresStore {
         key: &McpToolTagRuleKey,
         updated_at: OffsetDateTime,
     ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
-        let id = Uuid::new_v4();
-        // `RETURNING` gives the row this statement wrote, so `created` cannot be
-        // confused by a concurrent revoke and re-create.
-        let row = sqlx::query(&format!(
-            "INSERT INTO mcp_tool_tag_rules (
-                rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7)
-            ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
-            DO UPDATE SET updated_at = excluded.updated_at
-            RETURNING {TAG_RULE_COLUMNS}"
-        ))
-        .bind(id.to_string())
-        .bind(key.subject_kind.as_str())
-        .bind(key.subject_id.to_string())
-        .bind(key.server_scope())
-        .bind(key.tag.as_str())
-        .bind(key.effect.as_str())
-        .bind(updated_at.unix_timestamp())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(to_write_error)?;
-        let record = decode_tag_rule(&row)?;
-        let created = record.rule_id == id;
-        Ok((record, created))
+        let mut connection = self.pool.acquire().await.map_err(to_query_error)?;
+        insert_tag_rule(&mut connection, key, updated_at).await
+    }
+
+    async fn upsert_mcp_tool_tag_rule_guarded(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+        expected_server: &McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        // The server row is held `FOR SHARE` until the rule commits, so a
+        // narrowing that locks it `FOR UPDATE` either lands first and is seen,
+        // or waits and then counts this rule.
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        if key.mcp_server_id != Some(expected_server.mcp_server_id) {
+            return Err(expected_server.conflict());
+        }
+        check_ownership_guard(&mut tx, expected_server, None).await?;
+        if let Some(expected) = expected_subject_team
+            && subject_team_locked(&mut tx, key.subject_kind, key.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
+        }
+        let written = insert_tag_rule(&mut tx, key, updated_at).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(written)
     }
 
     async fn get_mcp_tool_tag_rule(

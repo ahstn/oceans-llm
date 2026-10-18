@@ -49,12 +49,22 @@ where
                     HashSet::new()
                 }
             }
-            None => self
-                .repo
-                .list_team_only_mcp_server_ids_outside(team_id)
-                .await?
-                .into_iter()
-                .collect(),
+            // Otherwise only the servers the resolved tools are on are read,
+            // not every team-only server in the registry.
+            None => {
+                let referenced: Vec<Uuid> = resolution
+                    .allowed_tools
+                    .iter()
+                    .map(|tool| tool.mcp_server_id)
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                self.repo
+                    .list_mcp_server_ids_hidden_from(&referenced, team_id)
+                    .await?
+                    .into_iter()
+                    .collect()
+            }
         };
         retain_reachable_tools(&mut resolution, &hidden);
         Ok(resolution)

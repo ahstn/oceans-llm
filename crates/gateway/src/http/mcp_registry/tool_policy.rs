@@ -308,35 +308,51 @@ pub async fn create_mcp_tag_rule(
         effect: parse_effect(&request.effect)?,
     };
     // An include rule grants tools, so a team-only server's rule follows the
-    // grant rule: only for subjects of the owning team. An exclude rule only
-    // removes access, so it may name anyone.
-    if key.effect == McpTagRuleEffect::Include
-        && let Some(server_id) = key.mcp_server_id
-    {
-        let server =
-            gateway_core::McpRegistryRepository::get_external_mcp_server(&*state.store, server_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                        format!("external MCP server `{server_id}` not found"),
-                    )))
-                })?;
-        if server.ownership.visibility == gateway_core::McpServerVisibility::Team {
-            super::ownership(&state)
-                .authorize_server_grant(
-                    &McpAdminScope::platform_admin(None),
-                    &server,
-                    McpGrantSubject {
-                        subject_kind: key.subject_kind,
-                        subject_id: key.subject_id,
-                    },
+    // grant rule: only for subjects of the owning team. It is written only
+    // while the server keeps the owner and visibility checked here, and the
+    // subject its team, so a narrowing or transfer racing it either counts
+    // the rule or refuses it. An exclude rule only removes access, so it may
+    // name anyone.
+    let service = McpToolPolicyService::new(state.store.clone());
+    let (rule, created) = match (key.effect, key.mcp_server_id) {
+        (McpTagRuleEffect::Include, Some(server_id)) => {
+            let server = gateway_core::McpRegistryRepository::get_external_mcp_server(
+                &*state.store,
+                server_id,
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+                    format!("external MCP server `{server_id}` not found"),
+                )))
+            })?;
+            let expected_subject_team =
+                if server.ownership.visibility == gateway_core::McpServerVisibility::Team {
+                    Some(
+                        super::ownership(&state)
+                            .authorize_server_grant(
+                                &McpAdminScope::platform_admin(None),
+                                &server,
+                                McpGrantSubject {
+                                    subject_kind: key.subject_kind,
+                                    subject_id: key.subject_id,
+                                },
+                            )
+                            .await?,
+                    )
+                } else {
+                    None
+                };
+            service
+                .create_rule_guarded(
+                    key,
+                    &gateway_core::McpServerOwnershipGuard::of(&server),
+                    expected_subject_team,
                 )
-                .await?;
+                .await?
         }
-    }
-    let (rule, created) = McpToolPolicyService::new(state.store.clone())
-        .create_rule(key)
-        .await?;
+        _ => service.create_rule(key).await?,
+    };
     // Repeating an active rule changes no access, so only a new rule is recorded.
     if created {
         state

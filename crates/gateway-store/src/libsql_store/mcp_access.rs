@@ -266,6 +266,47 @@ async fn subject_team_in(
     team.as_deref().map(parse_uuid).transpose()
 }
 
+/// Writes one tag rule, or touches the active rule with the same key.
+async fn insert_tag_rule(
+    connection: &libsql::Connection,
+    key: &McpToolTagRuleKey,
+    updated_at: OffsetDateTime,
+) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+    let id = Uuid::new_v4();
+    // `RETURNING` gives the row this statement wrote, so `created` cannot be
+    // confused by a concurrent revoke and re-create.
+    let mut rows = connection
+        .query(
+            &format!(
+                "INSERT INTO mcp_tool_tag_rules (
+                    rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
+                ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
+                DO UPDATE SET updated_at = excluded.updated_at
+                RETURNING {TAG_RULE_COLUMNS}"
+            ),
+            libsql::params![
+                id.to_string(),
+                key.subject_kind.as_str(),
+                key.subject_id.to_string(),
+                key.server_scope(),
+                key.tag.as_str(),
+                key.effect.as_str(),
+                updated_at.unix_timestamp(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+    let row =
+        rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+            StoreError::Unexpected("MCP tag rule upsert returned no row".to_string())
+        })?;
+    let record = decode_tag_rule(&row)?;
+    let created = record.rule_id == id;
+    while rows.next().await.map_err(to_write_error)?.is_some() {}
+    Ok((record, created))
+}
+
 #[async_trait]
 impl McpAccessRepository for LibsqlStore {
     async fn list_mcp_toolsets(
@@ -642,6 +683,37 @@ impl McpAccessRepository for LibsqlStore {
         Ok(rows.next().await.map_err(to_query_error)?.is_some())
     }
 
+    async fn list_mcp_server_ids_hidden_from(
+        &self,
+        mcp_server_ids: &[Uuid],
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serde_json::to_string(
+            &mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id FROM external_mcp_servers WHERE mcp_server_id IN (SELECT value FROM json_each(?1)) AND visibility = 'team' AND owner_team_id IS NOT ?2",
+                libsql::params![ids, team_id.map(|team_id| team_id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut hidden = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            hidden.push(parse_uuid(&id)?);
+        }
+        Ok(hidden)
+    }
+
     async fn list_mcp_tool_access_for_api_keys(
         &self,
         api_key_ids: &[Uuid],
@@ -901,38 +973,31 @@ impl McpAccessRepository for LibsqlStore {
         key: &McpToolTagRuleKey,
         updated_at: OffsetDateTime,
     ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
-        let id = Uuid::new_v4();
-        // `RETURNING` gives the row this statement wrote, so `created` cannot be
-        // confused by a concurrent revoke and re-create.
-        let mut rows = self
-            .connection
-            .query(
-                &format!(
-                    "INSERT INTO mcp_tool_tag_rules (
-                        rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
-                    ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
-                    DO UPDATE SET updated_at = excluded.updated_at
-                    RETURNING {TAG_RULE_COLUMNS}"
-                ),
-                libsql::params![
-                    id.to_string(),
-                    key.subject_kind.as_str(),
-                    key.subject_id.to_string(),
-                    key.server_scope(),
-                    key.tag.as_str(),
-                    key.effect.as_str(),
-                    updated_at.unix_timestamp(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
-            StoreError::Unexpected("MCP tag rule upsert returned no row".to_string())
-        })?;
-        let record = decode_tag_rule(&row)?;
-        let created = record.rule_id == id;
-        Ok((record, created))
+        insert_tag_rule(&self.connection, key, updated_at).await
+    }
+
+    async fn upsert_mcp_tool_tag_rule_guarded(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+        expected_server: &McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        // The write lock a narrowing also takes, so one that lands first is
+        // seen here and one that lands after counts this rule.
+        let tx = self.begin_transaction().await?;
+        if key.mcp_server_id != Some(expected_server.mcp_server_id) {
+            return Err(expected_server.conflict());
+        }
+        check_ownership_guard(&tx, expected_server, None).await?;
+        if let Some(expected) = expected_subject_team
+            && subject_team_in(&tx, key.subject_kind, key.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
+        }
+        let written = insert_tag_rule(&tx, key, updated_at).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(written)
     }
 
     async fn get_mcp_tool_tag_rule(

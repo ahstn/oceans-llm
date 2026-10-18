@@ -2417,3 +2417,88 @@ async fn only_platform_admins_require_approval_for_tool_changes() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["data"]["server"]["approve_tool_changes"], true);
 }
+
+#[tokio::test]
+async fn an_empty_owner_contact_clears_it() {
+    let context = TestContext::new().await;
+    let own = context
+        .server(
+            "contact",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let (status, body) = context
+        .update(&admin, own.id, json!({ "owner_contact": "#team-a" }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["server"]["owner_contact"], "#team-a");
+    let (status, body) = context
+        .update(&admin, own.id, json!({ "owner_contact": "" }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["data"]["server"]["owner_contact"],
+        Value::Null,
+        "{body}"
+    );
+    // Omitting it keeps whatever the server has.
+    let (_, body) = context
+        .update(&admin, own.id, json!({ "owner_contact": "#kept" }))
+        .await;
+    assert_eq!(body["data"]["server"]["owner_contact"], "#kept");
+    let (_, body) = context.update(&admin, own.id, json!({})).await;
+    assert_eq!(body["data"]["server"]["owner_contact"], "#kept");
+}
+
+#[tokio::test]
+async fn the_member_catalog_applies_tag_rules_on_their_keys() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "ruled",
+            context.team_owned(context.team_a, McpServerVisibility::Organisation),
+        )
+        .await;
+    let member = context.member(context.team_a).await;
+    let key = context.user_api_key(member).await;
+    let platform = context.platform_admin().await;
+    let rule = |effect: &str| {
+        let headers = platform.headers.clone();
+        let state = context.state.clone();
+        let body = json!({
+            "subject_kind": "api_key",
+            "subject_id": key,
+            "server_id": server.id,
+            "tag": "destructive",
+            "effect": effect,
+        });
+        async move {
+            read(
+                create_mcp_tag_rule(
+                    State(state),
+                    headers,
+                    AuditRequestMeta::default(),
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    let query: McpServersQuery = serde_json::from_value(json!({})).unwrap();
+    let listed = || list_member_servers(&context.state, member, Some(context.team_a), &query);
+    let (_, body) = read(listed().await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0);
+    // The discovered tool declares no hints, so it is tagged destructive, and
+    // an include rule on the member's key reaches it.
+    let (status, body) = rule("include").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, body) = read(listed().await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1, "{body}");
+    // An exclude rule on the same key removes it again.
+    let (status, body) = rule("exclude").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, body) = read(listed().await).await;
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0, "{body}");
+}

@@ -1371,6 +1371,26 @@ pub trait McpAccessRepository: Send + Sync {
         team_id: Option<Uuid>,
     ) -> Result<bool, StoreError>;
 
+    /// Which of these servers are visible to their team only and not owned by
+    /// `team_id`, in one read: for requests that resolved tools on several
+    /// servers.
+    async fn list_mcp_server_ids_hidden_from(
+        &self,
+        mcp_server_ids: &[Uuid],
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        let mut hidden = Vec::new();
+        for mcp_server_id in mcp_server_ids {
+            if self
+                .is_mcp_server_hidden_from(*mcp_server_id, team_id)
+                .await?
+            {
+                hidden.push(*mcp_server_id);
+            }
+        }
+        Ok(hidden)
+    }
+
     /// Every active tool these API keys are granted, directly or through an
     /// active tool set, on active servers, in one query, with the granting key
     /// on each row so its own MCP server list can be applied.
@@ -1442,6 +1462,19 @@ pub trait McpAccessRepository: Send + Sync {
         &self,
         key: &crate::mcp_tool_policy::McpToolTagRuleKey,
         updated_at: OffsetDateTime,
+    ) -> Result<(crate::mcp_tool_policy::McpToolTagRuleRecord, bool), StoreError>;
+
+    /// Like [`Self::upsert_mcp_tool_tag_rule`], written only while the rule's
+    /// server still has `expected_server`'s owner and visibility and, when
+    /// `expected_subject_team` is set, the subject is still in that team. Both
+    /// are checked in the same write, as for a guarded grant, so a narrowing
+    /// or a team move that lands first makes the write a conflict.
+    async fn upsert_mcp_tool_tag_rule_guarded(
+        &self,
+        key: &crate::mcp_tool_policy::McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+        expected_server: &crate::domain::McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
     ) -> Result<(crate::mcp_tool_policy::McpToolTagRuleRecord, bool), StoreError>;
 
     async fn get_mcp_tool_tag_rule(

@@ -1742,9 +1742,10 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
 /// tool's server, as runtime resolution enforces. As at runtime, a team-only
 /// server counts only for its own team's members.
 ///
-/// `server_id` limits the result to one server. The cost is a fixed number of
-/// queries however many keys, or distinct server lists, the user has: every
-/// key's grants come back in one query that names the granting key.
+/// `server_id` limits the result to one server. Each MCP-capable key is
+/// resolved with its owner and team, as a request made with it would be, so
+/// tag rules on any of them apply; a user's keys are few, and each resolution
+/// skips rule loading when none of its subjects has a rule.
 struct MemberAccess {
     tool_ids: Vec<Uuid>,
     servers: Vec<gateway_core::ExternalMcpServerRecord>,
@@ -1788,22 +1789,33 @@ async fn member_access(
         .into_iter()
         .map(|tool| (tool.mcp_tool_id, tool.mcp_server_id))
         .collect();
-    let key_ids: Vec<Uuid> = keys.keys().copied().collect();
-    for row in state
-        .store
-        .list_mcp_tool_access_for_api_keys(&key_ids, server_id)
-        .await?
-    {
-        if keys
-            .get(&row.api_key_id)
-            .is_some_and(|access| access.allows_mcp_server(&row.server_key))
+    // Each key is resolved as runtime resolves a request made with it: the key,
+    // its owner and their team together, so tag rules on any of them, include
+    // and exclude alike, apply to what the key reaches.
+    let mut key_tools: Vec<(Uuid, Uuid, Uuid)> = Vec::new();
+    for key_id in keys.keys() {
+        let mut key_subjects = subjects.clone();
+        key_subjects.push(McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::ApiKey,
+            subject_id: *key_id,
+        });
+        for tool in state
+            .store
+            .resolve_mcp_access_for_subjects(
+                &key_subjects,
+                server_id,
+                McpToolProjection::AccessUncounted,
+            )
+            .await?
+            .allowed_tools
         {
-            tool_servers.insert(row.mcp_tool_id, row.mcp_server_id);
+            key_tools.push((*key_id, tool.mcp_tool_id, tool.mcp_server_id));
         }
     }
     let referenced: Vec<Uuid> = tool_servers
         .values()
         .copied()
+        .chain(key_tools.iter().map(|(_, _, server)| *server))
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -1811,7 +1823,25 @@ async fn member_access(
         .store
         .list_external_mcp_servers_by_ids(&referenced)
         .await?;
-    servers.retain(|server| server.ownership.is_reachable_from(team_id));
+    // A key's tools count only while it may call MCP on their server.
+    let server_keys: std::collections::HashMap<Uuid, &str> = servers
+        .iter()
+        .map(|server| (server.mcp_server_id, server.server_key.as_str()))
+        .collect();
+    for (key_id, tool_id, tool_server) in key_tools {
+        if server_keys
+            .get(&tool_server)
+            .zip(keys.get(&key_id))
+            .is_some_and(|(server_key, access)| access.allows_mcp_server(server_key))
+        {
+            tool_servers.insert(tool_id, tool_server);
+        }
+    }
+    // Only servers left with a tool the user can call, on servers they reach.
+    let with_tools: std::collections::HashSet<Uuid> = tool_servers.values().copied().collect();
+    servers.retain(|server| {
+        with_tools.contains(&server.mcp_server_id) && server.ownership.is_reachable_from(team_id)
+    });
     let reachable: std::collections::HashSet<Uuid> =
         servers.iter().map(|server| server.mcp_server_id).collect();
     let tool_ids = tool_servers

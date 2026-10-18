@@ -184,7 +184,11 @@ async fn dispatch_mcp_request(
 
     let rpc_request = parse_mcp_rpc_request(method, &body);
 
-    match rpc_request {
+    // Any response that streams events is bound to the caller's reach, the
+    // POST replies a server may stream as well as the `GET` stream: each ends
+    // once the caller could no longer open it.
+    let caller = stream_reach::StreamCaller::of(auth, &server.server_key, server.mcp_server_id);
+    let response = match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
             // Approval servers serve the stored definition, which needs the
             // title and output schema, so they resolve the full projection.
@@ -368,6 +372,11 @@ async fn dispatch_mcp_request(
                 &rejection.error.to_string(),
             )
         }
+    };
+    if stream_reach::is_event_stream(&response) {
+        stream_reach::bound_to_reach(&state.mcp_stream_reach, caller, response)
+    } else {
+        response
     }
 }
 

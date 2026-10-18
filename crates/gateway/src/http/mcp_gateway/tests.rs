@@ -544,6 +544,42 @@ mod proxy_policy {
     }
 
     #[tokio::test]
+    async fn event_stream_replies_to_posts_are_watched_like_the_get_stream() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        // The upstream answers `prompts/get` as an event stream.
+        let response = dispatch_mcp_request(
+            &state,
+            &crate::http::request_policy::RequestPolicyContext::default(),
+            &auth,
+            "notes",
+            &Method::POST,
+            &headers,
+            Bytes::from(
+                json!({"jsonrpc": "2.0", "id": 4, "method": "prompts/get", "params": {"name": "summarise"}})
+                    .to_string(),
+            ),
+            Instant::now(),
+        )
+        .await;
+        assert!(super::super::stream_reach::is_event_stream(&response));
+        assert_eq!(state.mcp_stream_reach.watched(), 1);
+        drop(response);
+        assert_eq!(
+            state.mcp_stream_reach.watched(),
+            0,
+            "a dropped stream stops being watched"
+        );
+    }
+
+    #[tokio::test]
     async fn another_teams_team_only_server_does_not_exist_for_lifecycle_methods() {
         let (_directory, state) = crate::http::test_support::app_state().await;
         let upstream = spawn_upstream().await;

@@ -192,12 +192,8 @@ pub(super) async fn handle_event_stream(
         Ok(false) => return server_not_granted_response(None),
         Err(error) => return mcp_error_response(error),
     }
-    let caller =
-        super::stream_reach::StreamCaller::of(auth, &server.server_key, server.mcp_server_id);
-    let response = proxy_lifecycle(state, auth, http_method, headers, body, server, false).await;
-    // Rechecked with every other open stream by the shared watcher, so the
-    // stream ends once its caller could no longer open it.
-    super::stream_reach::bound_to_reach(&state.mcp_stream_reach, caller, response)
+    // `dispatch_mcp_request` binds the stream to the caller's reach.
+    proxy_lifecycle(state, auth, http_method, headers, body, server, false).await
 }
 
 /// Forwards session plumbing that carries no server data. `initialize` is

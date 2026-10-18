@@ -18,7 +18,8 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 /// same precedence as the service's subject lookup, so both agree on who is
 /// inside the team. An API key that is revoked, has no MCP scope, or whose
 /// server list leaves this server out holds no access, as at runtime. Nor does
-/// a grant on an inactive tool, which is not callable, or one held by a service
+/// a grant on a tool that is not callable (inactive, waiting for review, or
+/// rejected), or one held by a service
 /// account that is disabled or has no active budget, or by a key it owns:
 /// authentication refuses every key of such an account.
 pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
@@ -61,13 +62,15 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     ELSE FALSE
                 END AS subject_exists
             FROM (
-                -- Direct grants on the server's active tools: an inactive tool
-                -- is not callable, as at runtime.
+                -- Direct grants on the server's callable tools: an inactive
+                -- tool, or one waiting for review or rejected, is not callable,
+                -- as at runtime.
                 SELECT gr.subject_kind, gr.subject_id
                 FROM mcp_tool_grants gr
                 JOIN external_mcp_tools t ON t.mcp_tool_id = gr.target_id
                 WHERE gr.target_kind = 'tool' AND gr.is_active = 1
                   AND t.mcp_server_id = {server} AND t.is_active = 1
+                  AND t.approval_status IN ('approved', 'pending_change')
                 UNION ALL
                 -- Include tag rules on the server grant every matching tool,
                 -- discovered now or later, so they count as grants.
@@ -142,6 +145,7 @@ pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
         JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
         WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = 'api_key'
           AND g.subject_id {keys} AND ts.status = 'active' AND t.is_active = 1
+          AND t.approval_status IN ('approved', 'pending_change')
           AND s.status = 'active' AND ({server} IS NULL OR t.mcp_server_id = {server})
         "#
     )

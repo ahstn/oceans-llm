@@ -212,6 +212,25 @@ impl McpAccessRepository for AnyStore {
         }
     }
 
+    async fn list_mcp_server_ids_hidden_from(
+        &self,
+        mcp_server_ids: &[Uuid],
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_mcp_server_ids_hidden_from(mcp_server_ids, team_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_mcp_server_ids_hidden_from(mcp_server_ids, team_id)
+                    .await
+            }
+        }
+    }
+
     async fn list_mcp_tool_access_for_api_keys(
         &self,
         api_key_ids: &[Uuid],
@@ -367,6 +386,37 @@ impl McpAccessRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
             Self::Postgres(store) => store.upsert_mcp_tool_tag_rule(key, updated_at).await,
+        }
+    }
+
+    async fn upsert_mcp_tool_tag_rule_guarded(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .upsert_mcp_tool_tag_rule_guarded(
+                        key,
+                        updated_at,
+                        expected_server,
+                        expected_subject_team,
+                    )
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .upsert_mcp_tool_tag_rule_guarded(
+                        key,
+                        updated_at,
+                        expected_server,
+                        expected_subject_team,
+                    )
+                    .await
+            }
         }
     }
 
