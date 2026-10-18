@@ -213,12 +213,11 @@ pub async fn list_mcp_oauth_connections(
     // as they are now: leaving the team, or the server moving, in between must
     // not show a team-only server the user no longer reaches.
     if !listed_for_reach.is_empty() {
-        let current_team = user_team(&state, user.user_id).await?;
         let ids: Vec<Uuid> = listed_for_reach.iter().copied().collect();
-        let still_reached: std::collections::HashSet<Uuid> = state
-            .store
-            .list_mcp_server_ownerships(&ids)
-            .await?
+        let ownerships = state.store.list_mcp_server_ownerships(&ids).await?;
+        // The team is read last, so a move between the two reads is seen.
+        let current_team = user_team(&state, user.user_id).await?;
+        let still_reached: std::collections::HashSet<Uuid> = ownerships
             .into_iter()
             .filter(|(_, ownership)| ownership.is_reachable_from(current_team))
             .map(|(mcp_server_id, _)| mcp_server_id)
