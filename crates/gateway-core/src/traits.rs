@@ -1065,6 +1065,13 @@ pub trait McpRegistryRepository: Send + Sync {
         enabled_at: OffsetDateTime,
     ) -> Result<(ExternalMcpServerRecord, bool), StoreError>;
 
+    /// How many disable and enable transitions the server has had. Discovery reads it before
+    /// loading the server and passes it back in `expected_status_revision`.
+    async fn external_mcp_server_status_revision(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<i64, StoreError>;
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,

@@ -360,7 +360,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
         })
         .collect();
     let mut run = ExternalMcpDiscoveryRunRecord {
-        expected_server_status: None,
+        expected_status_revision: None,
         discovery_run_id: Uuid::new_v4(),
         mcp_server_id: server.mcp_server_id,
         status: ExternalMcpDiscoveryStatus::Success,

@@ -207,29 +207,27 @@ async fn ensure_discovery_status_unchanged(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     run: &ExternalMcpDiscoveryRunRecord,
 ) -> Result<(), StoreError> {
-    let Some(expected) = run.expected_server_status else {
+    let Some(expected) = run.expected_status_revision else {
         return Ok(());
     };
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM external_mcp_servers WHERE mcp_server_id = $1 FOR UPDATE",
+    let revision: Option<i64> = sqlx::query_scalar(
+        "SELECT status_revision FROM external_mcp_servers WHERE mcp_server_id = $1 FOR UPDATE",
     )
     .bind(run.mcp_server_id.to_string())
     .fetch_optional(&mut **tx)
     .await
     .map_err(to_query_error)?;
-    let Some(status) = status else {
-        return Err(StoreError::NotFound(format!(
+    match revision {
+        None => Err(StoreError::NotFound(format!(
             "external MCP server `{}` not found",
             run.mcp_server_id
-        )));
-    };
-    if status == expected.as_str() {
-        return Ok(());
+        ))),
+        Some(current) if current == expected => Ok(()),
+        Some(_) => Err(StoreError::Conflict(format!(
+            "external MCP server `{}` was disabled or enabled while discovery ran; refresh discovery again",
+            run.mcp_server_id
+        ))),
     }
-    Err(StoreError::Conflict(format!(
-        "external MCP server `{}` became {status} while discovery ran; refresh discovery again",
-        run.mcp_server_id
-    )))
 }
 
 #[async_trait]
@@ -410,7 +408,8 @@ impl McpRegistryRepository for PostgresStore {
         let disabled = sqlx::query(&format!(
             "UPDATE external_mcp_servers
              SET status = 'disabled', disabled_at = $1, updated_at = $1,
-                 last_discovery_status = 'disabled', last_discovery_at = $1
+                 last_discovery_status = 'disabled', last_discovery_at = $1,
+                 status_revision = status_revision + 1
              WHERE mcp_server_id = $2
                AND status <> 'disabled'
              RETURNING {SERVER_COLUMNS}"
@@ -437,7 +436,7 @@ impl McpRegistryRepository for PostgresStore {
             "UPDATE external_mcp_servers
              SET status = 'active', disabled_at = NULL, updated_at = $1,
                  last_discovery_status = NULL, last_discovery_at = NULL,
-                 last_error_summary = NULL
+                 last_error_summary = NULL, status_revision = status_revision + 1
              WHERE mcp_server_id = $2
                AND status = 'disabled'
              RETURNING {SERVER_COLUMNS}"
@@ -451,6 +450,22 @@ impl McpRegistryRepository for PostgresStore {
             Some(row) => Ok((decode_server(&row)?, true)),
             None => Ok((load_server(&self.pool, mcp_server_id).await?, false)),
         }
+    }
+
+    async fn external_mcp_server_status_revision(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<i64, StoreError> {
+        let revision: Option<i64> = sqlx::query_scalar(
+            "SELECT status_revision FROM external_mcp_servers WHERE mcp_server_id = $1",
+        )
+        .bind(mcp_server_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        revision.ok_or_else(|| {
+            StoreError::NotFound(format!("external MCP server `{mcp_server_id}` not found"))
+        })
     }
 
     async fn list_external_mcp_tools(

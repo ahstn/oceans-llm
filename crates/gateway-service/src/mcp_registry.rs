@@ -303,12 +303,19 @@ where
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let discovery_lock = discovery_lock_for(mcp_server_id);
         let _guard = discovery_lock.lock().await;
+        // Read before the server: a disable or enable after this point moves the revision, and
+        // recording the result then fails instead of overwriting the newer state.
+        let status_revision = self
+            .repo
+            .external_mcp_server_status_revision(mcp_server_id)
+            .await?;
         let server = self.server_or_not_found(mcp_server_id).await?;
         if server.status == ExternalMcpServerStatus::Disabled {
             return self
                 .record_discovery_failure(
                     server,
                     DiscoveryFailure {
+                        status_revision,
                         status: ExternalMcpDiscoveryStatus::Disabled,
                         started_at: OffsetDateTime::now_utc(),
                         summary: "external MCP server is disabled".to_string(),
@@ -325,6 +332,7 @@ where
                 .record_discovery_failure(
                     server,
                     DiscoveryFailure {
+                        status_revision,
                         status: ExternalMcpDiscoveryStatus::AuthRequired,
                         started_at: OffsetDateTime::now_utc(),
                         summary: "server auth mode requires per-user credentials for discovery"
@@ -349,6 +357,7 @@ where
                     .record_discovery_failure(
                         server,
                         DiscoveryFailure {
+                            status_revision,
                             status: ExternalMcpDiscoveryStatus::Failed,
                             started_at,
                             summary: bounded_error_summary(error.to_string()),
@@ -393,7 +402,7 @@ where
                     .collect::<Vec<_>>();
                 let schema_set_hash = schema_set_hash(&upserts);
                 let run = ExternalMcpDiscoveryRunRecord {
-                    expected_server_status: Some(server.status),
+                    expected_status_revision: Some(status_revision),
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -427,6 +436,7 @@ where
                 self.record_discovery_failure(
                     server,
                     DiscoveryFailure {
+                        status_revision,
                         status: ExternalMcpDiscoveryStatus::Failed,
                         started_at,
                         summary,
@@ -530,6 +540,7 @@ where
         progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
         let DiscoveryFailure {
+            status_revision,
             status,
             started_at,
             summary,
@@ -538,7 +549,7 @@ where
         } = failure;
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
-            expected_server_status: Some(server.status),
+            expected_status_revision: Some(status_revision),
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status,
@@ -571,6 +582,7 @@ where
 
 /// A discovery that ended without a tool list, as the run history records it.
 struct DiscoveryFailure {
+    status_revision: i64,
     status: ExternalMcpDiscoveryStatus,
     started_at: OffsetDateTime,
     summary: String,
@@ -963,6 +975,13 @@ mod tests {
             _enabled_at: OffsetDateTime,
         ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
             Err(StoreError::NotFound(mcp_server_id.to_string()))
+        }
+
+        async fn external_mcp_server_status_revision(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<i64, StoreError> {
+            unimplemented!()
         }
 
         async fn list_external_mcp_tools(

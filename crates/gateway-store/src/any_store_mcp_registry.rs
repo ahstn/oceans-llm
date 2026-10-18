@@ -99,6 +99,24 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn external_mcp_server_status_revision(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<i64, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .external_mcp_server_status_revision(mcp_server_id)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .external_mcp_server_status_revision(mcp_server_id)
+                    .await
+            }
+        }
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,
