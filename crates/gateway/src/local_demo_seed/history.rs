@@ -60,7 +60,12 @@ pub(super) const HISTORY_PROFILES: &[HistoryProfile] = &[
                 "anthropic/claude-opus-4-7",
                 1,
             ),
-            ("gpt-oss-120b", "bedrock-us-east-1", "gpt-oss-120b", 1),
+            (
+                "gpt-oss-120b",
+                "bedrock-us-east-1",
+                "openai.gpt-oss-120b-1:0",
+                1,
+            ),
         ],
         harnesses: &[
             (
