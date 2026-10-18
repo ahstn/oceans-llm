@@ -5,9 +5,12 @@ import { cn } from '@/lib/utils'
 
 /**
  * A column label, or a label with layout options: `align: 'right'` for numeric columns, and
- * `narrow` for a rank or index column. Headers that hold controls use `AdminTableHead` children.
+ * `narrow` for a rank or index column. A label doubles as the React key, so give `key` to a
+ * column whose label repeats. Headers that hold controls use `AdminTableHead` children.
  */
-export type AdminTableColumn = string | { label: string; align?: 'right'; narrow?: boolean }
+export type AdminTableColumn =
+  | string
+  | { label: string; key?: string; align?: 'right'; narrow?: boolean }
 
 type AdminTableHeaderProps = Omit<ComponentProps<typeof TableHeader>, 'children'> &
   (
@@ -53,7 +56,7 @@ export function AdminTableHeader({
               }
               return (
                 <AdminTableHead
-                  key={column.label}
+                  key={column.key ?? column.label}
                   className={cn(column.align === 'right' && 'text-right', column.narrow && 'w-16')}
                 >
                   {column.label}
