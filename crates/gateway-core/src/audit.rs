@@ -193,6 +193,16 @@ pub struct AuditLogPage {
 pub trait AuditLogRepository: Send + Sync {
     async fn insert_audit_log(&self, record: &NewAuditLogRecord) -> Result<i64, StoreError>;
 
+    /// Inserts several entries, in a few multi-row statements where the store
+    /// supports it, so a change that records one entry per affected row costs a
+    /// bounded number of round trips. Each statement lands whole or not at all.
+    async fn insert_audit_logs(&self, records: &[NewAuditLogRecord]) -> Result<(), StoreError> {
+        for record in records {
+            self.insert_audit_log(record).await?;
+        }
+        Ok(())
+    }
+
     /// Lists entries without their summaries: `before` and `after` are `None` and
     /// `metadata` is empty. Fetch one entry with [`AuditLogRepository::get_audit_log`].
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError>;

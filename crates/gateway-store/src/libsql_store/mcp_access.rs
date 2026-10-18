@@ -1,13 +1,18 @@
 use std::collections::{BTreeSet, HashMap};
 
-use gateway_core::McpToolProjection;
+use gateway_core::{McpServerOwnershipGuard, McpToolProjection};
 
 use gateway_core::{McpTagRuleSet, McpToolTagRuleKey, McpToolTagRuleRecord};
 
-use super::mcp_registry::{decode_tool_metadata, decode_tool_policy, decode_tool_review};
+use super::mcp_registry::{
+    check_no_team_only_tools, check_ownership_guard, decode_tool_metadata, decode_tool_policy,
+    decode_tool_review,
+};
 use super::*;
 use crate::mcp_tool_policy::{TAG_RULE_COLUMNS, TagRuleRow};
-use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
+use crate::shared::{
+    json_object_from_str, key_tool_grants_sql, parse_uuid, subject_team_changed, unix_to_datetime,
+};
 use gateway_core::Updated;
 
 mod resolution;
@@ -25,7 +30,7 @@ const ACCESS_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_na
 const RULE_TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, NULL, '{}', t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at, NULL, t.annotations_json, NULL, t.admin_tags_json, t.annotation_overrides_json, t.approval_status, t.approved_schema_version, t.pending_schema_version";
 /// Number of columns in `TOOL_COLUMNS`; server columns follow them.
 const TOOL_COLUMN_COUNT: usize = 20;
-const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at, s.approve_tool_changes";
+const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at, s.approve_tool_changes, s.owner_team_id, s.owner_contact, s.visibility, s.team_destinations";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
     let toolset_id: String = row.get(0).map_err(to_query_error)?;
@@ -58,7 +63,7 @@ fn decode_toolset_tool(row: &libsql::Row) -> Result<McpToolsetToolRecord, StoreE
     })
 }
 
-fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
+pub(super) fn decode_grant(row: &libsql::Row) -> Result<McpToolGrantRecord, StoreError> {
     let grant_id: String = row.get(0).map_err(to_query_error)?;
     let subject_kind: String = row.get(1).map_err(to_query_error)?;
     let subject_id: String = row.get(2).map_err(to_query_error)?;
@@ -174,6 +179,11 @@ fn decode_server_at(
             .get::<i64>(libsql_idx(offset, 18))
             .map_err(to_query_error)?
             == 1,
+        ownership: super::mcp_registry::decode_server_ownership(row, libsql_idx(offset, 19))?,
+        team_destinations: row
+            .get::<i64>(libsql_idx(offset, 22))
+            .map_err(to_query_error)?
+            != 0,
     })
 }
 
@@ -226,6 +236,75 @@ async fn toolset_tools_on(
         tools.push(decode_toolset_tool(&row)?);
     }
     Ok(tools)
+}
+
+/// The subject's team, read inside a grant write. libSQL transactions hold the
+/// write lock, so a team move cannot land before the grant commits.
+async fn subject_team_in(
+    connection: &libsql::Connection,
+    subject_kind: McpToolGrantSubjectKind,
+    subject_id: Uuid,
+) -> Result<Option<Uuid>, StoreError> {
+    let sql = match subject_kind {
+        McpToolGrantSubjectKind::Team => return Ok(Some(subject_id)),
+        McpToolGrantSubjectKind::User => "SELECT team_id FROM team_memberships WHERE user_id = ?1",
+        McpToolGrantSubjectKind::ServiceAccount => {
+            "SELECT team_id FROM service_accounts WHERE service_account_id = ?1"
+        }
+        McpToolGrantSubjectKind::ApiKey => {
+            "SELECT COALESCE(k.owner_team_id, sa.team_id, m.team_id) FROM api_keys k LEFT JOIN service_accounts sa ON sa.service_account_id = k.owner_service_account_id LEFT JOIN team_memberships m ON m.user_id = k.owner_user_id WHERE k.id = ?1"
+        }
+    };
+    let mut rows = connection
+        .query(sql, [subject_id.to_string()])
+        .await
+        .map_err(to_query_error)?;
+    let team: Option<String> = match rows.next().await.map_err(to_query_error)? {
+        Some(row) => row.get(0).map_err(to_query_error)?,
+        None => None,
+    };
+    team.as_deref().map(parse_uuid).transpose()
+}
+
+/// Writes one tag rule, or touches the active rule with the same key.
+async fn insert_tag_rule(
+    connection: &libsql::Connection,
+    key: &McpToolTagRuleKey,
+    updated_at: OffsetDateTime,
+) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+    let id = Uuid::new_v4();
+    // `RETURNING` gives the row this statement wrote, so `created` cannot be
+    // confused by a concurrent revoke and re-create.
+    let mut rows = connection
+        .query(
+            &format!(
+                "INSERT INTO mcp_tool_tag_rules (
+                    rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
+                ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
+                DO UPDATE SET updated_at = excluded.updated_at
+                RETURNING {TAG_RULE_COLUMNS}"
+            ),
+            libsql::params![
+                id.to_string(),
+                key.subject_kind.as_str(),
+                key.subject_id.to_string(),
+                key.server_scope(),
+                key.tag.as_str(),
+                key.effect.as_str(),
+                updated_at.unix_timestamp(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+    let row =
+        rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
+            StoreError::Unexpected("MCP tag rule upsert returned no row".to_string())
+        })?;
+    let record = decode_tag_rule(&row)?;
+    let created = record.rule_id == id;
+    while rows.next().await.map_err(to_write_error)?.is_some() {}
+    Ok((record, created))
 }
 
 #[async_trait]
@@ -360,6 +439,9 @@ impl McpAccessRepository for LibsqlStore {
     ) -> Result<Updated<Vec<McpToolsetToolRecord>>, StoreError> {
         let tx = self.begin_transaction().await?;
         let existing = toolset_tools_on(&tx, toolset_id).await?;
+        // Checked even for an unchanged set, so a resave never confirms a tool
+        // whose server has since been narrowed to its team.
+        check_no_team_only_tools(&tx, tool_ids).await?;
         if same_tool_ids(&existing, tool_ids) {
             tx.commit().await.map_err(to_write_error)?;
             return Ok(Updated::unchanged(existing));
@@ -409,10 +491,20 @@ impl McpAccessRepository for LibsqlStore {
         grant: &UpsertMcpToolGrantRecord,
     ) -> Result<(McpToolGrantRecord, bool), StoreError> {
         let id = Uuid::new_v4();
+        let tx = self.begin_transaction().await?;
+        if let Some(guard) = &grant.expected_server {
+            let tool_id =
+                (grant.target_kind == McpToolGrantTargetKind::Tool).then_some(grant.target_id);
+            check_ownership_guard(&tx, guard, tool_id).await?;
+        }
+        if let Some(expected) = grant.expected_subject_team
+            && subject_team_in(&tx, grant.subject_kind, grant.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
+        }
         // `RETURNING` gives the row this statement wrote, so `created` cannot be
         // confused by a concurrent revoke and re-grant.
-        let mut rows = self
-            .connection
+        let mut rows = tx
             .query(
                 r#"
                 INSERT INTO mcp_tool_grants (
@@ -437,6 +529,8 @@ impl McpAccessRepository for LibsqlStore {
             StoreError::Unexpected("MCP grant upsert returned no row".to_string())
         })?;
         let record = decode_grant(&row)?;
+        while rows.next().await.map_err(to_write_error)?.is_some() {}
+        tx.commit().await.map_err(to_write_error)?;
         // The insert keeps this call's id; an already-active grant keeps its own.
         let created = record.grant_id == id;
         Ok((record, created))
@@ -508,6 +602,180 @@ impl McpAccessRepository for LibsqlStore {
         Ok(grants)
     }
 
+    async fn revoke_mcp_tool_grant_guarded(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        mcp_tool_id: Uuid,
+        expected_server: &McpServerOwnershipGuard,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let tx = self.begin_transaction().await?;
+        check_ownership_guard(&tx, expected_server, Some(mcp_tool_id)).await?;
+        let mut rows = tx
+            .query(
+                r#"
+                UPDATE mcp_tool_grants
+                SET is_active = 0, revoked_at = ?1, updated_at = ?1
+                WHERE subject_kind = ?2 AND subject_id = ?3 AND target_kind = 'tool' AND target_id = ?4 AND is_active = 1
+                RETURNING grant_id
+                "#,
+                libsql::params![
+                    revoked_at.unix_timestamp(),
+                    subject_kind.as_str(),
+                    subject_id.to_string(),
+                    mcp_tool_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        let grant_id: Option<String> = match rows.next().await.map_err(to_write_error)? {
+            Some(row) => Some(row.get(0).map_err(to_query_error)?),
+            None => None,
+        };
+        drop(rows);
+        tx.commit().await.map_err(to_write_error)?;
+        grant_id
+            .map(|grant_id| {
+                Uuid::parse_str(&grant_id)
+                    .map_err(|error| StoreError::Unexpected(error.to_string()))
+            })
+            .transpose()
+    }
+
+    async fn list_team_only_mcp_server_ids_outside(
+        &self,
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        // `IS NOT NULL` for no team: every team-only server has an owner.
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id FROM external_mcp_servers WHERE visibility = 'team' AND owner_team_id IS NOT ?1",
+                libsql::params![team_id.map(|team_id| team_id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut ids = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            ids.push(parse_uuid(&id)?);
+        }
+        Ok(ids)
+    }
+
+    async fn is_mcp_server_hidden_from(
+        &self,
+        mcp_server_id: Uuid,
+        team_id: Option<Uuid>,
+    ) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT 1 FROM external_mcp_servers WHERE mcp_server_id = ?1 AND visibility = 'team' AND owner_team_id IS NOT ?2",
+                libsql::params![
+                    mcp_server_id.to_string(),
+                    team_id.map(|team_id| team_id.to_string())
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
+    }
+
+    async fn list_mcp_tag_rule_subject_ids(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if subject_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids =
+            serde_json::to_string(&subject_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT DISTINCT subject_id FROM mcp_tool_tag_rules WHERE is_active = 1 AND subject_kind = ?1 AND subject_id IN (SELECT value FROM json_each(?2))",
+                libsql::params![subject_kind.as_str(), ids],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut with_rules = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            with_rules.push(parse_uuid(&id)?);
+        }
+        Ok(with_rules)
+    }
+
+    async fn list_mcp_server_ids_hidden_from(
+        &self,
+        mcp_server_ids: &[Uuid],
+        team_id: Option<Uuid>,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        if mcp_server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serde_json::to_string(
+            &mcp_server_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT mcp_server_id FROM external_mcp_servers WHERE mcp_server_id IN (SELECT value FROM json_each(?1)) AND visibility = 'team' AND owner_team_id IS NOT ?2",
+                libsql::params![ids, team_id.map(|team_id| team_id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut hidden = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id: String = row.get(0).map_err(to_query_error)?;
+            hidden.push(parse_uuid(&id)?);
+        }
+        Ok(hidden)
+    }
+
+    async fn list_mcp_tool_access_for_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::McpApiKeyToolAccess>, StoreError> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids =
+            serde_json::to_string(&api_key_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                &key_tool_grants_sql("IN (SELECT value FROM json_each(?1))", "?2"),
+                libsql::params![ids, mcp_server_id.map(|id| id.to_string())],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut access = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let id = |index: i32| -> Result<Uuid, StoreError> {
+                let raw: String = row.get(index).map_err(to_query_error)?;
+                parse_uuid(&raw)
+            };
+            access.push(gateway_core::McpApiKeyToolAccess {
+                api_key_id: id(0)?,
+                mcp_tool_id: id(1)?,
+                mcp_server_id: id(2)?,
+                server_key: row.get(3).map_err(to_query_error)?,
+            });
+        }
+        Ok(access)
+    }
+
     async fn resolve_mcp_tool_for_subjects(
         &self,
         subjects: &[McpGrantSubject],
@@ -534,8 +802,16 @@ impl McpAccessRepository for LibsqlStore {
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError> {
-        let (exposed_tool_count, has_rules) =
-            active_tool_count(&self.connection, mcp_server_id, subjects).await?;
+        // An uncounted resolution skips the catalog-wide count and only asks
+        // whether any subject has a rule.
+        let (exposed_tool_count, has_rules) = match projection {
+            McpToolProjection::AccessUncounted => {
+                (0, rules_exist(&self.connection, subjects).await?)
+            }
+            McpToolProjection::Access | McpToolProjection::Full => {
+                active_tool_count(&self.connection, mcp_server_id, subjects).await?
+            }
+        };
         let rules = if has_rules {
             load_tag_rule_set(&self.connection, subjects).await?
         } else {
@@ -549,7 +825,10 @@ impl McpAccessRepository for LibsqlStore {
             .map(|tool| tool.mcp_server_id)
             .collect::<std::collections::HashSet<_>>()
             .len() as i64;
-        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+        // Zero for an uncounted resolution, whose exposed count is not read.
+        let filtered_tool_count = exposed_tool_count
+            .saturating_sub(allowed_tools.len() as i64)
+            .max(0);
         Ok(McpAccessResolution {
             allowed_tools,
             referenced_server_count,
@@ -721,38 +1000,31 @@ impl McpAccessRepository for LibsqlStore {
         key: &McpToolTagRuleKey,
         updated_at: OffsetDateTime,
     ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
-        let id = Uuid::new_v4();
-        // `RETURNING` gives the row this statement wrote, so `created` cannot be
-        // confused by a concurrent revoke and re-create.
-        let mut rows = self
-            .connection
-            .query(
-                &format!(
-                    "INSERT INTO mcp_tool_tag_rules (
-                        rule_id, subject_kind, subject_id, server_scope, tag, effect, is_active, created_at, updated_at
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
-                    ON CONFLICT(subject_kind, subject_id, server_scope, tag, effect) WHERE is_active = 1
-                    DO UPDATE SET updated_at = excluded.updated_at
-                    RETURNING {TAG_RULE_COLUMNS}"
-                ),
-                libsql::params![
-                    id.to_string(),
-                    key.subject_kind.as_str(),
-                    key.subject_id.to_string(),
-                    key.server_scope(),
-                    key.tag.as_str(),
-                    key.effect.as_str(),
-                    updated_at.unix_timestamp(),
-                ],
-            )
-            .await
-            .map_err(to_write_error)?;
-        let row = rows.next().await.map_err(to_write_error)?.ok_or_else(|| {
-            StoreError::Unexpected("MCP tag rule upsert returned no row".to_string())
-        })?;
-        let record = decode_tag_rule(&row)?;
-        let created = record.rule_id == id;
-        Ok((record, created))
+        insert_tag_rule(&self.connection, key, updated_at).await
+    }
+
+    async fn upsert_mcp_tool_tag_rule_guarded(
+        &self,
+        key: &McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+        expected_server: &McpServerOwnershipGuard,
+        expected_subject_team: Option<Option<Uuid>>,
+    ) -> Result<(McpToolTagRuleRecord, bool), StoreError> {
+        // The write lock a narrowing also takes, so one that lands first is
+        // seen here and one that lands after counts this rule.
+        let tx = self.begin_transaction().await?;
+        if key.mcp_server_id != Some(expected_server.mcp_server_id) {
+            return Err(expected_server.conflict());
+        }
+        check_ownership_guard(&tx, expected_server, None).await?;
+        if let Some(expected) = expected_subject_team
+            && subject_team_in(&tx, key.subject_kind, key.subject_id).await? != expected
+        {
+            return Err(subject_team_changed());
+        }
+        let written = insert_tag_rule(&tx, key, updated_at).await?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(written)
     }
 
     async fn get_mcp_tool_tag_rule(

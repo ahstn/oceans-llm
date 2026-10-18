@@ -7,8 +7,8 @@ use sqlx::{Row, postgres::PgRow};
 
 use super::{PostgresStore, to_query_error};
 use crate::audit_logs::{
-    AUDIT_LOG_COLUMNS, AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql,
-    parse_json, parse_optional_json,
+    AUDIT_INSERT_BATCH, AUDIT_LOG_COLUMNS, AuditInsertValue, AuditLogBind, AuditLogFilter,
+    AuditLogRow, finish_page, insert_many_sql, list_sql, parse_json, parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
 
@@ -78,6 +78,26 @@ impl AuditLogRepository for PostgresStore {
         .await
         .map_err(to_query_error)?;
         inserted.try_get(0).map_err(to_query_error)
+    }
+
+    async fn insert_audit_logs(&self, records: &[NewAuditLogRecord]) -> Result<(), StoreError> {
+        for chunk in records.chunks(AUDIT_INSERT_BATCH) {
+            let sql = insert_many_sql(chunk.len(), |index| format!("${index}"));
+            let mut statement = sqlx::query(&sql);
+            for record in chunk {
+                for value in AuditLogRow::from_record(record)?.insert_values(record) {
+                    statement = match value {
+                        AuditInsertValue::Int(value) => statement.bind(value),
+                        AuditInsertValue::Text(value) => statement.bind(value),
+                    };
+                }
+            }
+            statement
+                .execute(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+        }
+        Ok(())
     }
 
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {

@@ -204,6 +204,12 @@ where
     }
 
     /// Resolves `resource` to a gateway MCP resource, defaulting to `/mcp`.
+    ///
+    /// A per-server resource is not looked up here. This runs before anyone has
+    /// signed in, and a team-only server must not be told apart from one that
+    /// does not exist, so whether the user may reach the server is checked at
+    /// consent, once they are known. A token for a server they cannot reach is
+    /// refused on every request anyway.
     pub(crate) async fn resolve_resource(
         &self,
         raw: Option<&str>,
@@ -211,15 +217,9 @@ where
         let Some(raw) = raw else {
             return Ok(McpOauthResource::Aggregate);
         };
-        let resource = self.settings.parse_resource(raw).ok_or_else(|| {
+        self.settings.parse_resource(raw).ok_or_else(|| {
             OauthError::invalid_target("resource is not an MCP resource of this gateway")
-        })?;
-        if let McpOauthResource::Server(server_key) = &resource {
-            self.active_server_name(server_key)
-                .await?
-                .ok_or_else(|| OauthError::invalid_target("MCP server is not available"))?;
-        }
-        Ok(resource)
+        })
     }
 
     async fn active_server_name(&self, server_key: &str) -> Result<Option<String>, OauthError> {

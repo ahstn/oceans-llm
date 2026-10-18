@@ -34,6 +34,12 @@ Toolsets can contain tools from more than one registered server. Keep them small
 and purpose-oriented; they are the main way to keep agent-visible tool catalogs
 understandable.
 
+Toolsets are platform-managed and granted organisation-wide, so they hold only
+tools of servers published to the organisation. Saving a toolset that holds a tool
+of a `team` server returns `409`, even when the set is unchanged, so a server
+narrowed to its team cannot keep tools in one. See
+[Team-Managed Servers](#team-managed-servers).
+
 ## Grants
 
 Grant subjects are:
@@ -70,6 +76,48 @@ The Access tab supports:
 
 Use direct tool grants for exceptions. Prefer toolset grants when teams, service
 accounts, users, or API keys need the same bundle.
+
+## Team-Managed Servers
+
+Team owners and admins manage access for the servers their team owns. They use the
+same Access tab, limited to their team:
+
+- The target is always one tool of one of their team's servers. Toolsets are
+  platform-managed.
+- The subject must be inside their team: the team itself, a member, one of the
+  team's service accounts, or an API key owned by one of those. Granting to anyone
+  else returns `403`.
+- They can revoke any grant on their team's servers' tools, including one a
+  platform admin made.
+- They see only grants on their team's servers' tools.
+- The access preview needs one of their team's servers and a subject inside their
+  team.
+
+For every admin, previewing an API key applies that key's scopes and server list
+as the gateway does at runtime: a key without an MCP scope, or limited to other
+servers, previews no tools.
+
+A server's visibility bounds every actor, platform admins included. A `team`
+server's tools can be granted only to subjects of its owning team; granting one to
+anyone else returns `400`. Publish the server to the organisation first. See
+[Ownership and Visibility](../configuration/mcp-servers.md#ownership-and-visibility).
+
+Visibility is checked when a grant is written, inside the same write: if the
+server changes owner or visibility while the grant is saved, it returns `409` and
+nothing is written. Visibility is checked again on every request: a team-only
+server's tools work only for a caller whose current team owns the server, so a
+grant stops working as soon as its holder leaves the team, or the server moves to
+another team. The grant itself stays until someone revokes it.
+
+Every grant change is written to the [admin audit log](../access/admin-audit-log.md)
+with the actor's `actor_access` (`platform_admin` or `team_admin`) and, when they
+belong to a team, `actor_team_id` and `actor_team_role`.
+
+Tag rules, tool tags and annotation overrides, and tool reviews are platform-managed.
+An `include` [tag rule](#tag-rules) on a `team` server, like a grant, may name only
+a subject of its owning team (`400` otherwise), and it counts as access that a
+narrowing would strand. Only platform admins can turn on **Require approval for
+tool changes**, since only they review the changes.
 
 ## Tag rules
 
@@ -254,7 +302,7 @@ Resources, prompts, and completions can return server data just as tools can, so
 | `ping`, `logging/setLevel`, `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, `notifications/roots/list_changed` (no `id`), client replies to server requests, `DELETE` (end session) | Forwarded. These carry no server data. |
 | `tools/list`, `tools/call` | Filtered and checked per tool, as described above. `tools/list` results lose each tool's `execution.taskSupport`, and a `tools/call` with a `task` param is rejected with HTTP 400. |
 | `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `completion/complete` | Forwarded only when the caller has at least one effective grant on the server. Otherwise the gateway returns HTTP 403 with JSON-RPC code `-32001` and logs a policy-denied invocation with error code `mcp_server_not_granted`. |
-| `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. The stream is not logged per call. |
+| `GET` (server-to-client event stream) | Forwarded only when the caller has at least one effective grant on the server. Every 30 seconds while it is open, one shared check covers every open stream: an API key must still authenticate with an MCP scope, and the caller must still hold a grant on a server they can see. The stream ends when either check fails, or when a check cannot be answered, and the client reconnects. The stream is not logged per call. |
 | Any other method | Denied with HTTP 403 and JSON-RPC code `-32601`, and logged with error code `mcp_method_not_allowed`. |
 | `POST` with an empty or malformed body, or `GET`/`DELETE` with a body | Rejected with HTTP 400 and JSON-RPC code `-32600`. |
 

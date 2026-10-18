@@ -109,12 +109,23 @@ pub async fn list_mcp_oauth_connections(
         .into_iter()
         .map(|binding| (binding.mcp_server_id, binding))
         .collect();
+    let team_id = user_team(&state, user.user_id).await?;
     let mut items = Vec::new();
+    // Servers listed only because the user can reach them, rechecked below.
+    let mut listed_for_reach = std::collections::HashSet::new();
     for server in state.store.list_external_mcp_servers(true).await? {
         let binding = bindings.get(&server.mcp_server_id);
         let oauth_binding = binding.filter(|binding| {
             binding.material_kind == McpUpstreamCredentialMaterialKind::OauthTokens
         });
+        // A team-only server the user cannot reach stays hidden, as in the
+        // member registry, unless they hold a binding they may still revoke.
+        if oauth_binding.is_none() {
+            if !user_can_reach(team_id, &server) {
+                continue;
+            }
+            listed_for_reach.insert(server.mcp_server_id);
+        }
         let config = if server.status == ExternalMcpServerStatus::Active
             && server.auth_mode == ExternalMcpAuthMode::OauthObo
         {
@@ -198,6 +209,23 @@ pub async fn list_mcp_oauth_connections(
             availability_error,
         });
     }
+    // Checked again after the reads, against the user's team and each server
+    // as they are now: leaving the team, or the server moving, in between must
+    // not show a team-only server the user no longer reaches.
+    if !listed_for_reach.is_empty() {
+        let ids: Vec<Uuid> = listed_for_reach.iter().copied().collect();
+        let ownerships = state.store.list_mcp_server_ownerships(&ids).await?;
+        // The team is read last, so a move between the two reads is seen.
+        let current_team = user_team(&state, user.user_id).await?;
+        let still_reached: std::collections::HashSet<Uuid> = ownerships
+            .into_iter()
+            .filter(|(_, ownership)| ownership.is_reachable_from(current_team))
+            .map(|(mcp_server_id, _)| mcp_server_id)
+            .collect();
+        items.retain(|item: &McpOauthConnectionView| {
+            !listed_for_reach.contains(&item.server_id) || still_reached.contains(&item.server_id)
+        });
+    }
     Ok(([(CACHE_CONTROL, "no-store")], Json(items)).into_response())
 }
 
@@ -222,6 +250,15 @@ pub async fn start_mcp_oauth_connection(
 ) -> Result<Json<McpOauthStartResponse>, AppError> {
     let user = require_session_user(&state, &headers).await?;
     let server = load_oauth_server(&state, server_id).await?;
+    let team_id = user_team(&state, user.user_id).await?;
+    if !user_can_reach(team_id, &server) {
+        return Err(
+            GatewayError::Store(gateway_core::StoreError::NotFound(format!(
+                "external MCP server `{server_id}` not found"
+            )))
+            .into(),
+        );
+    }
     let config = mcp_oauth_server_config(&server.auth_config)?;
     // A dynamic-registration server registers its client here, on first use.
     let client = state
@@ -234,21 +271,26 @@ pub async fn start_mcp_oauth_connection(
     let authorization_url =
         client.authorization_url(&config, csrf_state.secret(), pkce_challenge.as_str())?;
     let now = OffsetDateTime::now_utc();
+    // Stored only while the server keeps the settings this authorization URL
+    // was built from; a settings change deletes its states under the same lock.
     state
         .store
-        .create_mcp_oauth_state(&McpOauthStateRecord {
-            state_hash: token_hash(csrf_state.secret()),
-            user_id: user.user_id,
-            mcp_server_id: server_id,
-            provider_key: config.provider_key,
-            pkce_verifier: pkce_verifier.secret().to_string(),
-            redirect_to,
-            resource: config.resource,
-            scopes: config.scopes,
-            expires_at: now + Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
-            consumed_at: None,
-            created_at: now,
-        })
+        .create_mcp_oauth_state_guarded(
+            &McpOauthStateRecord {
+                state_hash: token_hash(csrf_state.secret()),
+                user_id: user.user_id,
+                mcp_server_id: server_id,
+                provider_key: config.provider_key,
+                pkce_verifier: pkce_verifier.secret().to_string(),
+                redirect_to,
+                resource: config.resource,
+                scopes: config.scopes,
+                expires_at: now + Duration::minutes(MCP_OAUTH_STATE_TTL_MINUTES),
+                consumed_at: None,
+                created_at: now,
+            },
+            &gateway_core::McpServerOwnershipGuard::of(&server).with_auth_settings(&server),
+        )
         .await?;
     Ok(Json(McpOauthStartResponse { authorization_url }))
 }
@@ -332,44 +374,90 @@ async fn complete_oauth_callback(
     let Some(code) = query.code.as_deref() else {
         return Ok(connection_error_redirect("provider_failure"));
     };
-    let grant = match exchange_callback_code(state, &transaction, code).await {
-        Ok(grant) => grant,
+    let (grant, exchanged_with) = match exchange_callback_code(state, &transaction, code).await {
+        Ok(exchanged) => exchanged,
         Err(error) => {
             tracing::warn!(error = %error, "MCP OAuth token exchange failed");
             return Ok(connection_error_redirect("provider_failure"));
         }
     };
     let credentials = McpCredentialService::new(state.store.clone());
+    // Stored only while the server keeps the settings the code was exchanged
+    // with. A settings change revokes users' tokens under the same lock, so a
+    // bundle from replaced endpoints never lands after it.
     let connect = credentials.upsert_oauth_user_binding(
         transaction.mcp_server_id,
         transaction.user_id,
         grant,
+        Some(exchanged_with.clone()),
     );
     // Token values never leave the service; the entry keeps binding metadata only.
     // A reconnect replaces the user's binding, so it also records what it replaced.
-    state
+    let connected = state
         .audit()
-        .audited(&meta.user_context(&user), connect, |(binding, replaced)| {
-            let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
-                .target(binding.credential_binding_id)
-                .label(binding.owner_scope_key.clone())
-                .meta(
-                    "operation",
-                    if replaced.is_some() {
-                        "oauth_reconnect"
-                    } else {
-                        "oauth_connect"
-                    },
-                )
-                .meta("mcp_server_id", binding.mcp_server_id)
-                .after(oauth_binding_summary(binding));
-            match replaced {
-                Some(replaced) => event.before(oauth_binding_summary(replaced)),
-                None => event,
+        .audited(
+            &meta.user_context(&user),
+            connect,
+            |(binding, replaced, _)| {
+                let event = AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_SET)
+                    .target(binding.credential_binding_id)
+                    .label(binding.owner_scope_key.clone())
+                    .meta(
+                        "operation",
+                        if replaced.is_some() {
+                            "oauth_reconnect"
+                        } else {
+                            "oauth_connect"
+                        },
+                    )
+                    .meta("mcp_server_id", binding.mcp_server_id)
+                    .after(oauth_binding_summary(binding));
+                match replaced {
+                    Some(replaced) => event.before(oauth_binding_summary(replaced)),
+                    None => event,
+                }
+            },
+        )
+        .await;
+    match connected {
+        Ok((binding, _, written)) => {
+            // Membership is not part of the write's guard, so check it again
+            // now the binding is stored: a user who left the team meanwhile
+            // keeps no connection to its team-only server.
+            let team_id = user_team(state, transaction.user_id).await?;
+            let reachable = exchanged_with.is_reachable_from(team_id);
+            if !reachable {
+                // Only this callback's own tokens are revoked: a later callback
+                // that stored new ones is left alone. Recorded like a
+                // disconnect, so the trail matches the set written just before.
+                if credentials
+                    .revoke_oauth_binding_if_unchanged(binding.credential_binding_id, &written)
+                    .await?
+                {
+                    state
+                        .audit()
+                        .record(
+                            &meta.user_context(&user),
+                            AuditEvent::new(actions::MCP_CREDENTIAL_BINDING_REVOKED)
+                                .target(binding.credential_binding_id)
+                                .label(binding.owner_scope_key.clone())
+                                .meta("operation", "oauth_access_lost")
+                                .meta("mcp_server_id", binding.mcp_server_id)
+                                .before(oauth_binding_summary(&binding)),
+                        )
+                        .await;
+                }
+                return Ok(connection_error_redirect("provider_failure"));
             }
-        })
-        .await?;
-    Ok(connection_success_redirect(&transaction.redirect_to))
+            Ok(connection_success_redirect(&transaction.redirect_to))
+        }
+        // The server's settings changed during the flow; the user connects again.
+        Err(GatewayError::Store(gateway_core::StoreError::Conflict(message))) => {
+            tracing::warn!(%message, "MCP OAuth settings changed before the token was stored");
+            Ok(connection_error_redirect("provider_failure"))
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Exchanges the code with the client the flow started with. A server whose
@@ -379,10 +467,39 @@ async fn exchange_callback_code(
     state: &AppState,
     transaction: &McpOauthStateRecord,
     code: &str,
-) -> Result<gateway_service::McpOauthTokenGrant, GatewayError> {
+) -> Result<
+    (
+        gateway_service::McpOauthTokenGrant,
+        gateway_core::McpServerOwnershipGuard,
+    ),
+    GatewayError,
+> {
     let server = load_oauth_server(state, transaction.mcp_server_id)
         .await
         .map_err(|error| error.0)?;
+    // The user may have left the team, or the server moved, since the flow
+    // started. The token write below is pinned to this server's ownership, so
+    // a transfer after this check is refused there.
+    let team_id = user_team(state, transaction.user_id)
+        .await
+        .map_err(|error| error.0)?;
+    if !user_can_reach(team_id, &server) {
+        return Err(GatewayError::InvalidRequest(
+            "the MCP server is no longer available to this user".to_string(),
+        ));
+    }
+    // A change to the server's auth settings deletes its OAuth states in the
+    // same write. The state still existing after the reload above means the
+    // code goes to the endpoints the flow started with, not replacements.
+    if !state
+        .store
+        .mcp_oauth_state_exists(&transaction.state_hash)
+        .await?
+    {
+        return Err(GatewayError::InvalidRequest(
+            "MCP server OAuth settings changed during the connection".to_string(),
+        ));
+    }
     let config = mcp_oauth_server_config(&server.auth_config)?;
     if config.provider_key != transaction.provider_key || config.resource != transaction.resource {
         return Err(GatewayError::InvalidRequest(
@@ -393,7 +510,7 @@ async fn exchange_callback_code(
         .mcp_oauth_runtime
         .resolve_client(state.store.as_ref(), &server, &config, false)
         .await?;
-    state
+    let grant = state
         .mcp_oauth_runtime
         .exchange_code(
             &client,
@@ -402,7 +519,11 @@ async fn exchange_callback_code(
             &transaction.pkce_verifier,
             &transaction.scopes,
         )
-        .await
+        .await?;
+    Ok((
+        grant,
+        gateway_core::McpServerOwnershipGuard::of(&server).with_auth_settings(&server),
+    ))
 }
 
 #[utoipa::path(
@@ -503,6 +624,22 @@ async fn require_session_user(
     resolve_session_user(state, headers)
         .await?
         .ok_or_else(|| AppError(AuthError::SessionRequired.into()))
+}
+
+async fn user_team(state: &AppState, user_id: Uuid) -> Result<Option<Uuid>, AppError> {
+    Ok(
+        gateway_core::IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
+            .await?
+            .map(|membership| membership.team_id),
+    )
+}
+
+/// Whether a user may see and connect to `server`: one published to the
+/// organisation, or a team-only server their current team owns. A grant does
+/// not widen this, matching runtime access, which ignores a team-only server's
+/// grants once their holder has left the team.
+fn user_can_reach(team_id: Option<Uuid>, server: &gateway_core::ExternalMcpServerRecord) -> bool {
+    server.ownership.is_reachable_from(team_id)
 }
 
 async fn load_oauth_server(

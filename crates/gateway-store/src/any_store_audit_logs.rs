@@ -14,6 +14,13 @@ impl AuditLogRepository for AnyStore {
         }
     }
 
+    async fn insert_audit_logs(&self, records: &[NewAuditLogRecord]) -> Result<(), StoreError> {
+        match self {
+            Self::Libsql(store) => store.insert_audit_logs(records).await,
+            Self::Postgres(store) => store.insert_audit_logs(records).await,
+        }
+    }
+
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {
         match self {
             Self::Libsql(store) => store.list_audit_logs(query).await,

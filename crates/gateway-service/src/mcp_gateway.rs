@@ -261,7 +261,7 @@ mod tests {
         async fn update_external_mcp_server(
             &self,
             _input: &UpdateExternalMcpServerRecord,
-        ) -> Result<gateway_core::Updated<ExternalMcpServerRecord>, StoreError> {
+        ) -> Result<gateway_core::ExternalMcpServerUpdate, StoreError> {
             unimplemented!()
         }
 
@@ -318,6 +318,8 @@ mod tests {
     ) -> ExternalMcpServerRecord {
         let now = OffsetDateTime::now_utc();
         ExternalMcpServerRecord {
+            team_destinations: false,
+            ownership: Default::default(),
             mcp_server_id: Uuid::new_v4(),
             server_key: "github".to_string(),
             display_name: "GitHub".to_string(),

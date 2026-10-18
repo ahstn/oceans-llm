@@ -41,6 +41,7 @@ pub(super) async fn seed_server(state: &AppState, server_key: &str, server_url: 
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: server_key.to_string(),
             display_name: "Repository".to_string(),
             description: None,
@@ -123,9 +124,29 @@ async fn aggregate_protected_resource_metadata_names_issuer_and_scope() {
 }
 
 #[tokio::test]
-async fn server_protected_resource_metadata_requires_an_active_server() {
+async fn server_protected_resource_metadata_names_only_published_servers() {
     let (_directory, state) = oauth_state().await;
     seed_server(&state, "repository", "http://127.0.0.1:9/mcp").await;
+    let team = gateway_store::GatewayStore::create_team(&*state.store, "metadata-team", "Metadata")
+        .await
+        .unwrap();
+    state
+        .store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            approve_tool_changes: false,
+            ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
+            server_key: "private".to_string(),
+            display_name: "Private notes".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "http://127.0.0.1:9/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: OffsetDateTime::now_utc(),
+        })
+        .await
+        .unwrap();
     let router = router(&state);
 
     let (status, body) = send(
@@ -141,12 +162,21 @@ async fn server_protected_resource_metadata_requires_an_active_server() {
     assert_eq!(body["scopes_supported"], serde_json::json!(["mcp:proxy"]));
     assert_eq!(body["resource_name"], "Repository");
 
-    let (status, _) = send(
-        &router,
-        get("/.well-known/oauth-protected-resource/mcp/missing"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    // A team-only server and a missing one get the same generic metadata,
+    // named by their key, so this public route confirms neither.
+    for key in ["private", "missing"] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/.well-known/oauth-protected-resource/mcp/{key}")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{key}");
+        assert_eq!(body["resource_name"], key);
+        assert_eq!(
+            body["resource"],
+            format!("https://oceans.example.com/mcp/{key}")
+        );
+    }
 }
 
 #[tokio::test]

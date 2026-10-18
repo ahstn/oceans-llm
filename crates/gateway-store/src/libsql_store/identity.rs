@@ -524,6 +524,35 @@ impl LibsqlStore {
         Ok(teams)
     }
 
+    pub async fn list_teams_by_ids(
+        &self,
+        team_ids: &[Uuid],
+    ) -> Result<Vec<TeamRecord>, StoreError> {
+        if team_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = serde_json::to_string(&team_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
+                FROM teams
+                WHERE team_id IN (SELECT value FROM json_each(?1))
+                ORDER BY team_name ASC
+                "#,
+                [ids],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut teams = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            teams.push(decode_team_record(&row)?);
+        }
+        Ok(teams)
+    }
+
     pub async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
         let mut rows = self
             .connection
@@ -816,6 +845,65 @@ impl LibsqlStore {
             .await
             .map_err(to_write_error)?;
         Ok(())
+    }
+
+    pub async fn create_mcp_oauth_state_guarded(
+        &self,
+        state: &McpOauthStateRecord,
+        expected_server: &gateway_core::McpServerOwnershipGuard,
+    ) -> Result<(), StoreError> {
+        // A guard read for another server says nothing about this one.
+        if expected_server.mcp_server_id != state.mcp_server_id {
+            return Err(expected_server.conflict());
+        }
+        let scopes_json = crate::shared::serialize_json(&state.scopes)?;
+        // The immediate transaction holds the write lock a settings change
+        // takes, so the guard is checked against the settings this state sees.
+        let tx = self.begin_transaction().await?;
+        super::mcp_registry::check_ownership_guard(&tx, expected_server, None).await?;
+        tx.execute(
+            "DELETE FROM mcp_oauth_states WHERE expires_at <= ?1",
+            [state.created_at.unix_timestamp()],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.execute(
+            r#"
+            INSERT INTO mcp_oauth_states (
+                state_hash, user_id, mcp_server_id, provider_key, pkce_verifier,
+                redirect_to, resource, scopes_json, expires_at, consumed_at, created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "#,
+            libsql::params![
+                state.state_hash.as_str(),
+                state.user_id.to_string(),
+                state.mcp_server_id.to_string(),
+                state.provider_key.as_str(),
+                state.pkce_verifier.as_str(),
+                state.redirect_to.as_str(),
+                state.resource.as_str(),
+                scopes_json,
+                state.expires_at.unix_timestamp(),
+                state.consumed_at.map(|value| value.unix_timestamp()),
+                state.created_at.unix_timestamp(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn mcp_oauth_state_exists(&self, state_hash: &str) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                "SELECT 1 FROM mcp_oauth_states WHERE state_hash = ?1",
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
     }
 
     pub async fn consume_mcp_oauth_state(

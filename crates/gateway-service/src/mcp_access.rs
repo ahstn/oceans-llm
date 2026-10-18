@@ -22,27 +22,70 @@ where
         Self { repo }
     }
 
+    /// The tools the key may call. A team-only server's tools count only for a
+    /// caller whose current team owns it, checked here on every request, so a
+    /// grant stops working when its holder leaves the team or the server moves.
     pub async fn effective_tools_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
         mcp_server_id: Option<Uuid>,
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, GatewayError> {
-        let subjects = self.grant_subjects(auth).await?;
-        Ok(self
+        let (subjects, team_id) = self.subjects_and_team(auth).await?;
+        let mut resolution = self
             .repo
             .resolve_mcp_access_for_subjects(&subjects, mcp_server_id, projection)
-            .await?)
+            .await?;
+        // A request naming a server checks only that server.
+        let hidden: HashSet<Uuid> = match mcp_server_id {
+            Some(mcp_server_id) => {
+                if self
+                    .repo
+                    .is_mcp_server_hidden_from(mcp_server_id, team_id)
+                    .await?
+                {
+                    HashSet::from([mcp_server_id])
+                } else {
+                    HashSet::new()
+                }
+            }
+            // Otherwise only the servers the resolved tools are on are read,
+            // not every team-only server in the registry.
+            None => {
+                let referenced: Vec<Uuid> = resolution
+                    .allowed_tools
+                    .iter()
+                    .map(|tool| tool.mcp_server_id)
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                self.repo
+                    .list_mcp_server_ids_hidden_from(&referenced, team_id)
+                    .await?
+                    .into_iter()
+                    .collect()
+            }
+        };
+        retain_reachable_tools(&mut resolution, &hidden);
+        Ok(resolution)
     }
 
     /// Whether the key may reach the server at all: it holds a grant on at
-    /// least one of the server's active tools.
+    /// least one of the server's active tools, and the server is not limited
+    /// to a team other than the caller's.
     pub async fn has_server_grant(
         &self,
         auth: &AuthenticatedApiKey,
         mcp_server_id: Uuid,
     ) -> Result<bool, GatewayError> {
-        let subjects = self.grant_subjects(auth).await?;
+        let (subjects, team_id) = self.subjects_and_team(auth).await?;
+        if self
+            .repo
+            .is_mcp_server_hidden_from(mcp_server_id, team_id)
+            .await?
+        {
+            return Ok(false);
+        }
         Ok(self
             .repo
             .has_mcp_server_grant(&subjects, mcp_server_id)
@@ -71,8 +114,18 @@ where
         &self,
         auth: &AuthenticatedApiKey,
     ) -> Result<Vec<McpGrantSubject>, GatewayError> {
+        Ok(self.subjects_and_team(auth).await?.0)
+    }
+
+    /// The key's grant subjects, and the team it acts for now: the key's own
+    /// team (a service account's), or its owner's current team.
+    pub async fn subjects_and_team(
+        &self,
+        auth: &AuthenticatedApiKey,
+    ) -> Result<(Vec<McpGrantSubject>, Option<Uuid>), GatewayError> {
         let mut subjects = grant_subjects(auth);
-        if auth.owner_team_id.is_none()
+        let mut team_id = auth.owner_team_id;
+        if team_id.is_none()
             && let Some(user_id) = auth.owner_user_id
             && let Some(membership) = self.repo.get_team_membership_for_user(user_id).await?
         {
@@ -83,8 +136,9 @@ where
                 McpToolGrantSubjectKind::Team,
                 membership.team_id,
             );
+            team_id = Some(membership.team_id);
         }
-        Ok(subjects)
+        Ok((subjects, team_id))
     }
 }
 
@@ -92,6 +146,28 @@ impl<R> McpAccess<R>
 where
     R: IdentityRepository + AdminApiKeyRepository + ApiKeyRepository + BudgetRepository,
 {
+    /// The keys with these IDs that can still authenticate, loaded as
+    /// authentication loads them but without their secrets: active, with a
+    /// well-formed owner, and for a service account's key an active account
+    /// with an active budget. The keys are read in one query, for rechecks of
+    /// many open streams at once.
+    pub async fn usable_api_keys(
+        &self,
+        api_key_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, AuthenticatedApiKey>, GatewayError> {
+        let mut usable = std::collections::HashMap::new();
+        for key in self.repo.list_api_keys_by_ids(api_key_ids).await? {
+            match crate::authenticator::ensure_api_key_usable(self.repo.as_ref(), &key).await {
+                Ok(()) => {
+                    usable.insert(key.id, AuthenticatedApiKey::from(key));
+                }
+                Err(GatewayError::Auth(_)) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(usable)
+    }
+
     /// Expands previewed subjects the way runtime resolution would for a
     /// caller: a key brings its owner and team, a user its current team, and a
     /// service account its team. Rules and grants on those subjects then show in
@@ -238,6 +314,49 @@ pub fn grant_subjects(auth: &AuthenticatedApiKey) -> Vec<McpGrantSubject> {
         );
     }
     subjects
+}
+
+/// Drops tools of servers in `hidden` and recounts what the resolution reports.
+pub fn retain_reachable_tools(resolution: &mut McpAccessResolution, hidden: &HashSet<Uuid>) {
+    if hidden.is_empty() {
+        return;
+    }
+    retain_tools_and_recount(
+        &mut resolution.allowed_tools,
+        ResolutionCounts {
+            referenced_server_count: &mut resolution.referenced_server_count,
+            filtered_tool_count: &mut resolution.filtered_tool_count,
+            exposed_tool_count: resolution.exposed_tool_count,
+        },
+        |tool| tool.mcp_server_id,
+        |tool| !hidden.contains(&tool.mcp_server_id),
+    );
+}
+
+/// The counts a grant resolution reports beside its tools.
+pub(crate) struct ResolutionCounts<'a> {
+    pub(crate) referenced_server_count: &'a mut i64,
+    pub(crate) filtered_tool_count: &'a mut i64,
+    pub(crate) exposed_tool_count: i64,
+}
+
+/// Keeps the tools `keep` accepts and recounts the servers they reference and
+/// the tools filtered out, so effective access and the catalog report the
+/// same numbers after the same filter.
+pub(crate) fn retain_tools_and_recount<T>(
+    tools: &mut Vec<T>,
+    counts: ResolutionCounts<'_>,
+    server_of: impl Fn(&T) -> Uuid,
+    keep: impl FnMut(&T) -> bool,
+) {
+    let before = tools.len();
+    tools.retain(keep);
+    if tools.len() == before {
+        return;
+    }
+    *counts.referenced_server_count =
+        tools.iter().map(server_of).collect::<HashSet<_>>().len() as i64;
+    *counts.filtered_tool_count = counts.exposed_tool_count.saturating_sub(tools.len() as i64);
 }
 
 fn subjects_seen(subjects: &[McpGrantSubject]) -> HashSet<(McpToolGrantSubjectKind, Uuid)> {

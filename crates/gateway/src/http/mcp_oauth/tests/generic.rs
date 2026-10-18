@@ -97,7 +97,8 @@ async fn token(
 }
 
 fn configure(state: &mut AppState) {
-    // Every test in this binary uses the same key, so setting it is idempotent.
+    // Other tests in this binary set a different key and remove it after, so
+    // every test that calls this runs `#[serial_test::serial]` with them.
     unsafe {
         std::env::set_var(ENCRYPTION_KEY_ENV, STANDARD.encode([7_u8; 32]));
     }
@@ -120,6 +121,7 @@ async fn server(state: &AppState, origin: &str, registration: Value) -> External
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: format!("files_{}", &Uuid::new_v4().simple().to_string()[..8]),
             display_name: "Files".to_string(),
             description: None,
@@ -197,6 +199,7 @@ async fn user_binding(
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn dynamic_registration_code_flow_and_refresh() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
@@ -286,7 +289,7 @@ async fn dynamic_registration_code_flow_and_refresh() {
         expires_at: Some(OffsetDateTime::now_utc() + Duration::seconds(60)),
     };
     McpCredentialService::new(state.store.clone())
-        .upsert_oauth_user_binding(server.mcp_server_id, user.user_id, grant)
+        .upsert_oauth_user_binding(server.mcp_server_id, user.user_id, grant, None)
         .await
         .expect("near-expiry binding");
     let near_expiry = user_binding(&state, &server, user.user_id).await;
@@ -312,6 +315,7 @@ async fn dynamic_registration_code_flow_and_refresh() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn metadata_document_clients_connect_as_public_clients() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
@@ -361,6 +365,7 @@ async fn metadata_document_clients_connect_as_public_clients() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn generic_servers_get_a_connect_url_and_their_own_callback() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
@@ -411,6 +416,7 @@ async fn generic_servers_get_a_connect_url_and_their_own_callback() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn manual_clients_use_the_admin_secret_and_configured_auth_method() {
     let (_directory, mut state) = crate::http::test_support::app_state().await;
     configure(&mut state);
