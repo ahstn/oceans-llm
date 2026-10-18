@@ -1749,6 +1749,9 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
         .label(toolset.toolset_key().to_string())
 }
 
+/// How many of a member's API keys `member_access` resolves at once.
+const MEMBER_KEY_RESOLUTIONS_AT_ONCE: usize = 4;
+
 /// The active tools a user can call, by ID, and the servers they are on, read
 /// by ID. Grants to the user or their team count as they reach any of the
 /// user's MCP clients. A grant to one of their API keys counts only while that
@@ -1758,9 +1761,9 @@ fn toolset_event(action: AuditAction, toolset: &McpToolsetView) -> AuditEvent {
 ///
 /// `server_id` limits the result to one server. Each MCP-capable key is
 /// resolved with its owner and team, as a request made with it would be, so
-/// tag rules on any of them apply. A user's keys are few, they resolve
-/// concurrently, and each resolution skips rule loading when none of its
-/// subjects has a rule.
+/// tag rules on any of them apply. At most `MEMBER_KEY_RESOLUTIONS_AT_ONCE`
+/// keys resolve at a time, and each resolution skips rule loading when none of
+/// its subjects has a rule.
 struct MemberAccess {
     tool_ids: Vec<Uuid>,
     servers: Vec<gateway_core::ExternalMcpServerRecord>,
@@ -1807,14 +1810,16 @@ async fn member_access(
     // Each key is resolved as runtime resolves a request made with it: the key,
     // its owner and their team together, so tag rules on any of them, include
     // and exclude alike, apply to what the key reaches.
-    // The keys resolve concurrently, so the page waits on the slowest one,
-    // not their sum.
-    let key_tools: Vec<(Uuid, Uuid, Uuid)> =
-        futures_util::future::try_join_all(keys.keys().map(|key_id| {
+    // A few keys resolve at a time: faster than one by one, and a user with
+    // many keys still holds only a few store connections.
+    use futures_util::{StreamExt, TryStreamExt};
+    let key_ids: Vec<Uuid> = keys.keys().copied().collect();
+    let key_tools: Vec<(Uuid, Uuid, Uuid)> = futures_util::stream::iter(key_ids)
+        .map(|key_id| {
             let mut key_subjects = subjects.clone();
             key_subjects.push(McpGrantSubject {
                 subject_kind: McpToolGrantSubjectKind::ApiKey,
-                subject_id: *key_id,
+                subject_id: key_id,
             });
             async move {
                 let access = state
@@ -1829,11 +1834,13 @@ async fn member_access(
                     access
                         .allowed_tools
                         .into_iter()
-                        .map(|tool| (*key_id, tool.mcp_tool_id, tool.mcp_server_id))
+                        .map(|tool| (key_id, tool.mcp_tool_id, tool.mcp_server_id))
                         .collect::<Vec<_>>(),
                 )
             }
-        }))
+        })
+        .buffer_unordered(MEMBER_KEY_RESOLUTIONS_AT_ONCE)
+        .try_collect::<Vec<_>>()
         .await?
         .into_iter()
         .flatten()
