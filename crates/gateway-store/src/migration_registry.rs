@@ -442,6 +442,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V71__mcp_oauth_state_issuer.sql"),
         postgres_sql: include_str!("../migrations/postgres/V71__mcp_oauth_state_issuer.sql"),
     },
+    MigrationManifest {
+        version: 72,
+        name: "mcp_discovery_run_started_ms",
+        checksum: "V72__mcp_discovery_run_started_ms.sql",
+        libsql_sql: include_str!("../migrations/V72__mcp_discovery_run_started_ms.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V72__mcp_discovery_run_started_ms.sql"),
+    },
 ];
 
 #[cfg(test)]

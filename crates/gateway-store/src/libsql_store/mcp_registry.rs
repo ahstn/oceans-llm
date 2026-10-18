@@ -6,7 +6,7 @@ use crate::mcp_tool_review::{
     HistoricalLookup, HistoricalVersion, StoredTool, StoredVersion, ToolWrite, VersionOp,
     discovered_definition, historical_lookups, keep_newest, plan_tool_writes,
     reuse_historical_versions, review_ops, reviewable_version, stale_discovery_check,
-    tool_write_ops,
+    tool_write_ops, unix_millis,
 };
 use crate::shared::{
     active_toolset_for_server_sql, foreign_credentials_conflict, foreign_credentials_sql,
@@ -978,11 +978,11 @@ impl McpRegistryRepository for LibsqlStore {
             let server = load_server(&tx, run.mcp_server_id).await?;
             let mut rows = tx
                 .query(
-                    "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND started_at > ?3)",
+                    "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND COALESCE(started_at_ms, started_at * 1000) > ?3)",
                     libsql::params![
                         run.mcp_server_id.to_string(),
                         ExternalMcpDiscoveryStatus::Success.as_str(),
-                        run.started_at.unix_timestamp(),
+                        unix_millis(run.started_at),
                     ],
                 )
                 .await
@@ -1003,8 +1003,9 @@ impl McpRegistryRepository for LibsqlStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             libsql::params![
                 run.discovery_run_id.to_string(),
@@ -1017,6 +1018,7 @@ impl McpRegistryRepository for LibsqlStore {
                 run.schema_set_hash.as_deref(),
                 run.error_summary.as_deref(),
                 details_json,
+                unix_millis(run.started_at),
             ],
         )
         .await
@@ -1075,8 +1077,9 @@ impl McpRegistryRepository for LibsqlStore {
             r#"
             INSERT INTO external_mcp_discovery_runs (
                 discovery_run_id, mcp_server_id, status, started_at, finished_at,
-                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                discovered_tool_count, active_tool_count, schema_set_hash, error_summary, details_json,
+                started_at_ms
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             libsql::params![
                 run.discovery_run_id.to_string(),
@@ -1089,6 +1092,7 @@ impl McpRegistryRepository for LibsqlStore {
                 run.schema_set_hash.as_deref(),
                 run.error_summary.as_deref(),
                 details_json,
+                unix_millis(run.started_at),
             ],
         )
         .await

@@ -86,10 +86,10 @@ pub(crate) enum ToolWrite {
 }
 
 /// Refuses a guarded discovery commit whose results are stale: the server was
-/// disabled while discovery ran, or a discovery that started later has
-/// already committed. Committing either would serve tools for a server an
-/// admin turned off, or roll versions back. The ownership guard covers owner,
-/// URL and auth changes.
+/// disabled while discovery ran, or a discovery that started later (to the
+/// millisecond) has already committed. Committing either would serve tools
+/// for a server an admin turned off, or roll versions back. The ownership
+/// guard covers owner, URL and auth changes.
 pub(crate) fn stale_discovery_check(
     server_active: bool,
     newer_run_committed: bool,
@@ -106,6 +106,12 @@ pub(crate) fn stale_discovery_check(
         ));
     }
     Ok(())
+}
+
+/// A discovery start in Unix milliseconds, which orders runs that start in
+/// the same second.
+pub(crate) fn unix_millis(at: OffsetDateTime) -> i64 {
+    (at.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
 pub(crate) fn definition_of(tool: &ExternalMcpToolRecord) -> McpToolDefinition {
