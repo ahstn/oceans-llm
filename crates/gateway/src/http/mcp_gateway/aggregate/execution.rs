@@ -404,6 +404,7 @@ impl CatalogInvocation<'_> {
                     result_json: self.result_json,
                     metadata,
                     occurred_at: OffsetDateTime::now_utc(),
+                    tool_schema_version: Some(self.record.tool.schema_version),
                 },
             )
             .await;

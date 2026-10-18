@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ import type {
   McpToolView,
 } from '@/types/api'
 import { OauthDiscoveryPanel } from './-oauth-discovery'
+import { ToolPolicyEditor } from './-tool-policy'
 import type { CredentialBindingFormState, ServerFormState, ServerVisibility } from './-server-forms'
 
 /** What the caller may set on a server's ownership in the server form. */
@@ -59,6 +61,11 @@ export type ServerOwnershipOptions = {
   platformOwned: boolean
   /** Teams a platform admin can register a new server for. */
   teams?: AdminTeamOption[]
+  /**
+   * Only platform admins review tool changes, so only they can require
+   * approval for them.
+   */
+  canRequireApproval: boolean
 }
 
 const AUTH_MODES = [
@@ -210,6 +217,7 @@ export function ServerToolsPanel({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onToolUpdated,
 }: {
   tools: McpToolView[]
   toolsPending: boolean
@@ -219,6 +227,8 @@ export function ServerToolsPanel({
   onClearSelection: () => void
   /** Omitted when the caller cannot manage tool sets. */
   onAddToToolset?: () => void
+  /** Omitted when the caller cannot edit tool policy. */
+  onToolUpdated?: (tool: McpToolView) => void
 }) {
   const selected = new Set(selectedToolIds)
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
@@ -297,6 +307,7 @@ export function ServerToolsPanel({
               selected={selected.has(tool.id)}
               expanded={expandedToolIds.has(tool.id)}
               onToggleExpanded={() => toggleExpanded(tool.id)}
+              onToolUpdated={onToolUpdated}
               // Selecting only feeds a tool set, so it is offered only with that action.
               onToggleTool={
                 onAddToToolset
@@ -344,12 +355,14 @@ function ToolDisclosureRow({
   expanded,
   onToggleExpanded,
   onToggleTool,
+  onToolUpdated,
 }: {
   tool: McpToolView
   selected: boolean
   expanded: boolean
   onToggleExpanded: () => void
   onToggleTool?: () => void
+  onToolUpdated?: (tool: McpToolView) => void
 }) {
   const schema = formatToolSchema(tool.input_schema)
   const description = tool.description?.trim()
@@ -370,9 +383,7 @@ function ToolDisclosureRow({
               <div className="text-subtle-foreground truncate text-sm">{description}</div>
             ) : null}
           </div>
-          <Badge variant={tool.is_active ? 'default' : 'secondary'}>
-            {tool.is_active ? 'Active' : 'Inactive'}
-          </Badge>
+          <ToolStatusBadge tool={tool} />
           <CollapsibleTrigger asChild>
             <Button
               type="button"
@@ -415,13 +426,14 @@ function ToolDisclosureRow({
               ) : null}
               {toolAnnotationBadges(tool.annotations).length > 0 ? (
                 <div className="min-w-0 md:col-span-3">
-                  <dt className="text-subtle-foreground text-xs font-medium">Hints</dt>
+                  <dt className="text-subtle-foreground text-xs font-medium">Upstream hints</dt>
                   <dd className="mt-1">
                     <ToolAnnotationBadges tool={tool} />
                   </dd>
                 </div>
               ) : null}
             </dl>
+            {onToolUpdated ? <ToolPolicyEditor tool={tool} onToolUpdated={onToolUpdated} /> : null}
             <div className="mt-4 max-w-full min-w-0">
               <div className="text-subtle-foreground mb-2 text-xs font-medium">JSON schema</div>
               {schema ? (
@@ -447,6 +459,25 @@ function ToolDisclosureRow({
         </CollapsibleContent>
       </div>
     </Collapsible>
+  )
+}
+
+const reviewBadges: Record<string, { label: string; variant: 'warning' | 'destructive' }> = {
+  pending_change: { label: 'Change pending', variant: 'warning' },
+  pending_review: { label: 'Pending review', variant: 'warning' },
+  rejected: { label: 'Rejected', variant: 'destructive' },
+}
+
+/** Active state, or the review state when a change waits or was rejected. */
+function ToolStatusBadge({ tool }: { tool: McpToolView }) {
+  const review = tool.is_active ? reviewBadges[tool.approval_status] : undefined
+  if (review) {
+    return <Badge variant={review.variant}>{review.label}</Badge>
+  }
+  return (
+    <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+      {tool.is_active ? 'Active' : 'Inactive'}
+    </Badge>
   )
 }
 
@@ -943,6 +974,14 @@ export function ServerFormFields({
         />
       </div>
       <ServerAuthFields form={form} onFormChange={onFormChange} />
+      {(ownership?.canRequireApproval ?? true) ? (
+        <ApproveToolChangesField
+          checked={form.approve_tool_changes}
+          onCheckedChange={(approve_tool_changes) =>
+            onFormChange({ ...form, approve_tool_changes })
+          }
+        />
+      ) : null}
       {ownership ? (
         <ServerOwnershipFields
           mode={mode}
@@ -1114,6 +1153,29 @@ function ServerOwnershipFields({
         />
       </Field>
     </>
+  )
+}
+
+function ApproveToolChangesField({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}) {
+  return (
+    <Field orientation="horizontal" className="md:col-span-2">
+      <Switch id="mcp-approve-tool-changes" checked={checked} onCheckedChange={onCheckedChange} />
+      <div className="flex flex-col gap-1">
+        <FieldLabel htmlFor="mcp-approve-tool-changes">
+          Require approval for tool changes
+        </FieldLabel>
+        <FieldDescription>
+          New tools and changed definitions wait in Reviews until an admin approves them. A
+          description-only change keeps the approved version served meanwhile.
+        </FieldDescription>
+      </div>
+    </Field>
   )
 }
 

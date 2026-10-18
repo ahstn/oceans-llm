@@ -499,6 +499,14 @@ pub struct ApiKeyRecord {
     pub revoked_at: Option<OffsetDateTime>,
 }
 
+impl ApiKeyRecord {
+    /// Whether the key can still authenticate: active and not revoked.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.status == ApiKeyStatus::Active && self.revoked_at.is_none()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewApiKeyRecord {
     pub name: String,
@@ -1841,6 +1849,9 @@ pub struct ExternalMcpServerRecord {
     /// settings: a team may have chosen its URL and auth endpoints, which a
     /// platform admin has not vouched for.
     pub team_destinations: bool,
+    /// Hold new and changed tools until an admin approves them.
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 impl ExternalMcpServerRecord {
@@ -1865,6 +1876,8 @@ pub struct NewExternalMcpServerRecord {
     pub timeout_ms: i64,
     pub ownership: McpServerOwnership,
     pub created_at: OffsetDateTime,
+    #[serde(default)]
+    pub approve_tool_changes: bool,
 }
 
 /// A settings save. The owning team is changed only by
@@ -1904,6 +1917,7 @@ pub struct UpdateExternalMcpServerRecord {
     /// destinations, clearing [`ExternalMcpServerRecord::team_destinations`].
     pub vouch_for_destinations: bool,
     pub updated_at: OffsetDateTime,
+    pub approve_tool_changes: bool,
 }
 
 /// The outcome of [`UpdateExternalMcpServerRecord`]. `previous` is `None`
@@ -1955,6 +1969,12 @@ pub struct ExternalMcpToolRecord {
     pub input_schema: Value,
     #[serde(default)]
     pub metadata: McpToolMetadata,
+    /// Admin tags and annotation overrides. Discovery never writes them.
+    #[serde(default)]
+    pub policy: crate::mcp_tool_policy::McpToolPolicy,
+    /// Approval state. The definition fields hold the served version.
+    #[serde(default)]
+    pub review: crate::mcp_tool_review::McpToolReviewState,
     pub schema_hash: String,
     pub schema_version: i64,
     pub is_active: bool,
@@ -2361,8 +2381,9 @@ pub struct UpsertMcpToolGrantRecord {
 /// Which tool columns an access resolution loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpToolProjection {
-    /// Identity, schema and lifecycle columns. `metadata` is left empty because
-    /// authorization only needs to know which tools are granted.
+    /// Identity, schema and lifecycle columns, plus the annotations and admin
+    /// policy that tag rules are evaluated from. The title and output schema
+    /// are left out, because authorization does not read them.
     Access,
     /// As [`Self::Access`], without the counts: `exposed_tool_count` and
     /// `filtered_tool_count` are left at zero, so no count of the whole
@@ -2539,6 +2560,9 @@ pub struct McpToolInvocationRecord {
     /// `resources/read`, or `prompts/get`. Unparseable requests use `invalid`.
     #[serde(default = "default_mcp_invocation_method")]
     pub mcp_method: String,
+    /// Served schema version of the tool a `tools/call` used.
+    #[serde(default)]
+    pub tool_schema_version: Option<i64>,
     pub occurred_at: OffsetDateTime,
 }
 

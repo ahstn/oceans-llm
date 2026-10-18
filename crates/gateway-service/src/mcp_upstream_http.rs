@@ -145,6 +145,7 @@ mod tests {
     fn server(url: &str, owner_team_id: Option<Uuid>) -> ExternalMcpServerRecord {
         let now = OffsetDateTime::now_utc();
         ExternalMcpServerRecord {
+            approve_tool_changes: false,
             mcp_server_id: Uuid::new_v4(),
             server_key: "notes".to_string(),
             display_name: "Notes".to_string(),

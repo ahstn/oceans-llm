@@ -12,6 +12,7 @@ import {
   getUsers,
 } from '@/server/admin-data.functions'
 import type { AdminTeamOption, ApiKeyOwnerUserView, AuthSessionView } from '@/types/api'
+import { getMcpTagRules } from '@/server/mcp-policy-data.functions'
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
 import { McpNavigation } from './-navigation'
@@ -46,21 +47,24 @@ export const Route = createFileRoute('/mcp/')({
         recommended: [],
         toolsets: [],
         grants: [],
+        tagRules: [],
         apiKeys: [],
         users: [],
         serviceAccounts: [],
         teams: [],
       }
     }
-    const [servers, recommended, toolsets, grants, apiKeys, directory] = await Promise.all([
-      getMcpServers({ data: { include_disabled: true } }),
-      getRecommendedMcpServers(),
-      // Tool sets and the full identity list are platform-admin only.
-      platformAdmin ? getMcpToolsets({ data: { include_disabled: true } }) : null,
-      getMcpGrants(),
-      getApiKeys(),
-      platformAdmin ? getUsers().then(toPlatformDirectory) : loadTeamDirectory(context.session),
-    ])
+    const [servers, recommended, toolsets, grants, tagRules, apiKeys, directory] =
+      await Promise.all([
+        getMcpServers({ data: { include_disabled: true } }),
+        getRecommendedMcpServers(),
+        // Tool sets, tag rules and the full identity list are platform-admin only.
+        platformAdmin ? getMcpToolsets({ data: { include_disabled: true } }) : null,
+        getMcpGrants(),
+        platformAdmin ? getMcpTagRules() : null,
+        getApiKeys(),
+        platformAdmin ? getUsers().then(toPlatformDirectory) : loadTeamDirectory(context.session),
+      ])
     return {
       platformAdmin,
       readOnly: false,
@@ -70,6 +74,7 @@ export const Route = createFileRoute('/mcp/')({
       recommended: recommended.data.items,
       toolsets: toolsets?.data.items ?? [],
       grants: grants.data.items,
+      tagRules: tagRules?.data.items ?? [],
       apiKeys: apiKeys.data.items,
       users: directory.users ?? apiKeys.data.users,
       serviceAccounts: apiKeys.data.service_accounts,
@@ -125,6 +130,7 @@ export function McpWorkspacePage() {
           {tab === 'access' ? (
             <AccessTab
               grants={data.grants}
+              tagRules={data.tagRules}
               servers={data.servers}
               toolsets={data.toolsets}
               subjects={{

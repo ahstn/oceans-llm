@@ -64,6 +64,8 @@ pub struct CreateExternalMcpServerInput {
     pub timeout_ms: Option<i64>,
     /// Resolved by [`crate::McpOwnership::new_server_ownership`].
     pub ownership: McpServerOwnership,
+    /// Hold new and changed tools for review. Off when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +94,8 @@ pub struct UpdateExternalMcpServerInput {
     pub retarget_owner_credentials_only: bool,
     /// The URL and auth settings the save was authorized against.
     pub expected_server: Option<McpServerOwnershipGuard>,
+    /// Hold new and changed tools for review. Kept as it is when omitted.
+    pub approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -231,6 +235,7 @@ where
                 "a platform-owned MCP server is always visible to the organisation".to_string(),
             ));
         }
+        let approve_tool_changes = input.approve_tool_changes.unwrap_or(false);
         let resolved = self.resolve_create_input(input)?;
         let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
@@ -268,6 +273,7 @@ where
                 auth_config: resolved.auth_config,
                 timeout_ms,
                 created_at: now,
+                approve_tool_changes,
             })
             .await
             .map_err(Into::into)
@@ -323,6 +329,9 @@ where
                 expected_visibility: input.expected_visibility,
                 vouch_for_destinations: input.vouch_for_destinations,
                 updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: input
+                    .approve_tool_changes
+                    .unwrap_or(existing.approve_tool_changes),
             })
             .await?;
         Ok((
@@ -940,6 +949,7 @@ mod tests {
                 auth_config: Map::new(),
                 timeout_ms: None,
                 ownership: McpServerOwnership::default(),
+                approve_tool_changes: None,
             })
             .expect("resolve input");
 
@@ -964,6 +974,55 @@ mod tests {
 
     #[async_trait]
     impl McpRegistryRepository for NoopMcpRegistryRepository {
+        async fn list_mcp_tool_versions(
+            &self,
+            _mcp_tool_id: Uuid,
+            _query: &gateway_core::McpToolVersionQuery,
+        ) -> Result<Vec<gateway_core::McpToolVersionRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn review_mcp_tool_version(
+            &self,
+            _mcp_tool_id: Uuid,
+            _schema_version: i64,
+            _decision: gateway_core::McpToolReviewDecision,
+            _reviewed_by_user_id: Option<Uuid>,
+            _reviewed_at: OffsetDateTime,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tool(
+            &self,
+            _mcp_tool_id: Uuid,
+        ) -> Result<Option<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_tools(
+            &self,
+            _mcp_tool_ids: &[Uuid],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_tags(
+            &self,
+            _mcp_tool_id: Uuid,
+            _tags: &[String],
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_mcp_tool_annotation_overrides(
+            &self,
+            _mcp_tool_id: Uuid,
+            _overrides: &gateway_core::McpAnnotationOverrides,
+        ) -> Result<gateway_core::Updated<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_external_mcp_servers(
             &self,
             _include_disabled: bool,

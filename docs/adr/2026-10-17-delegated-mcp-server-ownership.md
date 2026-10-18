@@ -20,13 +20,14 @@ Teams already have Owner, Admin and Member roles, and Spend Controls already let
 
 ### 1. Ownership
 
-`external_mcp_servers` gains three columns (migration `V67__mcp_server_ownership.sql`, both backends):
+`external_mcp_servers` gains four columns (migration `V70__mcp_server_ownership.sql`, both backends):
 
 | Column | Meaning |
 |---|---|
 | `owner_team_id` | The owning team. `NULL` means the server is platform-owned. |
 | `owner_contact` | Free text, up to 256 characters: an email address, a chat channel or an on-call alias. |
 | `visibility` | `team` or `organisation`. |
+| `team_destinations` | `1` once a team has owned the server, until a platform admin saves its settings. Its traffic keeps the public-address guard while set. |
 
 Existing servers become platform-owned and `organisation`, so nothing changes for them. The team reference restricts deletion: a team that still owns servers cannot be deleted, so a team-only server never loses its owner. Teams are deactivated, not deleted, today. The API returns `owner_team_id: null` for a platform-owned server, and the UI shows its owner as "Platform admins", so it cannot be mistaken for a team named "Platform".
 

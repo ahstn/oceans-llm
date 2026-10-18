@@ -22,6 +22,7 @@ pub mod mcp_oauth_discovery;
 pub mod mcp_ownership;
 pub mod mcp_registry;
 pub mod mcp_token_overhead;
+pub mod mcp_tool_policy;
 pub mod mcp_upstream_auth;
 pub mod mcp_upstream_http;
 pub mod model_access;
@@ -86,7 +87,7 @@ pub use icon_identity::{
     provider_icon_key_from_metadata, resolve_model_icon_key, resolve_provider_display,
     resolve_provider_display_from_parts,
 };
-pub use mcp_access::{McpAccess, grant_subjects};
+pub use mcp_access::{McpAccess, McpAccessPreview, grant_subjects};
 pub use mcp_catalog::{
     CallMcpToolInput, DescribeMcpToolInput, DescribeMcpToolOutput, MAX_SEARCH_LIMIT,
     MCP_CATALOG_RANKER, McpCatalog, McpCatalogSearchItem, McpCatalogServerView,
@@ -126,6 +127,9 @@ pub use mcp_registry::{
     McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use mcp_token_overhead::{McpTokenOverhead, McpTokenOverheadInput, McpTokenOverheadSummary};
+pub use mcp_tool_policy::{
+    MAX_TAG_RULE_PREVIEW_MATCHES, McpTagRuleMatch, McpTagRulePreview, McpToolPolicyService,
+};
 pub use mcp_upstream_auth::{
     API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,

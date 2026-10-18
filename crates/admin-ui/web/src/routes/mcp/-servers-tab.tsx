@@ -1,6 +1,7 @@
 import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
 import {
   Cancel01Icon,
+  CheckListIcon,
   Configuration01Icon,
   Delete02Icon,
   Edit02Icon,
@@ -64,6 +65,7 @@ import {
   ServerToolsPanel,
 } from './-components'
 import { platformMcpScope, type McpWorkspaceScope } from './-scope'
+import { ToolReviewsPanel } from './-tool-reviews'
 import {
   emptyCredentialBindingForm,
   emptyServerForm,
@@ -76,17 +78,20 @@ import {
   type ServerFormState,
 } from './-server-forms'
 
-type ServerSection = 'overview' | 'configuration' | 'tools' | 'credentials'
+type ServerSection = 'overview' | 'configuration' | 'tools' | 'reviews' | 'credentials'
 
 const serverSections = [
   { value: 'overview', label: 'Overview', icon: ViewIcon },
   { value: 'configuration', label: 'Configuration', icon: Configuration01Icon },
   { value: 'tools', label: 'Tools', icon: ToolsIcon },
+  { value: 'reviews', label: 'Reviews', icon: CheckListIcon },
   { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
 // Servers the caller cannot manage are read-only: no configuration or credentials.
 const readOnlySections = new Set<ServerSection>(['overview', 'tools'])
+// Tool reviews and tool policy are platform-managed, like tag rules.
+const platformSections = new Set<ServerSection>(['reviews'])
 
 // Server selection coordinates CRUD, discovery, tools, and credentials through one lifecycle.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -453,6 +458,7 @@ export function ServersTab({
           canPublish: scope.canPublish,
           platformOwned: scope.platformAdmin,
           teams: scope.platformAdmin ? scope.teams : undefined,
+          canRequireApproval: scope.platformAdmin,
         }}
         onOpenChange={setCreateDialogOpen}
         onFormChange={setFormState}
@@ -492,6 +498,14 @@ export function ServersTab({
         onToggleTool={toggleToolSelection}
         onClearSelection={() => setSelectedToolIds([])}
         onAddToToolset={scope.platformAdmin ? handleAddToToolset : undefined}
+        onToolUpdated={
+          scope.platformAdmin
+            ? (updated) =>
+                setTools((current) =>
+                  current.map((tool) => (tool.id === updated.id ? updated : tool)),
+                )
+            : undefined
+        }
         onTransfer={handleTransferOwnership}
         onCredentialFormChange={setCredentialForm}
         onCredentialSubmit={handleCreateCredentialBinding}
@@ -529,6 +543,7 @@ function ServerDetailDialog({
   onToggleTool,
   onClearSelection,
   onAddToToolset,
+  onToolUpdated,
   onTransfer,
   onCredentialFormChange,
   onCredentialSubmit,
@@ -559,6 +574,7 @@ function ServerDetailDialog({
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
   onAddToToolset?: () => void
+  onToolUpdated?: (tool: McpToolView) => void
   onTransfer: (server: McpServerView, ownerTeamId: string | null) => void
   onCredentialFormChange: (form: CredentialBindingFormState) => void
   onCredentialSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -571,7 +587,11 @@ function ServerDetailDialog({
     onSectionChange(nextSection)
   }
 
-  const { canManage, sections, visibleSection } = useServerSections(server, section)
+  const { canManage, sections, visibleSection } = useServerSections(
+    server,
+    section,
+    scope.platformAdmin,
+  )
 
   return (
     <Dialog open={Boolean(server)} onOpenChange={onOpenChange}>
@@ -709,6 +729,16 @@ function ServerDetailDialog({
                     onToggleTool={onToggleTool}
                     onClearSelection={onClearSelection}
                     onAddToToolset={onAddToToolset}
+                    onToolUpdated={onToolUpdated}
+                  />
+                ) : null}
+                {visibleSection === 'reviews' && onToolUpdated ? (
+                  <ToolReviewsPanel
+                    server={server}
+                    tools={tools}
+                    toolsPending={toolsPending}
+                    toolsError={toolsError}
+                    onToolUpdated={onToolUpdated}
                   />
                 ) : null}
                 {visibleSection === 'credentials' ? (
@@ -733,11 +763,16 @@ function ServerDetailDialog({
 }
 
 /** Which detail sections the caller sees for `server`, and the one to show. */
-function useServerSections(server: McpServerView | null, section: ServerSection) {
+function useServerSections(
+  server: McpServerView | null,
+  section: ServerSection,
+  platformAdmin: boolean,
+) {
   const canManage = server?.can_manage ?? false
-  const sections = serverSections.filter((entry) => canManage || readOnlySections.has(entry.value))
-  const visibleSection: ServerSection =
-    canManage || readOnlySections.has(section) ? section : 'overview'
+  const shown = (value: ServerSection) =>
+    (canManage || readOnlySections.has(value)) && (platformAdmin || !platformSections.has(value))
+  const sections = serverSections.filter((entry) => shown(entry.value))
+  const visibleSection: ServerSection = shown(section) ? section : 'overview'
   return { canManage, sections, visibleSection }
 }
 
@@ -818,7 +853,11 @@ function ServerConfigurationForm({
       <ServerFormFields
         mode="edit"
         form={form}
-        ownership={{ canPublish: scope.canPublish, platformOwned: !server.owner_team_id }}
+        ownership={{
+          canPublish: scope.canPublish,
+          platformOwned: !server.owner_team_id,
+          canRequireApproval: scope.platformAdmin,
+        }}
         onFormChange={onFormChange}
       />
       <DialogFooter className="border-border mt-auto border-t pt-4">

@@ -51,6 +51,7 @@ pub(super) async fn seed_server(state: &AppState, server_key: &str, server_url: 
             auth_config: Map::new(),
             timeout_ms: 2_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("server");
@@ -132,6 +133,7 @@ async fn server_protected_resource_metadata_names_only_published_servers() {
     state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            approve_tool_changes: false,
             ownership: gateway_core::McpServerOwnership::team(team.team_id, None),
             server_key: "private".to_string(),
             display_name: "Private notes".to_string(),

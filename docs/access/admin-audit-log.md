@@ -32,12 +32,14 @@ Each entry shows:
 | MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.discovery_refreshed`, `mcp_server.ownership_transferred` |
 | MCP tool sets | `mcp_toolset.created`, `mcp_toolset.updated`, `mcp_toolset.disabled`, `mcp_toolset.tools_replaced` |
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
+| MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tool.version_approved`, `mcp_tool.version_rejected` |
+| MCP tag rules | `mcp_tag_rule.set`, `mcp_tag_rule.revoked` |
 | MCP credentials | `mcp_credential_binding.set` (create, replace, or a user's OAuth connect), `mcp_credential_binding.revoked` |
 | Provider credentials | `provider_credential.set`, `provider_credential.deleted` |
 | Rate limits | `rate_limit_policy.created`, `rate_limit_policy.updated`, `rate_limit_policy.deleted` |
 | Other | `pricing_catalog.refreshed`, `review_agent_repository.created`, `.updated`, `.disabled`, `.reactivated` |
 
-A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository or MCP server, removing a member another request already removed, signing out twice with the same session, or saving a user, team, budget, API key's access, MCP tool set, review agent repository, rate-limit policy or service account unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
+A change that fails writes no entry. That includes validation errors, conflicts and denied permissions. Repeating a change that has already happened, such as revoking a revoked key, adding a team's existing members, disabling a disabled repository or MCP server, removing a member another request already removed, signing out twice with the same session, or saving a user, team, budget, API key's access, MCP tool set, MCP tool's tags or annotation overrides, review agent repository, rate-limit policy or service account unchanged, writes no entry either. Some identity changes are made of several writes; if one fails after another has landed, the change is recorded with `outcome: partial` and the error code in **Details**, because part of it took effect.
 
 An invited user's first OIDC or OAuth sign-in records `user.invite_redeemed`, as setting a password from an invite does.
 

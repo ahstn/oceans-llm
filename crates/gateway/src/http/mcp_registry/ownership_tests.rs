@@ -119,6 +119,7 @@ impl TestContext {
         let now = OffsetDateTime::now_utc();
         let server = store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                approve_tool_changes: false,
                 server_key: key.to_string(),
                 display_name: key.to_string(),
                 description: None,
@@ -1249,6 +1250,7 @@ async fn servers_a_caller_cannot_manage_hide_their_url_secrets_and_auth_config()
         .state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            approve_tool_changes: false,
             server_key: "published".to_string(),
             display_name: "Published".to_string(),
             description: None,
@@ -1438,6 +1440,7 @@ async fn an_inherited_client_secret_stays_bound_to_its_token_endpoint() {
         .state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            approve_tool_changes: false,
             server_key: "files".to_string(),
             display_name: "Files".to_string(),
             description: None,
@@ -1494,6 +1497,7 @@ async fn inherited_internal_endpoints_are_rechecked_when_the_server_moves() {
         .state
         .store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            approve_tool_changes: false,
             server_key: "files".to_string(),
             display_name: "Files".to_string(),
             description: None,
@@ -1691,15 +1695,15 @@ async fn member_access_follows_each_api_keys_mcp_scopes() {
         "{body}"
     );
 
-    // Once revoked, the key authenticates nowhere, so it previews nothing.
+    // Once revoked, the key authenticates nowhere, so its preview is refused.
     context
         .state
         .store
         .revoke_api_key(id, OffsetDateTime::now_utc())
         .await
         .unwrap();
-    let (_, body) = preview(id).await;
-    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+    let (status, body) = preview(id).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 }
 
 #[tokio::test]
@@ -1869,10 +1873,10 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
             .await
         }
     };
-    // Runtime refuses a service account's keys until it has an active budget.
+    // Runtime refuses a service account's keys until it has an active budget,
+    // so the key's preview is refused too.
     let (status, body) = preview().await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     gateway_core::BudgetRepository::upsert_active_budget(
         &*context.state.store,
         &gateway_core::BudgetScope::ServiceAccount {
@@ -1936,17 +1940,18 @@ async fn previews_ignore_keys_of_disabled_service_accounts() {
         "{body}"
     );
 
-    // Runtime refuses keys of a disabled service account, so the preview does.
+    // Runtime refuses keys of a disabled service account, so both previews are
+    // refused.
     context
         .state
         .store
         .disable_service_account(account.service_account_id, now)
         .await
         .unwrap();
-    let (_, body) = preview().await;
-    assert_eq!(body["data"]["tools"], json!([]), "{body}");
-    let (_, body) = direct_preview().await;
-    assert_eq!(body["data"]["tools"], json!([]), "{body}");
+    let (status, body) = preview().await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = direct_preview().await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 }
 
 #[tokio::test]
@@ -2122,7 +2127,7 @@ async fn a_caller_chosen_credential_id_is_created_once() {
 }
 
 #[tokio::test]
-async fn a_revoked_key_hides_only_its_own_tools_in_a_combined_preview() {
+async fn revoked_keys_and_keys_mixed_with_other_subjects_are_not_previewed() {
     let context = TestContext::new().await;
     let server = context
         .server(
@@ -2162,16 +2167,19 @@ async fn a_revoked_key_hides_only_its_own_tools_in_a_combined_preview() {
         }
     };
     let tools = |body: &Value| body["data"]["tools"].as_array().map(Vec::len);
+    // A revoked key cannot authenticate, so it has nothing to preview.
     let (status, body) = preview(json!({ "api_key_id": key, "server_id": server.id })).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(tools(&body), Some(0), "a revoked key reaches nothing");
-    // The member's own grant still counts beside the revoked key.
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    // A key already brings its owner and team, so it is not mixed with others.
     let (status, body) = preview(json!({
         "api_key_id": key,
         "user_id": member,
         "server_id": server.id,
     }))
     .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    // The member's own grant previews on its own.
+    let (status, body) = preview(json!({ "user_id": member, "server_id": server.id })).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(tools(&body), Some(1), "{body}");
 }
@@ -2186,8 +2194,7 @@ async fn combined_previews_judge_each_subject_by_its_own_team() {
         )
         .await;
     let platform = context.platform_admin().await;
-    let member_a = context.member(context.team_a).await;
-    let key_a = context.user_api_key(member_a).await;
+    let team_a = context.team_a;
     let member_b = context.member(context.team_b).await;
     let (status, body) = context
         .grant(&platform, "user", member_b, "tool", server_b.tool_id)
@@ -2198,15 +2205,14 @@ async fn combined_previews_judge_each_subject_by_its_own_team() {
             State(context.state.clone()),
             platform.headers.clone(),
             Query(
-                serde_json::from_value(json!({ "api_key_id": key_a, "user_id": member_b }))
-                    .unwrap(),
+                serde_json::from_value(json!({ "team_id": team_a, "user_id": member_b })).unwrap(),
             ),
         )
         .await,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // Team B's member keeps the team-only tool though the key is team A's.
+    // Team B's member keeps the team-only tool beside a team A subject.
     assert_eq!(
         body["data"]["tools"]
             .as_array()

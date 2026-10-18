@@ -130,6 +130,7 @@ async fn server(state: &AppState, origin: &str, registration: Value) -> External
             auth_config: serde_json::from_value(auth_config).expect("auth config"),
             timeout_ms: 30_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("server")

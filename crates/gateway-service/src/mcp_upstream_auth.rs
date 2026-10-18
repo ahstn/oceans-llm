@@ -1174,6 +1174,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             disabled_at: None,
+            approve_tool_changes: false,
         }
     }
 }

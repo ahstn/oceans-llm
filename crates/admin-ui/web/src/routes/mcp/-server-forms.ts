@@ -21,6 +21,7 @@ export type ServerFormState = {
   owner_contact: string
   /** A platform admin's choice of owning team on create; blank is the platform. */
   owner_team_id: string
+  approve_tool_changes: boolean
 }
 
 export type ServerVisibility = 'team' | 'organisation'
@@ -51,6 +52,7 @@ export function emptyServerForm(visibility: ServerVisibility = 'organisation'): 
     visibility,
     owner_contact: '',
     owner_team_id: '',
+    approve_tool_changes: false,
   }
 }
 
@@ -85,6 +87,7 @@ export function formFromRecommended(
     auth_mode: server.auth_mode,
     auth_config: JSON.stringify(server.auth_config ?? {}, null, 2),
     timeout_ms: '30000',
+    approve_tool_changes: false,
   }
 }
 
@@ -100,6 +103,7 @@ export function formFromServer(server: McpServerView): ServerFormState {
     visibility: server.visibility === 'team' ? 'team' : 'organisation',
     owner_contact: server.owner_contact ?? '',
     owner_team_id: server.owner_team_id ?? '',
+    approve_tool_changes: server.approve_tool_changes,
   }
 }
 
@@ -121,6 +125,7 @@ export function formToCreateInput(form: ServerFormState): CreateMcpServerInput |
     owner_contact: optionalString(form.owner_contact),
     // A team admin leaves it blank; the gateway registers for their team.
     owner_team_id: optionalString(form.owner_team_id),
+    approve_tool_changes: form.approve_tool_changes,
   }
 }
 
@@ -139,6 +144,7 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
     visibility: form.visibility,
     // An empty string clears the contact.
     owner_contact: form.owner_contact.trim(),
+    approve_tool_changes: form.approve_tool_changes,
   }
 }
 

@@ -512,6 +512,10 @@ discovery that captures them updates the hash without bumping the version unless
 the input schema also changed. See
 [Store MCP tool metadata in the schema hash](../adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md).
 
+Every new hash is stored as a tool version. With **Require approval for tool
+changes** on, new and changed tools wait for an admin before they are served.
+See [Tool versions and approval](../mcp/mcp-tool-access.md#tool-versions-and-approval).
+
 ## Access
 
 On `/mcp`, `search_tools`, `describe_tool`, and `call_tool` resolve only active tools granted to the authenticated API key, owner user, owner service account, or team.

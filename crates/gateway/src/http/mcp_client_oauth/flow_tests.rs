@@ -885,6 +885,7 @@ async fn consent_names_only_servers_the_user_can_reach() {
     for (key, team_id) in [("own-notes", own.team_id), ("other-notes", other.team_id)] {
         store
             .create_external_mcp_server(&NewExternalMcpServerRecord {
+                approve_tool_changes: false,
                 ownership: McpServerOwnership::team(team_id, None),
                 server_key: key.to_string(),
                 display_name: format!("{key} display"),

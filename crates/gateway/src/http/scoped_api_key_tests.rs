@@ -322,6 +322,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
             timeout_ms: 2_000,
             ownership: Default::default(),
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");

@@ -1,3 +1,5 @@
+mod tool_policy;
+mod tool_reviews;
 mod views;
 
 #[cfg(test)]
@@ -41,6 +43,8 @@ use crate::http::{
     state::AppState,
 };
 use crate::observability::McpDiscoveryRefreshMetric;
+pub use tool_policy::*;
+pub use tool_reviews::*;
 use views::*;
 
 #[utoipa::path(
@@ -281,6 +285,7 @@ pub async fn create_mcp_server(
             auth_config: request.auth_config,
             timeout_ms: request.timeout_ms,
             ownership,
+            approve_tool_changes: request.approve_tool_changes,
         })
         .await?;
     let view = map_server(server.clone());
@@ -378,6 +383,7 @@ pub async fn update_mcp_server(
                 expected_server: Some(
                     McpServerOwnershipGuard::of(&existing).with_auth_settings(&existing),
                 ),
+                approve_tool_changes: request.approve_tool_changes,
             },
         )
         .await?;
@@ -1537,10 +1543,19 @@ pub async fn preview_mcp_effective_access(
     Query(query): Query<McpEffectiveAccessQuery>,
 ) -> Result<Json<Envelope<McpEffectiveAccessPayload>>, AppError> {
     let (_, scope) = require_mcp_admin_scope(&state, &headers).await?;
-    let subjects = preview_subjects(&query);
-    if subjects.is_empty() {
+    let selected = preview_subjects(&query);
+    if selected.is_empty() {
         return Err(GatewayError::InvalidRequest(
             "at least one access preview subject is required".to_string(),
+        )
+        .into());
+    }
+    // A key preview already includes the key's owner and team, and its scope
+    // limits apply to everything it resolves. A key mixed with another
+    // subject describes no real caller.
+    if query.api_key_id.is_some() && selected.len() > 1 {
+        return Err(GatewayError::InvalidRequest(
+            "an API key access preview cannot include other subjects; its owner and team are included automatically".to_string(),
         )
         .into());
     }
@@ -1554,7 +1569,7 @@ pub async fn preview_mcp_effective_access(
         })?;
         let ownership = ownership(&state);
         ownership.managed_server(&scope, server_id).await?;
-        for subject in &subjects {
+        for subject in &selected {
             if ownership.subject_team(subject.clone()).await? != Some(team_id) {
                 return Err(AppError(GatewayError::Auth(
                     gateway_core::AuthError::InsufficientPrivileges,
@@ -1562,26 +1577,26 @@ pub async fn preview_mcp_effective_access(
             }
         }
     }
-    // Each subject is resolved on its own, so a key's or service account's
-    // restrictions apply only to the tools that subject contributes, and a
-    // revoked key never hides what a user or team in the same preview holds.
-    let mut parts = Vec::with_capacity(subjects.len());
-    for subject in &subjects {
-        let resolution = state
-            .store
-            .resolve_mcp_access_for_subjects(
-                std::slice::from_ref(subject),
-                query.server_id,
-                McpToolProjection::Full,
-            )
-            .await?;
-        parts.push((subject.subject_kind, resolution));
-    }
-    // The servers the resolved tools are on, read once by ID for both checks
-    // below, rather than the whole registry.
-    let referenced: Vec<Uuid> = parts
+    // Preview what a real caller gets: a key with its owner and team, a user
+    // or service account with its team.
+    let preview = gateway_service::McpAccess::new(state.store.clone())
+        .preview_subjects(&selected)
+        .await?;
+    let resolution = state
+        .store
+        .resolve_mcp_access_for_subjects(
+            &preview.subjects,
+            query.server_id,
+            McpToolProjection::Full,
+        )
+        .await?;
+    let exposed_tool_count = resolution.exposed_tool_count;
+    // The servers the resolved tools are on, read once by ID, rather than the
+    // whole registry.
+    let referenced: Vec<Uuid> = resolution
+        .allowed_tools
         .iter()
-        .flat_map(|(_, part)| part.allowed_tools.iter().map(|tool| tool.mcp_server_id))
+        .map(|tool| tool.mcp_server_id)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -1592,50 +1607,38 @@ pub async fn preview_mcp_effective_access(
         .into_iter()
         .map(|server| (server.mcp_server_id, server))
         .collect();
-    for (kind, part) in &mut parts {
-        match kind {
-            McpToolGrantSubjectKind::ApiKey => {
-                if let Some(api_key_id) = query.api_key_id {
-                    limit_to_api_key_access(&state, api_key_id, &servers, part).await?;
-                }
-            }
-            McpToolGrantSubjectKind::ServiceAccount => {
-                // A service account acts only through its keys, which runtime
-                // refuses while it is disabled or has no active budget.
-                if let Some(service_account_id) = query.service_account_id
-                    && !service_account_can_authenticate(&state, service_account_id, None).await?
-                {
-                    part.allowed_tools.clear();
-                }
-            }
-            McpToolGrantSubjectKind::User | McpToolGrantSubjectKind::Team => {}
+    // As at runtime, a team-only server's tools count only for its own team:
+    // here, a team the previewed caller acts for. A previewed key's scopes and
+    // server list then apply on top of its grants.
+    let caller_teams: std::collections::HashSet<Uuid> = preview
+        .subjects
+        .iter()
+        .filter(|subject| subject.subject_kind == McpToolGrantSubjectKind::Team)
+        .map(|subject| subject.subject_id)
+        .collect();
+    // A service account acts only through its keys, which runtime refuses
+    // without an active budget; a disabled one was refused above.
+    let account_can_act = match query.service_account_id {
+        Some(service_account_id) => {
+            service_account_can_authenticate(&state, service_account_id, None).await?
         }
-    }
-    // As at runtime, a team-only server's tools count only for its own team,
-    // judged for each subject by that subject's team, so subjects from
-    // different teams each keep what their own team reaches.
-    for (subject, (_, part)) in subjects.iter().zip(&mut parts) {
-        let team_id = preview_subject_team(&state, subject).await?;
-        part.allowed_tools.retain(|tool| {
-            servers
-                .get(&tool.mcp_server_id)
-                .is_none_or(|server| server.ownership.is_reachable_from(team_id))
-        });
-    }
-    // The active tools in scope (all, or the named server's), so every
-    // subject's resolution reports the same count; it does not depend on who
-    // is asking.
-    let exposed_tool_count = parts.first().map_or(0, |(_, part)| part.exposed_tool_count);
-    let mut tools: std::collections::BTreeMap<(Uuid, String), gateway_core::ExternalMcpToolRecord> =
-        std::collections::BTreeMap::new();
-    for (_, part) in parts {
-        for tool in part.allowed_tools {
-            tools
-                .entry((tool.mcp_server_id, tool.upstream_name.clone()))
-                .or_insert(tool);
-        }
-    }
-    let allowed_tools: Vec<_> = tools.into_values().collect();
+        None => true,
+    };
+    let allowed_tools: Vec<_> = resolution
+        .allowed_tools
+        .into_iter()
+        .filter(|_| account_can_act)
+        .filter(|tool| {
+            servers.get(&tool.mcp_server_id).is_none_or(|server| {
+                (server.ownership.visibility == gateway_core::McpServerVisibility::Organisation
+                    || server
+                        .ownership
+                        .owner_team_id
+                        .is_some_and(|owner| caller_teams.contains(&owner)))
+                    && preview.allows_server(&server.server_key)
+            })
+        })
+        .collect();
     // Checked again after every read: a team admin who lost their role or
     // team, or whose server moved, during the preview gets none of it.
     if let (Some(_), Some(server_id)) = (scope.managed_team_id(), query.server_id) {
@@ -1654,52 +1657,6 @@ pub async fn preview_mcp_effective_access(
         exposed_tool_count,
         tools: allowed_tools.into_iter().map(map_tool).collect(),
     })))
-}
-
-/// Narrows a preview to what the API key can call at runtime: nothing once it
-/// is revoked or without an MCP scope, and with a server list only those
-/// servers' tools. Grants alone
-/// would report tools the gateway refuses that key.
-async fn limit_to_api_key_access(
-    state: &AppState,
-    api_key_id: Uuid,
-    servers: &std::collections::HashMap<Uuid, gateway_core::ExternalMcpServerRecord>,
-    resolution: &mut gateway_core::McpAccessResolution,
-) -> Result<(), AppError> {
-    use gateway_core::{AdminApiKeyRepository, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
-    let Some(key) = AdminApiKeyRepository::get_api_key_by_id(&*state.store, api_key_id).await?
-    else {
-        return Ok(());
-    };
-    // Runtime authentication refuses a key whose service account cannot act.
-    let owner_active = match key.owner_service_account_id {
-        Some(service_account_id) => {
-            service_account_can_authenticate(state, service_account_id, key.owner_team_id).await?
-        }
-        None => true,
-    };
-    let callable = key.revoked_at.is_none()
-        && owner_active
-        && (key.access.has_scope(SCOPE_MCP_AGGREGATE) || key.access.has_scope(SCOPE_MCP_PROXY));
-    if !callable {
-        resolution.allowed_tools.clear();
-    } else if key.access.mcp_server_keys.is_some() {
-        resolution.allowed_tools.retain(|tool| {
-            servers
-                .get(&tool.mcp_server_id)
-                .is_some_and(|server| key.access.allows_mcp_server(&server.server_key))
-        });
-    }
-    let servers: std::collections::HashSet<Uuid> = resolution
-        .allowed_tools
-        .iter()
-        .map(|tool| tool.mcp_server_id)
-        .collect();
-    resolution.referenced_server_count = servers.len() as i64;
-    resolution.filtered_tool_count = resolution
-        .exposed_tool_count
-        .saturating_sub(resolution.allowed_tools.len() as i64);
-    Ok(())
 }
 
 /// Whether keys of a service account can authenticate, as `Authenticator`
@@ -1726,43 +1683,6 @@ async fn service_account_can_authenticate(
     )
     .await?
     .is_some())
-}
-
-/// The team a previewed subject acts for: an API key's (its own, or its
-/// owner's), a user's current team, a service account's, or the team itself.
-async fn preview_subject_team(
-    state: &AppState,
-    subject: &McpGrantSubject,
-) -> Result<Option<Uuid>, AppError> {
-    use gateway_core::AdminApiKeyRepository;
-    let user_team = |user_id| async move {
-        Ok::<_, AppError>(
-            IdentityRepository::get_team_membership_for_user(&*state.store, user_id)
-                .await?
-                .map(|membership| membership.team_id),
-        )
-    };
-    match subject.subject_kind {
-        McpToolGrantSubjectKind::ApiKey => {
-            let Some(key) =
-                AdminApiKeyRepository::get_api_key_by_id(&*state.store, subject.subject_id).await?
-            else {
-                return Ok(None);
-            };
-            match (key.owner_team_id, key.owner_user_id) {
-                (Some(team_id), _) => Ok(Some(team_id)),
-                (None, Some(user_id)) => user_team(user_id).await,
-                (None, None) => Ok(None),
-            }
-        }
-        McpToolGrantSubjectKind::User => user_team(subject.subject_id).await,
-        McpToolGrantSubjectKind::ServiceAccount => Ok(
-            IdentityRepository::get_service_account_by_id(&*state.store, subject.subject_id)
-                .await?
-                .map(|service_account| service_account.team_id),
-        ),
-        McpToolGrantSubjectKind::Team => Ok(Some(subject.subject_id)),
-    }
 }
 
 fn preview_subjects(query: &McpEffectiveAccessQuery) -> Vec<McpGrantSubject> {

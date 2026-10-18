@@ -289,5 +289,6 @@ fn oauth_server() -> ExternalMcpServerRecord {
         created_at: OffsetDateTime::now_utc(),
         updated_at: OffsetDateTime::now_utc(),
         disabled_at: None,
+        approve_tool_changes: false,
     }
 }

@@ -223,6 +223,7 @@ async fn oauth_server(state: &AppState) -> gateway_core::ExternalMcpServerRecord
             .expect("auth config"),
             timeout_ms: 30_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("OAuth server")

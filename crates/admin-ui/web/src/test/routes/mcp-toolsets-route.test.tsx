@@ -64,6 +64,7 @@ const server: McpServerView = {
   owner_contact: 'platform@example.test',
   visibility: 'organisation',
   can_manage: true,
+  approve_tool_changes: false,
 }
 
 const toolset: McpToolsetView = {
@@ -109,6 +110,23 @@ const firstTool: McpToolView = {
   },
   first_discovered_at: '2026-05-27T08:00:00Z',
   last_discovered_at: '2026-05-27T09:00:00Z',
+  annotation_overrides: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  effective_annotations: {
+    read_only_hint: null,
+    destructive_hint: null,
+    idempotent_hint: null,
+    open_world_hint: null,
+  },
+  admin_tags: [],
+  effective_tags: ['destructive', 'open_world'],
+  approval_status: 'approved',
+  approved_schema_version: 2,
+  pending_schema_version: null,
   schema_hash: 'schema-1',
   schema_version: 1,
   deactivated_at: null,

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use gateway_core::{
     ExternalMcpToolRecord, GatewayError, McpTokenEstimateConfidence, McpTokenEstimateSource,
     McpTokenOverheadRepository, McpToolTokenEstimateRecord, RequestMcpTokenOverheadRecord,
+    mcp_tool_policy::effective_annotations,
 };
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
@@ -159,6 +160,12 @@ fn cache_key(
     hasher.update(tool.upstream_name.as_bytes());
     hasher.update(tool.schema_hash.as_bytes());
     hasher.update(description_hash(tool.description.as_deref().unwrap_or("")).as_bytes());
+    // Overrides change what clients receive without changing the schema hash.
+    let overrides =
+        serde_json::to_vec(&tool.policy.annotation_overrides.to_object()).map_err(|error| {
+            GatewayError::Internal(format!("failed hashing MCP overrides: {error}"))
+        })?;
+    hasher.update(&overrides);
     hasher.update(protocol_version.as_bytes());
     hasher.update(SERIALIZER_VERSION.as_bytes());
     Ok(format!("{:x}", hasher.finalize()))
@@ -171,7 +178,7 @@ fn description_hash(description: &str) -> String {
 }
 
 /// Estimates the definition a client receives from `tools/list`, including
-/// the optional title, annotations, and output schema.
+/// the optional title, effective annotations, and output schema.
 fn estimate_tool_definition_tokens(tool: &ExternalMcpToolRecord) -> Result<i64, GatewayError> {
     let mut definition = json!({
         "name": tool.upstream_name,
@@ -182,7 +189,7 @@ fn estimate_tool_definition_tokens(tool: &ExternalMcpToolRecord) -> Result<i64, 
     if let Some(title) = &metadata.title {
         definition["title"] = json!(title);
     }
-    if let Some(annotations) = &metadata.annotations {
+    if let Some(annotations) = effective_annotations(tool) {
         definition["annotations"] = json!(annotations);
     }
     if let Some(output_schema) = &metadata.output_schema {
@@ -213,12 +220,14 @@ mod tests {
             description: Some("Search the index".to_string()),
             input_schema: json!({"type": "object"}),
             metadata,
+            policy: Default::default(),
             schema_hash: "sha256:test".to_string(),
             schema_version: 1,
             is_active: true,
             first_discovered_at: now,
             last_discovered_at: now,
             deactivated_at: None,
+            review: Default::default(),
         }
     }
 
@@ -243,5 +252,20 @@ mod tests {
         .expect("full estimate");
 
         assert!(full - plain >= output_schema_bytes / 4);
+    }
+
+    #[test]
+    fn overrides_change_the_estimate_and_its_cache_key() {
+        let plain = tool(McpToolMetadata::default());
+        let mut overridden = plain.clone();
+        overridden.policy.annotation_overrides.read_only = Some(true);
+        assert!(
+            estimate_tool_definition_tokens(&overridden).expect("estimate")
+                > estimate_tool_definition_tokens(&plain).expect("estimate")
+        );
+        assert_ne!(
+            cache_key("openai", "o200k", &plain, "2025-06-18").expect("key"),
+            cache_key("openai", "o200k", &overridden, "2025-06-18").expect("key")
+        );
     }
 }
