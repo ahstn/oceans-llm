@@ -454,12 +454,19 @@ where
 /// One lookup's outcome, shared with every caller waiting on it. A failure
 /// keeps its message, since `StoreError` cannot be cloned.
 type TeamLookupOutcome = Result<Option<Uuid>, String>;
-type TeamLookupFlights =
-    std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<TeamLookupOutcome>>>>;
+type TeamLookupFlights = std::sync::Mutex<HashMap<Uuid, TeamLookupEntry>>;
 
-/// A caller's share of one user's team lookup. Dropping it, whether the
-/// lookup succeeded, failed or was cancelled, removes the entry if it is still
-/// this lookup's, so failed lookups leave nothing behind.
+/// A user's lookup in flight and how many callers share it.
+#[derive(Default)]
+struct TeamLookupEntry {
+    cell: Arc<tokio::sync::OnceCell<TeamLookupOutcome>>,
+    callers: usize,
+}
+
+/// A caller's share of one user's team lookup. The entry stays while any
+/// caller holds a share, so one waiter giving up cannot let a second,
+/// overlapping lookup start. Dropping the last share, whether the lookup
+/// succeeded, failed or every caller was cancelled, removes the entry.
 struct TeamLookupFlight<'a> {
     flights: &'a TeamLookupFlights,
     user_id: Uuid,
@@ -468,16 +475,13 @@ struct TeamLookupFlight<'a> {
 
 impl<'a> TeamLookupFlight<'a> {
     fn join(flights: &'a TeamLookupFlights, user_id: Uuid) -> Self {
-        let cell = flights
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .entry(user_id)
-            .or_default()
-            .clone();
+        let mut map = flights.lock().unwrap_or_else(|poison| poison.into_inner());
+        let entry = map.entry(user_id).or_default();
+        entry.callers += 1;
         Self {
             flights,
             user_id,
-            cell,
+            cell: entry.cell.clone(),
         }
     }
 }
@@ -488,10 +492,14 @@ impl Drop for TeamLookupFlight<'_> {
             .flights
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        if flights
-            .get(&self.user_id)
-            .is_some_and(|current| Arc::ptr_eq(current, &self.cell))
-        {
+        let Some(entry) = flights.get_mut(&self.user_id) else {
+            return;
+        };
+        if !Arc::ptr_eq(&entry.cell, &self.cell) {
+            return;
+        }
+        entry.callers -= 1;
+        if entry.callers == 0 {
             flights.remove(&self.user_id);
         }
     }
