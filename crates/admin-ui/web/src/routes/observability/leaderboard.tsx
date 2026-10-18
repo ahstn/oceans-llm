@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
-import { EMPTY_VALUE, formatUsd10000, formatUsdTotal } from '@/lib/format'
+import { EMPTY_VALUE, formatTimestamp, formatUsd10000, formatUsdTotal } from '@/lib/format'
 import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
 } from '@/server/admin-data.functions'
 import type { LeaderboardRange, LeaderboardLeaderView, LeaderboardView } from '@/types/api'
+
+import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/leaderboard')({
   loader: () => getObservabilityLeaderboard({ data: { range: '7d' } }),
@@ -76,6 +78,7 @@ export function ObservabilityLeaderboardPage() {
 
     return row
   })
+  const dayTicks = utcDayTicks(chartData.map((row) => String(row.bucket_start)))
 
   function refreshRange(nextRange: LeaderboardRange) {
     setIsRefreshing(true)
@@ -139,7 +142,12 @@ export function ObservabilityLeaderboardPage() {
             <LeaderboardEmptyState />
           ) : (
             <Suspense fallback={<LeaderboardChartSkeleton />}>
-              <LeaderboardChart series={chartSeries} config={chartConfig} data={chartData} />
+              <LeaderboardChart
+                series={chartSeries}
+                config={chartConfig}
+                data={chartData}
+                dayTicks={dayTicks}
+              />
             </Suspense>
           )}
         </CardContent>
@@ -296,10 +304,12 @@ const LeaderboardChart = lazy(async () => {
     series,
     config,
     data,
+    dayTicks,
   }: {
     series: LeaderboardChartSeries[]
     config: ChartConfig
     data: Record<string, number | string>[]
+    dayTicks: string[]
   }) {
     return (
       <ChartContainer config={config} className="h-[24rem] w-full">
@@ -322,17 +332,18 @@ const LeaderboardChart = lazy(async () => {
           <CartesianGrid vertical={false} />
           <XAxis
             dataKey="bucket_start"
+            ticks={dayTicks}
             tickLine={false}
             axisLine={false}
             minTickGap={24}
-            tickFormatter={(value) => formatAxisTick(value)}
+            tickFormatter={formatBucketDay}
           />
           <ChartTooltip
             cursor={false}
             content={
               <ChartTooltipContent
                 labelFormatter={(_, payload) =>
-                  formatTooltipLabel(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                  formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
                 }
                 formatter={(value, name) => (
                   <>
@@ -444,33 +455,6 @@ function formatAverageCount(value: number | null | undefined) {
   }
 
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
-}
-
-function formatAxisTick(value: string) {
-  if (!value) {
-    return ''
-  }
-
-  return new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  })
-}
-
-function formatTooltipLabel(value: string) {
-  if (!value) {
-    return 'UTC'
-  }
-
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'UTC',
-  })
 }
 
 function toLeaderboardRange(value: string): LeaderboardRange {
