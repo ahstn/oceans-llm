@@ -138,10 +138,10 @@ pub(super) fn id_placeholders(count: usize) -> String {
         .join(", ")
 }
 
-/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL: on a server
-/// without tool approval, a derived tag selects a tool only when an admin
-/// overrode the tag's own hint to `true`.
-const TRUSTED_INCLUDE_TAG_SQL: &str = "(s.approve_tool_changes = 1 OR et.tag NOT IN ('read_only', 'destructive', 'idempotent', 'open_world') OR json_type(t.annotation_overrides_json, CASE et.tag WHEN 'read_only' THEN '$.readOnlyHint' WHEN 'destructive' THEN '$.destructiveHint' WHEN 'idempotent' THEN '$.idempotentHint' ELSE '$.openWorldHint' END) = 'true')";
+/// `gateway_core::mcp_tool_policy::include_rule_selects` in SQL: a derived tag
+/// selects a tool only when an admin overrode the tag's own hint to `true`, or
+/// approved the served version on a server with tool approval.
+const TRUSTED_INCLUDE_TAG_SQL: &str = "((s.approve_tool_changes = 1 AND EXISTS (SELECT 1 FROM mcp_tool_versions v WHERE v.mcp_tool_id = t.mcp_tool_id AND v.schema_version = t.approved_schema_version AND v.reviewed_at IS NOT NULL)) OR et.tag NOT IN ('read_only', 'destructive', 'idempotent', 'open_world') OR json_type(t.annotation_overrides_json, CASE et.tag WHEN 'read_only' THEN '$.readOnlyHint' WHEN 'destructive' THEN '$.destructiveHint' WHEN 'idempotent' THEN '$.idempotentHint' ELSE '$.openWorldHint' END) = 'true')";
 
 /// Active, served tools that include rules select, found through the
 /// effective tag index: only matching tool ids are read.

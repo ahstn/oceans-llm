@@ -201,6 +201,26 @@ where
             .await?)
     }
 
+    /// Whether an admin approved the version the tool serves, as opposed to
+    /// discovery approving it while the server took changes unreviewed.
+    async fn served_version_reviewed(
+        &self,
+        tool: &ExternalMcpToolRecord,
+    ) -> Result<bool, GatewayError> {
+        let Some(version) = tool.review.approved_schema_version else {
+            return Ok(false);
+        };
+        Ok(self
+            .repo
+            .list_mcp_tool_versions(
+                tool.mcp_tool_id,
+                &McpToolVersionQuery::Versions(vec![version]),
+            )
+            .await?
+            .first()
+            .is_some_and(|version| version.reviewed_at.is_some()))
+    }
+
     /// The active tools a rule with this tag would select on one server, or on
     /// every active server when `mcp_server_id` is `None`. It applies only the
     /// one rule, so it shows what the rule matches, not a subject's access.
@@ -219,13 +239,6 @@ where
         let server = match mcp_server_id {
             Some(server_id) => Some(self.rule_server(server_id).await?),
             None => None,
-        };
-        // Include rules apply the same trust rule as runtime resolution.
-        let selects = |tool: &ExternalMcpToolRecord| match (&server, effect) {
-            (Some(server), McpTagRuleEffect::Include) => {
-                include_rule_selects(tool, &tag, server.approve_tool_changes)
-            }
-            _ => has_effective_tag(tool, &tag),
         };
         // Active tools on active servers, the same candidates runtime
         // resolution reads, read a page at a time until the cap is passed.
@@ -251,7 +264,17 @@ where
                 .map(|tool| (tool.mcp_server_id, tool.upstream_name.clone()));
             let mut full = false;
             for tool in page {
-                if !selects(&tool) {
+                // Include rules apply the same trust rule as runtime resolution.
+                let selected = match (&server, effect) {
+                    (Some(server), McpTagRuleEffect::Include) => {
+                        include_rule_selects(&tool, &tag, false)
+                            || (server.approve_tool_changes
+                                && include_rule_selects(&tool, &tag, true)
+                                && self.served_version_reviewed(&tool).await?)
+                    }
+                    _ => has_effective_tag(&tool, &tag),
+                };
+                if !selected {
                     continue;
                 }
                 if matched.len() == MAX_TAG_RULE_PREVIEW_MATCHES {

@@ -80,12 +80,12 @@ Derived tags come from annotations the upstream declares. On a server without `a
 
 An include rule on a derived tag now selects a tool only when one of these holds:
 
-- The server has `approve_tool_changes` on. Its served definitions were reviewed, or were accepted when an admin turned approval on, and a new or renamed tool waits in **Pending review**.
+- The server has `approve_tool_changes` on and an admin approved the served version (`reviewed_at` is set). A new or renamed tool waits in **Pending review**. Turning approval on does not vouch for definitions discovery approved while it was off: their `reviewed_at` is empty, so their hints count only after an override or once the upstream's next change is approved.
 - An admin overrode the tag's own hint to `true` (`readOnlyHint` for `read_only`, `destructiveHint` for `destructive`, and so on). A protocol default is not an admin claim, so `include open_world` does not select a tool that simply declares nothing.
 
-Admin tags are set by admins, so admin-tag include rules are unaffected. Exclude rules keep using the effective tags. `gateway_core::mcp_tool_policy::include_rule_selects` holds the rule; both stores apply it in the include query's `WHERE` clause, and the rule preview uses it for include rules. Rules created before this change keep working on approval servers and on tools with overrides, and stop selecting other tools.
+Admin tags are set by admins, so admin-tag include rules are unaffected. Exclude rules keep using the effective tags. `gateway_core::mcp_tool_policy::include_rule_selects` holds the rule; both stores apply it in the include query's `WHERE` clause, and the rule preview uses it for include rules. Rules created before this change keep working on tools with overrides and on admin-approved versions, and stop selecting other tools.
 
-The alternatives were to require approval before a derived-tag include rule can be created, or to hold newly discovered tools on servers with such rules. The first breaks admins who already vouch for hints with overrides on servers without approval. The second makes the approval setting depend on which rules exist. Trusting only admin-set or reviewed hints closes the self-grant with neither cost.
+The alternatives were to require approval before a derived-tag include rule can be created, or to hold newly discovered tools on servers with such rules. The first breaks admins who already vouch for hints with overrides on servers without approval. The second makes the approval setting depend on which rules exist. Trusting only admin-set or reviewed hints closes the self-grant with neither cost. Moving every definition into review when approval is turned on was also considered; it would withhold every tool on the server until an admin reviews each one, where requiring a reviewed version withholds only what derived-tag include rules select.
 
 The rule preview reads candidates a page at a time and stops after 200 matches or after checking 5,120 tools. It reports `truncated` when it stopped early, so a preview for a rare tag on a large registry is bounded and says it may be incomplete.
 
