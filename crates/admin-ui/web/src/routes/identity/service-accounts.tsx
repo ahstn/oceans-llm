@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
+import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import {
   Table,
   TableBody,
@@ -275,7 +276,7 @@ function credentialLabel(apiKey: ApiKeyView | null, accessRestricted: boolean) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={status === 'active' ? 'success' : 'warning'}>{status}</Badge>
+  return <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
 }
 
 function buildServiceAccountRows(

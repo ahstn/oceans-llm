@@ -251,6 +251,35 @@ describe('TeamsPage', () => {
     expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()
   })
 
+  it('badges an inactive team and member roles in neutral variants', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...rosterPayload,
+        teams: [rosterPayload.teams[0], { ...rosterPayload.teams[1], status: 'inactive' }],
+        users: rosterPayload.users.map((user) =>
+          user.id === 'user_1' ? { ...user, team_role: 'owner' } : user,
+        ),
+      } satisfies IdentityTeamsPayload,
+    })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    // Inactive is not pending: the same badge the read-only directory shows.
+    for (const badge of screen.getAllByText('inactive')) {
+      expect(badge).toHaveAttribute('data-variant', 'secondary')
+    }
+
+    // A role is a category, so it takes neither a status colour nor the lilac action colour.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show 2 members' })[0])
+    for (const badge of screen.getAllByText('owner')) {
+      expect(badge).toHaveAttribute('data-variant', 'secondary')
+    }
+    for (const badge of screen.getAllByText('member')) {
+      expect(badge).toHaveAttribute('data-variant', 'outline')
+    }
+  })
+
   it('links team admins to the users page only for viewers who can open it', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: rosterPayload })
 
