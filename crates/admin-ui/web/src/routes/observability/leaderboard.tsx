@@ -1,20 +1,12 @@
-import { useState, useTransition } from 'react'
+import { lazy, Suspense, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
 import { CompactCount } from '@/components/data/compact-count'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
+import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -146,67 +138,9 @@ export function ObservabilityLeaderboardPage() {
           ) : chartSeries.length === 0 ? (
             <LeaderboardEmptyState />
           ) : (
-            <ChartContainer config={chartConfig} className="h-[24rem] w-full">
-              <AreaChart accessibilityLayer data={chartData} margin={{ left: 12, right: 12 }}>
-                <defs>
-                  {chartSeries.map((user) => (
-                    <linearGradient
-                      key={user.gradientId}
-                      id={user.gradientId}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="5%" stopColor={user.color} stopOpacity={0.35} />
-                      <stop offset="95%" stopColor={user.color} stopOpacity={0.04} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="bucket_start"
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                  tickFormatter={(value) => formatAxisTick(value)}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) =>
-                        formatTooltipLabel(String(payload?.[0]?.payload?.bucket_start ?? ''))
-                      }
-                      formatter={(value, name) => (
-                        <>
-                          <span className="text-muted-foreground">
-                            {chartConfig[String(name)]?.label ?? String(name)}
-                          </span>
-                          <span className="font-mono font-medium tabular-nums">
-                            {CURRENCY_FORMATTER.format(Number(value))}
-                          </span>
-                        </>
-                      )}
-                    />
-                  }
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-                {chartSeries.map((user) => (
-                  <Area
-                    {...chartAnimation}
-                    key={user.user_id}
-                    dataKey={user.key}
-                    type="monotone"
-                    stroke={user.color}
-                    fill={`url(#${user.gradientId})`}
-                    fillOpacity={1}
-                    strokeWidth={2}
-                    stackId={undefined}
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
+            <Suspense fallback={<LeaderboardChartSkeleton />}>
+              <LeaderboardChart series={chartSeries} config={chartConfig} data={chartData} />
+            </Suspense>
           )}
         </CardContent>
       </Card>
@@ -343,6 +277,97 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
     </div>
   )
 }
+
+type LeaderboardChartSeries = {
+  user_id: string
+  key: string
+  color: string
+  gradientId: string
+}
+
+// Recharts stays out of the route chunk and loads on first render, like the usage cost charts.
+const LeaderboardChart = lazy(async () => {
+  const [
+    { Area, AreaChart, CartesianGrid, XAxis },
+    { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent },
+  ] = await Promise.all([import('recharts'), import('@/components/ui/chart')])
+
+  function LeaderboardChartComponent({
+    series,
+    config,
+    data,
+  }: {
+    series: LeaderboardChartSeries[]
+    config: ChartConfig
+    data: Record<string, number | string>[]
+  }) {
+    return (
+      <ChartContainer config={config} className="h-[24rem] w-full">
+        <AreaChart accessibilityLayer data={data} margin={{ left: 12, right: 12 }}>
+          <defs>
+            {series.map((user) => (
+              <linearGradient
+                key={user.gradientId}
+                id={user.gradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop offset="5%" stopColor={user.color} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={user.color} stopOpacity={0.04} />
+              </linearGradient>
+            ))}
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="bucket_start"
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+            tickFormatter={(value) => formatAxisTick(value)}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, payload) =>
+                  formatTooltipLabel(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                }
+                formatter={(value, name) => (
+                  <>
+                    <span className="text-muted-foreground">
+                      {config[String(name)]?.label ?? String(name)}
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      {CURRENCY_FORMATTER.format(Number(value))}
+                    </span>
+                  </>
+                )}
+              />
+            }
+          />
+          <ChartLegend content={<ChartLegendContent />} />
+          {series.map((user) => (
+            <Area
+              {...chartAnimation}
+              key={user.user_id}
+              dataKey={user.key}
+              type="monotone"
+              stroke={user.color}
+              fill={`url(#${user.gradientId})`}
+              fillOpacity={1}
+              strokeWidth={2}
+              stackId={undefined}
+            />
+          ))}
+        </AreaChart>
+      </ChartContainer>
+    )
+  }
+
+  return { default: LeaderboardChartComponent }
+})
 
 function MostUsedHarness({ leader }: { leader: LeaderboardLeaderView }) {
   if (!leader.most_used_harness) {
