@@ -644,3 +644,36 @@ models:
     );
     assert!(capabilities(2).embeddings && !capabilities(2).chat_completions);
 }
+
+#[test]
+fn rejects_capability_flags_the_provider_profile_cannot_serve() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for (route_yaml, flag) in [
+        (
+            "provider: zen\n      upstream_model: claude-sonnet\n      capabilities: { responses: true }",
+            "responses",
+        ),
+        (
+            "provider: vertex\n      upstream_model: meta/llama-4\n      capabilities: { tools: true }",
+            "tools",
+        ),
+        (
+            "provider: copilot\n      upstream_model: gpt-5\n      capabilities: { vision: true }\n      compatibility:\n        github_copilot: { chat_api: chat_completions }",
+            "vision",
+        ),
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  zen:\n    type: anthropic_compat\n    base_url: https://opencode.ai/zen\n  vertex:\n    type: gcp_vertex\n    project_id: project\n    auth: {{ mode: adc }}\n  copilot:\n    type: github_copilot\n    auth: {{ mode: github_user }}\nmodels:\n  model:\n    route:\n      {route_yaml}\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("unservable flag");
+        assert!(
+            format!("{error:#}")
+                .contains(&format!("enables capabilities.{flag}, which its provider")),
+            "{flag}: {error:#}"
+        );
+    }
+}

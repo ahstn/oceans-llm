@@ -138,6 +138,47 @@ impl ModelRouteConfig {
             validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
         validate_decisions_route_capability(model_id, self, provider, capabilities)?;
+        if provider.is_some() {
+            self.validate_capabilities_within_profile(model_id, provider)?;
+        }
+        Ok(())
+    }
+
+    /// Rejects an explicit `true` for a capability the provider and compatibility profile
+    /// cannot serve. Request routing limits every route to its profile, so such a flag would
+    /// pass validation but never take effect. `decisions` has its own, more specific checks.
+    fn validate_capabilities_within_profile(
+        &self,
+        model_id: &str,
+        provider: Option<&ProviderConfig>,
+    ) -> anyhow::Result<()> {
+        let defaults = self.capability_defaults(provider);
+        let explicit = &self.capabilities;
+        for (name, flag, supported) in [
+            (
+                "chat_completions",
+                explicit.chat_completions,
+                defaults.chat_completions,
+            ),
+            ("responses", explicit.responses, defaults.responses),
+            ("stream", explicit.stream, defaults.stream),
+            ("embeddings", explicit.embeddings, defaults.embeddings),
+            ("tools", explicit.tools, defaults.tools),
+            ("vision", explicit.vision, defaults.vision),
+            ("json_schema", explicit.json_schema, defaults.json_schema),
+            (
+                "developer_role",
+                explicit.developer_role,
+                defaults.developer_role,
+            ),
+        ] {
+            if flag == Some(true) && !supported {
+                bail!(
+                    "model `{model_id}` route for provider `{}` enables capabilities.{name}, which its provider and compatibility profile cannot serve; remove the flag",
+                    self.provider
+                );
+            }
+        }
         Ok(())
     }
 }

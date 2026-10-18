@@ -461,9 +461,9 @@ pub(crate) mod tests {
             .expect_err("routes sharing provider, upstream, and priority must not merge");
     }
 
-    /// Two named routes share a provider and upstream model, and both have batch history. When
-    /// one moves to the other's old priority, each must keep its own row instead of claiming the
-    /// other's by `(provider, upstream, priority)`.
+    /// Two named routes share a provider and upstream model, and both have batch history. A
+    /// priority swap must keep each route on its own row, and a removed route's surviving row
+    /// must not block another route that moves onto its priority.
     async fn exercise_batch_referenced_route_reprioritize<S>(store: &S)
     where
         S: GatewayStore + Sync,
@@ -560,24 +560,46 @@ pub(crate) mod tests {
             insert_batch_for_route(store, &api_key, &model, route, label).await;
         }
 
-        // `a` moves out of the way first, then `b` takes priority 10, which `a`'s old row held.
-        seed(vec![model_with(vec![route("a", 30), route("b", 10)])])
+        // A true swap: each route moves onto the other's old priority.
+        seed(vec![model_with(vec![route("a", 20), route("b", 10)])])
             .await
-            .expect("reseed reprioritized routes");
-
-        let routes = store
-            .list_routes_for_model(model.id)
-            .await
-            .expect("routes after reprioritize");
-        let priority_of = |route_id: Uuid| {
+            .expect("reseed swapped priorities");
+        let route_state = |routes: &[gateway_core::ModelRoute], route_id: Uuid| {
             routes
                 .iter()
                 .find(|route| route.id == route_id)
-                .map(|route| route.priority)
+                .map(|route| (route.priority, route.enabled))
         };
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after swap");
         assert_eq!(routes.len(), 2);
-        assert_eq!(priority_of(route_a), Some(30), "route a keeps its row");
-        assert_eq!(priority_of(route_b), Some(10), "route b keeps its row");
+        assert_eq!(
+            route_state(&routes, route_a),
+            Some((20, true)),
+            "route a keeps its row"
+        );
+        assert_eq!(
+            route_state(&routes, route_b),
+            Some((10, true)),
+            "route b keeps its row"
+        );
+
+        // `a` leaves the config while its batch row survives on priority 20, the priority `b`
+        // now wants. `a`'s row moves aside instead of blocking `b`.
+        seed(vec![model_with(vec![route("b", 20)])])
+            .await
+            .expect("reseed onto a removed route's priority");
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after removal");
+        assert_eq!(route_state(&routes, route_b), Some((20, true)));
+        let (parked_priority, parked_enabled) =
+            route_state(&routes, route_a).expect("batch history keeps route a's row");
+        assert!(!parked_enabled, "the removed route stays disabled");
+        assert!(parked_priority < 20, "the removed route's row moved aside");
     }
 
     async fn exercise_managed_service_account_seed<S>(store: &S)

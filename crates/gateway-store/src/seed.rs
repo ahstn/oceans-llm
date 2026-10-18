@@ -28,6 +28,8 @@ use crate::GatewayStore;
 pub(crate) struct RouteSurvivors {
     by_key: std::collections::HashMap<(String, String, i64), Uuid>,
     by_id: std::collections::HashMap<Uuid, (String, String, i64)>,
+    /// Every survivor with its original key, kept after claims for [`Self::parking_plan`].
+    all: Vec<(Uuid, (String, String, i64))>,
 }
 
 impl RouteSurvivors {
@@ -40,7 +42,62 @@ impl RouteSurvivors {
     ) {
         let key = (provider_key, upstream_model, priority);
         self.by_key.insert(key.clone(), id);
-        self.by_id.insert(id, key);
+        self.by_id.insert(id, key.clone());
+        self.all.push((id, key));
+    }
+
+    /// Survivor rows to move to an unused priority before upserting, given each configured
+    /// route's claimed row and target `(provider, upstream, priority)`. Upserts run one at a
+    /// time against the `(model, provider, upstream, priority)` unique key, so a claimed row
+    /// whose priority changes, or an unclaimed row sitting on a configured route's target, could
+    /// block another route; two routes swapping priorities would block each other. Parked rows
+    /// take priorities below every existing and configured priority of their provider and
+    /// upstream group, so they cannot collide. Claimed rows then get their real priority from
+    /// the upsert; unclaimed ones stay parked as disabled history.
+    pub(crate) fn parking_plan(
+        &self,
+        claimed: &[(Uuid, (String, String, i64))],
+    ) -> Vec<(Uuid, i64)> {
+        let target_of = claimed
+            .iter()
+            .map(|(id, key)| (*id, key))
+            .collect::<std::collections::HashMap<_, _>>();
+        let targets = claimed
+            .iter()
+            .map(|(_, key)| key)
+            .collect::<std::collections::HashSet<_>>();
+        let mut floors = std::collections::HashMap::<(&str, &str), i64>::new();
+        for (provider, upstream, priority) in self
+            .all
+            .iter()
+            .map(|(_, key)| key)
+            .chain(claimed.iter().map(|(_, key)| key))
+        {
+            let floor = floors
+                .entry((provider.as_str(), upstream.as_str()))
+                .or_insert(*priority);
+            *floor = (*floor).min(*priority);
+        }
+
+        let mut blocking = self
+            .all
+            .iter()
+            .filter(|(id, key)| match target_of.get(id) {
+                Some(target) => *target != key,
+                None => targets.contains(key),
+            })
+            .collect::<Vec<_>>();
+        blocking.sort_by_key(|(id, _)| *id);
+        blocking
+            .into_iter()
+            .map(|(id, (provider, upstream, _))| {
+                let floor = floors
+                    .get_mut(&(provider.as_str(), upstream.as_str()))
+                    .expect("every survivor has a floor");
+                *floor -= 1;
+                (*id, *floor)
+            })
+            .collect()
     }
 
     /// The row id a configured route should upsert. A route whose own deterministic id

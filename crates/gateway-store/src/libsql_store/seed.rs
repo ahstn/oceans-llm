@@ -397,21 +397,54 @@ impl LibsqlStore {
                 .remove(&model_id.to_string())
                 .unwrap_or_default();
 
+            // Claim a row for every configured route first, then move rows that would block
+            // another route's upsert out of the way, so reordered or swapped priorities apply.
+            let claimed = model
+                .routes
+                .iter()
+                .enumerate()
+                .map(|(route_index, route)| {
+                    let own_id = route_uuid(
+                        &model.model_key,
+                        route.route_key.as_deref(),
+                        &route.provider_key,
+                        &route.upstream_model,
+                        route.priority,
+                        route_index,
+                    );
+                    let id = survivors.claim(
+                        own_id,
+                        &route.provider_key,
+                        &route.upstream_model,
+                        i64::from(route.priority),
+                    );
+                    (
+                        id,
+                        (
+                            route.provider_key.clone(),
+                            route.upstream_model.clone(),
+                            i64::from(route.priority),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
+            for (route_id, parked) in survivors.parking_plan(&claimed) {
+                let parked = i32::try_from(parked).map_err(|_| {
+                    StoreError::Conflict(format!(
+                        "cannot move route `{route_id}` aside: priorities are too close to the minimum"
+                    ))
+                })?;
+                self.connection
+                    .execute(
+                        "UPDATE model_routes SET priority = ?1 WHERE id = ?2",
+                        libsql::params![parked, route_id.to_string()],
+                    )
+                    .await
+                    .map_err(to_query_error)?;
+            }
+
             for (route_index, route) in model.routes.iter().enumerate() {
-                let own_id = route_uuid(
-                    &model.model_key,
-                    route.route_key.as_deref(),
-                    &route.provider_key,
-                    &route.upstream_model,
-                    route.priority,
-                    route_index,
-                );
-                let route_id = survivors.claim(
-                    own_id,
-                    &route.provider_key,
-                    &route.upstream_model,
-                    i64::from(route.priority),
-                );
+                let route_id = claimed[route_index].0;
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;
