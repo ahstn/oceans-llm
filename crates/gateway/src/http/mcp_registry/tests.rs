@@ -140,6 +140,7 @@ async fn server_read_update_preserves_oauth_settings_without_secret_blobs() {
             auth_config: stored_auth,
             timeout_ms: 30_000,
             created_at: OffsetDateTime::now_utc(),
+            approve_tool_changes: false,
         })
         .await
         .expect("seed OAuth server");
@@ -342,6 +343,7 @@ async fn membership_returns_persisted_ids_including_inactive_tools() {
             auth_config: Default::default(),
             timeout_ms: 5_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("create server");

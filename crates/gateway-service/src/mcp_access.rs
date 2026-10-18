@@ -1,9 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
-    AuthenticatedApiKey, ExternalMcpToolRecord, GatewayError, IdentityRepository,
-    McpAccessRepository, McpAccessResolution, McpGrantSubject, McpToolGrantSubjectKind,
-    McpToolProjection,
+    AdminApiKeyRepository, ApiKeyAccess, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository,
+    ExternalMcpToolRecord, GatewayError, IdentityRepository, McpAccessRepository,
+    McpAccessResolution, McpGrantSubject, McpToolGrantSubjectKind, McpToolProjection,
+    SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY, ServiceAccountStatus,
 };
 use uuid::Uuid;
 
@@ -54,13 +55,11 @@ where
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, GatewayError> {
-        let resolution = self
-            .effective_tools_for_api_key(auth, Some(mcp_server_id), McpToolProjection::Access)
-            .await?;
-        Ok(resolution
-            .allowed_tools
-            .into_iter()
-            .find(|tool| tool.upstream_name == upstream_name))
+        let subjects = self.grant_subjects(auth).await?;
+        Ok(self
+            .repo
+            .resolve_mcp_tool_for_subjects(&subjects, mcp_server_id, upstream_name)
+            .await?)
     }
 }
 
@@ -86,6 +85,118 @@ where
             );
         }
         Ok(subjects)
+    }
+}
+
+impl<R> McpAccess<R>
+where
+    R: IdentityRepository + AdminApiKeyRepository + ApiKeyRepository + BudgetRepository,
+{
+    /// Expands previewed subjects the way runtime resolution would for a
+    /// caller: a key brings its owner and team, a user its current team, and a
+    /// service account its team. Rules and grants on those subjects then show in
+    /// the preview, as they apply to real requests.
+    pub async fn preview_subjects(
+        &self,
+        selected: &[McpGrantSubject],
+    ) -> Result<McpAccessPreview, GatewayError> {
+        let mut subjects = Vec::new();
+        let mut key_access = Vec::new();
+        let mut seen = HashSet::new();
+        for subject in selected {
+            push_subject(
+                &mut subjects,
+                &mut seen,
+                subject.subject_kind,
+                subject.subject_id,
+            );
+            match subject.subject_kind {
+                McpToolGrantSubjectKind::ApiKey => {
+                    if let Some(key) = self.repo.get_api_key_by_id(subject.subject_id).await? {
+                        // A key that cannot authenticate has no access to
+                        // preview: the same checks as authentication apply.
+                        crate::authenticator::ensure_api_key_usable(self.repo.as_ref(), &key)
+                            .await
+                            .map_err(|error| {
+                                GatewayError::InvalidRequest(format!(
+                                    "the API key cannot authenticate, so it has no MCP access: {error}"
+                                ))
+                            })?;
+                        let auth = AuthenticatedApiKey::from(key);
+                        key_access.push(auth.access.clone());
+                        for owned in self.grant_subjects(&auth).await? {
+                            push_subject(
+                                &mut subjects,
+                                &mut seen,
+                                owned.subject_kind,
+                                owned.subject_id,
+                            );
+                        }
+                    }
+                }
+                McpToolGrantSubjectKind::User => {
+                    if let Some(membership) = self
+                        .repo
+                        .get_team_membership_for_user(subject.subject_id)
+                        .await?
+                    {
+                        push_subject(
+                            &mut subjects,
+                            &mut seen,
+                            McpToolGrantSubjectKind::Team,
+                            membership.team_id,
+                        );
+                    }
+                }
+                McpToolGrantSubjectKind::ServiceAccount => {
+                    if let Some(account) = IdentityRepository::get_service_account_by_id(
+                        self.repo.as_ref(),
+                        subject.subject_id,
+                    )
+                    .await?
+                    {
+                        // A disabled account's keys cannot authenticate.
+                        if account.status != ServiceAccountStatus::Active {
+                            return Err(GatewayError::InvalidRequest(
+                                "the service account is disabled, so it has no MCP access"
+                                    .to_string(),
+                            ));
+                        }
+                        push_subject(
+                            &mut subjects,
+                            &mut seen,
+                            McpToolGrantSubjectKind::Team,
+                            account.team_id,
+                        );
+                    }
+                }
+                McpToolGrantSubjectKind::Team => {}
+            }
+        }
+        Ok(McpAccessPreview {
+            subjects,
+            key_access,
+        })
+    }
+}
+
+/// The subjects a preview resolves, and the scope limits of any previewed API
+/// key, which runtime applies on top of grants and rules.
+#[derive(Debug, Clone, Default)]
+pub struct McpAccessPreview {
+    pub subjects: Vec<McpGrantSubject>,
+    pub key_access: Vec<ApiKeyAccess>,
+}
+
+impl McpAccessPreview {
+    /// Whether every previewed key may reach the server through MCP: it has
+    /// an MCP scope (or no scope list) and the server is in its server list.
+    #[must_use]
+    pub fn allows_server(&self, server_key: &str) -> bool {
+        self.key_access.iter().all(|access| {
+            (access.has_scope(SCOPE_MCP_AGGREGATE) || access.has_scope(SCOPE_MCP_PROXY))
+                && access.allows_mcp_server(server_key)
+        })
     }
 }
 
@@ -147,5 +258,40 @@ fn push_subject(
             subject_kind,
             subject_id,
         });
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    fn access(scopes: Option<&[&str]>, servers: Option<&[&str]>) -> ApiKeyAccess {
+        ApiKeyAccess::new(
+            scopes.map(|scopes| scopes.iter().map(|scope| (*scope).to_string()).collect()),
+            servers.map(|servers| servers.iter().map(|server| (*server).to_string()).collect()),
+        )
+        .expect("access")
+    }
+
+    #[test]
+    fn key_scopes_limit_previewed_servers() {
+        let open = McpAccessPreview::default();
+        assert!(open.allows_server("github"), "no previewed key, no limit");
+
+        let limited = McpAccessPreview {
+            subjects: Vec::new(),
+            key_access: vec![access(Some(&[SCOPE_MCP_PROXY]), Some(&["notes"]))],
+        };
+        assert!(limited.allows_server("notes"));
+        assert!(!limited.allows_server("github"));
+
+        let inference_only = McpAccessPreview {
+            subjects: Vec::new(),
+            key_access: vec![access(Some(&[gateway_core::SCOPE_INFERENCE]), None)],
+        };
+        assert!(
+            !inference_only.allows_server("notes"),
+            "no MCP scope, no tools"
+        );
     }
 }

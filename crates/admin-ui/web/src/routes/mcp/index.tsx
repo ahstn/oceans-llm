@@ -9,6 +9,7 @@ import {
   getRecommendedMcpServers,
   getUsers,
 } from '@/server/admin-data.functions'
+import { getMcpTagRules } from '@/server/mcp-policy-data.functions'
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
 import { McpNavigation } from './-navigation'
@@ -29,19 +30,23 @@ export const Route = createFileRoute('/mcp/')({
     }
   },
   loader: async () => {
-    const [servers, recommended, toolsets, grants, apiKeys, identity] = await Promise.all([
-      getMcpServers({ data: { include_disabled: true } }),
-      getRecommendedMcpServers(),
-      getMcpToolsets({ data: { include_disabled: true } }),
-      getMcpGrants(),
-      getApiKeys(),
-      getUsers(),
-    ])
+    const [servers, recommended, toolsets, grants, tagRules, apiKeys, identity] = await Promise.all(
+      [
+        getMcpServers({ data: { include_disabled: true } }),
+        getRecommendedMcpServers(),
+        getMcpToolsets({ data: { include_disabled: true } }),
+        getMcpGrants(),
+        getMcpTagRules(),
+        getApiKeys(),
+        getUsers(),
+      ],
+    )
     return {
       servers: servers.data.items,
       recommended: recommended.data.items,
       toolsets: toolsets.data.items,
       grants: grants.data.items,
+      tagRules: tagRules.data.items,
       apiKeys: apiKeys.data.items,
       users: apiKeys.data.users,
       serviceAccounts: apiKeys.data.service_accounts,
@@ -87,6 +92,7 @@ export function McpWorkspacePage() {
           {search.tab === 'access' ? (
             <AccessTab
               grants={data.grants}
+              tagRules={data.tagRules}
               servers={data.servers}
               toolsets={data.toolsets}
               subjects={{

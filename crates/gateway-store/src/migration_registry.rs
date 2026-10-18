@@ -407,6 +407,27 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql"
         ),
     },
+    MigrationManifest {
+        version: 67,
+        name: "mcp_tool_tag_rules",
+        checksum: "V67__mcp_tool_tag_rules.sql",
+        libsql_sql: include_str!("../migrations/V67__mcp_tool_tag_rules.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V67__mcp_tool_tag_rules.sql"),
+    },
+    MigrationManifest {
+        version: 68,
+        name: "mcp_tool_versions",
+        checksum: "V68__mcp_tool_versions.sql",
+        libsql_sql: include_str!("../migrations/V68__mcp_tool_versions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V68__mcp_tool_versions.sql"),
+    },
+    MigrationManifest {
+        version: 69,
+        name: "mcp_tool_effective_tags",
+        checksum: "V69__mcp_tool_effective_tags.sql",
+        libsql_sql: include_str!("../migrations/V69__mcp_tool_effective_tags.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V69__mcp_tool_effective_tags.sql"),
+    },
 ];
 
 #[cfg(test)]
