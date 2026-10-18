@@ -982,6 +982,9 @@ where
         // The checks read only catalog values, which depend on the provider, upstream model,
         // and extra_body billing modifiers, so routes sharing those reuse one lookup, including
         // lookups an earlier check over the same routes already made.
+        // Targets whose lookup failed in this scan. Later pricing-only routes sharing one skip
+        // the lookup; a context override still tries, so its failure stays fatal.
+        let mut failed_targets = std::collections::HashSet::new();
         let mut scan = RouteOverrideScan::default();
         for (model_key, route) in routes {
             {
@@ -999,6 +1002,11 @@ where
                     Value::Object(route.extra_body.clone()).to_string(),
                 );
                 if !catalog.contains_key(&catalog_key) {
+                    if route.context_window_tokens.is_none()
+                        && failed_targets.contains(&catalog_key)
+                    {
+                        continue;
+                    }
                     let provider = providers.get(&route.provider_key).and_then(Option::as_ref);
                     match resolve_effective_route_metadata(
                         self.store.as_ref(),
@@ -1024,6 +1032,7 @@ where
                                 upstream_model = %route.upstream_model,
                                 "skipping redundant route override check; route metadata lookup failed"
                             );
+                            failed_targets.insert(catalog_key);
                             continue;
                         }
                     }
@@ -2966,6 +2975,47 @@ mod tests {
             .validate_route_overrides()
             .await
             .expect_err("a context override must still be checked against the catalog");
+    }
+
+    #[tokio::test]
+    async fn redundant_override_scan_does_not_retry_a_failed_catalog_target() {
+        let model_id = Uuid::new_v4();
+        let mut first = vertex_embedding_route(model_id);
+        first.upstream_model = "gpt-5".to_string();
+        first.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let mut second = first.clone();
+        second.id = Uuid::new_v4();
+        let lookups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model(model_id)],
+                provider: Some(openai_provider(&first.provider_key)),
+                routes: vec![first, second],
+                pricing_lookup_fails: true,
+                pricing_lookups: lookups.clone(),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        let routes = service
+            .validate_route_overrides()
+            .await
+            .expect("pricing-only overrides cannot block startup");
+        service
+            .warn_on_redundant_route_overrides(routes)
+            .await
+            .expect("a failed lookup is only logged");
+        assert_eq!(
+            lookups.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "routes sharing a failed target look it up once"
+        );
     }
 
     #[tokio::test]
