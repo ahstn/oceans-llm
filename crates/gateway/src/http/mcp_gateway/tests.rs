@@ -752,8 +752,13 @@ mod proxy_policy {
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
-    /// Discovers `search` again with an upstream claim of `readOnlyHint`.
-    async fn claim_read_only(state: &AppState, server: &gateway_core::ExternalMcpServerRecord) {
+    /// Discovers `search` again, as `schema_hash`, with an upstream claim of
+    /// `readOnlyHint`.
+    async fn claim_read_only(
+        state: &AppState,
+        server: &gateway_core::ExternalMcpServerRecord,
+        schema_hash: &str,
+    ) {
         let now = OffsetDateTime::now_utc();
         state
             .store
@@ -781,7 +786,7 @@ mod proxy_policy {
                         annotations: json!({"readOnlyHint": true}).as_object().cloned(),
                         ..Default::default()
                     },
-                    schema_hash: "search-v2".to_string(),
+                    schema_hash: schema_hash.to_string(),
                 }],
             )
             .await
@@ -799,7 +804,7 @@ mod proxy_policy {
             .await
             .expect("server lookup")
             .expect("server");
-        claim_read_only(&state, &server).await;
+        claim_read_only(&state, &server, "search-v2").await;
         add_user_rule(
             &state,
             &auth,
@@ -839,7 +844,8 @@ mod proxy_policy {
         let (status, _) = send(&state, &auth, call.clone()).await;
         assert_eq!(status, StatusCode::OK);
 
-        // So does approval on the server: served definitions were reviewed.
+        // Turning approval on does not vouch for the definition discovery
+        // approved before it.
         state
             .store
             .set_mcp_tool_annotation_overrides(search.mcp_tool_id, &Default::default())
@@ -869,6 +875,31 @@ mod proxy_policy {
             })
             .await
             .expect("enable approval");
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An admin approving the next definition does.
+        claim_read_only(&state, &server, "search-v3").await;
+        let pending = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool")
+            .review
+            .pending_schema_version
+            .expect("pending version");
+        state
+            .store
+            .review_mcp_tool_version(
+                search.mcp_tool_id,
+                pending,
+                gateway_core::McpToolReviewDecision::Approve,
+                None,
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("approve");
         let (status, _) = send(&state, &auth, call).await;
         assert_eq!(status, StatusCode::OK);
     }

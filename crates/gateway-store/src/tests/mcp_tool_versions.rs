@@ -231,8 +231,30 @@ where
     );
     assert!(versions[0].reviewed_by_user_id.is_none());
 
-    // Approval on: a new tool waits and is not served, even under an include rule.
+    // Turning approval on does not vouch for `read`'s hint, which discovery
+    // approved unreviewed; an admin override does.
     set_approval(store, &server, true).await;
+    assert!(
+        served(store, &subject, server.mcp_server_id)
+            .await
+            .is_empty()
+    );
+    store
+        .set_mcp_tool_annotation_overrides(
+            read.mcp_tool_id,
+            &gateway_core::McpAnnotationOverrides {
+                read_only: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("vouching override");
+    assert_eq!(
+        served(store, &subject, server.mcp_server_id).await,
+        [pair("read", "Read one file")]
+    );
+
+    // Approval on: a new tool waits and is not served, even under an include rule.
     let tools = discover(
         store,
         &server,
@@ -475,10 +497,11 @@ where
     );
     assert_eq!(delete.review.approved_schema_version, Some(1));
     // Without approval the upstream's `readOnlyHint` is an unreviewed claim,
-    // so the include rule stops selecting tools; the explicit grant remains.
+    // so the include rule selects only `read`, which an admin vouched for;
+    // `write` keeps its explicit grant.
     assert_eq!(
         served(store, &subject, server.mcp_server_id).await,
-        vec![pair("write", "Write a file")]
+        vec![pair("read", "Read one file"), pair("write", "Write a file")]
     );
 }
 

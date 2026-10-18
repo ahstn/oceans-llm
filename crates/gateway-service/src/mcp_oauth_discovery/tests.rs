@@ -177,6 +177,9 @@ async fn falls_back_to_well_known_resource_metadata_and_oidc_discovery() {
         "metadata_document"
     );
     assert!(discovery.client_id_metadata_document_supported);
+    // The issuer is the metadata's own string, trailing `/` included, since
+    // callbacks compare `iss` with it exactly.
+    assert_eq!(discovery.issuer, format!("{origin}/"));
     // RFC 8414 defaults to client_secret_basic when methods are not listed.
     assert_eq!(
         discovery.token_endpoint_auth_methods_supported,

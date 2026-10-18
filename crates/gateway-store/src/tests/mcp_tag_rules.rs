@@ -237,7 +237,8 @@ where
         .await
         .expect("clear override");
 
-    // With approval on, served definitions were reviewed, so their hints count.
+    // Turning approval on does not vouch for definitions discovery approved
+    // before it; only reviewed versions and overrides count.
     store
         .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
             mcp_server_id: files.mcp_server_id,
@@ -259,6 +260,21 @@ where
         })
         .await
         .expect("enable approval");
+    assert!(
+        allowed_names(store, &subjects, files.mcp_server_id)
+            .await
+            .is_empty()
+    );
+    store
+        .set_mcp_tool_annotation_overrides(
+            read_id,
+            &McpAnnotationOverrides {
+                read_only: Some(true),
+                ..McpAnnotationOverrides::default()
+            },
+        )
+        .await
+        .expect("vouching override");
     assert_eq!(
         allowed_names(store, &subjects, files.mcp_server_id).await,
         ["read"]

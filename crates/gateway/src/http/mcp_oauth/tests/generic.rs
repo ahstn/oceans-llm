@@ -560,6 +560,22 @@ async fn codes_from_another_issuer_never_reach_the_token_endpoint() {
         location,
         "/admin/account/connections?oauth_error=issuer_mismatch"
     );
+    // Issuers compare as exact strings: a trailing `/` names another issuer.
+    let query = start(&state, &headers, &server).await;
+    let location = callback_query(
+        &state,
+        &headers,
+        &format!(
+            "code=auth-code&state={}&iss={}",
+            encode(&query["state"]),
+            encode(&format!("{origin}/"))
+        ),
+    )
+    .await;
+    assert_eq!(
+        location,
+        "/admin/account/connections?oauth_error=issuer_mismatch"
+    );
     assert!(mock.lock().expect("mock").token_requests.is_empty());
 
     let query = start(&state, &headers, &server).await;

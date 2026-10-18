@@ -1416,6 +1416,49 @@ async fn the_reported_policy_has_the_smallest_share_left_whatever_its_unit() {
     assert_eq!(status.remaining, 100);
 }
 
+/// A slow team lookup that counts its calls.
+#[derive(Default)]
+struct CountingTeams(std::sync::atomic::AtomicUsize);
+
+#[async_trait]
+impl RateLimitTeamLookup for CountingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn concurrent_requests_from_one_user_share_a_team_lookup() {
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+    );
+    let teams = Arc::new(CountingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let decisions = tokio::join!(
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+    );
+    for decision in [decisions.0, decisions.1, decisions.2, decisions.3] {
+        decision.expect("check");
+    }
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 struct FailingTeams;
 
 #[async_trait]

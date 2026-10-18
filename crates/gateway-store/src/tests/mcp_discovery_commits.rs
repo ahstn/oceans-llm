@@ -177,6 +177,42 @@ where
     );
     assert_eq!(read_tool(store, &server).await, ("newer".to_string(), true));
 
+    // An older failure is kept in the history but leaves the newer success as
+    // the server's last discovery; a newer failure replaces it.
+    for (started_at, summary) in [
+        (t0 + time::Duration::minutes(3), "older failure"),
+        (t0 + time::Duration::minutes(6), "newer failure"),
+    ] {
+        store
+            .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                status: ExternalMcpDiscoveryStatus::Failed,
+                error_summary: Some(summary.to_string()),
+                ..guarded_run(&server, started_at)
+            })
+            .await
+            .expect("failure");
+        let summary_now = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let expected = match summary {
+            "older failure" => (Some(ExternalMcpDiscoveryStatus::Success), None),
+            _ => (
+                Some(ExternalMcpDiscoveryStatus::Failed),
+                Some(summary.to_string()),
+            ),
+        };
+        assert_eq!(
+            (
+                summary_now.last_discovery_status,
+                summary_now.last_error_summary
+            ),
+            expected,
+            "after the {summary}"
+        );
+    }
+
     // An admin disables the server while a discovery is in flight.
     store
         .disable_external_mcp_server(server.mcp_server_id, OffsetDateTime::now_utc())

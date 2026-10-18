@@ -1877,6 +1877,13 @@ async fn best_effort_log_stream_result(
 /// A grant change shows in the counts within this long.
 pub const MCP_TELEMETRY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Token-overhead estimates running at once. They are best effort, so when
+/// the store falls behind, a request past this records its counts without
+/// one instead of queueing more work.
+const MCP_TELEMETRY_TASKS: usize = 64;
+static MCP_TELEMETRY_PERMITS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MCP_TELEMETRY_TASKS);
+
 /// A credential's MCP tool set, as inference request telemetry counts it.
 #[derive(Debug)]
 pub struct McpTelemetrySnapshot {
@@ -1890,7 +1897,8 @@ pub struct McpTelemetrySnapshot {
 ///
 /// This runs before dispatch on every inference request, so it stays cheap:
 /// the tool set is cached per credential for [`MCP_TELEMETRY_CACHE_TTL`], and
-/// the token-overhead estimate and its writes run in a background task.
+/// the token-overhead estimate and its writes run in a background task, at
+/// most [`MCP_TELEMETRY_TASKS`] at once.
 #[tracing::instrument(
     name = "gateway.mcp.telemetry",
     skip_all,
@@ -1925,6 +1933,13 @@ async fn best_effort_record_mcp_request_telemetry(
     context.tool_cardinality.exposed_tool_count = Some(snapshot.tools.len() as i64);
     context.tool_cardinality.filtered_tool_count = Some(snapshot.filtered_tool_count);
 
+    let Ok(permit) = MCP_TELEMETRY_PERMITS.try_acquire() else {
+        tracing::debug!(
+            request_id = %context.request_id,
+            "skipping the MCP token-overhead estimate: too many in flight"
+        );
+        return;
+    };
     let state = state.clone();
     let request_id = context.request_id.clone();
     let model_key = context.resolved_model_key.clone();
@@ -1934,6 +1949,7 @@ async fn best_effort_record_mcp_request_telemetry(
         async move {
             record_mcp_token_overhead(&state, request_id, model_key, &route, provider, snapshot)
                 .await;
+            drop(permit);
         }
         .in_current_span(),
     );

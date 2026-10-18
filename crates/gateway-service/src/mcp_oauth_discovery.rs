@@ -330,6 +330,9 @@ pub async fn discover_mcp_oauth(
             "authorization server metadata does not match issuer `{issuer}`"
         )));
     }
+    // The authorization server's own identifier, exactly as its metadata
+    // states it: callbacks compare `iss` against it byte for byte (RFC 9207).
+    let issuer = metadata.issuer.clone().unwrap_or(issuer);
     let endpoint = |value: Option<String>, field: &str| -> Result<String, GatewayError> {
         let value = value.ok_or_else(|| {
             GatewayError::InvalidRequest(format!("authorization server metadata has no {field}"))

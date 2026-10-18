@@ -217,22 +217,24 @@ pub fn derived_tag_hint(tag: &str) -> Option<&'static str> {
 /// Derived tags come from hints the upstream declares. On a server that takes
 /// upstream changes without review, those hints are unreviewed claims, and a
 /// new tool (including one the upstream renamed) would grant itself access by
-/// claiming one. There an include rule on a derived tag selects a tool only
-/// when an admin overrode the tag's own hint to `true`. On a server with
-/// `approve_tool_changes`, served definitions were reviewed, so the effective
-/// tags apply. Admin tags apply everywhere. Exclude rules always use the
-/// effective tags. The stores' include queries mirror this rule in SQL.
+/// claiming one. So an include rule on a derived tag selects a tool only when
+/// an admin vouched for its hints: by overriding the tag's own hint to `true`,
+/// or by approving the served version on a server with `approve_tool_changes`
+/// (`served_version_reviewed`). Turning approval on does not vouch for
+/// definitions served before it, which discovery approved unreviewed. Admin
+/// tags apply everywhere. Exclude rules always use the effective tags. The
+/// stores' include queries mirror this rule in SQL.
 #[must_use]
 pub fn include_rule_selects(
     tool: &ExternalMcpToolRecord,
     tag: &str,
-    server_requires_approval: bool,
+    served_version_reviewed: bool,
 ) -> bool {
     if !has_effective_tag(tool, tag) {
         return false;
     }
     match derived_tag_hint(tag) {
-        Some(hint) if !server_requires_approval => {
+        Some(hint) if !served_version_reviewed => {
             tool.policy.annotation_overrides.get(hint) == Some(true)
         }
         _ => true,
@@ -685,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn include_rules_trust_derived_tags_only_from_admins_or_reviewed_servers() {
+    fn include_rules_trust_derived_tags_only_from_admins_or_reviewed_versions() {
         let server = Uuid::new_v4();
         let claimed = tool(
             server,

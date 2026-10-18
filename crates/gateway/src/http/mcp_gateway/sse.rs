@@ -20,6 +20,12 @@ const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 /// event would otherwise grow the buffer for the life of the stream.
 pub(super) const MAX_SSE_EVENT_BYTES: usize = super::MAX_MCP_REWRITE_BODY_BYTES as usize;
 
+fn oversized_event() -> io::Error {
+    io::Error::other(format!(
+        "upstream SSE event exceeds {MAX_SSE_EVENT_BYTES} bytes"
+    ))
+}
+
 /// Incremental SSE rewriter. Feed it upstream chunks in order and call
 /// [`SseSanitizer::finish`] once the stream ends.
 #[derive(Debug)]
@@ -52,7 +58,7 @@ impl SseSanitizer {
     }
 
     /// Accepts the next upstream chunk and returns the complete events it
-    /// finished, sanitised. Fails once an unfinished event passes
+    /// finished, sanitised. Fails once an event, finished or not, passes
     /// [`MAX_SSE_EVENT_BYTES`].
     pub(super) fn push(&mut self, chunk: &[u8]) -> Result<Bytes, io::Error> {
         if self.at_start {
@@ -72,15 +78,17 @@ impl SseSanitizer {
         // The last byte already searched may be the first half of `\n\n`.
         let mut from = self.scanned.saturating_sub(1);
         while let Some(end) = find_event_end(&self.pending[from..]).map(|end| from + end) {
+            // An event can end in the same chunk that takes it past the cap.
+            if end > MAX_SSE_EVENT_BYTES {
+                return Err(oversized_event());
+            }
             let event: Vec<u8> = self.pending.drain(..end + 2).collect();
             self.write_event(&event[..end], &mut out);
             from = 0;
         }
         self.scanned = self.pending.len();
         if self.pending.len() > MAX_SSE_EVENT_BYTES {
-            return Err(io::Error::other(format!(
-                "upstream SSE event exceeds {MAX_SSE_EVENT_BYTES} bytes"
-            )));
+            return Err(oversized_event());
         }
         Ok(Bytes::from(out))
     }
@@ -328,6 +336,15 @@ mod tests {
             1,
             "nothing of the oversized event was forwarded"
         );
+    }
+
+    #[test]
+    fn an_oversized_event_that_ends_in_its_chunk_is_refused() {
+        let mut chunk = b"data: ".to_vec();
+        chunk.extend(std::iter::repeat_n(b'x', MAX_SSE_EVENT_BYTES));
+        chunk.extend_from_slice(b"\n\ndata: {}\n\n");
+        let mut sanitizer = SseSanitizer::new(false);
+        assert!(sanitizer.push(&chunk).is_err());
     }
 
     #[test]

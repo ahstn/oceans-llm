@@ -347,6 +347,10 @@ macro_rules! server_columns {
     };
 }
 
+/// Whether a discovery of the server that started after this one already
+/// committed. Reads `external_mcp_discovery_runs_server_status_ms_idx`.
+const NEWER_DISCOVERY_COMMITTED_SQL: &str = "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND started_at_ms > ?3)";
+
 const SERVER_COLUMNS: &str = server_columns!();
 
 const SERVER_SELECT_BY_ID: &str = concat!(
@@ -1001,7 +1005,7 @@ impl McpRegistryRepository for LibsqlStore {
             let server = load_server(&tx, run.mcp_server_id).await?;
             let mut rows = tx
                 .query(
-                    "SELECT EXISTS (SELECT 1 FROM external_mcp_discovery_runs WHERE mcp_server_id = ?1 AND status = ?2 AND COALESCE(started_at_ms, started_at * 1000) > ?3)",
+                    NEWER_DISCOVERY_COMMITTED_SQL,
                     libsql::params![
                         run.mcp_server_id.to_string(),
                         ExternalMcpDiscoveryStatus::Success.as_str(),
@@ -1120,18 +1124,26 @@ impl McpRegistryRepository for LibsqlStore {
         )
         .await
         .map_err(to_query_error)?;
+        // The run stays in the history, but a success that started later
+        // remains the server's last discovery.
         tx.execute(
             r#"
             UPDATE external_mcp_servers
             SET last_discovery_status = ?1, last_discovery_at = ?2,
                 last_error_summary = ?3, updated_at = ?2
             WHERE mcp_server_id = ?4
+              AND NOT EXISTS (
+                SELECT 1 FROM external_mcp_discovery_runs
+                WHERE mcp_server_id = ?4 AND status = ?5 AND started_at_ms > ?6
+              )
             "#,
             libsql::params![
                 run.status.as_str(),
                 run.finished_at.unix_timestamp(),
                 run.error_summary.as_deref(),
                 run.mcp_server_id.to_string(),
+                ExternalMcpDiscoveryStatus::Success.as_str(),
+                unix_millis(run.started_at),
             ],
         )
         .await
@@ -1332,5 +1344,86 @@ impl LibsqlStore {
             current,
             previous: Some(existing),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::NEWER_DISCOVERY_COMMITTED_SQL;
+    use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
+
+    #[tokio::test]
+    async fn the_stale_discovery_check_reads_backfilled_runs_by_index() {
+        let temporary = tempdir().expect("tempdir");
+        let database_path = temporary.path().join("gateway.db");
+        let database = libsql::Builder::new_local(database_path.to_str().expect("database path"))
+            .build()
+            .await
+            .expect("database");
+        let connection = database.connect().expect("connection");
+        let apply = |below: u32, at_least: u32| {
+            MIGRATION_REGISTRY
+                .iter()
+                .filter(move |migration| migration.version >= at_least && migration.version < below)
+                .map(|migration| migration.sql_for(MigrationBackend::Libsql))
+        };
+        for sql in apply(72, 0) {
+            connection
+                .execute_batch(sql)
+                .await
+                .expect("earlier migration");
+        }
+        connection
+            .execute("PRAGMA foreign_keys = OFF", ())
+            .await
+            .expect("pragma");
+        connection
+            .execute(
+                "INSERT INTO external_mcp_discovery_runs \
+                 (discovery_run_id, mcp_server_id, status, started_at, finished_at) \
+                 VALUES ('run', 'server', 'success', 1700000000, 1700000001)",
+                (),
+            )
+            .await
+            .expect("older run");
+        for sql in apply(73, 72) {
+            connection.execute_batch(sql).await.expect("V72");
+        }
+
+        let mut rows = connection
+            .query(
+                NEWER_DISCOVERY_COMMITTED_SQL,
+                libsql::params!["server", "success", 1_699_999_999_500_i64],
+            )
+            .await
+            .expect("stale check");
+        let newer: bool = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("row")
+            .get(0)
+            .expect("value");
+        assert!(newer, "the older run was backfilled in milliseconds");
+
+        let mut rows = connection
+            .query(
+                &format!("EXPLAIN QUERY PLAN {NEWER_DISCOVERY_COMMITTED_SQL}"),
+                libsql::params!["server", "success", 0_i64],
+            )
+            .await
+            .expect("query plan");
+        let mut plan = String::new();
+        while let Some(row) = rows.next().await.expect("plan row") {
+            let detail: String = row.get(3).expect("plan detail");
+            plan.push_str(&detail);
+            plan.push('\n');
+        }
+        assert!(
+            plan.contains("external_mcp_discovery_runs_server_status_ms_idx"),
+            "plan:\n{plan}"
+        );
     }
 }

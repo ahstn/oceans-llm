@@ -455,6 +455,9 @@ pub struct RateLimiter {
     team_lookup: Option<Arc<dyn RateLimitTeamLookup>>,
     /// Each user's team, as of when it was read, for `policy_refresh`.
     member_teams: std::sync::Mutex<HashMap<Uuid, (Instant, Option<Uuid>)>>,
+    /// Team lookups in flight, so concurrent requests from one uncached user
+    /// share a single lookup.
+    member_team_lookups: std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<Option<Uuid>>>>>,
     settings: RateLimitSettings,
     config_policies: Vec<ActivePolicy>,
     cache: RwLock<Option<PolicyCache>>,
@@ -503,6 +506,7 @@ impl RateLimiter {
             store,
             team_lookup: None,
             member_teams: std::sync::Mutex::new(HashMap::new()),
+            member_team_lookups: std::sync::Mutex::new(HashMap::new()),
             settings,
             config_policies,
             cache: RwLock::new(None),
@@ -567,15 +571,38 @@ impl RateLimiter {
             subject.team_id = team;
             return Ok(subject);
         }
-        let team = lookup.team_for_user(user_id).await?;
-        let mut teams = self
-            .member_teams
+        let flight = self
+            .member_team_lookups
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .entry(user_id)
+            .or_default()
+            .clone();
+        // A failed lookup leaves the cell empty, so the next waiter tries
+        // again and gets its own error.
+        let team = *flight
+            .get_or_try_init(|| lookup.team_for_user(user_id))
+            .await?;
+        {
+            let mut teams = self
+                .member_teams
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
+                teams.clear();
+            }
+            teams.insert(user_id, (Instant::now(), team));
+        }
+        let mut flights = self
+            .member_team_lookups
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
-            teams.clear();
+        if flights
+            .get(&user_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &flight))
+        {
+            flights.remove(&user_id);
         }
-        teams.insert(user_id, (Instant::now(), team));
         subject.team_id = team;
         Ok(subject)
     }
