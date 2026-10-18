@@ -220,29 +220,16 @@ impl ClientMetadataDocuments {
         }
         let outcome = match self.recent_failure(client_id, now) {
             Some(failure) => Err(failure),
-            None => match self.fetch_limiter.check(requester, Instant::now()) {
-                Err(limited) => {
-                    tracing::warn!(?requester, "client metadata document fetch rate limited");
-                    Err(ResolveFailure {
-                        error: OauthError::rate_limited(
-                            "too many client metadata documents requested; try again later",
-                            limited.retry_after.as_secs(),
-                        ),
-                        transient: true,
-                        document_refused: false,
-                    })
-                }
-                Ok(()) => {
-                    let flight = InFlight::join(&self.in_flight, client_id);
-                    let outcome = flight
-                        .cell
-                        .get_or_init(|| self.refresh(repo, client_id, now))
-                        .await
-                        .clone();
-                    drop(flight);
-                    outcome
-                }
-            },
+            None => {
+                let flight = InFlight::join(&self.in_flight, client_id);
+                let outcome = flight
+                    .cell
+                    .get_or_init(|| self.limited_refresh(repo, client_id, now, requester))
+                    .await
+                    .clone();
+                drop(flight);
+                outcome
+            }
         };
         let failure = match outcome {
             Ok(client) => return Ok(client),
@@ -254,6 +241,33 @@ impl ClientMetadataDocuments {
             return Ok(stored);
         }
         Err(failure.error)
+    }
+
+    /// [`Self::refresh`], counted against the fetch limits. Only the caller
+    /// that starts a refresh runs this; callers that join it cause no fetch
+    /// of their own, so they do not count.
+    async fn limited_refresh<R>(
+        &self,
+        repo: &R,
+        client_id: &str,
+        now: OffsetDateTime,
+        requester: Option<IpAddr>,
+    ) -> RefreshOutcome
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        if let Err(limited) = self.fetch_limiter.check(requester, Instant::now()) {
+            tracing::warn!(?requester, "client metadata document fetch rate limited");
+            return Err(ResolveFailure {
+                error: OauthError::rate_limited(
+                    "too many client metadata documents requested; try again later",
+                    limited.retry_after.as_secs(),
+                ),
+                transient: true,
+                document_refused: false,
+            });
+        }
+        self.refresh(repo, client_id, now).await
     }
 
     /// Fetches, validates, stores, and caches the document. When the host is

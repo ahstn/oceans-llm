@@ -18,7 +18,7 @@ use axum::{
 use gateway_core::GatewayOauthRepository;
 use gateway_service::{
     ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument, McpClientOauthSettings,
-    outbound_fetch::OutboundFetchError,
+    SourceRateLimits, outbound_fetch::OutboundFetchError,
 };
 use serde_json::{Value, json};
 use url::Url;
@@ -309,6 +309,29 @@ async fn documents_are_cached_as_their_headers_allow() {
 async fn concurrent_requests_share_one_fetch() {
     let (harness, fixture) = harness_with_fixture(&[]).await;
     // Uncacheable, so only coalescing keeps this to one fetch.
+    fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
+    fixture.delay_ms.store(200, Ordering::SeqCst);
+    let query = harness.authorize_query(CLIENT_ID, &[]);
+    let starts = (0..5).map(|_| harness.authorize(&query));
+    for (status, _) in futures_util::future::join_all(starts).await {
+        assert_eq!(status, StatusCode::SEE_OTHER);
+    }
+    assert_eq!(fixture.fetches(), 1);
+}
+
+/// Callers waiting on a fetch already in flight cause no fetch of their own,
+/// so they do not count against the fetch limits.
+#[tokio::test]
+async fn joining_a_fetch_in_flight_is_not_rate_limited() {
+    let fixture = Arc::new(Fixture::default());
+    let documents = ClientMetadataDocuments::with_source(Vec::new(), fixture.clone())
+        .expect("documents")
+        .with_fetch_rate_limits(SourceRateLimits {
+            per_source_per_minute: 1,
+            per_minute: 1,
+        })
+        .expect("limits");
+    let harness = Harness::with_settings(settings_with(documents)).await;
     fixture.publish(CLIENT_ID, &editor_document(), Some("no-store"));
     fixture.delay_ms.store(200, Ordering::SeqCst);
     let query = harness.authorize_query(CLIENT_ID, &[]);
