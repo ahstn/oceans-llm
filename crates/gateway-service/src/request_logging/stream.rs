@@ -1,3 +1,4 @@
+use agent_session_analysis::tool_calls::ToolCallTally;
 use gateway_core::{RequestAttemptRecord, SseEventParser};
 use serde_json::{Map, Value, json};
 
@@ -8,7 +9,7 @@ use crate::{
     },
 };
 
-use super::{tool_cardinality::ToolCallCounter, truncate_payload};
+use super::{tool_cardinality::InvokedToolCounts, truncate_payload};
 
 const MAX_RESPONSE_ID_BYTES: usize = 256;
 
@@ -36,7 +37,7 @@ pub struct StreamResponseCollector {
     usage: Option<Value>,
     response_id: Option<String>,
     failure: Option<StreamFailureSummary>,
-    tool_calls: ToolCallCounter,
+    tool_calls: ToolCallTally,
     finished: bool,
     truncated: bool,
 }
@@ -170,8 +171,12 @@ impl StreamResponseCollector {
         self.tool_calls.distinct_tool_count()
     }
 
+    pub(super) fn invoked_tool_counts(&self) -> InvokedToolCounts {
+        InvokedToolCounts::from(&self.tool_calls)
+    }
+
     fn observe_tool_calls(&mut self, value: &Value) {
-        self.tool_calls.observe_value(value);
+        self.tool_calls.observe(value);
     }
 
     pub(super) fn into_payload(self, failure: Option<&StreamFailureSummary>) -> (Value, bool) {

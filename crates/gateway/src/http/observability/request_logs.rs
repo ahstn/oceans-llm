@@ -298,6 +298,7 @@ fn summary_view(
             filtered_tool_count: log.tool_cardinality.filtered_tool_count,
             request_tool_count: log.tool_cardinality.request_tool_count,
             invoked_distinct_tool_count: log.tool_cardinality.invoked_distinct_tool_count,
+            invoked_mcp_tool_count: log.tool_cardinality.invoked_mcp_tool_count,
         },
         agent_harness_key: log.agent_harness_key.clone(),
         agent_harness_label: log.agent_harness_label.clone(),

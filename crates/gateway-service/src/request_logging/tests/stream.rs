@@ -430,3 +430,26 @@ data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use"
 
     assert_eq!(collector.invoked_tool_count(), 1);
 }
+
+#[test]
+fn stream_collector_counts_responses_mcp_and_hosted_tool_calls() {
+    let mut collector = StreamResponseCollector::default();
+
+    collector.observe_chunk(
+        br#"event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"type":"mcp_call","id":"mcp_1","server_label":"github","name":"create_issue"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"type":"web_search_call","id":"ws_1","status":"in_progress"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output":[{"type":"mcp_call","id":"mcp_1","server_label":"github","name":"create_issue"},{"type":"web_search_call","id":"ws_1","status":"completed"}]}}
+
+"#,
+    );
+    collector.finish();
+
+    assert_eq!(collector.invoked_tool_count(), 2);
+    assert_eq!(collector.invoked_distinct_tool_count(), 2);
+    assert_eq!(collector.invoked_tool_counts().mcp_calls, 1);
+}

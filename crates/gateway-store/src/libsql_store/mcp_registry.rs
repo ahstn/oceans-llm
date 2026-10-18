@@ -1420,7 +1420,7 @@ mod tests {
                 .filter(move |migration| migration.version >= at_least && migration.version < below)
                 .map(|migration| migration.sql_for(MigrationBackend::Libsql))
         };
-        for sql in apply(72, 0) {
+        for sql in apply(73, 0) {
             connection
                 .execute_batch(sql)
                 .await
@@ -1439,8 +1439,8 @@ mod tests {
             )
             .await
             .expect("older run");
-        for sql in apply(73, 72) {
-            connection.execute_batch(sql).await.expect("V72");
+        for sql in apply(74, 73) {
+            connection.execute_batch(sql).await.expect("V73");
         }
 
         let mut rows = connection
@@ -1459,7 +1459,7 @@ mod tests {
             .expect("value");
         assert!(newer, "the older run was backfilled in milliseconds");
 
-        // A gateway older than V72 records a run without `started_at_ms`.
+        // A gateway older than V73 records a run without `started_at_ms`.
         connection
             .execute(
                 "INSERT INTO external_mcp_discovery_runs \
