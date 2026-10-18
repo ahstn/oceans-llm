@@ -342,18 +342,19 @@ These profile transforms apply to Chat Completions request-shape quirks unless e
 `openai_compat.empty_tools`
 
 - default: `preserve`
-- `omit` removes an explicit empty `tools` array from both Chat Completions and Responses requests; neutral `tool_choice` values (`auto`, `none`, or `null`) are removed with it, while `required` and named choices are rejected locally
+- `omit` removes an explicit empty `tools` array from both Chat Completions and Responses requests; neutral `tool_choice` values (`auto`, `none`, or `null`) and `parallel_tool_calls` are removed with it, while `required` and named choices are rejected locally
 - `preserve_with_tool_history` removes an empty array unless function-tool history is present, for LiteLLM/Anthropic proxy compatibility; preserved arrays retain `tool_choice`
 
 ## Anthropic Messages on OpenAI-Compatible Routes
 
-`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. When the selected route is `openai_compat`, `gcp_cloud_run_openai_compat`, or `github_copilot` with `chat_api: chat_completions`, the adapter rewrites them into Chat Completions shapes before `/chat/completions`:
+`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. When the selected route is `openai_compat`, `gcp_cloud_run_openai_compat`, `github_copilot` with `chat_api: chat_completions`, or `aws_bedrock` with `runtime_openai_chat` or `mantle_openai_chat`, the adapter rewrites them into Chat Completions shapes before `/chat/completions`:
 
-- Tool definitions with `input_schema` become `function` tools. `tool_choice` `auto`, `any`, `none`, and `tool` become `auto`, `required`, `none`, and a named function choice. `disable_parallel_tool_use: true` sets `parallel_tool_calls: false` unless the caller already set it.
-- Assistant `tool_use` blocks become `tool_calls` entries with the block `id`, the tool name, and `input` serialized as a JSON string. Text blocks are joined into a string `content`; a turn with only tool calls sends `content: null`.
+- Tool definitions with `input_schema` become `function` tools. `tool_choice` `auto`, `any`, `none`, and `tool` become `auto`, `required`, `none`, and a named function choice. `disable_parallel_tool_use: true` sets `parallel_tool_calls: false` unless the caller already set it. A `tool` choice without a `name` is rejected locally with 400.
+- Assistant `tool_use` blocks become `tool_calls` entries with the block `id`, the tool name, and `input` serialized as a JSON string. Text blocks are joined into a string `content`. A turn with only tool calls sends `content: null`, and a turn with only thinking blocks sends `content: ""`.
 - Each user `tool_result` block becomes a `{ "role": "tool", "tool_call_id": ..., "content": ... }` message, placed before any remaining user content from the same turn. String content passes through; block-array content is flattened to its text blocks joined with newlines. `is_error: true` prefixes the content with `Error: ` because Chat Completions has no error flag on tool messages.
-- Anthropic `image` blocks with `base64` or `url` sources become `image_url` parts. Images inside a `tool_result` move to the trailing user message, because `tool` messages cannot carry images.
+- Anthropic `image` blocks with `base64` or `url` sources become `image_url` parts. Images inside a `tool_result` move to the trailing user message, because `tool` messages cannot carry images. Other sources, such as Files API `file` references, are rejected locally with 400.
 - `thinking` and `redacted_thinking` blocks in assistant history are dropped. Chat Completions has no request field that returns them to the model, and their signatures are only valid for Anthropic upstreams. Route Claude through `anthropic_compat` when thinking continuity across tool turns matters.
+- `stop_sequences` becomes `stop` unless the caller already set `stop`. `top_k`, `thinking`, and `metadata` pass through unchanged, because several OpenAI-compatible upstreams accept them as extensions.
 
 OpenAI-shaped messages pass through unchanged, so the rewrite is safe for Chat Completions callers on the same route. Chat Completions batch items on these providers use the same rewrite. Through v0.41.0, tool history was forwarded as raw Anthropic blocks, so the model never saw a `tool_result` and repeated the tool call.
 

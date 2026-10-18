@@ -1,15 +1,21 @@
 //! Rewrites Anthropic Messages request shapes into Chat Completions shapes.
 //!
 //! `/v1/messages` requests reach the core chat boundary with their Anthropic
-//! tool definitions and content blocks intact. OpenAI-compatible upstreams need
-//! those rewritten before `/chat/completions`: tool definitions and
-//! `tool_choice`, plus `tool_use`, `tool_result`, `thinking`, and `image`
-//! blocks in the message history. OpenAI-shaped requests pass through
-//! unchanged because none of the rewritten shapes exist in Chat Completions.
+//! tool definitions, content blocks, and `stop_sequences` intact.
+//! OpenAI-compatible upstreams need those rewritten before `/chat/completions`:
+//! tool definitions and `tool_choice`, plus `tool_use`, `tool_result`,
+//! `thinking`, and `image` blocks in the message history. OpenAI-shaped
+//! requests pass through unchanged because none of the rewritten shapes exist
+//! in Chat Completions. Other Anthropic fields such as `top_k`, `thinking`, and
+//! `metadata` pass through, because several OpenAI-compatible upstreams accept
+//! them as extensions.
 
+use gateway_core::ProviderError;
 use serde_json::{Map, Value, json};
 
-pub(crate) fn normalize_anthropic_messages_for_openai(body: &mut Map<String, Value>) {
+pub(crate) fn normalize_anthropic_messages_for_openai(
+    body: &mut Map<String, Value>,
+) -> Result<(), ProviderError> {
     if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
         for tool in tools {
             normalize_tool(tool);
@@ -17,18 +23,26 @@ pub(crate) fn normalize_anthropic_messages_for_openai(body: &mut Map<String, Val
     }
 
     if let Some(tool_choice) = body.get_mut("tool_choice")
-        && let Some(parallel_tool_calls) = normalize_tool_choice(tool_choice)
+        && let Some(parallel_tool_calls) = normalize_tool_choice(tool_choice)?
     {
         body.entry("parallel_tool_calls")
             .or_insert(Value::Bool(parallel_tool_calls));
     }
 
-    if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) {
-        *messages = std::mem::take(messages)
-            .into_iter()
-            .flat_map(normalize_message)
-            .collect();
+    if let Some(stop_sequences) = body.remove("stop_sequences") {
+        body.entry("stop").or_insert(stop_sequences);
     }
+
+    if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut)
+        && messages.iter().any(needs_rewrite)
+    {
+        let mut rewritten = Vec::with_capacity(messages.len());
+        for message in std::mem::take(messages) {
+            rewritten.extend(normalize_message(message)?);
+        }
+        *messages = rewritten;
+    }
+    Ok(())
 }
 
 fn normalize_tool(tool: &mut Value) {
@@ -62,8 +76,10 @@ fn normalize_tool(tool: &mut Value) {
 
 /// Rewrites an Anthropic `tool_choice` object and returns the
 /// `parallel_tool_calls` value implied by `disable_parallel_tool_use`.
-fn normalize_tool_choice(tool_choice: &mut Value) -> Option<bool> {
-    let object = tool_choice.as_object()?;
+fn normalize_tool_choice(tool_choice: &mut Value) -> Result<Option<bool>, ProviderError> {
+    let Some(object) = tool_choice.as_object() else {
+        return Ok(None);
+    };
     let parallel_tool_calls = object
         .get("disable_parallel_tool_use")
         .and_then(Value::as_bool)
@@ -73,36 +89,45 @@ fn normalize_tool_choice(tool_choice: &mut Value) -> Option<bool> {
         Some("any") => *tool_choice = Value::String("required".to_string()),
         Some("none") => *tool_choice = Value::String("none".to_string()),
         Some("tool") => {
-            if let Some(name) = object.get("name").and_then(Value::as_str) {
-                *tool_choice = json!({"type":"function","function":{"name":name}});
-            }
+            let Some(name) = object.get("name").and_then(Value::as_str) else {
+                return Err(ProviderError::InvalidRequest(
+                    "`tool_choice` of type `tool` must include a string `name`".to_string(),
+                ));
+            };
+            *tool_choice = json!({"type":"function","function":{"name":name}});
         }
-        _ => return None,
+        _ => return Ok(None),
     }
-    parallel_tool_calls
+    Ok(parallel_tool_calls)
 }
 
-fn normalize_message(message: Value) -> Vec<Value> {
-    let Value::Object(mut object) = message else {
-        return vec![message];
-    };
-    let needs_rewrite = object
+fn needs_rewrite(message: &Value) -> bool {
+    message
         .get("content")
         .and_then(Value::as_array)
-        .is_some_and(|blocks| blocks.iter().any(is_anthropic_only_block));
-    if !needs_rewrite {
-        return vec![Value::Object(object)];
-    }
-    let Some(Value::Array(blocks)) = object.remove("content") else {
-        return vec![Value::Object(object)];
+        .is_some_and(|blocks| blocks.iter().any(is_anthropic_only_block))
+}
+
+fn normalize_message(message: Value) -> Result<Vec<Value>, ProviderError> {
+    let Value::Object(mut object) = message else {
+        return Ok(vec![message]);
+    };
+    let blocks = match object.remove("content") {
+        Some(Value::Array(blocks)) if blocks.iter().any(is_anthropic_only_block) => blocks,
+        content => {
+            if let Some(content) = content {
+                object.insert("content".to_string(), content);
+            }
+            return Ok(vec![Value::Object(object)]);
+        }
     };
 
     match object.get("role").and_then(Value::as_str) {
-        Some("assistant") => vec![assistant_message(object, blocks)],
+        Some("assistant") => Ok(vec![assistant_message(object, blocks)]),
         Some("user") => user_messages(object, blocks),
         _ => {
             object.insert("content".to_string(), Value::Array(blocks));
-            vec![Value::Object(object)]
+            Ok(vec![Value::Object(object)])
         }
     }
 }
@@ -135,7 +160,13 @@ fn assistant_message(mut object: Map<String, Value>, blocks: Vec<Value>) -> Valu
         }
     }
 
-    object.insert("content".to_string(), assistant_content(content));
+    // Chat Completions requires content when there are no tool calls, so a
+    // turn that held only thinking keeps an empty string.
+    let content = match assistant_content(content) {
+        Value::Null if tool_calls.is_empty() => Value::String(String::new()),
+        content => content,
+    };
+    object.insert("content".to_string(), content);
     if !tool_calls.is_empty() {
         object.insert("tool_calls".to_string(), Value::Array(tool_calls));
     }
@@ -155,8 +186,7 @@ fn tool_call(block: &Value) -> Value {
 }
 
 /// Collapses text-only assistant content to a string, which every
-/// OpenAI-compatible server accepts, and uses `null` when only tool calls
-/// remain.
+/// OpenAI-compatible server accepts, and uses `null` when nothing remains.
 fn assistant_content(blocks: Vec<Value>) -> Value {
     if blocks.is_empty() {
         return Value::Null;
@@ -179,17 +209,20 @@ fn assistant_content(blocks: Vec<Value>) -> Value {
 /// remaining content, which keeps every tool response adjacent to the
 /// assistant message that requested it. Images returned by a tool cannot live
 /// in a `tool` message, so they move into the trailing user message.
-fn user_messages(object: Map<String, Value>, blocks: Vec<Value>) -> Vec<Value> {
+fn user_messages(
+    object: Map<String, Value>,
+    blocks: Vec<Value>,
+) -> Result<Vec<Value>, ProviderError> {
     let mut messages = Vec::new();
     let mut remaining = Vec::new();
     for block in blocks {
         match block_type(&block) {
             Some("tool_result") => {
-                let (message, images) = tool_message(&block);
+                let (message, images) = tool_message(block)?;
                 messages.push(message);
                 remaining.extend(images);
             }
-            Some("image") => remaining.push(image_part(block)),
+            Some("image") => remaining.push(image_part(block)?),
             _ => remaining.push(block),
         }
     }
@@ -199,24 +232,27 @@ fn user_messages(object: Map<String, Value>, blocks: Vec<Value>) -> Vec<Value> {
         user.insert("content".to_string(), Value::Array(remaining));
         messages.push(Value::Object(user));
     }
-    messages
+    Ok(messages)
 }
 
-fn tool_message(block: &Value) -> (Value, Vec<Value>) {
+fn tool_message(mut block: Value) -> Result<(Value, Vec<Value>), ProviderError> {
     let mut images = Vec::new();
-    let mut text = match block.get("content") {
-        Some(Value::String(text)) => text.clone(),
+    let content = block
+        .as_object_mut()
+        .and_then(|object| object.remove("content"));
+    let mut text = match content {
+        Some(Value::String(text)) => text,
         Some(Value::Array(parts)) => {
             let mut texts = Vec::new();
             for part in parts {
-                match block_type(part) {
+                match block_type(&part) {
                     Some("text") => texts.push(
                         part.get("text")
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_string(),
                     ),
-                    Some("image") => images.push(image_part(part.clone())),
+                    Some("image") => images.push(image_part(part)?),
                     _ => texts.push(part.to_string()),
                 }
             }
@@ -238,46 +274,74 @@ fn tool_message(block: &Value) -> (Value, Vec<Value>) {
         "tool_call_id": block.get("tool_use_id").cloned().unwrap_or(Value::Null),
         "content": text,
     });
-    (message, images)
+    Ok((message, images))
 }
 
 /// Converts an Anthropic `image` block with a base64 or URL source into an
-/// OpenAI `image_url` part. Other blocks are returned unchanged.
-fn image_part(block: Value) -> Value {
-    let Some(source) = block.get("source").and_then(Value::as_object) else {
-        return block;
-    };
+/// OpenAI `image_url` part. Other sources, such as Files API references, have
+/// no Chat Completions equivalent and are rejected locally.
+fn image_part(block: Value) -> Result<Value, ProviderError> {
+    let source = block
+        .get("source")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest("image block must include a `source` object".to_string())
+        })?;
     let url = match source.get("type").and_then(Value::as_str) {
         Some("base64") => {
             let (Some(media_type), Some(data)) = (
                 source.get("media_type").and_then(Value::as_str),
                 source.get("data").and_then(Value::as_str),
             ) else {
-                return block;
+                return Err(ProviderError::InvalidRequest(
+                    "base64 image source must include string `media_type` and `data`".to_string(),
+                ));
             };
             format!("data:{media_type};base64,{data}")
         }
-        Some("url") => match source.get("url").and_then(Value::as_str) {
-            Some(url) => url.to_string(),
-            None => return block,
-        },
-        _ => return block,
+        Some("url") => source
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "url image source must include a string `url`".to_string(),
+                )
+            })?,
+        other => {
+            return Err(ProviderError::InvalidRequest(format!(
+                "image source type `{}` cannot be sent to a Chat Completions upstream; use a `base64` or `url` source",
+                other.unwrap_or("<missing>")
+            )));
+        }
     };
-    json!({"type": "image_url", "image_url": {"url": url}})
+    Ok(json!({"type": "image_url", "image_url": {"url": url}}))
 }
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::ProviderError;
     use serde_json::{Map, Value, json};
 
     use super::normalize_anthropic_messages_for_openai;
 
-    fn normalize(body: Value) -> Value {
+    fn try_normalize(body: Value) -> Result<Value, ProviderError> {
         let Value::Object(mut object) = body else {
             panic!("body must be an object");
         };
-        normalize_anthropic_messages_for_openai(&mut object);
-        Value::Object(object)
+        normalize_anthropic_messages_for_openai(&mut object)?;
+        Ok(Value::Object(object))
+    }
+
+    fn normalize(body: Value) -> Value {
+        try_normalize(body).expect("normalize")
+    }
+
+    fn invalid_request_message(body: Value) -> String {
+        match try_normalize(body) {
+            Err(ProviderError::InvalidRequest(message)) => message,
+            other => panic!("expected InvalidRequest, got {other:?}"),
+        }
     }
 
     fn messages(messages: Value) -> Value {
@@ -331,6 +395,17 @@ mod tests {
             translated[0]["tool_calls"][0]["function"]["arguments"],
             "{}"
         );
+    }
+
+    #[test]
+    fn thinking_only_assistant_turn_keeps_empty_string_content() {
+        let translated = messages(json!([
+            {"role": "assistant", "content": [
+                {"type": "redacted_thinking", "data": "opaque"}
+            ]}
+        ]));
+
+        assert_eq!(translated, json!([{"role": "assistant", "content": ""}]));
     }
 
     #[test]
@@ -405,6 +480,37 @@ mod tests {
     }
 
     #[test]
+    fn rejects_image_sources_without_a_chat_completions_equivalent() {
+        let file_source = invalid_request_message(json!({"messages": [
+            {"role": "user", "content": [
+                {"type": "image", "source": {"type": "file", "file_id": "file_1"}}
+            ]}
+        ]}));
+        assert!(file_source.contains("`file`"), "{file_source}");
+
+        let tool_result_image = invalid_request_message(json!({"messages": [
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": [
+                    {"type": "image", "source": {"type": "base64", "data": "iVBOR"}}
+                ]}
+            ]}
+        ]}));
+        assert!(
+            tool_result_image.contains("media_type"),
+            "{tool_result_image}"
+        );
+    }
+
+    #[test]
+    fn maps_stop_sequences_to_stop_without_overriding_stop() {
+        let body = normalize(json!({ "stop_sequences": ["END"] }));
+        assert_eq!(body, json!({ "stop": ["END"] }));
+
+        let body = normalize(json!({ "stop_sequences": ["END"], "stop": "STOP" }));
+        assert_eq!(body, json!({ "stop": "STOP" }));
+    }
+
+    #[test]
     fn leaves_openai_shaped_messages_unchanged() {
         let original = json!([
             {"role": "user", "content": [{"type": "text", "text": "hi"}]},
@@ -437,6 +543,11 @@ mod tests {
                 parallel_tool_calls
             );
         }
+
+        let message = invalid_request_message(json!({
+            "tool_choice": {"type": "tool", "disable_parallel_tool_use": true}
+        }));
+        assert!(message.contains("`name`"), "{message}");
 
         let openai_choice = normalize(json!({ "tool_choice": "required" }));
         assert_eq!(

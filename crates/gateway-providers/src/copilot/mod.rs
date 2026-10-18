@@ -375,7 +375,7 @@ impl CopilotProvider {
                     "model".to_string(),
                     Value::String(context.upstream_model.clone()),
                 );
-                normalize_anthropic_messages_for_openai(object);
+                normalize_anthropic_messages_for_openai(object)?;
                 merge_object_overrides(object, &context.extra_body);
             }
             apply_openai_compat_empty_tools_profile(&mut body, context)?;

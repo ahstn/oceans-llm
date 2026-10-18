@@ -277,7 +277,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
-            normalize_anthropic_messages_for_openai(object);
+            normalize_anthropic_messages_for_openai(object)?;
         }
         self.build_request("chat/completions", body, context, false, true, bearer_token)
     }
@@ -297,7 +297,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
-            normalize_anthropic_messages_for_openai(object);
+            normalize_anthropic_messages_for_openai(object)?;
         }
         self.build_request("chat/completions", body, context, true, true, bearer_token)
     }
@@ -549,6 +549,8 @@ pub(crate) fn apply_openai_compat_empty_tools_profile(
 
     object.remove("tools");
     object.remove("tool_choice");
+    // Upstreams reject `parallel_tool_calls` once no tools remain.
+    object.remove("parallel_tool_calls");
     Ok(())
 }
 
@@ -1530,6 +1532,40 @@ mod tests {
         let body = request_body_json(&built);
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
+    }
+
+    #[test]
+    fn omitting_empty_tools_also_drops_parallel_tool_calls() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!("hello"),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([
+                ("tools".to_string(), json!([])),
+                (
+                    "tool_choice".to_string(),
+                    json!({"type": "auto", "disable_parallel_tool_use": true}),
+                ),
+            ]),
+        };
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::Omit,
+            ..Default::default()
+        });
+
+        let built = provider
+            .build_chat_request(&request, &context)
+            .expect("build request");
+        let body = request_body_json(&built);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("parallel_tool_calls").is_none());
     }
 
     #[test]

@@ -221,7 +221,7 @@ impl OpenAiCompatProvider {
             Value::String(request.upstream_model.clone()),
         );
         if request.endpoint == gateway_core::BatchEndpoint::ChatCompletions {
-            normalize_anthropic_messages_for_openai(object);
+            normalize_anthropic_messages_for_openai(object)?;
         }
         let endpoint_suffix = match request.endpoint {
             gateway_core::BatchEndpoint::ChatCompletions => "chat/completions",
