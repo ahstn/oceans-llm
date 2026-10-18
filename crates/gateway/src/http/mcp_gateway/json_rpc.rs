@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 use gateway_core::GatewayError;
+use gateway_mcp::server::json_rpc_error_with_id;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -235,25 +236,28 @@ pub(super) fn truncate_rpc_text(value: &str) -> String {
     value.chars().take(MAX_LOGGED_RPC_TEXT_CHARS).collect()
 }
 
+/// Every JSON-RPC error the per-server proxy sends is built here, on
+/// `gateway_mcp`'s error shape.
+pub(super) fn mcp_jsonrpc_error_response_with_data(
+    status: StatusCode,
+    id: Option<&Value>,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response<Body> {
+    json_response(
+        status,
+        json_rpc_error_with_id(id.cloned().unwrap_or(Value::Null), code, message, data),
+    )
+}
+
 pub(super) fn mcp_jsonrpc_error_response(
     status: StatusCode,
     id: Option<&Value>,
     code: i64,
     message: &str,
 ) -> Response<Body> {
-    let body = json!({
-        "jsonrpc": "2.0",
-        "id": id.cloned().unwrap_or(Value::Null),
-        "error": {
-            "code": code,
-            "message": message,
-        }
-    });
-    let mut response = (status, Json(body)).into_response();
-    response
-        .headers_mut()
-        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    response
+    mcp_jsonrpc_error_response_with_data(status, id, code, message, None)
 }
 
 /// Rejects a notification. The transport requires an HTTP error status, and
@@ -263,13 +267,14 @@ pub(super) fn mcp_notification_error_response(
     code: i64,
     message: &str,
 ) -> Response<Body> {
-    let body = json!({
-        "jsonrpc": "2.0",
-        "error": {
-            "code": code,
-            "message": message,
-        }
-    });
+    let mut body = json_rpc_error_with_id(Value::Null, code, message, None);
+    if let Some(object) = body.as_object_mut() {
+        object.remove("id");
+    }
+    json_response(status, body)
+}
+
+fn json_response(status: StatusCode, body: Value) -> Response<Body> {
     let mut response = (status, Json(body)).into_response();
     response
         .headers_mut()

@@ -1,5 +1,6 @@
 mod aggregate;
 mod credentials;
+mod governance;
 mod guardrails;
 mod json_rpc;
 mod methods;
@@ -21,7 +22,7 @@ use axum::{
     },
     response::IntoResponse,
 };
-use credentials::{tool_call_auth_error_response, upstream_auth_error_response};
+use credentials::upstream_auth_error_response;
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, McpOauthResource,
     McpToolInvocationStatus, McpToolPolicyResult, McpToolProjection, OpenAiErrorEnvelope,
@@ -29,10 +30,8 @@ use gateway_core::{
 };
 use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
 use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
-use guardrails::{
-    enforce_direct_mcp_result, evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata,
-    guardrail_denied_response,
-};
+use governance::{GovernedCall, Refused};
+use guardrails::{enforce_direct_mcp_result, evaluate_mcp_result, guardrail_decision_metadata};
 use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
 use methods::{
     GovernedRequest, deny_unknown_method, handle_event_stream, handle_governed_request,
@@ -55,9 +54,9 @@ const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
-const GUARDRAIL_POLICY_DENIED_CODE: i64 = -32001;
-/// The documented JSON-RPC code for a credential missing a scope or server.
-const INSUFFICIENT_SCOPE_CODE: i64 = -32001;
+use gateway_mcp::server::{JSON_RPC_INVALID_REQUEST, JSON_RPC_POLICY_DENIED};
+/// A guardrail denied the operation.
+const GUARDRAIL_POLICY_DENIED_CODE: i64 = JSON_RPC_POLICY_DENIED;
 
 #[tracing::instrument(
     skip(state, request),
@@ -320,6 +319,7 @@ async fn dispatch_mcp_request(
         }) => {
             handle_governed_request(
                 state,
+                policy,
                 auth,
                 method,
                 headers,
@@ -378,7 +378,7 @@ async fn dispatch_mcp_request(
             mcp_jsonrpc_error_response(
                 StatusCode::BAD_REQUEST,
                 rejection.id.as_ref(),
-                -32600,
+                JSON_RPC_INVALID_REQUEST,
                 &rejection.error.to_string(),
             )
         }
@@ -414,158 +414,92 @@ async fn handle_tools_call(
     tool_name: String,
     arguments: Option<serde_json::Value>,
 ) -> Response<Body> {
-    let access = McpAccess::new(state.store.clone());
-    let mcp_tool_invocation_id = Uuid::new_v4();
-    let allowed_tool = match access
+    let call = GovernedCall::new(state, policy, auth, &server, mcp_request_id(&id));
+    let tool = match McpAccess::new(state.store.clone())
         .allowed_tool_for_call(auth, server.mcp_server_id, &tool_name)
         .await
     {
-        Ok(tool) => tool,
-        Err(error) => return mcp_error_response(error),
-    };
-    let Some(tool) = allowed_tool else {
-        let _ = state
-            .service
-            .log_mcp_tool_invocation(
-                auth,
-                tool_invocation_log_input(
-                    &server,
-                    "tools/call",
-                    &id,
-                    Some(mcp_tool_invocation_id),
-                    None,
-                    &tool_name,
-                    &tool_name,
-                    McpToolInvocationStatus::PolicyDenied,
-                    McpToolPolicyResult::Denied,
-                    Some("mcp_tool_not_granted".to_string()),
-                    arguments.clone(),
-                    None,
-                    started_at,
-                ),
-            )
-            .await;
-        return mcp_jsonrpc_error_response(
-            StatusCode::FORBIDDEN,
-            id.as_ref(),
-            -32001,
-            "MCP tool is not granted for this API key",
-        );
-    };
-    match rate_limits::check_tool_call(state, policy, auth, &server).await {
-        Ok(None) => {}
-        Ok(Some(rejected)) => {
-            let mut log_input = tool_call_log_input(
-                &server,
-                &id,
-                mcp_tool_invocation_id,
-                &tool,
-                McpToolInvocationStatus::PolicyDenied,
-                McpToolPolicyResult::Denied,
-                Some(rate_limits::RATE_LIMITED_ERROR_CODE.to_string()),
-                arguments,
-                None,
-                started_at,
-            );
-            log_input.metadata = rate_limits::rejection_metadata(&rejected);
-            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
-            return rate_limits::rejection_response(id.as_ref(), &rejected);
-        }
-        Err(error) => {
-            // The limiter cannot check the call in `closed` mode: a JSON-RPC
-            // error with the HTTP 503, as the aggregate route returns.
-            let log_input = tool_call_log_input(
-                &server,
-                &id,
-                mcp_tool_invocation_id,
-                &tool,
-                McpToolInvocationStatus::GatewayError,
-                McpToolPolicyResult::NotEvaluated,
-                Some(error.error_code().to_string()),
-                arguments,
-                None,
-                started_at,
-            );
-            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
-            return rate_limits::unavailable_response(id.as_ref(), &error);
-        }
-    }
-    let normalized_arguments = arguments.clone().unwrap_or_else(|| json!({}));
-    let guardrail_request_id = mcp_request_id(&id);
-    let guardrail_evaluation = evaluate_mcp_call(
-        state,
-        Some(&guardrail_request_id),
-        Some(mcp_tool_invocation_id),
-        &server.server_key,
-        &tool.upstream_name,
-        normalized_arguments,
-    )
-    .await;
-    if guardrail_evaluation.denied() {
-        let mut log_input = tool_call_log_input(
-            &server,
-            &id,
-            mcp_tool_invocation_id,
-            &tool,
-            McpToolInvocationStatus::PolicyDenied,
-            McpToolPolicyResult::Denied,
-            Some("guardrail_policy_denied".to_string()),
-            arguments,
-            None,
-            started_at,
-        );
-        log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
-        let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
-        return guardrail_denied_response(id.as_ref(), &guardrail_evaluation);
-    }
-
-    let transformed = guardrail_evaluation
-        .decisions
-        .iter()
-        .any(|decision| decision.transformed);
-    let guarded_arguments = match &guardrail_evaluation.output {
-        EvaluationPayload::McpCall { call } => call.arguments.clone(),
-        _ => unreachable!("MCP call evaluation preserves payload kind"),
-    };
-    let body = if transformed {
-        match rewrite_tools_call_arguments(&body, &guarded_arguments) {
-            Ok(body) => body,
-            Err(error) => return mcp_error_response(error),
-        }
-    } else {
-        body
-    };
-    let arguments = transformed.then_some(guarded_arguments).or(arguments);
-
-    let gateway = McpGatewayService::new(state.store.clone())
-        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
-    let upstream = match gateway
-        .prepare_upstream_for_auth(auth, server.clone())
-        .await
-    {
-        Ok(upstream) => upstream,
-        Err(error) => {
+        Ok(Some(tool)) => tool,
+        Ok(None) => {
             let _ = state
                 .service
                 .log_mcp_tool_invocation(
                     auth,
-                    tool_call_log_input(
+                    tool_invocation_log_input(
                         &server,
+                        "tools/call",
                         &id,
-                        mcp_tool_invocation_id,
-                        &tool,
-                        McpToolInvocationStatus::Unauthorized,
-                        McpToolPolicyResult::Allowed,
-                        Some(error.error_code().to_string()),
-                        arguments.clone(),
+                        Some(call.invocation_id),
+                        None,
+                        &tool_name,
+                        &tool_name,
+                        McpToolInvocationStatus::PolicyDenied,
+                        McpToolPolicyResult::Denied,
+                        Some("mcp_tool_not_granted".to_string()),
+                        arguments,
                         None,
                         started_at,
                     ),
                 )
                 .await;
-            return tool_call_auth_error_response(state, auth, &server, id.as_ref(), error);
+            return mcp_jsonrpc_error_response(
+                StatusCode::FORBIDDEN,
+                id.as_ref(),
+                JSON_RPC_POLICY_DENIED,
+                "MCP tool is not granted for this API key",
+            );
+        }
+        Err(error) => return mcp_error_response(error),
+    };
+    let normalized_arguments = arguments.clone().unwrap_or_else(|| json!({}));
+    let admitted = match call
+        .admit(Some((&tool.upstream_name, normalized_arguments)))
+        .await
+    {
+        Ok(admitted) => admitted,
+        Err(refused) => {
+            let Refused {
+                refusal,
+                evaluation,
+            } = *refused;
+            let refused = refusal.log();
+            // A refusal after guardrails logs the arguments they produced.
+            let logged_arguments = evaluation
+                .filter(|evaluation| evaluation.decisions.iter().any(|d| d.transformed))
+                .and_then(|evaluation| match evaluation.output {
+                    EvaluationPayload::McpCall { call } => Some(call.arguments),
+                    _ => None,
+                })
+                .or(arguments);
+            let mut log_input = tool_call_log_input(
+                &server,
+                &id,
+                call.invocation_id,
+                &tool,
+                refused.status,
+                refused.policy_result,
+                Some(refused.error_code),
+                logged_arguments,
+                None,
+                started_at,
+            );
+            log_input.metadata = refused.metadata;
+            let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
+            return refusal.direct_response(state, auth, &server, id.as_ref(), true);
         }
     };
+    let guarded = admitted
+        .arguments
+        .expect("tools/call runs argument guardrails");
+    let (body, arguments) = if guarded.transformed() {
+        match rewrite_tools_call_arguments(&body, &guarded.value) {
+            Ok(body) => (body, Some(guarded.value.clone())),
+            Err(error) => return mcp_error_response(error),
+        }
+    } else {
+        (body, arguments)
+    };
+    let upstream = admitted.upstream;
     let outcome =
         match proxy_upstream(&state.mcp_http_clients, method, headers, body, &upstream).await {
             Ok(response) => {
@@ -574,34 +508,53 @@ async fn handle_tools_call(
                     &upstream.server.server_key,
                     &tool.upstream_name,
                     id.as_ref(),
-                    mcp_tool_invocation_id,
+                    call.invocation_id,
                     response,
                 )
                 .await
             }
             Err(error) => Err(error),
         };
+    finish_proxied_call(state, auth, outcome, |status, policy_result, error_code| {
+        let mut log_input = tool_call_log_input(
+            &upstream.server,
+            &id,
+            call.invocation_id,
+            &tool,
+            status,
+            policy_result,
+            error_code,
+            arguments,
+            None,
+            started_at,
+        );
+        log_input.metadata = guardrail_decision_metadata(&guarded.evaluation);
+        log_input
+    })
+    .await
+}
+
+/// Logs a proxied call's outcome, adding the result guardrail's decision to
+/// the entry `log_input` builds, and returns the response.
+async fn finish_proxied_call(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    outcome: Result<guardrails::GuardedMcpResult, GatewayError>,
+    log_input: impl FnOnce(
+        McpToolInvocationStatus,
+        McpToolPolicyResult,
+        Option<String>,
+    ) -> McpInvocationLogInput,
+) -> Response<Body> {
     let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);
-    let mut log_input = tool_call_log_input(
-        &upstream.server,
-        &id,
-        mcp_tool_invocation_id,
-        &tool,
-        status,
-        policy_result,
-        error_code,
-        arguments,
-        None,
-        started_at,
-    );
-    log_input.metadata = guardrail_decision_metadata(&guardrail_evaluation);
+    let mut entry = log_input(status, policy_result, error_code);
     if let Ok((_, Some(result_evaluation), _)) = &outcome {
-        log_input.metadata.insert(
+        entry.metadata.insert(
             "guardrail_result".to_string(),
             Value::Object(guardrail_decision_metadata(result_evaluation)),
         );
     }
-    let _ = state.service.log_mcp_tool_invocation(auth, log_input).await;
+    let _ = state.service.log_mcp_tool_invocation(auth, entry).await;
     match outcome {
         Ok((response, _, _)) => response,
         Err(error) => mcp_error_response(error),
@@ -911,16 +864,13 @@ fn insufficient_scope_response(error: &GatewayError) -> Response<Body> {
         data["required_scope"] = json!(required);
     }
     tracing::Span::current().record("status_code", i64::from(StatusCode::FORBIDDEN.as_u16()));
-    let body = json!({
-        "jsonrpc": "2.0",
-        "id": null,
-        "error": {
-            "code": INSUFFICIENT_SCOPE_CODE,
-            "message": error.to_string(),
-            "data": data,
-        }
-    });
-    (StatusCode::FORBIDDEN, Json(body)).into_response()
+    json_rpc::mcp_jsonrpc_error_response_with_data(
+        StatusCode::FORBIDDEN,
+        None,
+        JSON_RPC_POLICY_DENIED,
+        &error.to_string(),
+        Some(data),
+    )
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

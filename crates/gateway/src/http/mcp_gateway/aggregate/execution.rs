@@ -8,16 +8,14 @@ use gateway_core::{
     AuthenticatedApiKey, GatewayError, McpCatalogToolRecord, McpToolInvocationStatus,
     McpToolPolicyResult, ProviderError,
 };
-use gateway_guardrails::EvaluationPayload;
+use gateway_guardrails::{EvaluationPayload, GuardrailEvaluation};
 use gateway_mcp::server::{
     JSON_RPC_INVALID_PARAMS, call_tool_error_result, json_rpc_error, json_rpc_success,
 };
 use gateway_mcp::{
     JsonRpcErrorObject, JsonRpcId, McpClientError, StreamableHttpClient, ToolsCallResponse,
 };
-use gateway_service::{
-    CallMcpToolInput, McpCatalog, McpGatewayService, McpInvocationLogInput, RateLimitStatus,
-};
+use gateway_service::{CallMcpToolInput, McpCatalog, McpInvocationLogInput, RateLimitStatus};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -25,9 +23,9 @@ use uuid::Uuid;
 use crate::http::{
     mcp_gateway::{
         credentials::credential_guidance,
+        governance::{GovernedCall, Refusal, Refused},
         rate_limits::{
-            JSON_RPC_INTERNAL_ERROR, RATE_LIMITED_ERROR_CODE, check_tool_call, rejection_body,
-            rejection_metadata,
+            JSON_RPC_INTERNAL_ERROR, RATE_LIMITED_ERROR_CODE, rejection_body, rejection_metadata,
         },
     },
     request_policy::RequestPolicyContext,
@@ -35,8 +33,7 @@ use crate::http::{
 };
 
 use super::{
-    evaluate_mcp_call, evaluate_mcp_result, guardrail_decision_metadata, json_rpc_response,
-    serialization_error,
+    evaluate_mcp_result, guardrail_decision_metadata, json_rpc_response, serialization_error,
 };
 
 pub(super) async fn call_catalog_tool(
@@ -134,51 +131,37 @@ impl CatalogInvocation<'_> {
         } else {
             original_arguments.clone()
         };
-        if let Some(rejected) =
-            check_tool_call(self.state, self.policy, self.auth, &self.record.server)
-                .await
-                .map_err(CatalogCallError::RateLimitUnavailable)?
-        {
-            self.metadata.extend(rejection_metadata(&rejected));
-            return Err(CatalogCallError::RateLimited(rejected));
-        }
-        let evaluation = evaluate_mcp_call(
+        let record = self.record;
+        let governed = GovernedCall::new(
             self.state,
-            Some(&self.request_id),
-            Some(self.mcp_tool_invocation_id),
-            &self.record.server.server_key,
-            &self.record.tool.upstream_name,
-            self.arguments.clone(),
-        )
-        .await;
-        self.metadata.insert(
-            "guardrail_call".to_string(),
-            Value::Object(guardrail_decision_metadata(&evaluation)),
+            self.policy,
+            self.auth,
+            &record.server,
+            self.request_id.clone(),
         );
-        if evaluation.denied() {
-            return Err(CatalogCallError::PolicyDenied("operation"));
-        }
-        self.arguments = match evaluation.output {
-            EvaluationPayload::McpCall { call } => call.arguments,
-            _ => unreachable!("MCP call evaluation preserves payload kind"),
-        };
-
-        let gateway = McpGatewayService::new(self.state.store.clone())
-            .with_oauth_runtime(self.state.mcp_oauth_runtime.clone());
-        let upstream = match gateway
-            .prepare_upstream_for_auth(self.auth, self.record.server.clone())
+        self.mcp_tool_invocation_id = governed.invocation_id;
+        let admitted = match governed
+            .admit(Some((&record.tool.upstream_name, self.arguments.clone())))
             .await
         {
-            Ok(upstream) => upstream,
-            Err(
-                error @ (GatewayError::McpCredentialRequired { .. }
-                | GatewayError::McpCredentialExpired { .. }),
-            ) => {
-                self.arguments = original_arguments;
-                return Err(CatalogCallError::Gateway(error));
+            Ok(admitted) => admitted,
+            Err(refused) => {
+                let Refused {
+                    refusal,
+                    evaluation,
+                } = *refused;
+                return Err(self.refused(refusal, evaluation, original_arguments));
             }
-            Err(error) => return Err(CatalogCallError::Gateway(error)),
         };
+        let guarded = admitted
+            .arguments
+            .expect("tools/call runs argument guardrails");
+        self.metadata.insert(
+            "guardrail_call".to_string(),
+            Value::Object(guardrail_decision_metadata(&guarded.evaluation)),
+        );
+        self.arguments = guarded.value;
+        let upstream = admitted.upstream;
         let client = StreamableHttpClient::with_http_client(
             &upstream.server.server_url,
             self.state
@@ -217,6 +200,52 @@ impl CatalogInvocation<'_> {
                 )))
             }
             Err(error) => Err(CatalogCallError::Gateway(map_mcp_client_error(error))),
+        }
+    }
+
+    /// Records why the governance steps refused the call. A call refused for
+    /// want of a credential logs the arguments as sent, since no guarded
+    /// arguments were ever used.
+    fn refused(
+        &mut self,
+        refusal: Refusal,
+        evaluation: Option<GuardrailEvaluation>,
+        original_arguments: Value,
+    ) -> CatalogCallError {
+        if let Some(evaluation) = &evaluation {
+            self.metadata.insert(
+                "guardrail_call".to_string(),
+                Value::Object(guardrail_decision_metadata(evaluation)),
+            );
+        }
+        match refusal {
+            Refusal::RateLimited(rejected) => {
+                self.metadata.extend(rejection_metadata(&rejected));
+                CatalogCallError::RateLimited(rejected)
+            }
+            Refusal::RateLimitUnavailable(error) => CatalogCallError::RateLimitUnavailable(error),
+            Refusal::GuardrailDenied(evaluation) => {
+                self.metadata.insert(
+                    "guardrail_call".to_string(),
+                    Value::Object(guardrail_decision_metadata(&evaluation)),
+                );
+                CatalogCallError::PolicyDenied("operation")
+            }
+            Refusal::Credential(
+                error @ (GatewayError::McpCredentialRequired { .. }
+                | GatewayError::McpCredentialExpired { .. }),
+            ) => {
+                self.arguments = original_arguments;
+                CatalogCallError::Gateway(error)
+            }
+            Refusal::Credential(error) => {
+                if let Some(EvaluationPayload::McpCall { call }) =
+                    evaluation.map(|evaluation| evaluation.output)
+                {
+                    self.arguments = call.arguments;
+                }
+                CatalogCallError::Gateway(error)
+            }
         }
     }
 
