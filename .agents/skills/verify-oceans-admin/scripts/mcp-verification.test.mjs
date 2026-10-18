@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { verifyNoMcpGrant } from "./mcp-canary.mjs";
+import { matchResultMarkers, verifyNoMcpGrant } from "./mcp-canary.mjs";
+import { MAX_CANDIDATES, validateCandidates } from "./mcp-candidates.mjs";
 import { attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
@@ -152,4 +153,44 @@ test("the expected MCP endpoint normalizes the base URL like the gateway", () =>
   assert.equal(mcpEndpointFor("https://gateway.example/v1"), "https://gateway.example/mcp");
   assert.equal(mcpEndpointFor("https://gateway.example/v1/"), "https://gateway.example/mcp");
   assert.equal(mcpEndpointFor("https://gateway.example/llm"), "https://gateway.example/llm/mcp");
+});
+
+const exampleFile = path.join(scripts, "../examples/mcp-candidates.json");
+
+test("the example candidate file passes validation and pairs each control with a positive", async () => {
+  const example = JSON.parse(await fs.readFile(exampleFile, "utf8"));
+  validateCandidates(example);
+  const isControl = (candidate) => candidate.expect_tool_error || candidate.expect_discovery_error;
+  const host = (candidate) => new URL(candidate.server_url).host;
+  const positives = new Set(example.candidates.filter((candidate) => !isControl(candidate)).map(host));
+  const controls = example.candidates.filter(isControl).map(host);
+  assert.deepEqual(controls.sort(), ["mcp.exa.ai", "mcp.reui.io"]);
+  assert.ok(controls.every((controlHost) => positives.has(controlHost)));
+});
+
+function fixtureCandidate(overrides = {}) {
+  return {
+    key: "fixture", label: "Fixture", server_url: "https://example.com/mcp",
+    auth_mode: "gateway_bearer_token", auth_config: { secret_ref: "env/OCEANS_MCP_DISCOVERY_FIXTURE_VERIFY" },
+    call: { name: "read", arguments: {} }, ...overrides,
+  };
+}
+
+test("candidate validation bounds the file and rejects ambiguous controls", () => {
+  const many = Array.from({ length: MAX_CANDIDATES + 1 }, (_, index) => fixtureCandidate({ key: `fixture-${index}` }));
+  assert.throws(() => validateCandidates({ candidates: many }), /one to 6 MCP candidates/);
+  assert.throws(() => validateCandidates({ candidates: [fixtureCandidate({ expect_discovery_error: true })] }), /makes no tool call/);
+  assert.throws(() => validateCandidates({ candidates: [fixtureCandidate({ expect_discovery_error: true, expect_tool_error: true, call: undefined })] }), /not both/);
+  assert.throws(() => validateCandidates({ candidates: [fixtureCandidate({ expect_tool_error: true, expect_result_markers: ["ok"] })] }), /only to successful calls/);
+  assert.throws(() => validateCandidates({ candidates: [fixtureCandidate({ expect_result_markers: [] })] }), /one to 4 short strings/);
+  assert.throws(() => validateCandidates({ candidates: [fixtureCandidate({ auth_mode: "none", auth_config: {}, expect_discovery_error: true, call: undefined })] }), /authenticated server mode/);
+  validateCandidates({ candidates: [fixtureCandidate(), fixtureCandidate({ key: "fixture-invalid", expect_discovery_error: true, call: undefined })] });
+});
+
+test("result markers match JSON carried in text content and fail without leaking it", () => {
+  const result = { content: [{ type: "text", text: JSON.stringify({ plan: "pro", results: [{ free: false }] }) }] };
+  assert.equal(matchResultMarkers(result, ['"plan":"pro"', '"free":false']), 2);
+  assert.equal(matchResultMarkers(result), 0);
+  assert.equal(matchResultMarkers({ content: [], structuredContent: { plan: "pro" } }, ['"plan":"pro"']), 1);
+  assert.throws(() => matchResultMarkers(result, ['"plan":"free"']), (error) => error.code === "result_marker_missing" && !error.message.includes("pro"));
 });
