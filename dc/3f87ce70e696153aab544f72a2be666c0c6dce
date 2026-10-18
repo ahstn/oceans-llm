@@ -1,0 +1,19 @@
+docs/overview-features.md
+  s_d6dce43e6d4e7f::t_4268f4cd38cab0 47,51,53,61,65,71,73,75,79,81,83,87,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc3f87ce70e696153aab544f72a2be666c0c6dce",
+  "prompts": {},
+  "sessions": {
+    "s_d6dce43e6d4e7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba63a36-9d2a-46eb-888e-80606ea1818c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
