@@ -1,0 +1,33 @@
+crates/admin-ui/web/src/server/admin-data.server.test.ts
+  s_eaf7116ccea134::t_9eb37f7d855c4c 1007-1010
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_eaf7116ccea134::t_ba06bc5140a876 459,483
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_eaf7116ccea134::t_5acba70e2648d5 33
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_eaf7116ccea134::t_6f038a7d739c79 151-152,193-194,292-293,1322
+crates/admin-ui/web/src/test/routes/review-agent-route.test.tsx
+  s_eaf7116ccea134::t_097df4a1a22508 139
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  s_eaf7116ccea134::t_d97fa046f9caad 74-75
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_eaf7116ccea134::t_940013bf6e453c 53,154
+crates/admin-ui/web/src/test/routes/users-route.test.tsx
+  s_eaf7116ccea134::t_547af5ead6b908 712-713
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d6ba47f123d44371201cbcd6c79af7a07928aa9",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
