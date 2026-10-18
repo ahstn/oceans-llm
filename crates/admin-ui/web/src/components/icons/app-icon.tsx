@@ -1,8 +1,9 @@
-import { HugeiconsIcon } from '@hugeicons/react'
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 
-type IconLike = unknown
+type IconLike = IconSvgElement
 
-export type AppIconStroke = 1 | 1.2 | 1.5
+// 2.5 keeps the small checkbox tick legible.
+export type AppIconStroke = 1 | 1.2 | 1.5 | 2.5
 
 interface AppIconProps {
   icon: IconLike

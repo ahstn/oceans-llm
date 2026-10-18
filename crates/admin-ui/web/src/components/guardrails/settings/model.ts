@@ -1,3 +1,4 @@
+import type { IconSvgElement } from '@hugeicons/react'
 import { useState } from 'react'
 import { PlugSocketIcon, SquareLock02Icon, Delete02Icon } from '@hugeicons/core-free-icons'
 
@@ -17,7 +18,7 @@ import { policyScopes, type PolicyScope } from '../decision-meta'
 export type AreaId = 'destructive' | 'redaction' | 'integrations'
 
 /** The three things an operator configures; every mock gives each one its own surface. */
-export const AREAS: { id: AreaId; label: string; description: string; icon: unknown }[] = [
+export const AREAS: { id: AreaId; label: string; description: string; icon: IconSvgElement }[] = [
   {
     id: 'destructive',
     label: 'Destructive actions',

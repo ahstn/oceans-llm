@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { UserIcon } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, type SearchSchemaInput } from '@tanstack/react-router'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
@@ -21,11 +21,17 @@ import { ReadOnlyUsersDirectory } from '@/routes/identity/-read-only-directory'
 import { useIdentityTransition } from '@/routes/identity/-use-identity-transition'
 import { UserDetailsDialog } from '@/routes/identity/-users/user-details-dialog'
 import { UsersList } from '@/routes/identity/-users/users-list'
-import { normalizeUserSearch, type UsersSearch } from '@/routes/identity/-users/users-search'
+import {
+  normalizeUserSearch,
+  type UserDetailsSection,
+  type UsersSearch,
+} from '@/routes/identity/-users/users-search'
 import type { IdentityDirectoryUsersPayload, IdentityUsersPayload, UserView } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
-  validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
+  validateSearch: (
+    search: { user_id?: string; user_section?: UserDetailsSection } & SearchSchemaInput,
+  ) => normalizeUserSearch(search),
   loader: ({ context }) =>
     isPlatformAdminSession(context.session) ? getUsers() : getUserDirectory(),
   component: UsersPage,

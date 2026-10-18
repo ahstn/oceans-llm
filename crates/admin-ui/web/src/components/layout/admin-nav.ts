@@ -1,3 +1,4 @@
+import type { IconSvgElement } from '@hugeicons/react'
 import {
   Audit01Icon,
   DashboardSpeed01Icon,
@@ -27,12 +28,12 @@ export interface AdminNavItem {
   platformAdminOnly?: boolean
   label: string
   to: string
-  icon: unknown
+  icon: IconSvgElement
 }
 
 export interface AdminNavSection {
   label: string
-  icon: unknown
+  icon: IconSvgElement
   items: AdminNavItem[]
 }
 

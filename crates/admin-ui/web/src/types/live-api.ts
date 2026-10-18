@@ -3,8 +3,29 @@ import type { components, operations, paths } from '@/generated/admin-api'
 export type GatewayPaths = paths
 export type ResponseMeta = components['schemas']['ResponseMeta']
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+/**
+ * Gateway responses are parsed JSON, so the `unknown` that openapi-typescript emits for
+ * free-form objects is always a JSON value. Narrowing it lets TanStack Start's server
+ * functions prove their return types serialize.
+ */
+export type JsonSafe<T> = unknown extends T
+  ? JsonValue
+  : T extends readonly (infer U)[]
+    ? JsonSafe<U>[]
+    : T extends object
+      ? { [K in keyof T]: JsonSafe<T[K]> }
+      : T
+
 export interface ApiEnvelope<T> {
-  data: T
+  data: JsonSafe<T>
   meta: ResponseMeta
 }
 
@@ -22,6 +43,7 @@ export type UpdateApiKeyResult = components['schemas']['UpdateApiKeyResponse']
 export type UpdateApiKeyScopesInput = components['schemas']['UpdateApiKeyScopesRequest']
 export type UpdateApiKeyScopesResult = components['schemas']['UpdateApiKeyScopesResponse']
 export type RevokeApiKeyResult = components['schemas']['RevokeApiKeyResponse']
+export type RevealApiKeySecretResponse = components['schemas']['RevealApiKeySecretResponse']
 
 export type SpendOwnerKind = 'all' | 'user' | 'service_account'
 
@@ -77,12 +99,8 @@ export type CreateBudgetIncreaseInput = components['schemas']['CreateBudgetIncre
 export type CreateBudgetIncreaseResultView = components['schemas']['CreateBudgetIncreaseResultView']
 
 export type ModelAllowlistView = NonNullable<components['schemas']['AdminModelView']['allowlist']>
-export type ModelView = components['schemas']['AdminModelView'] & {
-  allowlist: ModelAllowlistView | null
-}
-export type ModelPageView = Omit<components['schemas']['AdminModelPageView'], 'items'> & {
-  items: ModelView[]
-}
+export type ModelView = components['schemas']['AdminModelView']
+export type ModelPageView = components['schemas']['AdminModelPageView']
 export type ModelListQuery = NonNullable<operations['list_models']['parameters']['query']>
 export type GenerateModelClientConfigsInput =
   components['schemas']['GenerateModelClientConfigsRequest']
@@ -131,6 +149,7 @@ export type AgentSessionFiltersInput = NonNullable<
   operations['list_agent_sessions']['parameters']['query']
 >
 export type RequestLogDetailView = components['schemas']['RequestLogDetailView']
+export type RequestAttemptView = components['schemas']['RequestAttemptView']
 export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<
   operations['list_request_logs']['parameters']['query']
@@ -140,11 +159,11 @@ export type BatchStatus = components['schemas']['BatchStatusSchema']
 export type BatchItemStatus = components['schemas']['BatchItemStatusSchema']
 export type BatchEndpoint = components['schemas']['BatchEndpointSchema']
 export type BatchPricingStatus = components['schemas']['BatchPricingStatusSchema']
-export type BatchCallerView = components['schemas']['BatchCallerResponse']
-export type BatchView = components['schemas']['BatchResponse']
-export type BatchPageView = components['schemas']['BatchListResponse']
-export type BatchResultView = components['schemas']['BatchResultResponse']
-export type BatchResultsView = components['schemas']['BatchResultsResponse']
+export type BatchCallerView = JsonSafe<components['schemas']['BatchCallerResponse']>
+export type BatchView = JsonSafe<components['schemas']['BatchResponse']>
+export type BatchPageView = JsonSafe<components['schemas']['BatchListResponse']>
+export type BatchResultView = JsonSafe<components['schemas']['BatchResultResponse']>
+export type BatchResultsView = JsonSafe<components['schemas']['BatchResultsResponse']>
 export type BatchFiltersInput = NonNullable<operations['list_batches']['parameters']['query']>
 export type BatchResultsInput = NonNullable<operations['get_batch_results']['parameters']['query']>
 export type McpInvocationView = components['schemas']['McpToolInvocationSummaryView']

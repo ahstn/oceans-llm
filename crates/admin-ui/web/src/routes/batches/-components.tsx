@@ -151,7 +151,9 @@ export function BatchList({
                 </TableCell>
                 <TableCell className="px-3 py-3 tabular-nums">{progressLabel(batch)}</TableCell>
                 <TableCell className="px-3 py-3 tabular-nums">
-                  {batch.cost_usd === null ? 'Pending' : currencyFormatter.format(batch.cost_usd)}
+                  {typeof batch.cost_usd === 'number'
+                    ? currencyFormatter.format(batch.cost_usd)
+                    : 'Pending'}
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   <div className="flex items-center gap-2">
@@ -241,7 +243,9 @@ function BatchSummary({ batch }: { batch: BatchView }) {
       <SummaryField label="Created" value={formatTimestamp(batch.created_at)} />
       <SummaryField
         label="Cost"
-        value={batch.cost_usd === null ? 'Pending' : currencyFormatter.format(batch.cost_usd)}
+        value={
+          typeof batch.cost_usd === 'number' ? currencyFormatter.format(batch.cost_usd) : 'Pending'
+        }
       />
     </dl>
   )

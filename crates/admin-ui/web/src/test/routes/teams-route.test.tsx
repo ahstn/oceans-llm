@@ -55,6 +55,7 @@ vi.mock('@/server/admin-data.functions', () => ({
 const basePayload: IdentityTeamsPayload = {
   teams: [],
   users: [],
+  oauth_providers: [],
   oidc_providers: [],
 }
 
@@ -242,6 +243,7 @@ describe('TeamsPage', () => {
           },
         ],
         oidc_providers: [],
+        oauth_providers: [],
       } satisfies IdentityTeamsPayload,
     })
 

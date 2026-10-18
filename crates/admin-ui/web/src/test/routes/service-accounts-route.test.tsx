@@ -71,6 +71,8 @@ const serviceAccountsPayload: ServiceAccountsPayload = {
 }
 
 const apiKeysPayload: ApiKeysPayload = {
+  available_scopes: [],
+  mcp_servers: [],
   items: [
     {
       id: 'api_key_1',

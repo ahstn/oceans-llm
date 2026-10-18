@@ -1,6 +1,6 @@
-import type { ApiEnvelope, ModelPageView } from '@/types/api'
+import type { ApiEnvelope, ModelPageView, ResponseMeta } from '@/types/api'
 
-function envelope<T>(data: T): ApiEnvelope<T> {
+function envelope<T>(data: T): { data: T; meta: ResponseMeta } {
   return {
     data,
     meta: {
@@ -15,6 +15,9 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
       {
         id: 'fast',
         resolved_model_key: 'fast',
+        model_id: 'fast',
+        aliases: [],
+        pricing_varies_by_route: false,
         alias_of: null,
         description: 'Gemini via OpenRouter',
         provider_key: 'openrouter',
@@ -53,6 +56,9 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
       {
         id: 'reasoning',
         resolved_model_key: 'reasoning',
+        model_id: 'reasoning',
+        aliases: [],
+        pricing_varies_by_route: false,
         alias_of: null,
         description: 'OpenAI reasoning tier',
         provider_key: 'openai-prod',
@@ -83,6 +89,9 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
       {
         id: 'backup-fast',
         resolved_model_key: 'backup-fast',
+        model_id: 'backup-fast',
+        aliases: [],
+        pricing_varies_by_route: false,
         alias_of: 'fast',
         description: 'Gemini fallback on Vertex',
         provider_key: 'vertex-gemini',

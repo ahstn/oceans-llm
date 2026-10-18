@@ -1,3 +1,4 @@
+import type { IconSvgElement } from '@hugeicons/react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -16,7 +17,7 @@ const WIDE_LAYOUT_QUERY = '(min-width: 1280px)'
 export type SegmentedTabItem = {
   value: string
   label: string
-  icon?: unknown
+  icon?: IconSvgElement
   badge?: ReactNode
 }
 

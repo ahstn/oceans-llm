@@ -14,7 +14,7 @@ import {
   SourceCodeIcon,
   WorkflowSquare01Icon,
 } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, type SearchSchemaInput } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -90,7 +90,9 @@ import type {
 import { formatDuration, formatTimestamp } from '@/lib/format'
 
 export const Route = createFileRoute('/review-agent')({
-  validateSearch: (search: Record<string, unknown>) => normalizeReviewAgentSearch(search),
+  validateSearch: (
+    search: { repo_id?: string; repo_section?: RepoDetailsSection } & SearchSchemaInput,
+  ) => normalizeReviewAgentSearch(search),
   loader: () => getReviewAgentOverview(),
   component: ReviewAgentPage,
 })
