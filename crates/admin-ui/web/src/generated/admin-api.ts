@@ -6774,6 +6774,15 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The server was disabled or enabled while discovery ran */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
         };
     };
     enable_mcp_server: {

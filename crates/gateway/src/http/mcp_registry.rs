@@ -396,7 +396,8 @@ pub async fn discover_mcp_server_oauth(
     responses(
         (status = 200, body = Envelope<McpDiscoveryRefreshPayload>),
         (status = 400, body = OpenAiErrorEnvelopeView),
-        (status = 404, body = OpenAiErrorEnvelopeView)
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, description = "The server was disabled or enabled while discovery ran", body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]

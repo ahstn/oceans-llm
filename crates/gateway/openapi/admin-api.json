@@ -2082,6 +2082,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The server was disabled or enabled while discovery ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
           }
         },
         "security": [
