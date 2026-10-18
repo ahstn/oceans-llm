@@ -414,16 +414,27 @@ async fn harness_with_fetch_limit(
     allowed_domains: &[&str],
     per_minute: u32,
 ) -> (Harness, Arc<Fixture>) {
+    harness_with_fetch_limits(
+        allowed_domains,
+        SourceRateLimits {
+            per_source_per_minute: per_minute,
+            per_minute,
+        },
+    )
+    .await
+}
+
+async fn harness_with_fetch_limits(
+    allowed_domains: &[&str],
+    limits: SourceRateLimits,
+) -> (Harness, Arc<Fixture>) {
     let fixture = Arc::new(Fixture::default());
     let documents = ClientMetadataDocuments::with_source(
         allowed_domains.iter().map(ToString::to_string).collect(),
         fixture.clone(),
     )
     .expect("documents")
-    .with_fetch_rate_limits(SourceRateLimits {
-        per_source_per_minute: per_minute,
-        per_minute,
-    })
+    .with_fetch_rate_limits(limits)
     .expect("limits");
     (
         Harness::with_settings(settings_with(documents)).await,
@@ -490,6 +501,44 @@ async fn a_spent_fetch_budget_falls_back_to_a_usable_copy() {
     let uncached = "https://editor.example.com/oauth/other.json";
     let (status, page) = body_text(&harness, &harness.authorize_query(uncached, &[])).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{page}");
+}
+
+/// A source over its own limit gets the stale copy, but only for itself: the
+/// next source still fetches the current document.
+#[tokio::test]
+async fn one_source_over_its_limit_keeps_no_stale_copy_for_others() {
+    let (harness, fixture) = harness_with_fetch_limits(
+        &[],
+        SourceRateLimits {
+            per_source_per_minute: 1,
+            per_minute: 100,
+        },
+    )
+    .await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
+    let authorize =
+        |address: [u8; 4]| {
+            let query = harness.authorize_query(CLIENT_ID, &[]);
+            let mut request = Request::builder()
+                .uri(format!("/oauth/authorize?{query}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from((address, 40_000)),
+            ));
+            send_with_headers(&harness.router, request)
+        };
+    let (status, _, _) = authorize([192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(fixture.fetches(), 1);
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+    let (status, _, _) = authorize([192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "the stale copy stands in");
+    assert_eq!(fixture.fetches(), 1, "the source's limit held");
+    let (status, _, _) = authorize([198, 51, 100, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(fixture.fetches(), 2, "another source fetches the document");
 }
 
 #[tokio::test]

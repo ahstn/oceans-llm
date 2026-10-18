@@ -246,6 +246,11 @@ impl ClientMetadataDocuments {
             Ok(client) => return Ok(client),
             Err(failure) => failure,
         };
+        if failure.is_rate_limited()
+            && let Some(outcome) = self.own_stand_in(repo, client_id, now).await
+        {
+            return outcome.map_err(|failure| failure.error);
+        }
         if lookup == ClientLookup::Revoke
             && let Some(stored) = stored_client(repo, client_id).await?
         {
@@ -255,9 +260,10 @@ impl ClientMetadataDocuments {
     }
 
     /// Fetches, validates, stores, and caches the document. When the host is
-    /// temporarily unreachable, or the fetch limits refuse the fetch, a cached
-    /// copy stands in instead. This runs once per refresh shared by concurrent
-    /// callers, so a burst during an outage costs one fetch and one write.
+    /// temporarily unreachable, a cached copy stands in instead. This runs
+    /// once per refresh shared by concurrent callers, so a burst during an
+    /// outage costs one fetch and one write. A refusal by the fetch limits is
+    /// the caller's own, so it is returned for [`Self::own_stand_in`].
     async fn refresh<R>(
         &self,
         repo: &R,
@@ -269,6 +275,7 @@ impl ClientMetadataDocuments {
         R: GatewayOauthRepository + ?Sized,
     {
         match self.fetch_and_store(repo, client_id, now, requester).await {
+            Err(failure) if failure.is_rate_limited() => Err(failure),
             Err(failure) if failure.transient => self
                 .stand_in(repo, client_id, now, &failure)
                 .await
@@ -287,9 +294,8 @@ impl ClientMetadataDocuments {
     }
 
     /// Serves the cached copy for a document that cannot be fetched just now,
-    /// if one may stand in.
-    /// It is written back first, since cleanup ages these rows by their last
-    /// write and requests and grants need the row, then served for
+    /// if one may stand in. It is written back first (see
+    /// [`Self::write_back`]), then served to every caller for
     /// [`STAND_IN_RETRY_AFTER`] before the host is tried again.
     async fn stand_in<R>(
         &self,
@@ -301,25 +307,63 @@ impl ClientMetadataDocuments {
     where
         R: GatewayOauthRepository + ?Sized,
     {
-        let (mut client, usable_until) = self.stale(client_id, now)?;
+        let (client, usable_until) = self.stale(client_id, now)?;
         tracing::warn!(
             client_id,
             error = %failure.error.description,
             "using the cached copy of an unavailable client metadata document"
         );
-        client.updated_at = now;
-        let stored = match repo
-            .upsert_gateway_oauth_metadata_document_client(&client)
-            .await
-        {
+        let stored = match self.write_back(repo, client, now).await {
             Ok(stored) => stored,
-            Err(error) => return Some(Err(ResolveFailure::store(error))),
+            Err(failure) => return Some(Err(failure)),
         };
         self.serve_stand_in(
             stored.clone(),
-            (now + STAND_IN_RETRY_AFTER).min(usable_until),
+            Some((now + STAND_IN_RETRY_AFTER).min(usable_until)),
         );
         Some(Ok(stored))
+    }
+
+    /// Serves the cached copy, if one may stand in, to a caller whose own
+    /// fetch limit refused the refresh. Unlike [`Self::stand_in`] it neither
+    /// reaches other callers nor delays the next fetch: a source over its
+    /// limit must not keep a stale copy in place for sources that are not.
+    /// The row is written back at most once per [`STAND_IN_RETRY_AFTER`].
+    async fn own_stand_in<R>(
+        &self,
+        repo: &R,
+        client_id: &str,
+        now: OffsetDateTime,
+    ) -> Option<RefreshOutcome>
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        let (client, _) = self.stale(client_id, now)?;
+        if client.updated_at + STAND_IN_RETRY_AFTER > now {
+            return Some(Ok(client));
+        }
+        let outcome = self.write_back(repo, client, now).await;
+        if let Ok(stored) = &outcome {
+            self.serve_stand_in(stored.clone(), None);
+        }
+        Some(outcome)
+    }
+
+    /// Stores a stand-in again, since cleanup ages these rows by their last
+    /// write and requests and grants need the row.
+    async fn write_back<R>(
+        &self,
+        repo: &R,
+        mut client: GatewayOauthClientRecord,
+        now: OffsetDateTime,
+    ) -> RefreshOutcome
+    where
+        R: GatewayOauthRepository + ?Sized,
+    {
+        client.updated_at = now;
+        repo.upsert_gateway_oauth_metadata_document_client(&client)
+            .await
+            .map_err(ResolveFailure::store)
     }
 
     async fn fetch_and_store<R>(
@@ -383,13 +427,20 @@ impl ClientMetadataDocuments {
             .map(|entry| (entry.client.clone(), entry.usable_until))
     }
 
-    /// Serves a stand-in as fresh until `fresh_until`, keeping the entry's
-    /// stale-if-error limit from its last successful fetch.
-    fn serve_stand_in(&self, client: GatewayOauthClientRecord, fresh_until: OffsetDateTime) {
+    /// Keeps a stand-in's stored row in the cache, served as fresh until
+    /// `fresh_until` when given, keeping the entry's stale-if-error limit
+    /// from its last successful fetch.
+    fn serve_stand_in(
+        &self,
+        client: GatewayOauthClientRecord,
+        fresh_until: Option<OffsetDateTime>,
+    ) {
         let mut cache = self.cache.lock().expect("metadata document cache lock");
         if let Some(entry) = cache.get_mut(&client.client_id) {
             entry.client = client;
-            entry.fresh_until = fresh_until;
+            if let Some(fresh_until) = fresh_until {
+                entry.fresh_until = fresh_until;
+            }
         }
     }
 
