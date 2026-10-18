@@ -14,14 +14,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatStatus, isBatchCancellable } from '@/routes/batches/-utils'
 import type { BatchResultsView, BatchStatus, BatchView } from '@/types/api'
 import { formatTimestamp } from '@/lib/format'
@@ -112,18 +106,18 @@ export function BatchList({
         data-testid="batch-desktop-table"
       >
         <Table className="min-w-[70rem] text-left">
-          <TableHeader className="bg-muted/60">
-            <TableRow>
-              <TableHead className="px-3 py-2 font-semibold">Created</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Model</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Provider</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Caller</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Status</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Progress</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Cost</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              'Created',
+              'Model',
+              'Provider',
+              'Caller',
+              'Status',
+              'Progress',
+              'Cost',
+              'Actions',
+            ]}
+          />
           <TableBody>
             {batches.map((batch) => (
               <TableRow key={batch.batch_id}>

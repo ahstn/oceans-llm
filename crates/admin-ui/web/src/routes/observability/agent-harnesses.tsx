@@ -16,14 +16,8 @@ import {
 } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
 import { formatTimestamp } from '@/lib/format'
@@ -301,29 +295,17 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table data-testid="harness-usage-table" className="min-w-[64rem] text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground w-16 px-3 py-2 font-semibold">
-                Rank
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Harness
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Requests
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Input tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Output tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Total tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Key</TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              { label: 'Rank', narrow: true },
+              'Harness',
+              { label: 'Requests', align: 'right' },
+              { label: 'Input tokens', align: 'right' },
+              { label: 'Output tokens', align: 'right' },
+              { label: 'Total tokens', align: 'right' },
+              'Key',
+            ]}
+          />
           <TableBody>
             {leaders.map((leader, index) => (
               <TableRow key={leader.agent_harness_key}>

@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, Copy01Icon, MoreHorizontalIcon } from '@hugeicons/core-free-icons'
 import { useState } from 'react'
 
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -34,19 +35,12 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination'
 import { Separator } from '@/components/ui/separator'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { ShowcaseBlock, ShowcaseRow, ShowcaseSection } from './showcase'
 import { ShowcaseChart } from './showcase-chart'
+import { ShowcaseSectionNav } from './showcase-section-nav'
 import { ShowcaseSidebar } from './showcase-sidebar'
 
 const apiKeys = [
@@ -104,36 +98,34 @@ export function DataDisplaySection() {
 
       <ShowcaseBlock
         title="Table"
-        description="Bordered list pages. Header row uses --surface-muted; identifiers are monospace."
+        description="Bordered list pages. AdminTableHeader draws the header row on --surface-muted with muted semibold labels; pass column labels, or AdminTableHead cells for headers that hold controls. Identifiers are monospace."
       >
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableCaption className="sr-only">API keys</TableCaption>
-            <TableHeader className="bg-surface-muted">
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Key ID</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Spend (7d)</TableHead>
-                <TableHead className="w-10">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
+            <AdminTableHeader
+              columns={[
+                'Name',
+                'Key ID',
+                'Owner',
+                'Status',
+                { label: 'Spend (7d)', align: 'right' },
+                'Actions',
+              ]}
+            />
             <TableBody>
               {apiKeys.map((key) => (
                 <TableRow key={key.id}>
-                  <TableCell className="font-medium">{key.name}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
+                  <TableCell className="px-3 py-3 font-medium">{key.name}</TableCell>
+                  <TableCell className="text-muted-foreground px-3 py-3 font-mono text-xs">
                     {key.id}
                   </TableCell>
-                  <TableCell>{key.owner}</TableCell>
-                  <TableCell>
+                  <TableCell className="px-3 py-3">{key.owner}</TableCell>
+                  <TableCell className="px-3 py-3">
                     <Badge variant={statusVariant[key.status]}>{key.status}</Badge>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{key.spend}</TableCell>
-                  <TableCell>
+                  <TableCell className="px-3 py-3 text-right tabular-nums">{key.spend}</TableCell>
+                  <TableCell className="px-3 py-3">
                     <Button variant="ghost" size="icon-xs" aria-label={`Copy ${key.id}`}>
                       <HugeiconsIcon icon={Copy01Icon} />
                     </Button>
@@ -293,6 +285,13 @@ export function NavigationSection() {
           </ShowcaseBlock>
         </div>
       </div>
+
+      <ShowcaseBlock
+        title="Detail dialog sections"
+        description="SectionNavSidebar lists a detail dialog's sections down its left edge from md up; SectionNavTabs repeats them as buttons in the dialog header below md."
+      >
+        <ShowcaseSectionNav />
+      </ShowcaseBlock>
     </ShowcaseSection>
   )
 }

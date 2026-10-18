@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { Cancel01Icon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
+import { SectionNavSidebar, SectionNavTabs } from '@/components/shared/section-nav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,16 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-} from '@/components/ui/sidebar'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
 import { ProviderConfiguration } from '@/routes/identity/-users/provider-configuration'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
@@ -80,7 +72,11 @@ export function UserDetailsDialog({
             className="min-h-0 items-start"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
-            <UserDetailsSidebar activeSection={section} onSectionChange={details.showSection} />
+            <SectionNavSidebar
+              sections={userDetailsSections}
+              activeSection={section}
+              onSectionChange={details.showSection}
+            />
 
             <main className="flex max-h-[680px] min-h-[520px] flex-1 flex-col overflow-hidden">
               <UserDetailsHeader
@@ -122,34 +118,6 @@ interface SectionNavigationProps {
   onSectionChange: (section: UserDetailsSection) => void
 }
 
-function UserDetailsSidebar({ activeSection, onSectionChange }: SectionNavigationProps) {
-  return (
-    <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
-      <SidebarContent className="p-3">
-        <SidebarGroup className="px-0 py-0">
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {userDetailsSections.map((section) => (
-                <SidebarMenuItem key={section.id}>
-                  <SidebarMenuButton
-                    type="button"
-                    className="h-10 px-3 py-2"
-                    isActive={activeSection === section.id}
-                    onClick={() => onSectionChange(section.id)}
-                  >
-                    <AppIcon icon={section.icon} stroke={1.5} aria-hidden />
-                    <span>{section.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
-  )
-}
-
 /** Name, email, tags, and status, with section tabs in place of the sidebar on small screens. */
 function UserDetailsHeader({
   user,
@@ -179,20 +147,11 @@ function UserDetailsHeader({
         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto md:hidden">
-        {userDetailsSections.map((section) => (
-          <Button
-            key={section.id}
-            type="button"
-            size="sm"
-            variant={activeSection === section.id ? 'secondary' : 'ghost'}
-            onClick={() => onSectionChange(section.id)}
-          >
-            <AppIcon icon={section.icon} stroke={1.5} aria-hidden data-icon="inline-start" />
-            {section.label}
-          </Button>
-        ))}
-      </div>
+      <SectionNavTabs
+        sections={userDetailsSections}
+        activeSection={activeSection}
+        onSectionChange={onSectionChange}
+      />
     </header>
   )
 }

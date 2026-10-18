@@ -318,6 +318,8 @@ Where motion appears:
 
 Tables, virtualised lists, filters, sheets and detail panes are signature surfaces. Preserve density, make selected and detail state obvious, and keep filters close to the data they affect. Tables keep thin row lines; dense tables such as request logs and API keys need them to stay scannable. Empty states should teach the next operational step, not merely say that nothing exists.
 
+Admin tables draw their header row with `AdminTableHeader`, and detail dialogs with several sections navigate them with `SectionNavSidebar` and `SectionNavTabs`. Both live in `src/components/shared/` and render on the design-system page.
+
 **Numbers and time.** Each kind of value has one format, so a column compares at a glance:
 
 - Numbers in tables are right-aligned and use `tabular-nums`.

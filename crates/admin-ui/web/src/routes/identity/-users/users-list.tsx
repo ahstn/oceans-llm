@@ -1,14 +1,8 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { UserView } from '@/types/api'
 
@@ -73,18 +67,7 @@ function UsersTable({ users, onManage }: UserRowsProps) {
   return (
     <div className="border-border hidden overflow-hidden rounded-md border md:block">
       <Table className="text-left">
-        <TableHeader className="bg-surface-muted">
-          <TableRow>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Name</TableHead>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Email</TableHead>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-              Global role
-            </TableHead>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Team</TableHead>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Status</TableHead>
-            <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
+        <AdminTableHeader columns={['Name', 'Email', 'Global role', 'Team', 'Status', 'Actions']} />
         <TableBody>
           {users.map((user) => (
             <TableRow key={user.id}>

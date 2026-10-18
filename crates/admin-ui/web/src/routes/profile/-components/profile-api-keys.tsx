@@ -13,14 +13,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatLastUsedAt, formatModelGrantSummary, maskApiKeyPrefix } from '@/lib/api-key-format'
 import type { MyProfileApiKeyView } from '@/types/api'
 
@@ -58,24 +52,9 @@ export function ProfileApiKeysTable({
     <div className="flex flex-col gap-3">
       <div className="border-border overflow-hidden rounded-md border">
         <Table>
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Name</TableHead>
-              {dense ? null : (
-                <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                  Models
-                </TableHead>
-              )}
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Last used
-              </TableHead>
-              {dense ? null : (
-                <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                  Status
-                </TableHead>
-              )}
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={['Name', !dense && 'Models', 'Last used', !dense && 'Status']}
+          />
           <TableBody>
             {visible.map((key) => (
               <TableRow key={key.id}>
