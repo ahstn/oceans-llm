@@ -86,9 +86,12 @@ import type {
   CreateUserResult,
   IdentityDirectoryUsersPayload,
   IdentityUsersPayload,
-  UpdateUserInput,
+  UpdateUserInput as UpdateUserRequest,
   UserView,
 } from '@/types/api'
+
+// The form always holds an auth mode; only the API accepts null to leave it unchanged.
+type UpdateUserInput = Omit<UpdateUserRequest, 'auth_mode'> & { auth_mode?: string }
 
 export const Route = createFileRoute('/identity/users')({
   validateSearch: (
@@ -766,7 +769,7 @@ export function UsersPage() {
 
                     <EntityTagsField
                       label="Tags"
-                      tags={form.tags ?? []}
+                      tags={form.tags}
                       onChange={(tags) => setForm((current) => ({ ...current, tags }))}
                     />
                   </FieldGroup>
@@ -1184,7 +1187,7 @@ export function UsersPage() {
 
                         <EntityTagsField
                           label="Tags"
-                          tags={updateForm.tags ?? []}
+                          tags={updateForm.tags}
                           onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
                         />
                       </div>
@@ -1209,7 +1212,7 @@ export function UsersPage() {
                           <Field>
                             <FieldLabel htmlFor="manage-auth-mode">Auth method</FieldLabel>
                             <Select
-                              value={updateForm.auth_mode ?? undefined}
+                              value={updateForm.auth_mode}
                               onValueChange={setUpdateAuthMode}
                               disabled={selectedUser.status !== 'invited'}
                             >

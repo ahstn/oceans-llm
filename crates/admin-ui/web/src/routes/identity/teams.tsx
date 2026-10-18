@@ -720,7 +720,7 @@ export function TeamsPage() {
 
               <EntityTagsField
                 label="Tags"
-                tags={teamForm.tags ?? []}
+                tags={teamForm.tags}
                 onChange={(tags) => setTeamForm((current) => ({ ...current, tags }))}
               />
             </FieldGroup>
