@@ -261,17 +261,3 @@ fn contains_cache_control(value: &Value, depth: usize, remaining: &mut usize) ->
         _ => false,
     }
 }
-
-pub(super) fn tool_server_key(name: &str) -> Option<String> {
-    if let Some(value) = name.strip_prefix("mcp__") {
-        return value
-            .split_once("__")
-            .map(|(server, _)| server.to_string())
-            .filter(|value| !value.is_empty());
-    }
-    ['.', '/']
-        .into_iter()
-        .find_map(|delimiter| name.split_once(delimiter).map(|(server, _)| server))
-        .map(str::to_string)
-        .filter(|value| !value.is_empty())
-}

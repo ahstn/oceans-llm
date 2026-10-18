@@ -435,6 +435,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V70__mcp_server_ownership.sql"),
         postgres_sql: include_str!("../migrations/postgres/V70__mcp_server_ownership.sql"),
     },
+    MigrationManifest {
+        version: 71,
+        name: "request_log_invoked_mcp_tool_count",
+        checksum: "V71__request_log_invoked_mcp_tool_count.sql",
+        libsql_sql: include_str!("../migrations/V71__request_log_invoked_mcp_tool_count.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V71__request_log_invoked_mcp_tool_count.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]
