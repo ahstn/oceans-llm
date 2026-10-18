@@ -113,6 +113,12 @@ Every grant change is written to the [admin audit log](../access/admin-audit-log
 with the actor's `actor_access` (`platform_admin` or `team_admin`) and, when they
 belong to a team, `actor_team_id` and `actor_team_role`.
 
+Tag rules, tool tags and annotation overrides, and tool reviews are platform-managed.
+An `include` [tag rule](#tag-rules) on a `team` server, like a grant, may name only
+a subject of its owning team (`400` otherwise), and it counts as access that a
+narrowing would strand. Only platform admins can turn on **Require approval for
+tool changes**, since only they review the changes.
+
 ## Tag rules
 
 A tag rule grants or denies tools by what they do instead of by name. For

@@ -225,6 +225,7 @@ pub async fn create_mcp_server(
     Json(request): Json<CreateMcpServerRequest>,
 ) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
     let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    refuse_approval_change(&scope, false, request.approve_tool_changes)?;
     // A catalog entry supplies its own public URL, so only a typed one is
     // checked. Catalog values count as inherited, like a platform admin's.
     let catalog = match request.recommended_catalog_key.as_deref() {
@@ -325,6 +326,11 @@ pub async fn update_mcp_server(
     let server_id = parse_uuid(&server_id, "server_id")?;
     let ownership = ownership(&state);
     let existing = ownership.managed_server(&scope, server_id).await?;
+    refuse_approval_change(
+        &scope,
+        existing.approve_tool_changes,
+        request.approve_tool_changes,
+    )?;
     // A server a platform admin registered on an internal network stays
     // editable; only a new URL is checked.
     if request.server_url.trim() != existing.server_url {
@@ -1892,6 +1898,21 @@ async fn list_member_servers(
             "your team membership kept changing while MCP servers were listed; try again"
                 .to_string(),
         ),
+    )))
+}
+
+/// Only platform admins review tool changes, so only they turn approval on or
+/// off. A team admin may leave the setting out, or send the value it has.
+fn refuse_approval_change(
+    scope: &McpAdminScope,
+    current: bool,
+    requested: Option<bool>,
+) -> Result<(), AppError> {
+    if scope.is_platform_admin() || requested.is_none_or(|requested| requested == current) {
+        return Ok(());
+    }
+    Err(AppError(GatewayError::Auth(
+        gateway_core::AuthError::InsufficientPrivileges,
     )))
 }
 

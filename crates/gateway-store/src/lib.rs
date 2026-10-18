@@ -2935,6 +2935,31 @@ pub(crate) mod tests {
             .await
             .expect("tool no longer discovered");
         assert_eq!(outside().await.expect("count"), 0, "inactive tool");
+        // An include tag rule grants every matching tool on the server, now or
+        // after discovery, so one held outside the team counts like a grant;
+        // an exclude rule only removes access and never does.
+        let rule = |effect| gateway_core::McpToolTagRuleKey {
+            subject_kind: Kind::Team,
+            subject_id: other_team.team_id,
+            mcp_server_id: Some(underscored.mcp_server_id),
+            tag: "read_only".to_string(),
+            effect,
+        };
+        store
+            .upsert_mcp_tool_tag_rule(&rule(gateway_core::McpTagRuleEffect::Exclude), now)
+            .await
+            .expect("exclude rule");
+        assert_eq!(outside().await.expect("count"), 0, "exclude rule");
+        let (include, _) = store
+            .upsert_mcp_tool_tag_rule(&rule(gateway_core::McpTagRuleEffect::Include), now)
+            .await
+            .expect("include rule");
+        assert_eq!(outside().await.expect("count"), 1, "include rule");
+        store
+            .revoke_mcp_tool_tag_rule(include.rule_id, now)
+            .await
+            .expect("revoke include rule");
+        assert_eq!(outside().await.expect("count"), 0, "revoked include rule");
         // A disabled server exposes nothing and cannot be enabled again, so its
         // grants strand nothing.
         store

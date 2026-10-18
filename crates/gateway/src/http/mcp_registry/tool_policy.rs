@@ -7,9 +7,10 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    McpAccessRepository, McpTagRuleEffect, McpToolTagRuleKey, McpToolTagRuleRecord, UserRecord,
+    GatewayError, McpAccessRepository, McpGrantSubject, McpTagRuleEffect, McpToolTagRuleKey,
+    McpToolTagRuleRecord, UserRecord,
 };
-use gateway_service::{AuditEvent, McpToolPolicyService, admin_audit::actions};
+use gateway_service::{AuditEvent, McpAdminScope, McpToolPolicyService, admin_audit::actions};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -306,6 +307,33 @@ pub async fn create_mcp_tag_rule(
         tag: request.tag,
         effect: parse_effect(&request.effect)?,
     };
+    // An include rule grants tools, so a team-only server's rule follows the
+    // grant rule: only for subjects of the owning team. An exclude rule only
+    // removes access, so it may name anyone.
+    if key.effect == McpTagRuleEffect::Include
+        && let Some(server_id) = key.mcp_server_id
+    {
+        let server =
+            gateway_core::McpRegistryRepository::get_external_mcp_server(&*state.store, server_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+                        format!("external MCP server `{server_id}` not found"),
+                    )))
+                })?;
+        if server.ownership.visibility == gateway_core::McpServerVisibility::Team {
+            super::ownership(&state)
+                .authorize_server_grant(
+                    &McpAdminScope::platform_admin(None),
+                    &server,
+                    McpGrantSubject {
+                        subject_kind: key.subject_kind,
+                        subject_id: key.subject_id,
+                    },
+                )
+                .await?;
+        }
+    }
     let (rule, created) = McpToolPolicyService::new(state.store.clone())
         .create_rule(key)
         .await?;

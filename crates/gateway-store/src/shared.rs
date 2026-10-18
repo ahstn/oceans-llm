@@ -12,7 +12,9 @@ pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 }
 
 /// SQL for `count_mcp_tool_grants_outside_team`, with the backend's
-/// placeholders for the server and team IDs. Each subject's team follows the
+/// placeholders for the server and team IDs. Grants are direct tool grants and
+/// include tag rules on the server, which grant every matching tool. Each
+/// subject's team follows the
 /// same precedence as the service's subject lookup, so both agree on who is
 /// inside the team. An API key that is revoked, has no MCP scope, or whose
 /// server list leaves this server out holds no access, as at runtime. Nor does
@@ -58,9 +60,22 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
                     END
                     ELSE FALSE
                 END AS subject_exists
-            FROM mcp_tool_grants g
-            JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
-            JOIN external_mcp_servers srv ON srv.mcp_server_id = t.mcp_server_id
+            FROM (
+                -- Direct grants on the server's active tools: an inactive tool
+                -- is not callable, as at runtime.
+                SELECT gr.subject_kind, gr.subject_id
+                FROM mcp_tool_grants gr
+                JOIN external_mcp_tools t ON t.mcp_tool_id = gr.target_id
+                WHERE gr.target_kind = 'tool' AND gr.is_active = 1
+                  AND t.mcp_server_id = {server} AND t.is_active = 1
+                UNION ALL
+                -- Include tag rules on the server grant every matching tool,
+                -- discovered now or later, so they count as grants.
+                SELECT r.subject_kind, r.subject_id
+                FROM mcp_tool_tag_rules r
+                WHERE r.is_active = 1 AND r.effect = 'include' AND r.server_scope = {server}
+            ) g
+            JOIN external_mcp_servers srv ON srv.mcp_server_id = {server}
             LEFT JOIN teams st ON g.subject_kind = 'team' AND st.team_id = g.subject_id
             LEFT JOIN users su ON g.subject_kind = 'user' AND su.user_id = g.subject_id
             LEFT JOIN team_memberships um ON g.subject_kind = 'user' AND um.user_id = g.subject_id
@@ -69,11 +84,8 @@ pub(crate) fn grants_outside_team_sql(server: &str, team: &str) -> String {
             LEFT JOIN service_accounts ksa ON ksa.service_account_id = k.owner_service_account_id
             LEFT JOIN users ku ON ku.user_id = k.owner_user_id
             LEFT JOIN team_memberships km ON km.user_id = k.owner_user_id
-            WHERE g.target_kind = 'tool' AND g.is_active = 1 AND t.mcp_server_id = {server}
-              -- An inactive tool is not callable, as at runtime.
-              AND t.is_active = 1
-              -- A disabled server exposes nothing, and cannot be enabled again.
-              AND srv.status = 'active'
+            -- A disabled server exposes nothing, and cannot be enabled again.
+            WHERE srv.status = 'active'
         ) resolved
         WHERE resolved.subject_exists AND (resolved.subject_team IS NULL OR resolved.subject_team <> {team})
         "#,
@@ -119,7 +131,7 @@ pub(crate) fn key_tool_grants_sql(keys: &str, server: &str) -> String {
         JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id
         JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
         WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = 'api_key'
-          AND g.subject_id {keys} AND t.is_active = 1 AND s.status = 'active'
+          AND g.subject_id {keys} AND t.is_active = 1 AND t.approval_status IN ('approved', 'pending_change') AND s.status = 'active'
           AND ({server} IS NULL OR t.mcp_server_id = {server})
         UNION
         SELECT g.subject_id, t.mcp_tool_id, t.mcp_server_id, s.server_key

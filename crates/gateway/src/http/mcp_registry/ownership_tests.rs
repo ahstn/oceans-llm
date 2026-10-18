@@ -2345,3 +2345,75 @@ async fn api_key_server_lists_refuse_hidden_servers_like_missing_ones() {
         Ok(())
     );
 }
+
+#[tokio::test]
+async fn include_tag_rules_on_team_only_servers_stay_inside_the_team() {
+    let context = TestContext::new().await;
+    let server = context
+        .server(
+            "team-rules",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let platform = context.platform_admin().await;
+    let outsider = context.member(context.team_b).await;
+    let insider = context.member(context.team_a).await;
+    let create = |subject_id: Uuid, effect: &str| {
+        let headers = platform.headers.clone();
+        let state = context.state.clone();
+        let body = json!({
+            "subject_kind": "user",
+            "subject_id": subject_id,
+            "server_id": server.id,
+            "tag": "read_only",
+            "effect": effect,
+        });
+        async move {
+            read(
+                create_mcp_tag_rule(
+                    State(state),
+                    headers,
+                    AuditRequestMeta::default(),
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await,
+            )
+            .await
+        }
+    };
+    // An include rule grants tools, so it follows the grant rule.
+    let (status, body) = create(outsider, "include").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = create(insider, "include").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // An exclude rule only removes access, so it may name anyone.
+    let (status, body) = create(outsider, "exclude").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn only_platform_admins_require_approval_for_tool_changes() {
+    let context = TestContext::new().await;
+    let own = context
+        .server(
+            "approval",
+            context.team_owned(context.team_a, McpServerVisibility::Team),
+        )
+        .await;
+    let admin = context.team_admin(context.team_a).await;
+    let (status, body) = context
+        .update(&admin, own.id, json!({ "approve_tool_changes": true }))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    // Sending the value the server already has is fine.
+    let (status, body) = context
+        .update(&admin, own.id, json!({ "approve_tool_changes": false }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let platform = context.platform_admin().await;
+    let (status, body) = context
+        .update(&platform, own.id, json!({ "approve_tool_changes": true }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["server"]["approve_tool_changes"], true);
+}
