@@ -30,6 +30,7 @@ const item: McpInvocationView = {
   api_key_id: 'api_key_1',
   user_id: null,
   team_id: 'team_1',
+  owner_kind: 'team',
   server_id: 'server_1',
   server_display_key: 'github',
   server_display_name: 'GitHub',
