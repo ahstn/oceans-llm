@@ -421,6 +421,69 @@ async fn builds_runtime_openai_chat_request_with_route_headers() {
 }
 
 #[tokio::test]
+async fn runtime_openai_chat_translates_anthropic_messages_tool_exchange() {
+    let provider = BedrockProvider::new(BedrockProviderConfig {
+        provider_key: "bedrock-runtime".to_string(),
+        region: "us-east-1".to_string(),
+        endpoint_kind: BedrockEndpointKind::BedrockRuntime,
+        endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com".to_string(),
+        auth: BedrockAuthConfig::Bearer {
+            token: "runtime-token".to_string(),
+        },
+        default_headers: BTreeMap::new(),
+        request_timeout_ms: 1_000,
+    })
+    .expect("provider");
+    let block_message = |role: &str, content: Value| gateway_core::CoreChatMessage {
+        role: role.to_string(),
+        content,
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    let request = CoreChatRequest {
+        model: "gpt".to_string(),
+        messages: vec![
+            message("user", "weather in Paris?"),
+            block_message(
+                "assistant",
+                json!([{"type":"tool_use","id":"toolu_1","name":"weather","input":{"city":"Paris"}}]),
+            ),
+            block_message(
+                "user",
+                json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"18C"}]),
+            ),
+        ],
+        stream: false,
+        extra: BTreeMap::from([(
+            "tools".to_string(),
+            json!([{"name":"weather","input_schema":{"type":"object","properties":{}}}]),
+        )]),
+    };
+    let context = context_with_api_style(
+        "openai.gpt-oss-120b-1:0",
+        AwsBedrockApiStyle::RuntimeOpenaiChat,
+        Some("/openai/v1"),
+    );
+
+    let built = provider
+        .build_chat_request(&request, &context)
+        .await
+        .expect("request");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+
+    assert_eq!(body["tools"][0]["function"]["name"], "weather");
+    assert_eq!(
+        body["messages"][1]["tool_calls"][0]["function"],
+        json!({"name":"weather","arguments":"{\"city\":\"Paris\"}"})
+    );
+    assert_eq!(
+        body["messages"][2],
+        json!({"role":"tool","tool_call_id":"toolu_1","content":"18C"})
+    );
+}
+
+#[tokio::test]
 async fn builds_mantle_openai_responses_bearer_request_for_gpt_55() {
     let provider = mantle_bearer_provider();
     let request = responses_request(false);
