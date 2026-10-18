@@ -20,7 +20,37 @@ const MAX_ENTRIES: usize = 4096;
 pub struct ResponseCache<K, V> {
     ttl: Duration,
     entries: Mutex<HashMap<K, Arc<CacheEntry<V>>>>,
-    load_gates: Mutex<HashMap<K, Arc<Mutex<()>>>>,
+    /// Held only to look up or remove a gate, never across an await, so a
+    /// share can leave it from `Drop`.
+    load_gates: LoadGates<K>,
+}
+
+type LoadGates<K> = std::sync::Mutex<HashMap<K, Arc<Mutex<()>>>>;
+
+/// A caller's share of a key's load gate. Dropping the last share removes the
+/// gate, whether the load finished, failed or the caller was cancelled, so
+/// abandoned loads leave no gates behind.
+struct LoadGateShare<'a, K: Eq + Hash> {
+    gates: &'a LoadGates<K>,
+    key: K,
+    gate: Arc<Mutex<()>>,
+}
+
+impl<K: Eq + Hash> Drop for LoadGateShare<'_, K> {
+    fn drop(&mut self) {
+        let mut gates = self
+            .gates
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        // The map holds one reference and this share the other.
+        if gates
+            .get(&self.key)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.gate))
+            && Arc::strong_count(&self.gate) == 2
+        {
+            gates.remove(&self.key);
+        }
+    }
 }
 
 impl<K, V> ResponseCache<K, V>
@@ -33,7 +63,7 @@ where
         Self {
             ttl,
             entries: Mutex::new(HashMap::new()),
-            load_gates: Mutex::new(HashMap::new()),
+            load_gates: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -50,26 +80,29 @@ where
             return Ok((value, CacheStatus::Hit));
         }
 
-        let load_gate = {
-            let mut load_gates = self.load_gates.lock().await;
-            load_gates
-                .entry(key.clone())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone()
+        let share = {
+            let mut load_gates = self
+                .load_gates
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            LoadGateShare {
+                gates: &self.load_gates,
+                key: key.clone(),
+                gate: load_gates
+                    .entry(key.clone())
+                    .or_insert_with(|| Arc::new(Mutex::new(())))
+                    .clone(),
+            }
         };
-        let _load_guard = load_gate.lock().await;
+        let _load_guard = share.gate.lock().await;
 
         if let Some(value) = self.get_fresh(&key).await {
-            self.remove_load_gate(&key, &load_gate).await;
             return Ok((value, CacheStatus::Hit));
         }
 
         let value = match loader().await {
             Ok(value) => value,
-            Err(error) => {
-                self.remove_load_gate(&key, &load_gate).await;
-                return Err((error, CacheStatus::Miss));
-            }
+            Err(error) => return Err((error, CacheStatus::Miss)),
         };
         {
             let mut entries = self.entries.lock().await;
@@ -95,20 +128,7 @@ where
             );
         }
 
-        self.remove_load_gate(&key, &load_gate).await;
-
         Ok((value, CacheStatus::Miss))
-    }
-
-    async fn remove_load_gate(&self, key: &K, load_gate: &Arc<Mutex<()>>) {
-        let mut load_gates = self.load_gates.lock().await;
-        if load_gates
-            .get(key)
-            .is_some_and(|current| Arc::ptr_eq(current, load_gate))
-            && Arc::strong_count(load_gate) == 2
-        {
-            load_gates.remove(key);
-        }
     }
 
     async fn get_fresh(&self, key: &K) -> Option<V> {
@@ -161,6 +181,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancelled_loads_leave_no_load_gate() {
+        let cache = ResponseCache::new(Duration::from_secs(30));
+        let cancelled = tokio::time::timeout(
+            Duration::from_millis(10),
+            cache.get_or_load(1, || async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                Ok::<_, ()>(1)
+            }),
+        )
+        .await;
+        assert!(cancelled.is_err());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn expired_values_are_reloaded() {
         let cache = ResponseCache::new(Duration::ZERO);
         let first = cache
@@ -185,7 +220,7 @@ mod tests {
             .await;
 
         assert_eq!(result, Err(("load failed", CacheStatus::Miss)));
-        assert!(cache.load_gates.lock().await.is_empty());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -233,7 +268,7 @@ mod tests {
         second.await.expect("second task");
         third.await.expect("third task");
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
-        assert!(cache.load_gates.lock().await.is_empty());
+        assert!(cache.load_gates.lock().unwrap().is_empty());
     }
 
     async fn load(
@@ -275,7 +310,7 @@ mod tests {
                 let holder_count = cache
                     .load_gates
                     .lock()
-                    .await
+                    .unwrap()
                     .get("7d")
                     .map_or(0, Arc::strong_count);
                 if holder_count >= minimum {

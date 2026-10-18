@@ -1503,6 +1503,44 @@ async fn concurrent_requests_share_a_failed_team_lookup() {
     assert!(limiter.member_team_lookups.lock().unwrap().is_empty());
 }
 
+/// A waiter that gives up leaves the lookup to the callers still waiting,
+/// so a request arriving meanwhile joins it instead of starting another.
+#[tokio::test]
+async fn a_cancelled_waiter_keeps_the_team_lookup_shared() {
+    let mut harness = Harness::new(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+    );
+    let teams = Arc::new(CountingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let staying = limiter.check(&subject);
+    let leaving = async {
+        // Gives up partway through the 50 ms lookup.
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            limiter.check(&subject),
+        )
+        .await;
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        limiter.check(&subject).await
+    };
+    let (staying, late) = tokio::join!(staying, leaving);
+    staying.expect("check");
+    late.expect("check");
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(limiter.member_team_lookups.lock().unwrap().is_empty());
+}
+
 struct FailingTeams;
 
 #[async_trait]

@@ -236,6 +236,40 @@ where
         ("tied-later".to_string(), true)
     );
 
+    // A failure that started later commits first; an older success still
+    // commits its tools but leaves the failure as the last discovery.
+    store
+        .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+            status: ExternalMcpDiscoveryStatus::Failed,
+            error_summary: Some("later failure".to_string()),
+            ..guarded_run(&server, t0 + time::Duration::seconds(450))
+        })
+        .await
+        .expect("later failure");
+    store
+        .record_external_mcp_discovery_success(
+            &guarded_run(&server, t0 + time::Duration::seconds(435)),
+            &[tool(&server, "older-success")],
+        )
+        .await
+        .expect("older success");
+    assert_eq!(
+        read_tool(store, &server).await,
+        ("older-success".to_string(), true)
+    );
+    let summary = store
+        .get_external_mcp_server(server.mcp_server_id)
+        .await
+        .expect("server lookup")
+        .expect("server");
+    assert_eq!(
+        (summary.last_discovery_status, summary.last_error_summary),
+        (
+            Some(ExternalMcpDiscoveryStatus::Failed),
+            Some("later failure".to_string())
+        )
+    );
+
     // An admin disables the server while a discovery is in flight.
     store
         .disable_external_mcp_server(server.mcp_server_id, OffsetDateTime::now_utc())

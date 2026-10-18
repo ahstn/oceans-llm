@@ -2,7 +2,7 @@
 -- second are still ordered when a stale one is refused. Older rows are
 -- backfilled from their whole-second `started_at`. Gateways older than this
 -- migration, still serving during a rolling upgrade, insert runs without it;
--- the stale check compares those by `started_at`.
+-- the stale check treats those as newer than any run in the same second.
 ALTER TABLE external_mcp_discovery_runs ADD COLUMN IF NOT EXISTS started_at_ms BIGINT;
 
 UPDATE external_mcp_discovery_runs

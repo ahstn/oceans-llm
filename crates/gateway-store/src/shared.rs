@@ -7,6 +7,34 @@ use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// An SQL condition, true when the server (`server`) has a recorded discovery
+/// run, of `status` when given, that started after the run `run_id` started
+/// at `started_ms`. Placeholders are passed in, so both backends share it.
+///
+/// Runs are ordered by their start in milliseconds, and runs that start in
+/// the same millisecond by run id, so of two concurrent refreshes exactly one
+/// is the newer. A gateway older than V72, still serving during a rolling
+/// upgrade, records runs without `started_at_ms`; such a run counts as newer
+/// when it started in the same second or later, since its milliseconds are
+/// unknown. The run itself never counts.
+pub(crate) fn newer_discovery_run_sql(
+    server: &str,
+    status: Option<&str>,
+    started_ms: &str,
+    run_id: &str,
+) -> String {
+    let status = status
+        .map(|status| format!(" AND r.status = {status}"))
+        .unwrap_or_default();
+    format!(
+        "EXISTS (SELECT 1 FROM external_mcp_discovery_runs r WHERE r.mcp_server_id = {server}{status} \
+         AND r.discovery_run_id <> {run_id} \
+         AND (r.started_at_ms > {started_ms} \
+              OR (r.started_at_ms = {started_ms} AND r.discovery_run_id > {run_id}) \
+              OR (r.started_at_ms IS NULL AND (r.started_at + 1) * 1000 > {started_ms})))"
+    )
+}
+
 pub(crate) fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
     Uuid::parse_str(raw).map_err(|error| StoreError::Serialization(error.to_string()))
 }
