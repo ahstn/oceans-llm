@@ -18,8 +18,11 @@ use crate::http::{
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
+mod anthropic_messages;
 mod batch;
 mod decisions;
+
+use anthropic_messages::normalize_anthropic_messages_for_openai;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenAiBatchDialect {
@@ -274,7 +277,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
-            normalize_anthropic_messages_tools_for_openai(object);
+            normalize_anthropic_messages_for_openai(object);
         }
         self.build_request("chat/completions", body, context, false, true, bearer_token)
     }
@@ -294,7 +297,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
-            normalize_anthropic_messages_tools_for_openai(object);
+            normalize_anthropic_messages_for_openai(object);
         }
         self.build_request("chat/completions", body, context, true, true, bearer_token)
     }
@@ -497,63 +500,6 @@ impl OpenAiCompatProvider {
         }
 
         Ok(response)
-    }
-}
-
-fn normalize_anthropic_messages_tools_for_openai(body: &mut serde_json::Map<String, Value>) {
-    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
-        for tool in tools {
-            normalize_anthropic_messages_tool_for_openai(tool);
-        }
-    }
-
-    if let Some(tool_choice) = body.get_mut("tool_choice") {
-        normalize_anthropic_messages_tool_choice_for_openai(tool_choice);
-    }
-}
-
-fn normalize_anthropic_messages_tool_for_openai(tool: &mut Value) {
-    let Some(object) = tool.as_object_mut() else {
-        return;
-    };
-    if object.contains_key("type") || !object.contains_key("input_schema") {
-        return;
-    }
-    let Some(name) = object.get("name").cloned() else {
-        return;
-    };
-    let mut function = serde_json::Map::from_iter([
-        ("name".to_string(), name),
-        (
-            "parameters".to_string(),
-            object
-                .get("input_schema")
-                .cloned()
-                .unwrap_or_else(|| json!({"type":"object","properties":{}})),
-        ),
-    ]);
-    if let Some(description) = object.get("description").cloned() {
-        function.insert("description".to_string(), description);
-    }
-    *tool = json!({
-        "type": "function",
-        "function": Value::Object(function)
-    });
-}
-
-fn normalize_anthropic_messages_tool_choice_for_openai(tool_choice: &mut Value) {
-    let Some(object) = tool_choice.as_object() else {
-        return;
-    };
-    match object.get("type").and_then(Value::as_str) {
-        Some("auto") => *tool_choice = Value::String("auto".to_string()),
-        Some("any") => *tool_choice = Value::String("required".to_string()),
-        Some("tool") => {
-            if let Some(name) = object.get("name").and_then(Value::as_str) {
-                *tool_choice = json!({"type":"function","function":{"name":name}});
-            }
-        }
-        _ => {}
     }
 }
 
@@ -1507,6 +1453,53 @@ mod tests {
             body_json["tool_choice"],
             json!({"type":"function","function":{"name":"lookup"}})
         );
+    }
+
+    #[test]
+    fn build_chat_stream_request_translates_anthropic_tool_history_for_openai_compat() {
+        let provider = provider();
+        let message = |role: &str, content: Value| CoreChatMessage {
+            role: role.to_string(),
+            content,
+            name: None,
+            extra: BTreeMap::new(),
+        };
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![
+                message("user", json!("weather in Paris?")),
+                message(
+                    "assistant",
+                    json!([{"type":"tool_use","id":"toolu_1","name":"weather","input":{"city":"Paris"}}]),
+                ),
+                message(
+                    "user",
+                    json!([{"type":"tool_result","tool_use_id":"toolu_1","content":"18C"}]),
+                ),
+            ],
+            stream: true,
+            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+        };
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
+            ..Default::default()
+        });
+
+        let built = provider
+            .build_chat_stream_request(&request, &context)
+            .expect("build request");
+        let body = request_body_json(&built);
+
+        assert_eq!(
+            body["messages"][1]["tool_calls"][0]["function"],
+            json!({"name":"weather","arguments":"{\"city\":\"Paris\"}"})
+        );
+        assert_eq!(
+            body["messages"][2],
+            json!({"role":"tool","tool_call_id":"toolu_1","content":"18C"})
+        );
+        assert_eq!(body["messages"].as_array().map(Vec::len), Some(3));
+        assert_eq!(body["tools"], json!([]), "tool history keeps empty tools");
     }
 
     #[test]
