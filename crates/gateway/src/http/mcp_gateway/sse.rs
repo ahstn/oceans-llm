@@ -16,6 +16,9 @@ use futures_util::{Stream, StreamExt, stream};
 use serde_json::Value;
 
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+/// Most bytes one unfinished event may hold. An upstream that never ends an
+/// event would otherwise grow the buffer for the life of the stream.
+pub(super) const MAX_SSE_EVENT_BYTES: usize = super::MAX_MCP_REWRITE_BODY_BYTES as usize;
 
 /// Incremental SSE rewriter. Feed it upstream chunks in order and call
 /// [`SseSanitizer::finish`] once the stream ends.
@@ -25,7 +28,10 @@ pub(super) struct SseSanitizer {
     pending: Vec<u8>,
     /// A trailing `\r` that may be the first half of `\r\n`.
     carried_cr: bool,
+    /// Set until the first bytes show whether the stream opens with a BOM.
     at_start: bool,
+    /// The first bytes, held while they could still be a split BOM.
+    head: Vec<u8>,
     drop_responses: bool,
 }
 
@@ -36,29 +42,48 @@ impl SseSanitizer {
             pending: Vec::new(),
             carried_cr: false,
             at_start: true,
+            head: Vec::new(),
             drop_responses,
         }
     }
 
     /// Accepts the next upstream chunk and returns the complete events it
-    /// finished, sanitised.
-    pub(super) fn push(&mut self, chunk: &[u8]) -> Bytes {
-        let mut chunk = chunk;
-        if self.at_start && !chunk.is_empty() {
+    /// finished, sanitised. Fails once an unfinished event passes
+    /// [`MAX_SSE_EVENT_BYTES`].
+    pub(super) fn push(&mut self, chunk: &[u8]) -> Result<Bytes, io::Error> {
+        if self.at_start {
+            self.head.extend_from_slice(chunk);
+            // A BOM split across chunks must be stripped too, or the first
+            // field would no longer be recognised.
+            if self.head.len() < UTF8_BOM.len() && UTF8_BOM.starts_with(&self.head) {
+                return Ok(Bytes::new());
+            }
             self.at_start = false;
-            chunk = chunk.strip_prefix(UTF8_BOM).unwrap_or(chunk);
+            let head = std::mem::take(&mut self.head);
+            self.normalise_into_pending(head.strip_prefix(UTF8_BOM).unwrap_or(&head));
+        } else {
+            self.normalise_into_pending(chunk);
         }
-        self.normalise_into_pending(chunk);
         let mut out = Vec::new();
         while let Some(end) = find_event_end(&self.pending) {
             let event: Vec<u8> = self.pending.drain(..end + 2).collect();
             self.write_event(&event[..end], &mut out);
         }
-        Bytes::from(out)
+        if self.pending.len() > MAX_SSE_EVENT_BYTES {
+            return Err(io::Error::other(format!(
+                "upstream SSE event exceeds {MAX_SSE_EVENT_BYTES} bytes"
+            )));
+        }
+        Ok(Bytes::from(out))
     }
 
     /// Emits whatever remains when the upstream stream ends.
     pub(super) fn finish(&mut self) -> Bytes {
+        if std::mem::take(&mut self.at_start) {
+            // Fewer bytes than a BOM, so they are not one.
+            let head = std::mem::take(&mut self.head);
+            self.normalise_into_pending(&head);
+        }
         if std::mem::take(&mut self.carried_cr) {
             self.pending.push(b'\n');
         }
@@ -151,11 +176,11 @@ fn is_json_rpc_response(lines: &[&[u8]]) -> bool {
 }
 
 /// Sanitises a complete SSE body.
-pub(super) fn sanitize_sse_body(body: &[u8], drop_responses: bool) -> Bytes {
+pub(super) fn sanitize_sse_body(body: &[u8], drop_responses: bool) -> Result<Bytes, io::Error> {
     let mut sanitizer = SseSanitizer::new(drop_responses);
-    let mut out = sanitizer.push(body).to_vec();
+    let mut out = sanitizer.push(body)?.to_vec();
     out.extend_from_slice(&sanitizer.finish());
-    Bytes::from(out)
+    Ok(Bytes::from(out))
 }
 
 /// Sanitises an SSE byte stream as it arrives.
@@ -173,12 +198,11 @@ where
         }
         loop {
             match upstream.next().await {
-                Some(Ok(chunk)) => {
-                    let out = sanitizer.push(&chunk);
-                    if !out.is_empty() {
-                        return Some((Ok(out), (upstream, sanitizer, false)));
-                    }
-                }
+                Some(Ok(chunk)) => match sanitizer.push(&chunk) {
+                    Ok(out) if out.is_empty() => {}
+                    Ok(out) => return Some((Ok(out), (upstream, sanitizer, false))),
+                    Err(error) => return Some((Err(error), (upstream, sanitizer, true))),
+                },
                 Some(Err(error)) => return Some((Err(error), (upstream, sanitizer, true))),
                 None => {
                     let out = sanitizer.finish();
@@ -197,7 +221,12 @@ mod tests {
     use super::*;
 
     fn sanitize(body: &str, drop_responses: bool) -> String {
-        String::from_utf8(sanitize_sse_body(body.as_bytes(), drop_responses).to_vec()).unwrap()
+        String::from_utf8(
+            sanitize_sse_body(body.as_bytes(), drop_responses)
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -251,6 +280,44 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "data: {\"a\":1}\n\ndata: {}\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bom_split_across_chunks_is_still_stripped() {
+        let chunks: [&[u8]; 3] = [
+            b"\xEF",
+            b"\xBB",
+            b"\xBFid: 1\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n",
+        ];
+        let upstream = stream::iter(
+            chunks
+                .into_iter()
+                .map(|chunk| Ok::<_, io::Error>(Bytes::from_static(chunk))),
+        );
+        let out = sanitize_sse_stream(upstream, true)
+            .map(|chunk| chunk.unwrap())
+            .collect::<Vec<_>>()
+            .await
+            .concat();
+        assert!(out.is_empty(), "{:?}", String::from_utf8_lossy(&out));
+    }
+
+    #[tokio::test]
+    async fn an_event_that_never_ends_stops_the_stream() {
+        let line = Bytes::from(vec![b'x'; 1024 * 1024]);
+        let upstream = stream::iter(
+            std::iter::once(Ok::<_, io::Error>(Bytes::from_static(b"data: ")))
+                .chain(std::iter::repeat_n(line, 8).map(Ok)),
+        );
+        let items = sanitize_sse_stream(upstream, false)
+            .collect::<Vec<_>>()
+            .await;
+        assert!(matches!(items.last(), Some(Err(_))));
+        assert_eq!(
+            items.len(),
+            1,
+            "nothing of the oversized event was forwarded"
         );
     }
 }

@@ -88,7 +88,11 @@ pub(super) async fn proxy_buffered(
     let headers = response.headers().clone();
     let mut body = read_limited_response_body(response).await?;
     if is_event_stream(&headers) {
-        body = sanitize_sse_body(&body, method == Method::GET);
+        body = sanitize_sse_body(&body, method == Method::GET).map_err(|_| {
+            GatewayError::PayloadTooLarge {
+                limit_bytes: MAX_MCP_REWRITE_BODY_BYTES as usize,
+            }
+        })?;
     }
     Ok(BufferedMcpResponse {
         status,
