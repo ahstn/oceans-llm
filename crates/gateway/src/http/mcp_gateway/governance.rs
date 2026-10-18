@@ -89,11 +89,14 @@ pub(super) struct RefusalLog {
 }
 
 impl<'a> GovernedCall<'a> {
+    /// `invocation_id` names the call in guardrail events and the invocation
+    /// log, so the route passes the id it logs the call under.
     pub(super) fn new(
         state: &'a AppState,
         policy: &'a RequestPolicyContext,
         auth: &'a AuthenticatedApiKey,
         server: &'a ExternalMcpServerRecord,
+        invocation_id: Uuid,
         request_id: String,
     ) -> Self {
         Self {
@@ -101,7 +104,7 @@ impl<'a> GovernedCall<'a> {
             policy,
             auth,
             server,
-            invocation_id: Uuid::new_v4(),
+            invocation_id,
             request_id,
         }
     }

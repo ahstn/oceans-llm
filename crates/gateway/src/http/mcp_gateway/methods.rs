@@ -15,8 +15,10 @@ use gateway_core::{
     AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError, McpToolInvocationStatus,
     McpToolPolicyResult,
 };
+use gateway_mcp::server::{JSON_RPC_METHOD_NOT_FOUND, JSON_RPC_POLICY_DENIED};
 use gateway_service::{McpAccess, McpGatewayService};
 use serde_json::Value;
+use uuid::Uuid;
 
 use super::{
     credentials::upstream_auth_error_response,
@@ -31,11 +33,6 @@ use super::{
     upstream::{proxy_initialize, proxy_upstream},
 };
 use crate::http::{request_policy::RequestPolicyContext, state::AppState};
-
-use gateway_mcp::server::{
-    JSON_RPC_METHOD_NOT_FOUND as METHOD_NOT_FOUND_CODE,
-    JSON_RPC_POLICY_DENIED as SERVER_NOT_GRANTED_CODE,
-};
 
 /// A parsed resources, prompts, or completion request.
 pub(super) struct GovernedRequest {
@@ -61,11 +58,11 @@ fn server_not_granted_response(id: Option<&Value>) -> Response<Body> {
         Some(id) => mcp_jsonrpc_error_response(
             StatusCode::FORBIDDEN,
             Some(id),
-            SERVER_NOT_GRANTED_CODE,
+            JSON_RPC_POLICY_DENIED,
             MESSAGE,
         ),
         None => {
-            mcp_notification_error_response(StatusCode::FORBIDDEN, SERVER_NOT_GRANTED_CODE, MESSAGE)
+            mcp_notification_error_response(StatusCode::FORBIDDEN, JSON_RPC_POLICY_DENIED, MESSAGE)
         }
     }
 }
@@ -84,7 +81,14 @@ pub(super) async fn handle_governed_request(
 ) -> Response<Body> {
     let mcp_method = request.method.as_str();
     let display_key = request.target.as_deref().unwrap_or(mcp_method);
-    let call = GovernedCall::new(state, policy, auth, &server, mcp_request_id(&request.id));
+    let call = GovernedCall::new(
+        state,
+        policy,
+        auth,
+        &server,
+        Uuid::new_v4(),
+        mcp_request_id(&request.id),
+    );
     let log_input = |status, policy_result, error_code: Option<String>| {
         tool_invocation_log_input(
             &server,
@@ -247,11 +251,13 @@ pub(super) async fn deny_unknown_method(
         Some(id) => mcp_jsonrpc_error_response(
             StatusCode::FORBIDDEN,
             Some(&id),
-            METHOD_NOT_FOUND_CODE,
+            JSON_RPC_METHOD_NOT_FOUND,
             &message,
         ),
-        None => {
-            mcp_notification_error_response(StatusCode::FORBIDDEN, METHOD_NOT_FOUND_CODE, &message)
-        }
+        None => mcp_notification_error_response(
+            StatusCode::FORBIDDEN,
+            JSON_RPC_METHOD_NOT_FOUND,
+            &message,
+        ),
     }
 }

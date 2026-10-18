@@ -21,7 +21,7 @@ use crate::http::{
     state::AppState,
 };
 
-pub(super) use gateway_mcp::server::{JSON_RPC_INTERNAL_ERROR, JSON_RPC_RATE_LIMITED};
+use gateway_mcp::server::{JSON_RPC_INTERNAL_ERROR, JSON_RPC_RATE_LIMITED};
 /// The invocation log's `error_code` for a rate-limited call.
 pub(super) const RATE_LIMITED_ERROR_CODE: &str = "rate_limited";
 

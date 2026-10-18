@@ -29,6 +29,7 @@ use gateway_core::{
     ProviderError, SCOPE_MCP_PROXY, auth::extract_bearer_token, is_oauth_access_token,
 };
 use gateway_guardrails::GuardrailEvaluation;
+use gateway_mcp::server::{JSON_RPC_INVALID_REQUEST, JSON_RPC_POLICY_DENIED};
 use gateway_service::{McpAccess, McpClientOauthService, McpGatewayService, McpInvocationLogInput};
 use governance::{GovernedCall, GuardedArguments, Refused};
 use guardrails::{enforce_direct_mcp_result, evaluate_mcp_result, guardrail_decision_metadata};
@@ -57,9 +58,6 @@ const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
-use gateway_mcp::server::{JSON_RPC_INVALID_REQUEST, JSON_RPC_POLICY_DENIED};
-/// A guardrail denied the operation.
-const GUARDRAIL_POLICY_DENIED_CODE: i64 = JSON_RPC_POLICY_DENIED;
 
 #[tracing::instrument(
     skip(state, request),
@@ -418,7 +416,14 @@ async fn handle_tools_call(
     tool_name: String,
     arguments: Option<serde_json::Value>,
 ) -> Response<Body> {
-    let call = GovernedCall::new(state, policy, auth, &server, mcp_request_id(&id));
+    let call = GovernedCall::new(
+        state,
+        policy,
+        auth,
+        &server,
+        Uuid::new_v4(),
+        mcp_request_id(&id),
+    );
     let tool = match McpAccess::new(state.store.clone())
         .allowed_tool_for_call(auth, server.mcp_server_id, &tool_name)
         .await

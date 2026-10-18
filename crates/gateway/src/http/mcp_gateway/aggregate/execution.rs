@@ -10,7 +10,8 @@ use gateway_core::{
 };
 use gateway_guardrails::EvaluationPayload;
 use gateway_mcp::server::{
-    JSON_RPC_INVALID_PARAMS, call_tool_error_result, json_rpc_error, json_rpc_success,
+    JSON_RPC_INTERNAL_ERROR, JSON_RPC_INVALID_PARAMS, call_tool_error_result, json_rpc_error,
+    json_rpc_success,
 };
 use gateway_mcp::{
     JsonRpcErrorObject, JsonRpcId, McpClientError, StreamableHttpClient, ToolsCallResponse,
@@ -24,7 +25,7 @@ use crate::http::{
     mcp_gateway::{
         credentials::credential_guidance,
         governance::{GovernedCall, GuardedArguments, Refusal, Refused},
-        rate_limits::{JSON_RPC_INTERNAL_ERROR, rejection_body},
+        rate_limits::rejection_body,
     },
     request_policy::RequestPolicyContext,
     state::AppState,
@@ -136,9 +137,9 @@ impl CatalogInvocation<'_> {
             self.policy,
             self.auth,
             &record.server,
+            self.mcp_tool_invocation_id,
             self.request_id.clone(),
         );
-        self.mcp_tool_invocation_id = governed.invocation_id;
         let admitted = match governed
             .admit(Some((&record.tool.upstream_name, arguments)))
             .await
