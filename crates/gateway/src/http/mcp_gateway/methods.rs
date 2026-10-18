@@ -139,7 +139,7 @@ pub(super) async fn handle_governed_request(
     };
 
     let outcome = match proxy_upstream(
-        &state.mcp_http_client,
+        &state.mcp_http_clients,
         http_method,
         headers,
         body,
@@ -192,6 +192,7 @@ pub(super) async fn handle_event_stream(
         Ok(false) => return server_not_granted_response(None),
         Err(error) => return mcp_error_response(error),
     }
+    // `dispatch_mcp_request` binds the stream to the caller's reach.
     proxy_lifecycle(state, auth, http_method, headers, body, server, false).await
 }
 
@@ -215,7 +216,7 @@ pub(super) async fn proxy_lifecycle(
         Ok(upstream) => upstream,
         Err(error) => return upstream_auth_error_response(state, auth, &server, error),
     };
-    let client = &state.mcp_http_client;
+    let client = &state.mcp_http_clients;
     let response = if is_initialize {
         proxy_initialize(client, http_method, headers, body, &upstream).await
     } else {

@@ -1859,6 +1859,18 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "`platform` for platform-owned servers, or an owning team id.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2074,6 +2086,93 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/owner": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Moves a server to another team, or takes it over for the platform.\nPlatform admins only.",
+        "operationId": "transfer_mcp_server_ownership",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferMcpServerOwnershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -12421,6 +12520,21 @@
               "null"
             ]
           },
+          "owner_contact": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Defaults to the caller's email address."
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Platform admins only; a team admin always registers for their own team."
+          },
           "recommended_catalog_key": {
             "type": [
               "string",
@@ -12451,6 +12565,13 @@
               "string",
               "null"
             ]
+          },
+          "visibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`team` or `organisation`. Defaults to `team` for a team-owned server."
           }
         }
       },
@@ -14605,9 +14726,14 @@
           "data": {
             "type": "object",
             "required": [
-              "items"
+              "items",
+              "can_publish_to_organisation"
             ],
             "properties": {
+              "can_publish_to_organisation": {
+                "type": "boolean",
+                "description": "Whether the caller may set `organisation` visibility on servers they manage."
+              },
               "items": {
                 "type": "array",
                 "items": {
@@ -17109,7 +17235,9 @@
           "approve_tool_changes",
           "status",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "visibility",
+          "can_manage"
         ],
         "properties": {
           "approve_tool_changes": {
@@ -17122,6 +17250,10 @@
           },
           "auth_mode": {
             "type": "string"
+          },
+          "can_manage": {
+            "type": "boolean",
+            "description": "Whether the caller may edit the server, its grants and its credentials."
           },
           "created_at": {
             "type": "string"
@@ -17175,6 +17307,25 @@
             ],
             "format": "int64"
           },
+          "owner_contact": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The owning team; `null` for a platform-owned server."
+          },
+          "owner_team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "server_key": {
             "type": "string"
           },
@@ -17193,15 +17344,24 @@
           },
           "updated_at": {
             "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "description": "`team` or `organisation`."
           }
         }
       },
       "McpServersPayload": {
         "type": "object",
         "required": [
-          "items"
+          "items",
+          "can_publish_to_organisation"
         ],
         "properties": {
+          "can_publish_to_organisation": {
+            "type": "boolean",
+            "description": "Whether the caller may set `organisation` visibility on servers they manage."
+          },
           "items": {
             "type": "array",
             "items": {
@@ -20619,6 +20779,37 @@
           }
         }
       },
+      "TransferMcpServerOwnershipRequest": {
+        "type": "object",
+        "description": "A platform admin's ownership transfer.",
+        "required": [
+          "owner_team_id"
+        ],
+        "properties": {
+          "owner_contact": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted keeps the current contact; an empty string clears it."
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Required. The new owning team, or `null` to move the server to the\nplatform. Omitting it is rejected, so a request that only changes the\ncontact cannot take the server away from its team."
+          },
+          "visibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted keeps the current visibility. Platform-owned servers are always\n`organisation`."
+          }
+        }
+      },
       "TransferTeamMemberRequest": {
         "type": "object",
         "required": [
@@ -20733,6 +20924,13 @@
           "display_name": {
             "type": "string"
           },
+          "owner_contact": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted keeps the current contact; an empty string clears it."
+          },
           "server_url": {
             "type": "string"
           },
@@ -20742,6 +20940,13 @@
               "null"
             ],
             "format": "int64"
+          },
+          "visibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted keeps the current visibility."
           }
         }
       },

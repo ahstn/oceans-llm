@@ -101,6 +101,10 @@ pub struct CreateAdminApiKeyInput {
     pub scopes: Option<Vec<String>>,
     /// `None` lets the key reach every server its owner's grants reach.
     pub mcp_server_keys: Option<Vec<String>>,
+    /// The caller's current team, or `None` for a platform admin. Listed
+    /// servers must be ones that team reaches, so a hidden server's key is
+    /// refused exactly like an unknown one.
+    pub viewer_team: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone)]
@@ -201,7 +205,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
-            mcp_servers: self.mcp_server_options().await?,
+            mcp_servers: self.mcp_server_options(None).await?,
         })
     }
 
@@ -264,6 +268,13 @@ where
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("user `{user_id}`")))?;
         let users = vec![user];
+        // Server options follow the viewer's current team, whatever the list's
+        // own team scope.
+        let viewer_team = self
+            .repo
+            .get_team_membership_for_user(user_id)
+            .await?
+            .map(|membership| membership.team_id);
         let teams = match team_id {
             Some(team_id) => vec![
                 self.repo
@@ -335,7 +346,7 @@ where
                     tags: model.tags,
                 })
                 .collect(),
-            mcp_servers: self.mcp_server_options().await?,
+            mcp_servers: self.mcp_server_options(Some(viewer_team)).await?,
         })
     }
 
@@ -395,7 +406,12 @@ where
         }
         let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
         let access = self
-            .validated_access(request.scopes, request.mcp_server_keys)
+            .validated_access(
+                request.scopes,
+                request.mcp_server_keys,
+                request.viewer_team,
+                &[],
+            )
             .await?;
 
         let public_id = Uuid::new_v4().simple().to_string();

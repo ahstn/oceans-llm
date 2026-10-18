@@ -71,7 +71,7 @@ impl OutboundAddressScope {
         }
     }
 
-    fn allows(self, address: IpAddr) -> bool {
+    pub(crate) fn allows(self, address: IpAddr) -> bool {
         match classify(address) {
             AddressClass::Public => true,
             AddressClass::PrivateNetwork => self >= Self::PrivateNetwork,
@@ -140,6 +140,14 @@ const METADATA_ADDRESSES: [IpAddr; 3] = [
     // AWS over IPv6, inside unique-local space.
     IpAddr::V6(Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)),
 ];
+
+/// Whether `address` is reachable on the public internet, by the same rules
+/// the public scope uses at connect time. Shared with the team destination
+/// check in [`crate::mcp_ownership`].
+#[must_use]
+pub fn is_public_address(address: IpAddr) -> bool {
+    classify(address) == AddressClass::Public
+}
 
 fn classify(address: IpAddr) -> AddressClass {
     match address {
@@ -309,6 +317,59 @@ fn answers_allowed(scope: OutboundAddressScope, host: &str, answers: &[IpAddr]) 
     })
 }
 
+/// Checks, before a URL is saved, that it reaches only addresses in `scope` as
+/// it resolves now, by the rules [`GuardedResolver`] applies at connect time:
+/// an IP-literal host by its own class, and a name by every DNS answer. A
+/// `localhost` name is refused outside the loopback scope, and a name that does
+/// not resolve is refused too, since it could resolve to anything later. This
+/// pins nothing, so the connection is still checked when it is made.
+pub async fn check_destination(
+    url: &Url,
+    scope: OutboundAddressScope,
+) -> Result<(), OutboundFetchError> {
+    let host = url
+        .host()
+        .ok_or_else(|| OutboundFetchError::UnsupportedUrl("the URL has no host".to_string()))?;
+    let (host, answers) = match host {
+        Host::Ipv4(address) => (address.to_string(), vec![IpAddr::V4(address)]),
+        Host::Ipv6(address) => (address.to_string(), vec![IpAddr::V6(address)]),
+        Host::Domain(domain) => {
+            let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+            if scope < OutboundAddressScope::Loopback
+                && (domain == "localhost" || domain.ends_with(".localhost"))
+            {
+                return Err(OutboundFetchError::BlockedAddress { host: domain });
+            }
+            let port = url.port_or_known_default().unwrap_or(443);
+            let answers: Vec<IpAddr> = tokio::net::lookup_host((domain.as_str(), port))
+                .await
+                .map(|resolved| resolved.map(|address| address.ip()).collect())
+                .unwrap_or_default();
+            if answers.is_empty() {
+                return Err(OutboundFetchError::Unresolved { host: domain });
+            }
+            (domain, answers)
+        }
+    };
+    if answers_allowed(scope, &host, &answers) {
+        Ok(())
+    } else {
+        Err(OutboundFetchError::BlockedAddress { host })
+    }
+}
+
+/// A client builder whose connections reach only addresses in `scope`: names
+/// resolve through the guard, which the client then connects to exactly, and
+/// redirects and proxies are off. An IP-literal host skips the resolver, so a
+/// caller either checks it ([`OutboundFetcher::check_url`]) or derives `scope`
+/// from it ([`OutboundAddressScope::of_trusted_url`]).
+pub fn guarded_client_builder(scope: OutboundAddressScope) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .dns_resolver(Arc::new(GuardedResolver { scope }))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+}
+
 /// An HTTP client that only connects to addresses within its scope.
 #[derive(Clone)]
 pub struct OutboundFetcher {
@@ -345,10 +406,7 @@ impl OutboundFetcher {
         timeout: Duration,
         max_body_bytes: usize,
     ) -> Self {
-        let client = reqwest::Client::builder()
-            .dns_resolver(Arc::new(GuardedResolver { scope }))
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
+        let client = guarded_client_builder(scope)
             .referer(false)
             .connect_timeout(timeout)
             .timeout(timeout)

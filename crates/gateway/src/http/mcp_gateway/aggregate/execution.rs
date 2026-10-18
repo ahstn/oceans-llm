@@ -179,8 +179,13 @@ impl CatalogInvocation<'_> {
             }
             Err(error) => return Err(CatalogCallError::Gateway(error)),
         };
-        let client = StreamableHttpClient::new(
+        let client = StreamableHttpClient::with_http_client(
             &upstream.server.server_url,
+            self.state
+                .mcp_http_clients
+                .for_server(&upstream.server)
+                .map_err(CatalogCallError::Gateway)?
+                .clone(),
             Duration::from_millis(upstream.server.timeout_ms.max(1) as u64),
         )
         .map_err(|error| CatalogCallError::Gateway(map_mcp_client_error(error)))?

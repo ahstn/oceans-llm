@@ -132,3 +132,7 @@ Not audited:
 - Move audit writes into the mutation's transaction once the store has a unit of work.
 - Add a configurable retention window and an export for SIEM ingestion (see #452).
 - Audit failed sign-in attempts as security events, separate from control-plane changes.
+
+## Later changes
+
+- 2026-10-17: [Delegated MCP Server Ownership](./2026-10-17-delegated-mcp-server-ownership.md) adds `mcp_server.ownership_transferred` and records the actor's scope (`actor_access`, `actor_team_id`, `actor_team_role`) on MCP entries.

@@ -6,8 +6,8 @@ use gateway_core::{
 
 use super::{LibsqlStore, to_query_error};
 use crate::audit_logs::{
-    AUDIT_LOG_COLUMNS, AuditLogBind, AuditLogFilter, AuditLogRow, finish_page, list_sql,
-    parse_json, parse_optional_json,
+    AUDIT_INSERT_BATCH, AUDIT_LOG_COLUMNS, AuditInsertValue, AuditLogBind, AuditLogFilter,
+    AuditLogRow, finish_page, insert_many_sql, list_sql, parse_json, parse_optional_json,
 };
 use crate::shared::{parse_uuid, unix_millis_to_datetime};
 
@@ -87,6 +87,37 @@ impl AuditLogRepository for LibsqlStore {
             .map_err(to_query_error)?
             .ok_or_else(|| StoreError::Query("audit log insert returned no id".to_string()))?;
         row.get(0).map_err(to_query_error)
+    }
+
+    async fn insert_audit_logs(&self, records: &[NewAuditLogRecord]) -> Result<(), StoreError> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        // A connection of its own, for the same reason as a single insert.
+        let connection = self.own_connection().await?;
+        for chunk in records.chunks(AUDIT_INSERT_BATCH) {
+            let mut values = Vec::with_capacity(chunk.len() * 14);
+            for record in chunk {
+                values.extend(
+                    AuditLogRow::from_record(record)?
+                        .insert_values(record)
+                        .into_iter()
+                        .map(|value| match value {
+                            AuditInsertValue::Int(value) => libsql::Value::Integer(value),
+                            AuditInsertValue::Text(Some(value)) => libsql::Value::Text(value),
+                            AuditInsertValue::Text(None) => libsql::Value::Null,
+                        }),
+                );
+            }
+            connection
+                .execute(
+                    &insert_many_sql(chunk.len(), |index| format!("?{index}")),
+                    values,
+                )
+                .await
+                .map_err(to_query_error)?;
+        }
+        Ok(())
     }
 
     async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<AuditLogPage, StoreError> {

@@ -18,6 +18,7 @@ permissions:
     pages:
       - api_keys
       - models
+      - mcp
       - usage_costs
       - leaderboard
       - agent_harnesses

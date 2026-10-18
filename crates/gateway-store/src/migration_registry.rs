@@ -430,10 +430,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 70,
+        name: "mcp_server_ownership",
+        checksum: "V70__mcp_server_ownership.sql",
+        libsql_sql: include_str!("../migrations/V70__mcp_server_ownership.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V70__mcp_server_ownership.sql"),
+    },
+    MigrationManifest {
+        version: 71,
         name: "batch_jobs_route_index",
-        checksum: "V70__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V70__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V70__batch_jobs_route_index.sql"),
+        checksum: "V71__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V71__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V71__batch_jobs_route_index.sql"),
     },
 ];
 

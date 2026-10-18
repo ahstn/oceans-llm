@@ -428,6 +428,10 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             post(refresh_mcp_server_discovery),
         )
         .route(
+            "/api/v1/admin/mcp/servers/{server_id}/owner",
+            axum::routing::put(transfer_mcp_server_ownership),
+        )
+        .route(
             "/api/v1/admin/mcp/oauth-discovery",
             post(discover_mcp_server_oauth),
         )

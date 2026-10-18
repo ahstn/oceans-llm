@@ -773,6 +773,7 @@ async fn seed_authorized_tool_with_config(
         .expect("API key");
     let server = store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: "repository".to_string(),
             display_name: "Repository".to_string(),
             description: None,
@@ -799,6 +800,7 @@ async fn seed_authorized_tool_with_config(
                 schema_set_hash: None,
                 error_summary: None,
                 details: Map::new(),
+                expected_server: None,
             },
             &[UpsertExternalMcpToolRecord {
                 mcp_server_id: server.mcp_server_id,
@@ -819,6 +821,8 @@ async fn seed_authorized_tool_with_config(
             target_kind: McpToolGrantTargetKind::Tool,
             target_id: tools[0].mcp_tool_id,
             updated_at: now,
+            expected_server: None,
+            expected_subject_team: None,
         })
         .await
         .expect("tool grant");

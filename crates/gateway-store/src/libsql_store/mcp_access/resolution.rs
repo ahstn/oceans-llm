@@ -296,6 +296,22 @@ pub(super) async fn server_grant_exists(
     Ok((granted != 0, has_rules))
 }
 
+/// Whether any subject has an active tag rule, without counting tools.
+pub(super) async fn rules_exist(
+    connection: &libsql::Connection,
+    subjects: &[McpGrantSubject],
+) -> Result<bool, StoreError> {
+    let sql = format!("SELECT 0, {}", rules_exist_sql(subjects.len(), 1));
+    let (_, has_rules) = count_and_rules(
+        connection,
+        &sql,
+        subject_params(subjects).into_iter(),
+        "MCP tag rule check",
+    )
+    .await?;
+    Ok(has_rules)
+}
+
 /// Runs a query returning an integer and a rule-existence flag.
 pub(super) async fn count_and_rules(
     connection: &libsql::Connection,
@@ -319,7 +335,7 @@ pub(super) async fn count_and_rules(
 
 pub(super) fn tool_columns(projection: McpToolProjection) -> &'static str {
     match projection {
-        McpToolProjection::Access => ACCESS_TOOL_COLUMNS,
+        McpToolProjection::Access | McpToolProjection::AccessUncounted => ACCESS_TOOL_COLUMNS,
         McpToolProjection::Full => TOOL_COLUMNS,
     }
 }

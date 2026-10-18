@@ -25,6 +25,7 @@ where
 {
     store
         .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
             server_key: server_key.to_string(),
             display_name: server_key.to_string(),
             description: None,
@@ -69,6 +70,7 @@ where
     store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Success,
@@ -245,6 +247,8 @@ where
     // An exclude rule on any subject wins over an explicit grant to another.
     store
         .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+            expected_server: None,
+            expected_subject_team: None,
             subject_kind: key.subject_kind,
             subject_id: key.subject_id,
             target_kind: McpToolGrantTargetKind::Tool,
@@ -346,6 +350,8 @@ where
     }];
     store
         .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+            expected_server: None,
+            expected_subject_team: None,
             subject_kind: lone[0].subject_kind,
             subject_id: lone[0].subject_id,
             target_kind: McpToolGrantTargetKind::Tool,

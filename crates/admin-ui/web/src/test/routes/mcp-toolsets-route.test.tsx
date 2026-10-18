@@ -59,6 +59,11 @@ const server: McpServerView = {
   created_at: '2026-05-27T08:00:00Z',
   updated_at: '2026-05-27T09:00:00Z',
   disabled_at: null,
+  owner_team_id: null,
+  owner_team_name: null,
+  owner_contact: 'platform@example.test',
+  visibility: 'organisation',
+  can_manage: true,
   approve_tool_changes: false,
 }
 

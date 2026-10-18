@@ -54,6 +54,57 @@ impl AuditLogRow {
     }
 }
 
+/// Rows per multi-row audit insert. Fourteen values each keeps a statement well
+/// inside both backends' bind limits.
+pub(crate) const AUDIT_INSERT_BATCH: usize = 200;
+
+/// One value an audit insert binds.
+pub(crate) enum AuditInsertValue {
+    Int(i64),
+    Text(Option<String>),
+}
+
+impl AuditLogRow {
+    /// The values [`insert_many_sql`] binds for `record`, in column order.
+    pub(crate) fn insert_values(self, record: &NewAuditLogRecord) -> [AuditInsertValue; 14] {
+        use AuditInsertValue::{Int, Text};
+        [
+            Int(self.ts),
+            Text(Some(self.actor_kind.to_string())),
+            Text(self.actor_user_id),
+            Text(self.actor_api_key_id),
+            Text(record.actor.label.clone()),
+            Text(Some(record.action.clone())),
+            Text(Some(record.target_type.clone())),
+            Text(record.target_id.clone()),
+            Text(record.target_label.clone()),
+            Text(self.before_json),
+            Text(self.after_json),
+            Text(Some(self.details_json)),
+            Text(record.request_ip.clone()),
+            Text(record.user_agent.clone()),
+        ]
+    }
+}
+
+/// An insert of `rows` audit entries in one statement. `placeholder` renders
+/// the 1-based bind index in the backend's syntax.
+pub(crate) fn insert_many_sql(rows: usize, placeholder: impl Fn(usize) -> String) -> String {
+    let values = (0..rows)
+        .map(|row| {
+            let binds = (1..=14)
+                .map(|column| placeholder(row * 14 + column))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({binds})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT INTO audit_logs (ts, actor_kind, actor_user_id, actor_api_key_id, actor_label, action, object_type, object_id, target_label, before_json, after_json, details_json, request_ip, user_agent) VALUES {values}"
+    )
+}
+
 /// Bind values for a list query. `None` disables that filter.
 pub(crate) struct AuditLogFilter {
     pub actor_user_id: Option<String>,
@@ -323,6 +374,61 @@ pub(crate) async fn exercise_audit_log_store(store: &impl gateway_core::AuditLog
         .await
         .expect("other actor");
     assert!(nobody.items.is_empty());
+
+    // A batch spanning more than one statement lands whole, with every column.
+    let bulk: Vec<_> = (0..AUDIT_INSERT_BATCH + 5)
+        .map(|index| NewAuditLogRecord {
+            target_id: Some(format!("binding-{index}")),
+            target_label: None,
+            before: None,
+            request_ip: None,
+            ..record(
+                "mcp_credential_binding.revoked",
+                "mcp_credential_binding",
+                20,
+            )
+        })
+        .collect();
+    store
+        .insert_audit_logs(&bulk)
+        .await
+        .expect("insert audit logs");
+    let mut written = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = store
+            .list_audit_logs(&AuditLogQuery {
+                action: Some("mcp_credential_binding.revoked".to_string()),
+                cursor,
+                limit: 100,
+                ..AuditLogQuery::default()
+            })
+            .await
+            .expect("list bulk entries");
+        written.extend(page.items);
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(written.len(), bulk.len());
+    let one = store
+        .get_audit_log(written[0].id)
+        .await
+        .expect("get bulk entry")
+        .expect("bulk entry exists");
+    assert_eq!(one.actor, bulk[0].actor);
+    assert_eq!(one.occurred_at, bulk[0].occurred_at);
+    assert_eq!(one.target_label, None);
+    assert_eq!(one.before, None);
+    assert_eq!(one.after, bulk[0].after);
+    assert_eq!(one.metadata, bulk[0].metadata);
+    assert_eq!(one.request_ip, None);
+    assert_eq!(one.user_agent, bulk[0].user_agent);
+    store
+        .insert_audit_logs(&[])
+        .await
+        .expect("an empty batch writes nothing");
 }
 
 #[cfg(test)]
