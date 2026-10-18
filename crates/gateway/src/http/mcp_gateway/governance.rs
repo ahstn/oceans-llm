@@ -115,7 +115,7 @@ impl<'a> GovernedCall<'a> {
         tool_call: Option<(&str, Value)>,
     ) -> Result<Admitted, Box<Refused>> {
         let refused = |refusal, arguments| Box::new(Refused { refusal, arguments });
-        match rate_limits::check_tool_call(self.state, self.policy, self.auth, self.server).await {
+        match rate_limits::check_mcp_call(self.state, self.policy, self.auth, self.server).await {
             Ok(None) => {}
             Ok(Some(rejected)) => return Err(refused(Refusal::RateLimited(rejected), None)),
             Err(error) => return Err(refused(Refusal::RateLimitUnavailable(error), None)),
@@ -179,7 +179,15 @@ impl Refusal {
                 guardrail_decision_metadata(evaluation),
             ),
             Self::Credential(error) => (
-                McpToolInvocationStatus::Unauthorized,
+                match error {
+                    GatewayError::McpCredentialRequired { .. }
+                    | GatewayError::McpCredentialExpired { .. } => {
+                        McpToolInvocationStatus::Unauthorized
+                    }
+                    // Preparing the credential failed for another reason,
+                    // such as an unavailable store.
+                    _ => McpToolInvocationStatus::GatewayError,
+                },
                 McpToolPolicyResult::Allowed,
                 error.error_code().to_string(),
                 Map::new(),

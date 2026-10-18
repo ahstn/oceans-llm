@@ -1,6 +1,8 @@
-//! Rate limits on `tools/call`, shared by the per-server proxy and the
-//! aggregate `call_tool`. A rejection is a JSON-RPC error with HTTP 429; the
-//! request-policy middleware adds `Retry-After` and `X-RateLimit-*`.
+//! Rate limits on governed MCP calls: `tools/call` on the per-server proxy,
+//! aggregate `call_tool`, and the governed resources, prompts and completion
+//! methods. They share the server's `mcp_tool_call` policies; the persisted
+//! operation keeps that name. A rejection is a JSON-RPC error with HTTP 429;
+//! the request-policy middleware adds `Retry-After` and `X-RateLimit-*`.
 
 use axum::{
     body::Body,
@@ -23,7 +25,8 @@ pub(super) use gateway_mcp::server::{JSON_RPC_INTERNAL_ERROR, JSON_RPC_RATE_LIMI
 /// The invocation log's `error_code` for a rate-limited call.
 pub(super) const RATE_LIMITED_ERROR_CODE: &str = "rate_limited";
 
-pub(super) async fn check_tool_call(
+/// Checks the server's `mcp_tool_call` policies for one governed MCP call.
+pub(super) async fn check_mcp_call(
     state: &AppState,
     policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
