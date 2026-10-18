@@ -347,7 +347,7 @@ These profile transforms apply to Chat Completions request-shape quirks unless e
 
 ## Anthropic Messages on OpenAI-Compatible Routes
 
-`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. When the selected route is `openai_compat` or `gcp_cloud_run_openai_compat`, the adapter rewrites them into Chat Completions shapes before `/chat/completions`:
+`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. When the selected route is `openai_compat`, `gcp_cloud_run_openai_compat`, or `github_copilot` with `chat_api: chat_completions`, the adapter rewrites them into Chat Completions shapes before `/chat/completions`:
 
 - Tool definitions with `input_schema` become `function` tools. `tool_choice` `auto`, `any`, `none`, and `tool` become `auto`, `required`, `none`, and a named function choice. `disable_parallel_tool_use: true` sets `parallel_tool_calls: false` unless the caller already set it.
 - Assistant `tool_use` blocks become `tool_calls` entries with the block `id`, the tool name, and `input` serialized as a JSON string. Text blocks are joined into a string `content`; a turn with only tool calls sends `content: null`.

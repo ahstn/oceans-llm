@@ -22,7 +22,7 @@ mod anthropic_messages;
 mod batch;
 mod decisions;
 
-use anthropic_messages::normalize_anthropic_messages_for_openai;
+pub(crate) use anthropic_messages::normalize_anthropic_messages_for_openai;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenAiBatchDialect {

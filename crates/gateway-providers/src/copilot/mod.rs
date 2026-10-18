@@ -19,6 +19,7 @@ use crate::http::{
 };
 use crate::openai_compat::{
     apply_openai_compat_empty_tools_profile, apply_openai_compat_request_profile,
+    normalize_anthropic_messages_for_openai,
 };
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::CachedAccessTokenSource;
@@ -374,6 +375,7 @@ impl CopilotProvider {
                     "model".to_string(),
                     Value::String(context.upstream_model.clone()),
                 );
+                normalize_anthropic_messages_for_openai(object);
                 merge_object_overrides(object, &context.extra_body);
             }
             apply_openai_compat_empty_tools_profile(&mut body, context)?;
