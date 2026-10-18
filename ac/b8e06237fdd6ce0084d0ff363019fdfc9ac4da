@@ -1,0 +1,27 @@
+crates/gateway-service/src/mcp_credentials.rs
+  s_b8e52ffc321bb1::t_7ebda46698c4d4 116,132
+crates/gateway-service/src/mcp_gateway.rs
+  s_b8e52ffc321bb1::t_94d415f2a0fd93 82-87
+crates/gateway-service/src/mcp_oauth.rs
+  s_b8e52ffc321bb1::t_29b4849c75663f 636-643,646,651,669,672,674-697,748-762,765-771,781,804,806,814-817,1134
+crates/gateway/src/http/mcp_oauth/tests/generic.rs
+  s_b8e52ffc321bb1::t_a49f207ee17e98 36-39,81-106,330,572-683
+docs/adr/2026-08-04-user-owned-mcp-oauth.md
+  s_b8e52ffc321bb1::t_8949d42a0e7ebc 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acb8e06237fdd6ce0084d0ff363019fdfc9ac4da",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
