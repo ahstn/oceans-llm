@@ -1,6 +1,6 @@
-import type { ApiEnvelope, ModelPageView } from '@/types/api'
+import type { ApiEnvelope, ModelPageView, ResponseMeta } from '@/types/api'
 
-function envelope<T>(data: T): ApiEnvelope<T> {
+function envelope<T>(data: T): { data: T; meta: ResponseMeta } {
   return {
     data,
     meta: {
