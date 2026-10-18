@@ -451,7 +451,11 @@ where
     }
 }
 
-type TeamLookupFlights = std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<Option<Uuid>>>>>;
+/// One lookup's outcome, shared with every caller waiting on it. A failure
+/// keeps its message, since `StoreError` cannot be cloned.
+type TeamLookupOutcome = Result<Option<Uuid>, String>;
+type TeamLookupFlights =
+    std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCell<TeamLookupOutcome>>>>;
 
 /// A caller's share of one user's team lookup. Dropping it, whether the
 /// lookup succeeded, failed or was cancelled, removes the entry if it is still
@@ -459,7 +463,7 @@ type TeamLookupFlights = std::sync::Mutex<HashMap<Uuid, Arc<tokio::sync::OnceCel
 struct TeamLookupFlight<'a> {
     flights: &'a TeamLookupFlights,
     user_id: Uuid,
-    cell: Arc<tokio::sync::OnceCell<Option<Uuid>>>,
+    cell: Arc<tokio::sync::OnceCell<TeamLookupOutcome>>,
 }
 
 impl<'a> TeamLookupFlight<'a> {
@@ -626,12 +630,19 @@ impl RateLimiter {
             return Ok(subject);
         }
         let flight = TeamLookupFlight::join(&self.member_team_lookups, user_id);
-        // A failed lookup leaves the cell empty, so the next waiter tries
-        // again and gets its own error.
-        let team = *flight
+        // Callers already waiting share a failure too, rather than retrying
+        // the lookup one after another; the next request starts a new one.
+        let team = flight
             .cell
-            .get_or_try_init(|| lookup.team_for_user(user_id))
-            .await?;
+            .get_or_init(|| async {
+                lookup
+                    .team_for_user(user_id)
+                    .await
+                    .map_err(|error| error.to_string())
+            })
+            .await
+            .clone()
+            .map_err(StoreError::Unavailable)?;
         let mut teams = self
             .member_teams
             .lock()

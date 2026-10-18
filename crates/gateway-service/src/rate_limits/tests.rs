@@ -1459,6 +1459,50 @@ async fn concurrent_requests_from_one_user_share_a_team_lookup() {
     assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// A slow, failing team lookup that counts its calls.
+#[derive(Default)]
+struct CountingFailingTeams(std::sync::atomic::AtomicUsize);
+
+#[async_trait]
+impl RateLimitTeamLookup for CountingFailingTeams {
+    async fn team_for_user(&self, _: Uuid) -> Result<Option<Uuid>, StoreError> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Err(StoreError::Unavailable("identity store down".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn concurrent_requests_share_a_failed_team_lookup() {
+    let mut harness = Harness::with_mode(
+        MemoryStore::default(),
+        vec![config(
+            "per team",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Team,
+            RateLimitMetric::Requests,
+            RateLimitPeriod::Day,
+            100,
+        )],
+        RateLimitFailureMode::Closed,
+    );
+    let teams = Arc::new(CountingFailingTeams::default());
+    let limiter = Arc::into_inner(harness.limiter).expect("only owner");
+    harness.limiter = Arc::new(limiter.with_team_lookup(teams.clone()));
+    let subject = user_subject(Uuid::new_v4(), Uuid::new_v4());
+    let limiter = &harness.limiter;
+    let decisions = tokio::join!(
+        limiter.check(&subject),
+        limiter.check(&subject),
+        limiter.check(&subject),
+    );
+    for decision in [decisions.0, decisions.1, decisions.2] {
+        assert!(decision.is_err(), "{decision:?}");
+    }
+    assert_eq!(teams.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(limiter.member_team_lookups.lock().unwrap().is_empty());
+}
+
 struct FailingTeams;
 
 #[async_trait]
