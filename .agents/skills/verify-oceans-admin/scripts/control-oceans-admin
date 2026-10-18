@@ -86,7 +86,10 @@ process_checkout() {
   local cwd
   cwd="$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
   [[ -n "$cwd" ]] || return 1
-  git -C "$cwd" rev-parse --show-toplevel 2>/dev/null
+  # An inherited GIT_DIR or GIT_WORK_TREE would make every directory resolve to that repository.
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_PREFIX \
+    git -C "$cwd" rev-parse --show-toplevel 2>/dev/null
 }
 
 repo_root_physical="$(cd "$repo_root" && pwd -P)"
@@ -436,12 +439,13 @@ launch() {
   printf '%s\n' "$start_time" >"$stack_start_file"
   record_lock_owner "$pid"
 
-  local ready=false port listener
+  local ready=false spec port listener
   for _ in {1..600}; do
     current_gateway="$(listener_pid "$gateway_port" || true)"
     current_ui="$(listener_pid "$ui_port" || true)"
-    for port in "$gateway_port" "$ui_port"; do
-      listener="$(listener_pid "$port" || true)"
+    for spec in "$gateway_port:$current_gateway" "$ui_port:$current_ui"; do
+      port="${spec%%:*}"
+      listener="${spec#*:}"
       if [[ -n "$listener" ]] && ! listener_owned_by_checkout "$listener"; then
         echo "Port $port was taken by $(describe_listener "$listener") while this stack started. See $log_file" >&2
         exit 1
@@ -455,7 +459,7 @@ launch() {
       echo "The dev stack exited before it became ready. See $log_file" >&2
       exit 1
     fi
-    if [[ -n "$current_gateway" && -n "$current_ui" ]] && curl --silent --fail "$base_url/readyz" >/dev/null 2>&1; then
+    if [[ -n "$current_gateway" && -n "$current_ui" ]] && curl --silent --fail --max-time 5 "$base_url/readyz" >/dev/null 2>&1; then
       ready=true
       break
     fi
@@ -506,8 +510,8 @@ doctor() {
     }
     curl --silent --fail --max-time 2 "$(<"$run_dir/skills-endpoint")/health/ready" >/dev/null
   fi
-  curl --silent --fail "$base_url/readyz" | grep -q '"status":"ready"'
-  health="$(curl --silent --fail "$base_url/api/v1/health")"
+  curl --silent --fail --max-time 5 "$base_url/readyz" | grep -q '"status":"ready"'
+  health="$(curl --silent --fail --max-time 5 "$base_url/api/v1/health")"
   version="$(printf '%s' "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
   [[ -n "$version" ]] || {
     echo "Gateway health did not include a version: $health" >&2
