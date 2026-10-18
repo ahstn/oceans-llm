@@ -676,8 +676,9 @@ pub(super) fn classify_tool_call(
 ) -> InferredObservation {
     let name = call.name.unwrap_or_default();
     let normalized = name.to_ascii_lowercase();
-    // Provider-hosted tools such as `web_search` never touch the caller's files.
-    let kind = if call.kind == ToolCallKind::ProviderHosted {
+    // Tools the provider runs, hosted ones such as `web_search` and remote MCP servers, never
+    // touch the caller's files. Client-run `mcp__<server>__<tool>` calls still may.
+    let kind = if call.kind != ToolCallKind::Client {
         InferredObservationKind::ToolCallClassified
     } else if normalized.contains("search") || normalized.contains("grep") {
         InferredObservationKind::FileSearchSuspected

@@ -911,20 +911,29 @@ fn tool_classification_omits_file_identity_and_distinguishes_overwrites() {
 }
 
 #[test]
-fn provider_hosted_tools_are_not_classified_as_file_operations() {
+fn provider_run_tools_are_not_classified_as_file_operations() {
     with_passive_record(None, |input| {
-        let observation = classify_tool_call(
-            input,
-            ToolCall {
-                kind: ToolCallKind::ProviderHosted,
-                ..client_call("web_search")
-            },
-        );
-        assert_eq!(
-            observation.kind,
-            InferredObservationKind::ToolCallClassified
-        );
-        assert_eq!(observation.facts.tool_name.as_deref(), Some("web_search"));
+        for (kind, name) in [
+            (ToolCallKind::ProviderHosted, "web_search"),
+            (ToolCallKind::ProviderMcp, "create_issue"),
+            (ToolCallKind::ProviderMcp, "search"),
+        ] {
+            let observation = classify_tool_call(
+                input,
+                ToolCall {
+                    kind,
+                    ..client_call(name)
+                },
+            );
+            assert_eq!(
+                observation.kind,
+                InferredObservationKind::ToolCallClassified,
+                "{name}"
+            );
+            assert_eq!(observation.facts.tool_name.as_deref(), Some(name));
+        }
+        let client_mcp = classify_tool_call(input, client_call("mcp__fs__read_file"));
+        assert_eq!(client_mcp.kind, InferredObservationKind::FileReadSuspected);
     });
 }
 
