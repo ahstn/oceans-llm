@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/-review-agent/review-agent-meta.ts
+  s_eaf7116ccea134::t_65270c18b69660 1,100-101,126
+crates/admin-ui/web/src/routes/review-agent.tsx
+  s_eaf7116ccea134::t_176a215abbefd3 42,608-611,630-631,633,636-637,639
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c44962f6141e33c4ce0937618bfd2a0aaeb0986",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
