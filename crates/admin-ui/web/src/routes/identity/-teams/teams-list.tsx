@@ -6,14 +6,8 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
 import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { TeamManagementView, TeamMemberView } from '@/types/api'
@@ -77,23 +71,7 @@ export function TeamsList({
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table className="text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Team</TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Admins
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Members
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Status
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader columns={['Team', 'Admins', 'Members', 'Status', 'Actions']} />
           <TableBody>
             {teams.map((team) => (
               <TeamTableRows

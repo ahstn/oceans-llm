@@ -16,7 +16,7 @@ import {
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import { AppIcon } from '@/components/icons/app-icon'
+import { SectionNavSidebar, SectionNavTabs } from '@/components/shared/section-nav'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
 import {
   describeDiscoveryResult,
@@ -34,16 +34,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-} from '@/components/ui/sidebar'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import {
   addMcpServer,
   disableExternalMcpServer,
@@ -90,11 +81,11 @@ import {
 type ServerSection = 'overview' | 'configuration' | 'tools' | 'reviews' | 'credentials'
 
 const serverSections = [
-  { value: 'overview', label: 'Overview', icon: ViewIcon },
-  { value: 'configuration', label: 'Configuration', icon: Configuration01Icon },
-  { value: 'tools', label: 'Tools', icon: ToolsIcon },
-  { value: 'reviews', label: 'Reviews', icon: CheckListIcon },
-  { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
+  { id: 'overview', label: 'Overview', icon: ViewIcon },
+  { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
+  { id: 'tools', label: 'Tools', icon: ToolsIcon },
+  { id: 'reviews', label: 'Reviews', icon: CheckListIcon },
+  { id: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
 // Servers the caller cannot manage are read-only: no configuration or credentials.
@@ -651,29 +642,11 @@ function ServerDetailDialog({
             className="min-h-0 max-w-full min-w-0 items-start overflow-hidden"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
-            <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
-              <SidebarContent className="p-3">
-                <SidebarGroup className="px-0 py-0">
-                  <SidebarGroupContent>
-                    <SidebarMenu className="gap-1">
-                      {sections.map((entry) => (
-                        <SidebarMenuItem key={entry.value}>
-                          <SidebarMenuButton
-                            type="button"
-                            className="h-10 px-3 py-2"
-                            isActive={visibleSection === entry.value}
-                            onClick={() => setSection(entry.value)}
-                          >
-                            <AppIcon icon={entry.icon} stroke={1.5} aria-hidden />
-                            <span>{entry.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              </SidebarContent>
-            </Sidebar>
+            <SectionNavSidebar
+              sections={sections}
+              activeSection={visibleSection}
+              onSectionChange={setSection}
+            />
 
             <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
               <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
@@ -707,25 +680,11 @@ function ServerDetailDialog({
                   />
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto md:hidden">
-                  {sections.map((entry) => (
-                    <Button
-                      key={entry.value}
-                      type="button"
-                      size="sm"
-                      variant={visibleSection === entry.value ? 'secondary' : 'ghost'}
-                      onClick={() => setSection(entry.value)}
-                    >
-                      <AppIcon
-                        icon={entry.icon}
-                        stroke={1.5}
-                        aria-hidden
-                        data-icon="inline-start"
-                      />
-                      {entry.label}
-                    </Button>
-                  ))}
-                </div>
+                <SectionNavTabs
+                  sections={sections}
+                  activeSection={visibleSection}
+                  onSectionChange={setSection}
+                />
               </header>
 
               <div
@@ -811,7 +770,7 @@ function useServerSections(
   const canManage = server?.can_manage ?? false
   const shown = (value: ServerSection) =>
     (canManage || readOnlySections.has(value)) && (platformAdmin || !platformSections.has(value))
-  const sections = serverSections.filter((entry) => shown(entry.value))
+  const sections = serverSections.filter((entry) => shown(entry.id))
   const visibleSection: ServerSection = shown(section) ? section : 'overview'
   return { canManage, sections, visibleSection }
 }

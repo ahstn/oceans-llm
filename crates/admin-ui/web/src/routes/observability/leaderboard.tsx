@@ -9,14 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
 import { EMPTY_VALUE, formatTimestamp, formatUsd10000, formatUsdTotal } from '@/lib/format'
@@ -234,29 +228,17 @@ function LeaderboardRankings({ leaders }: { leaders: LeaderboardLeaderView[] }) 
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table data-testid="leaderboard-table" className="min-w-[60rem] text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground w-16 px-3 py-2 font-semibold">
-                Rank
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">User</TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Total spend
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Most used model
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Most used harness
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Total requests
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Avg tools
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              { label: 'Rank', narrow: true },
+              'User',
+              { label: 'Total spend', align: 'right' },
+              'Most used model',
+              'Most used harness',
+              { label: 'Total requests', align: 'right' },
+              'Avg tools',
+            ]}
+          />
           <TableBody>
             {leaders.map((leader) => (
               <TableRow key={leader.user_id}>

@@ -596,6 +596,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/review-agent.tsx",
+        "crates/admin-ui/web/src/routes/-review-agent/**",
         "crates/gateway/src/http/review_agent.rs",
         "crates/gateway-service/src/review_agent.rs",
         "crates/gateway-store/src/any_store_review_agent.rs",
@@ -706,6 +707,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/design-system/**",
         "crates/admin-ui/web/src/components/ui/**",
+        "crates/admin-ui/web/src/components/shared/{admin-table-header,section-nav}.tsx",
         "crates/admin-ui/web/src/styles/**"
       ]
     }

@@ -4,7 +4,7 @@ import { extname, join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // The design-system page renders every installed component, and every part of one that the app
-// renders. A file renders a part when it imports the part from its components/ui module and uses it
+// renders, directly or through a shared component it renders. A file renders a part when it imports the part from its components/ui module and uses it
 // as a JSX element. A type-only import, or an import nothing renders, doesn't count; lint only warns
 // about unused imports.
 const src = join(import.meta.dirname, '..')
@@ -109,8 +109,35 @@ function withNestedParts(module: string, parts: ReadonlySet<string>) {
   return shown
 }
 
+// The shared components (src/components/shared) the files render. The page shows the ui parts a
+// shared component renders whenever it renders that component, as it does AdminTableHeader.
+function sharedComponentFiles(files: string[]) {
+  const shared = new Set<string>()
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8')
+    for (const [, specifiers, module] of source.matchAll(
+      /import\s+\{([^}]*)\}\s*from\s*'@\/components\/shared\/([\w-]+)'/g,
+    )) {
+      const used = specifiers
+        .split(',')
+        .map(
+          (specifier) =>
+            specifier
+              .trim()
+              .split(/\s+as\s+/)
+              .at(-1) ?? '',
+        )
+        .some((local) => local && new RegExp(`<${local}[\\s/>]`).test(source))
+      const path = join(src, 'components/shared', `${module}.tsx`)
+      if (used && existsSync(path)) shared.add(path)
+    }
+  }
+  return [...shared]
+}
+
 describe('design-system page', () => {
-  const page = renderedParts(sourceFiles(pageDir))
+  const pageFiles = sourceFiles(pageDir)
+  const page = renderedParts([...pageFiles, ...sharedComponentFiles(pageFiles)])
 
   it('renders every component in src/components/ui', () => {
     const components = readdirSync(uiDir)

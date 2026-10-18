@@ -33,14 +33,8 @@ import {
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
@@ -602,46 +596,28 @@ function ModelTableHeader({
   onToggleAll: () => void
 }) {
   return (
-    <TableHeader className="bg-surface-muted">
-      <TableRow>
-        <TableHead className="bg-surface-muted text-muted-foreground sticky left-0 z-30 px-3 py-2 font-semibold">
-          <ModelCheckbox
-            aria-label="Select all configurable models"
-            checked={allSelected}
-            disabled={!hasSelectableModels}
-            onChange={onToggleAll}
-          />
-        </TableHead>
-        <TableHead className="bg-surface-muted text-muted-foreground lg:shadow-sticky-edge z-30 px-3 py-2 font-semibold lg:sticky lg:left-[3rem]">
-          Model ID
-        </TableHead>
-        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Actions</TableHead>
-        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-          Provider &amp; Model
-        </TableHead>
-        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-          <IntelligenceIndexLabel />
-        </TableHead>
-        <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-          Cost / 1M tokens
-        </TableHead>
-        {visibleColumns.contextWindow ? (
-          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-            Context window
-          </TableHead>
-        ) : null}
-        {visibleColumns.capabilities ? (
-          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-            Capabilities
-          </TableHead>
-        ) : null}
-        {showAccessDetails ? (
-          <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-            Allow List
-          </TableHead>
-        ) : null}
-      </TableRow>
-    </TableHeader>
+    <AdminTableHeader>
+      <AdminTableHead className="bg-surface-muted sticky left-0 z-30">
+        <ModelCheckbox
+          aria-label="Select all configurable models"
+          checked={allSelected}
+          disabled={!hasSelectableModels}
+          onChange={onToggleAll}
+        />
+      </AdminTableHead>
+      <AdminTableHead className="bg-surface-muted lg:shadow-sticky-edge z-30 lg:sticky lg:left-[3rem]">
+        Model ID
+      </AdminTableHead>
+      <AdminTableHead>Actions</AdminTableHead>
+      <AdminTableHead>Provider &amp; Model</AdminTableHead>
+      <AdminTableHead>
+        <IntelligenceIndexLabel />
+      </AdminTableHead>
+      <AdminTableHead>Cost / 1M tokens</AdminTableHead>
+      {visibleColumns.contextWindow ? <AdminTableHead>Context window</AdminTableHead> : null}
+      {visibleColumns.capabilities ? <AdminTableHead>Capabilities</AdminTableHead> : null}
+      {showAccessDetails ? <AdminTableHead>Allow List</AdminTableHead> : null}
+    </AdminTableHeader>
   )
 }
 
