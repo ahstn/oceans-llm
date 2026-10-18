@@ -286,6 +286,29 @@ describe('useTeamEditor', () => {
     await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Team updated'))
   })
 
+  it('still updates, never creates, when the edited team drops out of the list', async () => {
+    mocks.updateIdentityTeam.mockRejectedValue(new Error('team not found'))
+    const { result, rerender } = renderHook(
+      ({ teams }: { teams: TeamManagementView[] }) => {
+        const transition = useIdentityTransition()
+        return useTeamEditor({ teams, transition })
+      },
+      { initialProps: { teams } },
+    )
+
+    act(() => result.current.openEdit(research))
+    rerender({ teams: [platform] })
+    expect(result.current).toMatchObject({ isEditing: true, editingTeam: null })
+    await act(async () => result.current.saveTeam(submitEvent().event))
+
+    expect(mocks.updateIdentityTeam).toHaveBeenCalledWith({
+      data: { teamId: 'team_research', input: { name: 'Research', admin_user_ids: [], tags: [] } },
+    })
+    expect(mocks.createIdentityTeam).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('team not found'))
+    expect(result.current.isOpen).toBe(true)
+  })
+
   it('keeps the dialog open when saving fails', async () => {
     mocks.createIdentityTeam.mockRejectedValue(new Error('Team name already exists'))
     const { result } = renderTeamEditor()

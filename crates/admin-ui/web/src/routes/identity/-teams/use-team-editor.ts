@@ -49,10 +49,12 @@ export function useTeamEditor({
     event.preventDefault()
 
     transition.run(async () => {
-      if (target.mode === 'edit' && editingTeam) {
+      // Edit saves by id even when the team has dropped out of `teams`, so the server reports a
+      // missing team instead of the form falling through to create a new one.
+      if (target.mode === 'edit') {
         await updateIdentityTeam({
           data: {
-            teamId: editingTeam.id,
+            teamId: target.teamId,
             input: sanitizeTeamForm(form),
           },
         })
