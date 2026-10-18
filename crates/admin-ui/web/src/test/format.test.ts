@@ -33,6 +33,8 @@ describe('shared number and time formats', () => {
 
   it('keeps one money precision per column', () => {
     expect(formatUsd10000(344_000)).toBe('$34.40')
+    expect(formatUsd10000(31)).toBe('<$0.01')
+    expect(formatUsd10000(0)).toBe('$0.00')
     expect(formatUsd10000Precise(457)).toBe('$0.0457')
     expect(formatUsd10000Precise(5780)).toBe('$0.5780')
     expect(formatUsd10000Precise(1_982_090)).toBe('$198.2090')

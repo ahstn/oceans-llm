@@ -25,9 +25,9 @@ export function formatUsdTotal(amountUsd: number | null | undefined) {
   return CURRENCY_FORMATTER.format(amountUsd)
 }
 
-/** Formats an API amount expressed in ten-thousandths of a dollar. */
+/** Formats an API total in ten-thousandths of a dollar, like `formatUsdTotal` (`<$0.01` for tiny spend). */
 export function formatUsd10000(amountUsd10000: number) {
-  return CURRENCY_FORMATTER.format(amountUsd10000 / 10_000)
+  return formatUsdTotal(amountUsd10000 / 10_000)
 }
 
 const PRECISE_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {

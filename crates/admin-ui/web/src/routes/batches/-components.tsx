@@ -25,6 +25,7 @@ import {
 import { formatStatus, isBatchCancellable } from '@/routes/batches/-utils'
 import type { BatchResultsView, BatchStatus, BatchView } from '@/types/api'
 import { formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -77,7 +78,12 @@ export function BatchList({
               <SummaryField label="Provider" value={batch.provider} />
               <SummaryField label="Caller" value={callerLabel(batch)} />
               <SummaryField label="Progress" value={progressLabel(batch)} />
-              <SummaryField label="Created" value={formatTimestamp(batch.created_at)} />
+              {/* Full width so the timestamp keeps its time and zone on narrow cards. */}
+              <SummaryField
+                label="Created"
+                value={formatTimestamp(batch.created_at)}
+                className="col-span-2"
+              />
             </dl>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => onInspect(batch)}>
@@ -356,13 +362,15 @@ function SummaryField({
   label,
   value,
   mono = false,
+  className,
 }: {
   label: string
   value: string
   mono?: boolean
+  className?: string
 }) {
   return (
-    <div className="min-w-0">
+    <div className={cn('min-w-0', className)}>
       <dt className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
         {label}
       </dt>

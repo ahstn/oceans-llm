@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
-import { CURRENCY_FORMATTER, EMPTY_VALUE, formatUsd10000 } from '@/lib/format'
+import { EMPTY_VALUE, formatUsd10000, formatUsdTotal } from '@/lib/format'
 import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
@@ -340,7 +340,7 @@ const LeaderboardChart = lazy(async () => {
                       {config[String(name)]?.label ?? String(name)}
                     </span>
                     <span className="font-mono font-medium tabular-nums">
-                      {CURRENCY_FORMATTER.format(Number(value))}
+                      {formatUsdTotal(Number(value))}
                     </span>
                   </>
                 )}
