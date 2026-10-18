@@ -1,7 +1,11 @@
+use gateway_core::mcp_tool_policy::{
+    DESTRUCTIVE_HINT, EffectiveHints, IDEMPOTENT_HINT, OPEN_WORLD_HINT, READ_ONLY_HINT,
+    effective_tags,
+};
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
-    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolsetRecord,
-    McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+    McpAnnotationOverrides, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+    McpToolsetRecord, McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
 };
 use gateway_service::{
     McpDiscoveryResult, RecommendedMcpServerCatalogEntry, RedactedMcpCredentialBinding,
@@ -72,6 +76,8 @@ pub struct McpServerView {
     #[schema(additional_properties = true)]
     auth_config: Map<String, Value>,
     timeout_ms: i64,
+    /// New and changed tools wait for an admin to approve them.
+    approve_tool_changes: bool,
     status: String,
     last_discovery_status: Option<String>,
     last_discovery_at: Option<String>,
@@ -102,7 +108,24 @@ pub struct McpToolView {
     /// Schema of the tool's structured result, when the upstream declares one.
     #[schema(additional_properties = true)]
     output_schema: Option<Value>,
+    /// Hints as the upstream server declared them.
     annotations: McpToolAnnotationsView,
+    /// Hints an admin set. A missing value keeps the upstream's.
+    annotation_overrides: McpToolAnnotationsView,
+    /// Hints the gateway uses and serves: each override, else the upstream value.
+    effective_annotations: McpToolAnnotationsView,
+    /// Tags an admin attached to the tool.
+    admin_tags: Vec<String>,
+    /// Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)
+    /// plus admin tags. Tag rules match these.
+    effective_tags: Vec<String>,
+    /// `approved`, `pending_change` (served as the approved version while a
+    /// text change waits), `pending_review` or `rejected` (both withheld).
+    approval_status: String,
+    /// The served version; null until the tool is first approved.
+    approved_schema_version: Option<i64>,
+    /// The version waiting for review.
+    pending_schema_version: Option<i64>,
     schema_hash: String,
     schema_version: i64,
     is_active: bool,
@@ -111,14 +134,43 @@ pub struct McpToolView {
     deactivated_at: Option<String>,
 }
 
-/// Behaviour hints declared by the upstream server. A missing value means the
-/// server did not declare the hint. Hints are not verified by the gateway.
-#[derive(Debug, Serialize, ToSchema)]
+/// The four behaviour hints. A missing value means the hint is not declared
+/// at this level. Upstream hints are not verified by the gateway.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct McpToolAnnotationsView {
-    read_only_hint: Option<bool>,
-    destructive_hint: Option<bool>,
-    idempotent_hint: Option<bool>,
-    open_world_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) read_only_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) destructive_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) idempotent_hint: Option<bool>,
+    #[serde(default)]
+    pub(super) open_world_hint: Option<bool>,
+}
+
+impl McpToolAnnotationsView {
+    fn from_hints(hint: impl Fn(&str) -> Option<bool>) -> Self {
+        Self {
+            read_only_hint: hint(READ_ONLY_HINT),
+            destructive_hint: hint(DESTRUCTIVE_HINT),
+            idempotent_hint: hint(IDEMPOTENT_HINT),
+            open_world_hint: hint(OPEN_WORLD_HINT),
+        }
+    }
+
+    pub(super) fn overrides(overrides: &McpAnnotationOverrides) -> Self {
+        Self::from_hints(|name| overrides.get(name))
+    }
+
+    pub(super) fn to_overrides(&self) -> McpAnnotationOverrides {
+        McpAnnotationOverrides {
+            read_only: self.read_only_hint,
+            destructive: self.destructive_hint,
+            idempotent: self.idempotent_hint,
+            open_world: self.open_world_hint,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -306,6 +358,9 @@ pub struct CreateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Off when omitted.
+    #[serde(default)]
+    pub(super) approve_tool_changes: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -350,6 +405,9 @@ pub struct UpdateMcpServerRequest {
     #[schema(additional_properties = true)]
     pub(super) auth_config: Map<String, Value>,
     pub(super) timeout_ms: Option<i64>,
+    /// Hold new and changed tools for review. Kept as it is when omitted.
+    #[serde(default)]
+    pub(super) approve_tool_changes: Option<bool>,
 }
 
 pub(super) fn map_recommended_server(
@@ -380,6 +438,7 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
         auth_mode: server.auth_mode.as_str().to_string(),
         auth_config,
         timeout_ms: server.timeout_ms,
+        approve_tool_changes: server.approve_tool_changes,
         status: server.status.as_str().to_string(),
         last_discovery_status: server
             .last_discovery_status
@@ -529,6 +588,8 @@ pub(super) fn map_credential_binding(
 }
 
 pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
+    let effective = EffectiveHints::of(&tool);
+    let effective_tags = effective_tags(&tool).into_iter().collect();
     McpToolView {
         id: tool.mcp_tool_id.to_string(),
         server_id: tool.mcp_server_id.to_string(),
@@ -536,12 +597,19 @@ pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
         display_name: tool.display_name,
         description: tool.description,
         input_schema: tool.input_schema,
-        annotations: McpToolAnnotationsView {
-            read_only_hint: tool.metadata.hint("readOnlyHint"),
-            destructive_hint: tool.metadata.hint("destructiveHint"),
-            idempotent_hint: tool.metadata.hint("idempotentHint"),
-            open_world_hint: tool.metadata.hint("openWorldHint"),
+        annotations: McpToolAnnotationsView::from_hints(|name| tool.metadata.hint(name)),
+        annotation_overrides: McpToolAnnotationsView::overrides(&tool.policy.annotation_overrides),
+        effective_annotations: McpToolAnnotationsView {
+            read_only_hint: effective.read_only,
+            destructive_hint: effective.destructive,
+            idempotent_hint: effective.idempotent,
+            open_world_hint: effective.open_world,
         },
+        admin_tags: tool.policy.tags,
+        effective_tags,
+        approval_status: tool.review.approval_status.as_str().to_string(),
+        approved_schema_version: tool.review.approved_schema_version,
+        pending_schema_version: tool.review.pending_schema_version,
         title: tool.metadata.title,
         output_schema: tool.metadata.output_schema,
         schema_hash: tool.schema_hash,
@@ -702,6 +770,7 @@ mod audit_summary_tests {
             auth_mode: "oauth_obo".to_string(),
             auth_config,
             timeout_ms: 1000,
+            approve_tool_changes: false,
             status: "active".to_string(),
             last_discovery_status: None,
             last_discovery_at: None,

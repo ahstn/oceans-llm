@@ -1072,6 +1072,52 @@ pub trait McpRegistryRepository: Send + Sync {
         &self,
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError>;
+
+    /// Loads one tool, including an inactive one.
+    async fn get_external_mcp_tool(
+        &self,
+        mcp_tool_id: Uuid,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// Loads several tools with every column, including inactive ones, in no
+    /// particular order. Unknown ids are skipped.
+    async fn get_external_mcp_tools(
+        &self,
+        mcp_tool_ids: &[Uuid],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's admin tags. Nothing is written when they already match.
+    async fn set_mcp_tool_tags(
+        &self,
+        mcp_tool_id: Uuid,
+        tags: &[String],
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Replaces the tool's annotation overrides. Nothing is written when they
+    /// already match. Overrides never change the schema hash or version.
+    async fn set_mcp_tool_annotation_overrides(
+        &self,
+        mcp_tool_id: Uuid,
+        overrides: &crate::mcp_tool_policy::McpAnnotationOverrides,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
+
+    /// Versions of the tool, newest first: named ones or one page.
+    async fn list_mcp_tool_versions(
+        &self,
+        mcp_tool_id: Uuid,
+        query: &crate::mcp_tool_review::McpToolVersionQuery,
+    ) -> Result<Vec<crate::mcp_tool_review::McpToolVersionRecord>, StoreError>;
+
+    /// Approves or rejects the tool's pending version. Fails with `Conflict`
+    /// when that version is not pending, so two reviews cannot both apply.
+    async fn review_mcp_tool_version(
+        &self,
+        mcp_tool_id: Uuid,
+        schema_version: i64,
+        decision: crate::mcp_tool_review::McpToolReviewDecision,
+        reviewed_by_user_id: Option<Uuid>,
+        reviewed_at: OffsetDateTime,
+    ) -> Result<crate::audit::Updated<ExternalMcpToolRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -1148,6 +1194,16 @@ pub trait McpAccessRepository: Send + Sync {
         projection: McpToolProjection,
     ) -> Result<McpAccessResolution, StoreError>;
 
+    /// The tool with this upstream name on the server, when the subjects may
+    /// call it with tag rules applied. It reads only that tool, so a
+    /// `tools/call` does not resolve the caller's whole access set.
+    async fn resolve_mcp_tool_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
     /// Whether any subject holds an active grant on at least one active tool of
     /// the server, directly or through an active toolset.
     async fn has_mcp_server_grant(
@@ -1167,6 +1223,46 @@ pub trait McpAccessRepository: Send + Sync {
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+
+    /// One page of served tools (active, and approved or with only a text
+    /// change waiting) on active servers, on one server or every server,
+    /// ordered by server id then upstream name. `after` is the last
+    /// `(mcp_server_id, upstream_name)` of the previous page. Tag rule
+    /// previews read their candidates from it, so rows carry only the columns
+    /// tag rules read: no description, title or schemas.
+    async fn list_active_mcp_tools(
+        &self,
+        mcp_server_id: Option<Uuid>,
+        after: Option<(Uuid, &str)>,
+        limit: u32,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    async fn list_mcp_tool_tag_rules(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Creates the rule. The flag is `true` when this call created the active
+    /// rule, and `false` when an identical rule was already active.
+    async fn upsert_mcp_tool_tag_rule(
+        &self,
+        key: &crate::mcp_tool_policy::McpToolTagRuleKey,
+        updated_at: OffsetDateTime,
+    ) -> Result<(crate::mcp_tool_policy::McpToolTagRuleRecord, bool), StoreError>;
+
+    async fn get_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
+
+    /// Revokes the active rule and returns it as it was, or `None` when no
+    /// active rule has that id.
+    async fn revoke_mcp_tool_tag_rule(
+        &self,
+        rule_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<Option<crate::mcp_tool_policy::McpToolTagRuleRecord>, StoreError>;
 }
 
 #[async_trait]

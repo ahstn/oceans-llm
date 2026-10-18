@@ -321,6 +321,7 @@ async fn seed_granted_server(state: &AppState, server_key: &str, url: &str, user
             auth_config: Map::new(),
             timeout_ms: 2_000,
             created_at: now,
+            approve_tool_changes: false,
         })
         .await
         .expect("server");

@@ -22,6 +22,8 @@ mod audit_logs;
 mod budget_batch;
 mod budget_increases;
 mod libsql_store;
+mod mcp_tool_policy;
+mod mcp_tool_review;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
@@ -72,6 +74,8 @@ mod skills_tests;
 #[cfg(test)]
 pub(crate) mod tests {
     mod mcp_access;
+    mod mcp_tag_rules;
+    mod mcp_tool_versions;
     mod model_routing;
     mod request_log_list;
     mod request_log_purge;
@@ -1447,6 +1451,7 @@ pub(crate) mod tests {
             metadata: Map::new(),
             mcp_method: "tools/call".to_string(),
             occurred_at,
+            tool_schema_version: None,
         }
     }
 
@@ -1623,6 +1628,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server");
@@ -1647,6 +1653,7 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(1),
+                approve_tool_changes: false,
             })
             .await
             .expect("update MCP server")
@@ -1767,6 +1774,7 @@ pub(crate) mod tests {
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(6),
+                approve_tool_changes: false,
             })
             .await
             .expect("invalidate discovery on config update")
@@ -1845,18 +1853,6 @@ pub(crate) mod tests {
     where
         S: McpRegistryRepository + Sync,
     {
-        let run = ExternalMcpDiscoveryRunRecord {
-            discovery_run_id: Uuid::new_v4(),
-            mcp_server_id,
-            status: ExternalMcpDiscoveryStatus::Success,
-            started_at: at,
-            finished_at: at,
-            discovered_tool_count: 1,
-            active_tool_count: 1,
-            schema_set_hash: Some(format!("set-{schema_hash}")),
-            error_summary: None,
-            details: Map::new(),
-        };
         let metadata = gateway_core::McpToolMetadata {
             title: Some("Delete page".to_string()),
             annotations: Some(Map::from_iter([
@@ -1868,6 +1864,40 @@ pub(crate) mod tests {
                 "type": "object",
                 "properties": {"deleted": {"type": "boolean"}}
             })),
+        };
+        discover_tool_with(
+            store,
+            mcp_server_id,
+            at,
+            input_schema,
+            metadata,
+            schema_hash,
+        )
+        .await
+    }
+
+    async fn discover_tool_with<S>(
+        store: &S,
+        mcp_server_id: Uuid,
+        at: OffsetDateTime,
+        input_schema: serde_json::Value,
+        metadata: gateway_core::McpToolMetadata,
+        schema_hash: &str,
+    ) -> gateway_core::ExternalMcpToolRecord
+    where
+        S: McpRegistryRepository + Sync,
+    {
+        let run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: at,
+            finished_at: at,
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: Some(format!("set-{schema_hash}")),
+            error_summary: None,
+            details: Map::new(),
         };
         store
             .record_external_mcp_discovery_success(
@@ -1905,6 +1935,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server");
@@ -1952,6 +1983,33 @@ pub(crate) mod tests {
         let new_schema = json!({"type": "object", "properties": {"page_id": {"type": "string"}}});
         let drifted = discover_metadata_tool(store, id, at(6), new_schema, true, "h5").await;
         assert_eq!(drifted.schema_version, 4);
+
+        // A legacy row seen unchanged is marked captured, so metadata the
+        // upstream adds later is a change rather than a capture.
+        let plain_schema = json!({"type": "object", "properties": {"q": {"type": "string"}}});
+        let plain = discover_tool_with(
+            store,
+            id,
+            at(7),
+            plain_schema.clone(),
+            gateway_core::McpToolMetadata::default(),
+            "p1",
+        )
+        .await;
+        assert_eq!(plain.schema_version, 5);
+        mark_legacy(first.mcp_tool_id).await;
+        let unchanged = discover_tool_with(
+            store,
+            id,
+            at(8),
+            plain_schema.clone(),
+            gateway_core::McpToolMetadata::default(),
+            "p1",
+        )
+        .await;
+        assert_eq!(unchanged.schema_version, 5);
+        let annotated = discover_metadata_tool(store, id, at(9), plain_schema, true, "p2").await;
+        assert_eq!(annotated.schema_version, 6);
     }
 
     async fn exercise_mcp_upstream_credential_repository<S>(store: &S)
@@ -1974,6 +2032,7 @@ pub(crate) mod tests {
                 auth_config: Map::new(),
                 timeout_ms: 30_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("create MCP server for credentials");

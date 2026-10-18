@@ -155,6 +155,21 @@ pub mod actions {
     pub const MCP_GRANT_SET: AuditAction = AuditAction("mcp_grant.set");
     pub const MCP_GRANT_REVOKED: AuditAction = AuditAction("mcp_grant.revoked");
 
+    /// An admin replaced a tool's admin tags.
+    pub const MCP_TOOL_TAGS_UPDATED: AuditAction = AuditAction("mcp_tool.tags_updated");
+    /// An admin replaced a tool's annotation overrides.
+    pub const MCP_TOOL_ANNOTATIONS_OVERRIDDEN: AuditAction =
+        AuditAction("mcp_tool.annotations_overridden");
+
+    /// A rule that grants or denies tools by tag was created.
+    pub const MCP_TAG_RULE_SET: AuditAction = AuditAction("mcp_tag_rule.set");
+    pub const MCP_TAG_RULE_REVOKED: AuditAction = AuditAction("mcp_tag_rule.revoked");
+
+    /// An admin approved a pending tool version, which is now served.
+    pub const MCP_TOOL_VERSION_APPROVED: AuditAction = AuditAction("mcp_tool.version_approved");
+    /// An admin rejected a pending tool version.
+    pub const MCP_TOOL_VERSION_REJECTED: AuditAction = AuditAction("mcp_tool.version_rejected");
+
     pub const MCP_CREDENTIAL_BINDING_SET: AuditAction = AuditAction("mcp_credential_binding.set");
     /// A user allowed an MCP client on the OAuth consent page. The grant is
     /// created when the client redeems the code, so the target is the
@@ -224,6 +239,12 @@ pub mod actions {
         MCP_TOOLSET_TOOLS_REPLACED,
         MCP_GRANT_SET,
         MCP_GRANT_REVOKED,
+        MCP_TOOL_TAGS_UPDATED,
+        MCP_TOOL_ANNOTATIONS_OVERRIDDEN,
+        MCP_TAG_RULE_SET,
+        MCP_TAG_RULE_REVOKED,
+        MCP_TOOL_VERSION_APPROVED,
+        MCP_TOOL_VERSION_REJECTED,
         MCP_CREDENTIAL_BINDING_SET,
         MCP_CREDENTIAL_BINDING_REVOKED,
         MCP_CLIENT_GRANT_AUTHORIZED,
@@ -252,6 +273,8 @@ pub mod targets {
     pub const MCP_SERVER: &str = "mcp_server";
     pub const MCP_TOOLSET: &str = "mcp_toolset";
     pub const MCP_GRANT: &str = "mcp_grant";
+    pub const MCP_TOOL: &str = "mcp_tool";
+    pub const MCP_TAG_RULE: &str = "mcp_tag_rule";
     pub const MCP_CREDENTIAL_BINDING: &str = "mcp_credential_binding";
     pub const MCP_CLIENT_GRANT: &str = "mcp_client_grant";
     pub const PRICING_CATALOG: &str = "pricing_catalog";
@@ -270,6 +293,8 @@ pub mod targets {
         MCP_SERVER,
         MCP_TOOLSET,
         MCP_GRANT,
+        MCP_TOOL,
+        MCP_TAG_RULE,
         MCP_CREDENTIAL_BINDING,
         MCP_CLIENT_GRANT,
         PRICING_CATALOG,

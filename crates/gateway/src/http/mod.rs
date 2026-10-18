@@ -392,6 +392,38 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             get(list_mcp_server_tools),
         )
         .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags",
+            put(set_mcp_tool_tags),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides",
+            put(set_mcp_tool_annotation_overrides),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions",
+            get(list_mcp_tool_versions),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve",
+            post(approve_mcp_tool_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject",
+            post(reject_mcp_tool_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules",
+            get(list_mcp_tag_rules).post(create_mcp_tag_rule),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules/preview",
+            get(preview_mcp_tag_rule),
+        )
+        .route(
+            "/api/v1/admin/mcp/tag-rules/{rule_id}",
+            delete(revoke_mcp_tag_rule),
+        )
+        .route(
             "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh",
             post(refresh_mcp_server_discovery),
         )

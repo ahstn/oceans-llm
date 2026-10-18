@@ -601,6 +601,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/annotation-overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces the tool's annotation overrides. Overrides never change the
+         *     schema hash or version, and the upstream values stay visible.
+         */
+        put: operations["set_mcp_tool_annotation_overrides"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_mcp_tool_tags"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tool_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approves a pending version, which becomes the served definition. */
+        post: operations["approve_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools/{tool_id}/versions/{schema_version}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rejects a pending version. A text-only change keeps serving the previous
+         *     version; a new tool or a contract change stays withheld.
+         */
+        post: operations["reject_mcp_tool_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tag_rules"];
+        put?: never;
+        post: operations["create_mcp_tag_rule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists the active tools a rule would select, before it is saved. */
+        get: operations["preview_mcp_tag_rule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/tag-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_mcp_tag_rule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/toolsets": {
         parameters: {
             query?: never;
@@ -3139,6 +3277,8 @@ export interface components {
             user_id: string;
         };
         CreateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Off when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -3151,6 +3291,18 @@ export interface components {
             /** Format: int64 */
             timeout_ms?: number | null;
             transport?: string | null;
+        };
+        CreateMcpTagRuleRequest: {
+            effect: string;
+            /**
+             * Format: uuid
+             * @description Required for `include`. Omit for an `exclude` rule on every server.
+             */
+            server_id?: string | null;
+            /** Format: uuid */
+            subject_id: string;
+            subject_kind: string;
+            tag: string;
         };
         CreateMcpToolsetRequest: {
             description?: string | null;
@@ -3663,6 +3815,33 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpTagRulePayload: {
+            data: {
+                rule: components["schemas"]["McpTagRuleView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpTagRulePreviewPayload: {
+            data: {
+                /**
+                 * @description Active tools the rule would select, at most 200. Only this rule is
+                 *     applied.
+                 */
+                tools: components["schemas"]["McpToolView"][];
+                /**
+                 * @description The preview stopped early, after 200 matches or after checking 5,120
+                 *     tools, so more tools may match than it lists.
+                 */
+                truncated: boolean;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpTagRulesPayload: {
+            data: {
+                items: components["schemas"]["McpTagRuleView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpToolInvocationDetailView: {
             data: {
                 invocation: components["schemas"]["McpToolInvocationSummaryView"];
@@ -3679,6 +3858,25 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolPayload: {
+            data: {
+                tool: components["schemas"]["McpToolView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolVersionsPayload: {
+            data: {
+                /** @description Newest first. */
+                items: components["schemas"]["McpToolVersionView"][];
+                /**
+                 * Format: int64
+                 * @description Pass as `before` for the next page of history. Empty on the last page
+                 *     and when `schema_versions` is given.
+                 */
+                next_before?: number | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4223,6 +4421,8 @@ export interface components {
             server: components["schemas"]["McpServerView"];
         };
         McpServerView: {
+            /** @description New and changed tools wait for an admin to approve them. */
+            approve_tool_changes: boolean;
             auth_config: {
                 [key: string]: unknown;
             };
@@ -4249,9 +4449,41 @@ export interface components {
         McpServersPayload: {
             items: components["schemas"]["McpServerView"][];
         };
+        McpTagRulePayload: {
+            rule: components["schemas"]["McpTagRuleView"];
+        };
+        McpTagRulePreviewPayload: {
+            /**
+             * @description Active tools the rule would select, at most 200. Only this rule is
+             *     applied.
+             */
+            tools: components["schemas"]["McpToolView"][];
+            /**
+             * @description The preview stopped early, after 200 matches or after checking 5,120
+             *     tools, so more tools may match than it lists.
+             */
+            truncated: boolean;
+        };
+        McpTagRuleView: {
+            created_at: string;
+            /** @description `include` grants matching tools; `exclude` removes them and wins. */
+            effect: string;
+            id: string;
+            is_active: boolean;
+            revoked_at?: string | null;
+            /** @description The server the rule applies to; null for every server (exclude only). */
+            server_id?: string | null;
+            subject_id: string;
+            subject_kind: string;
+            tag: string;
+            updated_at: string;
+        };
+        McpTagRulesPayload: {
+            items: components["schemas"]["McpTagRuleView"][];
+        };
         /**
-         * @description Behaviour hints declared by the upstream server. A missing value means the
-         *     server did not declare the hint. Hints are not verified by the gateway.
+         * @description The four behaviour hints. A missing value means the hint is not declared
+         *     at this level. Upstream hints are not verified by the gateway.
          */
         McpToolAnnotationsView: {
             destructive_hint?: boolean | null;
@@ -4308,13 +4540,73 @@ export interface components {
             tool_display_key: string;
             tool_display_name: string;
             tool_id?: string | null;
+            /**
+             * Format: int64
+             * @description Served schema version of the tool a `tools/call` used; null otherwise.
+             */
+            tool_schema_version?: number | null;
             user_id?: string | null;
         };
+        McpToolPayload: {
+            tool: components["schemas"]["McpToolView"];
+        };
+        /** @description One definition the upstream served for a tool. */
+        McpToolVersionView: {
+            /** @description Annotations as the upstream declared them, without admin overrides. */
+            annotations?: {
+                [key: string]: unknown;
+            } | null;
+            description?: string | null;
+            discovered_at: string;
+            input_schema: unknown;
+            output_schema?: unknown;
+            reviewed_at?: string | null;
+            /** @description Empty for a version approved automatically by discovery. */
+            reviewed_by_user_id?: string | null;
+            schema_hash: string;
+            /** Format: int64 */
+            schema_version: number;
+            /** @description `approved`, `pending`, `rejected` or `superseded`. */
+            status: string;
+            title?: string | null;
+        };
+        McpToolVersionsPayload: {
+            /** @description Newest first. */
+            items: components["schemas"]["McpToolVersionView"][];
+            /**
+             * Format: int64
+             * @description Pass as `before` for the next page of history. Empty on the last page
+             *     and when `schema_versions` is given.
+             */
+            next_before?: number | null;
+        };
         McpToolView: {
+            /** @description Tags an admin attached to the tool. */
+            admin_tags: string[];
+            /** @description Hints an admin set. A missing value keeps the upstream's. */
+            annotation_overrides: components["schemas"]["McpToolAnnotationsView"];
+            /** @description Hints as the upstream server declared them. */
             annotations: components["schemas"]["McpToolAnnotationsView"];
+            /**
+             * @description `approved`, `pending_change` (served as the approved version while a
+             *     text change waits), `pending_review` or `rejected` (both withheld).
+             */
+            approval_status: string;
+            /**
+             * Format: int64
+             * @description The served version; null until the tool is first approved.
+             */
+            approved_schema_version?: number | null;
             deactivated_at?: string | null;
             description?: string | null;
             display_name: string;
+            /** @description Hints the gateway uses and serves: each override, else the upstream value. */
+            effective_annotations: components["schemas"]["McpToolAnnotationsView"];
+            /**
+             * @description Derived tags (`read_only`, `destructive`, `idempotent`, `open_world`)
+             *     plus admin tags. Tag rules match these.
+             */
+            effective_tags: string[];
             first_discovered_at: string;
             id: string;
             input_schema: unknown;
@@ -4322,6 +4614,11 @@ export interface components {
             last_discovered_at: string;
             /** @description Schema of the tool's structured result, when the upstream declares one. */
             output_schema?: unknown;
+            /**
+             * Format: int64
+             * @description The version waiting for review.
+             */
+            pending_schema_version?: number | null;
             schema_hash: string;
             /** Format: int64 */
             schema_version: number;
@@ -4900,6 +5197,14 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        SetMcpToolAnnotationOverridesRequest: {
+            /** @description Hints to override. A missing or null hint keeps the upstream's value. */
+            annotation_overrides: components["schemas"]["McpToolAnnotationsView"];
+        };
+        SetMcpToolTagsRequest: {
+            /** @description Admin tags. They are lowercased, deduplicated and sorted. */
+            tags: string[];
+        };
         SetMyProviderCredentialRequest: {
             token: string;
         };
@@ -5146,6 +5451,8 @@ export interface components {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
         UpdateMcpServerRequest: {
+            /** @description Hold new and changed tools for review. Kept as it is when omitted. */
+            approve_tool_changes?: boolean | null;
             auth_config?: {
                 [key: string]: unknown;
             };
@@ -6456,6 +6763,350 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    set_mcp_tool_annotation_overrides: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMcpToolAnnotationOverridesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    set_mcp_tool_tags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMcpToolTagsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_tool_versions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Comma-separated version numbers to read, at most 10. A review diff asks
+                 *     for the approved and pending versions. Paging is ignored when set.
+                 */
+                schema_versions?: string | null;
+                /** @description Read versions older than this one. */
+                before?: number | null;
+                /** @description Page size, 1 to 100. Defaults to 20. */
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolVersionsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    approve_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to approve */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    reject_mcp_tool_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+                /** @description MCP tool identifier */
+                tool_id: string;
+                /** @description Pending version to reject */
+                schema_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolPayload"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_tag_rules: {
+        parameters: {
+            query?: {
+                subject_kind?: string | null;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulesPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    create_mcp_tag_rule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpTagRuleRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulePayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    preview_mcp_tag_rule: {
+        parameters: {
+            query: {
+                server_id?: string | null;
+                tag: string;
+                effect: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulePreviewPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    revoke_mcp_tag_rule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP tag rule identifier */
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpTagRulesPayload"];
+                };
+            };
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

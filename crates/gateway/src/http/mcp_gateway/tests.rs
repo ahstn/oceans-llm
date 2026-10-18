@@ -388,6 +388,7 @@ mod proxy_policy {
                 auth_config: Map::new(),
                 timeout_ms: 2_000,
                 created_at: now,
+                approve_tool_changes: false,
             })
             .await
             .expect("server");
@@ -556,6 +557,214 @@ mod proxy_policy {
         // The upstream also sends `execution.taskSupport`, which the gateway drops
         // because it does not proxy tasks.
         assert_eq!(body["result"]["tools"], json!([annotated_search_tool()]));
+    }
+
+    /// Adds a tag rule for the key's owner user on the `notes` server.
+    async fn add_user_rule(
+        state: &AppState,
+        auth: &AuthenticatedApiKey,
+        server: Option<Uuid>,
+        tag: &str,
+        effect: gateway_core::McpTagRuleEffect,
+    ) {
+        state
+            .store
+            .upsert_mcp_tool_tag_rule(
+                &gateway_core::McpToolTagRuleKey {
+                    subject_kind: McpToolGrantSubjectKind::User,
+                    subject_id: auth.owner_user_id.expect("owner user"),
+                    mcp_server_id: server,
+                    tag: tag.to_string(),
+                    effect,
+                },
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("tag rule");
+    }
+
+    #[tokio::test]
+    async fn tag_rules_govern_direct_tools_list_calls_and_resources() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, false).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        let search = state
+            .store
+            .get_active_mcp_tool_by_name(server.mcp_server_id, "search")
+            .await
+            .expect("tool lookup")
+            .expect("search tool");
+        // The stored tool declares no hints, so only an override makes it read-only.
+        state
+            .store
+            .set_mcp_tool_annotation_overrides(
+                search.mcp_tool_id,
+                &gateway_core::McpAnnotationOverrides {
+                    read_only: Some(true),
+                    idempotent: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("override");
+        add_user_rule(
+            &state,
+            &auth,
+            Some(server.mcp_server_id),
+            "read_only",
+            gateway_core::McpTagRuleEffect::Include,
+        )
+        .await;
+
+        let list = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"});
+        let (status, body) = send(&state, &auth, list.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        let mut expected = annotated_search_tool();
+        expected["annotations"]["idempotentHint"] = json!(true);
+        assert_eq!(body["result"]["tools"], json!([expected]));
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // An exclude rule on every server wins over the include rule.
+        add_user_rule(
+            &state,
+            &auth,
+            None,
+            "idempotent",
+            gateway_core::McpTagRuleEffect::Exclude,
+        )
+        .await;
+        let (status, body) = send(&state, &auth, list).await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(body["result"]["tools"], json!([]));
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn approval_servers_serve_the_approved_definition_and_withhold_pending_tools() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+        // Without approval the live upstream definition passes through, so a
+        // call records no stored version.
+        let (status, _) = send(
+            &state,
+            &auth,
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "search", "arguments": {}},
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let passthrough = invocations(&state)
+            .await
+            .into_iter()
+            .find(|invocation| invocation.mcp_method == "tools/call")
+            .expect("passthrough call");
+        assert_eq!(passthrough.tool_schema_version, None);
+        state
+            .store
+            .update_external_mcp_server(&gateway_core::UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: server.display_name.clone(),
+                description: server.description.clone(),
+                server_url: server.server_url.clone(),
+                auth_mode: server.auth_mode,
+                auth_config: server.auth_config.clone(),
+                timeout_ms: server.timeout_ms,
+                updated_at: OffsetDateTime::now_utc(),
+                approve_tool_changes: true,
+            })
+            .await
+            .expect("enable approval");
+
+        // The upstream now declares metadata the gateway has not approved; the
+        // approved definition is served instead. `_meta` is not versioned, so
+        // it passes through.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(
+            body["result"]["tools"],
+            json!([{
+                "name": "search",
+                "inputSchema": {"type": "object"},
+                "_meta": {"origin": "upstream"},
+            }])
+        );
+
+        let call = json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "search", "arguments": {}},
+        });
+        let (status, _) = send(&state, &auth, call.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let called = invocations(&state)
+            .await
+            .into_iter()
+            .find(|invocation| {
+                invocation.mcp_method == "tools/call" && invocation.tool_schema_version.is_some()
+            })
+            .expect("call invocation");
+        assert_eq!(called.tool_schema_version, Some(1));
+
+        // Discovery sees the declared metadata as a contract change: the tool is
+        // withheld, even with its explicit grant, until an admin approves it.
+        gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery");
+        let search = state
+            .store
+            .list_external_mcp_tools(server.mcp_server_id, false)
+            .await
+            .expect("tools")
+            .into_iter()
+            .find(|tool| tool.upstream_name == "search")
+            .expect("search tool");
+        assert_eq!(
+            search.review.approval_status,
+            gateway_core::McpToolApprovalStatus::PendingReview
+        );
+        let (status, _) = send(&state, &auth, call).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (_, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "id": 5, "method": "tools/list"}),
+        )
+        .await;
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC response");
+        assert_eq!(body["result"]["tools"], json!([]));
     }
 
     #[tokio::test]
@@ -980,4 +1189,65 @@ mod proxy_policy {
         assert_eq!(logged.len(), 1);
         assert_eq!(logged[0].status, McpToolInvocationStatus::GatewayError);
     }
+}
+
+#[test]
+fn stored_definitions_are_served_while_approval_is_on_or_a_change_waits() {
+    use gateway_core::{McpToolApprovalStatus, McpToolReviewState};
+    let now = time::OffsetDateTime::UNIX_EPOCH;
+    let mut server = gateway_core::ExternalMcpServerRecord {
+        mcp_server_id: Uuid::new_v4(),
+        server_key: "notes".to_string(),
+        display_name: "Notes".to_string(),
+        description: None,
+        transport: gateway_core::ExternalMcpTransport::StreamableHttp,
+        server_url: "https://notes.example.test/mcp".to_string(),
+        auth_mode: gateway_core::ExternalMcpAuthMode::None,
+        auth_config: Map::new(),
+        timeout_ms: 1_000,
+        status: gateway_core::ExternalMcpServerStatus::Active,
+        last_discovery_status: None,
+        last_discovery_at: None,
+        last_successful_discovery_at: None,
+        last_error_summary: None,
+        last_tool_count: None,
+        created_at: now,
+        updated_at: now,
+        disabled_at: None,
+        approve_tool_changes: false,
+    };
+    let mut tool = gateway_core::ExternalMcpToolRecord {
+        mcp_tool_id: Uuid::new_v4(),
+        mcp_server_id: server.mcp_server_id,
+        upstream_name: "search".to_string(),
+        display_name: "search".to_string(),
+        description: Some("Search notes".to_string()),
+        input_schema: json!({"type": "object"}),
+        metadata: Default::default(),
+        policy: Default::default(),
+        review: McpToolReviewState {
+            approval_status: McpToolApprovalStatus::Approved,
+            approved_schema_version: Some(1),
+            pending_schema_version: None,
+        },
+        schema_hash: "sha256:a".to_string(),
+        schema_version: 1,
+        is_active: true,
+        first_discovered_at: now,
+        last_discovered_at: now,
+        deactivated_at: None,
+    };
+    assert!(
+        !serves_stored_definition(&server, &tool),
+        "clean tools pass through"
+    );
+    tool.review.approval_status = McpToolApprovalStatus::PendingChange;
+    tool.review.pending_schema_version = Some(2);
+    assert!(
+        serves_stored_definition(&server, &tool),
+        "a waiting change stays hidden after approval is turned off"
+    );
+    tool.review = McpToolReviewState::default();
+    server.approve_tool_changes = true;
+    assert!(serves_stored_definition(&server, &tool));
 }
