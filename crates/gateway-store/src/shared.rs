@@ -16,7 +16,8 @@ use uuid::Uuid;
 /// is the newer. A gateway older than V72, still serving during a rolling
 /// upgrade, records runs without `started_at_ms`; such a run counts as newer
 /// when it started in the same second or later, since its milliseconds are
-/// unknown. The run itself never counts.
+/// unknown. The run itself never counts: its start is not after its own, and
+/// its id is not greater than its own.
 pub(crate) fn newer_discovery_run_sql(
     server: &str,
     status: Option<&str>,
@@ -26,12 +27,24 @@ pub(crate) fn newer_discovery_run_sql(
     let status = status
         .map(|status| format!(" AND r.status = {status}"))
         .unwrap_or_default();
+    // One EXISTS per case, so each seeks
+    // `external_mcp_discovery_runs_server_started_ms_idx` by server and start
+    // instead of scanning the server's history for an OR.
+    let newer = |condition: String| {
+        format!(
+            "EXISTS (SELECT 1 FROM external_mcp_discovery_runs r \
+             WHERE r.mcp_server_id = {server}{status} AND {condition})"
+        )
+    };
     format!(
-        "EXISTS (SELECT 1 FROM external_mcp_discovery_runs r WHERE r.mcp_server_id = {server}{status} \
-         AND r.discovery_run_id <> {run_id} \
-         AND (r.started_at_ms > {started_ms} \
-              OR (r.started_at_ms = {started_ms} AND r.discovery_run_id > {run_id}) \
-              OR (r.started_at_ms IS NULL AND (r.started_at + 1) * 1000 > {started_ms})))"
+        "({} OR {} OR {})",
+        newer(format!("r.started_at_ms > {started_ms}")),
+        newer(format!(
+            "r.started_at_ms = {started_ms} AND r.discovery_run_id > {run_id}"
+        )),
+        newer(format!(
+            "r.started_at_ms IS NULL AND (r.started_at + 1) * 1000 > {started_ms}"
+        )),
     )
 }
 

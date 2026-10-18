@@ -9,5 +9,7 @@ UPDATE external_mcp_discovery_runs
 SET started_at_ms = started_at * 1000
 WHERE started_at_ms IS NULL;
 
-CREATE INDEX IF NOT EXISTS external_mcp_discovery_runs_server_status_ms_idx
-  ON external_mcp_discovery_runs (mcp_server_id, status, started_at_ms);
+-- The stale checks look for a newer run of a server, of any status or only
+-- successful ones, so the index leads with the start rather than the status.
+CREATE INDEX IF NOT EXISTS external_mcp_discovery_runs_server_started_ms_idx
+  ON external_mcp_discovery_runs (mcp_server_id, started_at_ms, discovery_run_id);

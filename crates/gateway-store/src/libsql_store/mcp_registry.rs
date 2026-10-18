@@ -349,7 +349,7 @@ macro_rules! server_columns {
 
 /// Whether a successful discovery of the server (`?1`, status `?2`) that
 /// started after this one (`?3` ms, run `?4`) already committed. Reads
-/// `external_mcp_discovery_runs_server_status_ms_idx`.
+/// `external_mcp_discovery_runs_server_started_ms_idx`.
 fn newer_discovery_committed_sql() -> String {
     format!(
         "SELECT {}",
@@ -1402,7 +1402,7 @@ impl LibsqlStore {
 mod tests {
     use tempfile::tempdir;
 
-    use super::newer_discovery_committed_sql;
+    use super::{newer_discovery_committed_sql, newer_discovery_run_sql};
     use crate::migration_registry::{MIGRATION_REGISTRY, MigrationBackend};
 
     #[tokio::test]
@@ -1503,22 +1503,46 @@ mod tests {
             .expect("value");
         assert!(newer, "a same-second run without milliseconds is newer");
 
-        let mut rows = connection
-            .query(
-                &format!("EXPLAIN QUERY PLAN {}", newer_discovery_committed_sql()),
-                libsql::params!["server", "success", 0_i64, "probe"],
-            )
-            .await
-            .expect("query plan");
-        let mut plan = String::new();
-        while let Some(row) = rows.next().await.expect("plan row") {
-            let detail: String = row.get(3).expect("plan detail");
-            plan.push_str(&detail);
-            plan.push('\n');
+        // Both stale checks, successful runs only and runs of any status, seek
+        // the index by server and start rather than scanning the history.
+        for (sql, params) in [
+            (
+                newer_discovery_committed_sql(),
+                vec![
+                    libsql::Value::from("server"),
+                    libsql::Value::from("success"),
+                    libsql::Value::from(0_i64),
+                    libsql::Value::from("probe"),
+                ],
+            ),
+            (
+                format!("SELECT {}", newer_discovery_run_sql("?1", None, "?2", "?3")),
+                vec![
+                    libsql::Value::from("server"),
+                    libsql::Value::from(0_i64),
+                    libsql::Value::from("probe"),
+                ],
+            ),
+        ] {
+            let mut rows = connection
+                .query(
+                    &format!("EXPLAIN QUERY PLAN {sql}"),
+                    libsql::params_from_iter(params),
+                )
+                .await
+                .expect("query plan");
+            let mut plan = String::new();
+            while let Some(row) = rows.next().await.expect("plan row") {
+                let detail: String = row.get(3).expect("plan detail");
+                plan.push_str(&detail);
+                plan.push('\n');
+            }
+            assert!(
+                plan.contains("external_mcp_discovery_runs_server_started_ms_idx")
+                    && plan.contains("started_at_ms>?")
+                    && !plan.contains("SCAN r"),
+                "plan:\n{plan}"
+            );
         }
-        assert!(
-            plan.contains("external_mcp_discovery_runs_server_status_ms_idx"),
-            "plan:\n{plan}"
-        );
     }
 }
