@@ -50,7 +50,7 @@ export function AlertTimeline({ items }: { items: BudgetAlertHistoryItemView[] }
         <TimelineItem key={alert.budget_alert_id} step={index + 1}>
           <TimelineHeader>
             <TimelineSeparator />
-            <TimelineDate dateTime={alert.created_at}>
+            <TimelineDate dateTime={alert.created_at} className="whitespace-nowrap">
               {formatTimestamp(alert.created_at)}
             </TimelineDate>
             <TimelineTitle className="flex flex-wrap items-center gap-2">
