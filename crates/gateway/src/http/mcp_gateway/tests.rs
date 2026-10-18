@@ -1760,6 +1760,32 @@ mod proxy_policy {
     }
 
     #[tokio::test]
+    async fn refused_notifications_get_errors_without_an_id() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let mut notification = read_resource();
+        notification
+            .as_object_mut()
+            .expect("request object")
+            .remove("id");
+
+        send(&state, &auth, read_resource()).await;
+        let (status, body) = send(&state, &auth, notification.clone()).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+        assert_eq!(body["error"]["code"], -32029);
+
+        crate::http::test_support::install_down_rate_limiter(&mut state);
+        let (status, body) = send(&state, &auth, notification).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+    }
+
+    #[tokio::test]
     async fn closed_rate_limit_failures_return_a_json_rpc_503() {
         let (_directory, mut state) = crate::http::test_support::app_state().await;
         crate::http::test_support::install_down_rate_limiter(&mut state);

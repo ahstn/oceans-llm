@@ -200,9 +200,10 @@ impl Refusal {
         }
     }
 
-    /// The per-server proxy's response: a JSON-RPC error with an HTTP status.
-    /// A `tools/call` credential error is a JSON-RPC error naming the
-    /// request; for other methods it is the proxy's HTTP error.
+    /// The per-server proxy's response: a JSON-RPC error with an HTTP status,
+    /// without an `id` for a notification. A `tools/call` credential error is
+    /// a tool result naming the request; for a notification or another
+    /// method it is the proxy's HTTP error.
     pub(super) fn direct_response(
         self,
         state: &AppState,
@@ -215,7 +216,7 @@ impl Refusal {
             Self::RateLimited(rejected) => rate_limits::rejection_response(id, &rejected),
             Self::RateLimitUnavailable(error) => rate_limits::unavailable_response(id, &error),
             Self::GuardrailDenied(evaluation) => guardrail_denied_response(id, &evaluation),
-            Self::Credential(error) if tool_call => {
+            Self::Credential(error) if tool_call && id.is_some() => {
                 tool_call_auth_error_response(state, auth, server, id, error)
             }
             Self::Credential(error) => upstream_auth_error_response(state, auth, server, error),

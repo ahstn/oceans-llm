@@ -13,7 +13,7 @@ use gateway_mcp::server::json_rpc_error_with_id;
 use gateway_service::{RateLimitStatus, RateLimitSubject};
 use serde_json::{Map, Value, json};
 
-use super::json_rpc::{mcp_jsonrpc_error_response, mcp_jsonrpc_error_response_with_data};
+use super::json_rpc::mcp_refusal_response;
 use crate::http::{
     request_policy::{RequestPolicyContext, check_rate_limits},
     state::AppState,
@@ -49,7 +49,7 @@ pub(super) fn rejection_body(id: Value, status: &RateLimitStatus) -> Value {
 }
 
 pub(super) fn rejection_response(id: Option<&Value>, status: &RateLimitStatus) -> Response<Body> {
-    mcp_jsonrpc_error_response_with_data(
+    mcp_refusal_response(
         StatusCode::TOO_MANY_REQUESTS,
         id,
         JSON_RPC_RATE_LIMITED,
@@ -66,7 +66,13 @@ pub(super) fn rejection_response(id: Option<&Value>, status: &RateLimitStatus) -
 pub(super) fn unavailable_response(id: Option<&Value>, error: &GatewayError) -> Response<Body> {
     let status =
         StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
-    mcp_jsonrpc_error_response(status, id, JSON_RPC_INTERNAL_ERROR, &error.to_string())
+    mcp_refusal_response(
+        status,
+        id,
+        JSON_RPC_INTERNAL_ERROR,
+        &error.to_string(),
+        None,
+    )
 }
 
 /// Invocation-log metadata naming the policy that rejected the call.

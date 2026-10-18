@@ -267,11 +267,35 @@ pub(super) fn mcp_notification_error_response(
     code: i64,
     message: &str,
 ) -> Response<Body> {
-    let mut body = json_rpc_error_with_id(Value::Null, code, message, None);
+    mcp_notification_error_response_with_data(status, code, message, None)
+}
+
+fn mcp_notification_error_response_with_data(
+    status: StatusCode,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response<Body> {
+    let mut body = json_rpc_error_with_id(Value::Null, code, message, data);
     if let Some(object) = body.as_object_mut() {
         object.remove("id");
     }
     json_response(status, body)
+}
+
+/// Refuses a parsed request: an error naming its `id`, or for a
+/// notification, which sent none, an error without one.
+pub(super) fn mcp_refusal_response(
+    status: StatusCode,
+    id: Option<&Value>,
+    code: i64,
+    message: &str,
+    data: Option<Value>,
+) -> Response<Body> {
+    match id {
+        Some(_) => mcp_jsonrpc_error_response_with_data(status, id, code, message, data),
+        None => mcp_notification_error_response_with_data(status, code, message, data),
+    }
 }
 
 fn json_response(status: StatusCode, body: Value) -> Response<Body> {

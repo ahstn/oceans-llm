@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::{
     GUARDRAIL_POLICY_DENIED_CODE,
-    json_rpc::{mcp_jsonrpc_error_response, mcp_request_id},
+    json_rpc::{mcp_jsonrpc_error_response, mcp_refusal_response, mcp_request_id},
 };
 use crate::http::{
     guardrail_events::{
@@ -128,11 +128,12 @@ pub(super) fn guardrail_denied_response(
         .find(|decision| decision.action == DecisionAction::Deny)
         .map(|decision| decision.reason_code.as_str())
         .unwrap_or("guardrail.policy_denied");
-    mcp_jsonrpc_error_response(
+    mcp_refusal_response(
         StatusCode::FORBIDDEN,
         id,
         GUARDRAIL_POLICY_DENIED_CODE,
         &format!("MCP operation denied by guardrail policy ({reason_code})"),
+        None,
     )
 }
 
