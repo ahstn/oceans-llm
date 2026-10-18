@@ -206,6 +206,43 @@ const SERVER_SELECT_BY_ID: &str = concat!(
 );
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at, title, annotations_json, output_schema_json, admin_tags_json, annotation_overrides_json, approval_status, approved_schema_version, pending_schema_version";
 
+/// Refuses a discovery result once the server's status has moved on since discovery read it.
+async fn ensure_discovery_status_unchanged(
+    tx: &libsql::Transaction,
+    run: &ExternalMcpDiscoveryRunRecord,
+) -> Result<(), StoreError> {
+    let Some(expected) = run.expected_status_revision else {
+        return Ok(());
+    };
+    let current = read_status_revision(tx, run.mcp_server_id).await?;
+    if current == expected {
+        return Ok(());
+    }
+    Err(StoreError::Conflict(format!(
+        "external MCP server `{}` was disabled or enabled while discovery ran; refresh discovery again",
+        run.mcp_server_id
+    )))
+}
+
+async fn read_status_revision(
+    connection: &libsql::Connection,
+    mcp_server_id: Uuid,
+) -> Result<i64, StoreError> {
+    let mut rows = connection
+        .query(
+            "SELECT status_revision FROM external_mcp_servers WHERE mcp_server_id = ?1",
+            libsql::params![mcp_server_id.to_string()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    match rows.next().await.map_err(to_query_error)? {
+        Some(row) => row.get::<i64>(0).map_err(to_query_error),
+        None => Err(StoreError::NotFound(format!(
+            "external MCP server `{mcp_server_id}` not found"
+        ))),
+    }
+}
+
 #[async_trait]
 impl McpRegistryRepository for LibsqlStore {
     async fn list_external_mcp_servers(
@@ -391,7 +428,8 @@ impl McpRegistryRepository for LibsqlStore {
                 &format!(
                     "UPDATE external_mcp_servers
                      SET status = 'disabled', disabled_at = ?1, updated_at = ?1,
-                         last_discovery_status = 'disabled', last_discovery_at = ?1
+                         last_discovery_status = 'disabled', last_discovery_at = ?1,
+                         status_revision = status_revision + 1
                      WHERE mcp_server_id = ?2
                        AND status <> 'disabled'
                      RETURNING {SERVER_COLUMNS}"
@@ -405,6 +443,43 @@ impl McpRegistryRepository for LibsqlStore {
         }
         drop(rows);
         Ok((load_server(&self.connection, mcp_server_id).await?, false))
+    }
+
+    async fn enable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        enabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only a disabled server changes, so a stale request can't wipe an active server's
+        // discovery result. With no row, the server was already active or is missing.
+        let mut rows = self
+            .connection
+            .query(
+                &format!(
+                    "UPDATE external_mcp_servers
+                     SET status = 'active', disabled_at = NULL, updated_at = ?1,
+                         last_discovery_status = NULL, last_discovery_at = NULL,
+                         last_error_summary = NULL, status_revision = status_revision + 1
+                     WHERE mcp_server_id = ?2
+                       AND status = 'disabled'
+                     RETURNING {SERVER_COLUMNS}"
+                ),
+                libsql::params![enabled_at.unix_timestamp(), mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if let Some(row) = rows.next().await.map_err(to_write_error)? {
+            return Ok((decode_server(&row)?, true));
+        }
+        drop(rows);
+        Ok((load_server(&self.connection, mcp_server_id).await?, false))
+    }
+
+    async fn external_mcp_server_status_revision(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<i64, StoreError> {
+        read_status_revision(&self.connection, mcp_server_id).await
     }
 
     async fn list_external_mcp_tools(
@@ -440,6 +515,8 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        // The transaction holds SQLite's write lock, so the status can't change after this check.
+        ensure_discovery_status_unchanged(&tx, run).await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (
@@ -509,6 +586,8 @@ impl McpRegistryRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let details_json = serialize_json(&run.details)?;
         let tx = self.begin_transaction().await?;
+        // The transaction holds SQLite's write lock, so the status can't change after this check.
+        ensure_discovery_status_unchanged(&tx, run).await?;
         tx.execute(
             r#"
             INSERT INTO external_mcp_discovery_runs (

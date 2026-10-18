@@ -3,7 +3,7 @@ import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@t
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
-import { discoveryLabel, needsAttention } from '@/components/mcp/server-discovery'
+import { discoveryLabel, endpointHost, needsAttention } from '@/components/mcp/server-discovery'
 import {
   DataGrid,
   DataGridContainer,
@@ -451,14 +451,6 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
       )}
     </div>
   )
-}
-
-function endpointHost(server: McpServerView) {
-  try {
-    return new URL(server.server_url).hostname
-  } catch {
-    return server.server_url
-  }
 }
 
 function authLabel(mode: string) {

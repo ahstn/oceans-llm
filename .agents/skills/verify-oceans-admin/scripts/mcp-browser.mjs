@@ -39,7 +39,111 @@ export async function loadStackEnv(file, env = process.env) {
 }
 
 export async function registerServer(ui, candidate) {
-  const { page, baseURL, expect, adminJson, poll, owned, actions, capture, scope } = ui;
+  const { page, expect, adminJson, poll, actions, capture } = ui;
+  const { server, displayName, manage } = await addServer(ui, candidate);
+  await manage.getByRole("button", { name: `Refresh ${displayName}`, exact: true }).click();
+  const discovered = await poll(async () => {
+    const current = (await adminJson(page, "/api/v1/admin/mcp/servers")).items.find((item) => item.id === server.id);
+    return current?.last_discovery_at ? current : null;
+  }, "completed MCP discovery");
+  if (discovered.last_discovery_status !== "success") throw new Error("MCP discovery did not succeed");
+  await manage.getByRole("button", { name: "Tools", exact: true }).filter({ visible: true }).click();
+  const tools = (await adminJson(page, `/api/v1/admin/mcp/servers/${server.id}/tools?include_inactive=true`)).items;
+  const panel = manage.getByTestId("mcp-server-tools");
+  await expect(panel.getByRole("checkbox")).toHaveCount(tools.length);
+  const tool = tools.find((item) => item.upstream_name === candidate.call.name && item.is_active);
+  if (!tool) throw new Error("Reviewed read-only call is missing from discovered tools");
+  await expect(panel.getByRole("checkbox", { name: `Select ${tool.display_name}`, exact: true })).toBeVisible();
+  await capture(page, `03-${candidate.key}-discovery`);
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  const row = page.getByTestId("mcp-server-list").getByRole("row").filter({ has: page.getByRole("button", { name: `Open ${displayName}`, exact: true }) });
+  await expect(row.getByTitle("Tool count from the last successful discovery")).toHaveText(String(tools.filter((item) => item.is_active).length));
+  actions.push({ action: `Register and discover ${candidate.key} through Registry`, result: `${tools.length} tools matched the API and registry count` });
+  return { ...candidate, server: discovered, tool, toolCount: tools.length };
+}
+
+// `.invalid` never resolves (RFC 6761), so this discovery fails without contacting a real host.
+// The overview explains the failure once, with Retry and no toast; a registry refresh, with the
+// overview closed, toasts briefly and links back to it.
+export async function verifyDiscoveryFailure(ui) {
+  const { page, expect, adminJson, poll, actions, capture } = ui;
+  const candidate = { key: "unreachable", label: "Unreachable", server_url: "https://unreachable.invalid/mcp", auth_mode: "none", auth_config: {} };
+  const registered = await addServer(ui, candidate);
+  const { server, displayName, manage } = registered;
+  const explanation = "Couldn't reach unreachable.invalid. Check the endpoint, then Retry.";
+  const discoveryToasts = page.locator("[data-sonner-toast]").filter({ hasText: /discovery|transport/i });
+  await manage.getByRole("button", { name: `Refresh ${displayName}`, exact: true }).click();
+  const failed = await poll(async () => {
+    const current = (await adminJson(page, "/api/v1/admin/mcp/servers")).items.find((item) => item.id === server.id);
+    return current?.last_discovery_at ? current : null;
+  }, "failed MCP discovery");
+  if (failed.last_discovery_status !== "failed" || !failed.last_error_summary?.startsWith("MCP transport failure")) throw new Error("Unreachable discovery did not fail in transport");
+  const alert = manage.getByRole("alert");
+  await expect(alert).toContainText("Discovery failed");
+  await expect(alert).toContainText(explanation);
+  await expect(alert).toContainText(failed.last_error_summary);
+  await expect(alert.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
+  // ServersTab calls toast() in the same tick that renders this alert, and Sonner mounts a toast one
+  // task later, so a task and a frame are enough to see one. Count once: a retrying assertion would
+  // pass after a toast had come and gone, since Sonner dismisses toasts after 4 s.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(() => requestAnimationFrame(() => resolve()), 0)));
+  expect(await discoveryToasts.count(), "discovery toasts beside the overview alert").toBe(0);
+  await capture(page, "03-unreachable-overview");
+  for (const [name, label] of [[`Refresh ${displayName}`, "Refresh tools"], [`Edit ${displayName}`, "Edit configuration"], [`More actions for ${displayName}`, "More actions"], ["Close", "Close"]]) {
+    // Radix opens a tooltip on pointer movement into its trigger, and a diagonal path would cross the
+    // neighbouring header buttons. Approach each one straight up from below the header instead.
+    const box = await manage.getByRole("button", { name, exact: true }).boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height + 80, { steps: 4 });
+    // A trigger opens only once the previous tooltip has closed and released its hover grace area.
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+    await expect(page.locator('[data-slot="tooltip-content"]').filter({ hasText: label })).toBeVisible();
+  }
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  const row = page.getByTestId("mcp-server-list").getByRole("row").filter({ has: page.getByRole("button", { name: `Open ${displayName}`, exact: true }) });
+  await row.getByRole("button", { name: `Refresh ${displayName}`, exact: true }).click();
+  const toast = discoveryToasts.filter({ hasText: `Discovery failed for ${displayName}` });
+  await expect(toast).toHaveCount(1);
+  await toast.hover(); // Sonner pauses dismissal while hovered.
+  await capture(page, "03-unreachable-toast");
+  await toast.getByRole("button", { name: "View", exact: true }).click();
+  await expect(manage.getByRole("alert")).toContainText(explanation);
+  actions.push({ action: "Fail discovery for an unreachable server", result: "Overview explained it once with Retry and no toast; a registry refresh toasted with View" });
+  return registered;
+}
+
+// Disabling lives in the header's More actions menu, not beside Close.
+export async function disableFromMenu(ui, { server, displayName, manage }) {
+  const { page, expect, adminJson, poll, actions, capture } = ui;
+  await expect(manage.getByRole("button", { name: `Disable ${displayName}`, exact: true })).toHaveCount(0);
+  await manage.getByRole("button", { name: `More actions for ${displayName}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Disable server", exact: true }).click();
+  await poll(async () => (await adminJson(page, "/api/v1/admin/mcp/servers?include_disabled=true")).items.find((item) => item.id === server.id && item.status === "disabled"), "disabled MCP server");
+  await expect(manage.getByText("Disabled", { exact: true })).toBeVisible();
+  await expect(manage.getByRole("button", { name: `Refresh ${displayName}`, exact: true })).toBeDisabled();
+  await capture(page, "03-unreachable-disabled");
+  actions.push({ action: "Disable the unreachable server from More actions", result: "API reported it disabled; Refresh is unavailable" });
+}
+
+// The same menu brings a disabled server back. Discovery reads as not run until it is refreshed.
+export async function enableFromMenu(ui, { server, displayName, manage }) {
+  const { page, expect, adminJson, poll, actions, capture } = ui;
+  await manage.getByRole("button", { name: `More actions for ${displayName}`, exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Disable server", exact: true })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Enable server", exact: true }).click();
+  const enabled = await poll(async () => (await adminJson(page, "/api/v1/admin/mcp/servers")).items.find((item) => item.id === server.id && item.status === "active"), "enabled MCP server");
+  if (enabled.disabled_at || enabled.last_discovery_status) throw new Error("Enabled server kept its disabled state");
+  await expect(manage.getByText("Active", { exact: true })).toBeVisible();
+  await expect(manage.getByText("Not discovered", { exact: true })).toBeVisible();
+  await expect(manage.getByRole("button", { name: `Refresh ${displayName}`, exact: true })).toBeEnabled();
+  await capture(page, "03-unreachable-enabled");
+  await manage.getByRole("button", { name: "Close", exact: true }).click();
+  actions.push({ action: "Enable the unreachable server from More actions", result: "API reported it active with discovery not run" });
+}
+
+// Registers through `Add server`, then waits for the `Manage MCP server` dialog that follows.
+async function addServer(ui, candidate) {
+  const { page, baseURL, expect, adminJson, poll, owned, scope } = ui;
   const serverKey = `verify-${scope.key}-${candidate.key}`;
   const displayName = `Verification ${candidate.label} ${scope.label}`;
   if ((await adminJson(page, "/api/v1/admin/mcp/servers?include_disabled=true")).items.some((item) => item.server_key === serverKey)) throw new Error("Verification server key already exists; rerun the driver for a new attempt scope");
@@ -64,25 +168,7 @@ export async function registerServer(ui, candidate) {
   Object.assign(ownedServer, server);
   const manage = page.getByRole("dialog", { name: "Manage MCP server", exact: true });
   await manage.waitFor();
-  await manage.getByRole("button", { name: `Refresh ${displayName}`, exact: true }).click();
-  const discovered = await poll(async () => {
-    const current = (await adminJson(page, "/api/v1/admin/mcp/servers")).items.find((item) => item.id === server.id);
-    return current?.last_discovery_at ? current : null;
-  }, "completed MCP discovery");
-  if (discovered.last_discovery_status !== "success") throw new Error("MCP discovery did not succeed");
-  await manage.getByRole("button", { name: "Tools", exact: true }).filter({ visible: true }).click();
-  const tools = (await adminJson(page, `/api/v1/admin/mcp/servers/${server.id}/tools?include_inactive=true`)).items;
-  const panel = manage.getByTestId("mcp-server-tools");
-  await expect(panel.getByRole("checkbox")).toHaveCount(tools.length);
-  const tool = tools.find((item) => item.upstream_name === candidate.call.name && item.is_active);
-  if (!tool) throw new Error("Reviewed read-only call is missing from discovered tools");
-  await expect(panel.getByRole("checkbox", { name: `Select ${tool.display_name}`, exact: true })).toBeVisible();
-  await capture(page, `03-${candidate.key}-discovery`);
-  await manage.getByRole("button", { name: "Close", exact: true }).click();
-  const row = page.getByTestId("mcp-server-list").getByRole("row").filter({ has: page.getByRole("button", { name: `Open ${displayName}`, exact: true }) });
-  await expect(row.getByTitle("Tool count from the last successful discovery")).toHaveText(String(tools.filter((item) => item.is_active).length));
-  actions.push({ action: `Register and discover ${candidate.key} through Registry`, result: `${tools.length} tools matched the API and registry count` });
-  return { ...candidate, server: discovered, tool, toolCount: tools.length };
+  return { server, displayName, manage };
 }
 
 export async function verifyWorkbench(ui, candidates) {

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { registerServer, verifyWorkbench, createAccess, attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
+import { registerServer, verifyDiscoveryFailure, disableFromMenu, enableFromMenu, verifyWorkbench, createAccess, attemptScope, loadStackEnv, mcpEndpointFor } from "./mcp-browser.mjs";
 import { runMcpCanaries, verifyNoMcpGrant, testRevokedKey } from "./mcp-canary.mjs";
 import { createProofRecorder } from "./proof.mjs";
 
@@ -55,6 +55,14 @@ try {
   await page.getByRole("region", { name: "MCP server registry" }).waitFor();
   await capture(page, "02-mcp-registry-entry");
   actions.push({ action: "Open protected MCP registry and sign in", result: "Browser session authenticated" });
+
+  // The unreachable server contacts no upstream, so these run whatever credentials are set.
+  const unreachable = await recordStep("discovery-failure-feedback", () => verifyDiscoveryFailure(ui));
+  const disabled = unreachable && await recordStep("disable-from-menu", () => disableFromMenu(ui, unreachable));
+  if (!unreachable) recorder.add({ id: "disable-from-menu", status: "fail", note: "Not run: no unreachable server to disable" });
+  if (disabled) await recordStep("enable-from-menu", () => enableFromMenu(ui, unreachable));
+  else recorder.add({ id: "enable-from-menu", status: "fail", note: "Not run: the unreachable server was not disabled" });
+  proof.discoveryFailure = unreachable ? { serverId: unreachable.server.id, serverUrl: "https://unreachable.invalid/mcp" } : null;
 
   const ready = [];
   for (const candidate of config.candidates) {
@@ -146,6 +154,20 @@ async function cleanup() {
     if (saved?.status !== "disabled") throw new Error("Server remains active");
   });
   return { passed: results.every((result) => result.passed), recordsRetainedDisabled: true, actions: results };
+}
+
+// Records one UI step as a required check without aborting the rest of the run.
+async function recordStep(id, step) {
+  try {
+    const result = await step();
+    recorder.pass(id);
+    return result ?? true;
+  } catch (error) {
+    const reason = error.name === "TimeoutError" ? "UI or discovery timed out" : "UI contract failed";
+    failures.push({ phase: id, required: true, reason, location: safeLocation(error) });
+    recorder.add({ id, status: "fail", note: `${reason} at ${safeLocation(error).join(", ")}` });
+    return null;
+  }
 }
 
 async function adminJson(currentPage, requestPath, options) {

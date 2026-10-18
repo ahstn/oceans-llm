@@ -17,6 +17,7 @@ The platform-admin API surface is:
 - `POST /api/v1/admin/mcp/servers`
 - `PATCH /api/v1/admin/mcp/servers/{server_id}`
 - `POST /api/v1/admin/mcp/servers/{server_id}/disable`
+- `POST /api/v1/admin/mcp/servers/{server_id}/enable`
 - `GET /api/v1/admin/mcp/servers/{server_id}/tools`
 - `POST /api/v1/admin/mcp/servers/{server_id}/discovery-refresh`
 - `POST /api/v1/admin/mcp/oauth-discovery`: read a server URL's OAuth metadata (RFC 9728, RFC 8414, OpenID Connect discovery) and return a suggested `oauth_obo` auth config; stores nothing
@@ -46,7 +47,7 @@ The admin UI route is:
 The MCP workspace has three top-level tabs:
 
 - **Servers**: registered server rows, recommended catalog, server detail dialog,
-  discovery refresh, edit/disable actions, and credential bindings
+  discovery refresh, edit/disable/enable actions, and credential bindings
 - **Toolsets**: named bundles of discovered tools used for reusable access grants
 - **Access**: tool or toolset grants plus effective-access preview
 
@@ -59,7 +60,8 @@ The Servers tab shows:
   tool id, upstream name, schema version, and persisted JSON schema
 - recommended catalog import
 - custom server creation
-- edit, disable, and discovery refresh actions
+- edit, disable, enable, and discovery refresh actions; disable and enable sit in the
+  dialog header's **More actions** menu
 - redacted upstream credential bindings for user, team, and service-account execution
 
 Keep this page separate from `/admin/observability/mcp-invocations`. The registry page describes configured upstream servers and discovery status; the invocation page describes request-linked tool calls.

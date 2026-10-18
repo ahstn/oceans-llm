@@ -1900,6 +1900,12 @@ pub struct UpsertExternalMcpToolRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalMcpDiscoveryRunRecord {
+    /// The server's status revision, read before discovery loaded the server. When set,
+    /// recording the run fails with a conflict once the revision has moved, so a result that
+    /// started before a disable or enable (on any gateway replica, even a disable then enable)
+    /// can't overwrite it. Not stored.
+    #[serde(default)]
+    pub expected_status_revision: Option<i64>,
     pub discovery_run_id: Uuid,
     pub mcp_server_id: Uuid,
     pub status: ExternalMcpDiscoveryStatus,

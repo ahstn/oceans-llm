@@ -205,7 +205,7 @@ Two pairs sit close together, and both are accepted:
 
 ### Hierarchy
 
-Each level is a Tailwind `@utility` in `globals.css`, so a role is one class: `type-display`, `type-headline`, `type-title`, `type-body`, `type-label`, `type-caption`. Page titles stay on `PageHeader`'s `text-2xl font-semibold`.
+Each level is a Tailwind `@utility` in `globals.css`, so a role is one class: `type-display`, `type-headline`, `type-title`, `type-body`, `type-label`, `type-caption`. Page titles stay on `PageHeader`'s `text-2xl font-semibold tracking-tight`.
 
 - **Display** (`type-display`, 500, `clamp(2.25rem, 2vw + 1.5rem, 3rem)`, `1.1`): reserved for auth and error surfaces, never routine card grids.
 - **Headline** (`type-headline`, 500, `1rem`, `1.375` line-height): card titles and page-local section headings.
@@ -213,6 +213,8 @@ Each level is a Tailwind `@utility` in `globals.css`, so a role is one class: `t
 - **Body** (`type-body`, 400, `clamp(15px, 0.28vw + 14px, 16px)`, `1.5` line-height): primary reading text and form descriptions.
 - **Label** (`type-label`, 500, `0.875rem`): button text, field labels and nav items.
 - **Caption** (`type-caption`, 500, `0.75rem`): badges, metadata and chart axes.
+
+Letter spacing is 0 by default. Uppercase labels are tracked, and new ones take `tracking-label` (0.08em). The error page's eyebrow takes `tracking-eyebrow` (0.18em).
 
 ### Named Rules
 

@@ -585,6 +585,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivates a disabled server. Its tools and grants apply again as they were before it was
+         *     disabled, and its discovery status resets to not run until discovery is refreshed.
+         */
+        post: operations["enable_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/servers/{server_id}/tools": {
         parameters: {
             query?: never;
@@ -3743,6 +3763,18 @@ export interface components {
         };
         Envelope_McpDiscoveryRefreshPayload: {
             data: {
+                /**
+                 * Format: int32
+                 * @description The upstream HTTP status when `error_kind` is `http`.
+                 */
+                error_http_status?: number | null;
+                /**
+                 * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
+                 *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
+                 *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
+                 */
+                error_kind?: string | null;
+                /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
                 error_summary?: string | null;
                 server: components["schemas"]["McpServerView"];
                 status: string;
@@ -4329,6 +4361,18 @@ export interface components {
             items: components["schemas"]["McpCredentialBindingView"][];
         };
         McpDiscoveryRefreshPayload: {
+            /**
+             * Format: int32
+             * @description The upstream HTTP status when `error_kind` is `http`.
+             */
+            error_http_status?: number | null;
+            /**
+             * @description Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,
+             *     `invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,
+             *     `response_too_large` or `invalid_tool_schema`. Absent for other statuses.
+             */
+            error_kind?: string | null;
+            /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
             error_summary?: string | null;
             server: components["schemas"]["McpServerView"];
             status: string;
@@ -6712,6 +6756,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpDiscoveryRefreshPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server was disabled or enabled while discovery ran */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    enable_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
                 };
             };
             400: {

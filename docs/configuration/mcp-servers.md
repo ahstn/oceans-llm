@@ -48,10 +48,16 @@ The page supports:
 - discovering a server's OAuth settings from its URL (**Discover OAuth**), then
   reviewing and overriding them before saving
 - editing display name, URL, auth mode, auth config, and timeout
-- disabling a server
+- disabling a server, and enabling it again, from **More actions** in the server
+  detail dialog
 - refreshing discovery
 - opening a server detail dialog to inspect overview, configuration, discovered
   tools, and credential bindings
+
+Disabling takes effect immediately: callers lose the server's tools, and there is
+no confirmation step. Enabling restores the tools, toolset memberships, and grants
+the server had before. Its discovery status reads **Not discovered** until you
+refresh discovery, so refresh it to pick up upstream changes made while it was off.
 
 The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md).
 

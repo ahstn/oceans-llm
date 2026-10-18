@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 use url::Url;
 use uuid::Uuid;
 
@@ -80,7 +80,17 @@ pub struct McpDiscoveryResult {
     pub server: ExternalMcpServerRecord,
     pub status: ExternalMcpDiscoveryStatus,
     pub error_summary: Option<String>,
+    /// Why a `failed` discovery failed, as a stable value clients can branch on; the summary
+    /// is diagnostic text whose wording may change.
+    pub error: Option<DiscoveryFailureKind>,
     pub tools: Vec<ExternalMcpToolRecord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscoveryFailureKind {
+    /// `invalid_auth_config`, or a client error class from `classify_client_error`.
+    pub kind: &'static str,
+    pub http_status: Option<u16>,
 }
 
 #[async_trait]
@@ -241,8 +251,23 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        // Status changes wait for an in-flight discovery in this process. Across replicas, the
+        // store refuses a discovery result recorded against a status that has since changed.
+        let _discovery = lock_discovery(mcp_server_id).await;
         self.repo
             .disable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Enables a disabled server; the flag is `false` when it was already active.
+    pub async fn enable_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<(ExternalMcpServerRecord, bool), GatewayError> {
+        let _discovery = lock_discovery(mcp_server_id).await;
+        self.repo
+            .enable_external_mcp_server(mcp_server_id, OffsetDateTime::now_utc())
             .await
             .map_err(Into::into)
     }
@@ -274,17 +299,26 @@ where
         mcp_server_id: Uuid,
         progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
-        let discovery_lock = discovery_lock_for(mcp_server_id);
-        let _guard = discovery_lock.lock().await;
+        let _discovery = lock_discovery(mcp_server_id).await;
+        // Read before the server: a disable or enable after this point moves the revision, and
+        // recording the result then fails instead of overwriting the newer state.
+        let status_revision = self
+            .repo
+            .external_mcp_server_status_revision(mcp_server_id)
+            .await?;
         let server = self.server_or_not_found(mcp_server_id).await?;
         if server.status == ExternalMcpServerStatus::Disabled {
             return self
                 .record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::Disabled,
-                    OffsetDateTime::now_utc(),
-                    Some("external MCP server is disabled".to_string()),
-                    json!({"reason": "disabled"}),
+                    DiscoveryFailure {
+                        status_revision,
+                        status: ExternalMcpDiscoveryStatus::Disabled,
+                        started_at: OffsetDateTime::now_utc(),
+                        summary: "external MCP server is disabled".to_string(),
+                        kind: None,
+                        details: json!({"reason": "disabled"}),
+                    },
                     progress,
                 )
                 .await;
@@ -294,12 +328,15 @@ where
             return self
                 .record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::AuthRequired,
-                    OffsetDateTime::now_utc(),
-                    Some(
-                        "server auth mode requires per-user credentials for discovery".to_string(),
-                    ),
-                    json!({"auth_mode": auth_mode}),
+                    DiscoveryFailure {
+                        status_revision,
+                        status: ExternalMcpDiscoveryStatus::AuthRequired,
+                        started_at: OffsetDateTime::now_utc(),
+                        summary: "server auth mode requires per-user credentials for discovery"
+                            .to_string(),
+                        kind: None,
+                        details: json!({"auth_mode": auth_mode}),
+                    },
                     progress,
                 )
                 .await;
@@ -316,10 +353,17 @@ where
                 return self
                     .record_discovery_failure(
                         server,
-                        ExternalMcpDiscoveryStatus::Failed,
-                        started_at,
-                        Some(bounded_error_summary(error.to_string())),
-                        json!({"reason": "invalid_discovery_auth_config"}),
+                        DiscoveryFailure {
+                            status_revision,
+                            status: ExternalMcpDiscoveryStatus::Failed,
+                            started_at,
+                            summary: bounded_error_summary(error.to_string()),
+                            kind: Some(DiscoveryFailureKind {
+                                kind: "invalid_auth_config",
+                                http_status: None,
+                            }),
+                            details: json!({"reason": "invalid_discovery_auth_config"}),
+                        },
                         progress,
                     )
                     .await;
@@ -355,6 +399,7 @@ where
                     .collect::<Vec<_>>();
                 let schema_set_hash = schema_set_hash(&upserts);
                 let run = ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: Some(status_revision),
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -379,6 +424,7 @@ where
                     server: refreshed_server,
                     status: ExternalMcpDiscoveryStatus::Success,
                     error_summary: None,
+                    error: None,
                     tools: stored_tools,
                 })
             }
@@ -386,10 +432,20 @@ where
                 let summary = bounded_error_summary(discovery_error_summary(&error));
                 self.record_discovery_failure(
                     server,
-                    ExternalMcpDiscoveryStatus::Failed,
-                    started_at,
-                    Some(summary),
-                    json!({"client_error": classify_client_error(&error)}),
+                    DiscoveryFailure {
+                        status_revision,
+                        status: ExternalMcpDiscoveryStatus::Failed,
+                        started_at,
+                        summary,
+                        kind: Some(DiscoveryFailureKind {
+                            kind: classify_client_error(&error),
+                            http_status: match &error {
+                                McpClientError::Http { status, .. } => Some(*status),
+                                _ => None,
+                            },
+                        }),
+                        details: json!({"client_error": classify_client_error(&error)}),
+                    },
                     progress,
                 )
                 .await
@@ -477,14 +533,20 @@ where
     async fn record_discovery_failure(
         &self,
         server: ExternalMcpServerRecord,
-        status: ExternalMcpDiscoveryStatus,
-        started_at: OffsetDateTime,
-        error_summary: Option<String>,
-        details: Value,
+        failure: DiscoveryFailure,
         progress: &AuditProgress,
     ) -> Result<McpDiscoveryResult, GatewayError> {
+        let DiscoveryFailure {
+            status_revision,
+            status,
+            started_at,
+            summary,
+            kind,
+            details,
+        } = failure;
         let now = OffsetDateTime::now_utc();
         let run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: Some(status_revision),
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status,
@@ -493,7 +555,7 @@ where
             discovered_tool_count: 0,
             active_tool_count: server.last_tool_count.unwrap_or(0),
             schema_set_hash: None,
-            error_summary,
+            error_summary: Some(summary),
             details: value_object(details)?,
         };
         self.repo
@@ -509,9 +571,20 @@ where
             server: refreshed_server,
             status,
             error_summary: run.error_summary,
+            error: kind,
             tools,
         })
     }
+}
+
+/// A discovery that ended without a tool list, as the run history records it.
+struct DiscoveryFailure {
+    status_revision: i64,
+    status: ExternalMcpDiscoveryStatus,
+    started_at: OffsetDateTime,
+    summary: String,
+    kind: Option<DiscoveryFailureKind>,
+    details: Value,
 }
 
 struct ResolvedCreateInput {
@@ -531,15 +604,47 @@ fn load_recommended_catalog() -> Result<Vec<RecommendedMcpServerCatalogEntry>, G
     })
 }
 
-fn discovery_lock_for(mcp_server_id: Uuid) -> Arc<AsyncMutex<()>> {
-    let locks = DISCOVERY_LOCKS.get_or_init(|| StdMutex::new(HashMap::new()));
-    let mut locks = locks
+/// Holds one server's discovery lock. Dropping it releases the lock and removes the server's
+/// entry once no other task holds or waits for it, so the registry only tracks servers in use.
+struct DiscoveryLockGuard {
+    mcp_server_id: Uuid,
+    guard: Option<OwnedMutexGuard<()>>,
+}
+
+impl Drop for DiscoveryLockGuard {
+    fn drop(&mut self) {
+        // Release first, so the count below no longer includes this guard's handle.
+        self.guard.take();
+        let mut locks = discovery_locks()
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        // Handles are only cloned under this registry lock, so a count of one means the
+        // registry's own handle is the last: no task holds or waits for the server's lock.
+        if locks
+            .get(&self.mcp_server_id)
+            .is_some_and(|lock| Arc::strong_count(lock) == 1)
+        {
+            locks.remove(&self.mcp_server_id);
+        }
+    }
+}
+
+fn discovery_locks() -> &'static StdMutex<HashMap<Uuid, Arc<AsyncMutex<()>>>> {
+    DISCOVERY_LOCKS.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+/// Serializes discovery and status changes for one server within this process.
+async fn lock_discovery(mcp_server_id: Uuid) -> DiscoveryLockGuard {
+    let lock = discovery_locks()
         .lock()
-        .expect("MCP discovery lock registry mutex poisoned");
-    locks
+        .unwrap_or_else(|poison| poison.into_inner())
         .entry(mcp_server_id)
         .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-        .clone()
+        .clone();
+    DiscoveryLockGuard {
+        mcp_server_id,
+        guard: Some(lock.lock_owned().await),
+    }
 }
 
 fn validate_display_name(value: String) -> Result<String, GatewayError> {
@@ -760,6 +865,83 @@ mod tests {
         assert!(resolved.auth_config.is_empty());
     }
 
+    #[tokio::test]
+    async fn enabling_waits_for_an_in_flight_discovery() {
+        let service = McpRegistryService::with_client(
+            Arc::new(NoopMcpRegistryRepository),
+            Arc::new(NoopMcpDiscoveryClient),
+        );
+        let server_id = Uuid::new_v4();
+        // Stand in for a refresh that has read the server but not yet written its result.
+        let discovery = lock_discovery(server_id).await;
+
+        let enable = tokio::spawn(async move { service.enable_server(server_id).await });
+        tokio::task::yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            !enable.is_finished(),
+            "enable ran while discovery held the server"
+        );
+
+        drop(discovery);
+        let result = enable.await.expect("enable task");
+        assert!(result.is_err(), "the noop store reports the server missing");
+        assert_eq!(
+            discovery_lock_holders(server_id),
+            None,
+            "the registry kept the lock of a server no task uses"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_released_discovery_lock_leaves_no_registry_entry() {
+        let server_id = Uuid::new_v4();
+        let discovery = lock_discovery(server_id).await;
+        assert_eq!(discovery_lock_holders(server_id), Some(1));
+
+        drop(discovery);
+        assert_eq!(discovery_lock_holders(server_id), None);
+    }
+
+    #[tokio::test]
+    async fn a_queued_discovery_lock_keeps_excluding_later_tasks() {
+        let server_id = Uuid::new_v4();
+        let first = lock_discovery(server_id).await;
+        let second = tokio::spawn(lock_discovery(server_id));
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while discovery_lock_holders(server_id) != Some(2) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the second task queued for the lock");
+
+        // The queued task still references the lock, so releasing the first keeps the entry.
+        drop(first);
+        let second = second.await.expect("second lock task");
+        assert_eq!(discovery_lock_holders(server_id), Some(1));
+
+        let third = tokio::spawn(lock_discovery(server_id));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            !third.is_finished(),
+            "a later task took the lock while the queued task held it"
+        );
+
+        drop(second);
+        drop(third.await.expect("third lock task"));
+        assert_eq!(discovery_lock_holders(server_id), None);
+    }
+
+    /// Tasks holding or waiting for the server's lock, or `None` when the registry has no entry.
+    fn discovery_lock_holders(mcp_server_id: Uuid) -> Option<usize> {
+        discovery_locks()
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .get(&mcp_server_id)
+            .map(|lock| Arc::strong_count(lock) - 1)
+    }
+
     struct NoopMcpDiscoveryClient;
 
     #[async_trait]
@@ -866,6 +1048,21 @@ mod tests {
             _mcp_server_id: Uuid,
             _disabled_at: OffsetDateTime,
         ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+            unimplemented!()
+        }
+
+        async fn enable_external_mcp_server(
+            &self,
+            mcp_server_id: Uuid,
+            _enabled_at: OffsetDateTime,
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+            Err(StoreError::NotFound(mcp_server_id.to_string()))
+        }
+
+        async fn external_mcp_server_status_revision(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<i64, StoreError> {
             unimplemented!()
         }
 

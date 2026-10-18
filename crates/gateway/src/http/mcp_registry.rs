@@ -262,6 +262,46 @@ pub async fn disable_mcp_server(
     Ok(Json(envelope(McpServerPayload { server })))
 }
 
+/// Reactivates a disabled server. Its tools and grants apply again as they were before it was
+/// disabled, and its discovery status resets to not run until discovery is refreshed.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/mcp/servers/{server_id}/enable",
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn enable_mcp_server(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    meta: AuditRequestMeta,
+    Path(server_id): Path<String>,
+) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
+    let actor = require_platform_admin(&state, &headers).await?;
+    let server_id = parse_uuid(&server_id, "server_id")?;
+    let service = McpRegistryService::new(state.store.clone());
+    let (server, enabled) = service.enable_server(server_id).await?;
+    let server = map_server(server);
+    // Enabling an active server is not a transition. As with disable, the store decides this
+    // in its update, so concurrent requests record one entry.
+    if enabled {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                server_event(actions::MCP_SERVER_ENABLED, &server)
+                    .before(serde_json::json!({ "status": "disabled" }))
+                    .after(serde_json::json!({ "status": "active" })),
+            )
+            .await;
+    }
+    Ok(Json(envelope(McpServerPayload { server })))
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/admin/mcp/servers/{server_id}/tools",
@@ -356,7 +396,8 @@ pub async fn discover_mcp_server_oauth(
     responses(
         (status = 200, body = Envelope<McpDiscoveryRefreshPayload>),
         (status = 400, body = OpenAiErrorEnvelopeView),
-        (status = 404, body = OpenAiErrorEnvelopeView)
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, description = "The server was disabled or enabled while discovery ran", body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]

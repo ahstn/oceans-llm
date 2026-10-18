@@ -1494,6 +1494,7 @@ pub(crate) mod tests {
         assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
 
         let first_run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,
@@ -1546,6 +1547,7 @@ pub(crate) mod tests {
         let issue_tool_id = issue_tool.mcp_tool_id;
 
         let second_run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,
@@ -1623,6 +1625,7 @@ pub(crate) mod tests {
 
         store
             .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Failed,
@@ -1647,6 +1650,10 @@ pub(crate) mod tests {
         );
         assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
 
+        let revision_before_disable = store
+            .external_mcp_server_status_revision(server.mcp_server_id)
+            .await
+            .expect("status revision");
         let (disabled, changed) = store
             .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(9))
             .await
@@ -1670,6 +1677,148 @@ pub(crate) mod tests {
                 .expect("list active")
                 .is_empty()
         );
+
+        // A discovery that started before the disable (on any replica) can't overwrite it:
+        // neither result is recorded. A repeated disable is no transition and doesn't count.
+        assert_eq!(
+            store
+                .external_mcp_server_status_revision(server.mcp_server_id)
+                .await
+                .expect("status revision after disable"),
+            revision_before_disable + 1
+        );
+        let stale_run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: Some(revision_before_disable),
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Failed,
+            started_at: now + Duration::seconds(8),
+            finished_at: now + Duration::seconds(9),
+            discovered_tool_count: 0,
+            active_tool_count: 0,
+            schema_set_hash: None,
+            error_summary: Some("stale".to_string()),
+            details: Map::new(),
+        };
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_failure(&stale_run)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_success(
+                    &ExternalMcpDiscoveryRunRecord {
+                        discovery_run_id: Uuid::new_v4(),
+                        status: ExternalMcpDiscoveryStatus::Success,
+                        error_summary: None,
+                        ..stale_run.clone()
+                    },
+                    &[],
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let still_disabled = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("load disabled server")
+            .expect("server");
+        assert_eq!(
+            still_disabled.last_discovery_status,
+            Some(ExternalMcpDiscoveryStatus::Disabled)
+        );
+
+        let (enabled, transitioned) = store
+            .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(10))
+            .await
+            .expect("enable server");
+        assert!(transitioned);
+        assert_eq!(enabled.status, ExternalMcpServerStatus::Active);
+        assert_eq!(enabled.disabled_at, None);
+        assert_eq!(enabled.last_discovery_status, None);
+        assert_eq!(enabled.last_discovery_at, None);
+        assert_eq!(enabled.last_error_summary, None);
+        assert_eq!(
+            store
+                .list_external_mcp_servers(false)
+                .await
+                .expect("list active after enable")
+                .len(),
+            1
+        );
+
+        // Enabling an active server, as a stale admin page might, keeps its discovery result.
+        store
+            .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
+                discovery_run_id: Uuid::new_v4(),
+                mcp_server_id: server.mcp_server_id,
+                status: ExternalMcpDiscoveryStatus::Failed,
+                started_at: now + Duration::seconds(11),
+                finished_at: now + Duration::seconds(12),
+                discovered_tool_count: 0,
+                active_tool_count: 0,
+                schema_set_hash: None,
+                error_summary: Some("unreachable".to_string()),
+                details: Map::new(),
+            })
+            .await
+            .expect("record discovery after enable");
+        let (unchanged, transitioned) = store
+            .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(13))
+            .await
+            .expect("enable active server");
+        assert!(!transitioned);
+        assert_eq!(
+            unchanged.last_discovery_status,
+            Some(ExternalMcpDiscoveryStatus::Failed)
+        );
+        assert_eq!(unchanged.last_error_summary.as_deref(), Some("unreachable"));
+        // A disable then enable puts the status back to active, but a discovery that read the
+        // revision before them still can't record over the enable's reset.
+        let revision_before_cycle = store
+            .external_mcp_server_status_revision(server.mcp_server_id)
+            .await
+            .expect("status revision before cycle");
+        store
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(14))
+            .await
+            .expect("disable in cycle");
+        store
+            .enable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(15))
+            .await
+            .expect("enable in cycle");
+        let cycled_run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: Some(revision_before_cycle),
+            discovery_run_id: Uuid::new_v4(),
+            started_at: now + Duration::seconds(14),
+            finished_at: now + Duration::seconds(16),
+            ..stale_run.clone()
+        };
+        assert!(matches!(
+            store
+                .record_external_mcp_discovery_failure(&cycled_run)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        let current_revision = store
+            .external_mcp_server_status_revision(server.mcp_server_id)
+            .await
+            .expect("current status revision");
+        store
+            .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: Some(current_revision),
+                discovery_run_id: Uuid::new_v4(),
+                ..cycled_run
+            })
+            .await
+            .expect("a discovery that read the current revision records");
+        assert!(matches!(
+            store.enable_external_mcp_server(Uuid::new_v4(), now).await,
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     /// Discovers one tool with the given hash and annotations and returns the
@@ -1720,6 +1869,7 @@ pub(crate) mod tests {
         S: McpRegistryRepository + Sync,
     {
         let run = ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: None,
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id,
             status: ExternalMcpDiscoveryStatus::Success,

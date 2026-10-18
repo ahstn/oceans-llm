@@ -2082,6 +2082,73 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The server was disabled or enabled while discovery ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Reactivates a disabled server. Its tools and grants apply again as they were before it was\ndisabled, and its discovery status resets to not run until discovery is refreshed.",
+        "operationId": "enable_mcp_server",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -14332,11 +14399,28 @@
               "tools"
             ],
             "properties": {
+              "error_http_status": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "The upstream HTTP status when `error_kind` is `http`.",
+                "minimum": 0
+              },
+              "error_kind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+              },
               "error_summary": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
               },
               "server": {
                 "$ref": "#/components/schemas/McpServerView"
@@ -16740,11 +16824,28 @@
           "tools"
         ],
         "properties": {
+          "error_http_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The upstream HTTP status when `error_kind` is `http`.",
+            "minimum": 0
+          },
+          "error_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a `failed` discovery failed: `transport`, `timeout`, `http`, `json_rpc`,\n`invalid_response`, `invalid_url`, `invalid_header`, `invalid_auth_config`,\n`response_too_large` or `invalid_tool_schema`. Absent for other statuses."
+          },
           "error_summary": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
           },
           "server": {
             "$ref": "#/components/schemas/McpServerView"
