@@ -247,7 +247,12 @@ pub(super) fn mcp_jsonrpc_error_response_with_data(
 ) -> Response<Body> {
     json_response(
         status,
-        json_rpc_error_with_id(id.cloned().unwrap_or(Value::Null), code, message, data),
+        json_rpc_error_with_id(
+            Some(id.cloned().unwrap_or(Value::Null)),
+            code,
+            message,
+            data,
+        ),
     )
 }
 
@@ -276,11 +281,7 @@ fn mcp_notification_error_response_with_data(
     message: &str,
     data: Option<Value>,
 ) -> Response<Body> {
-    let mut body = json_rpc_error_with_id(Value::Null, code, message, data);
-    if let Some(object) = body.as_object_mut() {
-        object.remove("id");
-    }
-    json_response(status, body)
+    json_response(status, json_rpc_error_with_id(None, code, message, data))
 }
 
 /// Refuses a parsed request: an error naming its `id`, or for a

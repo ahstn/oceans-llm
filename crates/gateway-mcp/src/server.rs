@@ -225,27 +225,31 @@ pub fn json_rpc_success<T: Serialize>(
 }
 
 pub fn json_rpc_error(id: Option<JsonRpcId>, code: i64, message: impl Into<String>) -> Value {
-    json_rpc_error_with_id(json!(id), code, message, None)
+    json_rpc_error_with_id(Some(json!(id)), code, message, None)
 }
 
 /// A JSON-RPC error response that echoes `id` exactly as the request sent
 /// it, which a proxy that forwards raw requests needs. `Value::Null` is the
-/// id of a request whose id could not be read.
+/// id of a request whose id could not be read; `None` omits the member, for
+/// an error answering a notification.
 pub fn json_rpc_error_with_id(
-    id: Value,
+    id: Option<Value>,
     code: i64,
     message: impl Into<String>,
     data: Option<Value>,
 ) -> Value {
-    json!({
+    let mut response = json!({
         "jsonrpc": "2.0",
-        "id": id,
         "error": JsonRpcErrorObject {
             code,
             message: message.into(),
             data,
         }
-    })
+    });
+    if let Some(id) = id {
+        response["id"] = id;
+    }
+    response
 }
 
 #[cfg(test)]

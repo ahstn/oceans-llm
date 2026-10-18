@@ -37,30 +37,33 @@ pub(super) async fn check_mcp_call(
     check_rate_limits(state, policy, &subject).await
 }
 
-/// The JSON-RPC error body. `data` repeats the retry delay for clients that
-/// do not read HTTP headers.
+/// The rejection's JSON-RPC error `data`, the same on both routes. It
+/// repeats the retry delay for clients that do not read HTTP headers.
+fn rejection_data(status: &RateLimitStatus) -> Value {
+    json!({
+        "error_code": RATE_LIMITED_ERROR_CODE,
+        "retry_after_seconds": status.retry_after_seconds,
+    })
+}
+
+/// The aggregate route's JSON-RPC error body.
 pub(super) fn rejection_body(id: Value, status: &RateLimitStatus) -> Value {
     json_rpc_error_with_id(
-        id,
+        Some(id),
         JSON_RPC_RATE_LIMITED,
         status.rejection_message(),
-        Some(json!({
-            "error_code": RATE_LIMITED_ERROR_CODE,
-            "retry_after_seconds": status.retry_after_seconds,
-        })),
+        Some(rejection_data(status)),
     )
 }
 
+/// The per-server proxy's response, with HTTP 429.
 pub(super) fn rejection_response(id: Option<&Value>, status: &RateLimitStatus) -> Response<Body> {
     mcp_refusal_response(
         StatusCode::TOO_MANY_REQUESTS,
         id,
         JSON_RPC_RATE_LIMITED,
         &status.rejection_message(),
-        Some(json!({
-            "error_code": RATE_LIMITED_ERROR_CODE,
-            "retry_after_seconds": status.retry_after_seconds,
-        })),
+        Some(rejection_data(status)),
     )
 }
 
