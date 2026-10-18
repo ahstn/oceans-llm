@@ -358,3 +358,45 @@ fn records_the_listed_path_while_reading_the_validated_target() {
         source.path.display()
     );
 }
+
+#[test]
+fn rendered_config_loads_back_to_the_same_models_and_providers() {
+    // `render_config` merges raw YAML while `load` merges typed values. Loading the rendered
+    // output must give the same result, so the two merges cannot drift apart.
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/examples/config-dir");
+    let sources = ConfigSources {
+        path: example.join("gateway.yaml"),
+        path_is_explicit: true,
+        dir: Some(example.join("conf.d")),
+    };
+    let loaded = GatewayConfig::load(&sources).expect("example config should load");
+    let rendered = render_config(&sources, false).expect("render");
+
+    let tmp = tempdir().expect("tempdir");
+    let rendered_path = tmp.path().join("rendered.yaml");
+    write_config(&rendered_path, &rendered);
+    let reloaded =
+        GatewayConfig::load(&ConfigSources::file(&rendered_path)).expect("rendered config");
+
+    let model_seeds = |config: &GatewayConfig| {
+        let mut seeds = config
+            .seed_models()
+            .expect("seed models")
+            .into_iter()
+            .map(|seed| format!("{seed:?}"))
+            .collect::<Vec<_>>();
+        seeds.sort();
+        seeds
+    };
+    let providers = |config: &GatewayConfig| {
+        let mut providers = config
+            .providers
+            .iter()
+            .map(|provider| (provider.id().to_string(), provider.provider_type()))
+            .collect::<Vec<_>>();
+        providers.sort();
+        providers
+    };
+    assert_eq!(model_seeds(&reloaded.config), model_seeds(&loaded.config));
+    assert_eq!(providers(&reloaded.config), providers(&loaded.config));
+}

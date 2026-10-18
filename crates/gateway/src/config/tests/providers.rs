@@ -956,3 +956,58 @@ fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
         );
     }
 }
+
+#[test]
+fn every_provider_type_has_a_core_capability_baseline() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    write_config(
+        &path,
+        r#"
+providers:
+  openai:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  cloud-run:
+    type: gcp_cloud_run_openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: google-vertex
+    auth: { mode: adc }
+  zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  vertex:
+    type: gcp_vertex
+    project_id: project
+    auth: { mode: adc }
+  bedrock:
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+  copilot:
+    type: github_copilot
+    auth: { mode: github_user }
+  typesafe:
+    type: typesafe
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&path).expect("config should parse");
+    let provider_types = config
+        .providers
+        .iter()
+        .map(|provider| provider.provider_type())
+        .collect::<std::collections::BTreeSet<_>>();
+    // One entry per ProviderConfig variant; extend the YAML when a provider type is added.
+    assert_eq!(provider_types.len(), 7);
+    for provider_type in provider_types {
+        // gateway-core falls back to every capability for unknown types, so a type missing
+        // from its table would silently gain capabilities it cannot serve.
+        assert_ne!(
+            gateway_core::ProviderCapabilities::for_provider_type(provider_type),
+            gateway_core::ProviderCapabilities::all_enabled(),
+            "`{provider_type}` has no baseline in ProviderCapabilities::for_provider_type"
+        );
+    }
+}
