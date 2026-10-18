@@ -100,6 +100,16 @@ impl McpRegistryRepository for AnyStore {
         }
     }
 
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_external_mcp_servers_by_keys(server_keys).await,
+            Self::Postgres(store) => store.list_external_mcp_servers_by_keys(server_keys).await,
+        }
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,

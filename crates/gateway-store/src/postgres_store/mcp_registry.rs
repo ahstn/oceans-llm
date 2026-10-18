@@ -483,6 +483,26 @@ impl McpRegistryRepository for PostgresStore {
             .transpose()
     }
 
+    async fn list_external_mcp_servers_by_keys(
+        &self,
+        server_keys: &[String],
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+        if server_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "SELECT {SERVER_COLUMNS} FROM external_mcp_servers WHERE server_key = ANY($1) ORDER BY server_key"
+        );
+        sqlx::query(&sql)
+            .bind(server_keys)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .iter()
+            .map(decode_server)
+            .collect()
+    }
+
     async fn create_external_mcp_server(
         &self,
         input: &NewExternalMcpServerRecord,

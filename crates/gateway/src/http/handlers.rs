@@ -2024,14 +2024,15 @@ pub(crate) async fn restrict_to_listed_servers(
     let Some(server_keys) = auth.access.mcp_server_keys.as_deref() else {
         return Ok(resolution);
     };
-    // One query for every server, rather than one per listed key.
-    let listed =
-        gateway_core::McpRegistryRepository::list_external_mcp_servers(state.store.as_ref(), true)
-            .await?
-            .into_iter()
-            .filter(|server| server_keys.contains(&server.server_key))
-            .map(|server| server.mcp_server_id)
-            .collect::<std::collections::HashSet<_>>();
+    // One query for the listed keys, rather than one per key.
+    let listed = gateway_core::McpRegistryRepository::list_external_mcp_servers_by_keys(
+        state.store.as_ref(),
+        server_keys,
+    )
+    .await?
+    .into_iter()
+    .map(|server| server.mcp_server_id)
+    .collect::<std::collections::HashSet<_>>();
     resolution
         .allowed_tools
         .retain(|tool| listed.contains(&tool.mcp_server_id));
