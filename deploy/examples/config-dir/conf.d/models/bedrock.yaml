@@ -19,7 +19,8 @@ models:
     description: OpenAI GPT OSS on AWS Bedrock
     route:
       provider: bedrock-us-east-1
-      upstream_model: gpt-oss-120b
+      # bedrock-runtime needs the versioned model ID; bedrock-mantle uses openai.gpt-oss-120b.
+      upstream_model: openai.gpt-oss-120b-1:0
       # openai_base_path defaults to /openai/v1 on bedrock-runtime.
       compatibility:
         aws_bedrock:

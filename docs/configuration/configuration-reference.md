@@ -68,6 +68,8 @@ Fragment rules:
 
 - The gateway reads `*.yaml` and `*.yml` files below `--config-dir` recursively, in lexical order of relative path.
 - It skips files and directories whose names start with `.`, which covers the `..data` directories in Kubernetes ConfigMap mounts, and it follows symlinks.
+- A symlink must resolve inside `--config-dir`. The loader resolves each file and directory to its real path and fails at startup, naming the link and its target, when that path is outside the directory. It never reads files outside `--config-dir`. Kubernetes ConfigMap mounts link only within the mount, so they pass.
+- A main config file inside `--config-dir` is read once, as the main file, not again as a fragment.
 - A fragment may contain only `providers` and `models`. Every other section stays in the main file.
 - Fragments merge as a union. A provider or model id defined in two places, including the main file, is an error that names both files. No file overrides another.
 - References such as `routes[].provider`, `alias_of`, `budgets.users.model_defaults`, and `service_accounts[].keys[].allowed_models` resolve after the merge, so they can point across files.
@@ -1253,7 +1255,7 @@ Important fields:
 | `routing.affinity` | Absent; no session affinity | An object; `{}` enables the default timeout |
 | `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
 
-Every route needs an id when `routing` is present, including `routing: {}`. A route's id defaults to its provider key, so only routes that share a provider within one model need an explicit `id`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
+Every route needs an id when `routing` is present, including `routing: {}`. A route's id defaults to its provider key when that key is a valid route id and no other route in the model uses it, either as a provider or as an explicit `id`. Other routes need an explicit `id`, such as routes that share a provider within one model. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
 
 Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
 
@@ -1327,7 +1329,7 @@ Important fields:
 - `extra_headers`
 - `extra_body`
 
-Route `id` defaults to the provider key when that provider appears once in the model and the key is a valid route id. Set it explicitly when two routes in one model share a provider. A route in a configured routing pool must end up with an id. Ids must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep them stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
+Route `id` defaults to the provider key when that provider appears once in the model, the key is a valid route id, and no explicit route `id` in the model already uses it. Set it explicitly when two routes in one model share a provider. A route in a configured routing pool must end up with an id. Ids must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep them stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
 
 A route that still has no id gets an identity from its priority and position, so reordering or reprioritizing it creates a new route.
 
