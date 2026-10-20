@@ -1,0 +1,23 @@
+deploy/examples/config-dir/conf.d/models/bedrock.yaml
+  s_dd118f467446e0::t_dd6a4d4d1779d2 22-23
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_6e24c1f876349c 71-72,1258,1332
+docs/reference/provider-api-compatibility.md
+  s_dd118f467446e0::t_f4809b59ad7057 163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "611181c9c79270c99caceb86f3a150b6de529f28",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
