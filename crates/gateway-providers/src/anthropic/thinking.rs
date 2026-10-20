@@ -10,7 +10,10 @@ pub use super::model::{
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 
-fn validate_adaptive_effort(effort: &Value, model: &str) -> Result<(), AnthropicAdapterError> {
+pub(crate) fn validate_adaptive_effort(
+    effort: &Value,
+    model: &str,
+) -> Result<(), AnthropicAdapterError> {
     let effort_str = effort.as_str().unwrap_or_default();
     if !ADAPTIVE_EFFORT_LEVELS.contains(&effort_str) {
         return Err(AnthropicAdapterError::UnsupportedAdaptiveEffort {

@@ -159,6 +159,80 @@ fn thinking_off_sends_only_the_type() {
 }
 
 #[test]
+fn ignores_null_budgets_when_thinking_is_off() {
+    for (key, value) in [
+        ("reasoning_budget_tokens", json!(null)),
+        ("thinking_budget_tokens", json!(null)),
+        ("reasoning", json!({ "budget_tokens": null })),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("thinking".to_string(), json!({ "type": "disabled" })),
+                (key.to_string(), value),
+            ]),
+        };
+
+        let body = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("global.anthropic.claude-sonnet-5-5"),
+        )
+        .unwrap_or_else(|error| panic!("{key}: {error}"));
+
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "between_tools" }),
+            "{key}"
+        );
+    }
+}
+
+#[test]
+fn adaptive_only_models_validate_effort_and_reject_adaptive_budgets() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("reasoning_effort".to_string(), json!("minimal")),
+            ]),
+        };
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("minimal effort rejected")
+            .to_string();
+        assert!(
+            error.contains("supported effort levels"),
+            "{upstream_model}: {error}"
+        );
+
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                (
+                    "thinking".to_string(),
+                    json!({ "type": "adaptive", "budget_tokens": 1024 }),
+                ),
+            ]),
+        };
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("adaptive budget rejected")
+            .to_string();
+        assert!(error.contains("budget_tokens"), "{upstream_model}: {error}");
+    }
+}
+
+#[test]
 fn rejects_between_tools_outside_sonnet_5_5() {
     for upstream_model in [
         "global.anthropic.claude-opus-4-8",

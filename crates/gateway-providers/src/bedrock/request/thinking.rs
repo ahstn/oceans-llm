@@ -1,7 +1,8 @@
 use super::*;
 use crate::anthropic::{
     AnthropicAdapterError, ClaudeThinkingOff, ClaudeThinkingPolicy, claude_thinking_off,
-    claude_thinking_policy, thinking::resolve_thinking_off,
+    claude_thinking_policy,
+    thinking::{resolve_thinking_off, validate_adaptive_effort},
 };
 
 pub(super) fn apply_anthropic_thinking_compatibility(
@@ -38,6 +39,9 @@ pub(super) fn apply_anthropic_thinking_compatibility(
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
+                if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+                    validate_adaptive_effort(&effort, upstream_model)?;
+                }
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
                 merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
@@ -189,14 +193,16 @@ pub(super) fn merge_optional_efforts(
     }
 }
 
+/// A null budget counts as absent, as on the Anthropic adapter.
 pub(super) fn extract_anthropic_reasoning_budget_tokens(
     extra: &mut BTreeMap<String, Value>,
 ) -> Option<Value> {
-    if let Some(value) = extra.remove("thinking_budget_tokens") {
-        return Some(value);
-    }
-    if let Some(value) = extra.remove("reasoning_budget_tokens") {
-        return Some(value);
+    for key in ["thinking_budget_tokens", "reasoning_budget_tokens"] {
+        if let Some(value) = extra.remove(key)
+            && !value.is_null()
+        {
+            return Some(value);
+        }
     }
     None
 }
@@ -230,6 +236,15 @@ pub(super) fn validate_caller_thinking_for_policy(
                 return Err(ProviderError::InvalidRequest(format!(
                     "`thinking.type: enabled` with manual `budget_tokens` is not supported for `{upstream_model}`; use `thinking.type: adaptive` and `output_config.effort`"
                 )));
+            }
+            if thinking
+                .get("budget_tokens")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                }
+                .into());
             }
         }
         ClaudeThinkingPolicy::ManualOnly => {
