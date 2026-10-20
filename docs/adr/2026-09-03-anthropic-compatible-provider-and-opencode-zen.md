@@ -40,3 +40,7 @@ Configuring OpenCode Zen as `openai_compat` fails because `openai_compat` always
 
 - Sharing Anthropic request/response parsing between Vertex and `anthropic_compat` reduces duplication, while keeping transport mechanisms (OAuth for Vertex, API key/bearer for `anthropic_compat`) decoupled.
 - `claude-fable-5-1` enforces adaptive thinking at the provider boundary to fail fast with structured errors when callers provide unsupported manual budgets or forced tool choices.
+
+## Amendment: forced tool choice by model (2026-10-20)
+
+The forced `tool_choice` check now follows the upstream model list instead of the `claude-fable-5` marker. Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Sonnet 5.5 reject forced choice; Claude Fable 5, which the marker also matched, accepts it. `claude_rejects_forced_tool_choice` in `crates/gateway-providers/src/anthropic/model.rs` classifies models by family and minor version, and Bedrock Converse and Runtime Anthropic routes now apply the same check. See [forced tool choice](../reference/provider-api-compatibility.md#forced-tool-choice).

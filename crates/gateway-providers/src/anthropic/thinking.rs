@@ -3,8 +3,8 @@ use serde_json::{Map, Value, json};
 use super::error::AnthropicAdapterError;
 
 pub use super::model::{
-    ClaudeThinkingPolicy, claude_thinking_policy, contains_exact_claude_model_marker,
-    is_adaptive_only_claude,
+    ClaudeThinkingPolicy, claude_rejects_forced_tool_choice, claude_thinking_policy,
+    contains_exact_claude_model_marker, is_adaptive_only_claude,
 };
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
@@ -421,7 +421,7 @@ pub fn validate_anthropic_tool_choice(
     value: &Value,
     upstream_model: &str,
 ) -> Result<(), AnthropicAdapterError> {
-    if !contains_exact_claude_model_marker(upstream_model, "claude-fable-5") {
+    if !claude_rejects_forced_tool_choice(upstream_model) {
         return Ok(());
     }
 
