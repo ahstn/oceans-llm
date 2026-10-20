@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.43.0](https://github.com/ahstn/oceans-llm/compare/v0.42.0...v0.43.0) - 2026-10-20
+
+### :rocket: New features
+- *(mcp)* Make server disable reversible and explain failed discovery once by @ahstn in [#531](https://github.com/ahstn/oceans-llm/pull/531)
+- *(admin-ui)* Apply the numbers-and-time rule to admin tables by @ahstn in [#526](https://github.com/ahstn/oceans-llm/pull/526)
+- *(admin-ui)* Adopt the Reef, Lilac and Tokyo Night design system by @ahstn in [#515](https://github.com/ahstn/oceans-llm/pull/515)
+
+### :bug: Bug fixes
+- *(mcp-oauth)* Tolerate the issuer's trailing slash only at the end of its path by @ahstn in [#550](https://github.com/ahstn/oceans-llm/pull/550)
+- *(admin-ui)* Tick chart axes once per UTC day and label tooltips in UTC by @ahstn in [#532](https://github.com/ahstn/oceans-llm/pull/532)
+
+### Changed
+- *(admin-ui)* Split TeamsPage into focused components and hooks by @ahstn in [#519](https://github.com/ahstn/oceans-llm/pull/519)
+- *(admin-ui)* Split UsersPage into focused components and hooks by @ahstn in [#517](https://github.com/ahstn/oceans-llm/pull/517)
+- *(admin-ui)* Share the admin table header and detail-dialog section nav by @ahstn in [#536](https://github.com/ahstn/oceans-llm/pull/536)
+
 ## [0.42.0](https://github.com/ahstn/oceans-llm/compare/v0.41.0...v0.42.0) - 2026-10-18
 
 ### :rocket: New features
