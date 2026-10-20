@@ -2029,8 +2029,28 @@
               }
             }
           },
+          "403": {
+            "description": "The caller can see the server but not manage it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The server changed owner since the caller was authorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -2087,6 +2107,93 @@
           },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The server was disabled, enabled, transferred or reconfigured while discovery ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "summary": "Reactivates a disabled server. Its tools and grants apply again as they were before it was\ndisabled, and its discovery status resets to not run until discovery is refreshed. Whoever\ncan disable a server can enable it again: a team admin for their team's servers.",
+        "operationId": "enable_mcp_server",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller can see the server but not manage it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The server changed owner since the caller was authorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -14471,11 +14578,32 @@
               "tools"
             ],
             "properties": {
+              "error_http_status": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "The upstream HTTP status when `error_kind` is `http`.",
+                "minimum": 0
+              },
+              "error_kind": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/McpDiscoveryErrorKindView",
+                    "description": "Why a `failed` discovery failed. Absent for other statuses."
+                  }
+                ]
+              },
               "error_summary": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
               },
               "server": {
                 "$ref": "#/components/schemas/McpServerView"
@@ -16876,6 +17004,22 @@
           }
         }
       },
+      "McpDiscoveryErrorKindView": {
+        "type": "string",
+        "description": "Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's\nerror. Clients branch on it.",
+        "enum": [
+          "transport",
+          "timeout",
+          "http",
+          "json_rpc",
+          "invalid_response",
+          "invalid_url",
+          "invalid_header",
+          "invalid_auth_config",
+          "response_too_large",
+          "invalid_tool_schema"
+        ]
+      },
       "McpDiscoveryRefreshPayload": {
         "type": "object",
         "required": [
@@ -16884,11 +17028,32 @@
           "tools"
         ],
         "properties": {
+          "error_http_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The upstream HTTP status when `error_kind` is `http`.",
+            "minimum": 0
+          },
+          "error_kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/McpDiscoveryErrorKindView",
+                "description": "Why a `failed` discovery failed. Absent for other statuses."
+              }
+            ]
+          },
           "error_summary": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`."
           },
           "server": {
             "$ref": "#/components/schemas/McpServerView"

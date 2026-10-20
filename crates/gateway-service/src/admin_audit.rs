@@ -144,6 +144,7 @@ pub mod actions {
     pub const MCP_SERVER_CREATED: AuditAction = AuditAction("mcp_server.created");
     pub const MCP_SERVER_UPDATED: AuditAction = AuditAction("mcp_server.updated");
     pub const MCP_SERVER_DISABLED: AuditAction = AuditAction("mcp_server.disabled");
+    pub const MCP_SERVER_ENABLED: AuditAction = AuditAction("mcp_server.enabled");
     pub const MCP_SERVER_DISCOVERY_REFRESHED: AuditAction =
         AuditAction("mcp_server.discovery_refreshed");
     /// A platform admin moved a server to another team or to the platform.
@@ -235,6 +236,7 @@ pub mod actions {
         MCP_SERVER_CREATED,
         MCP_SERVER_UPDATED,
         MCP_SERVER_DISABLED,
+        MCP_SERVER_ENABLED,
         MCP_SERVER_DISCOVERY_REFRESHED,
         MCP_SERVER_OWNERSHIP_TRANSFERRED,
         MCP_TOOLSET_CREATED,

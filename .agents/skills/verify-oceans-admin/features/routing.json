@@ -59,6 +59,14 @@
       ]
     },
     {
+      "reason": "shadcn theme package generated from globals.css; mise run lint checks it stays in sync",
+      "paths": ["registry.json", "scripts/build-shadcn-theme.mjs"]
+    },
+    {
+      "reason": "admin UI lint configuration; mise run lint and the React Doctor workflow run it",
+      "paths": ["crates/admin-ui/web/.oxlintrc.json", "crates/admin-ui/web/doctor.config.json"]
+    },
+    {
       "reason": "agent harness and repository wiring",
       "paths": [
         ".claude/skills/**",
@@ -107,6 +115,7 @@
         "crates/admin-ui/web/src/components/app-sidebar.tsx",
         "crates/admin-ui/web/src/components/ui/**",
         "crates/admin-ui/web/src/components/reui/**",
+        "crates/admin-ui/web/src/components/data/**",
         "crates/admin-ui/web/src/routes/__root.tsx",
         "crates/admin-ui/web/src/routes/-auth-routing.ts",
         "crates/admin-ui/web/src/router.tsx",
@@ -221,6 +230,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/leaderboard.tsx",
+        "crates/admin-ui/web/src/routes/observability/-bucket-axis.ts",
         "crates/gateway/src/http/observability.rs",
         "crates/gateway-store/src/libsql_store/budgets.rs",
         "crates/gateway/src/local_demo_seed/usage.rs",
@@ -235,6 +245,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx",
+        "crates/admin-ui/web/src/routes/observability/-bucket-axis.ts",
         "crates/admin-ui/web/src/components/icons/**",
         "crates/gateway/src/http/observability.rs",
         "crates/gateway-service/src/request_logging/harness.rs",
@@ -323,6 +334,7 @@
         "crates/gateway-store/src/libsql_store/mcp_token_overhead.rs",
         "crates/gateway-store/src/any_store_mcp_token_overhead.rs",
         "crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx",
+        "crates/admin-ui/web/src/routes/observability/-request-log-detail/**",
         "crates/gateway/src/http/observability/**",
         "crates/gateway/src/local_demo_seed/history.rs"
       ]
@@ -437,7 +449,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/guardrails.tsx",
         "crates/admin-ui/web/src/routes/guardrails.tsx",
-        "crates/admin-ui/web/src/components/guardrails/settings/**",
+        "crates/admin-ui/web/src/components/guardrails/**",
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/guardrail_events.rs",
         "crates/gateway-store/src/libsql_store/guardrail_decisions.rs",
@@ -569,7 +581,9 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/{invite.$token,account-ready,change-password}.tsx",
-        "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts}",
+        "crates/admin-ui/web/src/routes/identity/{users.tsx,-user-form.ts,-user-form-fields.tsx,-onboarding-result.tsx}",
+        "crates/admin-ui/web/src/routes/identity/-users/{create-user-dialog.tsx,use-create-user.ts}",
+        "crates/admin-ui/web/src/routes/identity/-users/{use-onboarding-reset.ts,user-auth-section.tsx}",
         "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
         "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",
@@ -584,6 +598,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/review-agent.tsx",
+        "crates/admin-ui/web/src/routes/-review-agent/**",
         "crates/gateway/src/http/review_agent.rs",
         "crates/gateway-service/src/review_agent.rs",
         "crates/gateway-store/src/any_store_review_agent.rs",
@@ -683,6 +698,19 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/agent-plugins.tsx"
+      ]
+    },
+    {
+      "id": "design-system",
+      "file": "design-system.md",
+      "proof": {
+        "manual": true
+      },
+      "paths": [
+        "crates/admin-ui/web/src/routes/design-system/**",
+        "crates/admin-ui/web/src/components/ui/**",
+        "crates/admin-ui/web/src/components/shared/{admin-table-header,section-nav}.tsx",
+        "crates/admin-ui/web/src/styles/**"
       ]
     }
   ]

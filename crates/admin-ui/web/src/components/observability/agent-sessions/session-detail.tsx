@@ -30,19 +30,21 @@ import type {
   AgentSessionDetailView,
   AgentSessionRequestView,
 } from '@/types/api'
+import { formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 
 type AgentRequestAttempt = NonNullable<
   AgentSessionDetailView['report']
 >['diagnostics']['reliability']['attempts'][number]
 
+// en-US so dollars read `$0.24`, not `US$0.24`.
 const currencyFormatters = {
-  standard: new Intl.NumberFormat('en-GB', {
+  standard: new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }),
-  precise: new Intl.NumberFormat('en-GB', {
+  precise: new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 4,
@@ -53,13 +55,6 @@ const currencyFormatters = {
 function formatCost(value?: number | null) {
   if (value === null || value === undefined) return '—'
   return currencyFormatters[value < 0.01 ? 'precise' : 'standard'].format(value)
-}
-
-function formatDuration(value?: number | null) {
-  if (value === null || value === undefined) return '—'
-  if (value < 1_000) return `${value} ms`
-  if (value < 60_000) return `${(value / 1_000).toFixed(1)} s`
-  return `${(value / 60_000).toFixed(1)} min`
 }
 
 export function SessionDetail({
@@ -86,7 +81,10 @@ export function SessionDetail({
             label="Session score"
             value={showScore ? formatNullable(report?.score) : 'Score not shown'}
           />
-          <Metric label="Normalised cost" value={formatCost(detail.session.normalized_cost_usd)} />
+          <Metric
+            label="Normalised cost"
+            value={formatUsdTotal(detail.session.normalized_cost_usd)}
+          />
           <Metric label="Total time" value={formatDuration(components?.wall_time_ms)} />
         </section>
 
@@ -232,7 +230,7 @@ function SessionEventStream({
                           dateTime={request.occurred_at}
                           className="mb-0 font-normal tabular-nums"
                         >
-                          {formatTimestamp(request.occurred_at)}
+                          {formatRequestTime(request.occurred_at)}
                         </TimelineDate>
                         {canAccessRequestLogs ? (
                           <AppIcon
@@ -531,14 +529,9 @@ export function StateBadge({ value }: { value: string }) {
   return <Badge variant={variant}>{humanize(value)}</Badge>
 }
 
-const timestampFormatter = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
-
-function formatTimestamp(value: string) {
-  return timestampFormatter.format(new Date(value))
+// Requests in a session often land within the same minute, so their timestamps carry seconds.
+function formatRequestTime(value: string) {
+  return formatTimestamp(value, { seconds: true })
 }
 
 function formatNullable(value: unknown, fallback = '—') {

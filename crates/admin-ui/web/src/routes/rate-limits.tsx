@@ -26,14 +26,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import {
   getApiKeys,
   getMcpServers,
@@ -171,15 +165,9 @@ function PolicyList({ policies, onEdit, onDelete }: PolicyListProps) {
       </div>
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table className="text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              {['Name', 'Limit', 'Traffic', 'Counted per', 'Status', 'Actions'].map((label) => (
-                <TableHead key={label} className="text-muted-foreground px-3 py-2 font-semibold">
-                  {label}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={['Name', 'Limit', 'Traffic', 'Counted per', 'Status', 'Actions']}
+          />
           <TableBody>
             {policies.map((policy) => (
               <TableRow key={policy.id ?? policy.name}>

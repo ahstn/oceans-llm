@@ -35,6 +35,7 @@ async fn seed_tool(harness: &Harness) -> (String, String) {
         .store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server_id,
@@ -264,6 +265,7 @@ async fn discover_read_file(harness: &Harness, server_id: Uuid, description: &st
         .store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server_id,
@@ -599,6 +601,7 @@ async fn discover_read_only(harness: &Harness, server_id: Uuid, tools: &[(&str, 
         .store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server_id,

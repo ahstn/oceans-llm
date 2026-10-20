@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
+import { statusBadgeVariant } from '@/routes/identity/-status-badge'
 import type { IdentityDirectoryTeamView, IdentityDirectoryUserView } from '@/types/api'
 
 export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUserView[] }) {
@@ -28,7 +29,7 @@ export function ReadOnlyUsersDirectory({ users }: { users: IdentityDirectoryUser
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-foreground truncate font-semibold">{user.name}</h2>
                       <Badge variant="outline">{formatRole(user.global_role)}</Badge>
-                      <Badge>{user.status}</Badge>
+                      <Badge variant={statusBadgeVariant(user.status)}>{user.status}</Badge>
                     </div>
                     <p className="text-subtle-foreground truncate text-sm">{user.email}</p>
                   </div>
@@ -70,7 +71,7 @@ export function ReadOnlyTeamsDirectory({ teams }: { teams: IdentityDirectoryTeam
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-foreground truncate font-semibold">{team.name}</h2>
-                      <Badge>{team.status}</Badge>
+                      <Badge variant={statusBadgeVariant(team.status)}>{team.status}</Badge>
                     </div>
                   </div>
                   <span className="text-subtle-foreground text-sm">

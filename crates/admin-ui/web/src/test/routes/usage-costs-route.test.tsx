@@ -340,7 +340,7 @@ describe('usage costs token series helpers', () => {
     expect(ada.hitRate).toBeCloseTo(50 / 600)
   })
 
-  it('warms from danger to warning below 50% and switches to primary blue above', () => {
+  it('warms from danger to warning below 50% and switches to the hero blue above', () => {
     expect(hitRateColor(0)).toBe(
       'color-mix(in oklch, var(--color-warning) 0%, var(--color-danger))',
     )
@@ -348,15 +348,15 @@ describe('usage costs token series helpers', () => {
       'color-mix(in oklch, var(--color-warning) 50%, var(--color-danger))',
     )
     // No amber-to-blue blend: that passes through green.
-    expect(hitRateColor(0.5)).toBe('color-mix(in oklab, var(--color-primary) 55%, transparent)')
-    expect(hitRateColor(0.75)).toBe('color-mix(in oklab, var(--color-primary) 78%, transparent)')
-    expect(hitRateColor(1.2)).toBe('color-mix(in oklab, var(--color-primary) 100%, transparent)')
+    expect(hitRateColor(0.5)).toBe('color-mix(in oklab, var(--chart-hero) 55%, transparent)')
+    expect(hitRateColor(0.75)).toBe('color-mix(in oklab, var(--chart-hero) 78%, transparent)')
+    expect(hitRateColor(1.2)).toBe('color-mix(in oklab, var(--chart-hero) 100%, transparent)')
   })
 
   it('stacks model tokens and gives the Other series a neutral colour', () => {
     const chart = modelTokenChart(series)
     expect(chart.rows[0]).toMatchObject({ model_1: 1_500, model_2: 500 })
     expect(chart.keys[0].color).toBe('var(--chart-1)')
-    expect(chart.keys[1].color).not.toMatch(/--chart-/)
+    expect(chart.keys[1].color).toBe('var(--chart-other)')
   })
 })

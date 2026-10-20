@@ -4,14 +4,8 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { disconnectAuthorizedMcpClient } from '@/server/admin-data.functions'
 import type { AuthorizedMcpClientView, AuthorizedMcpClientsView } from '@/types/api'
 
@@ -96,18 +90,7 @@ export function AuthorizedMcpClientsCard({ clients }: { clients: AuthorizedMcpCl
               data-testid="authorized-mcp-clients-table"
             >
               <Table className="text-left">
-                <TableHeader className="bg-surface-muted">
-                  <TableRow>
-                    {COLUMNS.map((column) => (
-                      <TableHead
-                        key={column}
-                        className="text-muted-foreground px-3 py-2 font-semibold"
-                      >
-                        {column}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
+                <AdminTableHeader columns={COLUMNS} />
                 <TableBody>
                   {clients.items.map((client) => (
                     <TableRow key={client.grant_id}>

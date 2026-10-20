@@ -2,15 +2,14 @@ import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
 import { getErrorMessage } from '@/lib/errors'
-import { CURRENCY_FORMATTER, formatUsd10000 } from '@/lib/format'
+import { CURRENCY_FORMATTER, formatCount, formatUsd10000 } from '@/lib/format'
 import { getSpendUsageReport } from '@/server/admin-data.functions'
 import type { SpendOwnerKind, SpendReportView } from '@/types/api'
 
 export type WindowDays = 7 | 30
 
-export { CURRENCY_FORMATTER }
-
-export const NUMBER_FORMATTER = new Intl.NumberFormat('en-US')
+// The shared formats, so a missing count reads `—` here as on every other page.
+export { CURRENCY_FORMATTER, formatCount }
 
 export const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'percent',
@@ -18,10 +17,6 @@ export const PERCENT_FORMATTER = new Intl.NumberFormat('en-US', {
 })
 
 export const formatUsd = formatUsd10000
-
-export function formatCount(value: number | null | undefined) {
-  return value == null ? 'Unavailable' : NUMBER_FORMATTER.format(value)
-}
 
 export function formatShare(part: number, whole: number) {
   return whole > 0 ? PERCENT_FORMATTER.format(part / whole) : '—'

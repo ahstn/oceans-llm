@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { chartAnimation } from '@/lib/chart-motion'
 
 import {
   COMPACT_FORMATTER,
@@ -78,6 +79,7 @@ const LazyTokenVolumeChart = lazy(async () => {
           <ChartLegend content={<ChartLegendContent className={LEGEND_CLASS} />} />
           {chart.keys.map((series) => (
             <Area
+              {...chartAnimation}
               key={series.key}
               dataKey={series.key}
               type="monotone"
@@ -137,7 +139,13 @@ const LazyRequestsBarChart = lazy(async () => {
           />
           <ChartLegend content={<ChartLegendContent className={LEGEND_CLASS} />} />
           {chart.keys.map((series) => (
-            <Bar key={series.key} dataKey={series.key} stackId="requests" fill={series.color} />
+            <Bar
+              key={series.key}
+              dataKey={series.key}
+              stackId="requests"
+              fill={series.color}
+              {...chartAnimation}
+            />
           ))}
         </BarChart>
       </ChartContainer>

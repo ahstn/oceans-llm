@@ -480,7 +480,9 @@ pub async fn update_mcp_server(
     responses(
         (status = 200, body = Envelope<McpServerPayload>),
         (status = 400, body = OpenAiErrorEnvelopeView),
-        (status = 404, body = OpenAiErrorEnvelopeView)
+        (status = 403, description = "The caller can see the server but not manage it", body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, description = "The server changed owner since the caller was authorized", body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]
@@ -511,6 +513,56 @@ pub async fn disable_mcp_server(
                     server_event(actions::MCP_SERVER_DISABLED, &server)
                         .before(serde_json::json!({ "status": before["status"] }))
                         .after(serde_json::json!({ "status": "disabled" })),
+                ),
+            )
+            .await;
+    }
+    let server = present_server(&state, &scope, record).await?;
+    Ok(Json(envelope(McpServerPayload { server })))
+}
+
+/// Reactivates a disabled server. Its tools and grants apply again as they were before it was
+/// disabled, and its discovery status resets to not run until discovery is refreshed. Whoever
+/// can disable a server can enable it again: a team admin for their team's servers.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/mcp/servers/{server_id}/enable",
+    params(("server_id" = String, Path, description = "External MCP server identifier")),
+    responses(
+        (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
+        (status = 403, description = "The caller can see the server but not manage it", body = OpenAiErrorEnvelopeView),
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, description = "The server changed owner since the caller was authorized", body = OpenAiErrorEnvelopeView)
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn enable_mcp_server(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    meta: AuditRequestMeta,
+    Path(server_id): Path<String>,
+) -> Result<Json<Envelope<McpServerPayload>>, AppError> {
+    let (actor, scope) = require_mcp_admin_scope(&state, &headers).await?;
+    let server_id = parse_uuid(&server_id, "server_id")?;
+    let existing = ownership(&state).managed_server(&scope, server_id).await?;
+    let expected_owner = existing.ownership.owner_team_id;
+    let service = McpRegistryService::new(state.store.clone());
+    let (record, enabled) = service
+        .enable_server_for_owner(server_id, expected_owner)
+        .await?;
+    let server = map_server(record.clone());
+    // Enabling an active server is not a transition. As with disable, the store decides this
+    // in its update, so concurrent requests record one entry.
+    if enabled {
+        state
+            .audit()
+            .record(
+                &meta.user_context(&actor),
+                scope.annotate(
+                    server_event(actions::MCP_SERVER_ENABLED, &server)
+                        .before(serde_json::json!({ "status": "disabled" }))
+                        .after(serde_json::json!({ "status": "active" })),
                 ),
             )
             .await;
@@ -766,7 +818,8 @@ pub async fn discover_mcp_server_oauth(
     responses(
         (status = 200, body = Envelope<McpDiscoveryRefreshPayload>),
         (status = 400, body = OpenAiErrorEnvelopeView),
-        (status = 404, body = OpenAiErrorEnvelopeView)
+        (status = 404, body = OpenAiErrorEnvelopeView),
+        (status = 409, description = "The server was disabled, enabled, transferred or reconfigured while discovery ran", body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
 )]

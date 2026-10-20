@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentHarnessesPage } from '@/routes/observability/agent-harnesses'
 
@@ -19,8 +19,32 @@ vi.mock('recharts', () => ({
   AreaChart: ({ children }: { children: ReactNode }) => <svg>{children}</svg>,
   Area: () => <path />,
   CartesianGrid: () => <g />,
-  XAxis: () => <g />,
-  Tooltip: () => null,
+  XAxis: ({
+    ticks,
+    tickFormatter,
+  }: {
+    ticks?: string[]
+    tickFormatter: (value: string) => string
+  }) => (
+    <g data-testid="x-axis">
+      {ticks?.map((tick) => (
+        <text key={tick}>{tickFormatter(tick)}</text>
+      ))}
+    </g>
+  ),
+  // Render the tooltip as if the noon bucket on 1 Mar were hovered.
+  Tooltip: ({ content }: { content: ReactElement }) =>
+    cloneElement(content as ReactElement<Record<string, unknown>>, {
+      active: true,
+      payload: [
+        {
+          dataKey: 'harness_1',
+          name: 'harness_1',
+          value: 4,
+          payload: { bucket_start: '2026-03-01T12:00:00Z' },
+        },
+      ],
+    }),
   Legend: () => null,
 }))
 
@@ -192,5 +216,36 @@ describe('AgentHarnessesPage', () => {
       expect(scope.getByTestId('harness-chart-skeleton')).toBeInTheDocument()
       expect(scope.getByTestId('harness-table-skeleton')).toBeInTheDocument()
     })
+  })
+
+  it('labels each UTC day once on the axis and names the zone in the tooltip', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...harnessUsageData,
+        series: [
+          '2026-03-01T12:00:00Z',
+          '2026-03-02T00:00:00Z',
+          '2026-03-02T12:00:00Z',
+          '2026-03-03T00:00:00Z',
+        ].map((bucket_start) => ({
+          bucket_start,
+          values: [{ agent_harness_key: 'mastra', request_count: 4 }],
+        })),
+      },
+    })
+
+    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
+
+    const view = render(<AgentHarnessesPage />)
+    const scope = within(view.container)
+
+    // 12-hour buckets: only the midnight buckets get a tick, so no day repeats.
+    expect(
+      within(scope.getByTestId('x-axis'))
+        .getAllByText(/./)
+        .map((tick) => tick.textContent),
+    ).toEqual(['Mar 2', 'Mar 3'])
+    expect(scope.getByText('1 Mar 2026, 12:00 UTC')).toBeInTheDocument()
+    expect(scope.getByText('4 requests')).toBeInTheDocument()
   })
 })

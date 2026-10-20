@@ -396,6 +396,7 @@ mod proxy_policy {
         let tools = store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -764,6 +765,7 @@ mod proxy_policy {
             .store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -1268,6 +1270,35 @@ mod proxy_policy {
             seen.lock().unwrap().last().cloned(),
             Some((Method::DELETE, Some("upstream-session-1".to_string()), None))
         );
+    }
+
+    #[tokio::test]
+    async fn failed_discovery_reports_a_stable_error_kind() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        // Nothing listens on port 1, so the request fails in transport.
+        seed_server(&state, "http://127.0.0.1:1/mcp", true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+
+        let result = gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery result");
+
+        assert_eq!(
+            result.status,
+            gateway_core::ExternalMcpDiscoveryStatus::Failed
+        );
+        let error = result.error.expect("failure kind");
+        assert_eq!(
+            error.kind,
+            gateway_service::McpDiscoveryErrorKind::Transport
+        );
+        assert_eq!(error.http_status, None);
     }
 
     #[tokio::test]
@@ -1908,6 +1939,7 @@ mod stream_reach {
         let tools = store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,

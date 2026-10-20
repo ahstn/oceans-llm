@@ -125,3 +125,7 @@ Tag rules (#443) and tool versioning with approval (#444) landed alongside this 
 - Let team admins review tool versions, and set tool tags and annotation overrides, on the servers their team owns, and create `include` tag rules there for their own team's subjects. `require_mcp_policy_admin` is the one place to widen.
 - Let teams own tool sets made only of their own tools.
 - Show the actor's team role as a column in the audit log UI.
+
+## Later changes
+
+- Disabling a server became reversible ([#531](https://github.com/ahstn/oceans-llm/pull/531)). Re-enabling follows the disable row in section 4: a team owner or admin can re-enable their team's servers, and the store checks the owner inside the same write, so a former team cannot re-enable a server mid-transfer.

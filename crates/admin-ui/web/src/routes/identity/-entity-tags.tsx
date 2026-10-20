@@ -55,7 +55,7 @@ export function EntityTagsField({
         </Button>
       </div>
       <FieldDescription>
-        Up to five lowercase key/value rows. Keys may use letters, digits, dot, underscore, or dash.
+        Up to five lowercase key/value tags. Keys may use letters, digits, dot, underscore, or dash.
       </FieldDescription>
     </Field>
   )

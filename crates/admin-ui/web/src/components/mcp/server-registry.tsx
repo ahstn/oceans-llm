@@ -3,6 +3,7 @@ import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@t
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
+import { discoveryLabel, endpointHost, needsAttention } from '@/components/mcp/server-discovery'
 import {
   DataGrid,
   DataGridContainer,
@@ -34,16 +35,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { McpServerView } from '@/types/api'
+import { EMPTY_VALUE, formatTimestamp } from '@/lib/format'
 import { matchesOwner, ownerLabel, ownerOptions, visibilityLabel } from './server-ownership'
 
 type ServerFilter = 'all' | 'attention' | 'active' | 'disabled'
-
-const discoveryLabels: Record<string, string> = {
-  success: 'Discovered',
-  failed: 'Discovery failed',
-  auth_required: 'Authentication required',
-  disabled: 'Discovery disabled',
-}
 
 interface RegistryProps {
   servers: McpServerView[]
@@ -532,9 +527,7 @@ function RegistrationBadge({ server }: { server: McpServerView }) {
 }
 
 function DiscoveryResult({ server }: { server: McpServerView }) {
-  const label = server.last_discovery_status
-    ? (discoveryLabels[server.last_discovery_status] ?? server.last_discovery_status)
-    : 'Not discovered'
+  const label = discoveryLabel(server.last_discovery_status)
   return (
     <div className="flex flex-col items-start gap-1.5">
       <Badge
@@ -545,7 +538,7 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
       </Badge>
       {server.last_discovery_at ? (
         <time
-          className="text-muted-foreground text-xs"
+          className="text-muted-foreground text-xs whitespace-nowrap"
           dateTime={server.last_discovery_at}
           title={server.last_discovery_at}
         >
@@ -556,21 +549,6 @@ function DiscoveryResult({ server }: { server: McpServerView }) {
       )}
     </div>
   )
-}
-
-function needsAttention(server: McpServerView) {
-  return (
-    server.status === 'active' &&
-    ['failed', 'auth_required'].includes(server.last_discovery_status ?? '')
-  )
-}
-
-function endpointHost(server: McpServerView) {
-  try {
-    return new URL(server.server_url).hostname
-  } catch {
-    return server.server_url
-  }
 }
 
 function authLabel(mode: string) {
@@ -585,24 +563,6 @@ function authLabel(mode: string) {
 }
 
 function formatDiscoveryTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown discovery time'
-  // Fixed UTC parts keep server and browser output identical during hydration.
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
-  const hours = String(date.getUTCHours()).padStart(2, '0')
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0')
-  return `${date.getUTCDate()} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${hours}:${minutes} UTC`
+  const formatted = formatTimestamp(value)
+  return formatted === EMPTY_VALUE ? 'Unknown discovery time' : formatted
 }

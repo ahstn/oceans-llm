@@ -1,11 +1,14 @@
-import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
 import {
-  Cancel01Icon,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type FormEvent,
+} from 'react'
+import {
   CheckListIcon,
   Configuration01Icon,
-  Delete02Icon,
-  Edit02Icon,
-  RefreshIcon,
   ShieldKeyIcon,
   ToolsIcon,
   ViewIcon,
@@ -13,33 +16,29 @@ import {
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import { AppIcon } from '@/components/icons/app-icon'
+import { SectionNavSidebar, SectionNavTabs } from '@/components/shared/section-nav'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
+import {
+  describeDiscoveryResult,
+  needsAttention,
+  type DiscoveryRefreshResult,
+} from '@/components/mcp/server-discovery'
 import { ServerRegistry } from '@/components/mcp/server-registry'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-} from '@/components/ui/sidebar'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import {
   addMcpServer,
   disableExternalMcpServer,
+  enableExternalMcpServer,
   getMcpCredentialBindings,
   getMcpServerTools,
   refreshExternalMcpServerDiscovery,
@@ -59,6 +58,7 @@ import {
   DiscoveryStatusBadge,
   ServerFormDialog,
   ServerFormFields,
+  ServerHeaderActions,
   ServerOverviewPanel,
   ServerOwnershipTransfer,
   ServerStatusBadge,
@@ -81,11 +81,11 @@ import {
 type ServerSection = 'overview' | 'configuration' | 'tools' | 'reviews' | 'credentials'
 
 const serverSections = [
-  { value: 'overview', label: 'Overview', icon: ViewIcon },
-  { value: 'configuration', label: 'Configuration', icon: Configuration01Icon },
-  { value: 'tools', label: 'Tools', icon: ToolsIcon },
-  { value: 'reviews', label: 'Reviews', icon: CheckListIcon },
-  { value: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
+  { id: 'overview', label: 'Overview', icon: ViewIcon },
+  { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
+  { id: 'tools', label: 'Tools', icon: ToolsIcon },
+  { id: 'reviews', label: 'Reviews', icon: CheckListIcon },
+  { id: 'credentials', label: 'Credentials', icon: ShieldKeyIcon },
 ] as const
 
 // Servers the caller cannot manage are read-only: no configuration or credentials.
@@ -126,7 +126,7 @@ export function ServersTab({
   )
   const [refreshingServerIds, setRefreshingServerIds] = useState<string[]>([])
   const [refreshResults, setRefreshResults] = useState<
-    Record<string, { status: string; errorSummary: string | null; revision: number }>
+    Record<string, DiscoveryRefreshResult & { revision: number }>
   >({})
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -135,8 +135,17 @@ export function ServersTab({
 
   const selectedServer = servers.find((server) => server.id === selectedServerId) ?? null
   const selectedRefresh = selectedServer ? refreshResults[selectedServer.id] : null
+  const selectedRefreshing = Boolean(
+    selectedServer && refreshingServerIds.includes(selectedServer.id),
+  )
   // Refresh responses omit inactive tools; reload the complete list after each result.
   const discoveryRevision = selectedRefresh?.revision ?? 0
+  // Read when a refresh finishes, not when it starts: the admin may have moved on meanwhile.
+  const visibleOverviewIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    visibleOverviewIdRef.current = section === 'overview' ? (selectedServer?.id ?? null) : null
+  }, [section, selectedServer])
 
   useEffect(() => {
     setSelectedToolIds([])
@@ -315,47 +324,69 @@ export function ServersTab({
     })
   }
 
+  function handleEnableServer(server: McpServerView) {
+    startTransition(async () => {
+      try {
+        const response = await enableExternalMcpServer({ data: { serverId: server.id } })
+        toast.success('MCP server enabled')
+        await selectServerAfterMutation(response.data.server.id)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to enable MCP server')
+      }
+    })
+  }
+
+  // An earlier result stays on screen until the new one replaces it.
   async function handleRefreshDiscovery(server: McpServerView) {
     if (refreshingServerIds.includes(server.id)) return
     setRefreshingServerIds((current) => [...current, server.id])
-    setRefreshResults((current) => ({
-      ...current,
-      [server.id]: {
-        status: 'pending',
-        errorSummary: null,
-        revision: current[server.id]?.revision ?? 0,
-      },
-    }))
     try {
       const response = await refreshExternalMcpServerDiscovery({ data: { serverId: server.id } })
+      const result = {
+        status: response.data.status,
+        errorKind: response.data.error_kind ?? null,
+        httpStatus: response.data.error_http_status ?? null,
+        errorSummary: response.data.error_summary ?? null,
+        toolCount: response.data.tools.length,
+      }
       setRefreshResults((current) => ({
         ...current,
-        [server.id]: {
-          status: response.data.status,
-          errorSummary: response.data.error_summary ?? null,
-          revision: (current[server.id]?.revision ?? 0) + 1,
-        },
+        [server.id]: { ...result, revision: (current[server.id]?.revision ?? 0) + 1 },
       }))
-      if (response.data.status === 'success') {
-        toast.success('Discovery refreshed')
-      } else {
-        toast.error(response.data.error_summary ?? `Discovery ${response.data.status}`)
-      }
+      announceRefreshResult(server, result)
       await router.invalidate()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Discovery refresh failed'
+      const result = {
+        status: 'request_failed',
+        errorSummary: error instanceof Error ? error.message : null,
+        toolCount: 0,
+      }
       setRefreshResults((current) => ({
         ...current,
-        [server.id]: {
-          status: 'failed',
-          errorSummary: message,
-          revision: current[server.id]?.revision ?? 0,
-        },
+        [server.id]: { ...result, revision: current[server.id]?.revision ?? 0 },
       }))
-      toast.error(message)
+      announceRefreshResult(server, result)
+      // A 409 means the server was disabled, enabled, transferred or reconfigured meanwhile, so
+      // reload it: the dialog shouldn't keep offering actions for its old state. The request may
+      // also have failed because the gateway is unreachable, so a failed reload is ignored.
+      await router.invalidate().catch(() => undefined)
     } finally {
       setRefreshingServerIds((current) => current.filter((id) => id !== server.id))
     }
+  }
+
+  // The overview explains every result. A brief toast reports one only while that overview is
+  // hidden, and links back to it.
+  function announceRefreshResult(server: McpServerView, result: DiscoveryRefreshResult) {
+    if (visibleOverviewIdRef.current === server.id) return
+    const message = `${describeDiscoveryResult(result, server).title} for ${server.display_name}`
+    if (result.status === 'success') {
+      toast.success(message)
+      return
+    }
+    toast.error(message, {
+      action: { label: 'View', onClick: () => handleSelectServer(server.id) },
+    })
   }
 
   function handleCreateCredentialBinding(event: FormEvent<HTMLFormElement>) {
@@ -478,11 +509,9 @@ export function ServersTab({
         credentialBindingsPending={credentialBindingsPending}
         credentialBindingsError={credentialBindingsError}
         credentialForm={credentialForm}
-        refreshStatus={selectedRefresh?.status ?? null}
-        refreshErrorSummary={selectedRefresh?.errorSummary ?? null}
-        actionPending={
-          isPending || Boolean(selectedServer && refreshingServerIds.includes(selectedServer.id))
-        }
+        refreshResult={selectedRefresh ?? null}
+        refreshing={selectedRefreshing}
+        actionPending={isPending || selectedRefreshing}
         onOpenChange={(open) => {
           if (!open) {
             setEditingServer(null)
@@ -494,6 +523,7 @@ export function ServersTab({
         onSubmit={handleUpdateServer}
         onEdit={openEditDialog}
         onDisable={handleDisableServer}
+        onEnable={handleEnableServer}
         onRefresh={handleRefreshDiscovery}
         onToggleTool={toggleToolSelection}
         onClearSelection={() => setSelectedToolIds([])}
@@ -535,8 +565,8 @@ function ServerDetailDialog({
   credentialBindingsPending,
   credentialBindingsError,
   credentialForm,
-  refreshStatus,
-  refreshErrorSummary,
+  refreshResult,
+  refreshing,
   actionPending,
   onOpenChange,
   onSectionChange,
@@ -544,6 +574,7 @@ function ServerDetailDialog({
   onSubmit,
   onEdit,
   onDisable,
+  onEnable,
   onRefresh,
   onToggleTool,
   onClearSelection,
@@ -566,8 +597,8 @@ function ServerDetailDialog({
   credentialBindingsPending: boolean
   credentialBindingsError: string | null
   credentialForm: CredentialBindingFormState
-  refreshStatus: string | null
-  refreshErrorSummary: string | null
+  refreshResult: DiscoveryRefreshResult | null
+  refreshing: boolean
   actionPending: boolean
   onOpenChange: (open: boolean) => void
   onSectionChange: (section: ServerSection) => void
@@ -575,6 +606,7 @@ function ServerDetailDialog({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onEdit: (server: McpServerView) => void
   onDisable: (server: McpServerView) => void
+  onEnable: (server: McpServerView) => void
   onRefresh: (server: McpServerView) => void
   onToggleTool: (toolId: string) => void
   onClearSelection: () => void
@@ -614,29 +646,11 @@ function ServerDetailDialog({
             className="min-h-0 max-w-full min-w-0 items-start overflow-hidden"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
-            <Sidebar collapsible="none" className="border-border hidden border-r md:flex">
-              <SidebarContent className="p-3">
-                <SidebarGroup className="px-0 py-0">
-                  <SidebarGroupContent>
-                    <SidebarMenu className="gap-1">
-                      {sections.map((entry) => (
-                        <SidebarMenuItem key={entry.value}>
-                          <SidebarMenuButton
-                            type="button"
-                            className="h-10 px-3 py-2"
-                            isActive={visibleSection === entry.value}
-                            onClick={() => setSection(entry.value)}
-                          >
-                            <AppIcon icon={entry.icon} stroke={1.5} aria-hidden />
-                            <span>{entry.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              </SidebarContent>
-            </Sidebar>
+            <SectionNavSidebar
+              sections={sections}
+              activeSection={visibleSection}
+              onSectionChange={setSection}
+            />
 
             <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
               <header className="border-border flex shrink-0 flex-col gap-4 border-b px-6 py-5">
@@ -650,49 +664,31 @@ function ServerDetailDialog({
                         {server.display_name}
                       </h2>
                       <ServerStatusBadge status={server.status} />
-                      <DiscoveryStatusBadge status={server.last_discovery_status} />
+                      <DiscoveryStatusBadge
+                        status={server.last_discovery_status}
+                        attention={needsAttention(server)}
+                      />
                     </div>
                     <p className="text-subtle-foreground mt-1 truncate font-mono text-sm">
                       /mcp/{server.server_key}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {canManage ? (
-                      <ServerManageActions
-                        server={server}
-                        actionPending={actionPending}
-                        onRefresh={onRefresh}
-                        onEdit={onEdit}
-                        onDisable={onDisable}
-                      />
-                    ) : null}
-                    <DialogClose asChild>
-                      <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
-                        <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
-                      </Button>
-                    </DialogClose>
-                  </div>
+                  <ServerHeaderActions
+                    server={server}
+                    canManage={canManage}
+                    actionPending={actionPending}
+                    onRefresh={onRefresh}
+                    onEdit={onEdit}
+                    onDisable={onDisable}
+                    onEnable={onEnable}
+                  />
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto md:hidden">
-                  {sections.map((entry) => (
-                    <Button
-                      key={entry.value}
-                      type="button"
-                      size="sm"
-                      variant={visibleSection === entry.value ? 'secondary' : 'ghost'}
-                      onClick={() => setSection(entry.value)}
-                    >
-                      <AppIcon
-                        icon={entry.icon}
-                        stroke={1.5}
-                        aria-hidden
-                        data-icon="inline-start"
-                      />
-                      {entry.label}
-                    </Button>
-                  ))}
-                </div>
+                <SectionNavTabs
+                  sections={sections}
+                  activeSection={visibleSection}
+                  onSectionChange={setSection}
+                />
               </header>
 
               <div
@@ -702,8 +698,10 @@ function ServerDetailDialog({
                 {visibleSection === 'overview' ? (
                   <ServerOverviewPanel
                     server={server}
-                    refreshStatus={refreshStatus}
-                    refreshErrorSummary={refreshErrorSummary}
+                    refreshResult={refreshResult}
+                    refreshing={refreshing}
+                    retryDisabled={actionPending || !canManage || server.status !== 'active'}
+                    onRetry={() => onRefresh(server)}
                     ownershipControl={
                       <PlatformOwnershipControl
                         server={server}
@@ -776,58 +774,9 @@ function useServerSections(
   const canManage = server?.can_manage ?? false
   const shown = (value: ServerSection) =>
     (canManage || readOnlySections.has(value)) && (platformAdmin || !platformSections.has(value))
-  const sections = serverSections.filter((entry) => shown(entry.value))
+  const sections = serverSections.filter((entry) => shown(entry.id))
   const visibleSection: ServerSection = shown(section) ? section : 'overview'
   return { canManage, sections, visibleSection }
-}
-
-function ServerManageActions({
-  server,
-  actionPending,
-  onRefresh,
-  onEdit,
-  onDisable,
-}: {
-  server: McpServerView
-  actionPending: boolean
-  onRefresh: (server: McpServerView) => void
-  onEdit: (server: McpServerView) => void
-  onDisable: (server: McpServerView) => void
-}) {
-  const inactive = actionPending || server.status !== 'active'
-  return (
-    <>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        aria-label={`Refresh ${server.display_name}`}
-        onClick={() => onRefresh(server)}
-        disabled={inactive}
-      >
-        <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
-      </Button>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        aria-label={`Edit ${server.display_name}`}
-        onClick={() => onEdit(server)}
-      >
-        <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
-      </Button>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="destructive"
-        aria-label={`Disable ${server.display_name}`}
-        onClick={() => onDisable(server)}
-        disabled={inactive}
-      >
-        <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
-      </Button>
-    </>
-  )
 }
 
 function ServerConfigurationForm({

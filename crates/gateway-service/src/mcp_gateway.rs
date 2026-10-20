@@ -278,6 +278,21 @@ mod tests {
             unimplemented!()
         }
 
+        async fn enable_external_mcp_server(
+            &self,
+            _mcp_server_id: Uuid,
+            _enabled_at: OffsetDateTime,
+        ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+            unimplemented!()
+        }
+
+        async fn external_mcp_server_status_revision(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<i64, StoreError> {
+            unimplemented!()
+        }
+
         async fn list_external_mcp_tools(
             &self,
             _mcp_server_id: Uuid,

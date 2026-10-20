@@ -458,6 +458,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V73__mcp_discovery_run_started_ms.sql"),
         postgres_sql: include_str!("../migrations/postgres/V73__mcp_discovery_run_started_ms.sql"),
     },
+    MigrationManifest {
+        version: 74,
+        name: "external_mcp_server_status_revision",
+        checksum: "V74__external_mcp_server_status_revision.sql",
+        libsql_sql: include_str!("../migrations/V74__external_mcp_server_status_revision.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V74__external_mcp_server_status_revision.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

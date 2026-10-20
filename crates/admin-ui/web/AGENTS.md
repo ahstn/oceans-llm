@@ -16,18 +16,21 @@
 ## Tables
 
 - Use the Teams/API Keys table style for admin data tables:
+  - render the header with `AdminTableHeader` (`src/components/shared/admin-table-header.tsx`): pass `columns` labels, or `AdminTableHead` cells when a header holds controls or sticky columns. Do not restyle `TableHeader`/`TableHead` by hand.
   - outlined table container
   - header row with muted background
   - sentence case column labels
   - muted header text color
-  - left-aligned cells
+  - left-aligned text cells; numbers right-aligned with `tabular-nums`
+  - values formatted with the `src/lib/format.ts` helpers (DESIGN.md "Numbers and time")
+  - an action column pinned right when the table can scroll sideways (DESIGN.md "Wide tables")
   - consistent row height and vertical alignment
   - row hover state
 - Prefer action buttons with consistent sizing, background, hover state, and tooltips.
 
 ## Dialogs
 
-- Detail dialogs with multiple sections should use a sidebar navigation pattern.
+- Detail dialogs with multiple sections should use a sidebar navigation pattern: `SectionNavSidebar` inside the dialog's `SidebarProvider`, plus `SectionNavTabs` in the dialog header for small screens (`src/components/shared/section-nav.tsx`).
 - Keep section tabs such as Overview, Configuration, Tools, and Credentials inside the dialog instead of expanding page-level complexity.
 - Inside dialogs, prefer single-sided borders (`border-t`, `border-b`, `border-y`, `divide-y`, or `border-r` for sidebars) to separate elements, inputs, items, and sections. Avoid wrapping every setting or row in a full four-sided border unless it is a distinct nested surface.
 - Dialog content must be width-contained:

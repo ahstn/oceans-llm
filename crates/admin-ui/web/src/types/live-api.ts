@@ -188,6 +188,7 @@ export type RecommendedMcpServerView = components['schemas']['RecommendedMcpServ
 export type McpConnectionInfoPayload = components['schemas']['McpConnectionInfoPayload']
 export type RecommendedMcpServersPayload = components['schemas']['RecommendedMcpServersPayload']
 export type McpServerView = components['schemas']['McpServerView']
+export type McpDiscoveryErrorKind = components['schemas']['McpDiscoveryErrorKindView']
 export type McpServersPayload = components['schemas']['McpServersPayload']
 export type McpServerPayload = components['schemas']['McpServerPayload']
 export type McpToolView = components['schemas']['McpToolView']

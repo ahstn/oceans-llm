@@ -4,6 +4,16 @@
 
 Reference screenshots for the admin UI. These images are useful when reviewing documentation, release notes, and user-facing workflow changes.
 
+## Capturing screenshots
+
+Capture every admin UI image the same way so pages look consistent side by side:
+
+- **Size.** A 1440 × 900 CSS-pixel viewport at device scale factor 2, so full-page images are 2880 × 1800 PNG. Crops of a dialog or the page content keep the same scale.
+- **Data.** A fresh `gateway.db` with the local demo seed (`mise run dev-stack`, or the `verify-oceans-admin` stack), so no leftover verification records appear. Sign in as `admin@local` unless the page needs a role: team admin views use `cara@research.local`.
+- **Timing.** Wait for charts to draw and for the page entrance animation (about 300 ms) to finish before capturing.
+- **Content.** Mask invite URLs, API keys and tokens. Use neutral example addresses such as `alex@example.com` where an email appears in the URL.
+- **Names.** Keep existing file names so documentation links don't change.
+
 ## Leaderboard
 
 Shows request and usage ranking across the gateway's observed traffic.

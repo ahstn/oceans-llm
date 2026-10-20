@@ -16,20 +16,18 @@ import {
 } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { chartAnimation } from '@/lib/chart-motion'
+import { formatTimestamp } from '@/lib/format'
 import {
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
 } from '@/server/admin-data.functions'
 import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
+
+import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
   loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
@@ -88,6 +86,7 @@ export function AgentHarnessesPage() {
 
     return row
   })
+  const dayTicks = utcDayTicks(chartData.map((row) => String(row.bucket_start)))
 
   function refreshRange(nextRange: HarnessUsageRange) {
     setIsRefreshing(true)
@@ -170,17 +169,18 @@ export function AgentHarnessesPage() {
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="bucket_start"
+                  ticks={dayTicks}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
-                  tickFormatter={(value) => formatAxisTick(value)}
+                  tickFormatter={formatBucketDay}
                 />
                 <ChartTooltip
                   cursor={false}
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) =>
-                        formatTooltipLabel(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                        formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
                       }
                       formatter={(value, name) => (
                         <>
@@ -198,6 +198,7 @@ export function AgentHarnessesPage() {
                 <ChartLegend content={<ChartLegendContent />} />
                 {chartSeries.map((harness) => (
                   <Area
+                    {...chartAnimation}
                     key={harness.agent_harness_key}
                     dataKey={harness.key}
                     type="monotone"
@@ -294,29 +295,17 @@ function HarnessRankings({ leaders }: { leaders: HarnessUsageLeaderView[] }) {
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table data-testid="harness-usage-table" className="min-w-[64rem] text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground w-16 px-3 py-2 font-semibold">
-                Rank
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Harness
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Requests
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Input tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Output tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 text-right font-semibold">
-                Total tokens
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Key</TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              { label: 'Rank', narrow: true },
+              'Harness',
+              { label: 'Requests', align: 'right' },
+              { label: 'Input tokens', align: 'right' },
+              { label: 'Output tokens', align: 'right' },
+              { label: 'Total tokens', align: 'right' },
+              'Key',
+            ]}
+          />
           <TableBody>
             {leaders.map((leader, index) => (
               <TableRow key={leader.agent_harness_key}>
@@ -375,31 +364,6 @@ function HarnessChartSkeleton() {
 
 function HarnessTableSkeleton() {
   return <Skeleton data-testid="harness-table-skeleton" className="h-48 w-full" />
-}
-
-function formatAxisTick(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
-}
-
-function formatTooltipLabel(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
 }
 
 function getErrorMessage(error: unknown) {
