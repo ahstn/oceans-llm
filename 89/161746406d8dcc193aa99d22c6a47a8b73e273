@@ -1,0 +1,27 @@
+crates/gateway-core/src/claude_models.rs
+  s_cd9d806c1e358d::t_ad77ac696350b2 19,31-41
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_cd9d806c1e358d::t_7b767eefe888e5 471
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_cd9d806c1e358d::t_fa7b8eae7478ab 621-649
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_cd9d806c1e358d::t_627a23d91357b2 46
+docs/providers/aws-bedrock.md
+  s_cd9d806c1e358d::t_48e3488b30e8d0 154,160-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89161746406d8dcc193aa99d22c6a47a8b73e273",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
