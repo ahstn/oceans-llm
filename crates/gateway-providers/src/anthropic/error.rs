@@ -52,7 +52,7 @@ pub enum AnthropicAdapterError {
     )]
     RemoteImageUrlNotSupported,
     #[error(
-        "forced `tool_choice` is not supported for `{model}`; Fable 5.1 rejects forced tool choice, use `auto` or omit the field"
+        "forced `tool_choice` is not supported for `{model}`; this model rejects `any`, `tool`, `required`, and named function choices, use `auto`, `none`, or omit the field"
     )]
     ForcedToolChoiceRejected { model: String },
     #[error("unsupported tool_choice for Anthropic mapping")]

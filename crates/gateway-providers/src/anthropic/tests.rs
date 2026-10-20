@@ -529,84 +529,101 @@ fn opus_5_and_haiku_5_5_accept_adaptive_thinking_and_effort() {
     }
 }
 
+fn tool_choice_request(model: &str, choice: Value) -> CoreChatRequest {
+    let mut extra = BTreeMap::new();
+    extra.insert("tool_choice".to_string(), choice);
+    extra.insert(
+        "tools".to_string(),
+        json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {"type": "object"}
+            }
+        }]),
+    );
+
+    CoreChatRequest {
+        model: model.to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("weather in sf".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra,
+    }
+}
+
 #[test]
-fn fable_5_1_rejects_forced_tool_choice() {
-    let forbidden_choices = [
+fn forced_tool_choice_is_rejected_only_where_upstream_rejects_it() {
+    let forced_choices = [
         json!("required"),
         json!({"type": "any"}),
         json!({"type": "tool", "name": "get_weather"}),
         json!({"type": "function", "function": {"name": "get_weather"}}),
     ];
 
-    for choice in forbidden_choices {
-        let mut extra = BTreeMap::new();
-        extra.insert("tool_choice".to_string(), choice.clone());
-        extra.insert(
-            "tools".to_string(),
-            json!([{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "parameters": {"type": "object"}
+    for (model, rejects) in [
+        ("claude-fable-5-1", true),
+        ("claude-mythos-5-1", true),
+        ("claude-opus-5-5", true),
+        ("claude-sonnet-5-5", true),
+        ("claude-fable-5", false),
+        ("claude-opus-5", false),
+        ("claude-sonnet-5", false),
+        ("claude-haiku-5-5", false),
+    ] {
+        for qualified in [
+            model.to_string(),
+            format!("us.anthropic.{model}-v1:0"),
+            format!("anthropic/{model}@20260101"),
+            model.to_ascii_uppercase(),
+        ] {
+            for choice in &forced_choices {
+                let request = tool_choice_request(&qualified, choice.clone());
+                let context = test_context(&qualified);
+                let result = map_anthropic_request(
+                    &request,
+                    &context,
+                    false,
+                    &AnthropicRequestOptions::default(),
+                );
+                if rejects {
+                    let err = result
+                        .expect_err(&format!("{qualified} should reject forced choice {choice}"));
+                    assert!(
+                        err.to_string()
+                            .contains("forced `tool_choice` is not supported"),
+                        "{qualified}: {err}"
+                    );
+                } else {
+                    let body = result
+                        .unwrap_or_else(|err| panic!("{qualified} should allow {choice}: {err}"));
+                    assert!(body.get("tool_choice").is_some(), "{qualified}");
                 }
-            }]),
-        );
-
-        let request = CoreChatRequest {
-            model: "claude-fable-5-1".to_string(),
-            messages: vec![CoreChatMessage {
-                role: "user".to_string(),
-                content: Value::String("weather in sf".to_string()),
-                name: None,
-                extra: BTreeMap::new(),
-            }],
-            stream: false,
-            extra,
-        };
-
-        let context = test_context("claude-fable-5-1");
-        let options = AnthropicRequestOptions::default();
-        let err = map_anthropic_request(&request, &context, false, &options)
-            .expect_err(&format!("should reject forced choice: {choice}"));
-        assert!(
-            err.to_string()
-                .contains("forced `tool_choice` is not supported")
-        );
+            }
+        }
     }
 }
 
 #[test]
-fn fable_5_1_allows_auto_and_none_tool_choice() {
-    for choice in [json!("auto"), json!("none"), json!({"type": "auto"})] {
-        let mut extra = BTreeMap::new();
-        extra.insert("tool_choice".to_string(), choice.clone());
-        extra.insert(
-            "tools".to_string(),
-            json!([{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "parameters": {"type": "object"}
-                }
-            }]),
-        );
-
-        let request = CoreChatRequest {
-            model: "claude-fable-5-1".to_string(),
-            messages: vec![CoreChatMessage {
-                role: "user".to_string(),
-                content: Value::String("weather in sf".to_string()),
-                name: None,
-                extra: BTreeMap::new(),
-            }],
-            stream: false,
-            extra,
-        };
-
-        let context = test_context("claude-fable-5-1");
-        let options = AnthropicRequestOptions::default();
-        let body = map_anthropic_request(&request, &context, false, &options).expect("allowed");
-        assert!(body.get("tools").is_some());
+fn rejecting_models_allow_auto_and_none_tool_choice() {
+    for model in [
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+    ] {
+        for choice in [json!("auto"), json!("none"), json!({"type": "auto"})] {
+            let request = tool_choice_request(model, choice.clone());
+            let context = test_context(model);
+            let options = AnthropicRequestOptions::default();
+            let body = map_anthropic_request(&request, &context, false, &options)
+                .unwrap_or_else(|err| panic!("{model} should allow {choice}: {err}"));
+            assert!(body.get("tools").is_some());
+        }
     }
 }
 

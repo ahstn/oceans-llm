@@ -530,3 +530,45 @@ fn preserves_native_anthropic_tools_and_tool_choices() {
     assert!(body.get("tools").is_none());
     assert!(body.get("tool_choice").is_none());
 }
+
+#[test]
+fn rejects_forced_tool_choice_where_claude_rejects_it() {
+    for (model, rejects) in [
+        ("us.anthropic.claude-opus-5-5-v1:0", true),
+        ("us.anthropic.claude-sonnet-5-5-v1:0", true),
+        ("global.anthropic.claude-fable-5-1", true),
+        ("global.anthropic.claude-fable-5", false),
+        ("us.anthropic.claude-haiku-5-5-v1:0", false),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Check weather")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(256)),
+                (
+                    "tools".to_string(),
+                    json!([{
+                        "type": "function",
+                        "function": {"name": "get_weather", "parameters": {"type": "object"}}
+                    }]),
+                ),
+                ("tool_choice".to_string(), json!("required")),
+            ]),
+        };
+
+        for result in [
+            map_chat_request_to_converse(&request, &context(model)),
+            map_chat_request_to_anthropic_messages(&request, &context(model)),
+        ] {
+            match result {
+                Err(ProviderError::InvalidRequest(message)) if rejects => assert!(
+                    message.contains("forced `tool_choice` is not supported"),
+                    "{model}: {message}"
+                ),
+                Ok(_) if !rejects => {}
+                other => panic!("{model}: unexpected result {other:?}"),
+            }
+        }
+    }
+}

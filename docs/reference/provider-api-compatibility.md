@@ -216,6 +216,17 @@ Chat Completions response policy matches the Bedrock Claude policy. Native Anthr
 
 Provider metadata preservation is not yet request-side replay. The current Vertex Anthropic mapper does not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 
+### Forced tool choice
+
+Some Claude models return 400 for a forced `tool_choice`, on Messages, token counting, and Batches alike. The gateway rejects these requests locally with a 400 for Anthropic-compatible, Anthropic-on-Vertex, and Bedrock (Converse and Runtime Anthropic) routes, before anything is sent upstream:
+
+| Forced `tool_choice` | Models |
+| --- | --- |
+| Rejected | Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5 |
+| Accepted | Claude Fable 5, Claude Opus 5, Claude Sonnet 5, Claude Haiku 5.5, and earlier Claude models |
+
+Forced choices are OpenAI `required` and named function choices, and Anthropic `{"type": "any"}` and `{"type": "tool"}`. `auto`, `none`, and an omitted `tool_choice` are always accepted. The model is matched from `upstream_model`, so Bedrock application inference profile IDs and ARNs that hide the model name are passed through to the upstream unchanged.
+
 Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, and streaming tool-use deltas are supported for Anthropic-on-Vertex text/tool workflows. Image/document content blocks remain unsupported in the current mapper and should keep `vision: false`; broader multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
 
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
@@ -277,7 +288,7 @@ The native Bedrock Anthropic body always includes:
 - `max_tokens` from `max_tokens` or `max_completion_tokens`
 - `temperature`, `top_p`, `top_k`, and `stop_sequences`, subject to Claude Opus 4.7+ sampling restrictions
 - function tools as Anthropic custom tools with `input_schema`
-- `tool_choice` mapped from OpenAI `auto`, `required`, and named function choices
+- `tool_choice` mapped from OpenAI `auto`, `required`, and named function choices; forced choices are rejected locally for the models listed under [forced tool choice](#forced-tool-choice)
 
 The implementation rejects missing `max_tokens` for native Claude invocation because Bedrock marks it required. It also rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls`, and `response_format`. JSON schema mode should stay disabled in route capabilities unless a route explicitly uses Bedrock/Anthropic-specific `output_config` through provider overrides and accepts the non-OpenAI contract.
 

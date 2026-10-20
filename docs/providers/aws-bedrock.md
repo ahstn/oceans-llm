@@ -234,6 +234,8 @@ Converse user content and tool results share base64 image/document conversion. S
 
 Bedrock rejects `strict` in Claude Opus 4.7 and 4.8 tool specifications, so the gateway omits it when the upstream model ID identifies those models. Models that support the field continue receiving the caller's explicit value. Application-inference-profile IDs and ARNs are opaque; set `compatibility.aws_bedrock.supports_strict_tools: false` when such a profile targets Opus 4.7/4.8. An explicit `true` or `false` overrides model-ID detection.
 
+Claude Fable 5.1, Mythos 5.1, Opus 5.5, and Sonnet 5.5 reject a forced `tool_choice` (`required`, a named function, `any`, or `tool`), so the gateway returns a 400 for it before calling Bedrock. See [forced tool choice](../reference/provider-api-compatibility.md#forced-tool-choice).
+
 ## Fallback Across Providers
 
 Route priority and weight can put Bedrock behind another provider while keeping a stable gateway model id.
