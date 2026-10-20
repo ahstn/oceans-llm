@@ -233,6 +233,31 @@ fn adaptive_only_models_validate_effort_and_reject_adaptive_budgets() {
 }
 
 #[test]
+fn converse_validates_effort_for_adaptive_only_models() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("reasoning_effort".to_string(), json!("minimal")),
+            ]),
+        };
+        let error = map_chat_request_to_converse(&request, &context(upstream_model))
+            .expect_err("minimal effort rejected")
+            .to_string();
+        assert!(
+            error.contains("supported effort levels"),
+            "{upstream_model}: {error}"
+        );
+    }
+}
+
+#[test]
 fn rejects_between_tools_outside_sonnet_5_5() {
     for upstream_model in [
         "global.anthropic.claude-opus-4-8",

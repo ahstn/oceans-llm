@@ -432,6 +432,9 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
+                if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+                    validate_adaptive_effort(&effort, upstream_model)?;
+                }
                 merge_converse_thinking_field(
                     additional,
                     "type",
