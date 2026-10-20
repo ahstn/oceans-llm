@@ -258,6 +258,43 @@ fn converse_validates_effort_for_adaptive_only_models() {
 }
 
 #[test]
+fn converse_rejects_native_budgets_and_invalid_effort_for_adaptive_only_models() {
+    for (thinking, expected) in [
+        (
+            json!({ "type": "adaptive", "budget_tokens": 1024 }),
+            "budget_tokens",
+        ),
+        (
+            json!({ "type": "adaptive", "effort": "minimal" }),
+            "supported effort levels",
+        ),
+    ] {
+        for upstream_model in [
+            "global.anthropic.claude-opus-5",
+            "global.anthropic.claude-haiku-5-5",
+        ] {
+            let request = CoreChatRequest {
+                model: "claude".to_string(),
+                messages: vec![message("user", "Think carefully")],
+                stream: true,
+                extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+            };
+            let mut context = context(upstream_model);
+            context.extra_body.insert(
+                "additionalModelRequestFields".to_string(),
+                json!({ "thinking": thinking.clone() }),
+            );
+
+            let error = map_chat_request_to_converse(&request, &context)
+                .expect_err("native thinking rejected")
+                .to_string();
+
+            assert!(error.contains(expected), "{upstream_model}: {error}");
+        }
+    }
+}
+
+#[test]
 fn rejects_between_tools_outside_sonnet_5_5() {
     for upstream_model in [
         "global.anthropic.claude-opus-4-8",

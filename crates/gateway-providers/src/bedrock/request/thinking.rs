@@ -573,6 +573,18 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
                     "`additionalModelRequestFields.thinking.type: enabled` is not supported for `{upstream_model}`; use adaptive thinking"
                 )));
             }
+            if thinking
+                .get("budget_tokens")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                }
+                .into());
+            }
+            if let Some(effort) = thinking.get("effort").filter(|value| !value.is_null()) {
+                validate_adaptive_effort(effort, upstream_model)?;
+            }
         }
         ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {
             if thinking_type == Some("adaptive") {
