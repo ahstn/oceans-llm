@@ -151,13 +151,15 @@ Native Claude invocation requires callers to set `max_tokens` or `max_completion
 
 For native Claude Messages invocation, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. On Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, and Claude Haiku 5.5, the gateway also sends `thinking: { "type": "adaptive" }` and rejects manual `thinking.type: "enabled"` budgets. For `thinking.type: "disabled"` on these models, see [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models). On Claude Opus 4.6 and Claude Sonnet 4.6, `reasoning_effort` also selects adaptive thinking, while explicit manual `thinking` budgets remain pass-through for existing callers.
 
-For Bedrock Converse and ConverseStream, the gateway uses Bedrock's provider-specific shape instead:
+For Bedrock Converse and ConverseStream, the gateway uses Bedrock's provider-specific shape instead. Effort goes in a sibling `output_config`, because Bedrock rejects it inside `thinking`:
 
 ```json
 {
   "additionalModelRequestFields": {
     "thinking": {
-      "type": "adaptive",
+      "type": "adaptive"
+    },
+    "output_config": {
       "effort": "high"
     }
   }

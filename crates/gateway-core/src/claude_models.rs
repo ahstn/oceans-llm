@@ -16,7 +16,7 @@ pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     let model = normalize_claude_model(upstream_model);
     if model.contains("claude-mythos-preview") {
         ClaudeThinkingPolicy::MythosPreview
-    } else if is_adaptive_only_claude(&model) {
+    } else if is_normalized_adaptive_only_claude(&model) {
         ClaudeThinkingPolicy::AdaptiveOnly
     } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
         ClaudeThinkingPolicy::AdaptivePreferred
@@ -28,13 +28,17 @@ pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
 }
 
 pub fn is_adaptive_only_claude(model: &str) -> bool {
-    let model = normalize_claude_model(model);
-    is_opus_4_7_or_later(&model)
-        || contains_exact_claude_model_marker(&model, "claude-fable-5")
-        || contains_exact_claude_model_marker(&model, "claude-opus-5")
-        || contains_exact_claude_model_marker(&model, "claude-sonnet-5")
-        || contains_exact_claude_model_marker(&model, "claude-haiku-5")
-        || contains_exact_claude_model_marker(&model, "claude-mythos-5")
+    is_normalized_adaptive_only_claude(&normalize_claude_model(model))
+}
+
+/// Expects a model already passed through `normalize_claude_model`.
+fn is_normalized_adaptive_only_claude(model: &str) -> bool {
+    is_opus_4_7_or_later(model)
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-opus-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+        || contains_exact_claude_model_marker(model, "claude-haiku-5")
+        || contains_exact_claude_model_marker(model, "claude-mythos-5")
 }
 
 /// Lowercases `model` and rewrites dotted versions such as `claude-haiku-5.5` (the OpenRouter

@@ -86,9 +86,6 @@ pub(super) fn map_chat_request_to_converse(
         .aws_bedrock
         .as_ref()
         .and_then(|compatibility| compatibility.supports_strict_tools);
-    if let Some(tool_choice) = passthrough.get("tool_choice") {
-        validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;
-    }
     if let Some(tool_config) = extract_tool_config(
         &mut passthrough,
         &context.upstream_model,
@@ -466,15 +463,12 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     passthrough.remove("stream");
 
     extract_anthropic_inference_fields(&mut body, &mut passthrough)?;
-    if let Some(tool_choice) = passthrough.get("tool_choice") {
-        validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;
-    }
     if let Some(tools) = extract_anthropic_tools(&mut passthrough)? {
         body.extend(tools);
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
     merge_object_overrides(&mut body, &context.extra_body);
-    // Route `extra_body` can replace the caller's choice, so check the merged value too.
+    // Checked after route `extra_body` merges, so an admin override decides the final choice.
     if let Some(tool_choice) = body.get("tool_choice") {
         validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;
     }

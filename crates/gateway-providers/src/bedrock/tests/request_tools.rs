@@ -618,3 +618,32 @@ fn rejects_forced_tool_choice_from_route_extra_body() {
         .insert("tool_choice".to_string(), json!({"type": "any"}));
     map_chat_request_to_anthropic_messages(&request, &allowed).expect("Haiku 5.5 allows it");
 }
+
+#[test]
+fn route_extra_body_can_replace_a_forced_tool_choice() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Check weather")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(256)),
+            (
+                "tools".to_string(),
+                json!([{
+                    "type": "function",
+                    "function": {"name": "get_weather", "parameters": {"type": "object"}}
+                }]),
+            ),
+            ("tool_choice".to_string(), json!("required")),
+        ]),
+    };
+    let mut context = context("us.anthropic.claude-sonnet-5-5-v1:0");
+    context
+        .extra_body
+        .insert("tool_choice".to_string(), json!({"type": "auto"}));
+
+    let body = map_chat_request_to_anthropic_messages(&request, &context)
+        .expect("route override decides the final choice");
+
+    assert_eq!(body["tool_choice"], json!({"type": "auto"}));
+}
