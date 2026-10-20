@@ -417,3 +417,27 @@ fn a_blank_main_file_is_the_default_config() {
         render_config(&sources(tmp.path()), false).expect("render with a blank main file");
     }
 }
+
+#[test]
+fn a_main_file_inside_the_config_directory_is_read_once() {
+    let tmp = tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        "gateway.yaml",
+        &format!("server:\n  bind: 127.0.0.1:8080\n{MAIN}"),
+    );
+    write(
+        tmp.path(),
+        "models/openai.yaml",
+        "models:\n  gpt-5:\n    route: { provider: openai-prod, upstream_model: gpt-5 }\n",
+    );
+
+    let loaded = GatewayConfig::load(&ConfigSources {
+        path: tmp.path().join("gateway.yaml"),
+        path_is_explicit: true,
+        dir: Some(tmp.path().to_path_buf()),
+    })
+    .expect("main file is not also a fragment");
+    assert_eq!(loaded.config.providers.len(), 1);
+    assert_eq!(loaded.config.models.len(), 1);
+}

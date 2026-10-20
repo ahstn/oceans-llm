@@ -123,6 +123,8 @@ impl TryFrom<RawModelConfig> for ModelConfig {
             (Some(route), None) => vec![route],
             (None, routes) => routes.unwrap_or_default(),
         };
+        let mut routes = routes;
+        infer_route_ids(&mut routes);
         Ok(Self {
             id: raw.id,
             benchmark_model_id: raw.benchmark_model_id,
@@ -152,19 +154,24 @@ fn is_valid_benchmark_model_id(value: &str) -> bool {
 /// Defaults each unnamed route's id to its provider key when that provider appears once in the
 /// model and the key is a valid route id. Named routes keep their identity when routes are
 /// reordered or reprioritized.
-pub(super) fn infer_route_ids(models: &mut [ModelConfig]) {
-    for model in models {
-        let mut provider_counts = BTreeMap::<String, usize>::new();
-        for route in &model.routes {
-            *provider_counts.entry(route.provider.clone()).or_default() += 1;
-        }
-        for route in &mut model.routes {
-            if route.id.is_none()
-                && provider_counts.get(&route.provider) == Some(&1)
-                && is_valid_route_id(&route.provider)
-            {
-                route.id = Some(route.provider.clone());
-            }
+/// Gives each unnamed route its provider key as id when that provider appears once in the model,
+/// the key is a valid route id, and no explicit route id in the model already uses it.
+fn infer_route_ids(routes: &mut [ModelRouteConfig]) {
+    let mut provider_counts = BTreeMap::<String, usize>::new();
+    for route in routes.iter() {
+        *provider_counts.entry(route.provider.clone()).or_default() += 1;
+    }
+    let explicit_ids = routes
+        .iter()
+        .filter_map(|route| route.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for route in routes {
+        if route.id.is_none()
+            && provider_counts.get(&route.provider) == Some(&1)
+            && is_valid_route_id(&route.provider)
+            && !explicit_ids.contains(&route.provider)
+        {
+            route.id = Some(route.provider.clone());
         }
     }
 }

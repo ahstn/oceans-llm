@@ -65,12 +65,17 @@ where
         .collect()
 }
 
-pub(super) fn deserialize_providers<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+/// Providers also get the `pricing_provider_id` their base URL determines, so every parsed
+/// config carries it, not only configs read through `GatewayConfig::load`.
+pub(super) fn deserialize_providers<'de, D>(
+    deserializer: D,
+) -> Result<Vec<super::ProviderConfig>, D::Error>
 where
     D: Deserializer<'de>,
-    T: DeserializeOwned,
 {
-    deserialize_keyed(deserializer, "providers")
+    let mut providers = deserialize_keyed(deserializer, "providers")?;
+    super::providers::infer_pricing_provider_ids(&mut providers);
+    Ok(providers)
 }
 
 pub(super) fn deserialize_models<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>

@@ -127,12 +127,6 @@ pub struct GatewayConfig {
 }
 
 impl GatewayConfig {
-    /// Fills fields that other config already determines: route ids and pricing catalog ids.
-    fn apply_inferred_defaults(&mut self) {
-        providers::infer_pricing_provider_ids(&mut self.providers);
-        models::infer_route_ids(&mut self.models);
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         self.server.validate()?;
         self.database.connection_options()?;

@@ -247,6 +247,9 @@ impl LibsqlStore {
         }
 
         let mut model_ids = std::collections::HashMap::new();
+        let mut existing_route_ids =
+            std::collections::HashMap::<Uuid, std::collections::HashSet<Uuid>>::new();
+        let no_route_ids = std::collections::HashSet::new();
         for model in models {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
@@ -293,6 +296,21 @@ impl LibsqlStore {
                 )
                 .await
                 .map_err(to_query_error)?;
+
+            // Route ids from before this seed, so a route can keep a legacy id it still has.
+            let mut route_id_rows = self
+                .connection
+                .query(
+                    "SELECT id FROM model_routes WHERE model_id = ?1",
+                    [model_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let ids = existing_route_ids.entry(model_id).or_default();
+            while let Some(row) = route_id_rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                ids.insert(parse_uuid(&id)?);
+            }
 
             // Batch history retains the exact route used for each submitted
             // job. Disable all existing routes first, then remove only routes
@@ -411,13 +429,11 @@ impl LibsqlStore {
                 .iter()
                 .enumerate()
                 .map(|(route_index, route)| {
-                    let own_id = route_uuid(
+                    let own_id = configured_route_uuid(
                         &model.model_key,
-                        route.route_key.as_deref(),
-                        &route.provider_key,
-                        &route.upstream_model,
-                        route.priority,
+                        route,
                         route_index,
+                        existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
                     );
                     (
                         own_id,

@@ -56,10 +56,7 @@ async fn main() -> anyhow::Result<()> {
     match &command {
         Command::Config(ConfigCommand::Validate) => {
             validate_config_file(&sources)?;
-            println!(
-                "gateway configuration {} is valid",
-                describe_sources(&sources)
-            );
+            println!("gateway configuration {} is valid", sources.describe());
             return Ok(());
         }
         Command::Config(ConfigCommand::Render { show_sources }) => {
@@ -88,24 +85,13 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-fn describe_sources(sources: &ConfigSources) -> String {
-    match &sources.dir {
-        Some(dir) => format!(
-            "`{}` with fragments from `{}`",
-            sources.path.display(),
-            dir.display()
-        ),
-        None => format!("`{}`", sources.path.display()),
-    }
-}
-
 fn load_config(sources: &ConfigSources) -> anyhow::Result<GatewayConfig> {
     GatewayConfig::load(sources)
         .map(|loaded| loaded.config)
         .with_context(|| {
             format!(
                 "failed to load gateway configuration from {}",
-                describe_sources(sources)
+                sources.describe()
             )
         })
 }
@@ -686,9 +672,7 @@ fn spawn_redundant_route_override_check(
     routes: gateway_service::OverriddenRoutes,
 ) {
     tokio::spawn(async move {
-        if let Err(error) = service.warn_on_redundant_route_overrides(routes).await {
-            tracing::warn!(error = %error, "checking route overrides against the catalog failed");
-        }
+        service.warn_on_redundant_route_overrides(routes).await;
     });
 }
 

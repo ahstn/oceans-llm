@@ -40,6 +40,19 @@ impl ConfigSources {
             dir: None,
         }
     }
+
+    /// The config file, and the fragment directory when one is set, for messages.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match &self.dir {
+            Some(dir) => format!(
+                "`{}` with fragments from `{}`",
+                self.path.display(),
+                dir.display()
+            ),
+            None => format!("`{}`", self.path.display()),
+        }
+    }
 }
 
 /// The file that defined one provider or model.
@@ -54,9 +67,11 @@ pub struct ConfigEntitySource {
 pub struct LoadedConfig {
     pub config: GatewayConfig,
     pub sources: Vec<ConfigEntitySource>,
-    /// The text of every file the load read, main file first, so `render_config` merges
-    /// exactly what was loaded without walking or reading the sources again.
-    documents: Vec<(PathBuf, String)>,
+    /// The text of the files the load read, so `render_config` merges exactly what was loaded
+    /// without walking or reading the sources again. The main document is `None` when the
+    /// implicit default path is absent.
+    main_document: Option<(PathBuf, String)>,
+    fragment_documents: Vec<(PathBuf, String)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,15 +88,18 @@ const FRAGMENT_COLLECTIONS: [&str; 2] = ["providers", "models"];
 impl GatewayConfig {
     pub fn load(sources: &ConfigSources) -> anyhow::Result<LoadedConfig> {
         let (mut config, main_text) = read_main_file(sources)?;
-        let mut documents = Vec::new();
-        if let Some(text) = main_text {
-            documents.push((sources.path.clone(), text));
-        }
+        let main_document = main_text.map(|text| (sources.path.clone(), text));
+        let mut fragment_documents = Vec::new();
         let mut tracker = SourceTracker::default();
         tracker.record_main(&config, &sources.path)?;
 
         if let Some(dir) = &sources.dir {
+            // A main file inside the config directory is read once, as the main file.
+            let main_canonical = fs::canonicalize(&sources.path).ok();
             for FragmentFile { path, canonical } in fragment_files(dir)? {
+                if main_canonical.as_ref() == Some(&canonical) {
+                    continue;
+                }
                 let raw = fs::read_to_string(&canonical).with_context(|| {
                     format!("failed reading config fragment `{}`", path.display())
                 })?;
@@ -103,24 +121,19 @@ impl GatewayConfig {
                 }
                 config.providers.extend(fragment.providers);
                 config.models.extend(fragment.models);
-                documents.push((path, raw));
+                fragment_documents.push((path, raw));
             }
         }
 
-        config.apply_inferred_defaults();
-        config.validate().with_context(|| match &sources.dir {
-            Some(dir) => format!(
-                "invalid gateway configuration `{}` with fragments from `{}`",
-                sources.path.display(),
-                dir.display()
-            ),
-            None => format!("invalid gateway configuration `{}`", sources.path.display()),
-        })?;
+        config
+            .validate()
+            .with_context(|| format!("invalid gateway configuration {}", sources.describe()))?;
 
         Ok(LoadedConfig {
             config,
             sources: tracker.sources,
-            documents,
+            main_document,
+            fragment_documents,
         })
     }
 
@@ -301,18 +314,18 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
 
     // Merge the same documents the load used. Only the main file contributes sections other
     // than providers and models, which the load already enforced for fragments.
-    let has_main = loaded
-        .documents
-        .first()
-        .is_some_and(|(path, _)| path == &sources.path);
-    let mut merged = Mapping::new();
     let mut collections: BTreeMap<&str, Mapping> = BTreeMap::new();
-    for (index, (path, text)) in loaded.documents.iter().enumerate() {
+    let mut merged = match &loaded.main_document {
+        Some((path, text)) => {
+            let mut document = parse_yaml_mapping(path, text)?;
+            take_collections(&mut document, &mut collections)?;
+            document
+        }
+        None => Mapping::new(),
+    };
+    for (path, text) in &loaded.fragment_documents {
         let mut document = parse_yaml_mapping(path, text)?;
         take_collections(&mut document, &mut collections)?;
-        if index == 0 && has_main {
-            merged = document;
-        }
     }
     ensure_render_matches_load(&collections, &loaded.sources)?;
     for collection in FRAGMENT_COLLECTIONS {
@@ -357,12 +370,6 @@ const CREDENTIAL_FIELDS: &[&str] = &[
     "token",
 ];
 
-/// Replaces values that can carry credentials. Rendered output still contains identity data,
-/// such as user emails, so it is not anonymized:
-/// `literal.` secret references, raw values in credential fields (including service-account key
-/// `value`s), every header value, and URL
-/// credentials (userinfo, query values, and fragments). `env.` and
-/// `file.` references name where a secret lives without containing it, so they stay visible.
 /// Where a value sits, for redaction rules that depend on context rather than field name.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RedactScope {
@@ -375,6 +382,11 @@ enum RedactScope {
     ManagedKey,
 }
 
+/// Replaces values that can carry credentials: `literal.` secret references, raw values in
+/// credential fields (including service-account key `value`s), every header value, and URL
+/// credentials (userinfo, query values, and fragments). `env.` and `file.` references name where
+/// a secret lives without containing it, so they stay visible. Rendered output still contains
+/// identity data, such as user emails, so it is not anonymized.
 fn redact_secrets(value: &mut Value, scope: RedactScope) {
     match value {
         Value::Mapping(mapping) => {

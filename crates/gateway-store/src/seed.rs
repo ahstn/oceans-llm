@@ -161,6 +161,40 @@ pub(crate) fn model_uuid(model_key: &str) -> Uuid {
     )
 }
 
+/// The id a configured route upserts under. Before route ids defaulted to the provider key, a
+/// route without an `id` took the positional legacy id, so after upgrading it carries a key equal
+/// to its provider. Its legacy id stays while a row under it already exists, because responses
+/// and request logs refer to route ids. The route moves to the keyed id once the legacy id would
+/// have changed anyway, when its priority or position in the model changes.
+pub(crate) fn configured_route_uuid(
+    model_key: &str,
+    route: &gateway_core::SeedModelRoute,
+    route_index: usize,
+    existing_ids: &std::collections::HashSet<Uuid>,
+) -> Uuid {
+    if route.route_key.as_deref() == Some(route.provider_key.as_str()) {
+        let legacy = route_uuid(
+            model_key,
+            None,
+            &route.provider_key,
+            &route.upstream_model,
+            route.priority,
+            route_index,
+        );
+        if existing_ids.contains(&legacy) {
+            return legacy;
+        }
+    }
+    route_uuid(
+        model_key,
+        route.route_key.as_deref(),
+        &route.provider_key,
+        &route.upstream_model,
+        route.priority,
+        route_index,
+    )
+}
+
 pub(crate) fn route_uuid(
     model_key: &str,
     route_key: Option<&str>,

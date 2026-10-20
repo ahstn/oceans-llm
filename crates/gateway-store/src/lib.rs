@@ -354,6 +354,88 @@ pub(crate) mod tests {
         batch_id
     }
 
+    async fn exercise_inferred_route_key_keeps_legacy_id<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let mut models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                route_key: None,
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::openai_compat_baseline(),
+                compatibility: RouteCompatibility::default(),
+            }],
+            allowlist: None,
+        }];
+        let providers = &providers;
+        let route_id = |models: Vec<SeedModel>| async move {
+            store
+                .seed_from_inputs(providers, &models, &[], &[], &[], &[], &[], &[])
+                .await
+                .expect("seed");
+            let routes = store
+                .list_routes_for_model(crate::seed::model_uuid("fast"))
+                .await
+                .expect("routes");
+            assert_eq!(routes.len(), 1);
+            routes[0].id
+        };
+
+        let legacy = route_id(models.clone()).await;
+        assert_eq!(
+            legacy,
+            crate::seed::route_uuid("fast", None, "openai-prod", "gpt-4o-mini", 10, 0)
+        );
+
+        // After upgrading, the route id defaults to the provider key; the route keeps its id.
+        models[0].routes[0].route_key = Some("openai-prod".to_string());
+        assert_eq!(route_id(models.clone()).await, legacy);
+        assert_eq!(
+            route_id(models.clone()).await,
+            legacy,
+            "stable across reseeds"
+        );
+
+        // A priority change would have moved the legacy id, so the route takes its keyed id.
+        models[0].routes[0].priority = 20;
+        let keyed = crate::seed::route_uuid(
+            "fast",
+            Some("openai-prod"),
+            "openai-prod",
+            "gpt-4o-mini",
+            20,
+            0,
+        );
+        assert_eq!(route_id(models.clone()).await, keyed);
+        models[0].routes[0].priority = 10;
+        assert_eq!(
+            route_id(models).await,
+            keyed,
+            "keyed ids no longer depend on priority"
+        );
+    }
+
     async fn exercise_batch_referenced_route_rename<S>(store: &S)
     where
         S: GatewayStore + Sync,
@@ -7107,6 +7189,45 @@ pub(crate) mod tests {
             .expect("postgres store");
 
         exercise_batch_referenced_route_rename(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn seed_keeps_legacy_route_id_when_route_key_is_inferred() {
+        let temp = tempdir().expect("tempdir");
+        let db_path = temp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_inferred_route_key_keeps_legacy_id(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_keeps_legacy_route_id_when_route_key_is_inferred() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres legacy route id seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_inferred_route_key_keeps_legacy_id(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

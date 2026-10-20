@@ -724,3 +724,43 @@ fn rejects_ambiguous_model_shapes() {
         );
     }
 }
+
+#[test]
+fn parsing_infers_route_ids_without_taking_an_explicit_id() {
+    let config: GatewayConfig = serde_yaml::from_str(
+        r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  openai-secondary:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+models:
+  fast:
+    route: { provider: openai-prod, upstream_model: gpt-5-mini }
+  pooled:
+    routes:
+      - { id: openai-secondary, provider: openai-prod, upstream_model: gpt-5 }
+      - { provider: openai-secondary, upstream_model: gpt-5 }
+"#,
+    )
+    .expect("config parses");
+
+    let route_ids = |model: usize| {
+        config.models[model]
+            .routes
+            .iter()
+            .map(|route| route.id.clone())
+            .collect::<Vec<_>>()
+    };
+    // Inference runs during parsing, not only in `GatewayConfig::load`.
+    assert_eq!(route_ids(0), [Some("openai-prod".to_string())]);
+    // `openai-secondary` is already an explicit id in this model, so it is not inferred again.
+    assert_eq!(route_ids(1), [Some("openai-secondary".to_string()), None]);
+    let crate::config::ProviderConfig::OpenAiCompat(provider) = &config.providers[0] else {
+        panic!("openai_compat provider");
+    };
+    assert_eq!(provider.pricing_provider_id, "openai");
+    config.validate().expect("valid config");
+}

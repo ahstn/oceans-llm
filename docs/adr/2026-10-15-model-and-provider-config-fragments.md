@@ -131,16 +131,15 @@ Positive:
 - Model config can be split by provider account in plain files, Helm values files, or ConfigMaps, without the chart knowing file names.
 - Typos and duplicate ids fail at load time, naming the files involved.
 - A typical model entry is a key, a provider, and an upstream model.
-- Route identities no longer change when routes are reordered.
+- Route identities no longer change when routes are reordered, once a route has its keyed id.
 - The request path and model metadata agree on provider capability.
 
 Trade-offs:
 
-- **Route identity changes once.**
-  - Unnamed routes now take their provider key as id, so the first reseed after upgrading gives them new internal route ids.
-  - Old route rows not referenced by batch jobs are deleted, and new ones are inserted.
+- **Route identity moves to the keyed form gradually.**
+  - Unnamed routes now take their provider key as id. Upgrading does not change their internal route ids: seeding keeps a route's positional legacy id while a row under it still exists, so `previous_response_id` continuations, session affinity, and request-log joins keep working across the upgrade.
+  - A route takes its keyed id the first time its priority or position changes, which would have changed the legacy id anyway. From then on, reordering keeps its id.
   - A batch-referenced row keeps its old id. Seeding now reuses any surviving row with the same model, provider, upstream model, and priority instead of inserting a second row that the `model_routes` unique key would reject. Before this change, renaming a route with batch history failed the seed.
-  - Session affinity bindings for those routes reset once.
 - **Unknown fields now fail.** Configs with misspelled or stale provider and route fields fail to load until those fields are fixed.
 - **A missing explicit config path fails.** Deployments that pointed `GATEWAY_CONFIG` at a missing file and relied on the empty default now fail at startup.
 - **List form in Helm is noisy.** List-form `providers` and `models` in Helm values log a Helm notice, because the chart defaults are now maps.
