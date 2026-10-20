@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"6380927df10782511a2c36dfd45a2ec3\"",
-    "fetched_at": "2026-10-20T07:50:27.556938Z"
+    "etag": "\"97da5102b498d8f2e7839cafc5a03a28\"",
+    "fetched_at": "2026-10-20T18:08:18.903867Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -24515,9 +24515,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4400",
-            "output": "1.3200",
-            "cache_read": "0.0140",
+            "input": "0.1298",
+            "output": "0.3894",
+            "cache_read": "0.0041",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -24609,9 +24609,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.9553",
-            "output": "1.9105",
-            "cache_read": "0.0796",
+            "input": "0.3953",
+            "output": "0.7907",
+            "cache_read": "0.0329",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -24703,9 +24703,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0352",
-            "output": "0.0112",
-            "cache_read": "0.0016",
+            "input": "0.0283",
+            "output": "0.1200",
+            "cache_read": "0.0006",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -24751,9 +24751,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0060",
+            "input": "0.1500",
+            "output": "0.6000",
+            "cache_read": "0.0030",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -28502,9 +28502,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.6800",
-            "output": "2.0900",
-            "cache_read": "0.0700",
+            "input": "1.3600",
+            "output": "4.1800",
+            "cache_read": "0.1400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -34729,9 +34729,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
+            "input": "0.1000",
             "output": "1.1000",
-            "cache_read": null,
+            "cache_read": "0.0700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -34739,7 +34739,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -36864,9 +36864,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -36956,9 +36956,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -38603,9 +38603,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.6000",
-            "output": "1.9200",
-            "cache_read": "0.1200",
+            "input": "1.0000",
+            "output": "3.2000",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -38613,7 +38613,7 @@
           "limit": {
             "context": 204800,
             "input": null,
-            "output": 128000
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -39223,9 +39223,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.0240",
-            "cache_read": "0.0100",
+            "input": "0.0700",
+            "output": "0.5000",
+            "cache_read": "0.0080",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -39271,9 +39271,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2250",
+            "input": "0.1307",
             "output": "8.0000",
-            "cache_read": "0.2300",
+            "cache_read": "0.1300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -39318,9 +39318,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0159",
+            "input": "0.0121",
             "output": "0.1200",
-            "cache_read": "0.0034",
+            "cache_read": "0.0033",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null

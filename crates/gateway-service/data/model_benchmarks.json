@@ -5,7 +5,7 @@
     "benchmark_source_url": "https://artificialanalysis.ai",
     "retrieved_via": "openrouter",
     "source_url": "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200",
-    "updated_at": "2026-10-18T12:23:11Z"
+    "updated_at": "2026-10-20T18:08:17Z"
   },
   "models": {
     "amazon/nova-2-lite-v1": {
@@ -1167,6 +1167,16 @@
         "agentic_index": 0.9
       },
       "updated_at": "2026-09-24T00:59:11Z"
+    },
+    "qwen/qwen3-coder": {
+      "name": "Qwen: Qwen3 Coder 480B A35B",
+      "canonical_slug": "qwen/qwen3-coder-480b-a35b-07-25",
+      "artificial_analysis": {
+        "intelligence_index": 11.9,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-20T18:08:17Z"
     },
     "qwen/qwen3-coder-next": {
       "name": "Qwen: Qwen3 Coder Next",
