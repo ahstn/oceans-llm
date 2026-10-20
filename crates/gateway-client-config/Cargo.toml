@@ -4,6 +4,7 @@ version = "0.43.0"
 edition = "2024"
 
 [dependencies]
+gateway-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

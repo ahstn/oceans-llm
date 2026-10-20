@@ -1,5 +1,9 @@
 use super::*;
-use crate::anthropic::{ClaudeThinkingPolicy, claude_thinking_policy};
+use crate::anthropic::{
+    AnthropicAdapterError, ClaudeThinkingOff, ClaudeThinkingPolicy, claude_thinking_off,
+    claude_thinking_policy,
+    thinking::{resolve_thinking_off, validate_adaptive_effort},
+};
 
 pub(super) fn apply_anthropic_thinking_compatibility(
     body: &mut Map<String, Value>,
@@ -15,11 +19,29 @@ pub(super) fn apply_anthropic_thinking_compatibility(
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
+    let caller_thinking_type = body
+        .get("thinking")
+        .and_then(|thinking| thinking.get("type"))
+        .and_then(Value::as_str);
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
+    {
+        if budget_tokens.is_some() {
+            return Err(ProviderError::InvalidRequest(format!(
+                "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
+            )));
+        }
+        return apply_anthropic_thinking_off(body, effort, upstream_model);
+    }
+
     if let Some(effort) = effort {
         match policy {
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
+                if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+                    validate_adaptive_effort(&effort, upstream_model)?;
+                }
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
                 merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
@@ -64,6 +86,25 @@ pub(super) fn apply_anthropic_thinking_compatibility(
         }
     }
 
+    Ok(())
+}
+
+/// Keeps a caller's request to turn thinking off on an adaptive-only model, in the form that
+/// model accepts, using the rules shared with the Anthropic adapter.
+fn apply_anthropic_thinking_off(
+    body: &mut Map<String, Value>,
+    effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let thinking = body
+        .get("thinking")
+        .and_then(Value::as_object)
+        .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
+    let thinking = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
+    body.insert("thinking".to_string(), thinking);
+    if let Some(effort) = effort {
+        merge_anthropic_output_effort(body, effort, upstream_model)?;
+    }
     Ok(())
 }
 
@@ -152,14 +193,16 @@ pub(super) fn merge_optional_efforts(
     }
 }
 
+/// A null budget counts as absent, as on the Anthropic adapter.
 pub(super) fn extract_anthropic_reasoning_budget_tokens(
     extra: &mut BTreeMap<String, Value>,
 ) -> Option<Value> {
-    if let Some(value) = extra.remove("thinking_budget_tokens") {
-        return Some(value);
-    }
-    if let Some(value) = extra.remove("reasoning_budget_tokens") {
-        return Some(value);
+    for key in ["thinking_budget_tokens", "reasoning_budget_tokens"] {
+        if let Some(value) = extra.remove(key)
+            && !value.is_null()
+        {
+            return Some(value);
+        }
     }
     None
 }
@@ -178,6 +221,14 @@ pub(super) fn validate_caller_thinking_for_policy(
         )
     })?;
     let thinking_type = thinking.get("type").and_then(Value::as_str);
+    if thinking_type == Some("between_tools")
+        && claude_thinking_off(upstream_model) != ClaudeThinkingOff::BetweenTools
+    {
+        return Err(AnthropicAdapterError::BetweenToolsNotSupported {
+            model: upstream_model.to_string(),
+        }
+        .into());
+    }
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -185,6 +236,15 @@ pub(super) fn validate_caller_thinking_for_policy(
                 return Err(ProviderError::InvalidRequest(format!(
                     "`thinking.type: enabled` with manual `budget_tokens` is not supported for `{upstream_model}`; use `thinking.type: adaptive` and `output_config.effort`"
                 )));
+            }
+            if thinking
+                .get("budget_tokens")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                }
+                .into());
             }
         }
         ClaudeThinkingPolicy::ManualOnly => {
@@ -358,6 +418,42 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     let effort = extract_anthropic_reasoning_effort(extra)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
     let policy = claude_thinking_policy(upstream_model);
+    move_converse_thinking_effort(body, upstream_model)?;
+
+    let caller_thinking_type = body
+        .get("additionalModelRequestFields")
+        .and_then(|additional| additional.get("thinking"))
+        .and_then(|thinking| thinking.get("type"))
+        .and_then(Value::as_str);
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
+    {
+        if budget_tokens.is_some() {
+            return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                model: upstream_model.to_string(),
+            }
+            .into());
+        }
+        let additional = ensure_additional_model_request_fields(body)?;
+        return apply_converse_thinking_off(additional, effort, upstream_model);
+    }
+
+    // A native `output_config.effort` turns on adaptive thinking, as on the Messages paths.
+    let effort = effort.or_else(|| {
+        matches!(
+            policy,
+            ClaudeThinkingPolicy::AdaptiveOnly
+                | ClaudeThinkingPolicy::AdaptivePreferred
+                | ClaudeThinkingPolicy::MythosPreview
+        )
+        .then(|| {
+            body.get("additionalModelRequestFields")
+                .and_then(Value::as_object)
+                .and_then(converse_output_effort)
+                .cloned()
+        })
+        .flatten()
+    });
 
     if effort.is_none() && budget_tokens.is_none() {
         validate_converse_caller_thinking_for_policy(body, policy, upstream_model)?;
@@ -372,13 +468,16 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
             ClaudeThinkingPolicy::AdaptiveOnly
             | ClaudeThinkingPolicy::AdaptivePreferred
             | ClaudeThinkingPolicy::MythosPreview => {
+                if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+                    validate_adaptive_effort(&effort, upstream_model)?;
+                }
                 merge_converse_thinking_field(
                     additional,
                     "type",
                     json!("adaptive"),
                     upstream_model,
                 )?;
-                merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+                merge_converse_output_effort(additional, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualWithEffort => {
                 let budget_tokens = budget_tokens
@@ -400,7 +499,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
                     budget_tokens,
                     upstream_model,
                 )?;
-                merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+                merge_converse_output_effort(additional, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
                 let budget_tokens = budget_tokens
@@ -454,6 +553,82 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     Ok(())
 }
 
+/// Applies the shared thinking-off rules to `additionalModelRequestFields.thinking`. The thinking
+/// object is replaced by the resolved type-only form, so caller fields such as `display` are
+/// dropped as on Messages routes; effort stays in `output_config`.
+fn apply_converse_thinking_off(
+    additional: &mut Map<String, Value>,
+    effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    if let Some(effort) = effort {
+        merge_converse_output_effort(additional, effort, upstream_model)?;
+    }
+    let effort = converse_output_effort(additional).cloned();
+    let thinking = additional
+        .get("thinking")
+        .and_then(Value::as_object)
+        .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
+    let resolved = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
+    additional.insert("thinking".to_string(), resolved);
+    Ok(())
+}
+
+/// Bedrock Converse takes Claude effort in `additionalModelRequestFields.output_config.effort`
+/// and rejects it inside `thinking`, so a caller's `thinking.effort` is moved there.
+fn move_converse_thinking_effort(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let Some(additional) = body
+        .get_mut("additionalModelRequestFields")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    let Some(effort) = additional
+        .get_mut("thinking")
+        .and_then(Value::as_object_mut)
+        .and_then(|thinking| thinking.remove("effort"))
+        .filter(|effort| !effort.is_null())
+    else {
+        return Ok(());
+    };
+    merge_converse_output_effort(additional, effort, upstream_model)
+}
+
+fn merge_converse_output_effort(
+    additional: &mut Map<String, Value>,
+    effort: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let Value::Object(output_config) = additional
+        .entry("output_config".to_string())
+        .or_insert_with(|| Value::Object(Map::new()))
+    else {
+        return Err(ProviderError::InvalidRequest(
+            "`additionalModelRequestFields.output_config` must be an object for aws_bedrock Converse"
+                .to_string(),
+        ));
+    };
+    match output_config.get("effort").filter(|value| !value.is_null()) {
+        Some(existing) if existing != &effort => Err(ProviderError::InvalidRequest(format!(
+            "`reasoning_effort` conflicts with `additionalModelRequestFields.output_config.effort` for `{upstream_model}`"
+        ))),
+        _ => {
+            output_config.insert("effort".to_string(), effort);
+            Ok(())
+        }
+    }
+}
+
+fn converse_output_effort(additional: &Map<String, Value>) -> Option<&Value> {
+    additional
+        .get("output_config")?
+        .get("effort")
+        .filter(|value| !value.is_null())
+}
+
 pub(super) fn ensure_additional_model_request_fields(
     body: &mut Map<String, Value>,
 ) -> Result<&mut Map<String, Value>, ProviderError> {
@@ -492,6 +667,11 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
     policy: ClaudeThinkingPolicy,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && let Some(effort) = converse_output_effort(additional)
+    {
+        validate_adaptive_effort(effort, upstream_model)?;
+    }
     let Some(thinking) = additional.get("thinking") else {
         return Ok(());
     };
@@ -502,6 +682,14 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
         )
     })?;
     let thinking_type = thinking.get("type").and_then(Value::as_str);
+    if thinking_type == Some("between_tools")
+        && claude_thinking_off(upstream_model) != ClaudeThinkingOff::BetweenTools
+    {
+        return Err(AnthropicAdapterError::BetweenToolsNotSupported {
+            model: upstream_model.to_string(),
+        }
+        .into());
+    }
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -509,6 +697,15 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
                 return Err(ProviderError::InvalidRequest(format!(
                     "`additionalModelRequestFields.thinking.type: enabled` is not supported for `{upstream_model}`; use adaptive thinking"
                 )));
+            }
+            if thinking
+                .get("budget_tokens")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                    model: upstream_model.to_string(),
+                }
+                .into());
             }
         }
         ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {

@@ -149,15 +149,17 @@ Native Claude invocation requires callers to set `max_tokens` or `max_completion
 
 ### Claude Thinking Compatibility
 
-For native Claude Messages invocation, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. On Claude Opus 4.7 and later, the gateway also sends `thinking: { "type": "adaptive" }` and rejects manual `thinking.type: "enabled"` budgets. On Claude Opus 4.6 and Claude Sonnet 4.6, `reasoning_effort` also selects adaptive thinking, while explicit manual `thinking` budgets remain pass-through for existing callers.
+For native Claude Messages invocation, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. On Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, and Claude Haiku 5.5, the gateway also sends `thinking: { "type": "adaptive" }` and rejects manual `thinking.type: "enabled"` budgets. For `thinking.type: "disabled"` on these models, see [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models). On Claude Opus 4.6 and Claude Sonnet 4.6, `reasoning_effort` also selects adaptive thinking, while explicit manual `thinking` budgets remain pass-through for existing callers.
 
-For Bedrock Converse and ConverseStream, the gateway uses Bedrock's provider-specific shape instead:
+For Bedrock Converse and ConverseStream, the gateway uses Bedrock's provider-specific shape instead. Effort goes in a sibling `output_config`, because Bedrock rejects it inside `thinking`:
 
 ```json
 {
   "additionalModelRequestFields": {
     "thinking": {
-      "type": "adaptive",
+      "type": "adaptive"
+    },
+    "output_config": {
       "effort": "high"
     }
   }
@@ -233,6 +235,8 @@ Static route `extra_body` is merged after request-scoped validation and remains 
 Converse user content and tool results share base64 image/document conversion. Supported documents are PDF, CSV, Word (`doc`, `docx`), Excel (`xls`, `xlsx`), HTML, Markdown, and plain text. Tool results also accept structured JSON. Document names are normalized to Bedrock's required character set. Tool IDs that are invalid or longer than 64 characters are replaced deterministically on both the tool-use and tool-result blocks; valid Bedrock IDs are unchanged.
 
 Bedrock rejects `strict` in Claude Opus 4.7 and 4.8 tool specifications, so the gateway omits it when the upstream model ID identifies those models. Models that support the field continue receiving the caller's explicit value. Application-inference-profile IDs and ARNs are opaque; set `compatibility.aws_bedrock.supports_strict_tools: false` when such a profile targets Opus 4.7/4.8. An explicit `true` or `false` overrides model-ID detection.
+
+Claude Fable 5.1, Mythos 5.1, Opus 5.5, and Sonnet 5.5 reject a forced `tool_choice` (`required`, a named function, `any`, or `tool`), so the gateway returns a 400 for it before calling Bedrock. See [forced tool choice](../reference/provider-api-compatibility.md#forced-tool-choice).
 
 ## Fallback Across Providers
 

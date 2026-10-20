@@ -202,7 +202,7 @@ Claude thinking compatibility is model-aware:
 | Model family | Gateway behavior |
 | --- | --- |
 | Claude Fable 5.1 | Adaptive thinking is always on. Request-level `reasoning_effort`, `reasoning.effort`, or `output_config.effort` maps to adaptive thinking plus `output_config.effort`. Provider support for beta per-message effort is separate from request-level mapping; see [Google Vertex AI](../providers/gcp-vertex.md#per-message-effort). |
-| Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, Claude Haiku 5.5 | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. See [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models) for `thinking.type: "disabled"`. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, though they are deprecated upstream. |
 | Claude Mythos Preview | `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when the request also includes a manual thinking budget. |
@@ -215,6 +215,17 @@ Model reasoning-effort ceilings are enforced before provider mapping. Every expl
 Chat Completions response policy matches the Bedrock Claude policy. Native Anthropic `thinking` and `redacted_thinking` blocks are never concatenated into `choices[*].message.content`. Streaming `thinking_delta` and `signature_delta` events are never emitted as `delta.content`. The gateway preserves these blocks under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
 
 Provider metadata preservation is not yet request-side replay. The current Vertex Anthropic mapper does not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
+
+### Forced tool choice
+
+Some Claude models return 400 for a forced `tool_choice`, on Messages, token counting, and Batches alike. The gateway rejects these requests locally with a 400 for Anthropic-compatible, Anthropic-on-Vertex, and Bedrock (Converse and Runtime Anthropic) routes, before anything is sent upstream:
+
+| Forced `tool_choice` | Models |
+| --- | --- |
+| Rejected | Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5 |
+| Accepted | Claude Fable 5, Claude Opus 5, Claude Sonnet 5, Claude Haiku 5.5, and earlier Claude models |
+
+Forced choices are OpenAI `required` and named function choices, and Anthropic `{"type": "any"}` and `{"type": "tool"}`. `auto`, `none`, and an omitted `tool_choice` are always accepted. The model is matched from `upstream_model`, so Bedrock application inference profile IDs and ARNs that hide the model name are passed through to the upstream unchanged.
 
 Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, and streaming tool-use deltas are supported for Anthropic-on-Vertex text/tool workflows. Image/document content blocks remain unsupported in the current mapper and should keep `vision: false`; broader multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
 
@@ -277,7 +288,7 @@ The native Bedrock Anthropic body always includes:
 - `max_tokens` from `max_tokens` or `max_completion_tokens`
 - `temperature`, `top_p`, `top_k`, and `stop_sequences`, subject to Claude Opus 4.7+ sampling restrictions
 - function tools as Anthropic custom tools with `input_schema`
-- `tool_choice` mapped from OpenAI `auto`, `required`, and named function choices
+- `tool_choice` mapped from OpenAI `auto`, `required`, and named function choices; forced choices are rejected locally for the models listed under [forced tool choice](#forced-tool-choice)
 
 The implementation rejects missing `max_tokens` for native Claude invocation because Bedrock marks it required. It also rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls`, and `response_format`. JSON schema mode should stay disabled in route capabilities unless a route explicitly uses Bedrock/Anthropic-specific `output_config` through provider overrides and accepts the non-OpenAI contract.
 
@@ -285,7 +296,7 @@ Claude thinking compatibility is model-aware:
 
 | Model family | Gateway behavior |
 | --- | --- |
-| Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, Claude Haiku 5.5 | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. See [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models) for `thinking.type: "disabled"`. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` or `reasoning.effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual `thinking.type: "enabled"` with `budget_tokens` remains pass-through because Anthropic still accepts it. |
 | Claude Mythos Preview | `reasoning_effort` maps to adaptive thinking and `output_config.effort`; `thinking.type: "disabled"` is rejected. |
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to Bedrock's beta `output_config.effort` for native Messages invocation and adds `anthropic_beta: ["effort-2025-11-24"]`. If a manual budget is also supplied through `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`, the gateway sends manual `thinking.type: "enabled"` as well. |
@@ -293,7 +304,7 @@ Claude thinking compatibility is model-aware:
 
 Provider-specific fields remain available where they do not conflict with normalized compatibility behavior. `anthropic_beta`, `context_management`, `container`, and `metadata` are copied through. `thinking` and `output_config` are copied through first, then normalized OpenAI-shaped reasoning fields are applied. If `reasoning_effort` disagrees with `reasoning.effort`, `output_config.effort`, caller-supplied `thinking`, or a manual budget, the request fails locally with a deterministic gateway error instead of leaking incompatible OpenAI-only fields upstream. Route `extra_body` is still a final raw override for admin-controlled experiments.
 
-For Bedrock Converse and ConverseStream, Claude thinking controls are written to `additionalModelRequestFields.thinking`. Adaptive models receive `type: "adaptive"` and `effort` inside that object. Manual-budget models receive `type: "enabled"` and `budget_tokens` inside that object. Existing unrelated `additionalModelRequestFields` keys are preserved, while conflicting `thinking` values are rejected locally.
+For Bedrock Converse and ConverseStream, Claude thinking controls are written to `additionalModelRequestFields`. Adaptive models receive `thinking.type: "adaptive"`, and effort goes in a sibling `output_config.effort`, because Bedrock rejects effort inside `thinking`. A caller-supplied `thinking.effort` is moved to `output_config.effort`. Manual-budget models receive `type: "enabled"` and `budget_tokens` inside `thinking`. Existing unrelated `additionalModelRequestFields` keys are preserved, while conflicting `thinking` values are rejected locally. A caller-supplied `thinking.type: "disabled"` or `"between_tools"` follows the [thinking-off rules](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models).
 
 Vision is supported only for Bedrock-compatible base64 image payloads. Remote image URLs are rejected because Bedrock Anthropic Messages requires base64 image sources. Tools and tool-result turns are supported for Claude 3+ models, subject to the model's Bedrock feature availability.
 

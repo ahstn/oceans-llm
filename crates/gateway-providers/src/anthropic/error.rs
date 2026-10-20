@@ -52,7 +52,7 @@ pub enum AnthropicAdapterError {
     )]
     RemoteImageUrlNotSupported,
     #[error(
-        "forced `tool_choice` is not supported for `{model}`; Fable 5.1 rejects forced tool choice, use `auto` or omit the field"
+        "forced `tool_choice` is not supported for `{model}`; this model rejects `any`, `tool`, `required`, and named function choices, use `auto`, `none`, or omit the field"
     )]
     ForcedToolChoiceRejected { model: String },
     #[error("unsupported tool_choice for Anthropic mapping")]
@@ -124,9 +124,17 @@ pub enum AnthropicAdapterError {
     )]
     AdaptiveOnlyManualThinkingNotSupported { model: String },
     #[error(
-        "`thinking.type: disabled` is not supported for `{model}`; adaptive thinking is always enabled"
+        "`thinking.type: disabled` is not supported for `{model}`; adaptive thinking is always enabled. Omit `thinking` and set `output_config.effort` to `low` for the least thinking, or route this request to a model that can turn thinking off"
     )]
     AdaptiveOnlyDisabledNotSupported { model: String },
+    #[error(
+        "`output_config.effort` {effort} is not supported with thinking turned off for `{model}`; use effort `high` or below, or adaptive thinking"
+    )]
+    DisabledThinkingEffortTooHigh { effort: String, model: String },
+    #[error(
+        "`thinking.type: between_tools` is not supported for `{model}`; only Claude Sonnet 5.5 accepts it"
+    )]
+    BetweenToolsNotSupported { model: String },
     #[error("`thinking.type: disabled` is not supported for Claude Mythos Preview")]
     MythosDisabledNotSupported,
     #[error("`thinking.type: enabled` for `{model}` must include `budget_tokens`")]

@@ -1,3 +1,8 @@
+use gateway_core::claude_models::{
+    ClaudeThinkingOff, claude_thinking_off, contains_exact_claude_model_marker,
+    normalize_claude_model,
+};
+
 use crate::types::ThinkingPolicy;
 
 const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
@@ -11,7 +16,12 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
     "claude-sonnet-4-6",
 ];
 
-const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
+const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &[
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-haiku-5",
+    "claude-mythos-5",
+];
 
 /// Infers the thinking policy from candidate identifiers, most specific first: callers pass
 /// the upstream model, then gateway model aliases, then provider metadata. The first candidate
@@ -39,12 +49,13 @@ pub fn infer_thinking_policy(
 }
 
 fn classify_model_family(value: &str) -> Option<ThinkingPolicy> {
+    let claude = normalize_claude_model(value);
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
-        .any(|marker| value.contains(marker))
+        .any(|marker| claude.contains(marker))
         || SAFE_EFFORT_EXACT_MODEL_MARKERS
             .iter()
-            .any(|marker| contains_exact_model_marker(value, marker))
+            .any(|marker| contains_exact_claude_model_marker(&claude, marker))
     {
         return Some(ThinkingPolicy::AnthropicSafeEffort);
     }
@@ -82,10 +93,12 @@ fn gemini_generation(value: &str) -> Option<(u32, u32, bool)> {
     })
 }
 
-fn contains_exact_model_marker(value: &str, marker: &str) -> bool {
-    value.split(marker).skip(1).any(|rest| {
-        rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
-        })
-    })
+/// Whether any of `values` names a Claude model that always thinks, and so rejects the
+/// `thinking.type: disabled` requests Claude Code sends for background work. Uses the same
+/// table as the gateway's request adapters.
+#[must_use]
+pub(crate) fn claude_always_thinks(values: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
+    values
+        .into_iter()
+        .any(|value| claude_thinking_off(value.as_ref()) == ClaudeThinkingOff::Unsupported)
 }

@@ -1,4 +1,7 @@
 use super::*;
+use crate::anthropic::{
+    AnthropicAdapterError, claude_rejects_forced_tool_choice, validate_anthropic_tool_choice,
+};
 
 mod content;
 mod inference;
@@ -99,6 +102,7 @@ pub(super) fn map_chat_request_to_converse(
     }
     extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
+    validate_converse_tool_choice(&body, &context.upstream_model)?;
     validate_converse_request_controls(&body, request.stream)?;
     apply_converse_anthropic_thinking_compatibility(
         &mut body,
@@ -464,6 +468,10 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
     merge_object_overrides(&mut body, &context.extra_body);
+    // Checked after route `extra_body` merges, so an admin override decides the final choice.
+    if let Some(tool_choice) = body.get("tool_choice") {
+        validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;
+    }
     apply_anthropic_thinking_compatibility(&mut body, &mut passthrough, &context.upstream_model)?;
     reject_openai_only_fields(&passthrough)?;
     reject_unknown_anthropic_messages_fields(&passthrough)?;
@@ -495,6 +503,26 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
 
     Ok(Value::Object(body))
+}
+
+/// Rejects a forced Converse `toolConfig.toolChoice` (`any` or `tool`) on Claude models that
+/// reject forced tool choice, including one supplied through route `extra_body`.
+fn validate_converse_tool_choice(
+    body: &Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let forced = body
+        .get("toolConfig")
+        .and_then(|tool_config| tool_config.get("toolChoice"))
+        .and_then(Value::as_object)
+        .is_some_and(|choice| choice.contains_key("any") || choice.contains_key("tool"));
+    if forced && claude_rejects_forced_tool_choice(upstream_model) {
+        return Err(AnthropicAdapterError::ForcedToolChoiceRejected {
+            model: upstream_model.to_string(),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 pub(crate) fn merge_object_overrides(

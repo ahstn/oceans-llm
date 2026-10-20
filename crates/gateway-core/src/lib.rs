@@ -3,6 +3,7 @@ pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
+pub mod claude_models;
 pub mod credential_scopes;
 pub mod domain;
 pub mod error;

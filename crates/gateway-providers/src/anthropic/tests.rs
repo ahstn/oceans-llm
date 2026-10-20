@@ -12,7 +12,7 @@ use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
 use super::response::{map_anthropic_finish_reason, normalize_anthropic_response};
 use super::streaming::normalize_anthropic_stream;
-use super::thinking::apply_anthropic_thinking_compatibility;
+use super::thinking::{apply_anthropic_thinking_compatibility, validate_anthropic_tool_choice};
 use crate::anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
@@ -322,83 +322,308 @@ fn fable_5_1_rejects_disabled_thinking() {
 }
 
 #[test]
-fn fable_5_1_rejects_forced_tool_choice() {
-    let forbidden_choices = [
+fn sonnet_5_5_maps_disabled_thinking_to_between_tools() {
+    // Claude Code side queries (WebFetch summaries, titles) send `thinking: disabled`.
+    let mut extra = BTreeMap::new();
+    extra.insert("thinking".to_string(), json!({ "type": "disabled" }));
+    extra.insert("max_tokens".to_string(), json!(1024));
+    let request = CoreChatRequest {
+        model: "claude-sonnet-5.5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("summarize this page".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra,
+    };
+
+    let context = test_context("anthropic/claude-sonnet-5-5");
+    let options = AnthropicRequestOptions::default();
+    let body = map_anthropic_request(&request, &context, false, &options).expect("mapped");
+
+    assert_eq!(body["thinking"], json!({ "type": "between_tools" }));
+    assert!(body.get("output_config").is_none());
+}
+
+#[test]
+fn adaptive_only_models_keep_thinking_off_in_the_form_each_accepts() {
+    for (model, thinking, effort, expected_thinking) in [
+        ("claude-opus-4-7", "disabled", Some("max"), "disabled"),
+        ("claude-opus-4-8", "disabled", None, "disabled"),
+        ("claude-sonnet-5", "disabled", Some("xhigh"), "disabled"),
+        ("claude-opus-5", "disabled", Some("high"), "disabled"),
+        ("claude-haiku-5-5", "disabled", Some("low"), "disabled"),
+        (
+            "claude-sonnet-5-5",
+            "disabled",
+            Some("medium"),
+            "between_tools",
+        ),
+        ("claude-sonnet-5-5", "between_tools", None, "between_tools"),
+    ] {
+        let mut body =
+            serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": thinking }))]);
+        if let Some(effort) = effort {
+            body.insert("reasoning_effort".to_string(), json!(effort));
+        }
+
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model} {thinking}: {error}"));
+
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": expected_thinking }),
+            "{model}"
+        );
+        assert_eq!(
+            body.get("output_config").map(|config| &config["effort"]),
+            effort.map(|effort| json!(effort)).as_ref(),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn thinking_off_rejects_effort_above_high_where_upstream_does() {
+    for model in ["claude-opus-5", "claude-haiku-5-5", "claude-sonnet-5-5"] {
+        for effort in ["xhigh", "max"] {
+            let mut body = serde_json::Map::from_iter([
+                ("thinking".to_string(), json!({ "type": "disabled" })),
+                ("output_config".to_string(), json!({ "effort": effort })),
+            ]);
+            let error = apply_anthropic_thinking_compatibility(&mut body, model)
+                .expect_err("effort above high with thinking off");
+            assert!(
+                matches!(
+                    error,
+                    AnthropicAdapterError::DisabledThinkingEffortTooHigh { .. }
+                ),
+                "{model} {effort}: {error:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn always_on_thinking_models_reject_disabled_with_guidance() {
+    for model in ["claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"] {
+        let mut body =
+            serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("thinking cannot be turned off");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::AdaptiveOnlyDisabledNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("`output_config.effort` to `low`")
+        );
+    }
+}
+
+#[test]
+fn between_tools_is_rejected_outside_sonnet_5_5() {
+    for model in [
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-haiku-5-5",
+        "claude-opus-5-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "claude-mythos-preview",
+    ] {
+        let mut body = serde_json::Map::from_iter([(
+            "thinking".to_string(),
+            json!({ "type": "between_tools" }),
+        )]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("between_tools rejected");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::BetweenToolsNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn thinking_off_sends_only_the_type_and_rejects_budgets() {
+    for (model, thinking, expected) in [
+        (
+            "claude-opus-5",
+            json!({ "type": "disabled", "display": "omitted" }),
+            "disabled",
+        ),
+        (
+            "claude-sonnet-5-5",
+            json!({ "type": "disabled", "display": "summarized" }),
+            "between_tools",
+        ),
+    ] {
+        let mut body = serde_json::Map::from_iter([("thinking".to_string(), thinking)]);
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model}: {error}"));
+        assert_eq!(body["thinking"], json!({ "type": expected }), "{model}");
+    }
+
+    for model in ["claude-opus-4-8", "claude-sonnet-5-5"] {
+        let mut body = serde_json::Map::from_iter([(
+            "thinking".to_string(),
+            json!({ "type": "disabled", "budget_tokens": 1024 }),
+        )]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("budget with thinking off");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn dotted_fable_5_1_rejects_forced_tool_choice() {
+    let error =
+        validate_anthropic_tool_choice(&json!({"type": "any"}), "anthropic/claude-fable-5.1")
+            .expect_err("forced tool choice rejected");
+    assert!(
+        matches!(
+            error,
+            AnthropicAdapterError::ForcedToolChoiceRejected { .. }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn dotted_sonnet_5_5_maps_disabled_thinking_to_between_tools() {
+    let mut body =
+        serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
+    apply_anthropic_thinking_compatibility(&mut body, "anthropic/claude-sonnet-5.5")
+        .expect("mapped");
+    assert_eq!(body["thinking"], json!({ "type": "between_tools" }));
+}
+
+#[test]
+fn opus_5_and_haiku_5_5_accept_adaptive_thinking_and_effort() {
+    for model in ["claude-opus-5", "claude-opus-5-5", "claude-haiku-5-5"] {
+        let mut body = serde_json::Map::from_iter([
+            ("thinking".to_string(), json!({ "type": "adaptive" })),
+            ("reasoning_effort".to_string(), json!("low")),
+        ]);
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model}: {error}"));
+        assert_eq!(body["thinking"], json!({ "type": "adaptive" }), "{model}");
+        assert_eq!(body["output_config"], json!({ "effort": "low" }), "{model}");
+    }
+}
+
+fn tool_choice_request(model: &str, choice: Value) -> CoreChatRequest {
+    let mut extra = BTreeMap::new();
+    extra.insert("tool_choice".to_string(), choice);
+    extra.insert(
+        "tools".to_string(),
+        json!([{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {"type": "object"}
+            }
+        }]),
+    );
+
+    CoreChatRequest {
+        model: model.to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("weather in sf".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra,
+    }
+}
+
+#[test]
+fn forced_tool_choice_is_rejected_only_where_upstream_rejects_it() {
+    let forced_choices = [
         json!("required"),
         json!({"type": "any"}),
         json!({"type": "tool", "name": "get_weather"}),
         json!({"type": "function", "function": {"name": "get_weather"}}),
     ];
 
-    for choice in forbidden_choices {
-        let mut extra = BTreeMap::new();
-        extra.insert("tool_choice".to_string(), choice.clone());
-        extra.insert(
-            "tools".to_string(),
-            json!([{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "parameters": {"type": "object"}
+    for (model, rejects) in [
+        ("claude-fable-5-1", true),
+        ("claude-mythos-5-1", true),
+        ("claude-opus-5-5", true),
+        ("claude-sonnet-5-5", true),
+        ("claude-fable-5", false),
+        ("claude-opus-5", false),
+        ("claude-sonnet-5", false),
+        ("claude-haiku-5-5", false),
+    ] {
+        for qualified in [
+            model.to_string(),
+            format!("us.anthropic.{model}-v1:0"),
+            format!("anthropic/{model}@20260101"),
+            model.to_ascii_uppercase(),
+        ] {
+            for choice in &forced_choices {
+                let request = tool_choice_request(&qualified, choice.clone());
+                let context = test_context(&qualified);
+                let result = map_anthropic_request(
+                    &request,
+                    &context,
+                    false,
+                    &AnthropicRequestOptions::default(),
+                );
+                if rejects {
+                    let err = result
+                        .expect_err(&format!("{qualified} should reject forced choice {choice}"));
+                    assert!(
+                        err.to_string()
+                            .contains("forced `tool_choice` is not supported"),
+                        "{qualified}: {err}"
+                    );
+                } else {
+                    let body = result
+                        .unwrap_or_else(|err| panic!("{qualified} should allow {choice}: {err}"));
+                    assert!(body.get("tool_choice").is_some(), "{qualified}");
                 }
-            }]),
-        );
-
-        let request = CoreChatRequest {
-            model: "claude-fable-5-1".to_string(),
-            messages: vec![CoreChatMessage {
-                role: "user".to_string(),
-                content: Value::String("weather in sf".to_string()),
-                name: None,
-                extra: BTreeMap::new(),
-            }],
-            stream: false,
-            extra,
-        };
-
-        let context = test_context("claude-fable-5-1");
-        let options = AnthropicRequestOptions::default();
-        let err = map_anthropic_request(&request, &context, false, &options)
-            .expect_err(&format!("should reject forced choice: {choice}"));
-        assert!(
-            err.to_string()
-                .contains("forced `tool_choice` is not supported")
-        );
+            }
+        }
     }
 }
 
 #[test]
-fn fable_5_1_allows_auto_and_none_tool_choice() {
-    for choice in [json!("auto"), json!("none"), json!({"type": "auto"})] {
-        let mut extra = BTreeMap::new();
-        extra.insert("tool_choice".to_string(), choice.clone());
-        extra.insert(
-            "tools".to_string(),
-            json!([{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "parameters": {"type": "object"}
-                }
-            }]),
-        );
-
-        let request = CoreChatRequest {
-            model: "claude-fable-5-1".to_string(),
-            messages: vec![CoreChatMessage {
-                role: "user".to_string(),
-                content: Value::String("weather in sf".to_string()),
-                name: None,
-                extra: BTreeMap::new(),
-            }],
-            stream: false,
-            extra,
-        };
-
-        let context = test_context("claude-fable-5-1");
-        let options = AnthropicRequestOptions::default();
-        let body = map_anthropic_request(&request, &context, false, &options).expect("allowed");
-        assert!(body.get("tools").is_some());
+fn rejecting_models_allow_auto_and_none_tool_choice() {
+    for model in [
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+    ] {
+        for choice in [json!("auto"), json!("none"), json!({"type": "auto"})] {
+            let request = tool_choice_request(model, choice.clone());
+            let context = test_context(model);
+            let options = AnthropicRequestOptions::default();
+            let body = map_anthropic_request(&request, &context, false, &options)
+                .unwrap_or_else(|err| panic!("{model} should allow {choice}: {err}"));
+            assert!(body.get("tools").is_some());
+        }
     }
 }
 

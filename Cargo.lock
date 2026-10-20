@@ -1896,6 +1896,7 @@ dependencies = [
 name = "gateway-client-config"
 version = "0.43.0"
 dependencies = [
+ "gateway-core",
  "serde",
  "serde_json",
  "toml",

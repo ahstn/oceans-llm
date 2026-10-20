@@ -7,6 +7,7 @@ use crate::{
 pub(crate) enum ClientConfigNoteKind {
     ThinkingPolicy,
     ClaudeCodeBaseUrl,
+    ClaudeCodeBackgroundModel,
     ContextWindow,
 }
 
@@ -102,6 +103,17 @@ pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientCon
         ));
     }
     notes
+}
+
+/// Claude Code sends background work (WebFetch summaries, titles) with thinking turned off,
+/// which the gateway rejects for models that always think.
+pub(crate) fn claude_code_background_model_note(model_id: &str) -> ClientConfigNote {
+    ClientConfigNote::new(
+        ClientConfigNoteKind::ClaudeCodeBackgroundModel,
+        format!(
+            "ANTHROPIC_SMALL_FAST_MODEL is set to {model_id}, which always thinks, so the gateway rejects the thinking-off requests Claude Code sends for background work such as WebFetch summaries. Add a Haiku or Sonnet model to this selection, or set ANTHROPIC_SMALL_FAST_MODEL to a gateway model that can turn thinking off."
+        ),
+    )
 }
 
 pub(crate) fn codex_notes(_input: &ClientConfigInput) -> Vec<String> {

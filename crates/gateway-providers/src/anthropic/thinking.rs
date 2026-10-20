@@ -2,14 +2,18 @@ use serde_json::{Map, Value, json};
 
 use super::error::AnthropicAdapterError;
 
-pub use super::model::{
-    ClaudeThinkingPolicy, claude_thinking_policy, contains_exact_claude_model_marker,
+pub use gateway_core::claude_models::{
+    ClaudeThinkingOff, ClaudeThinkingPolicy, claude_rejects_forced_tool_choice,
+    claude_thinking_off, claude_thinking_policy, contains_exact_claude_model_marker,
     is_adaptive_only_claude,
 };
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 
-fn validate_adaptive_effort(effort: &Value, model: &str) -> Result<(), AnthropicAdapterError> {
+pub(crate) fn validate_adaptive_effort(
+    effort: &Value,
+    model: &str,
+) -> Result<(), AnthropicAdapterError> {
     let effort_str = effort.as_str().unwrap_or_default();
     if !ADAPTIVE_EFFORT_LEVELS.contains(&effort_str) {
         return Err(AnthropicAdapterError::UnsupportedAdaptiveEffort {
@@ -39,6 +43,12 @@ pub fn apply_anthropic_thinking_compatibility(
                 model: upstream_model.to_string(),
             });
         }
+        if matches!(
+            caller_thinking_type(body),
+            Some("disabled" | "between_tools")
+        ) {
+            return apply_thinking_off(body, effort, upstream_model);
+        }
         let effort = effort.unwrap_or_else(|| Value::String("high".to_string()));
         validate_adaptive_effort(&effort, upstream_model)?;
         apply_policy_effort(
@@ -62,6 +72,73 @@ pub fn apply_anthropic_thinking_compatibility(
         apply_policy_budget(body, policy, budget_tokens, upstream_model)?;
     }
     Ok(())
+}
+
+/// Keeps a caller's request to turn thinking off on an adaptive-only model, in the form that
+/// model accepts. The gateway adds no adaptive thinking or default effort here.
+fn apply_thinking_off(
+    body: &mut Map<String, Value>,
+    effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<(), AnthropicAdapterError> {
+    let thinking = body
+        .get("thinking")
+        .and_then(Value::as_object)
+        .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
+    let thinking = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
+    body.insert("thinking".to_string(), thinking);
+    if let Some(effort) = effort {
+        restore_anthropic_output_effort(body, effort);
+    }
+    Ok(())
+}
+
+/// Checks a caller's `disabled` or `between_tools` thinking against an adaptive-only model's
+/// rules and returns the `thinking` object to send. Every transport that sends the Anthropic
+/// Messages body uses this, so the rules live in one place.
+pub(crate) fn resolve_thinking_off(
+    thinking: &Map<String, Value>,
+    effort: Option<&Value>,
+    upstream_model: &str,
+) -> Result<Value, AnthropicAdapterError> {
+    let thinking_off = claude_thinking_off(upstream_model);
+    let model = || upstream_model.to_string();
+    if thinking.get("type").and_then(Value::as_str) == Some("between_tools")
+        && thinking_off != ClaudeThinkingOff::BetweenTools
+    {
+        return Err(AnthropicAdapterError::BetweenToolsNotSupported { model: model() });
+    }
+    if thinking_off == ClaudeThinkingOff::Unsupported {
+        return Err(AnthropicAdapterError::AdaptiveOnlyDisabledNotSupported { model: model() });
+    }
+    if thinking
+        .get("budget_tokens")
+        .is_some_and(|val| !val.is_null())
+    {
+        return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { model: model() });
+    }
+    if let Some(effort) = effort {
+        validate_adaptive_effort(effort, upstream_model)?;
+        if thinking_off != ClaudeThinkingOff::Disabled
+            && matches!(effort.as_str(), Some("xhigh" | "max"))
+        {
+            return Err(AnthropicAdapterError::DisabledThinkingEffortTooHigh {
+                effort: effort.to_string(),
+                model: model(),
+            });
+        }
+    }
+    // With thinking off, upstream accepts only `type`; fields such as `display` are dropped.
+    let thinking_type = if thinking_off == ClaudeThinkingOff::BetweenTools {
+        "between_tools"
+    } else {
+        "disabled"
+    };
+    Ok(json!({ "type": thinking_type }))
+}
+
+fn caller_thinking_type(body: &Map<String, Value>) -> Option<&str> {
+    body.get("thinking")?.get("type")?.as_str()
 }
 
 fn apply_policy_effort(
@@ -250,6 +327,13 @@ fn validate_caller_thinking_for_policy(
         .as_object()
         .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
     let thinking_type = thinking.get("type").and_then(Value::as_str);
+    if thinking_type == Some("between_tools")
+        && claude_thinking_off(upstream_model) != ClaudeThinkingOff::BetweenTools
+    {
+        return Err(AnthropicAdapterError::BetweenToolsNotSupported {
+            model: upstream_model.to_string(),
+        });
+    }
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -260,10 +344,9 @@ fn validate_caller_thinking_for_policy(
                     },
                 );
             }
-            if thinking_type == Some("disabled") {
-                return Err(AnthropicAdapterError::AdaptiveOnlyDisabledNotSupported {
-                    model: upstream_model.to_string(),
-                });
+            // `resolve_thinking_off` applies the model's thinking-off rules.
+            if matches!(thinking_type, Some("disabled" | "between_tools")) {
+                return Ok(());
             }
             if thinking_type != Some("adaptive") {
                 return Err(
@@ -421,7 +504,7 @@ pub fn validate_anthropic_tool_choice(
     value: &Value,
     upstream_model: &str,
 ) -> Result<(), AnthropicAdapterError> {
-    if !contains_exact_claude_model_marker(upstream_model, "claude-fable-5") {
+    if !claude_rejects_forced_tool_choice(upstream_model) {
         return Ok(());
     }
 

@@ -56,7 +56,7 @@ models:
 - **`upstream_model`**: `claude-fable-5-1`.
 - **Model limits**: 1,000,000 context tokens and 128,000 output tokens.
 - **Thinking policy**: Adaptive thinking is always enabled for `claude-fable-5-1`. Supported effort levels are `low`, `medium`, `high`, `xhigh`, and `max`. Default is `high`. Manual token budgets are rejected.
-- **Tools**: Tool use is supported for `auto`, `none`, or omitted `tool_choice`. Forced tool selection (`tool_choice.type: "tool"` or `"any"`) is rejected for Fable 5.1.
+- **Tools**: Tool use is supported for `auto`, `none`, or omitted `tool_choice`. Forced tool selection (`tool_choice: "required"`, a named function choice, or `tool_choice.type: "tool"` or `"any"`) is rejected locally for Fable 5.1, because the upstream returns 400 for it. See [forced tool choice](../reference/provider-api-compatibility.md#forced-tool-choice) for the other Claude models with the same restriction.
 - **Capabilities**: `chat_completions: true`, `stream: true`, `tools: true`, `vision: true`. `responses: false`, `embeddings: false`, and `json_schema: false`.
 
 ## Local Pi Client Configuration

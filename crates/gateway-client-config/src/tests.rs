@@ -308,10 +308,24 @@ fn infers_safe_effort_for_newer_claude_models() {
         "anthropic/claude-opus-4-8",
         "anthropic/claude-sonnet-4-6",
         "anthropic/claude-sonnet-5",
+        "anthropic/claude-sonnet-5-5",
+        "anthropic/claude-opus-5-5",
+        "anthropic/claude-haiku-5-5",
+        "anthropic/claude-haiku-5.5",
+        "anthropic/claude-sonnet-4.6",
+        "anthropic/claude-fable-5.1",
     ] {
         assert_eq!(
             infer_thinking_policy([model]),
-            Some(ThinkingPolicy::AnthropicSafeEffort)
+            Some(ThinkingPolicy::AnthropicSafeEffort),
+            "{model}"
+        );
+    }
+    for model in ["anthropic/claude-haiku-4-5", "anthropic/claude-haiku-4.5"] {
+        assert_eq!(
+            infer_thinking_policy([model]),
+            Some(ThinkingPolicy::AnthropicManualBudget),
+            "{model}"
         );
     }
     assert_eq!(
@@ -1059,6 +1073,75 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
             .notes
             .iter()
             .all(|note| !note.contains("<gateway api token>"))
+    );
+}
+
+fn claude_input(model_id: &str, upstream_model: &str) -> ClientConfigInput {
+    let mut input = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    input.model_id = model_id.to_string();
+    input.upstream_model = Some(upstream_model.to_string());
+    input
+}
+
+#[test]
+fn claude_code_background_model_skips_models_that_always_think() {
+    let rendered = ClaudeCodeConfigTemplate
+        .render_many(&ClientConfigInputSet::new(vec![
+            claude_input("claude-opus-5.5", "anthropic/claude-opus-5-5"),
+            claude_input("claude-mythos-5", "anthropic/claude-mythos-5"),
+            claude_input("claude-haiku-5.5", "anthropic/claude-haiku-5.5"),
+        ]))
+        .expect("claude code config");
+    let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        gateway_settings["env"]["ANTHROPIC_MODEL"],
+        "claude-opus-5.5"
+    );
+    assert_eq!(
+        gateway_settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"],
+        "claude-haiku-5.5"
+    );
+    assert!(
+        !rendered
+            .notes
+            .iter()
+            .any(|note| note.contains("always thinks"))
+    );
+}
+
+#[test]
+fn claude_code_notes_when_every_model_always_thinks() {
+    for (model_id, upstream_model) in [
+        ("claude-fable-5.1", "anthropic/claude-fable-5-1"),
+        ("claude-opus-5.5", "us.anthropic.claude-opus-5-5-v1:0"),
+        ("claude-mythos-5.1", "anthropic/claude-mythos-5-1"),
+    ] {
+        let rendered = ClaudeCodeConfigTemplate.render(&claude_input(model_id, upstream_model));
+        let gateway_settings: Value =
+            serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"],
+            model_id
+        );
+        assert!(
+            rendered
+                .notes
+                .iter()
+                .any(|note| note.contains(&format!("{model_id}, which always thinks"))),
+            "{model_id}: {:?}",
+            rendered.notes
+        );
+    }
+
+    let rendered =
+        ClaudeCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
+    assert!(
+        !rendered
+            .notes
+            .iter()
+            .any(|note| note.contains("always thinks"))
     );
 }
 
