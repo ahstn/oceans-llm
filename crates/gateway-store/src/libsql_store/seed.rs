@@ -250,19 +250,21 @@ impl LibsqlStore {
         for model in models {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
-        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
-        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
-        const MODEL_ID_QUERY_CHUNK: usize = 500;
+        // Query in fixed-size chunks so a large config stays under SQLite's host-parameter limit.
+        // An empty config runs no query, which also avoids an invalid `IN ()`.
+        const IN_LIST_CHUNK: usize = 500;
         let configured_model_ids = model_ids
             .values()
             .map(|model_id| libsql::Value::Text(model_id.to_string()))
             .collect::<Vec<_>>();
-        // Route ids from before this seed, so a route can keep a legacy id it still has (see
-        // `configured_route_uuid`).
-        let mut existing_route_ids =
-            std::collections::HashMap::<Uuid, std::collections::HashSet<Uuid>>::new();
-        let no_route_ids = std::collections::HashSet::new();
-        for chunk in configured_model_ids.chunks(MODEL_ID_QUERY_CHUNK) {
+        // Which ids the configured routes may take already exist, so a route can keep a legacy
+        // id it still has (see `configured_route_uuid`). Only those ids are looked up.
+        let candidate_route_ids = configured_route_candidate_ids(models)
+            .into_iter()
+            .map(|id| libsql::Value::Text(id.to_string()))
+            .collect::<Vec<_>>();
+        let mut existing_route_ids = std::collections::HashSet::new();
+        for chunk in candidate_route_ids.chunks(IN_LIST_CHUNK) {
             let placeholders = (1..=chunk.len())
                 .map(|index| format!("?{index}"))
                 .collect::<Vec<_>>()
@@ -270,20 +272,14 @@ impl LibsqlStore {
             let mut rows = self
                 .connection
                 .query(
-                    &format!(
-                        "SELECT id, model_id FROM model_routes WHERE model_id IN ({placeholders})"
-                    ),
+                    &format!("SELECT id FROM model_routes WHERE id IN ({placeholders})"),
                     libsql::params::Params::Positional(chunk.to_vec()),
                 )
                 .await
                 .map_err(to_query_error)?;
             while let Some(row) = rows.next().await.map_err(to_query_error)? {
                 let id: String = row.get(0).map_err(to_query_error)?;
-                let model_id: String = row.get(1).map_err(to_query_error)?;
-                existing_route_ids
-                    .entry(parse_uuid(&model_id)?)
-                    .or_default()
-                    .insert(parse_uuid(&id)?);
+                existing_route_ids.insert(parse_uuid(&id)?);
             }
         }
 
@@ -393,7 +389,7 @@ impl LibsqlStore {
         // rejects.
         let mut survivors_by_model =
             std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
-        for chunk in configured_model_ids.chunks(MODEL_ID_QUERY_CHUNK) {
+        for chunk in configured_model_ids.chunks(IN_LIST_CHUNK) {
             let placeholders = (1..=chunk.len())
                 .map(|index| format!("?{index}"))
                 .collect::<Vec<_>>()
@@ -444,7 +440,7 @@ impl LibsqlStore {
                         &model.model_key,
                         route,
                         route_index,
-                        existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
+                        &existing_route_ids,
                     );
                     (
                         own_id,
@@ -457,10 +453,7 @@ impl LibsqlStore {
                 })
                 .collect::<Vec<_>>();
             let claimed = survivors
-                .claim_all(
-                    &targets,
-                    existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
-                )
+                .claim_all(&targets, &existing_route_ids)
                 .into_iter()
                 .zip(targets.into_iter().map(|(_, key)| key))
                 .collect::<Vec<_>>();

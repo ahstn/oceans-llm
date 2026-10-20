@@ -250,28 +250,24 @@ impl PostgresStore {
         for model in models {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
-        // Route ids from before this seed, in one query, so a route can keep a legacy id it still
-        // has (see `configured_route_uuid`).
-        let mut existing_route_ids =
-            std::collections::HashMap::<Uuid, std::collections::HashSet<Uuid>>::new();
-        let no_route_ids = std::collections::HashSet::new();
-        let route_id_rows: Vec<(String, String)> =
-            sqlx::query_as("SELECT id, model_id FROM model_routes WHERE model_id = ANY($1)")
+        // Which ids the configured routes may take already exist, in one query, so a route can
+        // keep a legacy id it still has (see `configured_route_uuid`). Only those ids are looked
+        // up.
+        let route_id_rows: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM model_routes WHERE id = ANY($1)")
                 .bind(
-                    model_ids
-                        .values()
+                    configured_route_candidate_ids(models)
+                        .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>(),
                 )
                 .fetch_all(&self.pool)
                 .await
                 .map_err(to_query_error)?;
-        for (id, model_id) in route_id_rows {
-            existing_route_ids
-                .entry(parse_uuid(&model_id)?)
-                .or_default()
-                .insert(parse_uuid(&id)?);
-        }
+        let existing_route_ids = route_id_rows
+            .iter()
+            .map(|id| parse_uuid(id))
+            .collect::<Result<std::collections::HashSet<_>, _>>()?;
 
         // Insert model rows first with a null alias target so config order does not
         // matter for self-referential alias foreign keys.
@@ -415,7 +411,7 @@ impl PostgresStore {
                         &model.model_key,
                         route,
                         route_index,
-                        existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
+                        &existing_route_ids,
                     );
                     (
                         own_id,
@@ -428,10 +424,7 @@ impl PostgresStore {
                 })
                 .collect::<Vec<_>>();
             let claimed = survivors
-                .claim_all(
-                    &targets,
-                    existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
-                )
+                .claim_all(&targets, &existing_route_ids)
                 .into_iter()
                 .zip(targets.into_iter().map(|(_, key)| key))
                 .collect::<Vec<_>>();

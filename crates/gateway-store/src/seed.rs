@@ -185,6 +185,19 @@ pub(crate) fn configured_route_uuid(
     route_index: usize,
     existing_ids: &std::collections::HashSet<Uuid>,
 ) -> Uuid {
+    let (keyed, legacy) = route_id_candidates(model_key, route, route_index);
+    match legacy {
+        Some(legacy) if !existing_ids.contains(&keyed) && existing_ids.contains(&legacy) => legacy,
+        _ => keyed,
+    }
+}
+
+/// A route's keyed id, and its legacy id when its key equals its provider key.
+fn route_id_candidates(
+    model_key: &str,
+    route: &gateway_core::SeedModelRoute,
+    route_index: usize,
+) -> (Uuid, Option<Uuid>) {
     let keyed = route_uuid(
         model_key,
         route.route_key.as_deref(),
@@ -193,22 +206,35 @@ pub(crate) fn configured_route_uuid(
         route.priority,
         route_index,
     );
-    if route.route_key.as_deref() == Some(route.provider_key.as_str())
-        && !existing_ids.contains(&keyed)
-    {
-        let legacy = route_uuid(
+    let legacy = (route.route_key.as_deref() == Some(route.provider_key.as_str())).then(|| {
+        route_uuid(
             model_key,
             None,
             &route.provider_key,
             &route.upstream_model,
             route.priority,
             route_index,
-        );
-        if existing_ids.contains(&legacy) {
-            return legacy;
-        }
-    }
-    keyed
+        )
+    });
+    (keyed, legacy)
+}
+
+/// Every id [`configured_route_uuid`] may pick for these models. Seeding checks which of them
+/// already exist, so it never reads route history beyond the current configuration.
+pub(crate) fn configured_route_candidate_ids(models: &[gateway_core::SeedModel]) -> Vec<Uuid> {
+    models
+        .iter()
+        .flat_map(|model| {
+            model
+                .routes
+                .iter()
+                .enumerate()
+                .flat_map(|(route_index, route)| {
+                    let (keyed, legacy) = route_id_candidates(&model.model_key, route, route_index);
+                    std::iter::once(keyed).chain(legacy)
+                })
+        })
+        .collect()
 }
 
 pub(crate) fn route_uuid(
