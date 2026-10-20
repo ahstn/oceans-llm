@@ -84,6 +84,19 @@ fn gemini_generation(value: &str) -> Option<(u32, u32, bool)> {
     })
 }
 
+/// Whether any of `values` names a Claude model that always thinks (Opus 5.5, Fable 5.x, Mythos
+/// Preview) and so rejects the `thinking.type: disabled` requests Claude Code sends for
+/// background work. Mirrors `claude_thinking_off` in the gateway's Anthropic adapter.
+#[must_use]
+pub(crate) fn claude_always_thinks(values: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
+    values.into_iter().any(|value| {
+        let value = dash_claude_versions(&value.as_ref().to_ascii_lowercase());
+        value.contains("claude-mythos-preview")
+            || contains_exact_model_marker(&value, "claude-fable-5")
+            || contains_exact_model_marker(&value, "claude-opus-5-5")
+    })
+}
+
 /// Rewrites dotted Claude versions such as `claude-haiku-5.5` (the OpenRouter spelling) to the
 /// dashed form the markers use. Only a dot between two digits changes; Gemini ids keep their
 /// dots because `gemini_generation` parses them.

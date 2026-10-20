@@ -294,6 +294,75 @@ fn converse_rejects_native_budgets_and_invalid_effort_for_adaptive_only_models()
     }
 }
 
+fn converse_request_with_thinking(
+    upstream_model: &str,
+    thinking: Value,
+) -> Result<Value, ProviderError> {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Summarize this page")],
+        stream: true,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+    };
+    let mut context = context(upstream_model);
+    context.extra_body.insert(
+        "additionalModelRequestFields".to_string(),
+        json!({ "thinking": thinking }),
+    );
+    map_chat_request_to_converse(&request, &context)
+}
+
+#[test]
+fn converse_applies_thinking_off_rules() {
+    for (upstream_model, thinking, expected) in [
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            json!({ "type": "disabled" }),
+            json!({ "type": "between_tools" }),
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "effort": "high" }),
+            json!({ "type": "disabled", "effort": "high" }),
+        ),
+        (
+            "global.anthropic.claude-opus-4-8",
+            json!({ "type": "disabled" }),
+            json!({ "type": "disabled" }),
+        ),
+    ] {
+        let body = converse_request_with_thinking(upstream_model, thinking)
+            .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+        assert_eq!(
+            body["additionalModelRequestFields"]["thinking"], expected,
+            "{upstream_model}"
+        );
+    }
+
+    for (upstream_model, thinking, expected) in [
+        (
+            "global.anthropic.claude-fable-5-1",
+            json!({ "type": "disabled" }),
+            "adaptive thinking is always enabled",
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "effort": "max" }),
+            "effort `high` or below",
+        ),
+        (
+            "us.anthropic.claude-sonnet-4-6-v1:0",
+            json!({ "type": "between_tools" }),
+            "`thinking.type: between_tools` is not supported",
+        ),
+    ] {
+        let error = converse_request_with_thinking(upstream_model, thinking)
+            .expect_err("thinking off rejected")
+            .to_string();
+        assert!(error.contains(expected), "{upstream_model}: {error}");
+    }
+}
+
 #[test]
 fn rejects_between_tools_outside_sonnet_5_5() {
     for upstream_model in [

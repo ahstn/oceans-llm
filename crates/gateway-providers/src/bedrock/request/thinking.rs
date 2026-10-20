@@ -419,6 +419,24 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
     let policy = claude_thinking_policy(upstream_model);
 
+    let caller_thinking_type = body
+        .get("additionalModelRequestFields")
+        .and_then(|additional| additional.get("thinking"))
+        .and_then(|thinking| thinking.get("type"))
+        .and_then(Value::as_str);
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
+    {
+        if budget_tokens.is_some() {
+            return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                model: upstream_model.to_string(),
+            }
+            .into());
+        }
+        let additional = ensure_additional_model_request_fields(body)?;
+        return apply_converse_thinking_off(additional, effort, upstream_model);
+    }
+
     if effort.is_none() && budget_tokens.is_none() {
         validate_converse_caller_thinking_for_policy(body, policy, upstream_model)?;
         return Ok(());
@@ -517,6 +535,33 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     Ok(())
 }
 
+/// Applies the shared thinking-off rules to `additionalModelRequestFields.thinking`. Converse
+/// carries effort inside the thinking object, so only `type` is rewritten and effort stays there.
+fn apply_converse_thinking_off(
+    additional: &mut Map<String, Value>,
+    effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let resolved = {
+        let thinking = additional
+            .get("thinking")
+            .and_then(Value::as_object)
+            .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
+        let caller_effort = thinking.get("effort").filter(|value| !value.is_null());
+        resolve_thinking_off(thinking, effort.as_ref().or(caller_effort), upstream_model)?
+    };
+    if let Some(thinking) = additional
+        .get_mut("thinking")
+        .and_then(Value::as_object_mut)
+    {
+        thinking.insert("type".to_string(), resolved["type"].clone());
+    }
+    if let Some(effort) = effort {
+        merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+    }
+    Ok(())
+}
+
 pub(super) fn ensure_additional_model_request_fields(
     body: &mut Map<String, Value>,
 ) -> Result<&mut Map<String, Value>, ProviderError> {
@@ -565,6 +610,14 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
         )
     })?;
     let thinking_type = thinking.get("type").and_then(Value::as_str);
+    if thinking_type == Some("between_tools")
+        && claude_thinking_off(upstream_model) != ClaudeThinkingOff::BetweenTools
+    {
+        return Err(AnthropicAdapterError::BetweenToolsNotSupported {
+            model: upstream_model.to_string(),
+        }
+        .into());
+    }
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
