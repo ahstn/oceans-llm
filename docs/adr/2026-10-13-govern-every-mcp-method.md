@@ -58,11 +58,23 @@ The gateway now refuses resumption instead of governing replays:
 
 - `Last-Event-ID` is no longer forwarded upstream.
 - Every upstream SSE body, streamed or buffered, loses its `id` field, so clients have no event id to resume from. An event that held only an `id` is dropped.
-- On the standalone `GET` stream, the gateway drops JSON-RPC responses (any message with `result` or `error`). The transport allows only server requests and notifications there, so a compliant upstream loses nothing. A successful `GET` answer that is not `text/event-stream` is refused with a gateway error rather than passed through unexamined.
+- Every upstream SSE body keeps only the `data`, `event` and `retry` fields and comments. Clients ignore other fields, but one could read a field differently from the gateway: a client that strips a second BOM sees `\u{FEFF}data` as `data`.
+- On the standalone `GET` stream, the gateway forwards an event only when its data is empty or is a server request or notification (a message with a string `method` and no `result` or `error`; for a batch, every element). The transport allows only those there, so a compliant upstream loses nothing. The filter fails closed: data that serde_json cannot parse is dropped, because a client's `JSON.parse` accepts input that serde_json rejects (lone surrogates, nesting past serde_json's recursion limit, and invalid UTF-8 that the client's text decoder replaces), so such data could still reach it as a response.
+- A successful `GET` answer that is not `text/event-stream` is refused with a gateway error rather than passed through unexamined. A `202` or `204` opens no stream and passes with an empty body and no `Content-Type`, whatever content type the upstream labelled it with: the transport gives it no body, and clients read any successful `GET` body as an event stream.
 
 Governing replays would mean tracking which request each upstream event id belongs to, across replicas, and re-running the original request's grant check and guardrails on delivery. Resumption is optional in the transport, and a client that loses a stream can repeat the request.
 
 Upstream `Mcp-Session-Id` values were also passed through unchanged. On a server with a shared credential, any caller who learned a session id could open its event stream or `DELETE` it; `DELETE` needs no grant. The gateway now issues its own session id: the upstream id in base64url, a `.`, and an HMAC-SHA256 tag (128 bits, keyed with the identity token secret, or with a random per-process key when that secret is unset or the public development fallback) over the server id, the API key id or OAuth grant id, and the owner. Inbound session ids are checked against the current caller before anything is forwarded. A missing tag, a tag for another caller or server, or the raw upstream id gets HTTP 404 with JSON-RPC code `-32001`, which MCP clients treat as an expired session. The signed format needs no session table, so it works across replicas that share a configured identity token secret.
+
+### 6. One governance pipeline for every call
+
+_Added 2026-10-18 after a review of the MCP gateway epic._
+
+Direct `tools/call`, aggregate `call_tool`, and the governed methods each wrote out the same steps between authorization and the upstream request. Steps added later reached some routes and not others: governed resources, prompts and completions were never rate-limited. `mcp_gateway::governance::GovernedCall::admit` now runs those steps for all three, in one order: the server's `mcp_tool_call` rate limits, request guardrails on tool arguments (for `tools/call`), then the caller's upstream credential. Each route still authorizes its own way, sends the upstream request its own way and writes its own response format, and a refusal maps onto each format through one `Refusal` type that also gives the invocation-log fields. Governed methods are therefore now counted by `mcp_tool_call` policies, sharing the counter with tool calls on the same server, and a rate-limited one gets the same JSON-RPC `-32029` error and `rate_limited` log entry.
+
+The JSON-RPC error bodies the routes send are built on `gateway_mcp::server::json_rpc_error_with_id`, with the codes from `gateway_mcp::server` (`JSON_RPC_POLICY_DENIED`, `JSON_RPC_RATE_LIMITED`, `JSON_RPC_INTERNAL_ERROR`, and the standard ones) instead of codes redeclared per module.
+
+_Superseded 2026-10-18:_ section 5 records HTTP 404 with JSON-RPC code `-32001` for an unknown or foreign session id. With this pipeline the per-server proxy answers it with `-32602` (`JSON_RPC_INVALID_PARAMS`), the code the aggregate route already used for an unknown session, so both routes agree. The HTTP 404, which is what MCP clients treat as an expired session, is unchanged.
 
 ## Trade-offs
 

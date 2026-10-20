@@ -491,6 +491,9 @@ async fn buffered_bodies_enforce_the_limit_with_and_without_content_length() {
     }
 }
 
+// The GET stream forwards only requests and notifications.
+const NOTIFICATION_EVENT: &[u8] = b"data: {\"jsonrpc\":\"2.0\",\"method\":\"n\"}\n\n";
+
 #[tokio::test]
 async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_streams() {
     let router = Router::new().fallback(any(|| async {
@@ -498,7 +501,7 @@ async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_stream
             [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
             Body::from_stream(futures_util::stream::once(async {
                 tokio::time::sleep(Duration::from_millis(300)).await;
-                Ok::<_, io::Error>(Bytes::from_static(b"data: complete\n\n"))
+                Ok::<_, io::Error>(Bytes::from_static(NOTIFICATION_EVENT))
             })),
         )
     }));
@@ -531,10 +534,7 @@ async fn timeout_applies_to_buffered_and_finite_responses_but_not_receive_stream
                 .await
                 .expect("body terminates");
         if receive_stream {
-            assert_eq!(
-                body.expect("receive stream stays open"),
-                "data: complete\n\n"
-            );
+            assert_eq!(body.expect("receive stream stays open"), NOTIFICATION_EVENT);
         } else {
             let error = body.expect_err("finite response times out").to_string();
             assert!(!error.contains("upstream-secret"));
@@ -614,4 +614,58 @@ async fn a_get_stream_answered_without_an_event_stream_is_refused() {
     .await
     .expect("POST response");
     assert_eq!(posted.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_get_answered_202_loses_its_body() {
+    // Labelling the body an event stream must not keep it either.
+    for content_type in ["text/plain", "text/event-stream"] {
+        let router = Router::new().fallback(any(move || async move {
+            (
+                StatusCode::ACCEPTED,
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                "data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"content\":[]}}\n\n",
+            )
+        }));
+        let server = TestUpstream::start(router).await;
+        let client = gateway_service::McpUpstreamClients::default().with_platform_client(
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("HTTP client"),
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        let streamed = proxy_upstream(
+            &client,
+            &Method::GET,
+            &headers,
+            Bytes::new(),
+            &server.upstream,
+        )
+        .await
+        .expect("GET 202");
+        assert_eq!(streamed.status(), StatusCode::ACCEPTED);
+        let returned_type = streamed.headers().get(CONTENT_TYPE).cloned();
+        let body = to_bytes(streamed.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert!(body.is_empty(), "{content_type}: {body:?}");
+        assert!(returned_type.is_none(), "{content_type}: {returned_type:?}");
+        let buffered = proxy_buffered(
+            &client,
+            &Method::GET,
+            &headers,
+            Bytes::new(),
+            &server.upstream,
+        )
+        .await
+        .expect("buffered GET 202");
+        assert_eq!(buffered.status, StatusCode::ACCEPTED);
+        assert!(
+            buffered.headers.get(CONTENT_TYPE).is_none(),
+            "{content_type}"
+        );
+        assert!(buffered.body.is_empty(), "{content_type}");
+    }
 }

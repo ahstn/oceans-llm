@@ -20,6 +20,7 @@ import {
   createBudgetIncrease,
   deactivateBudget,
   disableMcpServer,
+  enableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
   getAgentSessionDetail,
@@ -714,23 +715,39 @@ export const transferExternalMcpServerOwnership = createServerFn({ method: 'POST
     return transferMcpServerOwnership(data.serverId, data.input)
   })
 
+type McpServerInput = { serverId: string }
+
+function validateMcpServerInput<T extends McpServerInput>(data: T): T {
+  if (typeof data?.serverId !== 'string' || !data.serverId) {
+    throw new Error('serverId is required')
+  }
+  return data
+}
+
 export const disableExternalMcpServer = createServerFn({ method: 'POST' })
-  .validator((data: { serverId: string }) => data)
-  .handler(async ({ data }) => {
-    return disableMcpServer(data.serverId)
-  })
+  .validator(validateMcpServerInput<McpServerInput>)
+  .handler(async ({ data }: { data: McpServerInput }) => disableMcpServer(data.serverId))
+
+export const enableExternalMcpServer = createServerFn({ method: 'POST' })
+  .validator(validateMcpServerInput<McpServerInput>)
+  .handler(async ({ data }: { data: McpServerInput }) => enableMcpServer(data.serverId))
+
+type McpServerToolsInput = { serverId: string; include_inactive?: boolean }
 
 export const getMcpServerTools = createServerFn({ method: 'GET' })
-  .validator((data: { serverId: string; include_inactive?: boolean }) => data)
-  .handler(async ({ data }) => {
-    return listMcpServerTools(data.serverId, { include_inactive: data.include_inactive })
+  .validator((data: McpServerToolsInput) => {
+    if (data?.include_inactive !== undefined && typeof data.include_inactive !== 'boolean') {
+      throw new Error('include_inactive must be a boolean')
+    }
+    return validateMcpServerInput(data)
   })
+  .handler(async ({ data }: { data: McpServerToolsInput }) =>
+    listMcpServerTools(data.serverId, { include_inactive: data.include_inactive }),
+  )
 
 export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' })
-  .validator((data: { serverId: string }) => data)
-  .handler(async ({ data }) => {
-    return refreshMcpServerDiscovery(data.serverId)
-  })
+  .validator(validateMcpServerInput<McpServerInput>)
+  .handler(async ({ data }: { data: McpServerInput }) => refreshMcpServerDiscovery(data.serverId))
 
 function validateMcpOauthDiscoveryInput(input: unknown): { serverUrl: string } {
   if (

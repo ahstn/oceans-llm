@@ -241,6 +241,35 @@ async fn load_server(
     decode_server(&row)
 }
 
+/// Refuses a discovery result once the server's status has moved on since discovery read it.
+/// `FOR UPDATE` holds the row until commit, so a disable or enable on another replica waits.
+async fn ensure_discovery_status_unchanged(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    run: &ExternalMcpDiscoveryRunRecord,
+) -> Result<(), StoreError> {
+    let Some(expected) = run.expected_status_revision else {
+        return Ok(());
+    };
+    let revision: Option<i64> = sqlx::query_scalar(
+        "SELECT status_revision FROM external_mcp_servers WHERE mcp_server_id = $1 FOR UPDATE",
+    )
+    .bind(run.mcp_server_id.to_string())
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(to_query_error)?;
+    match revision {
+        None => Err(StoreError::NotFound(format!(
+            "external MCP server `{}` not found",
+            run.mcp_server_id
+        ))),
+        Some(current) if current == expected => Ok(()),
+        Some(_) => Err(StoreError::Conflict(format!(
+            "external MCP server `{}` was disabled or enabled while discovery ran; refresh discovery again",
+            run.mcp_server_id
+        ))),
+    }
+}
+
 /// Checks `guard` inside a write transaction. `FOR SHARE` holds the server row
 /// until the caller commits, so a transfer or narrowing waits for this write,
 /// and one that committed first is the row read here. With `tool_id`, the tool
@@ -722,7 +751,8 @@ impl McpRegistryRepository for PostgresStore {
         let disabled = sqlx::query(&format!(
             "UPDATE external_mcp_servers
              SET status = 'disabled', disabled_at = $1, updated_at = $1,
-                 last_discovery_status = 'disabled', last_discovery_at = $1
+                 last_discovery_status = 'disabled', last_discovery_at = $1,
+                 status_revision = status_revision + 1
              WHERE mcp_server_id = $2
                AND status <> 'disabled'
              RETURNING {SERVER_COLUMNS}"
@@ -748,7 +778,8 @@ impl McpRegistryRepository for PostgresStore {
         let row = sqlx::query(&format!(
             "UPDATE external_mcp_servers
              SET status = 'disabled', disabled_at = $1, updated_at = $1,
-                 last_discovery_status = 'disabled', last_discovery_at = $1
+                 last_discovery_status = 'disabled', last_discovery_at = $1,
+                 status_revision = status_revision + 1
              WHERE mcp_server_id = $2
                AND status <> 'disabled'
                AND owner_team_id IS NOT DISTINCT FROM $3
@@ -882,6 +913,82 @@ impl McpRegistryRepository for PostgresStore {
         rows.iter().map(super::mcp_access::decode_grant).collect()
     }
 
+    async fn enable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        enabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // Only a disabled server changes, so a stale request can't wipe an active server's
+        // discovery result. With no row, the server was already active or is missing.
+        let enabled = sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET status = 'active', disabled_at = NULL, updated_at = $1,
+                 last_discovery_status = NULL, last_discovery_at = NULL,
+                 last_error_summary = NULL, status_revision = status_revision + 1
+             WHERE mcp_server_id = $2
+               AND status = 'disabled'
+             RETURNING {SERVER_COLUMNS}"
+        ))
+        .bind(enabled_at.unix_timestamp())
+        .bind(mcp_server_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        match enabled {
+            Some(row) => Ok((decode_server(&row)?, true)),
+            None => Ok((load_server(&self.pool, mcp_server_id).await?, false)),
+        }
+    }
+
+    async fn enable_external_mcp_server_for_owner(
+        &self,
+        mcp_server_id: Uuid,
+        expected_owner_team_id: Option<Uuid>,
+        enabled_at: OffsetDateTime,
+    ) -> Result<(ExternalMcpServerRecord, bool), StoreError> {
+        // As in the owner-checked disable, the owner check and the enable are one statement.
+        let row = sqlx::query(&format!(
+            "UPDATE external_mcp_servers
+             SET status = 'active', disabled_at = NULL, updated_at = $1,
+                 last_discovery_status = NULL, last_discovery_at = NULL,
+                 last_error_summary = NULL, status_revision = status_revision + 1
+             WHERE mcp_server_id = $2
+               AND status = 'disabled'
+               AND owner_team_id IS NOT DISTINCT FROM $3
+             RETURNING {SERVER_COLUMNS}"
+        ))
+        .bind(enabled_at.unix_timestamp())
+        .bind(mcp_server_id.to_string())
+        .bind(expected_owner_team_id.map(|id| id.to_string()))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if let Some(row) = row {
+            return Ok((decode_server(&row)?, true));
+        }
+        let server = load_server(&self.pool, mcp_server_id).await?;
+        if server.ownership.owner_team_id != expected_owner_team_id {
+            return Err(owner_changed(mcp_server_id));
+        }
+        Ok((server, false))
+    }
+
+    async fn external_mcp_server_status_revision(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<i64, StoreError> {
+        let revision: Option<i64> = sqlx::query_scalar(
+            "SELECT status_revision FROM external_mcp_servers WHERE mcp_server_id = $1",
+        )
+        .bind(mcp_server_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        revision.ok_or_else(|| {
+            StoreError::NotFound(format!("external MCP server `{mcp_server_id}` not found"))
+        })
+    }
+
     async fn list_external_mcp_tools(
         &self,
         mcp_server_id: Uuid,
@@ -922,6 +1029,7 @@ impl McpRegistryRepository for PostgresStore {
         let approve_tool_changes = server
             .as_ref()
             .is_some_and(|server| server.approve_tool_changes);
+        ensure_discovery_status_unchanged(&mut tx, run).await?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
             let newer_run_committed: bool = sqlx::query_scalar(&format!(
@@ -1030,6 +1138,7 @@ impl McpRegistryRepository for PostgresStore {
             .fetch_optional(&mut *tx)
             .await
             .map_err(to_query_error)?;
+        ensure_discovery_status_unchanged(&mut tx, run).await?;
         if let Some(guard) = &run.expected_server {
             check_ownership_guard(&mut tx, guard, None).await?;
         }

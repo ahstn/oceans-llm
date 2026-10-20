@@ -35,6 +35,23 @@ describe('signed-in route selection', () => {
     expect(canAccessSignedInPath(modelsOnlySession, '/profiles')).toBe(false)
   })
 
+  it('lets any signed-in user open the design system reference', () => {
+    const modelsOnlySession = regularUserSession(['models'])
+
+    expect(canAccessSignedInPath(modelsOnlySession, '/design-system')).toBe(true)
+    expect(canAccessSignedInPath(modelsOnlySession, '/design-systems')).toBe(false)
+  })
+
+  it('ignores a trailing slash, which a login redirect can carry', () => {
+    const modelsOnlySession = regularUserSession(['models'])
+
+    expect(canAccessSignedInPath(modelsOnlySession, '/design-system/')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/agent-plugins/')).toBe(true)
+    expect(canAccessSignedInPath(userSession, '/account/connections/')).toBe(true)
+    expect(canAccessSignedInPath(modelsOnlySession, '/batches/')).toBe(false)
+    expect(postLoginAdminHref(modelsOnlySession, '/design-system/')).toBe('/admin/design-system/')
+  })
+
   it('allows regular users to return to self-service routes', () => {
     expect(canAccessSignedInPath(userSession, '/api-keys')).toBe(true)
     expect(canAccessSignedInPath(userSession, '/models?page=2')).toBe(true)

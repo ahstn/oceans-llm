@@ -136,6 +136,7 @@ impl TestContext {
         let tools = store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -268,6 +269,20 @@ impl TestContext {
     async fn disable(&self, actor: &Actor, server_id: Uuid) -> StatusCode {
         read(
             disable_mcp_server(
+                State(self.state.clone()),
+                actor.headers.clone(),
+                AuditRequestMeta::default(),
+                Path(server_id.to_string()),
+            )
+            .await,
+        )
+        .await
+        .0
+    }
+
+    async fn enable(&self, actor: &Actor, server_id: Uuid) -> StatusCode {
+        read(
+            enable_mcp_server(
                 State(self.state.clone()),
                 actor.headers.clone(),
                 AuditRequestMeta::default(),
@@ -680,6 +695,10 @@ async fn team_admin_cannot_change_another_teams_or_platform_servers() {
         context.disable(&admin, private.id).await,
         StatusCode::NOT_FOUND
     );
+    assert_eq!(
+        context.enable(&admin, private.id).await,
+        StatusCode::NOT_FOUND
+    );
     for server in [&published, &platform] {
         assert_eq!(
             context.update(&admin, server.id, json!({})).await.0,
@@ -687,6 +706,10 @@ async fn team_admin_cannot_change_another_teams_or_platform_servers() {
         );
         assert_eq!(
             context.disable(&admin, server.id).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            context.enable(&admin, server.id).await,
             StatusCode::FORBIDDEN
         );
     }
@@ -740,6 +763,22 @@ async fn team_admin_manages_their_own_server() {
     assert_eq!(context.disable(&admin, own.id).await, StatusCode::OK);
     let entry = context.last_audit("mcp_server.disabled").await;
     assert_eq!(entry.metadata["actor_access"], "team_admin");
+
+    // Disabling is reversible by whoever could disable it.
+    assert_eq!(context.enable(&admin, own.id).await, StatusCode::OK);
+    let entry = context.last_audit("mcp_server.enabled").await;
+    assert_eq!(entry.metadata["actor_access"], "team_admin");
+    let reloaded = context
+        .state
+        .store
+        .get_external_mcp_server(own.id)
+        .await
+        .expect("reload")
+        .expect("server");
+    assert_eq!(
+        reloaded.status,
+        gateway_core::ExternalMcpServerStatus::Active
+    );
 }
 
 #[tokio::test]

@@ -1,9 +1,11 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AccountReadyPage } from '@/routes/account-ready'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useSearch: vi.fn(),
-}
+}))
 const navigateMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
@@ -22,9 +24,7 @@ describe('AccountReadyPage', () => {
     vi.useRealTimers()
   })
 
-  it('links back to the control plane after onboarding', async () => {
-    const { AccountReadyPage } = await import('@/routes/account-ready')
-
+  it('links back to the control plane after onboarding', () => {
     render(<AccountReadyPage />)
 
     expect(
@@ -42,7 +42,6 @@ describe('AccountReadyPage', () => {
   it('redirects SSO onboarding to the gateway UI after showing the success state', async () => {
     vi.useFakeTimers()
     routeMock.useSearch.mockReturnValue({ mode: 'oauth' })
-    const { AccountReadyPage } = await import('@/routes/account-ready')
 
     render(<AccountReadyPage />)
 

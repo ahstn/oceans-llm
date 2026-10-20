@@ -10,14 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { statusBadgeVariant } from '@/routes/identity/-status-badge'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { getApiKeys, getServiceAccounts } from '@/server/admin-data.functions'
 import type { ApiKeyView, ServiceAccountView } from '@/types/api'
 
@@ -160,27 +155,17 @@ function ServiceAccountTable({
 
       <div className="border-border hidden overflow-hidden rounded-md border md:block">
         <Table className="text-left">
-          <TableHeader className="bg-surface-muted">
-            <TableRow>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Service account name
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Service account key
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Team</TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Status
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">Tags</TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                API key name
-              </TableHead>
-              <TableHead className="text-muted-foreground px-3 py-2 font-semibold">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              'Service account name',
+              'Service account key',
+              'Team',
+              'Status',
+              'Tags',
+              'API key name',
+              'Actions',
+            ]}
+          />
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
@@ -275,7 +260,7 @@ function credentialLabel(apiKey: ApiKeyView | null, accessRestricted: boolean) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={status === 'active' ? 'success' : 'warning'}>{status}</Badge>
+  return <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
 }
 
 function buildServiceAccountRows(

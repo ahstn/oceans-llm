@@ -585,6 +585,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/servers/{server_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivates a disabled server. Its tools and grants apply again as they were before it was
+         *     disabled, and its discovery status resets to not run until discovery is refreshed. Whoever
+         *     can disable a server can enable it again: a team admin for their team's servers.
+         */
+        post: operations["enable_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/servers/{server_id}/owner": {
         parameters: {
             query?: never;
@@ -3772,6 +3793,13 @@ export interface components {
         };
         Envelope_McpDiscoveryRefreshPayload: {
             data: {
+                /**
+                 * Format: int32
+                 * @description The upstream HTTP status when `error_kind` is `http`.
+                 */
+                error_http_status?: number | null;
+                error_kind?: null | components["schemas"]["McpDiscoveryErrorKindView"];
+                /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
                 error_summary?: string | null;
                 server: components["schemas"]["McpServerView"];
                 status: string;
@@ -4359,7 +4387,20 @@ export interface components {
         McpCredentialBindingsPayload: {
             items: components["schemas"]["McpCredentialBindingView"][];
         };
+        /**
+         * @description Why a discovery failed: credentials the gateway couldn't load, or the class of the MCP client's
+         *     error. Clients branch on it.
+         * @enum {string}
+         */
+        McpDiscoveryErrorKindView: "transport" | "timeout" | "http" | "json_rpc" | "invalid_response" | "invalid_url" | "invalid_header" | "invalid_auth_config" | "response_too_large" | "invalid_tool_schema";
         McpDiscoveryRefreshPayload: {
+            /**
+             * Format: int32
+             * @description The upstream HTTP status when `error_kind` is `http`.
+             */
+            error_http_status?: number | null;
+            error_kind?: null | components["schemas"]["McpDiscoveryErrorKindView"];
+            /** @description Diagnostic text for a failed discovery. Its wording may change; branch on `error_kind`. */
             error_summary?: string | null;
             server: components["schemas"]["McpServerView"];
             status: string;
@@ -6754,7 +6795,25 @@ export interface operations {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6793,6 +6852,71 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server was disabled, enabled, transferred or reconfigured while discovery ran */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    enable_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The caller can see the server but not manage it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            /** @description The server changed owner since the caller was authorized */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -396,6 +396,7 @@ mod proxy_policy {
         let tools = store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -764,6 +765,7 @@ mod proxy_policy {
             .store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,
@@ -1271,6 +1273,35 @@ mod proxy_policy {
     }
 
     #[tokio::test]
+    async fn failed_discovery_reports_a_stable_error_kind() {
+        let (_directory, state) = crate::http::test_support::app_state().await;
+        // Nothing listens on port 1, so the request fails in transport.
+        seed_server(&state, "http://127.0.0.1:1/mcp", true).await;
+        let server = state
+            .store
+            .get_external_mcp_server_by_key("notes")
+            .await
+            .expect("server lookup")
+            .expect("server");
+
+        let result = gateway_service::McpRegistryService::new(state.store.clone())
+            .refresh_discovery(server.mcp_server_id)
+            .await
+            .expect("discovery result");
+
+        assert_eq!(
+            result.status,
+            gateway_core::ExternalMcpDiscoveryStatus::Failed
+        );
+        let error = result.error.expect("failure kind");
+        assert_eq!(
+            error.kind,
+            gateway_service::McpDiscoveryErrorKind::Transport
+        );
+        assert_eq!(error.http_status, None);
+    }
+
+    #[tokio::test]
     async fn discovery_stores_declared_metadata_and_counts_it_as_drift() {
         let (_directory, state) = crate::http::test_support::app_state().await;
         let upstream = spawn_upstream().await;
@@ -1730,6 +1761,72 @@ mod proxy_policy {
         assert_eq!(body["error"]["code"], -32029);
     }
 
+    /// Resources and prompts read server data through the same upstream
+    /// access as tools, so the server's MCP call limits count them too.
+    #[tokio::test]
+    async fn governed_methods_share_the_servers_call_limits() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+
+        let (status, _) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = send(&state, &auth, read_resource()).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert_eq!(body["id"], 7);
+        assert_eq!(body["error"]["code"], -32029);
+        assert_eq!(upstream.requests.load(Ordering::SeqCst), 1);
+        let logged = invocations(&state).await;
+        let limited = logged
+            .iter()
+            .find(|invocation| invocation.error_code.as_deref() == Some("rate_limited"))
+            .expect("rate-limited invocation");
+        assert_eq!(limited.mcp_method, "resources/read");
+        assert_eq!(limited.status, McpToolInvocationStatus::PolicyDenied);
+        // Tool calls share the counter.
+        let (status, _) = send(&state, &auth, search_call(8)).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn refused_notifications_get_errors_without_an_id() {
+        let (_directory, mut state) = crate::http::test_support::app_state().await;
+        limit_tool_calls(&mut state, 1);
+        let upstream = spawn_upstream().await;
+        let auth = seed_server(&state, &upstream.url, true).await;
+        let mut notification = read_resource();
+        notification
+            .as_object_mut()
+            .expect("request object")
+            .remove("id");
+
+        send(&state, &auth, read_resource()).await;
+        let (status, body) = send(&state, &auth, notification.clone()).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+        assert_eq!(body["error"]["code"], -32029);
+
+        crate::http::test_support::install_down_rate_limiter(&mut state);
+        let (status, body) = send(&state, &auth, notification).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+
+        // So is a tools/call notification for a tool that is not granted.
+        let (status, body) = send(
+            &state,
+            &auth,
+            json!({"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "not-granted", "arguments": {}}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let body: Value = serde_json::from_str(&body).expect("JSON-RPC error");
+        assert!(body.get("id").is_none(), "{body}");
+    }
+
     #[tokio::test]
     async fn closed_rate_limit_failures_return_a_json_rpc_503() {
         let (_directory, mut state) = crate::http::test_support::app_state().await;
@@ -1842,6 +1939,7 @@ mod stream_reach {
         let tools = store
             .record_external_mcp_discovery_success(
                 &ExternalMcpDiscoveryRunRecord {
+                    expected_status_revision: None,
                     discovery_run_id: Uuid::new_v4(),
                     mcp_server_id: server.mcp_server_id,
                     status: ExternalMcpDiscoveryStatus::Success,

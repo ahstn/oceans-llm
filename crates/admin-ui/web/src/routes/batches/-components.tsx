@@ -1,6 +1,5 @@
 import { CancelCircleIcon, DatabaseSearchIcon, FileViewIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { format } from 'date-fns'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -15,16 +14,12 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatStatus, isBatchCancellable } from '@/routes/batches/-utils'
 import type { BatchResultsView, BatchStatus, BatchView } from '@/types/api'
+import { formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -77,7 +72,12 @@ export function BatchList({
               <SummaryField label="Provider" value={batch.provider} />
               <SummaryField label="Caller" value={callerLabel(batch)} />
               <SummaryField label="Progress" value={progressLabel(batch)} />
-              <SummaryField label="Created" value={formatDateTime(batch.created_at)} />
+              {/* Full width so the timestamp keeps its time and zone on narrow cards. */}
+              <SummaryField
+                label="Created"
+                value={formatTimestamp(batch.created_at)}
+                className="col-span-2"
+              />
             </dl>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => onInspect(batch)}>
@@ -106,23 +106,23 @@ export function BatchList({
         data-testid="batch-desktop-table"
       >
         <Table className="min-w-[70rem] text-left">
-          <TableHeader className="bg-muted/60">
-            <TableRow>
-              <TableHead className="px-3 py-2 font-semibold">Created</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Model</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Provider</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Caller</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Status</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Progress</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Cost</TableHead>
-              <TableHead className="px-3 py-2 font-semibold">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+          <AdminTableHeader
+            columns={[
+              'Created',
+              'Model',
+              'Provider',
+              'Caller',
+              'Status',
+              'Progress',
+              'Cost',
+              'Actions',
+            ]}
+          />
           <TableBody>
             {batches.map((batch) => (
               <TableRow key={batch.batch_id}>
                 <TableCell className="px-3 py-3 whitespace-nowrap">
-                  {formatDateTime(batch.created_at)}
+                  {formatTimestamp(batch.created_at)}
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   <div className="min-w-0">
@@ -234,7 +234,7 @@ function BatchSummary({ batch }: { batch: BatchView }) {
       <SummaryField label="Provider" value={batch.provider} />
       <SummaryField label="Caller" value={callerLabel(batch)} />
       <SummaryField label="Progress" value={progressLabel(batch)} />
-      <SummaryField label="Created" value={formatDateTime(batch.created_at)} />
+      <SummaryField label="Created" value={formatTimestamp(batch.created_at)} />
       <SummaryField
         label="Cost"
         value={
@@ -360,13 +360,15 @@ function SummaryField({
   label,
   value,
   mono = false,
+  className,
 }: {
   label: string
   value: string
   mono?: boolean
+  className?: string
 }) {
   return (
-    <div className="min-w-0">
+    <div className={cn('min-w-0', className)}>
       <dt className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
         {label}
       </dt>
@@ -411,10 +413,4 @@ function callerKind(batch: BatchView) {
   if (batch.caller.service_account_id) return 'Service account'
   if (batch.caller.user_id) return 'User'
   return 'API key'
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return format(date, 'MMM dd, yyyy, HH:mm')
 }

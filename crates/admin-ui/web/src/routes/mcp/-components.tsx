@@ -1,20 +1,43 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@hugeicons/core-free-icons'
+import { useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react'
+import {
+  Alert02Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  Copy01Icon,
+  Edit02Icon,
+  MoreHorizontalIcon,
+  PowerIcon,
+  RefreshIcon,
+} from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  describeDiscoveryResult,
+  discoveryLabel,
+  type DiscoveryRefreshResult,
+} from '@/components/mcp/server-discovery'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -28,6 +51,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -38,6 +62,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
   PLATFORM_OWNER_LABEL,
@@ -84,28 +109,196 @@ const AUTH_CONFIG_HINTS: Record<string, string> = {
     "Use provider_key for a configured provider, or discover the server's own authorization server above. scopes is optional when the provider has defaults.",
 }
 
+// The header's icon actions. Disabling cuts callers off from the server's tools at once, so it
+// sits behind the overflow menu rather than beside Close; the same menu enables it again. A
+// caller who can't manage the server gets only Close.
+export function ServerHeaderActions({
+  server,
+  canManage,
+  actionPending,
+  onRefresh,
+  onEdit,
+  onDisable,
+  onEnable,
+}: {
+  server: McpServerView
+  canManage: boolean
+  actionPending: boolean
+  onRefresh: (server: McpServerView) => void
+  onEdit: (server: McpServerView) => void
+  onDisable: (server: McpServerView) => void
+  onEnable: (server: McpServerView) => void
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {canManage ? (
+        <ServerManageActions
+          server={server}
+          actionPending={actionPending}
+          onRefresh={onRefresh}
+          onEdit={onEdit}
+          onDisable={onDisable}
+          onEnable={onEnable}
+        />
+      ) : null}
+      <IconTooltip label="Close">
+        <DialogClose asChild>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
+            <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
+          </Button>
+        </DialogClose>
+      </IconTooltip>
+    </div>
+  )
+}
+
+function ServerManageActions({
+  server,
+  actionPending,
+  onRefresh,
+  onEdit,
+  onDisable,
+  onEnable,
+}: {
+  server: McpServerView
+  actionPending: boolean
+  onRefresh: (server: McpServerView) => void
+  onEdit: (server: McpServerView) => void
+  onDisable: (server: McpServerView) => void
+  onEnable: (server: McpServerView) => void
+}) {
+  const active = server.status === 'active'
+  return (
+    <>
+      <IconTooltip label="Refresh tools">
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Refresh ${server.display_name}`}
+          onClick={() => onRefresh(server)}
+          disabled={actionPending || !active}
+        >
+          <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
+        </Button>
+      </IconTooltip>
+      <IconTooltip label="Edit configuration">
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Edit ${server.display_name}`}
+          onClick={() => onEdit(server)}
+        >
+          <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
+        </Button>
+      </IconTooltip>
+      <ServerActionsMenu
+        server={server}
+        disabled={actionPending}
+        onDisable={onDisable}
+        onEnable={onEnable}
+      />
+    </>
+  )
+}
+
+function ServerActionsMenu({
+  server,
+  disabled,
+  onDisable,
+  onEnable,
+}: {
+  server: McpServerView
+  disabled: boolean
+  onDisable: (server: McpServerView) => void
+  onEnable: (server: McpServerView) => void
+}) {
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  // Closing the menu hands focus back to its trigger, which would pop the tooltip over the result.
+  const returningFocus = useRef(false)
+
+  return (
+    <DropdownMenu>
+      <Tooltip
+        open={tooltipOpen}
+        onOpenChange={(open) => setTooltipOpen(open && !returningFocus.current)}
+      >
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`More actions for ${server.display_name}`}
+              disabled={disabled}
+            >
+              <AppIcon icon={MoreHorizontalIcon} stroke={1.5} aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={() => {
+          // Radix refocuses the trigger synchronously after this handler.
+          returningFocus.current = true
+          queueMicrotask(() => {
+            returningFocus.current = false
+          })
+        }}
+      >
+        {server.status === 'active' ? (
+          <DropdownMenuItem variant="destructive" onSelect={() => onDisable(server)}>
+            <AppIcon icon={PowerIcon} stroke={1.5} aria-hidden />
+            Disable server
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={() => onEnable(server)}>
+            <AppIcon icon={PowerIcon} stroke={1.5} aria-hidden />
+            Enable server
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function IconTooltip({ label, children }: { label: string; children: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function ServerOverviewPanel({
   server,
-  refreshStatus,
-  refreshErrorSummary,
+  refreshResult,
+  refreshing,
+  retryDisabled,
+  onRetry,
   ownershipControl,
 }: {
   server: McpServerView
-  refreshStatus: string | null
-  refreshErrorSummary: string | null
+  refreshResult: DiscoveryRefreshResult | null
+  refreshing: boolean
+  retryDisabled: boolean
+  onRetry: () => void
   ownershipControl?: ReactNode
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      {refreshStatus && refreshStatus !== 'pending' ? (
-        <Alert variant={refreshStatus === 'success' ? 'default' : 'destructive'}>
-          <AlertTitle>Discovery {refreshStatus}</AlertTitle>
-          <AlertDescription>
-            {refreshErrorSummary ??
-              server.last_error_summary ??
-              'Discovery metadata has been refreshed.'}
-          </AlertDescription>
-        </Alert>
+      {refreshResult ? (
+        <DiscoveryResultAlert
+          result={refreshResult}
+          server={server}
+          refreshing={refreshing}
+          retryDisabled={retryDisabled}
+          onRetry={onRetry}
+        />
       ) : null}
 
       <div className="flex min-w-0 flex-col gap-2">
@@ -195,6 +388,56 @@ export function ServerOwnershipTransfer({
         </Button>
       </div>
     </div>
+  )
+}
+
+// The only place a refresh result is explained; ServersTab toasts only while this panel is hidden.
+// It stays up during a retry so the explanation doesn't flicker away.
+function DiscoveryResultAlert({
+  result,
+  server,
+  refreshing,
+  retryDisabled,
+  onRetry,
+}: {
+  result: DiscoveryRefreshResult
+  server: McpServerView
+  refreshing: boolean
+  retryDisabled: boolean
+  onRetry: () => void
+}) {
+  const feedback = describeDiscoveryResult(result, server)
+  return (
+    <Alert variant={feedback.failed ? 'destructive' : 'default'}>
+      <AppIcon icon={feedback.failed ? Alert02Icon : CheckmarkCircle02Icon} aria-hidden />
+      <AlertTitle>{feedback.title}</AlertTitle>
+      <AlertDescription>
+        {feedback.message}
+        {feedback.detail ? (
+          <div className="text-muted-foreground mt-1 font-mono text-xs wrap-anywhere">
+            {feedback.detail}
+          </div>
+        ) : null}
+      </AlertDescription>
+      {feedback.retry ? (
+        <AlertAction>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onRetry}
+            disabled={retryDisabled}
+          >
+            {refreshing ? (
+              <Spinner className="size-3.5" aria-hidden data-icon="inline-start" />
+            ) : (
+              <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden data-icon="inline-start" />
+            )}
+            Retry
+          </Button>
+        </AlertAction>
+      ) : null}
+    </Alert>
   )
 }
 
@@ -468,14 +711,17 @@ const reviewBadges: Record<string, { label: string; variant: 'warning' | 'destru
   rejected: { label: 'Rejected', variant: 'destructive' },
 }
 
-/** Active state, or the review state when a change waits or was rejected. */
+/**
+ * Active state, or the review state when a change waits or was rejected. Status badges never take
+ * the default (lilac) variant, which reads as an action (DESIGN.md's Status Rule).
+ */
 function ToolStatusBadge({ tool }: { tool: McpToolView }) {
   const review = tool.is_active ? reviewBadges[tool.approval_status] : undefined
   if (review) {
     return <Badge variant={review.variant}>{review.label}</Badge>
   }
   return (
-    <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+    <Badge variant={tool.is_active ? 'success' : 'secondary'}>
       {tool.is_active ? 'Active' : 'Inactive'}
     </Badge>
   )
@@ -1181,16 +1427,30 @@ function ApproveToolChangesField({
 
 export function ServerStatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+    <Badge variant={status === 'active' ? 'success' : 'secondary'}>
       {status === 'active' ? 'Active' : 'Disabled'}
     </Badge>
   )
 }
 
-export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
-  const label = status ?? 'not run'
-  const variant = status === 'success' ? 'default' : status ? 'secondary' : 'outline'
-  return <Badge variant={variant}>{label}</Badge>
+// Sits beside the registration badge, so it uses the registry's labels ("Discovery failed", not a
+// raw enum) and stays hidden when it would only repeat that badge: after a successful discovery, or
+// once disabling the server has also disabled discovery. `attention` follows needsAttention, so a
+// failed or blocked discovery on an active server reads as destructive.
+export function DiscoveryStatusBadge({
+  status,
+  attention = false,
+}: {
+  status?: string | null
+  attention?: boolean
+}) {
+  if (status === 'success' || status === 'disabled') return null
+  return <Badge variant={discoveryVariant(status, attention)}>{discoveryLabel(status)}</Badge>
+}
+
+function discoveryVariant(status: string | null | undefined, attention: boolean) {
+  if (attention) return 'destructive'
+  return status ? 'secondary' : 'outline'
 }
 
 function formatOverviewValue(value: string) {

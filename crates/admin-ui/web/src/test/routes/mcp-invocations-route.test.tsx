@@ -2,14 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpInvocationView } from '@/types/api'
+import { McpInvocationsPage } from '@/routes/observability/mcp-invocations'
 
 const getObservabilityMcpInvocationDetailMock = vi.fn()
 const navigateMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -64,12 +66,10 @@ describe('McpInvocationsPage', () => {
     routeMock.useSearch.mockReturnValue({})
   })
 
-  it('renders filters and invocation records', async () => {
+  it('renders filters and invocation records', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [item], page: 1, page_size: 25, total: 1 },
     })
-
-    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
 
     render(<McpInvocationsPage />)
 
@@ -88,8 +88,6 @@ describe('McpInvocationsPage', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [item], page: 1, page_size: 25, total: 1 },
     })
-
-    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
 
     render(<McpInvocationsPage />)
 
@@ -135,8 +133,6 @@ describe('McpInvocationsPage', () => {
       },
     })
 
-    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
-
     render(<McpInvocationsPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
 
@@ -165,8 +161,6 @@ describe('McpInvocationsPage', () => {
       },
     })
 
-    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
-
     render(<McpInvocationsPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
 
@@ -180,12 +174,10 @@ describe('McpInvocationsPage', () => {
     expect(screen.queryByText('No payload stored')).not.toBeInTheDocument()
   })
 
-  it('renders an explicit empty state', async () => {
+  it('renders an explicit empty state', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [], page: 1, page_size: 25, total: 0 },
     })
-
-    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
 
     render(<McpInvocationsPage />)
 

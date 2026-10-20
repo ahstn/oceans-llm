@@ -122,7 +122,9 @@ describe('skill attribution', () => {
     )
     expect(screen.getByText('Matt Pocock')).toBeVisible()
     expect(screen.getByText('Upstream version').nextElementSibling).toHaveTextContent('1.0')
-    expect(screen.getByText('Uploaded').nextElementSibling).toHaveTextContent(/^03\/10\/26 13:07$/)
+    expect(screen.getByText('Uploaded').nextElementSibling).toHaveTextContent(
+      /^3 Oct 2026, 13:07 UTC$/,
+    )
     expect(screen.getByText('Contents').nextElementSibling).toHaveTextContent(/^1 file$/)
     expect(screen.queryByText('SHA-256')).not.toBeInTheDocument()
     expect(screen.queryByText(detail.version.sha256)).not.toBeInTheDocument()

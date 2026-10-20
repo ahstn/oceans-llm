@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.42.0](https://github.com/ahstn/oceans-llm/compare/v0.41.0...v0.42.0) - 2026-10-18
+
+### :rocket: New features
+- *(gateway)* Count tool and MCP calls from one parser across every API format by @ahstn in [#544](https://github.com/ahstn/oceans-llm/pull/544)
+
+### :bug: Bug fixes
+- *(config)* Use the Bedrock Runtime model ID for the local gpt-oss-120b route by @ahstn in [#543](https://github.com/ahstn/oceans-llm/pull/543)
+- *(providers)* Translate Anthropic Messages tools for Copilot chat-completions routes by @ahstn in [#542](https://github.com/ahstn/oceans-llm/pull/542)
+- *(providers)* Translate Anthropic tool history for openai_compat Messages routes by @ahstn in [#541](https://github.com/ahstn/oceans-llm/pull/541)
+- *(verify)* Never adopt or signal another checkout's stack listeners by @ahstn in [#545](https://github.com/ahstn/oceans-llm/pull/545)
+- *(mcp)* Address MCP gateway epic review findings by @ahstn in [#538](https://github.com/ahstn/oceans-llm/pull/538)
+- Address pre-release review findings in MCP, OAuth and rate limits by @ahstn in [#549](https://github.com/ahstn/oceans-llm/pull/549)
+
+### Changed
+- *(gateway)* Group users by team once when building admin team views by @ahstn in [#540](https://github.com/ahstn/oceans-llm/pull/540)
+- *(mcp)* Run every governed MCP call through one pipeline by @ahstn in [#539](https://github.com/ahstn/oceans-llm/pull/539)
+- *(overview)* Add MCP gateway features section by @ahstn in [#548](https://github.com/ahstn/oceans-llm/pull/548)
+
 ## [0.41.0](https://github.com/ahstn/oceans-llm/compare/v0.40.0...v0.41.0) - 2026-10-18
 
 ### :rocket: New features

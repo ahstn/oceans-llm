@@ -48,7 +48,8 @@ The page supports:
 - discovering a server's OAuth settings from its URL (**Discover OAuth**), then
   reviewing and overriding them before saving
 - editing display name, URL, auth mode, auth config, and timeout
-- disabling a server
+- disabling a server, and enabling it again, from **More actions** in the server
+  detail dialog
 - refreshing discovery
 - opening a server detail dialog to inspect overview, configuration, discovered
   tools, and credential bindings
@@ -57,6 +58,11 @@ The page supports:
 Team owners and admins see their team's servers and the servers published to the
 organisation. They manage only their team's servers. See
 [Ownership and Visibility](#ownership-and-visibility).
+
+Disabling takes effect immediately: callers lose the server's tools, and there is
+no confirmation step. Enabling restores the tools, toolset memberships, and grants
+the server had before. Its discovery status reads **Not discovered** until you
+refresh discovery, so refresh it to pick up upstream changes made while it was off.
 
 The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md).
 
@@ -112,7 +118,7 @@ Every other signed-in user also gets the `mcp` page by default, through the `use
 |---|---|
 | See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, only the URL's origin (`scheme://host[:port]`) is shown, and the auth config and discovery errors are hidden |
 | Register a server | Yes, at an address that resolves and is public. It is owned by their team and starts as `team`. They cannot name gateway secrets (`env/...`) in its auth config, and one a platform admin set stays only while the server URL and every URL in the auth config are unchanged. A platform admin registers servers on internal networks or with gateway secrets, including for a team |
-| Edit, disable, refresh discovery | Their team's servers |
+| Edit, disable, re-enable, refresh discovery | Their team's servers. A disable or re-enable names the owner it was authorized against, so it fails with `409` if the server changed owner meanwhile |
 | Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing` |
 | Grant tools | Tools of their team's servers, to their team, its members, its service accounts, and their API keys |
 | Revoke grants | Any grant on their team's servers' tools |
@@ -309,7 +315,7 @@ https://gateway.example.com/api/v1/mcp/oauth/callback
    - the protected-resource metadata (RFC 9728) named by the `WWW-Authenticate` challenge, or at `/.well-known/oauth-protected-resource`
    - the authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, falling back to OpenID Connect discovery
 3. Review what discovery found: the resource, the authorization server, its endpoints, the default scopes, how Oceans will get a client, and any warnings.
-4. Select **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. Edit it to override any value, such as the scopes, then save.
+4. Select **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. Edit it to override any value, such as the scopes, then save. The `issuer` and endpoints must stay the ones the authorization server publishes, as the next section explains.
 
 Discovery only reads metadata. It stores nothing until you save the server. Metadata URLs must use HTTPS. Plain HTTP is accepted only when both the MCP server and the metadata are on a loopback host, for local development. Every metadata, registration, and token request for the server reaches public addresses only, unless you entered the server by IP address (its own kind of address applies), as `localhost`, or by a host listed under `mcp.oauth.private_network_hosts`. A server on a private network registered by hostname needs that entry. No server can reach link-local or cloud metadata addresses. Requests do not follow redirects or use an HTTP proxy. See [ADR: SSRF-safe outbound fetch](../adr/2026-10-17-ssrf-safe-outbound-fetch.md). Oceans refuses an authorization server that lists PKCE methods without `S256`.
 
@@ -333,13 +339,15 @@ A discovered server's auth config looks like this:
 | --- | --- |
 | `resource` | The protected resource. It must share an origin with the server URL. |
 | `resource_indicator` | Whether authorization and token requests send the RFC 8707 `resource` parameter. Discovery sets it to `true` when the server publishes protected-resource metadata. Defaults to `true`. |
-| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. |
+| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. The endpoints, and `registration_endpoint` when set, must be the ones the issuer's metadata publishes. |
 | `scopes` | Scopes to request and require. Discovery fills them from the challenge's `scope`, then from the resource's `scopes_supported`. Omit them to let the authorization server choose. |
 | `client_registration` | How Oceans gets its OAuth client: `dynamic`, `metadata_document`, or `manual`. |
 | `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post`, or `none`. |
 | `authorization_response_iss_parameter_supported` | Whether the authorization server returns `iss` with every authorization response (RFC 9207). Discovery copies it from the authorization server metadata. When `true`, a callback without `iss` is refused. Defaults to `false`. |
 
-Every connection to a server with its own authorization server records the expected issuer. If the callback carries an `iss` that names a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code is never sent to the token endpoint. This stops an upstream whose metadata sends users to another authorization server from receiving that server's codes (a mix-up attack), because all these servers share one callback URI and, with `metadata_document`, one client ID.
+Every connection to a server with its own authorization server records the expected issuer. If the callback carries an `iss` that names a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code is never sent to the token endpoint. This stops an upstream whose metadata sends users to another authorization server from receiving that server's codes (a mix-up attack), because all these servers share one callback URI and, with `metadata_document`, one client ID. The issuers must match exactly, except that one trailing `/` at the end of the path is ignored, so servers saved before discovery recorded the issuer exactly as the metadata states it keep connecting.
+
+The issuer check only proves which authorization server sent a code, so the code must also go to that server's own token endpoint. When a save creates a server with its own authorization server, or changes its `issuer`, `authorization_endpoint`, `token_endpoint` or `registration_endpoint`, Oceans reads the issuer's metadata, as discovery does, and refuses the save with `400` unless each configured endpoint is the one the metadata publishes. An issuer that publishes no metadata is refused; use a [configured `oauth2` provider](#a-configured-oauth2-provider) for it. Edits that leave these fields as they are fetch nothing, so a server saved before this check keeps working until its endpoints change.
 
 ### Client registration
 

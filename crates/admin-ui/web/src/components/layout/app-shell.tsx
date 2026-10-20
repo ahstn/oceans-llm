@@ -1,5 +1,5 @@
 import { useTransition, type ReactNode } from 'react'
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useMatches, useRouterState } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
@@ -30,6 +30,9 @@ interface AppShellProps {
 
 export function AppShell({ children, session, oceansVersion }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  // The page wrapper replays its entrance when the rendered page changes. `location` moves as soon as
+  // a navigation starts, while the old page is still on screen, so the key follows the presented match.
+  const presentedPathname = useMatches({ select: (matches) => matches.at(-1)?.pathname })
   const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
   const navSections = getAdminNavSections(
@@ -85,7 +88,10 @@ export function AppShell({ children, session, oceansVersion }: AppShellProps) {
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-6 p-4 sm:p-6">
+          <div
+            key={presentedPathname}
+            className="animate-page-in mx-auto flex min-h-full w-full max-w-[1600px] min-w-0 flex-col gap-6 p-4 sm:p-6"
+          >
             {children}
           </div>
         </main>

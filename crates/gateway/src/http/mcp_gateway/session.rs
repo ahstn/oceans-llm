@@ -23,7 +23,8 @@ use super::{MCP_SESSION_ID, json_rpc::mcp_jsonrpc_error_response};
 type HmacSha256 = Hmac<Sha256>;
 
 const TAG_HEX_LEN: usize = 32;
-const SESSION_NOT_FOUND_CODE: i64 = -32001;
+/// The aggregate route answers an unknown session the same way.
+const SESSION_NOT_FOUND_CODE: i64 = gateway_mcp::server::JSON_RPC_INVALID_PARAMS;
 
 /// Signs and checks session ids for one caller on one server.
 pub(super) struct SessionBinding<'a> {

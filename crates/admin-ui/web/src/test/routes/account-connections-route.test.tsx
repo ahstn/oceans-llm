@@ -2,11 +2,13 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpOauthConnectionView } from '@/types/api'
+import { ConnectionsPage } from '@/routes/account/connections'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 const navigateMock = vi.fn()
 const connectMock = vi.fn()
 const toastMock = vi.hoisted(() => ({
@@ -79,7 +81,6 @@ describe('ConnectionsPage connect links', () => {
     connectMock.mockResolvedValue({
       authorization_url: 'https://accounts.example/consent',
     })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 
@@ -103,7 +104,6 @@ describe('ConnectionsPage connect links', () => {
     connectMock.mockResolvedValue({
       authorization_url: 'https://accounts.example/consent',
     })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 
@@ -113,7 +113,6 @@ describe('ConnectionsPage connect links', () => {
   it('does not start the flow when the server is already connected', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection({ status: 'connected' })]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 
@@ -132,7 +131,6 @@ describe('ConnectionsPage connect links', () => {
       ]),
     )
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     const { unmount } = render(<ConnectionsPage />)
     await waitFor(() =>
@@ -154,7 +152,6 @@ describe('ConnectionsPage connect links', () => {
     routeMock.useLoaderData.mockReturnValue(loaderData([connection()]))
     routeMock.useSearch.mockReturnValue({ connect: 'google_drive' })
     connectMock.mockRejectedValue(new Error('consent failed'))
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     const { rerender } = render(<ConnectionsPage />)
     await waitFor(() => expect(connectMock).toHaveBeenCalledTimes(1))
@@ -178,7 +175,6 @@ describe('ConnectionsPage callbacks and discovered servers', () => {
       oauth: 'connected',
       server: 'server-1',
     })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     const { rerender } = render(<ConnectionsPage />)
 
@@ -215,7 +211,6 @@ describe('ConnectionsPage callbacks and discovered servers', () => {
     connectMock.mockResolvedValue({
       authorization_url: 'https://auth.linear.example/authorize',
     })
-    const { ConnectionsPage } = await import('@/routes/account/connections')
 
     render(<ConnectionsPage />)
 

@@ -1,6 +1,8 @@
 import type { ComponentProps, ComponentType } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { McpWorkspacePage } from '@/routes/mcp/index'
+import '@/routes/mcp/toolsets'
 
 type Search = Record<string, unknown>
 type RouteOptions = {
@@ -20,9 +22,12 @@ type ToolsetsProps = {
   onSeedConsumed: () => void
 }
 
-const routeOptions = new Map<string, RouteOptions>()
-const workspaceRoute = { useLoaderData: vi.fn(), useSearch: vi.fn() }
-const toolsetsRoute = { useLoaderData: vi.fn(), useSearch: vi.fn() }
+// Hoisted with the mocks: each route module registers its options as it loads.
+const { routeOptions, workspaceRoute, toolsetsRoute } = vi.hoisted(() => ({
+  routeOptions: new Map<string, RouteOptions>(),
+  workspaceRoute: { useLoaderData: vi.fn(), useSearch: vi.fn() },
+  toolsetsRoute: { useLoaderData: vi.fn(), useSearch: vi.fn() },
+}))
 const navigateMock = vi.fn()
 const redirectMock = vi.fn()
 const toolsetsPropsMock = vi.fn<(props: ToolsetsProps) => void>()
@@ -89,8 +94,7 @@ describe('MCP navigation', () => {
     toolsetsRoute.useLoaderData.mockReturnValue({ servers: [], toolsets: [] })
   })
 
-  it('deduplicates imported IDs and removes values that cannot be tool IDs', async () => {
-    await import('@/routes/mcp/toolsets')
+  it('deduplicates imported IDs and removes values that cannot be tool IDs', () => {
     const route = routeOptions.get('/mcp/toolsets')!
 
     expect(
@@ -106,8 +110,7 @@ describe('MCP navigation', () => {
     })
   })
 
-  it('redirects the legacy Toolsets tab while preserving the selected set and carried tools', async () => {
-    await import('@/routes/mcp/index')
+  it('redirects the legacy Toolsets tab while preserving the selected set and carried tools', () => {
     const route = routeOptions.get('/mcp/')!
     const search = route.validateSearch({
       tab: 'toolsets',
@@ -123,8 +126,7 @@ describe('MCP navigation', () => {
     })
   })
 
-  it.each(['servers', 'access'])('keeps the %s section in the existing workspace', async (tab) => {
-    await import('@/routes/mcp/index')
+  it.each(['servers', 'access'])('keeps the %s section in the existing workspace', (tab) => {
     const route = routeOptions.get('/mcp/')!
 
     route.beforeLoad?.({ search: route.validateSearch({ tab }) })
@@ -132,9 +134,8 @@ describe('MCP navigation', () => {
     expect(redirectMock).not.toHaveBeenCalled()
   })
 
-  it('shows sibling section links and forwards the selected set and imported tools', async () => {
+  it('shows sibling section links and forwards the selected set and imported tools', () => {
     toolsetsRoute.useSearch.mockReturnValue({ toolset_id: 'toolset_1', tool_ids: ['tool_1'] })
-    await import('@/routes/mcp/toolsets')
     const Page = routeOptions.get('/mcp/toolsets')!.component
     render(<Page />)
 
@@ -160,8 +161,7 @@ describe('MCP navigation', () => {
     )
   })
 
-  it('sends a server tool selection to the dedicated Tool Sets page', async () => {
-    const { McpWorkspacePage } = await import('@/routes/mcp/index')
+  it('sends a server tool selection to the dedicated Tool Sets page', () => {
     render(<McpWorkspacePage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add to toolset' }))
@@ -172,13 +172,12 @@ describe('MCP navigation', () => {
     })
   })
 
-  it('does not restore consumed tools or lose a target when callbacks share an old render', async () => {
+  it('does not restore consumed tools or lose a target when callbacks share an old render', () => {
     let currentSearch: Search = { tool_ids: ['tool_1'] }
     toolsetsRoute.useSearch.mockReturnValue(currentSearch)
     navigateMock.mockImplementation(({ search }: NavigationOptions) => {
       currentSearch = typeof search === 'function' ? search(currentSearch) : search
     })
-    await import('@/routes/mcp/toolsets')
     const Page = routeOptions.get('/mcp/toolsets')!.component
     render(<Page />)
     const props = toolsetsPropsMock.mock.lastCall![0]

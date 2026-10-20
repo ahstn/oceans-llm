@@ -49,7 +49,6 @@ async fn discover_titled<S>(
 where
     S: McpRegistryRepository + Sync,
 {
-    let now = OffsetDateTime::now_utc();
     let upserts = tools
         .iter()
         .map(
@@ -68,9 +67,23 @@ where
             },
         )
         .collect::<Vec<_>>();
+    record_discovery(store, server, &upserts).await
+}
+
+/// Records one successful discovery of `upserts` and lists the server's tools.
+async fn record_discovery<S>(
+    store: &S,
+    server: &ExternalMcpServerRecord,
+    upserts: &[UpsertExternalMcpToolRecord],
+) -> Vec<ExternalMcpToolRecord>
+where
+    S: McpRegistryRepository + Sync,
+{
+    let now = OffsetDateTime::now_utc();
     store
         .record_external_mcp_discovery_success(
             &ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 expected_server: None,
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
@@ -83,7 +96,7 @@ where
                 error_summary: None,
                 details: Map::new(),
             },
-            &upserts,
+            upserts,
         )
         .await
         .expect("discovery");
@@ -914,6 +927,166 @@ where
         status_of(4),
         Some((McpToolVersionStatus::Superseded, Some("D".to_string())))
     );
+}
+
+/// A tool row from before V58 kept no metadata. With approval on, metadata the
+/// upstream serves on the first refresh after the upgrade waits for review,
+/// but the tool stays callable on its approved definition: the row never
+/// recorded those members, so their arrival is not a contract change.
+async fn exercise_legacy_metadata_capture<S>(store: &S, mark_legacy: impl AsyncFn(Uuid))
+where
+    S: McpAccessRepository + McpRegistryRepository + Sync,
+{
+    let now = OffsetDateTime::now_utc();
+    let server = store
+        .create_external_mcp_server(&NewExternalMcpServerRecord {
+            ownership: Default::default(),
+            server_key: "legacy".to_string(),
+            display_name: "Legacy".to_string(),
+            description: None,
+            transport: ExternalMcpTransport::StreamableHttp,
+            server_url: "https://legacy.example.test/mcp".to_string(),
+            auth_mode: ExternalMcpAuthMode::None,
+            auth_config: Map::new(),
+            timeout_ms: 2_000,
+            created_at: now,
+            approve_tool_changes: false,
+        })
+        .await
+        .expect("server");
+    let subject = McpGrantSubject {
+        subject_kind: McpToolGrantSubjectKind::Team,
+        subject_id: Uuid::new_v4(),
+    };
+    let upsert = |metadata: McpToolMetadata, schema_hash: &str| UpsertExternalMcpToolRecord {
+        mcp_server_id: server.mcp_server_id,
+        upstream_name: "search".to_string(),
+        display_name: "search".to_string(),
+        description: Some("Search".to_string()),
+        input_schema: json!({"type": "object"}),
+        metadata,
+        schema_hash: schema_hash.to_string(),
+    };
+    let tools = record_discovery(store, &server, &[upsert(Default::default(), "h1")]).await;
+    let search = find(&tools, "search").clone();
+    mark_legacy(search.mcp_tool_id).await;
+    store
+        .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+            expected_server: None,
+            expected_subject_team: None,
+            subject_kind: subject.subject_kind,
+            subject_id: subject.subject_id,
+            target_kind: McpToolGrantTargetKind::Tool,
+            target_id: search.mcp_tool_id,
+            updated_at: now,
+        })
+        .await
+        .expect("grant");
+    set_approval(store, &server, true).await;
+
+    let captured = McpToolMetadata {
+        title: Some("Search".to_string()),
+        annotations: json!({"readOnlyHint": true}).as_object().cloned(),
+        output_schema: Some(json!({"type": "object"})),
+    };
+    let refreshed = record_discovery(store, &server, &[upsert(captured.clone(), "h2")]).await;
+    let search_now = find(&refreshed, "search");
+    assert_eq!(
+        search_now.review.approval_status,
+        McpToolApprovalStatus::PendingChange
+    );
+    assert_eq!(search_now.review.approved_schema_version, Some(1));
+    assert_eq!(search_now.review.pending_schema_version, Some(2));
+    assert_eq!(
+        search_now.metadata,
+        McpToolMetadata::default(),
+        "the unreviewed metadata is not served"
+    );
+    assert_eq!(
+        served(store, &subject, server.mcp_server_id).await,
+        [pair("search", "Search")]
+    );
+    let pending = store
+        .list_mcp_tool_versions(search.mcp_tool_id, &McpToolVersionQuery::Versions(vec![2]))
+        .await
+        .expect("versions")
+        .remove(0);
+    assert_eq!(pending.status, McpToolVersionStatus::Pending);
+    assert_eq!(pending.definition.annotations, captured.annotations);
+
+    // Rejecting the captured metadata keeps the tool served, and the upstream
+    // still serving it does not withhold the tool.
+    store
+        .review_mcp_tool_version(
+            search.mcp_tool_id,
+            2,
+            McpToolReviewDecision::Reject,
+            Some(Uuid::new_v4()),
+            now,
+        )
+        .await
+        .expect("reject");
+    let settled = record_discovery(store, &server, &[upsert(captured, "h2")]).await;
+    let search_now = find(&settled, "search");
+    assert_eq!(
+        search_now.review.approval_status,
+        McpToolApprovalStatus::Approved
+    );
+    assert_eq!(search_now.metadata, McpToolMetadata::default());
+    assert_eq!(
+        served(store, &subject, server.mcp_server_id).await,
+        [pair("search", "Search")]
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn libsql_mcp_tool_legacy_metadata_capture() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("gateway.db");
+    run_migrations(&db_path).await.expect("migrations");
+    let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+        .await
+        .expect("store");
+    exercise_legacy_metadata_capture(&store, async |mcp_tool_id: Uuid| {
+        store
+            .connection()
+            .execute(
+                "UPDATE external_mcp_tools SET metadata_captured = 0 WHERE mcp_tool_id = ?1",
+                [mcp_tool_id.to_string()],
+            )
+            .await
+            .expect("mark legacy tool");
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_mcp_tool_legacy_metadata_capture() {
+    let Some(test_db) = create_postgres_test_database().await else {
+        eprintln!("skipping postgres MCP legacy capture test: TEST_POSTGRES_URL is not set");
+        return;
+    };
+    run_migrations_with_options(&StoreConnectionOptions::Postgres {
+        url: test_db.database_url.clone(),
+        max_connections: 4,
+    })
+    .await
+    .expect("migrations");
+    let store = PostgresStore::connect(&test_db.database_url, 4)
+        .await
+        .expect("store");
+    exercise_legacy_metadata_capture(&store, async |mcp_tool_id: Uuid| {
+        sqlx::query("UPDATE external_mcp_tools SET metadata_captured = 0 WHERE mcp_tool_id = $1")
+            .bind(mcp_tool_id.to_string())
+            .execute(store.pool())
+            .await
+            .expect("mark legacy tool");
+    })
+    .await;
+    drop(store);
+    drop_postgres_test_database(&test_db).await;
 }
 
 /// Historical lookups run in batches; reuse must hold for tools in every

@@ -4,6 +4,8 @@ use super::*;
 pub(super) struct InferenceRequest<'a> {
     pub state: &'a AppState,
     pub auth: &'a AuthenticatedApiKey,
+    /// The team the request's rate-limit check counted.
+    pub rate_limit_team: RateLimitMemberTeam,
     pub resolved: &'a gateway_service::ResolvedGatewayRequest,
     pub request_id: &'a str,
     pub request_started_at: Instant,
@@ -164,6 +166,7 @@ impl InferenceExecution<'_> {
         let &InferenceRequest {
             state,
             auth,
+            rate_limit_team,
             resolved,
             request_id,
             request_started_at,
@@ -182,6 +185,7 @@ impl InferenceExecution<'_> {
                 state,
                 UsageAccountingContext {
                     auth,
+                    rate_limit_team,
                     model: &resolved.selection.execution_model,
                     route,
                     request_id,
@@ -288,6 +292,7 @@ impl InferenceExecution<'_> {
         let &InferenceRequest {
             state,
             auth,
+            rate_limit_team,
             resolved,
             request_started_at,
             ref request_log_context,
@@ -299,6 +304,7 @@ impl InferenceExecution<'_> {
         let stream = enforce_guarded_stream_after_provider(
             state,
             auth,
+            rate_limit_team,
             resolved,
             request_log_context,
             route,
@@ -314,6 +320,7 @@ impl InferenceExecution<'_> {
             service: state.service.clone(),
             metrics: state.metrics.clone(),
             auth: auth.clone(),
+            rate_limit_team,
             request_log_context: request_log_context.clone(),
             requested_model_key: resolved.selection.requested_model.model_key.clone(),
             resolved_model_key: resolved.selection.execution_model.model_key.clone(),
@@ -350,6 +357,7 @@ impl InferenceExecution<'_> {
         let &InferenceRequest {
             state,
             auth,
+            rate_limit_team,
             resolved,
             request_id,
             request_started_at,
@@ -364,6 +372,7 @@ impl InferenceExecution<'_> {
             state,
             UsageAccountingContext {
                 auth,
+                rate_limit_team,
                 model: &resolved.selection.execution_model,
                 route,
                 request_id,

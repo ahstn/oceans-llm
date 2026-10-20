@@ -18,7 +18,8 @@ use axum::{
 use gateway_core::GatewayOauthRepository;
 use gateway_service::{
     ClientMetadataDocumentSource, ClientMetadataDocuments, FetchedDocument, McpClientOauthSettings,
-    SourceRateLimits, outbound_fetch::OutboundFetchError,
+    SourceRateLimits,
+    outbound_fetch::{OutboundAddressScope, OutboundFetchError, OutboundFetcher},
 };
 use serde_json::{Value, json};
 use url::Url;
@@ -68,6 +69,11 @@ impl Fixture {
 
 #[async_trait]
 impl ClientMetadataDocumentSource for Fixture {
+    /// Refuses what the production fetcher refuses without a request.
+    fn check(&self, url: &Url) -> Result<(), OutboundFetchError> {
+        OutboundFetcher::new(OutboundAddressScope::Public).check_url(url)
+    }
+
     async fn fetch(&self, url: &Url) -> Result<FetchedDocument, OutboundFetchError> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
         let delay = self.delay_ms.load(Ordering::SeqCst) as u64;
@@ -402,6 +408,137 @@ async fn document_fetches_are_limited_per_source() {
     assert_eq!(fixture.fetches(), 30, "the refused request fetched nothing");
     authorize(31, [198, 51, 100, 9]).await;
     assert_eq!(fixture.fetches(), 31, "other sources are unaffected");
+}
+
+async fn harness_with_fetch_limit(
+    allowed_domains: &[&str],
+    per_minute: u32,
+) -> (Harness, Arc<Fixture>) {
+    harness_with_fetch_limits(
+        allowed_domains,
+        SourceRateLimits {
+            per_source_per_minute: per_minute,
+            per_minute,
+        },
+    )
+    .await
+}
+
+async fn harness_with_fetch_limits(
+    allowed_domains: &[&str],
+    limits: SourceRateLimits,
+) -> (Harness, Arc<Fixture>) {
+    let fixture = Arc::new(Fixture::default());
+    let documents = ClientMetadataDocuments::with_source(
+        allowed_domains.iter().map(ToString::to_string).collect(),
+        fixture.clone(),
+    )
+    .expect("documents")
+    .with_fetch_rate_limits(limits)
+    .expect("limits");
+    (
+        Harness::with_settings(settings_with(documents)).await,
+        fixture,
+    )
+}
+
+/// Client IDs refused without a fetch must not spend the budget that
+/// documents on allowed hosts need.
+#[tokio::test]
+async fn client_ids_refused_before_fetching_do_not_count() {
+    let (harness, fixture) = harness_with_fetch_limit(&["editor.example.com"], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), None);
+    for client_id in [
+        "https://elsewhere.example.net/oauth/client.json",
+        "https://editor.example.com",
+    ] {
+        let (status, page) = body_text(&harness, &harness.authorize_query(client_id, &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{client_id}: {page}");
+    }
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1);
+}
+
+/// Without a domain allowlist, an address the fetcher never connects to
+/// must not spend the budget either.
+#[tokio::test]
+async fn blocked_addresses_do_not_count() {
+    let (harness, fixture) = harness_with_fetch_limit(&[], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), None);
+    for client_id in [
+        "https://127.0.0.1/oauth/client.json",
+        "https://10.0.0.1/oauth/client.json",
+        "https://[::1]/oauth/client.json",
+    ] {
+        let (status, page) = body_text(&harness, &harness.authorize_query(client_id, &[])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{client_id}: {page}");
+    }
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1);
+}
+
+/// Once the fetch budget is spent, a stale copy that may still stand in
+/// serves as it does for an unreachable host, rather than a 429.
+#[tokio::test]
+async fn a_spent_fetch_budget_falls_back_to_a_usable_copy() {
+    let (harness, fixture) = harness_with_fetch_limit(&[], 1).await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
+    let request_id = harness
+        .start(&harness.authorize_query(CLIENT_ID, &[]))
+        .await;
+    let code = harness.approve(&request_id).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+    let (status, token) = harness.exchange_code(CLIENT_ID, &code).await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+    let (status, page) = body_text(&harness, &harness.authorize_query(CLIENT_ID, &[])).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{page}");
+    assert_eq!(fixture.fetches(), 1, "the limit still held");
+
+    // Without a usable copy, the refusal stands.
+    let uncached = "https://editor.example.com/oauth/other.json";
+    let (status, page) = body_text(&harness, &harness.authorize_query(uncached, &[])).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{page}");
+}
+
+/// A source over its own limit gets the stale copy, but only for itself: the
+/// next source still fetches the current document.
+#[tokio::test]
+async fn one_source_over_its_limit_keeps_no_stale_copy_for_others() {
+    let (harness, fixture) = harness_with_fetch_limits(
+        &[],
+        SourceRateLimits {
+            per_source_per_minute: 1,
+            per_minute: 100,
+        },
+    )
+    .await;
+    fixture.publish(CLIENT_ID, &editor_document(), Some("max-age=1"));
+    let authorize =
+        |address: [u8; 4]| {
+            let query = harness.authorize_query(CLIENT_ID, &[]);
+            let mut request = Request::builder()
+                .uri(format!("/oauth/authorize?{query}"))
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from((address, 40_000)),
+            ));
+            send_with_headers(&harness.router, request)
+        };
+    let (status, _, _) = authorize([192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(fixture.fetches(), 1);
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+    let (status, _, _) = authorize([192, 0, 2, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "the stale copy stands in");
+    assert_eq!(fixture.fetches(), 1, "the source's limit held");
+    let (status, _, _) = authorize([198, 51, 100, 9]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(fixture.fetches(), 2, "another source fetches the document");
 }
 
 #[tokio::test]

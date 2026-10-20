@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ObservabilityLeaderboardPage } from '@/routes/observability/leaderboard'
 
 const refreshObservabilityLeaderboardMock = vi.fn()
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -17,8 +19,32 @@ vi.mock('recharts', () => ({
   AreaChart: ({ children }: { children: ReactNode }) => <svg>{children}</svg>,
   Area: () => <path />,
   CartesianGrid: () => <g />,
-  XAxis: () => <g />,
-  Tooltip: () => null,
+  XAxis: ({
+    ticks,
+    tickFormatter,
+  }: {
+    ticks?: string[]
+    tickFormatter: (value: string) => string
+  }) => (
+    <g data-testid="x-axis">
+      {ticks?.map((tick) => (
+        <text key={tick}>{tickFormatter(tick)}</text>
+      ))}
+    </g>
+  ),
+  // Render the tooltip as if the noon bucket on 1 Mar were hovered.
+  Tooltip: ({ content }: { content: ReactElement }) =>
+    cloneElement(content as ReactElement<Record<string, unknown>>, {
+      active: true,
+      payload: [
+        {
+          dataKey: 'user_1',
+          name: 'user_1',
+          value: 3.5,
+          payload: { bucket_start: '2026-03-01T12:00:00Z' },
+        },
+      ],
+    }),
   Legend: () => null,
 }))
 
@@ -109,10 +135,8 @@ describe('ObservabilityLeaderboardPage', () => {
     refreshObservabilityLeaderboardMock.mockReset()
   })
 
-  it('renders the chart card, range selector, and ranked leaderboard table', async () => {
+  it('renders the chart card, range selector, and ranked leaderboard table', () => {
     routeMock.useLoaderData.mockReturnValue({ data: leaderboardData })
-
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
 
     const view = render(<ObservabilityLeaderboardPage />)
     const scope = within(view.container)
@@ -144,8 +168,6 @@ describe('ObservabilityLeaderboardPage', () => {
       },
     })
 
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
-
     const view = render(<ObservabilityLeaderboardPage />)
     fireEvent.click(within(view.container).getByRole('radio', { name: 'Last 31 days' }))
 
@@ -162,7 +184,7 @@ describe('ObservabilityLeaderboardPage', () => {
     })
   })
 
-  it('renders an explicit empty state when no leaderboard data exists', async () => {
+  it('renders an explicit empty state when no leaderboard data exists', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...leaderboardData,
@@ -171,8 +193,6 @@ describe('ObservabilityLeaderboardPage', () => {
         leaders: [],
       },
     })
-
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
 
     const view = render(<ObservabilityLeaderboardPage />)
 
@@ -183,8 +203,6 @@ describe('ObservabilityLeaderboardPage', () => {
     routeMock.useLoaderData.mockReturnValue({ data: leaderboardData })
     refreshObservabilityLeaderboardMock.mockImplementation(() => new Promise(() => undefined))
 
-    const { ObservabilityLeaderboardPage } = await import('@/routes/observability/leaderboard')
-
     const view = render(<ObservabilityLeaderboardPage />)
     const scope = within(view.container)
     fireEvent.click(scope.getByRole('radio', { name: 'Last 31 days' }))
@@ -193,5 +211,35 @@ describe('ObservabilityLeaderboardPage', () => {
       expect(scope.getByTestId('leaderboard-chart-skeleton')).toBeInTheDocument()
       expect(scope.getByTestId('leaderboard-table-skeleton')).toBeInTheDocument()
     })
+  })
+
+  it('labels each UTC day once on the axis and names the zone in the tooltip', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...leaderboardData,
+        series: [
+          '2026-03-01T12:00:00Z',
+          '2026-03-02T00:00:00Z',
+          '2026-03-02T12:00:00Z',
+          '2026-03-03T00:00:00Z',
+        ].map((bucket_start) => ({
+          bucket_start,
+          values: [{ user_id: 'user_1', spend_usd_10000: 35000 }],
+        })),
+      },
+    })
+
+    const view = render(<ObservabilityLeaderboardPage />)
+    const scope = within(view.container)
+
+    // The chart loads lazily, so wait for it rather than relying on an earlier test's load.
+    // 12-hour buckets: only the midnight buckets get a tick, so no day repeats.
+    expect(
+      within(await scope.findByTestId('x-axis'))
+        .getAllByText(/./)
+        .map((tick) => tick.textContent),
+    ).toEqual(['Mar 2', 'Mar 3'])
+    expect(scope.getByText('1 Mar 2026, 12:00 UTC')).toBeInTheDocument()
+    expect(scope.getByText('$3.50')).toBeInTheDocument()
   })
 })

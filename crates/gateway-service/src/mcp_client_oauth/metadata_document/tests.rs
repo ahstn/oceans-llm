@@ -356,6 +356,47 @@ fn in_flight_entries_leave_with_their_last_caller() {
     assert!(map.lock().unwrap().is_empty());
 }
 
+/// A leader refused by the fetch limits must not hand its 429 to a caller
+/// waiting on it, whose source may be under the limits.
+#[tokio::test]
+async fn a_fetch_limit_refusal_is_not_shared_with_waiting_callers() {
+    use std::{
+        pin::pin,
+        task::{Context, Waker},
+    };
+
+    let map = Mutex::new(HashMap::new());
+    let client = validate_document(CLIENT_ID, &document(json!({})), now()).expect("valid");
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let leader = InFlight::join(&map, CLIENT_ID);
+    let waiter = InFlight::join(&map, CLIENT_ID);
+    let mut context = Context::from_waker(Waker::noop());
+
+    let mut leading = pin!(leader.outcome(async {
+        released.await.ok();
+        Err(ResolveFailure::rate_limited(RateLimited {
+            retry_after: StdDuration::from_secs(30),
+        }))
+    }));
+    assert!(leading.as_mut().poll(&mut context).is_pending());
+    let mut waiting = pin!(waiter.outcome(async { Ok(client.clone()) }));
+    assert!(
+        waiting.as_mut().poll(&mut context).is_pending(),
+        "the waiter joins the leader's refresh"
+    );
+    release.send(()).unwrap();
+
+    let refused = leading.await.expect_err("the leader is refused");
+    assert_eq!(refused.error.status_code(), 429);
+    assert_eq!(waiting.await.ok(), Some(client.clone()), "its own refresh");
+    // A settled outcome is still shared: a later caller runs no refresh.
+    let later = InFlight::join(&map, CLIENT_ID);
+    let shared = later
+        .outcome(async { panic!("the waiter's outcome is shared") })
+        .await;
+    assert_eq!(shared.ok(), Some(client.clone()));
+}
+
 #[tokio::test]
 async fn every_cache_control_line_counts() {
     use axum::{Router, http::header, routing::get};

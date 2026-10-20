@@ -25,6 +25,11 @@ use gateway_core::{
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+mod member_teams;
+
+use member_teams::TeamLookupFlights;
+pub use member_teams::{RateLimitMemberTeam, RateLimitTeamLookup};
+
 /// How often each replica deletes expired counter rows, and how many per pass.
 const PURGE_INTERVAL_SECONDS: i64 = 60;
 const PURGE_BATCH: i64 = 500;
@@ -80,6 +85,9 @@ pub struct RateLimitSubject<'a> {
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    /// Whether `team_id` is the user's team as already resolved, so no lookup
+    /// is needed for team policies.
+    team_resolved: bool,
     /// The requested model key and the key it resolved to.
     pub model_keys: &'a [&'a str],
     /// The MCP server id and key.
@@ -91,7 +99,8 @@ impl<'a> RateLimitSubject<'a> {
     /// API key's, or for an OAuth caller its grant's, so `api_key` scope
     /// counts each authorized client on its own, as it does each key. A
     /// user's team is not on the credential; the limiter looks it up for
-    /// team-scoped policies.
+    /// team-scoped policies, or takes it from
+    /// [`Self::with_member_team`].
     #[must_use]
     pub fn new(operation: RateLimitOperation, auth: &AuthenticatedApiKey) -> Self {
         Self {
@@ -99,6 +108,7 @@ impl<'a> RateLimitSubject<'a> {
             api_key_id: auth.id,
             user_id: auth.owner_user_id,
             team_id: auth.owner_team_id,
+            team_resolved: false,
             model_keys: &[],
             mcp_server: None,
         }
@@ -431,83 +441,6 @@ impl Drop for PendingCharge {
     }
 }
 
-/// Finds the team a user belongs to, so team-scoped policies also count the
-/// requests members make with their own keys and OAuth grants.
-#[async_trait::async_trait]
-pub trait RateLimitTeamLookup: Send + Sync {
-    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError>;
-}
-
-#[async_trait::async_trait]
-impl<T> RateLimitTeamLookup for T
-where
-    T: gateway_core::IdentityRepository + ?Sized,
-{
-    async fn team_for_user(&self, user_id: Uuid) -> Result<Option<Uuid>, StoreError> {
-        Ok(self
-            .get_team_membership_for_user(user_id)
-            .await?
-            .map(|membership| membership.team_id))
-    }
-}
-
-/// One lookup's outcome, shared with every caller waiting on it. A failure
-/// keeps its message, since `StoreError` cannot be cloned.
-type TeamLookupOutcome = Result<Option<Uuid>, String>;
-type TeamLookupFlights = std::sync::Mutex<HashMap<Uuid, TeamLookupEntry>>;
-
-/// A user's lookup in flight and how many callers share it.
-#[derive(Default)]
-struct TeamLookupEntry {
-    cell: Arc<tokio::sync::OnceCell<TeamLookupOutcome>>,
-    callers: usize,
-}
-
-/// A caller's share of one user's team lookup. The entry stays while any
-/// caller holds a share, so one waiter giving up cannot let a second,
-/// overlapping lookup start. Dropping the last share, whether the lookup
-/// succeeded, failed or every caller was cancelled, removes the entry.
-struct TeamLookupFlight<'a> {
-    flights: &'a TeamLookupFlights,
-    user_id: Uuid,
-    cell: Arc<tokio::sync::OnceCell<TeamLookupOutcome>>,
-}
-
-impl<'a> TeamLookupFlight<'a> {
-    fn join(flights: &'a TeamLookupFlights, user_id: Uuid) -> Self {
-        let mut map = flights.lock().unwrap_or_else(|poison| poison.into_inner());
-        let entry = map.entry(user_id).or_default();
-        entry.callers += 1;
-        Self {
-            flights,
-            user_id,
-            cell: entry.cell.clone(),
-        }
-    }
-}
-
-impl Drop for TeamLookupFlight<'_> {
-    fn drop(&mut self) {
-        let mut flights = self
-            .flights
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        let Some(entry) = flights.get_mut(&self.user_id) else {
-            return;
-        };
-        if !Arc::ptr_eq(&entry.cell, &self.cell) {
-            return;
-        }
-        entry.callers -= 1;
-        if entry.callers == 0 {
-            flights.remove(&self.user_id);
-        }
-    }
-}
-
-/// Users whose team is cached at once. Past this the cache starts over.
-const MAX_CACHED_MEMBER_TEAMS: usize = 10_000;
-
 pub struct RateLimiter {
     store: Option<Arc<dyn RateLimitRepository>>,
     team_lookup: Option<Arc<dyn RateLimitTeamLookup>>,
@@ -578,112 +511,6 @@ impl RateLimiter {
         }
     }
 
-    /// Resolves the team of a user whose credential carries none, for
-    /// team-scoped policies. Without it those policies count only team
-    /// (service account) keys.
-    #[must_use]
-    pub fn with_team_lookup(mut self, lookup: Arc<dyn RateLimitTeamLookup>) -> Self {
-        self.team_lookup = Some(lookup);
-        self
-    }
-
-    /// The user's team from the cache, when it was read recently.
-    fn cached_member_team(&self, user_id: Uuid) -> Option<Option<Uuid>> {
-        let teams = self
-            .member_teams
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        teams
-            .get(&user_id)
-            .filter(|(read_at, _)| read_at.elapsed() < self.settings.policy_refresh)
-            .map(|(_, team)| *team)
-    }
-
-    /// Whether `subject` needs its user's team looked up for `set`: some
-    /// team policy, of `metric` when given, matches the request's traffic.
-    fn needs_member_team(
-        &self,
-        set: &PolicySet,
-        subject: &RateLimitSubject<'_>,
-        metric: Option<RateLimitMetric>,
-    ) -> bool {
-        self.team_lookup.is_some()
-            && subject.team_id.is_none()
-            && subject.user_id.is_some()
-            && set.for_operation(subject.operation).iter().any(|policy| {
-                policy.scope_kind == RateLimitScopeKind::Team
-                    && metric.is_none_or(|metric| policy.metric == metric)
-                    && policy.matches_traffic(subject)
-            })
-    }
-
-    /// `subject` with its user's team filled in, when a team policy of
-    /// `metric` (any, when `None`) matches the request. A failed lookup is an
-    /// error, which callers handle like any other store failure.
-    async fn with_member_team<'a>(
-        &self,
-        set: &PolicySet,
-        subject: &RateLimitSubject<'a>,
-        metric: Option<RateLimitMetric>,
-    ) -> Result<RateLimitSubject<'a>, StoreError> {
-        let mut subject = *subject;
-        if !self.needs_member_team(set, &subject, metric) {
-            return Ok(subject);
-        }
-        let (Some(lookup), Some(user_id)) = (&self.team_lookup, subject.user_id) else {
-            return Ok(subject);
-        };
-        if let Some(team) = self.cached_member_team(user_id) {
-            subject.team_id = team;
-            return Ok(subject);
-        }
-        let flight = TeamLookupFlight::join(&self.member_team_lookups, user_id);
-        // Callers already waiting share a failure too, rather than retrying
-        // the lookup one after another; the next request starts a new one.
-        let team = flight
-            .cell
-            .get_or_init(|| async {
-                lookup
-                    .team_for_user(user_id)
-                    .await
-                    .map_err(|error| error.to_string())
-            })
-            .await
-            .clone()
-            .map_err(StoreError::Unavailable)?;
-        let mut teams = self
-            .member_teams
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        if teams.len() >= MAX_CACHED_MEMBER_TEAMS {
-            teams.clear();
-        }
-        teams.insert(user_id, (Instant::now(), team));
-        subject.team_id = team;
-        Ok(subject)
-    }
-
-    /// [`Self::with_member_team`] for a token charge. A failed lookup charges
-    /// the other counters and marks token counters stale, as a failed usage
-    /// write does, so `closed` mode refuses token checks it can no longer trust.
-    async fn charge_subject<'a>(
-        &self,
-        set: &PolicySet,
-        subject: &RateLimitSubject<'a>,
-    ) -> RateLimitSubject<'a> {
-        match self
-            .with_member_team(set, subject, Some(RateLimitMetric::Tokens))
-            .await
-        {
-            Ok(subject) => subject,
-            Err(error) => {
-                tracing::warn!(error = %error, "could not read the user's team for a token charge");
-                self.mark_token_write_failed();
-                *subject
-            }
-        }
-    }
-
     /// Replaces the clock, so tests can move between windows.
     #[must_use]
     pub fn with_clock(
@@ -705,27 +532,48 @@ impl RateLimiter {
         &self,
         subject: &RateLimitSubject<'_>,
     ) -> Result<RateLimitDecision, GatewayError> {
+        Ok(self.check_with_team(subject).await?.0)
+    }
+
+    /// [`Self::check`], also returning the user's team as the check resolved
+    /// it, for the request's token charge.
+    pub async fn check_with_team(
+        &self,
+        subject: &RateLimitSubject<'_>,
+    ) -> Result<(RateLimitDecision, RateLimitMemberTeam), GatewayError> {
         let set = self.policies().await;
         if !set.complete {
             // Admin policies are unknown, so this request may be one they
             // limit: follow the failure mode as for any other store failure.
-            return self.store_failure(
+            let decision = self.store_failure(
                 subject.operation,
                 StoreError::Unavailable("rate limit policies could not be loaded".to_string()),
-            );
+            )?;
+            return Ok((decision, RateLimitMemberTeam::default()));
         }
         // Without the team, team policies cannot be checked: `closed` mode
         // refuses the request; `open` mode checks the other policies.
-        let subject = &match self.with_member_team(&set, subject, None).await {
+        let subject = match self.resolve_member_team(&set, subject, None).await {
             Ok(subject) => subject,
             Err(error) if self.settings.failure_mode == RateLimitFailureMode::Closed => {
-                return self.store_failure(subject.operation, error);
+                let decision = self.store_failure(subject.operation, error)?;
+                return Ok((decision, RateLimitMemberTeam::default()));
             }
             Err(error) => {
                 tracing::warn!(error = %error, "could not read the user's team for rate limits");
                 *subject
             }
         };
+        let decision = self.check_policies(&set, &subject).await?;
+        Ok((decision, RateLimitMemberTeam::of(&subject)))
+    }
+
+    /// Checks `subject`, its team already resolved, against `set`.
+    async fn check_policies(
+        &self,
+        set: &PolicySet,
+        subject: &RateLimitSubject<'_>,
+    ) -> Result<RateLimitDecision, GatewayError> {
         let now = (self.clock)();
         let matched: Vec<(&ActivePolicy, RateLimitCounterCharge)> = set
             .for_operation(subject.operation)
@@ -910,8 +758,9 @@ impl RateLimiter {
         // after an invalidation, or once it is stale) the task loads the set
         // itself and every token check waits.
         let snapshot = self.cached(false);
-        // The same goes for a member's team: from the cache the marked
-        // counters are exact; otherwise the task looks it up and every token
+        // The same goes for a member's team: resolved by the request's check
+        // or fresh in the cache, the marked counters are exact and the task
+        // charges that team; otherwise the task looks it up and every token
         // check waits.
         let mut subject = *subject;
         let team_unknown = match &snapshot {
@@ -922,6 +771,7 @@ impl RateLimiter {
                 {
                     Some(team) => {
                         subject.team_id = team;
+                        subject.team_resolved = true;
                         false
                     }
                     None => true,
@@ -944,6 +794,7 @@ impl RateLimiter {
         let api_key_id = subject.api_key_id;
         let user_id = subject.user_id;
         let team_id = subject.team_id;
+        let team_resolved = subject.team_resolved;
         let model_keys: Vec<String> = subject.model_keys.iter().map(ToString::to_string).collect();
         Some(runtime.spawn(async move {
             let _pending = pending;
@@ -953,6 +804,7 @@ impl RateLimiter {
                 api_key_id,
                 user_id,
                 team_id,
+                team_resolved,
                 model_keys: &model_keys,
                 mcp_server: None,
             };

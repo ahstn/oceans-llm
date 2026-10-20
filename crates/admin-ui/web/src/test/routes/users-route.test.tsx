@@ -2,12 +2,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { IdentityUsersPayload } from '@/types/api'
+import { UsersPage } from '@/routes/identity/users'
+import { sanitizeOnboardingUpdateForm } from '@/routes/identity/-user-form'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 const routerMock = {
   invalidate: vi.fn(async () => {}),
@@ -117,7 +120,7 @@ describe('UsersPage', () => {
     cleanup()
   })
 
-  it('shows the user directory without mutation controls to regular users', async () => {
+  it('shows the user directory without mutation controls to regular users', () => {
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
@@ -156,7 +159,6 @@ describe('UsersPage', () => {
       },
     })
 
-    const { UsersPage } = await import('@/routes/identity/users')
     render(<UsersPage />)
 
     expect(screen.getByText('Regular User')).toBeInTheDocument()
@@ -168,10 +170,8 @@ describe('UsersPage', () => {
     expect(screen.getByText(/Only administrators can make changes/)).toBeInTheDocument()
   })
 
-  it('teaches the next step when no users exist', async () => {
+  it('teaches the next step when no users exist', () => {
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
-
-    const { UsersPage } = await import('@/routes/identity/users')
 
     render(<UsersPage />)
 
@@ -208,8 +208,6 @@ describe('UsersPage', () => {
       },
     })
 
-    const { UsersPage } = await import('@/routes/identity/users')
-
     render(<UsersPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add user' }))
@@ -231,7 +229,33 @@ describe('UsersPage', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
   })
 
-  it('locks owner membership controls and invited-only auth mode edits', async () => {
+  it('clears a created user from the form when the dialog is dismissed', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: basePayload })
+    createIdentityUserMock.mockResolvedValue({
+      data: {
+        kind: 'password_invite',
+        invite_url: 'http://example.test/invite/user-1',
+        expires_at: '2026-03-14T12:00:00Z',
+        user: { ...basePayload.users[0], id: 'user_new', email: 'jane@example.com' },
+      },
+    })
+
+    render(<UsersPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Jane Operator' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jane@example.com' } })
+    fireEvent.submit(screen.getByRole('button', { name: 'Create user' }).closest('form')!)
+    await screen.findByLabelText('Generated URL')
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }))
+
+    expect(screen.getByLabelText('Name')).toHaveValue('')
+    expect(screen.getByLabelText('Email')).toHaveValue('')
+  })
+
+  it('locks owner membership controls and invited-only auth mode edits', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         users: [
@@ -258,8 +282,6 @@ describe('UsersPage', () => {
     })
 
     routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'configuration' })
-
-    const { UsersPage } = await import('@/routes/identity/users')
 
     const { rerender } = render(<UsersPage />)
 
@@ -293,8 +315,6 @@ describe('UsersPage', () => {
       },
     })
 
-    const { UsersPage } = await import('@/routes/identity/users')
-
     const { rerender } = render(<UsersPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
@@ -318,6 +338,49 @@ describe('UsersPage', () => {
     )
   })
 
+  it('drops a reset onboarding URL when another user is selected', async () => {
+    const firstUser = invitedUser()
+    const secondUser = invitedUser({
+      id: 'user_2',
+      name: 'Second User',
+      email: 'second@example.com',
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [firstUser, secondUser],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: firstUser.id, user_section: 'auth' })
+    resetOnboardingMock.mockResolvedValue({
+      data: {
+        kind: 'password_invite',
+        invite_url: 'http://example.test/invite/reset-user-1',
+        expires_at: '2026-03-14T12:00:00Z',
+        user: firstUser,
+      },
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Generated URL')).toHaveValue(
+        'http://example.test/invite/reset-user-1',
+      ),
+    )
+
+    routeMock.useSearch.mockReturnValue({ user_id: secondUser.id, user_section: 'auth' })
+    rerender(<UsersPage />)
+    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+
+    routeMock.useSearch.mockReturnValue({ user_id: firstUser.id, user_section: 'auth' })
+    rerender(<UsersPage />)
+    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+  })
+
   it('clears a stale reset onboarding URL before retrying', async () => {
     const user = invitedUser()
     routeMock.useLoaderData.mockReturnValue({
@@ -338,8 +401,6 @@ describe('UsersPage', () => {
       })
       .mockRejectedValueOnce(new Error('reset failed'))
 
-    const { UsersPage } = await import('@/routes/identity/users')
-
     render(<UsersPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
@@ -357,6 +418,28 @@ describe('UsersPage', () => {
 
     await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument())
+  })
+
+  it('blocks reset onboarding while an invited SSO user has no provider chosen', () => {
+    // An OAuth invite with no provider on record; two providers, so none is preselected.
+    const user = invitedUser({ auth_mode: 'oauth', onboarding: null })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+        oauth_providers: [
+          { key: 'github', label: 'GitHub' },
+          { key: 'gitlab', label: 'GitLab' },
+        ],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+
+    render(<UsersPage />)
+
+    // The reset would first save the auth change, which has no provider to save.
+    expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
   it('renders an OAuth reset onboarding URL', async () => {
@@ -384,8 +467,6 @@ describe('UsersPage', () => {
         sign_in_url: 'http://example.test/api/v1/auth/oauth/start?provider=github',
       },
     })
-
-    const { UsersPage } = await import('@/routes/identity/users')
 
     render(<UsersPage />)
 
@@ -429,7 +510,6 @@ describe('UsersPage', () => {
     })
     saveProviderCredentialMock.mockResolvedValue({ data: { configured: true } })
 
-    const { UsersPage } = await import('@/routes/identity/users')
     render(<UsersPage />)
 
     expect(screen.getAllByText('Provider Configuration').length).toBeGreaterThan(0)
@@ -482,7 +562,6 @@ describe('UsersPage', () => {
     })
     removeProviderCredentialMock.mockResolvedValue({ data: { status: 'deleted' } })
 
-    const { UsersPage } = await import('@/routes/identity/users')
     render(<UsersPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
@@ -530,7 +609,6 @@ describe('UsersPage', () => {
     const saveRequest = deferred<{ data: { configured: boolean } }>()
     saveProviderCredentialMock.mockReturnValue(saveRequest.promise)
 
-    const { UsersPage } = await import('@/routes/identity/users')
     const { rerender } = render(<UsersPage />)
 
     fireEvent.change(screen.getByLabelText('GitHub token'), {
@@ -586,7 +664,6 @@ describe('UsersPage', () => {
     const removeRequest = deferred<{ data: { status: string } }>()
     removeProviderCredentialMock.mockReturnValue(removeRequest.promise)
 
-    const { UsersPage } = await import('@/routes/identity/users')
     const { rerender } = render(<UsersPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove token' }))
@@ -635,7 +712,6 @@ describe('UsersPage', () => {
     const saveRequest = deferred<{ data: { configured: boolean } }>()
     saveProviderCredentialMock.mockReturnValue(saveRequest.promise)
 
-    const { UsersPage } = await import('@/routes/identity/users')
     render(<UsersPage />)
 
     fireEvent.change(screen.getByLabelText('GitHub token'), {
@@ -679,7 +755,6 @@ describe('UsersPage', () => {
     const removeRequest = deferred<{ data: { status: string } }>()
     removeProviderCredentialMock.mockReturnValue(removeRequest.promise)
 
-    const { UsersPage } = await import('@/routes/identity/users')
     render(<UsersPage />)
 
     fireEvent.change(screen.getByLabelText('GitHub token'), {
@@ -695,9 +770,7 @@ describe('UsersPage', () => {
     await waitFor(() => expect(screen.getByLabelText('GitHub token')).toHaveValue('newer-draft'))
   })
 
-  it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {
-    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/-user-form')
-
+  it('sanitizes onboarding updates to auth fields and persisted role/team membership', () => {
     const input = sanitizeOnboardingUpdateForm(
       {
         auth_mode: 'oauth',

@@ -13,7 +13,7 @@ import {
   actionLabel,
   actionVariant,
   formatLatency,
-  formatTimestamp,
+  formatDecisionTime,
   phaseLabel,
   ruleLabel,
 } from './decision-meta'
@@ -38,7 +38,7 @@ export function DecisionSheet({
                   {actionLabel(decision.action)}
                 </Badge>
               </SheetTitle>
-              <SheetDescription>{formatTimestamp(decision.occurred_at)}</SheetDescription>
+              <SheetDescription>{formatDecisionTime(decision.occurred_at)}</SheetDescription>
             </SheetHeader>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 px-4 text-sm">
               <Fact label="Reason">{decision.reason_code}</Fact>

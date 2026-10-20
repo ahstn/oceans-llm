@@ -574,6 +574,15 @@ export async function disableMcpServer(serverId: string): Promise<ApiEnvelope<Mc
   )
 }
 
+export async function enableMcpServer(serverId: string): Promise<ApiEnvelope<McpServerPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/servers/{server_id}/enable', {
+      params: { path: { server_id: serverId } },
+    }),
+  )
+}
+
 export async function listMcpServerTools(
   serverId: string,
   params?: { include_inactive?: boolean },

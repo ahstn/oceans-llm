@@ -9,6 +9,7 @@ import {
   emptyPolicyForm,
   policyInputFromForm,
 } from '@/routes/rate-limits/-policy-model'
+import { RateLimitsPage } from '@/routes/rate-limits'
 
 const invalidateMock = vi.fn()
 const addRateLimitPolicyMock = vi.fn()
@@ -79,8 +80,6 @@ vi.mock('@/server/admin-data.functions', () => ({
   getRateLimitPolicies: vi.fn(),
   getTeams: vi.fn(),
 }))
-
-const { RateLimitsPage } = await import('@/routes/rate-limits')
 
 function renderPage(policies: RateLimitPolicyView[]) {
   loaderData = {

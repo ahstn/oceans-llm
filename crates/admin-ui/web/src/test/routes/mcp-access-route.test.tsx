@@ -8,6 +8,7 @@ import type {
   McpTagRuleView,
   McpToolsetView,
 } from '@/types/api'
+import { AccessTab } from '@/routes/mcp/-access-tab'
 
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
@@ -113,8 +114,7 @@ const user: ApiKeyOwnerUserView = {
   email: 'jane@example.com',
 }
 
-async function renderAccessTab() {
-  const { AccessTab } = await import('@/routes/mcp/-access-tab')
+function renderAccessTab() {
   render(
     <AccessTab
       grants={[grant]}
@@ -159,8 +159,8 @@ describe('AccessTab', () => {
     getMcpServerToolsMock.mockResolvedValue({ data: { items: [] } })
   })
 
-  it('resolves grant subject and target UUIDs to human labels', async () => {
-    await renderAccessTab()
+  it('resolves grant subject and target UUIDs to human labels', () => {
+    renderAccessTab()
 
     const grants = screen.getByTestId('mcp-grant-list')
     expect(within(grants).getByText('Jane Admin')).toBeInTheDocument()
@@ -170,7 +170,7 @@ describe('AccessTab', () => {
   })
 
   it('revokes a grant through the server function', async () => {
-    await renderAccessTab()
+    renderAccessTab()
     fireEvent.click(
       within(screen.getByTestId('mcp-grant-list')).getByRole('button', { name: 'Revoke' }),
     )
@@ -188,7 +188,6 @@ describe('AccessTab', () => {
   })
 
   it('limits a team admin to tools of the servers their team manages', async () => {
-    const { AccessTab } = await import('@/routes/mcp/-access-tab')
     const teamServer = {
       ...server,
       id: 'server_team',
@@ -228,7 +227,7 @@ describe('AccessTab', () => {
   })
 
   it('lists active tag rules and revokes one', async () => {
-    await renderAccessTab()
+    renderAccessTab()
     const rules = screen.getByTestId('mcp-tag-rule-list')
     expect(within(rules).getByText('Jane Admin')).toBeInTheDocument()
     expect(within(rules).getByText('exclude')).toBeInTheDocument()
@@ -240,8 +239,8 @@ describe('AccessTab', () => {
     })
   })
 
-  it('needs a server before previewing an include rule', async () => {
-    await renderAccessTab()
+  it('needs a server before previewing an include rule', () => {
+    renderAccessTab()
     fireEvent.click(screen.getByRole('button', { name: 'Preview matches' }))
     expect(getMcpTagRulePreviewMock).not.toHaveBeenCalled()
   })
@@ -258,7 +257,7 @@ describe('AccessTab', () => {
 
   it('saves an exclude rule for all servers', async () => {
     saveMcpTagRuleMock.mockResolvedValue({ data: tagRule })
-    await renderAccessTab()
+    renderAccessTab()
     chooseSelect('Tag rule subject type', 'User')
     choose('Tag rule subject', /Jane Admin/)
     chooseSelect('Tag rule effect', 'Exclude (deny matching tools)')
@@ -281,7 +280,7 @@ describe('AccessTab', () => {
   it('drops a preview that returns after the form changed', async () => {
     let finish: (value: unknown) => void = () => {}
     getMcpTagRulePreviewMock.mockReturnValue(new Promise((resolve) => (finish = resolve)))
-    await renderAccessTab()
+    renderAccessTab()
     choose('Tag rule server', /GitHub/)
     fireEvent.click(screen.getByRole('button', { name: 'Preview matches' }))
     choose('Tag rule tag', /destructive/)
@@ -310,7 +309,7 @@ describe('AccessTab', () => {
       },
     })
     removeMcpTagRuleMock.mockResolvedValue({ data: tagRule })
-    await renderAccessTab()
+    renderAccessTab()
     choose('Preview subject', /Jane Admin/)
     fireEvent.click(screen.getByRole('button', { name: 'Preview access' }))
     await screen.findByText('No callable tools for this subject.')

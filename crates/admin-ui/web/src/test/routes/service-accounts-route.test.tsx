@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 import type { ApiKeysPayload, ServiceAccountsPayload } from '@/types/api'
+import { ServiceAccountsPage } from '@/routes/identity/service-accounts'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useRouteContext: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -129,15 +131,17 @@ describe('ServiceAccountsPage', () => {
     })
   })
 
-  it('renders service accounts with teams, status, and attached API-key names', async () => {
-    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
-
+  it('renders service accounts with teams, status, and attached API-key names', () => {
     render(<ServiceAccountsPage />)
 
     expect(screen.getAllByText('Deploy Bot').length).toBeGreaterThan(0)
     expect(screen.getAllByText('deploy-bot').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Core Platform').length).toBeGreaterThan(0)
     expect(screen.getAllByText('active').length).toBeGreaterThan(0)
+    // Disabled is inactive, not pending.
+    for (const badge of screen.getAllByText('disabled')) {
+      expect(badge).toHaveAttribute('data-variant', 'secondary')
+    }
     expect(screen.getAllByText('Deploy Worker Key').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Nightly Rollup').length).toBeGreaterThan(0)
     expect(screen.getAllByText('No credential attached').length).toBeGreaterThan(0)
@@ -146,28 +150,22 @@ describe('ServiceAccountsPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('links teams to the identity Teams page', async () => {
-    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
-
+  it('links teams to the identity Teams page', () => {
     render(<ServiceAccountsPage />)
 
     const teamLinks = screen.getAllByRole('link', { name: 'Open Core Platform in Teams' })
     expect(teamLinks[0]).toHaveAttribute('href', '/identity/teams')
   })
 
-  it('links attached credentials to the API Keys deeplink target', async () => {
-    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
-
+  it('links attached credentials to the API Keys deeplink target', () => {
     render(<ServiceAccountsPage />)
 
     const apiKeyLinks = screen.getAllByRole('link', { name: 'Open API key Deploy Worker Key' })
     expect(apiKeyLinks[0]).toHaveAttribute('href', '/api-keys?api_key_id=api_key_1')
   })
 
-  it('explains the scoped empty state without mutation controls', async () => {
+  it('explains the scoped empty state without mutation controls', () => {
     routeMock.useLoaderData.mockReturnValue({ serviceAccounts: [], apiKeys: [] })
-
-    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
 
     render(<ServiceAccountsPage />)
 
@@ -178,14 +176,13 @@ describe('ServiceAccountsPage', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('does not imply that scoped credential data is missing for regular users', async () => {
+  it('does not imply that scoped credential data is missing for regular users', () => {
     routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
     routeMock.useLoaderData.mockReturnValue({
       serviceAccounts: serviceAccountsPayload.service_accounts,
       apiKeys: [],
     })
 
-    const { ServiceAccountsPage } = await import('@/routes/identity/service-accounts')
     render(<ServiceAccountsPage />)
 
     expect(screen.getAllByText('Credential details restricted').length).toBeGreaterThan(0)

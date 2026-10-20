@@ -1,10 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ssoErrorMessage } from '@/routes/-login-messages'
+import { LoginPage } from '@/routes/login'
 
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useSearch: vi.fn(),
   useLoaderData: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -38,17 +41,13 @@ beforeEach(() => {
 })
 
 describe('login SSO errors', () => {
-  it('explains GitHub unverified primary email failures', async () => {
-    const { ssoErrorMessage } = await import('@/routes/-login-messages')
-
+  it('explains GitHub unverified primary email failures', () => {
     expect(ssoErrorMessage('github_unverified_email')).toContain(
       'https://github.com/settings/emails',
     )
   })
 
-  it('provides a safe fallback for unknown provider errors', async () => {
-    const { ssoErrorMessage } = await import('@/routes/-login-messages')
-
+  it('provides a safe fallback for unknown provider errors', () => {
     expect(ssoErrorMessage('unexpected_provider_error')).toBe(
       'SSO sign-in did not complete. Start sign-in again.',
     )
@@ -56,9 +55,7 @@ describe('login SSO errors', () => {
 })
 
 describe('LoginPage', () => {
-  it('uses user-facing sign-in copy and provider actions', async () => {
-    const { LoginPage } = await import('@/routes/login')
-
+  it('uses user-facing sign-in copy and provider actions', () => {
     const { container } = render(<LoginPage />)
 
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
@@ -88,9 +85,8 @@ describe('LoginPage', () => {
     )
   })
 
-  it('shows callback errors in an alert', async () => {
+  it('shows callback errors in an alert', () => {
     routeMock.useSearch.mockReturnValue({ sso_error: 'provider_failure' })
-    const { LoginPage } = await import('@/routes/login')
 
     render(<LoginPage />)
 

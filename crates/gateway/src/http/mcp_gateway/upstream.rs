@@ -54,8 +54,12 @@ pub(super) async fn proxy_upstream(
 
     let response = request.send().await.map_err(map_reqwest_error)?;
     let status = response.status();
-    let headers = response.headers().clone();
+    let mut headers = response.headers().clone();
     refuse_get_without_event_stream(method, status, &headers)?;
+    if is_bodyless_get_answer(method, status) {
+        headers.remove(CONTENT_TYPE);
+        return Ok(response_from_parts(status, &headers, Body::empty()));
+    }
     let stream = response
         .bytes_stream()
         .map_err(|error| io::Error::other(error.without_url().to_string()));
@@ -71,7 +75,8 @@ pub(super) async fn proxy_upstream(
 /// The standalone `GET` stream may carry only an event stream, whose JSON-RPC
 /// responses the sanitizer drops. A successful answer in any other format is
 /// refused rather than passed through, since a client could read a response
-/// from it outside the governed `POST`. A bodiless `202` or `204` is harmless.
+/// from it outside the governed `POST`. A `202` or `204` opens no stream and
+/// passes, but without its body (see [`is_bodyless_get_answer`]).
 fn refuse_get_without_event_stream(
     method: &Method,
     status: StatusCode,
@@ -79,8 +84,7 @@ fn refuse_get_without_event_stream(
 ) -> Result<(), GatewayError> {
     if method == Method::GET
         && status.is_success()
-        && status != StatusCode::ACCEPTED
-        && status != StatusCode::NO_CONTENT
+        && !is_bodyless_get_answer(method, status)
         && !is_event_stream(headers)
     {
         return Err(ProviderError::UpstreamHttp {
@@ -90,6 +94,14 @@ fn refuse_get_without_event_stream(
         .into());
     }
     Ok(())
+}
+
+/// A `GET` answered `202` or `204`, whatever its content type. Its body is
+/// discarded: the transport gives it none, and clients read any successful
+/// `GET` body as an event stream, so a body could carry an unfiltered response
+/// or hold the request open.
+fn is_bodyless_get_answer(method: &Method, status: StatusCode) -> bool {
+    method == Method::GET && (status == StatusCode::ACCEPTED || status == StatusCode::NO_CONTENT)
 }
 
 pub(super) async fn proxy_buffered(
@@ -104,14 +116,22 @@ pub(super) async fn proxy_buffered(
     );
 
     let response = request.send().await.map_err(map_reqwest_error)?;
-    refuse_get_without_event_stream(method, response.status(), response.headers())?;
+    let status = response.status();
+    let mut headers = response.headers().clone();
+    refuse_get_without_event_stream(method, status, &headers)?;
+    if is_bodyless_get_answer(method, status) {
+        headers.remove(CONTENT_TYPE);
+        return Ok(BufferedMcpResponse {
+            status,
+            headers,
+            body: Bytes::new(),
+        });
+    }
     if response.content_length().unwrap_or(0) > MAX_MCP_REWRITE_BODY_BYTES {
         return Err(GatewayError::PayloadTooLarge {
             limit_bytes: MAX_MCP_REWRITE_BODY_BYTES as usize,
         });
     }
-    let status = response.status();
-    let headers = response.headers().clone();
     let mut body = read_limited_response_body(response).await?;
     if is_event_stream(&headers) {
         body = sanitize_sse_body(&body, method == Method::GET).map_err(|_| {

@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"d4f6541f45803918a31ab2f95184fab1\"",
-    "fetched_at": "2026-10-18T12:23:12.26721Z"
+    "etag": "\"6a843075ca9ce62e9a5138e1673b5144\"",
+    "fetched_at": "2026-10-18T21:13:48.633768Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -24658,9 +24658,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0114",
+            "input": "0.0086",
             "output": "0.4500",
-            "cache_read": "0.0114",
+            "cache_read": "0.0086",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -24846,9 +24846,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.6000",
-            "cache_read": "0.0080",
+            "input": "0.0616",
+            "output": "0.1440",
+            "cache_read": "0.0016",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -29386,7 +29386,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3040",
+            "input": "0.2490",
             "output": "11.9360",
             "cache_read": "0.2100",
             "cache_write": null,
@@ -36984,9 +36984,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -37076,9 +37076,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -38898,7 +38898,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0790",
-            "output": "2.5000",
+            "output": "1.0000",
             "cache_read": "0.0780",
             "cache_write": null,
             "input_audio": null,
@@ -39438,8 +39438,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0091",
-            "output": "0.1436",
+            "input": "0.0069",
+            "output": "0.1440",
             "cache_read": "0.0015",
             "cache_write": null,
             "input_audio": null,
@@ -39605,9 +39605,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2800",
-            "output": "16.0000",
-            "cache_read": "0.2700",
+            "input": "0.2490",
+            "output": "11.9360",
+            "cache_read": "0.2100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -40133,9 +40133,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0632",
-            "output": "4.4000",
-            "cache_read": "0.0588",
+            "input": "0.0750",
+            "output": "2.2000",
+            "cache_read": "0.0700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null

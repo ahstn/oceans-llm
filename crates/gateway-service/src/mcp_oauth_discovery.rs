@@ -22,7 +22,7 @@ use serde_json::{Map, Value, json};
 use url::Url;
 
 use crate::{
-    mcp_upstream_auth::McpOauthTokenEndpointAuthMethod,
+    mcp_upstream_auth::{McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints},
     outbound_fetch::{OutboundFetchError, OutboundFetcher, OutboundResponse},
 };
 
@@ -301,38 +301,8 @@ pub async fn discover_mcp_oauth(
             }
         };
 
-    let issuer = authorization_servers[0].clone();
-    let issuer_url = Url::parse(&issuer).map_err(|error| {
-        GatewayError::InvalidRequest(format!(
-            "authorization server `{issuer}` is invalid: {error}"
-        ))
-    })?;
-    ensure_fetchable(http, &issuer_url, "authorization server")?;
-    let mut server_metadata = None;
-    for candidate in authorization_server_metadata_urls(&issuer_url) {
-        if let Some(metadata) = fetch_json::<AuthorizationServerMetadata>(http, &candidate).await? {
-            server_metadata = Some((candidate, metadata));
-            break;
-        }
-    }
-    let (metadata_url, metadata) = server_metadata.ok_or_else(|| {
-        GatewayError::InvalidRequest(format!(
-            "authorization server `{issuer}` publishes no OAuth or OpenID Connect metadata"
-        ))
-    })?;
-    if metadata
-        .issuer
-        .as_deref()
-        .map(|value| value.trim_end_matches('/'))
-        != Some(issuer.trim_end_matches('/'))
-    {
-        return Err(GatewayError::InvalidRequest(format!(
-            "authorization server metadata does not match issuer `{issuer}`"
-        )));
-    }
-    // The authorization server's own identifier, exactly as its metadata
-    // states it: callbacks compare `iss` against it byte for byte (RFC 9207).
-    let issuer = metadata.issuer.clone().unwrap_or(issuer);
+    let (metadata_url, issuer, metadata) =
+        fetch_authorization_server_metadata(http, &authorization_servers[0]).await?;
     let endpoint = |value: Option<String>, field: &str| -> Result<String, GatewayError> {
         let value = value.ok_or_else(|| {
             GatewayError::InvalidRequest(format!("authorization server metadata has no {field}"))
@@ -426,6 +396,125 @@ pub async fn discover_mcp_oauth(
         recommended_client_registration,
         warnings,
     })
+}
+
+/// Whether `iss` names the `expected` issuer: the same string, or one that
+/// differs from it only by a single trailing `/`.
+///
+/// RFC 9207 compares issuers as exact strings, and discovery now records the
+/// metadata's own issuer. Earlier discovery recorded the protected resource's
+/// `authorization_servers` entry, or the server's origin, after accepting
+/// metadata whose issuer differed from it only by a trailing `/`. Rows saved
+/// then keep working without a re-save, which would revoke every user's
+/// connection. The tolerance is no mix-up risk: both strings name the same
+/// host and path, whose metadata a save checks the endpoints against, so no
+/// other authorization server can issue a code that passes. It applies only
+/// where the `/` ends the path: an issuer has no query or fragment (RFC 8414),
+/// and a `/` at the end of one names a different identifier.
+#[must_use]
+pub fn issuer_matches(expected: &str, iss: &str) -> bool {
+    let ends_path = |issuer: &str| !issuer.contains(['?', '#']);
+    // `longer` is `shorter` plus one `/`, and `shorter` has none to lose.
+    let one_slash_more = |longer: &str, shorter: &str| {
+        longer.strip_suffix('/') == Some(shorter) && !shorter.ends_with('/')
+    };
+    expected == iss
+        || (ends_path(expected)
+            && ends_path(iss)
+            && (one_slash_more(expected, iss) || one_slash_more(iss, expected)))
+}
+
+/// Reads the RFC 8414 metadata of the authorization server `issuer`, falling
+/// back to OpenID Connect discovery, and returns where it was found and the
+/// issuer exactly as the metadata states it.
+async fn fetch_authorization_server_metadata(
+    http: &OutboundFetcher,
+    issuer: &str,
+) -> Result<(Url, String, AuthorizationServerMetadata), GatewayError> {
+    let issuer_url = Url::parse(issuer).map_err(|error| {
+        GatewayError::InvalidRequest(format!(
+            "authorization server `{issuer}` is invalid: {error}"
+        ))
+    })?;
+    ensure_fetchable(http, &issuer_url, "authorization server")?;
+    for candidate in authorization_server_metadata_urls(&issuer_url) {
+        let Some(mut metadata) =
+            fetch_json::<AuthorizationServerMetadata>(http, &candidate).await?
+        else {
+            continue;
+        };
+        // Callbacks compare `iss` with the metadata's own string (RFC 9207).
+        let Some(published) = metadata
+            .issuer
+            .take()
+            .filter(|published| issuer_matches(issuer, published))
+        else {
+            return Err(GatewayError::InvalidRequest(format!(
+                "authorization server metadata does not match issuer `{issuer}`"
+            )));
+        };
+        return Ok((candidate, published, metadata));
+    }
+    Err(GatewayError::InvalidRequest(format!(
+        "authorization server `{issuer}` publishes no OAuth or OpenID Connect metadata"
+    )))
+}
+
+/// Checks that a server's configured endpoints are the ones its issuer
+/// publishes. The callback's RFC 9207 check only proves which issuer sent a
+/// code, so it protects the code only while the token endpoint it goes to is
+/// that issuer's own. Without this, an admin could pair an honest issuer with
+/// a token endpoint they control.
+pub async fn verify_published_endpoints(
+    http: &OutboundFetcher,
+    endpoints: &McpServerOauthEndpoints,
+) -> Result<(), GatewayError> {
+    let issuer = &endpoints.issuer;
+    let (_, _, metadata) = fetch_authorization_server_metadata(http, issuer)
+        .await
+        .map_err(|error| match error {
+            GatewayError::InvalidRequest(message) => GatewayError::InvalidRequest(format!(
+                "auth_config cannot be checked against the issuer's metadata: {message}. An authorization server configured on the server must publish metadata; use an `oauth2` provider in gateway configuration otherwise"
+            )),
+            other => other,
+        })?;
+    let checks = [
+        (
+            "authorization_endpoint",
+            Some(endpoints.authorization_endpoint.as_str()),
+            metadata.authorization_endpoint.as_deref(),
+        ),
+        (
+            "token_endpoint",
+            Some(endpoints.token_endpoint.as_str()),
+            metadata.token_endpoint.as_deref(),
+        ),
+        (
+            "registration_endpoint",
+            endpoints.registration_endpoint.as_deref(),
+            metadata.registration_endpoint.as_deref(),
+        ),
+    ];
+    for (field, configured, published) in checks {
+        let Some(configured) = configured else {
+            continue;
+        };
+        if !published.is_some_and(|published| same_url(configured, published)) {
+            return Err(GatewayError::InvalidRequest(format!(
+                "auth_config.{field} is not the {field} that `{issuer}` publishes; run OAuth discovery again"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Compares parsed URLs, so `HTTPS://AS.example:443/token` and
+/// `https://as.example/token` are the same endpoint.
+fn same_url(left: &str, right: &str) -> bool {
+    match (Url::parse(left), Url::parse(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
 }
 
 /// Prefers a confidential method, since the gateway can keep a secret.

@@ -29,6 +29,8 @@ type CodeBlockProps = Omit<ComponentProps<'div'>, 'children'> & {
   code: string
   language?: string
   showLineNumbers?: boolean
+  /** Soft-wrap long lines instead of scrolling sideways, for prose-heavy payloads. */
+  wrapLines?: boolean
   maxLines?: number
   children?: ReactNode
 }
@@ -43,6 +45,7 @@ function CodeBlock({
   code,
   language,
   showLineNumbers = false,
+  wrapLines = false,
   maxLines,
   children,
   className,
@@ -95,10 +98,15 @@ function CodeBlock({
           className="focus-visible:ring-ring max-w-full min-w-0 overflow-auto overscroll-contain py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset"
           style={viewportStyle}
         >
-          <pre className="min-w-max text-[13px] leading-6" dir="ltr">
+          <pre className={cn('text-[13px] leading-6', !wrapLines && 'min-w-max')} dir="ltr">
             <code>
               {lines.map((line) => (
-                <CodeBlockLineRow key={line.number} line={line} showLineNumber={showLineNumbers} />
+                <CodeBlockLineRow
+                  key={line.number}
+                  line={line}
+                  showLineNumber={showLineNumbers}
+                  wrap={wrapLines}
+                />
               ))}
             </code>
           </pre>
@@ -111,9 +119,10 @@ function CodeBlock({
 type CodeBlockLineRowProps = {
   line: CodeBlockLine
   showLineNumber: boolean
+  wrap: boolean
 }
 
-function CodeBlockLineRow({ line, showLineNumber }: CodeBlockLineRowProps) {
+function CodeBlockLineRow({ line, showLineNumber, wrap }: CodeBlockLineRowProps) {
   let tokenOffset = 0
 
   return (
@@ -132,7 +141,12 @@ function CodeBlockLineRow({ line, showLineNumber }: CodeBlockLineRowProps) {
           {line.number}
         </span>
       ) : null}
-      <span className={cn('whitespace-pre', showLineNumber && 'px-4')}>
+      <span
+        className={cn(
+          wrap ? 'min-w-0 break-words whitespace-pre-wrap' : 'whitespace-pre',
+          showLineNumber && 'px-4',
+        )}
+      >
         {line.tokens.length > 0
           ? line.tokens.map((token) => {
               const start = tokenOffset

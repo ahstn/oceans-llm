@@ -706,7 +706,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await expect(row).toContainText(maskedPrefix ?? '')
   await expect(row).toContainText('Seed API Keys')
   await expect(row).not.toContainText('system-legacy')
-  await expect(row).toContainText(/\d{4}-\d{2}-\d{2}/)
+  await expect(row).toContainText(/\d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/)
 
   await row.getByRole('button', { name: 'Manage' }).click()
 

@@ -34,6 +34,7 @@ Preconditions: launch a dedicated verification stack, require `doctor` to pass, 
 - The route always loads 7 days first; do not infer a 31-day refresh from the selected radio alone. Wait for row values from the 31-day API response.
 - `harness-usage-mobile-list` is present but hidden at the driver's desktop viewport. Use `harness-usage-table` for deterministic API comparison and verify responsive behavior in route tests.
 - The chart plots at most 5 harnesses (`chart_harnesses`) while the ranking lists up to 30 `leaders`. Chart area count need not equal row count.
+- The x-axis ticks once per UTC day, at the midnight bucket; with 31 days it shows an evenly spaced subset. The tooltip names the hovered bucket's start as `16 Oct 2026, 12:00 UTC`.
 - Token sums are ranking-only. The chart remains request-count-only and its values must be compared with `series[].values[].request_count` semantics.
 - Oh My Pi deliberately does not reuse the unrelated Pi icon. Its `omp.sh` mark must use a solid white fill, not the source gradient.
 - This is a seeded read-only proof. It does not require a paid live LLM request.

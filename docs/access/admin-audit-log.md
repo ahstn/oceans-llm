@@ -29,7 +29,7 @@ Each entry shows:
 | Service accounts | `service_account.created`, `service_account.updated`, `service_account.disabled` |
 | Budgets | `budget.set`, `budget.deactivated`, `budget.increase_created` |
 | Sessions | `session.created` (password, OIDC or OAuth sign-in), `session.revoked` (logout) |
-| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.discovery_refreshed`, `mcp_server.ownership_transferred` |
+| MCP servers | `mcp_server.created`, `mcp_server.updated`, `mcp_server.disabled`, `mcp_server.enabled`, `mcp_server.discovery_refreshed`, `mcp_server.ownership_transferred` |
 | MCP tool sets | `mcp_toolset.created`, `mcp_toolset.updated`, `mcp_toolset.disabled`, `mcp_toolset.tools_replaced` |
 | MCP grants | `mcp_grant.set`, `mcp_grant.revoked` |
 | MCP tools | `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tool.version_approved`, `mcp_tool.version_rejected` |
@@ -50,7 +50,7 @@ Not recorded:
 - Failed sign-in attempts and session refreshes.
 - Model traffic, MCP tool calls, batches and Skills publishing. Request logs and MCP invocations cover traffic.
 - Guardrail policy, because it is set in `gateway.yaml` and has no admin edit endpoint.
-- Enabling or deleting an MCP server, because the API only disables servers today.
+- Deleting an MCP server, because the API only disables and re-enables servers.
 
 ## Redaction
 

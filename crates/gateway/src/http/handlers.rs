@@ -49,7 +49,7 @@ use gateway_core::{
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RateLimitSubject, RequestLogContext,
     RequestLogIconMetadata, ResolvedGatewayRequest, ResolvedProviderConnection,
-    resolve_model_icon_key, resolve_provider_display_from_parts,
+    rate_limits::RateLimitMemberTeam, resolve_model_icon_key, resolve_provider_display_from_parts,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -196,7 +196,7 @@ async fn v1_messages_inner(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_chat_rate_limits(
+    let rate_limit_team = enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
@@ -347,6 +347,7 @@ async fn v1_messages_inner(
         return anthropic_messages_stream_response(
             &state,
             &auth,
+            rate_limit_team,
             request_started_at,
             &request_id,
             &resolved,
@@ -389,6 +390,7 @@ async fn v1_messages_inner(
                     &state,
                     UsageAccountingContext {
                         auth: &auth,
+                        rate_limit_team,
                         model: &resolved.selection.execution_model,
                         route: &route,
                         request_id: &request_id,
@@ -435,6 +437,7 @@ async fn v1_messages_inner(
         &state,
         UsageAccountingContext {
             auth: &auth,
+            rate_limit_team,
             model: &resolved.selection.execution_model,
             route: &route,
             request_id: &request_id,
@@ -532,7 +535,7 @@ pub async fn v1_chat_completions(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_chat_rate_limits(
+    let rate_limit_team = enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
@@ -585,6 +588,7 @@ pub async fn v1_chat_completions(
     let execution = inference::InferenceRequest {
         state: &state,
         auth: &auth,
+        rate_limit_team,
         resolved: &resolved,
         request_id: &request_id,
         request_started_at,
@@ -712,7 +716,7 @@ pub async fn v1_responses(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    enforce_chat_rate_limits(
+    let rate_limit_team = enforce_chat_rate_limits(
         &state,
         &policy,
         &auth,
@@ -765,6 +769,7 @@ pub async fn v1_responses(
     let execution = inference::InferenceRequest {
         state: &state,
         auth: &auth,
+        rate_limit_team,
         resolved: &resolved,
         request_id: &request_id,
         request_started_at,
@@ -1052,6 +1057,8 @@ struct LoggingBodyStreamState {
     service: std::sync::Arc<AppGatewayService>,
     metrics: std::sync::Arc<crate::observability::GatewayMetrics>,
     auth: AuthenticatedApiKey,
+    /// The team the request's rate-limit check counted.
+    rate_limit_team: RateLimitMemberTeam,
     request_log_context: gateway_service::RequestLogContext,
     requested_model_key: String,
     resolved_model_key: String,
@@ -1109,8 +1116,9 @@ fn spawn_cancelled_stream_token_charge(state: &LoggingBodyStreamState) {
         state.requested_model_key.as_str(),
         state.resolved_model_key.as_str(),
     ];
-    let subject =
-        RateLimitSubject::new(RateLimitOperation::Inference, &state.auth).with_models(&model_keys);
+    let subject = RateLimitSubject::new(RateLimitOperation::Inference, &state.auth)
+        .with_models(&model_keys)
+        .with_member_team(state.rate_limit_team);
     // Nothing can await here: the task runs on, and this replica's next
     // check for the same counters waits for it.
     drop(
@@ -1197,6 +1205,8 @@ fn spawn_cancelled_stream_log(state: &LoggingBodyStreamState) {
 
 struct UsageAccountingContext<'a> {
     auth: &'a AuthenticatedApiKey,
+    /// The team the request's rate-limit check counted.
+    rate_limit_team: RateLimitMemberTeam,
     model: &'a gateway_core::GatewayModel,
     route: &'a gateway_core::ModelRoute,
     request_id: &'a str,
@@ -1286,6 +1296,7 @@ async fn record_post_provider_failure(
 async fn record_guarded_stream_failure(
     state: &AppState,
     auth: &AuthenticatedApiKey,
+    rate_limit_team: RateLimitMemberTeam,
     resolved: &gateway_service::ResolvedGatewayRequest,
     request_log_context: &RequestLogContext,
     route: &gateway_core::ModelRoute,
@@ -1305,6 +1316,7 @@ async fn record_guarded_stream_failure(
         state,
         UsageAccountingContext {
             auth,
+            rate_limit_team,
             model: &resolved.selection.execution_model,
             route,
             request_id: &request_log_context.request_id,
@@ -1358,6 +1370,7 @@ async fn record_guarded_stream_failure(
 async fn enforce_guarded_stream_after_provider(
     state: &AppState,
     auth: &AuthenticatedApiKey,
+    rate_limit_team: RateLimitMemberTeam,
     resolved: &gateway_service::ResolvedGatewayRequest,
     request_log_context: &RequestLogContext,
     route: &gateway_core::ModelRoute,
@@ -1375,6 +1388,7 @@ async fn enforce_guarded_stream_after_provider(
                 record_guarded_stream_failure(
                     state,
                     auth,
+                    rate_limit_team,
                     resolved,
                     request_log_context,
                     route,
@@ -1395,6 +1409,7 @@ async fn enforce_guarded_stream_after_provider(
 async fn anthropic_messages_stream_response(
     state: &AppState,
     auth: &AuthenticatedApiKey,
+    rate_limit_team: RateLimitMemberTeam,
     request_started_at: Instant,
     request_id: &str,
     resolved: &gateway_service::ResolvedGatewayRequest,
@@ -1470,6 +1485,7 @@ async fn anthropic_messages_stream_response(
     let stream = enforce_guarded_stream_after_provider(
         state,
         auth,
+        rate_limit_team,
         resolved,
         request_log_context,
         route,
@@ -1490,6 +1506,7 @@ async fn anthropic_messages_stream_response(
         service: state.service.clone(),
         metrics: state.metrics.clone(),
         auth: auth.clone(),
+        rate_limit_team,
         request_log_context: request_log_context.clone(),
         requested_model_key: resolved.selection.requested_model.model_key.clone(),
         resolved_model_key: resolved.selection.execution_model.model_key.clone(),
@@ -1750,6 +1767,7 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
         &state.metrics,
         UsageAccountingContext {
             auth: &state.auth,
+            rate_limit_team: state.rate_limit_team,
             model: &state.execution_model,
             route: &state.route,
             request_id: &state.request_log_context.request_id,
@@ -2253,8 +2271,9 @@ fn charge_rate_limit_tokens(
         context.labels.requested_model,
         context.labels.resolved_model,
     ];
-    let subject =
-        RateLimitSubject::new(RateLimitOperation::Inference, context.auth).with_models(&model_keys);
+    let subject = RateLimitSubject::new(RateLimitOperation::Inference, context.auth)
+        .with_models(&model_keys)
+        .with_member_team(context.rate_limit_team);
     service
         .rate_limiter()
         .record_tokens_detached(&subject, total_tokens)
@@ -2286,7 +2305,7 @@ async fn enforce_chat_rate_limits(
     resolved: &ResolvedGatewayRequest,
     stream: bool,
     request_started_at: Instant,
-) -> Result<(), GatewayError> {
+) -> Result<RateLimitMemberTeam, GatewayError> {
     let result =
         enforce_inference_rate_limits(state, policy, auth, resolved, RateLimitOperation::Inference)
             .await;
@@ -2309,13 +2328,14 @@ async fn enforce_chat_rate_limits(
 /// Rejects the request with `429 rate_limited` when a matching policy is
 /// exhausted. Runs after model resolution and before the request log,
 /// guardrails, budget and provider call, so a rejection costs nothing upstream.
+/// Returns the team the check counted, for the request's token charge.
 async fn enforce_inference_rate_limits(
     state: &AppState,
     policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     resolved: &ResolvedGatewayRequest,
     operation: RateLimitOperation,
-) -> Result<(), GatewayError> {
+) -> Result<RateLimitMemberTeam, GatewayError> {
     let model_keys = [
         resolved.selection.requested_model.model_key.as_str(),
         resolved.selection.execution_model.model_key.as_str(),
@@ -2554,6 +2574,7 @@ mod tests {
                 service: self.service.clone(),
                 metrics: self.metrics.clone(),
                 auth: self.auth.clone(),
+                rate_limit_team: Default::default(),
                 request_log_context: context.clone(),
                 requested_model_key: self.resolved.selection.requested_model.model_key.clone(),
                 resolved_model_key: self.resolved.selection.execution_model.model_key.clone(),

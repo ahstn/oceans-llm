@@ -1,8 +1,9 @@
 //! Per-server proxy handling for MCP methods outside `tools/*`.
 //!
 //! Resources, prompts, and completions expose server data just as tools do, so
-//! they need at least one effective grant on the server. Unknown methods are
-//! denied rather than forwarded.
+//! they need at least one effective grant on the server, and then go through
+//! the same governance steps as `tools/call` (see `governance`). Unknown
+//! methods are denied rather than forwarded.
 
 use std::time::Instant;
 
@@ -14,22 +15,24 @@ use gateway_core::{
     AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError, McpToolInvocationStatus,
     McpToolPolicyResult,
 };
+use gateway_mcp::server::{JSON_RPC_METHOD_NOT_FOUND, JSON_RPC_POLICY_DENIED};
 use gateway_service::{McpAccess, McpGatewayService};
 use serde_json::Value;
 use uuid::Uuid;
 
 use super::{
     credentials::upstream_auth_error_response,
-    guarded_outcome_log_fields,
-    guardrails::{enforce_direct_mcp_result, guardrail_decision_metadata},
-    json_rpc::{GovernedMcpMethod, mcp_jsonrpc_error_response, mcp_notification_error_response},
+    finish_proxied_call,
+    governance::GovernedCall,
+    guardrails::enforce_direct_mcp_result,
+    json_rpc::{
+        GovernedMcpMethod, mcp_jsonrpc_error_response, mcp_notification_error_response,
+        mcp_request_id,
+    },
     mcp_error_response, tool_invocation_log_input,
     upstream::{proxy_initialize, proxy_upstream},
 };
-use crate::http::state::AppState;
-
-const SERVER_NOT_GRANTED_CODE: i64 = -32001;
-const METHOD_NOT_FOUND_CODE: i64 = -32601;
+use crate::http::{request_policy::RequestPolicyContext, state::AppState};
 
 /// A parsed resources, prompts, or completion request.
 pub(super) struct GovernedRequest {
@@ -55,11 +58,11 @@ fn server_not_granted_response(id: Option<&Value>) -> Response<Body> {
         Some(id) => mcp_jsonrpc_error_response(
             StatusCode::FORBIDDEN,
             Some(id),
-            SERVER_NOT_GRANTED_CODE,
+            JSON_RPC_POLICY_DENIED,
             MESSAGE,
         ),
         None => {
-            mcp_notification_error_response(StatusCode::FORBIDDEN, SERVER_NOT_GRANTED_CODE, MESSAGE)
+            mcp_notification_error_response(StatusCode::FORBIDDEN, JSON_RPC_POLICY_DENIED, MESSAGE)
         }
     }
 }
@@ -67,6 +70,7 @@ fn server_not_granted_response(id: Option<&Value>) -> Response<Body> {
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_governed_request(
     state: &AppState,
+    policy: &RequestPolicyContext,
     auth: &AuthenticatedApiKey,
     http_method: &Method,
     headers: &HeaderMap,
@@ -77,13 +81,20 @@ pub(super) async fn handle_governed_request(
 ) -> Response<Body> {
     let mcp_method = request.method.as_str();
     let display_key = request.target.as_deref().unwrap_or(mcp_method);
-    let mcp_tool_invocation_id = Uuid::new_v4();
+    let call = GovernedCall::new(
+        state,
+        policy,
+        auth,
+        &server,
+        Uuid::new_v4(),
+        mcp_request_id(&request.id),
+    );
     let log_input = |status, policy_result, error_code: Option<String>| {
         tool_invocation_log_input(
             &server,
             mcp_method,
             &request.id,
-            Some(mcp_tool_invocation_id),
+            Some(call.invocation_id),
             None,
             display_key,
             display_key,
@@ -115,26 +126,19 @@ pub(super) async fn handle_governed_request(
         Err(error) => return mcp_error_response(error),
     }
 
-    let gateway = McpGatewayService::new(state.store.clone())
-        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
-    let upstream = match gateway
-        .prepare_upstream_for_auth(auth, server.clone())
-        .await
-    {
-        Ok(upstream) => upstream,
-        Err(error) => {
-            let _ = state
-                .service
-                .log_mcp_tool_invocation(
-                    auth,
-                    log_input(
-                        McpToolInvocationStatus::Unauthorized,
-                        McpToolPolicyResult::Allowed,
-                        Some(error.error_code().to_string()),
-                    ),
-                )
-                .await;
-            return upstream_auth_error_response(state, auth, &server, error);
+    let upstream = match call.admit(None).await {
+        Ok(admitted) => admitted.upstream,
+        Err(refused) => {
+            let refusal = refused.refusal;
+            let refused = refusal.log();
+            let mut entry = log_input(
+                refused.status,
+                refused.policy_result,
+                Some(refused.error_code),
+            );
+            entry.metadata = refused.metadata;
+            let _ = state.service.log_mcp_tool_invocation(auth, entry).await;
+            return refusal.direct_response(state, auth, &server, request.id.as_ref(), false);
         }
     };
 
@@ -153,7 +157,7 @@ pub(super) async fn handle_governed_request(
                 &upstream.server.server_key,
                 mcp_method,
                 request.id.as_ref(),
-                mcp_tool_invocation_id,
+                call.invocation_id,
                 response,
             )
             .await
@@ -161,19 +165,7 @@ pub(super) async fn handle_governed_request(
         Ok(response) => Ok((response, None, false)),
         Err(error) => Err(error),
     };
-    let (status, error_code, policy_result) = guarded_outcome_log_fields(&outcome);
-    let mut entry = log_input(status, policy_result, error_code);
-    if let Ok((_, Some(result_evaluation), _)) = &outcome {
-        entry.metadata.insert(
-            "guardrail_result".to_string(),
-            Value::Object(guardrail_decision_metadata(result_evaluation)),
-        );
-    }
-    let _ = state.service.log_mcp_tool_invocation(auth, entry).await;
-    match outcome {
-        Ok((response, _, _)) => response,
-        Err(error) => mcp_error_response(error),
-    }
+    finish_proxied_call(state, auth, outcome, log_input).await
 }
 
 /// `GET` opens the server-to-client SSE stream. It can carry resource update
@@ -259,11 +251,13 @@ pub(super) async fn deny_unknown_method(
         Some(id) => mcp_jsonrpc_error_response(
             StatusCode::FORBIDDEN,
             Some(&id),
-            METHOD_NOT_FOUND_CODE,
+            JSON_RPC_METHOD_NOT_FOUND,
             &message,
         ),
-        None => {
-            mcp_notification_error_response(StatusCode::FORBIDDEN, METHOD_NOT_FOUND_CODE, &message)
-        }
+        None => mcp_notification_error_response(
+            StatusCode::FORBIDDEN,
+            JSON_RPC_METHOD_NOT_FOUND,
+            &message,
+        ),
     }
 }

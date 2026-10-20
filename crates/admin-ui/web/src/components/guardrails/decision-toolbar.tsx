@@ -12,7 +12,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { GuardrailDecisionFiltersInput, GuardrailDecisionPageView } from '@/types/api'
 
-import { ACTIONS, PHASES, formatTimestamp } from './decision-meta'
+import { ACTIONS, PHASES, formatDecisionTime } from './decision-meta'
 
 export type DashboardProps = {
   decisions: GuardrailDecisionPageView
@@ -110,7 +110,7 @@ export function DecisionToolbar({ search, pending, onSearch, showPhase = true }:
 /** URL-supplied bounds may not parse; show them as written rather than throwing. */
 function boundLabel(value: string | null | undefined, fallback: string) {
   if (!value) return fallback
-  return Number.isNaN(Date.parse(value)) ? value : formatTimestamp(value)
+  return Number.isNaN(Date.parse(value)) ? value : formatDecisionTime(value)
 }
 
 /** Previous/next paging for server pages; hidden when everything fits on one page. */

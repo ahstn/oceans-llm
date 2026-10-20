@@ -11,7 +11,7 @@ use axum::{
     Form, Json, Router,
     extract::State as MockState,
     http::{HeaderMap as MockHeaders, StatusCode},
-    routing::post,
+    routing::{get, post},
 };
 use base64::engine::general_purpose::STANDARD;
 use gateway_core::{
@@ -46,12 +46,22 @@ async fn start_mock(refreshable: bool) -> (String, SharedMock) {
         refreshable,
         ..MockAuthorizationServer::default()
     }));
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind mock");
+    let origin = format!("http://{}", listener.local_addr().expect("mock address"));
+    let metadata = json!({
+        "issuer": origin,
+        "authorization_endpoint": format!("{origin}/authorize"),
+        "token_endpoint": format!("{origin}/token"),
+        "registration_endpoint": format!("{origin}/register"),
+    });
     let router = Router::new()
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(move || async move { Json(metadata) }),
+        )
         .route("/register", post(register))
         .route("/token", post(token))
         .with_state(mock.clone());
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind mock");
-    let origin = format!("http://{}", listener.local_addr().expect("mock address"));
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve mock");
     });
@@ -560,22 +570,24 @@ async fn codes_from_another_issuer_never_reach_the_token_endpoint() {
         location,
         "/admin/account/connections?oauth_error=issuer_mismatch"
     );
-    // Issuers compare as exact strings: a trailing `/` names another issuer.
-    let query = start(&state, &headers, &server).await;
-    let location = callback_query(
-        &state,
-        &headers,
-        &format!(
-            "code=auth-code&state={}&iss={}",
-            encode(&query["state"]),
-            encode(&format!("{origin}/"))
-        ),
-    )
-    .await;
-    assert_eq!(
-        location,
-        "/admin/account/connections?oauth_error=issuer_mismatch"
-    );
+    // Another path on the same host names another issuer.
+    for iss in [format!("{origin}/tenant"), format!("{origin}//")] {
+        let query = start(&state, &headers, &server).await;
+        let location = callback_query(
+            &state,
+            &headers,
+            &format!(
+                "code=auth-code&state={}&iss={}",
+                encode(&query["state"]),
+                encode(&iss)
+            ),
+        )
+        .await;
+        assert_eq!(
+            location, "/admin/account/connections?oauth_error=issuer_mismatch",
+            "{iss}"
+        );
+    }
     assert!(mock.lock().expect("mock").token_requests.is_empty());
 
     let query = start(&state, &headers, &server).await;
@@ -591,6 +603,172 @@ async fn codes_from_another_issuer_never_reach_the_token_endpoint() {
     .await;
     assert_eq!(location, "/admin/account/connections?oauth=connected");
     assert_eq!(mock.lock().expect("mock").token_requests.len(), 1);
+}
+
+/// Servers saved before discovery recorded the metadata's exact issuer may
+/// hold it without the trailing `/` the authorization server sends in `iss`,
+/// or with one it omits. They keep connecting without a re-save, which would
+/// revoke every user's connection.
+#[tokio::test]
+#[serial_test::serial]
+async fn an_issuer_saved_without_its_trailing_slash_still_connects() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    let (origin, mock) = start_mock(false).await;
+    let encode =
+        |value: &str| url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
+    let (_user, headers) = oauth_session(&state).await;
+    for (saved, iss) in [
+        (origin.clone(), format!("{origin}/")),
+        (format!("{origin}/"), origin.clone()),
+    ] {
+        let server = server(
+            &state,
+            &origin,
+            json!({
+                "client_registration": "metadata_document",
+                "issuer": saved,
+                "authorization_response_iss_parameter_supported": true,
+            }),
+        )
+        .await;
+        let query = start(&state, &headers, &server).await;
+        let location = callback_query(
+            &state,
+            &headers,
+            &format!(
+                "code=auth-code&state={}&iss={}",
+                encode(&query["state"]),
+                encode(&iss)
+            ),
+        )
+        .await;
+        assert_eq!(
+            location, "/admin/account/connections?oauth=connected",
+            "saved {saved}, iss {iss}"
+        );
+    }
+    assert_eq!(mock.lock().expect("mock").token_requests.len(), 2);
+}
+
+/// Saves `auth_config` as a platform admin: a new server when `server_id` is
+/// `None`, otherwise an update of that server.
+async fn save_server(
+    state: &AppState,
+    headers: &HeaderMap,
+    origin: &str,
+    server_id: Option<Uuid>,
+    auth_config: Value,
+) -> Result<(), String> {
+    use crate::http::mcp_registry::{create_mcp_server, update_mcp_server};
+
+    let body = json!({
+        "server_key": format!("files_{}", &Uuid::new_v4().simple().to_string()[..8]),
+        "display_name": "Files",
+        "server_url": format!("{origin}/mcp"),
+        "auth_mode": "oauth_obo",
+        "auth_config": auth_config,
+    });
+    let meta = crate::http::audit::AuditRequestMeta::default;
+    let saved = match server_id {
+        None => create_mcp_server(
+            State(state.clone()),
+            headers.clone(),
+            meta(),
+            Json(serde_json::from_value(body).expect("create request")),
+        )
+        .await
+        .map(drop),
+        Some(server_id) => update_mcp_server(
+            State(state.clone()),
+            headers.clone(),
+            meta(),
+            Path(server_id.to_string()),
+            Json(serde_json::from_value(body).expect("update request")),
+        )
+        .await
+        .map(drop),
+    };
+    saved.map_err(|error| error.0.to_string())
+}
+
+/// The callback's issuer check binds a code only to its issuer, so a save
+/// that pairs an honest issuer with a token endpoint the admin controls is
+/// refused: that endpoint would receive the honest server's code and the
+/// PKCE verifier.
+#[tokio::test]
+#[serial_test::serial]
+async fn a_save_refuses_endpoints_the_issuer_does_not_publish() {
+    let (_directory, mut state) = crate::http::test_support::app_state().await;
+    configure(&mut state);
+    let (origin, _mock) = start_mock(false).await;
+    let (_admin, headers) =
+        super::session_with_role(&state, gateway_core::GlobalRole::PlatformAdmin).await;
+    let honest = json!({
+        "resource": format!("{origin}/mcp"),
+        "issuer": origin,
+        "authorization_endpoint": format!("{origin}/authorize"),
+        "token_endpoint": format!("{origin}/token"),
+        "client_registration": "metadata_document",
+    });
+    let mut evil_token = honest.clone();
+    evil_token["token_endpoint"] = json!("http://127.0.0.1:9/token");
+
+    let error = save_server(&state, &headers, &origin, None, evil_token.clone())
+        .await
+        .expect_err("a foreign token endpoint must be refused");
+    assert!(
+        error.contains("auth_config.token_endpoint is not the token_endpoint"),
+        "{error}"
+    );
+
+    save_server(&state, &headers, &origin, None, honest.clone())
+        .await
+        .expect("published endpoints are saved");
+    let saved = server(
+        &state,
+        &origin,
+        json!({"client_registration": "metadata_document"}),
+    )
+    .await;
+    let error = save_server(
+        &state,
+        &headers,
+        &origin,
+        Some(saved.mcp_server_id),
+        evil_token.clone(),
+    )
+    .await
+    .expect_err("an edit to a foreign token endpoint must be refused");
+    assert!(error.contains("token_endpoint"), "{error}");
+
+    // An issuer that publishes no metadata cannot vouch for any endpoint.
+    let mut silent = honest.clone();
+    silent["issuer"] = json!(format!("{origin}/silent"));
+    let error = save_server(&state, &headers, &origin, None, silent)
+        .await
+        .expect_err("an issuer without metadata must be refused");
+    assert!(error.contains("publishes no OAuth"), "{error}");
+
+    // A server saved before the check keeps its endpoints through an edit
+    // that leaves them as they are: only a change is checked.
+    let legacy = server(
+        &state,
+        "http://127.0.0.1:9",
+        json!({"client_registration": "metadata_document"}),
+    )
+    .await;
+    let mut kept = legacy.auth_config.clone();
+    kept.insert("scopes".to_string(), json!(["files:write"]));
+    save_server(
+        &state,
+        &headers,
+        "http://127.0.0.1:9",
+        Some(legacy.mcp_server_id),
+        Value::Object(kept),
+    )
+    .await
+    .expect("an unchanged authorization server is not fetched");
 }
 
 /// Connects `server` through the code flow, then replaces the binding with one

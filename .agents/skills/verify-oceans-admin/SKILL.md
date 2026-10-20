@@ -34,6 +34,8 @@ export OCEANS_VERIFY_UI_PORT=33010
 
 `launch` requires `lsof` for listener and checkout ownership checks. It runs the existing `mise run dev-stack` task with alternate ports through `GATEWAY_PORT` and `UI_PORT`, refreshes this checkout's gitignored `gateway.db` with the local demo seed, and records process IDs under `/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/`. It refuses to start if either selected port is in use or another gateway process has this repository as its working directory. A listener counts as this run's only when its working directory belongs to this checkout's git root, so a stack from another worktree that takes a selected port during startup fails the launch instead of being adopted. The launch also fails as soon as the dev stack exits, for example when its gateway cannot bind the port.
 
+The refresh never recreates `gateway.db`, so rows that earlier runs created stay: onboarding users, audit entries, and the disabled servers every MCP proof leaves behind (servers have no delete API, so cleanup disables them). For a clean database, such as before capturing docs screenshots, run `mise run //crates/gateway:reset-local-demo` or move `gateway.db` aside before launch.
+
 The instance is ready when `launch` prints `ready` and both `/readyz` and `/api/v1/health` answer. The sign-in URL is `http://127.0.0.1:$OCEANS_VERIFY_GATEWAY_PORT/admin/login`. Protected feature routes remain under `/admin/*`.
 
 For Skills storage, set `OCEANS_VERIFY_SKILLS=true` before launch. The harness starts native RustFS through the `rustfs` mise profile and creates a private run-local configuration, database, and synthetic service-account key. See [features/skills.md](./features/skills.md) for the full recipe. This option leaves `gateway.db` unchanged.
@@ -104,7 +106,7 @@ export OCEANS_VERIFY_MCP_CANDIDATES_FILE=/absolute/path/to/mcp-candidates.json
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive mcp
 ```
 
-Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The aliases must be in the launch environment (exported or in `mise.local.toml`); `launch` records their names, and the driver trusts that record rather than its own environment. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
+Read [features/mcp.md](./features/mcp.md) before launch. It defines the required gateway credential aliases and the candidate file. The aliases must be in the launch environment (exported or in `mise.local.toml`); `launch` records their names, and the driver trusts that record rather than its own environment. The MCP driver creates temporary servers, two tool sets, and one API key through the UI. One server points at `https://unreachable.invalid/mcp` to prove how a failed discovery is reported without contacting a real host. It verifies saved membership, independent drafts, client configurations, grant enforcement, direct and aggregate tool calls, and invocation records. The API key UI requires one explicit model grant; the driver selects one model but sends no model request. This proof uses public access or static upstream credentials and does not test OAuth consent or token refresh.
 
 Prove Skills storage and ownership with Oceans and native RustFS:
 
@@ -205,8 +207,8 @@ The Backend Gateway proof produces:
 
 The MCP proof produces:
 
-- Screenshots and ARIA snapshots for sign-in, discovery, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
-- `mcp-proof.json` with one check per candidate plus workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, result-marker counts, the negative-auth controls (an authentication error on a tool call, or discovery rejected with its HTTP status), and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
+- Screenshots and ARIA snapshots for sign-in, discovery, the failed-discovery overview and toast, the menu disable and enable, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
+- `mcp-proof.json` with one check per candidate plus discovery-feedback, menu-disable, menu-enable, workbench, grant, tool-call, and cleanup checks; `details` holds candidate results, saved IDs, grant checks, request and invocation IDs, transport type, result-marker counts, the negative-auth controls (an authentication error on a tool call, or discovery rejected with its HTTP status), and cleanup actions. A candidate whose `OCEANS_MCP_DISCOVERY_*` alias was not set for the launched gateway, according to the run's `stack-env.json`, is recorded as `blocked` without being registered.
 - No raw key, authorization header, tool arguments, or tool-result payload in the proof JSON. Invocation detail is inspected in memory and is not captured.
 
 An optional candidate failure does not change the verdict but remains a reported gap. Check `control-oceans-admin evidence mcp` before and after stack cleanup.

@@ -40,6 +40,7 @@ fn run(
     started_at: OffsetDateTime,
 ) -> ExternalMcpDiscoveryRunRecord {
     ExternalMcpDiscoveryRunRecord {
+        expected_status_revision: None,
         discovery_run_id: Uuid::new_v4(),
         mcp_server_id: server.mcp_server_id,
         status: ExternalMcpDiscoveryStatus::Success,
@@ -61,6 +62,7 @@ fn guarded_run(
     started_at: OffsetDateTime,
 ) -> ExternalMcpDiscoveryRunRecord {
     ExternalMcpDiscoveryRunRecord {
+        expected_status_revision: None,
         expected_server: Some(McpServerOwnershipGuard::of(server).with_auth_settings(server)),
         ..run(server, started_at)
     }
@@ -185,6 +187,7 @@ where
     ] {
         store
             .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                expected_status_revision: None,
                 status: ExternalMcpDiscoveryStatus::Failed,
                 error_summary: Some(summary.to_string()),
                 ..guarded_run(&server, started_at)
@@ -217,6 +220,7 @@ where
     // once the later one committed, the earlier one is refused.
     let same_instant = t0 + time::Duration::minutes(7);
     let tied = |id: u128| ExternalMcpDiscoveryRunRecord {
+        expected_status_revision: None,
         discovery_run_id: Uuid::from_u128(id),
         ..guarded_run(&server, same_instant)
     };
@@ -240,6 +244,7 @@ where
     // commits its tools but leaves the failure as the last discovery.
     store
         .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+            expected_status_revision: None,
             status: ExternalMcpDiscoveryStatus::Failed,
             error_summary: Some("later failure".to_string()),
             ..guarded_run(&server, t0 + time::Duration::seconds(450))

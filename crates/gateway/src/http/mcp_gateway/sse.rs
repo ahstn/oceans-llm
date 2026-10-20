@@ -5,9 +5,16 @@
 //! have nothing to resume from. An upstream replay would skip the grant
 //! filtering, guardrails and invocation logging that the original request got.
 //!
+//! Only the `data`, `event` and `retry` fields and comments are forwarded. Any
+//! other line is a field clients ignore, unless they read it differently from
+//! the gateway: a client that strips a second BOM would take `\u{FEFF}data`
+//! for `data`.
+//!
 //! On the standalone `GET` stream the server may only send requests and
-//! notifications. JSON-RPC responses are dropped there, so an upstream cannot
-//! deliver a tool result outside the `tools/call` that the gateway governs.
+//! notifications, and only events whose data is one of those, or empty, are
+//! forwarded there. An upstream therefore cannot deliver a tool result outside
+//! the `tools/call` that the gateway governs, even in data the gateway cannot
+//! parse but a client can.
 
 use std::io;
 
@@ -141,17 +148,17 @@ impl SseSanitizer {
         }
     }
 
-    /// Writes one event (without its terminating blank line), minus its `id`
-    /// field. Events that are only an `id` are dropped entirely.
+    /// Writes one event (without its terminating blank line), keeping only
+    /// the forwarded fields and comments. Events left with nothing are dropped.
     fn write_event(&self, event: &[u8], out: &mut Vec<u8>) {
         let lines = event
             .split(|byte| *byte == b'\n')
-            .filter(|line| !is_id_field(line))
+            .filter(|line| is_forwarded_line(line))
             .collect::<Vec<_>>();
-        if lines.iter().all(|line| line.is_empty()) {
+        if lines.is_empty() {
             return;
         }
-        if self.drop_responses && is_json_rpc_response(&lines) {
+        if self.drop_responses && !carries_only_requests_or_notifications(&lines) {
             return;
         }
         for line in lines {
@@ -166,35 +173,59 @@ fn find_event_end(pending: &[u8]) -> Option<usize> {
     pending.windows(2).position(|pair| pair == b"\n\n")
 }
 
-/// An SSE line whose field name is `id`, with or without a value.
-fn is_id_field(line: &[u8]) -> bool {
-    line == b"id" || line.starts_with(b"id:")
+/// The SSE fields the gateway forwards. `id` is left out so clients cannot
+/// resume a stream.
+const FORWARDED_FIELDS: [&[u8]; 3] = [b"data", b"event", b"retry"];
+
+/// Whether a line is a comment or one of [`FORWARDED_FIELDS`]. A blank line
+/// here is only a surplus event separator and is dropped.
+fn is_forwarded_line(line: &[u8]) -> bool {
+    line.first() == Some(&b':') || (!line.is_empty() && FORWARDED_FIELDS.contains(&field(line).0))
 }
 
-/// Whether the event's data is a JSON-RPC response (a result or error for
-/// some request id) rather than a server request or notification. A message
-/// with a `result` or `error` counts even when it also carries `method`: a
-/// permissive client could still take it as a response.
-fn is_json_rpc_response(lines: &[&[u8]]) -> bool {
+/// Splits an SSE line into its field name and value, as the SSE spec does.
+fn field(line: &[u8]) -> (&[u8], &[u8]) {
+    match line.iter().position(|byte| *byte == b':') {
+        Some(colon) => {
+            let value = &line[colon + 1..];
+            (&line[..colon], value.strip_prefix(b" ").unwrap_or(value))
+        }
+        None => (line, &[]),
+    }
+}
+
+/// Whether the event's data is empty or holds only server requests and
+/// notifications. Anything else is refused, including data serde_json cannot
+/// parse: a client's `JSON.parse` accepts lone surrogates and deeper nesting,
+/// and its text decoder replaces invalid UTF-8, so such data can still reach
+/// it as a response.
+fn carries_only_requests_or_notifications(lines: &[&[u8]]) -> bool {
     let data = lines
         .iter()
-        .filter_map(|line| line.strip_prefix(b"data:"))
-        .map(|data| data.strip_prefix(b" ").unwrap_or(data))
+        .map(|line| field(line))
+        .filter(|(name, _)| *name == b"data")
+        .map(|(_, value)| value)
         .collect::<Vec<_>>()
         .join(&b'\n');
+    // Clients dispatch no event for empty data.
     if data.is_empty() {
-        return false;
+        return true;
     }
     let Ok(value) = serde_json::from_slice::<Value>(&data) else {
-        // Not JSON-RPC at all; a client cannot treat it as a response either.
         return false;
     };
-    let is_response =
-        |message: &Value| message.get("result").is_some() || message.get("error").is_some();
     match &value {
-        Value::Array(batch) => batch.iter().any(is_response),
-        message => is_response(message),
+        Value::Array(batch) => !batch.is_empty() && batch.iter().all(is_request_or_notification),
+        message => is_request_or_notification(message),
     }
+}
+
+/// A message with a `result` or `error` is not one even when it also carries
+/// `method`: a permissive client could still take it as a response.
+fn is_request_or_notification(message: &Value) -> bool {
+    message.get("method").is_some_and(Value::is_string)
+        && message.get("result").is_none()
+        && message.get("error").is_none()
 }
 
 /// Sanitises a complete SSE body.
@@ -273,6 +304,74 @@ mod tests {
             "data: {\"jsonrpc\":\"2.0\",\"id\":\"s1\",\"method\":\"roots/list\"}\n\n"
         );
         assert_eq!(sanitize(body, false), body);
+    }
+
+    fn sanitize_bytes(body: &[u8], drop_responses: bool) -> Vec<u8> {
+        sanitize_sse_body(body, drop_responses).unwrap().to_vec()
+    }
+
+    const NOTIFICATION: &str = "data: {\"jsonrpc\":\"2.0\",\"method\":\"n\"}\n\n";
+
+    #[test]
+    fn get_streams_drop_data_serde_json_cannot_parse() {
+        let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+        let deep = format!("data: {{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{nested}}}\n\n");
+        let lone_surrogate =
+            "data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"t\":\"\\ud800\"}}\n\n";
+        let mut invalid_utf8 = b"data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"t\":\"".to_vec();
+        invalid_utf8.extend_from_slice(b"\xFF\"}}\n\n");
+        for event in [
+            deep.as_bytes(),
+            lone_surrogate.as_bytes(),
+            &invalid_utf8,
+            b"data: x\n\n",
+        ] {
+            let mut body = event.to_vec();
+            body.extend_from_slice(NOTIFICATION.as_bytes());
+            assert_eq!(
+                sanitize_bytes(&body, true),
+                NOTIFICATION.as_bytes(),
+                "{}",
+                String::from_utf8_lossy(event)
+            );
+            assert_eq!(sanitize_bytes(&body, false), body);
+        }
+    }
+
+    #[test]
+    fn get_streams_forward_a_batch_only_when_every_message_is_a_request_or_notification() {
+        let mixed = concat!(
+            "data: [{\"jsonrpc\":\"2.0\",\"method\":\"n\"},",
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}]\n\n",
+        );
+        let with_scalar = "data: [{\"jsonrpc\":\"2.0\",\"method\":\"n\"},4]\n\n";
+        assert_eq!(
+            sanitize(&format!("{mixed}{with_scalar}data: []\n\n"), true),
+            ""
+        );
+        let requests = concat!(
+            "data: [{\"jsonrpc\":\"2.0\",\"method\":\"n\"},",
+            "{\"jsonrpc\":\"2.0\",\"id\":\"s1\",\"method\":\"roots/list\"}]\n\n",
+        );
+        assert_eq!(sanitize(requests, true), requests);
+    }
+
+    #[test]
+    fn only_known_fields_and_comments_are_forwarded() {
+        let response = "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}";
+        // A client that strips both BOMs would read the second line as `data`.
+        let mut double_bom = b"\xEF\xBB\xBF\xEF\xBB\xBFdata: ".to_vec();
+        double_bom.extend_from_slice(response.as_bytes());
+        double_bom.extend_from_slice(b"\n\n");
+        assert!(sanitize_bytes(&double_bom, true).is_empty());
+        assert!(sanitize_bytes(&double_bom, false).is_empty());
+
+        let body = format!(
+            ": ping\n\nfoo: {response}\nData: {response}\n data: {response}\nevent: message\nretry: 10\ndata\n\n"
+        );
+        let kept = ": ping\n\nevent: message\nretry: 10\ndata\n\n";
+        assert_eq!(sanitize(&body, true), kept);
+        assert_eq!(sanitize(&body, false), kept);
     }
 
     #[test]

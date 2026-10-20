@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AuditLogPage } from '@/routes/observability/audit-log'
 
 const navigateMock = vi.fn()
-const routeMock = {
+// Hoisted with the mocks: the route module reads it as it loads.
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -64,8 +66,7 @@ describe('AuditLogPage', () => {
     getAuditLogEntry.mockResolvedValue({ data: detail })
   })
 
-  async function renderPage() {
-    const { AuditLogPage } = await import('@/routes/observability/audit-log')
+  function renderPage() {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -74,8 +75,8 @@ describe('AuditLogPage', () => {
     )
   }
 
-  it('lists entries with actor, target and request address', async () => {
-    await renderPage()
+  it('lists entries with actor, target and request address', () => {
+    renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Audit Log' })).toBeInTheDocument()
     expect(screen.getByText('tickets')).toBeInTheDocument()
@@ -87,7 +88,7 @@ describe('AuditLogPage', () => {
   })
 
   it('applies an action filter through route search', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.change(screen.getByLabelText('Action'), {
       target: { value: 'api_key.created' },
@@ -103,7 +104,7 @@ describe('AuditLogPage', () => {
   })
 
   it('filters by actor from a row without opening the detail sheet', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'admin@example.test' }))
 
@@ -118,7 +119,7 @@ describe('AuditLogPage', () => {
 
   it('pages older with the cursor and keeps filters', async () => {
     routeMock.useSearch.mockReturnValue({ target_type: 'mcp_server' })
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: 'Older' }))
 
@@ -133,7 +134,7 @@ describe('AuditLogPage', () => {
   it('returns to the newest page and hides Older on the last page', async () => {
     routeMock.useLoaderData.mockReturnValue(loaderData({ next_cursor: null }))
     routeMock.useSearch.mockReturnValue({ action: 'team.created', cursor: '1800000000000_6' })
-    await renderPage()
+    renderPage()
 
     expect(screen.queryByRole('button', { name: 'Older' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Newest' }))
@@ -147,7 +148,7 @@ describe('AuditLogPage', () => {
   })
 
   it('opens a contained detail sheet with before and after summaries', async () => {
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByText('tickets'))
 
@@ -172,7 +173,7 @@ describe('AuditLogPage', () => {
       },
     }
     routeMock.useLoaderData.mockReturnValue(loaderData({ items: [keyEntry] }))
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByText('tickets'))
 
@@ -183,7 +184,7 @@ describe('AuditLogPage', () => {
 
   it('shows an error when an entry cannot be loaded', async () => {
     getAuditLogEntry.mockRejectedValue(new Error('audit log entry `7` not found'))
-    await renderPage()
+    renderPage()
 
     fireEvent.click(screen.getByText('tickets'))
 
@@ -191,9 +192,9 @@ describe('AuditLogPage', () => {
     expect(await within(sheet).findByText(/not found/)).toBeInTheDocument()
   })
 
-  it('shows an empty state when nothing matches', async () => {
+  it('shows an empty state when nothing matches', () => {
     routeMock.useLoaderData.mockReturnValue(loaderData({ items: [], next_cursor: null }))
-    await renderPage()
+    renderPage()
 
     expect(screen.getByText('No audit entries')).toBeInTheDocument()
   })
