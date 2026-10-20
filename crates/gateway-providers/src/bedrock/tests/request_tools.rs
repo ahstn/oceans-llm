@@ -572,3 +572,49 @@ fn rejects_forced_tool_choice_where_claude_rejects_it() {
         }
     }
 }
+
+#[test]
+fn rejects_forced_tool_choice_from_route_extra_body() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Check weather")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(256)),
+            (
+                "tools".to_string(),
+                json!([{
+                    "type": "function",
+                    "function": {"name": "get_weather", "parameters": {"type": "object"}}
+                }]),
+            ),
+        ]),
+    };
+
+    let mut messages_context = context("us.anthropic.claude-sonnet-5-5-v1:0");
+    messages_context
+        .extra_body
+        .insert("tool_choice".to_string(), json!({"type": "any"}));
+    let mut converse_context = context("us.anthropic.claude-sonnet-5-5-v1:0");
+    converse_context.extra_body.insert(
+        "toolConfig".to_string(),
+        json!({"toolChoice": {"tool": {"name": "get_weather"}}}),
+    );
+
+    for result in [
+        map_chat_request_to_anthropic_messages(&request, &messages_context),
+        map_chat_request_to_converse(&request, &converse_context),
+    ] {
+        let message = result.expect_err("route override rejected").to_string();
+        assert!(
+            message.contains("forced `tool_choice` is not supported"),
+            "{message}"
+        );
+    }
+
+    let mut allowed = context("us.anthropic.claude-haiku-5-5-v1:0");
+    allowed
+        .extra_body
+        .insert("tool_choice".to_string(), json!({"type": "any"}));
+    map_chat_request_to_anthropic_messages(&request, &allowed).expect("Haiku 5.5 allows it");
+}
