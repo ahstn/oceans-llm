@@ -335,6 +335,38 @@ fn converse_moves_caller_thinking_effort_to_output_config() {
 }
 
 #[test]
+fn converse_native_output_effort_turns_on_adaptive_thinking() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "us.anthropic.claude-sonnet-4-6-v1:0",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+        };
+        let mut context = context(upstream_model);
+        context.extra_body.insert(
+            "additionalModelRequestFields".to_string(),
+            json!({ "output_config": { "effort": "low" } }),
+        );
+
+        let body = map_chat_request_to_converse(&request, &context)
+            .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "low" }
+            }),
+            "{upstream_model}"
+        );
+    }
+}
+
+#[test]
 fn converse_applies_thinking_off_rules() {
     for (upstream_model, thinking, expected) in [
         (

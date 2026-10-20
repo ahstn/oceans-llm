@@ -438,6 +438,23 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
         return apply_converse_thinking_off(additional, effort, upstream_model);
     }
 
+    // A native `output_config.effort` turns on adaptive thinking, as on the Messages paths.
+    let effort = effort.or_else(|| {
+        matches!(
+            policy,
+            ClaudeThinkingPolicy::AdaptiveOnly
+                | ClaudeThinkingPolicy::AdaptivePreferred
+                | ClaudeThinkingPolicy::MythosPreview
+        )
+        .then(|| {
+            body.get("additionalModelRequestFields")
+                .and_then(Value::as_object)
+                .and_then(converse_output_effort)
+                .cloned()
+        })
+        .flatten()
+    });
+
     if effort.is_none() && budget_tokens.is_none() {
         validate_converse_caller_thinking_for_policy(body, policy, upstream_model)?;
         return Ok(());
