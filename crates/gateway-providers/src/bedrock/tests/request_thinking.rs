@@ -135,6 +135,30 @@ fn rejects_thinking_off_where_the_upstream_model_would() {
 }
 
 #[test]
+fn thinking_off_sends_only_the_type() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Summarize this page")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(1024)),
+            (
+                "thinking".to_string(),
+                json!({ "type": "disabled", "display": "omitted" }),
+            ),
+        ]),
+    };
+
+    let body = map_chat_request_to_anthropic_messages(
+        &request,
+        &context("global.anthropic.claude-opus-5"),
+    )
+    .expect("mapped");
+
+    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
+}
+
+#[test]
 fn rejects_between_tools_outside_sonnet_5_5() {
     for upstream_model in [
         "global.anthropic.claude-opus-4-8",
@@ -142,6 +166,7 @@ fn rejects_between_tools_outside_sonnet_5_5() {
         "global.anthropic.claude-opus-5",
         "global.anthropic.claude-haiku-5-5",
         "global.anthropic.claude-opus-5-5",
+        "us.anthropic.claude-sonnet-4-6-v1:0",
     ] {
         let request = CoreChatRequest {
             model: "claude".to_string(),

@@ -12,7 +12,7 @@ use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
 use super::response::{map_anthropic_finish_reason, normalize_anthropic_response};
 use super::streaming::normalize_anthropic_stream;
-use super::thinking::apply_anthropic_thinking_compatibility;
+use super::thinking::{apply_anthropic_thinking_compatibility, validate_anthropic_tool_choice};
 use crate::anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
@@ -435,6 +435,9 @@ fn between_tools_is_rejected_outside_sonnet_5_5() {
         "claude-opus-5",
         "claude-haiku-5-5",
         "claude-opus-5-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "claude-mythos-preview",
     ] {
         let mut body = serde_json::Map::from_iter([(
             "thinking".to_string(),
@@ -450,6 +453,57 @@ fn between_tools_is_rejected_outside_sonnet_5_5() {
             "{model}: {error:?}"
         );
     }
+}
+
+#[test]
+fn thinking_off_sends_only_the_type_and_rejects_budgets() {
+    for (model, thinking, expected) in [
+        (
+            "claude-opus-5",
+            json!({ "type": "disabled", "display": "omitted" }),
+            "disabled",
+        ),
+        (
+            "claude-sonnet-5-5",
+            json!({ "type": "disabled", "display": "summarized" }),
+            "between_tools",
+        ),
+    ] {
+        let mut body = serde_json::Map::from_iter([("thinking".to_string(), thinking)]);
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model}: {error}"));
+        assert_eq!(body["thinking"], json!({ "type": expected }), "{model}");
+    }
+
+    for model in ["claude-opus-4-8", "claude-sonnet-5-5"] {
+        let mut body = serde_json::Map::from_iter([(
+            "thinking".to_string(),
+            json!({ "type": "disabled", "budget_tokens": 1024 }),
+        )]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("budget with thinking off");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn dotted_fable_5_1_rejects_forced_tool_choice() {
+    let error =
+        validate_anthropic_tool_choice(&json!({"type": "any"}), "anthropic/claude-fable-5.1")
+            .expect_err("forced tool choice rejected");
+    assert!(
+        matches!(
+            error,
+            AnthropicAdapterError::ForcedToolChoiceRejected { .. }
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
