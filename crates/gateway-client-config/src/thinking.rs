@@ -1,3 +1,8 @@
+use gateway_core::claude_models::{
+    ClaudeThinkingOff, claude_thinking_off, contains_exact_claude_model_marker,
+    normalize_claude_model,
+};
+
 use crate::types::ThinkingPolicy;
 
 const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
@@ -44,13 +49,13 @@ pub fn infer_thinking_policy(
 }
 
 fn classify_model_family(value: &str) -> Option<ThinkingPolicy> {
-    let claude = dash_claude_versions(value);
+    let claude = normalize_claude_model(value);
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
         .any(|marker| claude.contains(marker))
         || SAFE_EFFORT_EXACT_MODEL_MARKERS
             .iter()
-            .any(|marker| contains_exact_model_marker(&claude, marker))
+            .any(|marker| contains_exact_claude_model_marker(&claude, marker))
     {
         return Some(ThinkingPolicy::AnthropicSafeEffort);
     }
@@ -88,40 +93,12 @@ fn gemini_generation(value: &str) -> Option<(u32, u32, bool)> {
     })
 }
 
-/// Whether any of `values` names a Claude model that always thinks (Opus 5.5, Fable 5.x, Mythos
-/// 5.x, Mythos Preview) and so rejects the `thinking.type: disabled` requests Claude Code sends for
-/// background work. Mirrors `claude_thinking_off` in the gateway's Anthropic adapter.
+/// Whether any of `values` names a Claude model that always thinks, and so rejects the
+/// `thinking.type: disabled` requests Claude Code sends for background work. Uses the same
+/// table as the gateway's request adapters.
 #[must_use]
 pub(crate) fn claude_always_thinks(values: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
-    values.into_iter().any(|value| {
-        let value = dash_claude_versions(&value.as_ref().to_ascii_lowercase());
-        value.contains("claude-mythos-preview")
-            || contains_exact_model_marker(&value, "claude-fable-5")
-            || contains_exact_model_marker(&value, "claude-mythos-5")
-            || contains_exact_model_marker(&value, "claude-opus-5-5")
-    })
-}
-
-/// Rewrites dotted Claude versions such as `claude-haiku-5.5` (the OpenRouter spelling) to the
-/// dashed form the markers use. Only a dot between two digits changes; Gemini ids keep their
-/// dots because `gemini_generation` parses them.
-fn dash_claude_versions(value: &str) -> String {
-    let bytes = value.as_bytes();
-    value
-        .char_indices()
-        .map(|(index, ch)| {
-            let between_digits = index > 0
-                && bytes[index - 1].is_ascii_digit()
-                && bytes.get(index + 1).is_some_and(u8::is_ascii_digit);
-            if ch == '.' && between_digits { '-' } else { ch }
-        })
-        .collect()
-}
-
-fn contains_exact_model_marker(value: &str, marker: &str) -> bool {
-    value.split(marker).skip(1).any(|rest| {
-        rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
-        })
-    })
+    values
+        .into_iter()
+        .any(|value| claude_thinking_off(value.as_ref()) == ClaudeThinkingOff::Unsupported)
 }

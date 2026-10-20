@@ -1,4 +1,6 @@
-//! Shared Claude model classification; request and beta handling stay in each transport.
+//! Claude model classification shared by the provider adapters and the client-config
+//! generator, so both agree on what each model generation accepts. Request and beta handling
+//! stay in each transport.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeThinkingPolicy {
@@ -38,7 +40,8 @@ pub fn is_adaptive_only_claude(model: &str) -> bool {
 /// Lowercases `model` and rewrites dotted versions such as `claude-haiku-5.5` (the OpenRouter
 /// spelling) to Anthropic's dashed form. Only a dot between two digits changes, so prefixes
 /// like `us.anthropic.` keep theirs.
-pub(super) fn normalize_claude_model(model: &str) -> String {
+#[must_use]
+pub fn normalize_claude_model(model: &str) -> String {
     let model = model.to_ascii_lowercase();
     let bytes = model.as_bytes();
     model

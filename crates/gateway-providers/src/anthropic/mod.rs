@@ -1,7 +1,6 @@
 mod controls;
 pub mod count_tokens;
 pub mod error;
-mod model;
 pub mod request;
 #[cfg(test)]
 mod request_tests;
