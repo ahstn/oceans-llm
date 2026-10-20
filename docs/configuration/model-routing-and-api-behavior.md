@@ -403,7 +403,7 @@ Messages support still depends on the selected provider and route. Disable unsup
 
 #### Turn thinking off on adaptive-only Claude models
 
-Newer Claude models accept only adaptive thinking, and each handles a request to turn thinking off differently. Claude Code sends `thinking: { "type": "disabled" }` on background work such as WebFetch summaries and session titles. The gateway keeps that request in the form the upstream model accepts, on `anthropic_compat`, Vertex `anthropic/*`, and Bedrock Anthropic Messages routes. Bedrock Converse routes apply the same rules to `additionalModelRequestFields.thinking`, where effort stays inside the thinking object:
+Newer Claude models accept only adaptive thinking, and each handles a request to turn thinking off differently. Claude Code sends `thinking: { "type": "disabled" }` on background work such as WebFetch summaries and session titles. The gateway keeps that request in the form the upstream model accepts, on `anthropic_compat`, Vertex `anthropic/*`, and Bedrock Anthropic Messages routes. Bedrock Converse routes apply the same rules to `additionalModelRequestFields.thinking`, with effort in `additionalModelRequestFields.output_config.effort`:
 
 | Upstream model | `thinking.type: "disabled"` |
 | --- | --- |

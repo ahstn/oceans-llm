@@ -313,38 +313,66 @@ fn converse_request_with_thinking(
 }
 
 #[test]
+fn converse_moves_caller_thinking_effort_to_output_config() {
+    for upstream_model in [
+        "us.anthropic.claude-sonnet-4-6-v1:0",
+        "global.anthropic.claude-opus-5",
+    ] {
+        let body = converse_request_with_thinking(
+            upstream_model,
+            json!({ "type": "adaptive", "effort": "low" }),
+        )
+        .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "low" }
+            }),
+            "{upstream_model}"
+        );
+    }
+}
+
+#[test]
 fn converse_applies_thinking_off_rules() {
     for (upstream_model, thinking, expected) in [
         (
             "global.anthropic.claude-sonnet-5-5",
             json!({ "type": "disabled" }),
-            json!({ "type": "between_tools" }),
+            json!({ "thinking": { "type": "between_tools" } }),
         ),
         (
             "global.anthropic.claude-opus-5",
             json!({ "type": "disabled", "effort": "high" }),
-            json!({ "type": "disabled", "effort": "high" }),
+            json!({
+                "thinking": { "type": "disabled" },
+                "output_config": { "effort": "high" }
+            }),
         ),
         (
             "global.anthropic.claude-opus-4-8",
             json!({ "type": "disabled" }),
-            json!({ "type": "disabled" }),
+            json!({ "thinking": { "type": "disabled" } }),
         ),
         (
             "global.anthropic.claude-sonnet-5-5",
             json!({ "type": "disabled", "display": "omitted", "budget_tokens": null }),
-            json!({ "type": "between_tools" }),
+            json!({ "thinking": { "type": "between_tools" } }),
         ),
         (
             "global.anthropic.claude-opus-5",
             json!({ "type": "disabled", "display": "omitted", "effort": "low" }),
-            json!({ "type": "disabled", "effort": "low" }),
+            json!({
+                "thinking": { "type": "disabled" },
+                "output_config": { "effort": "low" }
+            }),
         ),
     ] {
         let body = converse_request_with_thinking(upstream_model, thinking)
             .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
         assert_eq!(
-            body["additionalModelRequestFields"]["thinking"], expected,
+            body["additionalModelRequestFields"], expected,
             "{upstream_model}"
         );
     }
@@ -577,10 +605,8 @@ fn maps_claude_converse_reasoning_effort_to_additional_model_request_fields() {
         body["additionalModelRequestFields"],
         json!({
             "trace": "enabled",
-            "thinking": {
-                "type": "adaptive",
-                "effort": "high"
-            }
+            "thinking": { "type": "adaptive" },
+            "output_config": { "effort": "high" }
         })
     );
     assert!(body.get("reasoning_effort").is_none());
@@ -610,10 +636,8 @@ fn maps_adaptive_only_claude_converse_reasoning_effort() {
         assert_eq!(
             body["additionalModelRequestFields"],
             json!({
-                "thinking": {
-                    "type": "adaptive",
-                    "effort": "xhigh"
-                }
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "xhigh" }
             })
         );
         assert!(body.get("reasoning_effort").is_none());
@@ -673,9 +697,9 @@ fn maps_opus_4_5_converse_reasoning_effort_with_manual_budget() {
         json!({
             "thinking": {
                 "type": "enabled",
-                "budget_tokens": 1024,
-                "effort": "medium"
-            }
+                "budget_tokens": 1024
+            },
+            "output_config": { "effort": "medium" }
         })
     );
 }
@@ -725,7 +749,7 @@ fn rejects_conflicting_claude_converse_reasoning_effort() {
             .expect_err("conflict rejected")
             .to_string();
 
-    assert!(error.contains("additionalModelRequestFields.thinking.effort"));
+    assert!(error.contains("additionalModelRequestFields.output_config.effort"));
 }
 
 #[test]

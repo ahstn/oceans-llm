@@ -1088,6 +1088,7 @@ fn claude_code_background_model_skips_models_that_always_think() {
     let rendered = ClaudeCodeConfigTemplate
         .render_many(&ClientConfigInputSet::new(vec![
             claude_input("claude-opus-5.5", "anthropic/claude-opus-5-5"),
+            claude_input("claude-mythos-5", "anthropic/claude-mythos-5"),
             claude_input("claude-haiku-5.5", "anthropic/claude-haiku-5.5"),
         ]))
         .expect("claude code config");
@@ -1114,6 +1115,7 @@ fn claude_code_notes_when_every_model_always_thinks() {
     for (model_id, upstream_model) in [
         ("claude-fable-5.1", "anthropic/claude-fable-5-1"),
         ("claude-opus-5.5", "us.anthropic.claude-opus-5-5-v1:0"),
+        ("claude-mythos-5.1", "anthropic/claude-mythos-5-1"),
     ] {
         let rendered = ClaudeCodeConfigTemplate.render(&claude_input(model_id, upstream_model));
         let gateway_settings: Value =

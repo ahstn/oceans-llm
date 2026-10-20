@@ -11,8 +11,12 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
     "claude-sonnet-4-6",
 ];
 
-const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] =
-    &["claude-fable-5", "claude-sonnet-5", "claude-haiku-5"];
+const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &[
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-haiku-5",
+    "claude-mythos-5",
+];
 
 /// Infers the thinking policy from candidate identifiers, most specific first: callers pass
 /// the upstream model, then gateway model aliases, then provider metadata. The first candidate
@@ -85,7 +89,7 @@ fn gemini_generation(value: &str) -> Option<(u32, u32, bool)> {
 }
 
 /// Whether any of `values` names a Claude model that always thinks (Opus 5.5, Fable 5.x, Mythos
-/// Preview) and so rejects the `thinking.type: disabled` requests Claude Code sends for
+/// 5.x, Mythos Preview) and so rejects the `thinking.type: disabled` requests Claude Code sends for
 /// background work. Mirrors `claude_thinking_off` in the gateway's Anthropic adapter.
 #[must_use]
 pub(crate) fn claude_always_thinks(values: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
@@ -93,6 +97,7 @@ pub(crate) fn claude_always_thinks(values: impl IntoIterator<Item = impl AsRef<s
         let value = dash_claude_versions(&value.as_ref().to_ascii_lowercase());
         value.contains("claude-mythos-preview")
             || contains_exact_model_marker(&value, "claude-fable-5")
+            || contains_exact_model_marker(&value, "claude-mythos-5")
             || contains_exact_model_marker(&value, "claude-opus-5-5")
     })
 }

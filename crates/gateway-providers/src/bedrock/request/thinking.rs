@@ -418,6 +418,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     let effort = extract_anthropic_reasoning_effort(extra)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
     let policy = claude_thinking_policy(upstream_model);
+    move_converse_thinking_effort(body, upstream_model)?;
 
     let caller_thinking_type = body
         .get("additionalModelRequestFields")
@@ -459,7 +460,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
                     json!("adaptive"),
                     upstream_model,
                 )?;
-                merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+                merge_converse_output_effort(additional, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualWithEffort => {
                 let budget_tokens = budget_tokens
@@ -481,7 +482,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
                     budget_tokens,
                     upstream_model,
                 )?;
-                merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+                merge_converse_output_effort(additional, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
                 let budget_tokens = budget_tokens
@@ -535,36 +536,80 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     Ok(())
 }
 
-/// Applies the shared thinking-off rules to `additionalModelRequestFields.thinking`. Converse
-/// carries effort inside the thinking object, so the object is rebuilt from the resolved `type`
-/// plus any effort; other caller fields such as `display` are dropped, as on Messages routes.
+/// Applies the shared thinking-off rules to `additionalModelRequestFields.thinking`. The thinking
+/// object is replaced by the resolved type-only form, so caller fields such as `display` are
+/// dropped as on Messages routes; effort stays in `output_config`.
 fn apply_converse_thinking_off(
     additional: &mut Map<String, Value>,
     effort: Option<Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
+    if let Some(effort) = effort {
+        merge_converse_output_effort(additional, effort, upstream_model)?;
+    }
+    let effort = converse_output_effort(additional).cloned();
     let thinking = additional
         .get("thinking")
         .and_then(Value::as_object)
         .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
-    let caller_effort = thinking
-        .get("effort")
-        .filter(|value| !value.is_null())
-        .cloned();
-    if let (Some(effort), Some(caller_effort)) = (&effort, &caller_effort)
-        && effort != caller_effort
-    {
-        return Err(ProviderError::InvalidRequest(format!(
-            "`reasoning_effort` conflicts with `additionalModelRequestFields.thinking.effort` for `{upstream_model}`"
-        )));
-    }
-    let effort = effort.or(caller_effort);
-    let mut resolved = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
-    if let Some(effort) = effort {
-        resolved["effort"] = effort;
-    }
+    let resolved = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
     additional.insert("thinking".to_string(), resolved);
     Ok(())
+}
+
+/// Bedrock Converse takes Claude effort in `additionalModelRequestFields.output_config.effort`
+/// and rejects it inside `thinking`, so a caller's `thinking.effort` is moved there.
+fn move_converse_thinking_effort(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let Some(additional) = body
+        .get_mut("additionalModelRequestFields")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    let Some(effort) = additional
+        .get_mut("thinking")
+        .and_then(Value::as_object_mut)
+        .and_then(|thinking| thinking.remove("effort"))
+        .filter(|effort| !effort.is_null())
+    else {
+        return Ok(());
+    };
+    merge_converse_output_effort(additional, effort, upstream_model)
+}
+
+fn merge_converse_output_effort(
+    additional: &mut Map<String, Value>,
+    effort: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let Value::Object(output_config) = additional
+        .entry("output_config".to_string())
+        .or_insert_with(|| Value::Object(Map::new()))
+    else {
+        return Err(ProviderError::InvalidRequest(
+            "`additionalModelRequestFields.output_config` must be an object for aws_bedrock Converse"
+                .to_string(),
+        ));
+    };
+    match output_config.get("effort").filter(|value| !value.is_null()) {
+        Some(existing) if existing != &effort => Err(ProviderError::InvalidRequest(format!(
+            "`reasoning_effort` conflicts with `additionalModelRequestFields.output_config.effort` for `{upstream_model}`"
+        ))),
+        _ => {
+            output_config.insert("effort".to_string(), effort);
+            Ok(())
+        }
+    }
+}
+
+fn converse_output_effort(additional: &Map<String, Value>) -> Option<&Value> {
+    additional
+        .get("output_config")?
+        .get("effort")
+        .filter(|value| !value.is_null())
 }
 
 pub(super) fn ensure_additional_model_request_fields(
@@ -605,6 +650,11 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
     policy: ClaudeThinkingPolicy,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && let Some(effort) = converse_output_effort(additional)
+    {
+        validate_adaptive_effort(effort, upstream_model)?;
+    }
     let Some(thinking) = additional.get("thinking") else {
         return Ok(());
     };
@@ -639,9 +689,6 @@ pub(super) fn validate_converse_caller_thinking_for_policy_object(
                     model: upstream_model.to_string(),
                 }
                 .into());
-            }
-            if let Some(effort) = thinking.get("effort").filter(|value| !value.is_null()) {
-                validate_adaptive_effort(effort, upstream_model)?;
             }
         }
         ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {

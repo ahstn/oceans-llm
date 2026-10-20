@@ -32,6 +32,7 @@ pub fn is_adaptive_only_claude(model: &str) -> bool {
         || contains_exact_claude_model_marker(&model, "claude-opus-5")
         || contains_exact_claude_model_marker(&model, "claude-sonnet-5")
         || contains_exact_claude_model_marker(&model, "claude-haiku-5")
+        || contains_exact_claude_model_marker(&model, "claude-mythos-5")
 }
 
 /// Lowercases `model` and rewrites dotted versions such as `claude-haiku-5.5` (the OpenRouter
@@ -72,6 +73,7 @@ pub fn claude_thinking_off(upstream_model: &str) -> ClaudeThinkingOff {
     let model = normalize_claude_model(upstream_model);
     if model.contains("claude-mythos-preview")
         || contains_exact_claude_model_marker(&model, "claude-fable-5")
+        || contains_exact_claude_model_marker(&model, "claude-mythos-5")
         || claude_minor_version(&model, "claude-opus-5") == Some(5)
     {
         ClaudeThinkingOff::Unsupported
@@ -156,6 +158,8 @@ mod tests {
             ("claude-opus-5", AdaptiveOnly),
             ("claude-opus-5-5", AdaptiveOnly),
             ("claude-haiku-5-5", AdaptiveOnly),
+            ("claude-mythos-5", AdaptiveOnly),
+            ("claude-mythos-5-1", AdaptiveOnly),
             ("claude-haiku-4-5", ManualOnly),
             ("claude-opus-4-6", AdaptivePreferred),
             ("claude-sonnet-4-6", AdaptivePreferred),
@@ -261,6 +265,8 @@ mod tests {
             ("claude-opus-5-5", ClaudeThinkingOff::Unsupported),
             ("claude-fable-5", ClaudeThinkingOff::Unsupported),
             ("claude-fable-5-1", ClaudeThinkingOff::Unsupported),
+            ("claude-mythos-5", ClaudeThinkingOff::Unsupported),
+            ("claude-mythos-5-1", ClaudeThinkingOff::Unsupported),
             ("claude-mythos-preview", ClaudeThinkingOff::Unsupported),
         ] {
             for qualified in [
