@@ -108,9 +108,15 @@ impl RouteSurvivors {
     /// target `(provider, upstream, priority)`, in config order. Claims run in two passes so the
     /// result does not depend on route order: first every route whose own id survived keeps it,
     /// even when its priority changed; then each remaining route may reuse a survivor with the
-    /// same `(provider, upstream, priority)`, which covers a renamed route. Each survivor is
-    /// claimed once, so two configured routes never share a row.
-    pub(crate) fn claim_all(&mut self, routes: &[(Uuid, (String, String, i64))]) -> Vec<Uuid> {
+    /// same `(provider, upstream, priority)`, which covers a renamed route. A route whose own id
+    /// already had a row before this seed (`established`) was not renamed, so it keeps its own id
+    /// rather than taking another row. Each survivor is claimed once, so two configured routes
+    /// never share a row.
+    pub(crate) fn claim_all(
+        &mut self,
+        routes: &[(Uuid, (String, String, i64))],
+        established: &std::collections::HashSet<Uuid>,
+    ) -> Vec<Uuid> {
         let mut claimed = routes
             .iter()
             .map(|(own_id, _)| {
@@ -122,7 +128,12 @@ impl RouteSurvivors {
             .collect::<Vec<_>>();
         for ((own_id, key), slot) in routes.iter().zip(&mut claimed) {
             if slot.is_none() {
-                let id = match self.by_key.remove(key) {
+                let reused = if established.contains(own_id) {
+                    None
+                } else {
+                    self.by_key.remove(key)
+                };
+                let id = match reused {
                     Some(id) => {
                         self.by_id.remove(&id);
                         id
@@ -165,14 +176,26 @@ pub(crate) fn model_uuid(model_key: &str) -> Uuid {
 /// route without an `id` took the positional legacy id, so after upgrading it carries a key equal
 /// to its provider. Its legacy id stays while a row under it already exists, because responses
 /// and request logs refer to route ids. The route moves to the keyed id once the legacy id would
-/// have changed anyway, when its priority or position in the model changes.
+/// have changed anyway, when its priority or position in the model changes. An existing keyed row
+/// wins over a legacy one, so reverting that change, while batch history keeps the legacy row,
+/// does not move the route back.
 pub(crate) fn configured_route_uuid(
     model_key: &str,
     route: &gateway_core::SeedModelRoute,
     route_index: usize,
     existing_ids: &std::collections::HashSet<Uuid>,
 ) -> Uuid {
-    if route.route_key.as_deref() == Some(route.provider_key.as_str()) {
+    let keyed = route_uuid(
+        model_key,
+        route.route_key.as_deref(),
+        &route.provider_key,
+        &route.upstream_model,
+        route.priority,
+        route_index,
+    );
+    if route.route_key.as_deref() == Some(route.provider_key.as_str())
+        && !existing_ids.contains(&keyed)
+    {
         let legacy = route_uuid(
             model_key,
             None,
@@ -185,14 +208,7 @@ pub(crate) fn configured_route_uuid(
             return legacy;
         }
     }
-    route_uuid(
-        model_key,
-        route.route_key.as_deref(),
-        &route.provider_key,
-        &route.upstream_model,
-        route.priority,
-        route_index,
-    )
+    keyed
 }
 
 pub(crate) fn route_uuid(
@@ -1147,7 +1163,7 @@ mod route_survivor_tests {
         // below the group.
         let targets = vec![(route, key(i64::from(i32::MIN)))];
         let claimed = survivors
-            .claim_all(&targets)
+            .claim_all(&targets, &std::collections::HashSet::new())
             .into_iter()
             .zip(targets.into_iter().map(|(_, key)| key))
             .collect::<Vec<_>>();

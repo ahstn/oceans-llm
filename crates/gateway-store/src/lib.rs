@@ -535,6 +535,37 @@ pub(crate) mod tests {
             .expect("batch after rename");
         assert_eq!(batch.route_id, route.id);
 
+        // A priority change moves the route to its keyed id; the legacy row keeps its batch.
+        let keyed = crate::seed::route_uuid(
+            "fast",
+            Some("openai-prod"),
+            "openai-prod",
+            "gpt-4o-mini",
+            20,
+            0,
+        );
+        for priority in [20, 10] {
+            models[0].routes[0].priority = priority;
+            seed(models.clone())
+                .await
+                .expect("reseed reprioritized route");
+            let routes = store
+                .list_routes_for_model(model.id)
+                .await
+                .expect("routes after priority change");
+            let enabled = routes
+                .iter()
+                .filter(|route| route.enabled)
+                .map(|route| (route.id, route.priority))
+                .collect::<Vec<_>>();
+            // Reverting the priority keeps the keyed id instead of reviving the legacy row.
+            assert_eq!(enabled, [(keyed, priority)], "priority {priority}");
+            assert!(
+                routes.iter().any(|row| row.id == route.id && !row.enabled),
+                "the batch-referenced legacy row stays, disabled"
+            );
+        }
+
         // Only rows that survived the delete are reused. Two configured routes that share
         // (provider, upstream, priority) must still fail instead of overwriting each other.
         let mut duplicate = models[0].routes[0].clone();

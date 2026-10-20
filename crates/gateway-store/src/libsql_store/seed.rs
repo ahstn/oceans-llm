@@ -247,11 +247,44 @@ impl LibsqlStore {
         }
 
         let mut model_ids = std::collections::HashMap::new();
+        for model in models {
+            model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
+        }
+        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
+        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
+        const MODEL_ID_QUERY_CHUNK: usize = 500;
+        let configured_model_ids = model_ids
+            .values()
+            .map(|model_id| libsql::Value::Text(model_id.to_string()))
+            .collect::<Vec<_>>();
+        // Route ids from before this seed, so a route can keep a legacy id it still has (see
+        // `configured_route_uuid`).
         let mut existing_route_ids =
             std::collections::HashMap::<Uuid, std::collections::HashSet<Uuid>>::new();
         let no_route_ids = std::collections::HashSet::new();
-        for model in models {
-            model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
+        for chunk in configured_model_ids.chunks(MODEL_ID_QUERY_CHUNK) {
+            let placeholders = (1..=chunk.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut rows = self
+                .connection
+                .query(
+                    &format!(
+                        "SELECT id, model_id FROM model_routes WHERE model_id IN ({placeholders})"
+                    ),
+                    libsql::params::Params::Positional(chunk.to_vec()),
+                )
+                .await
+                .map_err(to_query_error)?;
+            while let Some(row) = rows.next().await.map_err(to_query_error)? {
+                let id: String = row.get(0).map_err(to_query_error)?;
+                let model_id: String = row.get(1).map_err(to_query_error)?;
+                existing_route_ids
+                    .entry(parse_uuid(&model_id)?)
+                    .or_default()
+                    .insert(parse_uuid(&id)?);
+            }
         }
 
         // Insert model rows first with a null alias target so config order does not
@@ -296,21 +329,6 @@ impl LibsqlStore {
                 )
                 .await
                 .map_err(to_query_error)?;
-
-            // Route ids from before this seed, so a route can keep a legacy id it still has.
-            let mut route_id_rows = self
-                .connection
-                .query(
-                    "SELECT id FROM model_routes WHERE model_id = ?1",
-                    [model_id.to_string()],
-                )
-                .await
-                .map_err(to_query_error)?;
-            let ids = existing_route_ids.entry(model_id).or_default();
-            while let Some(row) = route_id_rows.next().await.map_err(to_query_error)? {
-                let id: String = row.get(0).map_err(to_query_error)?;
-                ids.insert(parse_uuid(&id)?);
-            }
 
             // Batch history retains the exact route used for each submitted
             // job. Disable all existing routes first, then remove only routes
@@ -373,16 +391,9 @@ impl LibsqlStore {
         // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
         // of inserting a second row that the (model, provider, upstream, priority) unique key
         // rejects.
-        let configured_model_ids = model_ids
-            .values()
-            .map(|model_id| libsql::Value::Text(model_id.to_string()))
-            .collect::<Vec<_>>();
         let mut survivors_by_model =
             std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
-        // Query in fixed-size chunks so a large model set stays under SQLite's host-parameter
-        // limit. An empty config runs no query, which also avoids an invalid `IN ()`.
-        const SURVIVOR_QUERY_CHUNK: usize = 500;
-        for chunk in configured_model_ids.chunks(SURVIVOR_QUERY_CHUNK) {
+        for chunk in configured_model_ids.chunks(MODEL_ID_QUERY_CHUNK) {
             let placeholders = (1..=chunk.len())
                 .map(|index| format!("?{index}"))
                 .collect::<Vec<_>>()
@@ -446,7 +457,10 @@ impl LibsqlStore {
                 })
                 .collect::<Vec<_>>();
             let claimed = survivors
-                .claim_all(&targets)
+                .claim_all(
+                    &targets,
+                    existing_route_ids.get(&model_id).unwrap_or(&no_route_ids),
+                )
                 .into_iter()
                 .zip(targets.into_iter().map(|(_, key)| key))
                 .collect::<Vec<_>>();
