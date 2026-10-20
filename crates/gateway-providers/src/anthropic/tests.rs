@@ -322,6 +322,127 @@ fn fable_5_1_rejects_disabled_thinking() {
 }
 
 #[test]
+fn sonnet_5_5_maps_disabled_thinking_to_between_tools() {
+    // Claude Code side queries (WebFetch summaries, titles) send `thinking: disabled`.
+    let mut extra = BTreeMap::new();
+    extra.insert("thinking".to_string(), json!({ "type": "disabled" }));
+    extra.insert("max_tokens".to_string(), json!(1024));
+    let request = CoreChatRequest {
+        model: "claude-sonnet-5.5".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("summarize this page".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra,
+    };
+
+    let context = test_context("anthropic/claude-sonnet-5-5");
+    let options = AnthropicRequestOptions::default();
+    let body = map_anthropic_request(&request, &context, false, &options).expect("mapped");
+
+    assert_eq!(body["thinking"], json!({ "type": "between_tools" }));
+    assert!(body.get("output_config").is_none());
+}
+
+#[test]
+fn adaptive_only_models_keep_thinking_off_in_the_form_each_accepts() {
+    for (model, thinking, effort, expected_thinking) in [
+        ("claude-opus-4-7", "disabled", Some("max"), "disabled"),
+        ("claude-opus-4-8", "disabled", None, "disabled"),
+        ("claude-sonnet-5", "disabled", Some("xhigh"), "disabled"),
+        ("claude-opus-5", "disabled", Some("high"), "disabled"),
+        ("claude-haiku-5-5", "disabled", Some("low"), "disabled"),
+        (
+            "claude-sonnet-5-5",
+            "disabled",
+            Some("medium"),
+            "between_tools",
+        ),
+        ("claude-sonnet-5-5", "between_tools", None, "between_tools"),
+    ] {
+        let mut body =
+            serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": thinking }))]);
+        if let Some(effort) = effort {
+            body.insert("reasoning_effort".to_string(), json!(effort));
+        }
+
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model} {thinking}: {error}"));
+
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": expected_thinking }),
+            "{model}"
+        );
+        assert_eq!(
+            body.get("output_config").map(|config| &config["effort"]),
+            effort.map(|effort| json!(effort)).as_ref(),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn thinking_off_rejects_effort_above_high_where_upstream_does() {
+    for model in ["claude-opus-5", "claude-haiku-5-5", "claude-sonnet-5-5"] {
+        for effort in ["xhigh", "max"] {
+            let mut body = serde_json::Map::from_iter([
+                ("thinking".to_string(), json!({ "type": "disabled" })),
+                ("output_config".to_string(), json!({ "effort": effort })),
+            ]);
+            let error = apply_anthropic_thinking_compatibility(&mut body, model)
+                .expect_err("effort above high with thinking off");
+            assert!(
+                matches!(
+                    error,
+                    AnthropicAdapterError::DisabledThinkingEffortTooHigh { .. }
+                ),
+                "{model} {effort}: {error:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn always_on_thinking_models_reject_disabled_with_guidance() {
+    for model in ["claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"] {
+        let mut body =
+            serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("thinking cannot be turned off");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::AdaptiveOnlyDisabledNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("`output_config.effort` to `low`")
+        );
+    }
+}
+
+#[test]
+fn opus_5_and_haiku_5_5_accept_adaptive_thinking_and_effort() {
+    for model in ["claude-opus-5", "claude-opus-5-5", "claude-haiku-5-5"] {
+        let mut body = serde_json::Map::from_iter([
+            ("thinking".to_string(), json!({ "type": "adaptive" })),
+            ("reasoning_effort".to_string(), json!("low")),
+        ]);
+        apply_anthropic_thinking_compatibility(&mut body, model)
+            .unwrap_or_else(|error| panic!("{model}: {error}"));
+        assert_eq!(body["thinking"], json!({ "type": "adaptive" }), "{model}");
+        assert_eq!(body["output_config"], json!({ "effort": "low" }), "{model}");
+    }
+}
+
+#[test]
 fn fable_5_1_rejects_forced_tool_choice() {
     let forbidden_choices = [
         json!("required"),

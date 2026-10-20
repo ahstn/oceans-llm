@@ -124,9 +124,13 @@ pub enum AnthropicAdapterError {
     )]
     AdaptiveOnlyManualThinkingNotSupported { model: String },
     #[error(
-        "`thinking.type: disabled` is not supported for `{model}`; adaptive thinking is always enabled"
+        "`thinking.type: disabled` is not supported for `{model}`; adaptive thinking is always enabled. Omit `thinking` and set `output_config.effort` to `low` for the least thinking, or route this request to a model that can turn thinking off"
     )]
     AdaptiveOnlyDisabledNotSupported { model: String },
+    #[error(
+        "`output_config.effort` {effort} is not supported with thinking turned off for `{model}`; use effort `high` or below, or adaptive thinking"
+    )]
+    DisabledThinkingEffortTooHigh { effort: String, model: String },
     #[error("`thinking.type: disabled` is not supported for Claude Mythos Preview")]
     MythosDisabledNotSupported,
     #[error("`thinking.type: enabled` for `{model}` must include `budget_tokens`")]

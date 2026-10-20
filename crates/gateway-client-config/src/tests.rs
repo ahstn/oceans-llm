@@ -308,12 +308,20 @@ fn infers_safe_effort_for_newer_claude_models() {
         "anthropic/claude-opus-4-8",
         "anthropic/claude-sonnet-4-6",
         "anthropic/claude-sonnet-5",
+        "anthropic/claude-sonnet-5-5",
+        "anthropic/claude-opus-5-5",
+        "anthropic/claude-haiku-5-5",
     ] {
         assert_eq!(
             infer_thinking_policy([model]),
-            Some(ThinkingPolicy::AnthropicSafeEffort)
+            Some(ThinkingPolicy::AnthropicSafeEffort),
+            "{model}"
         );
     }
+    assert_eq!(
+        infer_thinking_policy(["anthropic/claude-haiku-4-5"]),
+        Some(ThinkingPolicy::AnthropicManualBudget)
+    );
     assert_eq!(
         infer_thinking_policy(["anthropic/claude-sonnet-50"]),
         Some(ThinkingPolicy::AnthropicManualBudget)

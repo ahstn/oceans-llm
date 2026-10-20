@@ -1,5 +1,7 @@
 use super::*;
-use crate::anthropic::{ClaudeThinkingPolicy, claude_thinking_policy};
+use crate::anthropic::{
+    ClaudeThinkingOff, ClaudeThinkingPolicy, claude_thinking_off, claude_thinking_policy,
+};
 
 pub(super) fn apply_anthropic_thinking_compatibility(
     body: &mut Map<String, Value>,
@@ -14,6 +16,21 @@ pub(super) fn apply_anthropic_thinking_compatibility(
     let policy = claude_thinking_policy(upstream_model);
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
+
+    let caller_thinking_type = body
+        .get("thinking")
+        .and_then(|thinking| thinking.get("type"))
+        .and_then(Value::as_str);
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
+    {
+        if budget_tokens.is_some() {
+            return Err(ProviderError::InvalidRequest(format!(
+                "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
+            )));
+        }
+        return apply_anthropic_thinking_off(body, effort, upstream_model);
+    }
 
     if let Some(effort) = effort {
         match policy {
@@ -64,6 +81,36 @@ pub(super) fn apply_anthropic_thinking_compatibility(
         }
     }
 
+    Ok(())
+}
+
+/// Keeps a caller's request to turn thinking off on an adaptive-only model, in the form that
+/// model accepts. Mirrors the Anthropic adapter's rules.
+fn apply_anthropic_thinking_off(
+    body: &mut Map<String, Value>,
+    effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let thinking_off = claude_thinking_off(upstream_model);
+    if thinking_off == ClaudeThinkingOff::Unsupported {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`thinking.type: disabled` is not supported for `{upstream_model}`; adaptive thinking is always enabled. Omit `thinking` and set `output_config.effort` to `low` for the least thinking, or route this request to a model that can turn thinking off"
+        )));
+    }
+    if let Some(effort) = &effort
+        && thinking_off != ClaudeThinkingOff::Disabled
+        && matches!(effort.as_str(), Some("xhigh" | "max"))
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`output_config.effort` {effort} is not supported with thinking turned off for `{upstream_model}`; use effort `high` or below, or adaptive thinking"
+        )));
+    }
+    if thinking_off == ClaudeThinkingOff::BetweenTools {
+        body.insert("thinking".to_string(), json!({ "type": "between_tools" }));
+    }
+    if let Some(effort) = effort {
+        merge_anthropic_output_effort(body, effort, upstream_model)?;
+    }
     Ok(())
 }
 

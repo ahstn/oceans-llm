@@ -28,13 +28,73 @@ pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
 pub fn is_adaptive_only_claude(model: &str) -> bool {
     is_opus_4_7_or_later(model)
         || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-opus-5")
         || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+        || contains_exact_claude_model_marker(model, "claude-haiku-5")
+}
+
+/// How a Claude model accepts a caller's request to turn thinking off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaudeThinkingOff {
+    /// `thinking.type: disabled` is accepted at every effort level.
+    Disabled,
+    /// `thinking.type: disabled` is accepted at effort `high` or below.
+    DisabledUpToHighEffort,
+    /// `disabled` is rejected; `thinking.type: between_tools` is the thinking-off setting and
+    /// is accepted at effort `high` or below.
+    BetweenTools,
+    /// Thinking is always on.
+    Unsupported,
+}
+
+/// Only documented model generations are listed; anything else keeps `disabled` and lets
+/// the upstream decide.
+#[must_use]
+pub fn claude_thinking_off(upstream_model: &str) -> ClaudeThinkingOff {
+    let model = upstream_model.to_ascii_lowercase();
+    if model.contains("claude-mythos-preview")
+        || contains_exact_claude_model_marker(&model, "claude-fable-5")
+        || claude_minor_version(&model, "claude-opus-5") == Some(5)
+    {
+        ClaudeThinkingOff::Unsupported
+    } else if claude_minor_version(&model, "claude-sonnet-5") == Some(5) {
+        ClaudeThinkingOff::BetweenTools
+    } else if claude_minor_version(&model, "claude-opus-5") == Some(0)
+        || claude_minor_version(&model, "claude-haiku-5") == Some(5)
+    {
+        ClaudeThinkingOff::DisabledUpToHighEffort
+    } else {
+        ClaudeThinkingOff::Disabled
+    }
 }
 
 pub fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
-    model.split(marker).skip(1).any(|rest| {
-        rest.chars().next().is_none_or(|ch| {
-            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
+    model
+        .split(marker)
+        .skip(1)
+        .any(|rest| rest.chars().next().is_none_or(is_model_marker_boundary))
+}
+
+fn is_model_marker_boundary(ch: char) -> bool {
+    ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']' | '-')
+}
+
+/// Minor version of the first `marker` (a `claude-<family>-<major>` id) in `model`: `0` for
+/// the bare major release, so `claude-sonnet-5-v1:0` is `0` and `claude-sonnet-5-5@001` is `5`.
+/// A segment longer than two digits is a date stamp, not a minor version.
+fn claude_minor_version(model: &str, marker: &str) -> Option<u16> {
+    model.split(marker).skip(1).find_map(|rest| {
+        if !rest.chars().next().is_none_or(is_model_marker_boundary) {
+            return None;
+        }
+        let digits = rest
+            .strip_prefix('-')
+            .and_then(|rest| rest.split(|ch: char| !ch.is_ascii_digit()).next())
+            .unwrap_or_default();
+        Some(if (1..=2).contains(&digits.len()) {
+            digits.parse().unwrap_or(0)
+        } else {
+            0
         })
     })
 }
@@ -51,7 +111,9 @@ fn is_opus_4_7_or_later(model: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClaudeThinkingPolicy::*, claude_thinking_policy};
+    use super::{
+        ClaudeThinkingOff, ClaudeThinkingPolicy::*, claude_thinking_off, claude_thinking_policy,
+    };
 
     #[test]
     fn classifies_direct_and_transport_qualified_models() {
@@ -60,6 +122,11 @@ mod tests {
             ("claude-opus-4-7", AdaptiveOnly),
             ("claude-fable-5-1", AdaptiveOnly),
             ("claude-sonnet-5", AdaptiveOnly),
+            ("claude-sonnet-5-5", AdaptiveOnly),
+            ("claude-opus-5", AdaptiveOnly),
+            ("claude-opus-5-5", AdaptiveOnly),
+            ("claude-haiku-5-5", AdaptiveOnly),
+            ("claude-haiku-4-5", ManualOnly),
             ("claude-opus-4-6", AdaptivePreferred),
             ("claude-sonnet-4-6", AdaptivePreferred),
             ("claude-opus-4-5", ManualWithEffort),
@@ -81,7 +148,12 @@ mod tests {
 
     #[test]
     fn adaptive_model_markers_require_a_suffix_boundary() {
-        for marker in ["claude-fable-5", "claude-sonnet-5"] {
+        for marker in [
+            "claude-fable-5",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-haiku-5",
+        ] {
             for suffix in [
                 "", "-1", ":0", "@latest", "/alias", ",", ")", "]", " ", "\t",
             ] {
@@ -112,6 +184,36 @@ mod tests {
             ("claude-opus-4-5/claude-sonnet-5", AdaptiveOnly),
         ] {
             assert_eq!(claude_thinking_policy(model), expected, "{model}");
+        }
+    }
+
+    #[test]
+    fn classifies_how_each_model_turns_thinking_off() {
+        for (model, expected) in [
+            ("claude-opus-4-7", ClaudeThinkingOff::Disabled),
+            ("claude-opus-4-8", ClaudeThinkingOff::Disabled),
+            ("claude-sonnet-5", ClaudeThinkingOff::Disabled),
+            ("claude-sonnet-4-6", ClaudeThinkingOff::Disabled),
+            ("claude-opus-5", ClaudeThinkingOff::DisabledUpToHighEffort),
+            (
+                "claude-haiku-5-5",
+                ClaudeThinkingOff::DisabledUpToHighEffort,
+            ),
+            ("claude-sonnet-5-5", ClaudeThinkingOff::BetweenTools),
+            ("claude-opus-5-5", ClaudeThinkingOff::Unsupported),
+            ("claude-fable-5", ClaudeThinkingOff::Unsupported),
+            ("claude-fable-5-1", ClaudeThinkingOff::Unsupported),
+            ("claude-mythos-preview", ClaudeThinkingOff::Unsupported),
+        ] {
+            for qualified in [
+                model.to_string(),
+                format!("us.anthropic.{model}-v1:0"),
+                format!("anthropic/{model}@20260101"),
+                format!("{model}-20260415"),
+                model.to_ascii_uppercase(),
+            ] {
+                assert_eq!(claude_thinking_off(&qualified), expected, "{qualified}");
+            }
         }
     }
 }

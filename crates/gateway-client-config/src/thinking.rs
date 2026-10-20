@@ -11,7 +11,8 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
     "claude-sonnet-4-6",
 ];
 
-const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
+const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] =
+    &["claude-fable-5", "claude-sonnet-5", "claude-haiku-5"];
 
 /// Infers the thinking policy from candidate identifiers, most specific first: callers pass
 /// the upstream model, then gateway model aliases, then provider metadata. The first candidate
