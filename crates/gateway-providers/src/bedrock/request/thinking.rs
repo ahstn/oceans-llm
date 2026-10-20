@@ -536,29 +536,34 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
 }
 
 /// Applies the shared thinking-off rules to `additionalModelRequestFields.thinking`. Converse
-/// carries effort inside the thinking object, so only `type` is rewritten and effort stays there.
+/// carries effort inside the thinking object, so the object is rebuilt from the resolved `type`
+/// plus any effort; other caller fields such as `display` are dropped, as on Messages routes.
 fn apply_converse_thinking_off(
     additional: &mut Map<String, Value>,
     effort: Option<Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
-    let resolved = {
-        let thinking = additional
-            .get("thinking")
-            .and_then(Value::as_object)
-            .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
-        let caller_effort = thinking.get("effort").filter(|value| !value.is_null());
-        resolve_thinking_off(thinking, effort.as_ref().or(caller_effort), upstream_model)?
-    };
-    if let Some(thinking) = additional
-        .get_mut("thinking")
-        .and_then(Value::as_object_mut)
+    let thinking = additional
+        .get("thinking")
+        .and_then(Value::as_object)
+        .ok_or(AnthropicAdapterError::InvalidThinkingObject)?;
+    let caller_effort = thinking
+        .get("effort")
+        .filter(|value| !value.is_null())
+        .cloned();
+    if let (Some(effort), Some(caller_effort)) = (&effort, &caller_effort)
+        && effort != caller_effort
     {
-        thinking.insert("type".to_string(), resolved["type"].clone());
+        return Err(ProviderError::InvalidRequest(format!(
+            "`reasoning_effort` conflicts with `additionalModelRequestFields.thinking.effort` for `{upstream_model}`"
+        )));
     }
+    let effort = effort.or(caller_effort);
+    let mut resolved = resolve_thinking_off(thinking, effort.as_ref(), upstream_model)?;
     if let Some(effort) = effort {
-        merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
+        resolved["effort"] = effort;
     }
+    additional.insert("thinking".to_string(), resolved);
     Ok(())
 }
 

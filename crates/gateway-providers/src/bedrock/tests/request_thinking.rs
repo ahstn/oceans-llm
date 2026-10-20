@@ -330,6 +330,16 @@ fn converse_applies_thinking_off_rules() {
             json!({ "type": "disabled" }),
             json!({ "type": "disabled" }),
         ),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            json!({ "type": "disabled", "display": "omitted", "budget_tokens": null }),
+            json!({ "type": "between_tools" }),
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "display": "omitted", "effort": "low" }),
+            json!({ "type": "disabled", "effort": "low" }),
+        ),
     ] {
         let body = converse_request_with_thinking(upstream_model, thinking)
             .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
