@@ -40,12 +40,13 @@ pub fn infer_thinking_policy(
 }
 
 fn classify_model_family(value: &str) -> Option<ThinkingPolicy> {
+    let claude = dash_claude_versions(value);
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
-        .any(|marker| value.contains(marker))
+        .any(|marker| claude.contains(marker))
         || SAFE_EFFORT_EXACT_MODEL_MARKERS
             .iter()
-            .any(|marker| contains_exact_model_marker(value, marker))
+            .any(|marker| contains_exact_model_marker(&claude, marker))
     {
         return Some(ThinkingPolicy::AnthropicSafeEffort);
     }
@@ -81,6 +82,22 @@ fn gemini_generation(value: &str) -> Option<(u32, u32, bool)> {
         let is_pro = segments.any(|segment| segment == "pro");
         Some((major, minor, is_pro))
     })
+}
+
+/// Rewrites dotted Claude versions such as `claude-haiku-5.5` (the OpenRouter spelling) to the
+/// dashed form the markers use. Only a dot between two digits changes; Gemini ids keep their
+/// dots because `gemini_generation` parses them.
+fn dash_claude_versions(value: &str) -> String {
+    let bytes = value.as_bytes();
+    value
+        .char_indices()
+        .map(|(index, ch)| {
+            let between_digits = index > 0
+                && bytes[index - 1].is_ascii_digit()
+                && bytes.get(index + 1).is_some_and(u8::is_ascii_digit);
+            if ch == '.' && between_digits { '-' } else { ch }
+        })
+        .collect()
 }
 
 fn contains_exact_model_marker(value: &str, marker: &str) -> bool {

@@ -131,6 +131,10 @@ pub enum AnthropicAdapterError {
         "`output_config.effort` {effort} is not supported with thinking turned off for `{model}`; use effort `high` or below, or adaptive thinking"
     )]
     DisabledThinkingEffortTooHigh { effort: String, model: String },
+    #[error(
+        "`thinking.type: between_tools` is not supported for `{model}`; only Claude Sonnet 5.5 accepts it"
+    )]
+    BetweenToolsNotSupported { model: String },
     #[error("`thinking.type: disabled` is not supported for Claude Mythos Preview")]
     MythosDisabledNotSupported,
     #[error("`thinking.type: enabled` for `{model}` must include `budget_tokens`")]

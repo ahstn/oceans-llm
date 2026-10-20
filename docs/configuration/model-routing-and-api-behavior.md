@@ -412,7 +412,7 @@ Newer Claude models accept only adaptive thinking, and each handles a request to
 | Claude Sonnet 5.5 | Rewritten to `thinking: { "type": "between_tools" }`, the model's thinking-off setting. With `xhigh` or `max`, the gateway rejects the request. Callers can also send `between_tools` directly. |
 | Claude Opus 5.5, Fable 5, Fable 5.1, Mythos Preview | Rejected. These models always think, so the gateway returns a 400 instead of running thinking the caller turned off. |
 
-With thinking off, the gateway adds no adaptive thinking and no default effort, and forwards any effort the caller set. When `thinking` is omitted, adaptive-only models still receive adaptive thinking and `output_config.effort: high` by default.
+With thinking off, the gateway adds no adaptive thinking and no default effort, and forwards any effort the caller set. Other models reject `between_tools`. On `anthropic_compat` and Vertex `anthropic/*` routes, adaptive-only models still receive adaptive thinking and `output_config.effort: high` when `thinking` is omitted. Bedrock adds adaptive thinking only when the request sets an effort.
 
 To keep Claude Code background work on a model that always thinks, point it at a model that can turn thinking off. See [Claude Code background model](client-harness-configuration.md#claude-code-background-model).
 

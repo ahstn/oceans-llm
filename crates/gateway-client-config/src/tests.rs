@@ -311,6 +311,9 @@ fn infers_safe_effort_for_newer_claude_models() {
         "anthropic/claude-sonnet-5-5",
         "anthropic/claude-opus-5-5",
         "anthropic/claude-haiku-5-5",
+        "anthropic/claude-haiku-5.5",
+        "anthropic/claude-sonnet-4.6",
+        "anthropic/claude-fable-5.1",
     ] {
         assert_eq!(
             infer_thinking_policy([model]),
@@ -318,10 +321,13 @@ fn infers_safe_effort_for_newer_claude_models() {
             "{model}"
         );
     }
-    assert_eq!(
-        infer_thinking_policy(["anthropic/claude-haiku-4-5"]),
-        Some(ThinkingPolicy::AnthropicManualBudget)
-    );
+    for model in ["anthropic/claude-haiku-4-5", "anthropic/claude-haiku-4.5"] {
+        assert_eq!(
+            infer_thinking_policy([model]),
+            Some(ThinkingPolicy::AnthropicManualBudget),
+            "{model}"
+        );
+    }
     assert_eq!(
         infer_thinking_policy(["anthropic/claude-sonnet-50"]),
         Some(ThinkingPolicy::AnthropicManualBudget)

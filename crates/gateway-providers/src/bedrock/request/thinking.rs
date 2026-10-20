@@ -20,16 +20,18 @@ pub(super) fn apply_anthropic_thinking_compatibility(
     let caller_thinking_type = body
         .get("thinking")
         .and_then(|thinking| thinking.get("type"))
-        .and_then(Value::as_str);
+        .and_then(Value::as_str)
+        .map(str::to_string);
     if policy == ClaudeThinkingPolicy::AdaptiveOnly
-        && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
+        && let Some(thinking_type @ ("disabled" | "between_tools")) =
+            caller_thinking_type.as_deref()
     {
         if budget_tokens.is_some() {
             return Err(ProviderError::InvalidRequest(format!(
                 "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
             )));
         }
-        return apply_anthropic_thinking_off(body, effort, upstream_model);
+        return apply_anthropic_thinking_off(body, thinking_type, effort, upstream_model);
     }
 
     if let Some(effort) = effort {
@@ -88,22 +90,37 @@ pub(super) fn apply_anthropic_thinking_compatibility(
 /// model accepts. Mirrors the Anthropic adapter's rules.
 fn apply_anthropic_thinking_off(
     body: &mut Map<String, Value>,
+    thinking_type: &str,
     effort: Option<Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
     let thinking_off = claude_thinking_off(upstream_model);
+    if thinking_type == "between_tools" && thinking_off != ClaudeThinkingOff::BetweenTools {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`thinking.type: between_tools` is not supported for `{upstream_model}`; only Claude Sonnet 5.5 accepts it"
+        )));
+    }
     if thinking_off == ClaudeThinkingOff::Unsupported {
         return Err(ProviderError::InvalidRequest(format!(
             "`thinking.type: disabled` is not supported for `{upstream_model}`; adaptive thinking is always enabled. Omit `thinking` and set `output_config.effort` to `low` for the least thinking, or route this request to a model that can turn thinking off"
         )));
     }
-    if let Some(effort) = &effort
-        && thinking_off != ClaudeThinkingOff::Disabled
-        && matches!(effort.as_str(), Some("xhigh" | "max"))
-    {
-        return Err(ProviderError::InvalidRequest(format!(
-            "`output_config.effort` {effort} is not supported with thinking turned off for `{upstream_model}`; use effort `high` or below, or adaptive thinking"
-        )));
+    if let Some(effort) = &effort {
+        if !matches!(
+            effort.as_str(),
+            Some("low" | "medium" | "high" | "xhigh" | "max")
+        ) {
+            return Err(ProviderError::InvalidRequest(format!(
+                "`output_config.effort` {effort} is not supported for `{upstream_model}`; supported effort levels are `low`, `medium`, `high`, `xhigh`, and `max`"
+            )));
+        }
+        if thinking_off != ClaudeThinkingOff::Disabled
+            && matches!(effort.as_str(), Some("xhigh" | "max"))
+        {
+            return Err(ProviderError::InvalidRequest(format!(
+                "`output_config.effort` {effort} is not supported with thinking turned off for `{upstream_model}`; use effort `high` or below, or adaptive thinking"
+            )));
+        }
     }
     if thinking_off == ClaudeThinkingOff::BetweenTools {
         body.insert("thinking".to_string(), json!({ "type": "between_tools" }));

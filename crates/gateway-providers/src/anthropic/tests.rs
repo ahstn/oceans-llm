@@ -429,6 +429,39 @@ fn always_on_thinking_models_reject_disabled_with_guidance() {
 }
 
 #[test]
+fn between_tools_is_rejected_outside_sonnet_5_5() {
+    for model in [
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-haiku-5-5",
+        "claude-opus-5-5",
+    ] {
+        let mut body = serde_json::Map::from_iter([(
+            "thinking".to_string(),
+            json!({ "type": "between_tools" }),
+        )]);
+        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            .expect_err("between_tools rejected");
+        assert!(
+            matches!(
+                error,
+                AnthropicAdapterError::BetweenToolsNotSupported { .. }
+            ),
+            "{model}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn dotted_sonnet_5_5_maps_disabled_thinking_to_between_tools() {
+    let mut body =
+        serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
+    apply_anthropic_thinking_compatibility(&mut body, "anthropic/claude-sonnet-5.5")
+        .expect("mapped");
+    assert_eq!(body["thinking"], json!({ "type": "between_tools" }));
+}
+
+#[test]
 fn opus_5_and_haiku_5_5_accept_adaptive_thinking_and_effort() {
     for model in ["claude-opus-5", "claude-opus-5-5", "claude-haiku-5-5"] {
         let mut body = serde_json::Map::from_iter([

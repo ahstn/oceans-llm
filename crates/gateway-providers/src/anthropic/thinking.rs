@@ -306,9 +306,12 @@ fn validate_caller_thinking_for_policy(
                 }
                 return Ok(());
             }
-            if thinking_type == Some("between_tools")
-                && claude_thinking_off(upstream_model) == ClaudeThinkingOff::BetweenTools
-            {
+            if thinking_type == Some("between_tools") {
+                if claude_thinking_off(upstream_model) != ClaudeThinkingOff::BetweenTools {
+                    return Err(AnthropicAdapterError::BetweenToolsNotSupported {
+                        model: upstream_model.to_string(),
+                    });
+                }
                 return Ok(());
             }
             if thinking_type != Some("adaptive") {

@@ -101,6 +101,16 @@ fn rejects_thinking_off_where_the_upstream_model_would() {
             Some("xhigh"),
             "effort `high` or below",
         ),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            Some("minimal"),
+            "supported effort levels",
+        ),
+        (
+            "global.anthropic.claude-opus-4-8",
+            Some("XHIGH"),
+            "supported effort levels",
+        ),
     ] {
         let mut extra = BTreeMap::from([
             ("max_tokens".to_string(), json!(1024)),
@@ -121,6 +131,36 @@ fn rejects_thinking_off_where_the_upstream_model_would() {
             .to_string();
 
         assert!(error.contains(expected), "{upstream_model}: {error}");
+    }
+}
+
+#[test]
+fn rejects_between_tools_outside_sonnet_5_5() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-4-8",
+        "global.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+        "global.anthropic.claude-opus-5-5",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("thinking".to_string(), json!({ "type": "between_tools" })),
+            ]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("between_tools rejected")
+            .to_string();
+
+        assert!(
+            error.contains("`thinking.type: between_tools` is not supported"),
+            "{upstream_model}: {error}"
+        );
     }
 }
 

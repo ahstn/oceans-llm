@@ -11,7 +11,7 @@ pub enum ClaudeThinkingPolicy {
 
 #[must_use]
 pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
-    let model = upstream_model.to_ascii_lowercase();
+    let model = normalize_claude_model(upstream_model);
     if model.contains("claude-mythos-preview") {
         ClaudeThinkingPolicy::MythosPreview
     } else if is_adaptive_only_claude(&model) {
@@ -26,11 +26,29 @@ pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
 }
 
 pub fn is_adaptive_only_claude(model: &str) -> bool {
-    is_opus_4_7_or_later(model)
-        || contains_exact_claude_model_marker(model, "claude-fable-5")
-        || contains_exact_claude_model_marker(model, "claude-opus-5")
-        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
-        || contains_exact_claude_model_marker(model, "claude-haiku-5")
+    let model = normalize_claude_model(model);
+    is_opus_4_7_or_later(&model)
+        || contains_exact_claude_model_marker(&model, "claude-fable-5")
+        || contains_exact_claude_model_marker(&model, "claude-opus-5")
+        || contains_exact_claude_model_marker(&model, "claude-sonnet-5")
+        || contains_exact_claude_model_marker(&model, "claude-haiku-5")
+}
+
+/// Lowercases `model` and rewrites dotted versions such as `claude-haiku-5.5` (the OpenRouter
+/// spelling) to Anthropic's dashed form. Only a dot between two digits changes, so prefixes
+/// like `us.anthropic.` keep theirs.
+fn normalize_claude_model(model: &str) -> String {
+    let model = model.to_ascii_lowercase();
+    let bytes = model.as_bytes();
+    model
+        .char_indices()
+        .map(|(index, ch)| {
+            let between_digits = index > 0
+                && bytes[index - 1].is_ascii_digit()
+                && bytes.get(index + 1).is_some_and(u8::is_ascii_digit);
+            if ch == '.' && between_digits { '-' } else { ch }
+        })
+        .collect()
 }
 
 /// How a Claude model accepts a caller's request to turn thinking off.
@@ -51,7 +69,7 @@ pub enum ClaudeThinkingOff {
 /// the upstream decide.
 #[must_use]
 pub fn claude_thinking_off(upstream_model: &str) -> ClaudeThinkingOff {
-    let model = upstream_model.to_ascii_lowercase();
+    let model = normalize_claude_model(upstream_model);
     if model.contains("claude-mythos-preview")
         || contains_exact_claude_model_marker(&model, "claude-fable-5")
         || claude_minor_version(&model, "claude-opus-5") == Some(5)
@@ -155,12 +173,12 @@ mod tests {
             "claude-haiku-5",
         ] {
             for suffix in [
-                "", "-1", ":0", "@latest", "/alias", ",", ")", "]", " ", "\t",
+                "", "-1", ".1", ":0", "@latest", "/alias", ",", ")", "]", " ", "\t",
             ] {
                 let model = format!("anthropic.{marker}{suffix}");
                 assert_eq!(claude_thinking_policy(&model), AdaptiveOnly, "{model}");
             }
-            for suffix in ["0", "1", "x", "_1", ".1"] {
+            for suffix in ["0", "1", "x", "_1", ".x"] {
                 let model = format!("anthropic.{marker}{suffix}");
                 assert_eq!(claude_thinking_policy(&model), ManualOnly, "{model}");
             }
@@ -184,6 +202,34 @@ mod tests {
             ("claude-opus-4-5/claude-sonnet-5", AdaptiveOnly),
         ] {
             assert_eq!(claude_thinking_policy(model), expected, "{model}");
+        }
+    }
+
+    #[test]
+    fn classifies_dotted_model_versions_like_dashed_ones() {
+        for (model, expected) in [
+            ("anthropic/claude-sonnet-4.6", AdaptivePreferred),
+            ("anthropic/claude-opus-4.7", AdaptiveOnly),
+            ("anthropic/claude-haiku-5.5", AdaptiveOnly),
+            ("anthropic/claude-haiku-4.5", ManualOnly),
+            ("us.anthropic.claude-opus-4-5-v1:0", ManualWithEffort),
+        ] {
+            assert_eq!(claude_thinking_policy(model), expected, "{model}");
+        }
+        for (model, expected) in [
+            ("anthropic/claude-opus-4.8", ClaudeThinkingOff::Disabled),
+            (
+                "anthropic/claude-haiku-5.5",
+                ClaudeThinkingOff::DisabledUpToHighEffort,
+            ),
+            (
+                "anthropic/claude-sonnet-5.5",
+                ClaudeThinkingOff::BetweenTools,
+            ),
+            ("anthropic/claude-opus-5.5", ClaudeThinkingOff::Unsupported),
+            ("anthropic/claude-fable-5.1", ClaudeThinkingOff::Unsupported),
+        ] {
+            assert_eq!(claude_thinking_off(model), expected, "{model}");
         }
     }
 
