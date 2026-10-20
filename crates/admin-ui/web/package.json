@@ -67,12 +67,12 @@
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",
-    "playwright": "1.64.0",
+    "playwright": "1.64.1",
     "postcss": "8.5.30",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vite": "npm:rolldown-vite@7.3.1",
     "vite-tsconfig-paths": "6.1.1",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }
