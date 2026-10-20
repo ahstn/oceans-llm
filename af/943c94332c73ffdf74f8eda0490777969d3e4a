@@ -1,0 +1,27 @@
+crates/gateway-client-config/src/templates/claude_code.rs
+  s_cd9d806c1e358d::t_31dff696b0075f 8-12,147,161-181,259-263
+crates/gateway-client-config/src/templates/notes.rs
+  s_cd9d806c1e358d::t_7730450d7fdd2d 10,108-118
+crates/gateway-client-config/src/tests.rs
+  s_cd9d806c1e358d::t_9922a846b7ba06 1079-1145
+crates/gateway-client-config/src/thinking.rs
+  s_cd9d806c1e358d::t_401a9a33acc403 87-99
+docs/configuration/client-harness-configuration.md
+  s_cd9d806c1e358d::t_c24091f3caf114 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af943c94332c73ffdf74f8eda0490777969d3e4a",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
