@@ -63,3 +63,10 @@ trap 'status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || tru
 curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/readyz >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
 """
+
+# Preview: reports every existing finding and is not part of `lint` or CI yet.
+# Settings live in .squawk.toml at the repository root.
+[tasks.migrations-lint]
+description = "Lint Postgres migrations for locking and compatibility risks with squawk (preview)"
+dir = "{{config_root}}"
+run = "squawk migrations/postgres/*.sql"

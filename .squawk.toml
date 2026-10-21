@@ -1,0 +1,4 @@
+# squawk lints Postgres migrations (`mise run //store:migrations-lint`).
+pg_version = "18"
+# The migration runner wraps each migration in its own transaction.
+assume_in_transaction = true

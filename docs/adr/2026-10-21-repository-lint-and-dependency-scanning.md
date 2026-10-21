@@ -35,6 +35,10 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - `mise run deps-audit` runs osv-scanner over every tracked lockfile. It lists lockfiles with `git ls-files` because the scanner's recursive walk finds nothing in a linked git worktree.
 - `mise run links-check-external` also fetches remote URLs. It stays out of CI because remote documentation sites change anchors and rate-limit requests.
 
+- Two preview checks are installed but not part of `lint` or CI:
+  - `mise run //store:migrations-lint` runs squawk over the Postgres migrations, using `.squawk.toml` for Postgres 18 and per-migration transactions. It reports 204 findings in the 58 existing migrations. Applied migrations are checksummed and cannot change, so these are informational.
+  - `mise run //helm:validate` runs kubeconform over the chart defaults and every example. CRDs validate against datreeio/CRDs-catalog pinned to a commit. All rendered resources are valid.
+
 ## Reasons and tradeoffs
 
 - Single-binary tools installed by mise keep local runs and CI identical without adding Node or Python dependencies. All of the checks in `repo-lint` finish in under a second.
@@ -44,6 +48,9 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - Duplicate crate versions are allowed in `deny.toml`. They come from upstream crates such as the AWS SDK and libsql, and 69 warnings would bury real findings.
 
 ## Follow up
+
+- Decide whether to gate squawk on new migrations only, and which rules to keep. The runner wraps each migration in a transaction, so `CREATE INDEX CONCURRENTLY` is unavailable and `require-concurrent-index-creation` cannot be satisfied without a runner change.
+- Add `//helm:validate` to `helm-ci.yml` if it stays clean.
 
 - Clear the advisory backlog, starting with zip 9 and rustls-webpki. Remove each `deny.toml` ignore as its advisory is fixed.
 - Add container image and Helm misconfiguration scanning if the threat model needs it. Trivy covers both, but pin it through aqua rather than its GitHub Action after its March 2026 compromise.

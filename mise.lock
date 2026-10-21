@@ -286,6 +286,35 @@ checksum = "sha256:a0be97e237d440d34c5e508ec21d070b2c85cbb8be48a46a56f9a4e8bd247
 url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573487203"
 
+[[tools."github:sbdchd/squawk"]]
+version = "2.69.0"
+backend = "github:sbdchd/squawk"
+
+[tools."github:sbdchd/squawk"."platforms.linux-x64"]
+checksum = "sha256:9af8b2b54135ab236389122bce6c9edc40a8db4347e77d19079f19dcceddc737"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.69.0/squawk-linux-x64"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/640531839"
+
+[tools."github:sbdchd/squawk"."platforms.linux-x64-baseline"]
+checksum = "sha256:9af8b2b54135ab236389122bce6c9edc40a8db4347e77d19079f19dcceddc737"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.69.0/squawk-linux-x64"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/640531839"
+
+[tools."github:sbdchd/squawk"."platforms.linux-x64-musl"]
+checksum = "sha256:b33f720be72d6a71580c57319288aaecd11e9efcfb68d51f8ac44dbdd0888fa0"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.69.0/squawk-linux-musl-x64"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/640537643"
+
+[tools."github:sbdchd/squawk"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:b33f720be72d6a71580c57319288aaecd11e9efcfb68d51f8ac44dbdd0888fa0"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.69.0/squawk-linux-musl-x64"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/640537643"
+
+[tools."github:sbdchd/squawk"."platforms.macos-arm64"]
+checksum = "sha256:209158e42765fb6b2aeb5afff7ddd012f7a03d6bca06f0339204af87c45b5a52"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.69.0/squawk-darwin-arm64"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/640545723"
+
 [[tools.helm]]
 version = "4.2.4"
 backend = "aqua:helm/helm"
@@ -309,6 +338,35 @@ url = "https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz"
 [tools.helm."platforms.macos-arm64"]
 checksum = "sha256:d747eb4e28bd2727173d15b759fa0a17822291ec09db7ced3d55af290a3661a2"
 url = "https://get.helm.sh/helm-v4.2.4-darwin-arm64.tar.gz"
+
+[[tools.kubeconform]]
+version = "0.8.0"
+backend = "aqua:yannh/kubeconform"
+
+[tools.kubeconform."platforms.linux-x64"]
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612666"
+
+[tools.kubeconform."platforms.linux-x64-baseline"]
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612666"
+
+[tools.kubeconform."platforms.linux-x64-musl"]
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612666"
+
+[tools.kubeconform."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612666"
+
+[tools.kubeconform."platforms.macos-arm64"]
+checksum = "sha256:f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612680"
 
 [[tools.lychee]]
 version = "0.24.2"
