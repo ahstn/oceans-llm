@@ -28,12 +28,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The first parent is the base: the PR merge commit's target, or main's
+          # previous commit on push. The migration check diffs against it.
+          fetch-depth: 2
           persist-credentials: false
 
       - name: Setup mise and repository lint tools
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          install_args: zizmor taplo lychee editorconfig-checker typos
+          install_args: zizmor taplo lychee editorconfig-checker typos github:sbdchd/squawk
 
       - name: Check TOML
         run: mise run toml-check
@@ -43,6 +46,11 @@ jobs:
 
       - name: Check spelling
         run: mise run typos
+
+      - name: Lint new Postgres migrations
+        env:
+          MIGRATIONS_BASE: HEAD^1
+        run: mise run //store:migrations-lint-new
 
       - name: Check local links
         run: mise run links-check

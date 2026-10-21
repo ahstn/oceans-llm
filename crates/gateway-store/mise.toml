@@ -64,9 +64,25 @@ curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors 
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
 """
 
-# Preview: reports every existing finding and is not part of `lint` or CI yet.
-# Settings live in .squawk.toml at the repository root.
+# Applied migrations are checksummed and cannot change, so CI lints only the
+# migrations a change adds. Settings live in .squawk.toml at the repository root.
 [tasks.migrations-lint]
-description = "Lint Postgres migrations for locking and compatibility risks with squawk (preview)"
+description = "Lint every Postgres migration with squawk, including applied ones"
 dir = "{{config_root}}"
 run = "squawk migrations/postgres/*.sql"
+
+[tasks.migrations-lint-new]
+description = "Lint Postgres migrations added since MIGRATIONS_BASE (default: merge base with origin/main) with squawk"
+dir = "{{config_root}}"
+run = """
+base="${MIGRATIONS_BASE:-$(git merge-base origin/main HEAD)}"
+added="$({
+  git diff --relative --diff-filter=A --name-only "$base" -- 'migrations/postgres/*.sql'
+  git ls-files --others --exclude-standard -- 'migrations/postgres/*.sql'
+} | sort -u)"
+if [ -z "$added" ]; then
+  echo "No new Postgres migrations since $base."
+  exit 0
+fi
+echo "$added" | xargs squawk
+"""

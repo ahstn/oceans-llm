@@ -37,10 +37,10 @@ for values in oceans-llm/examples/*.yaml; do
 done
 """
 
-# Preview: not part of `check` or CI yet. CRDs (CloudNativePG, External Secrets)
-# validate against datreeio/CRDs-catalog, pinned to a commit.
+# Runs in helm-ci.yml. CRDs (CloudNativePG, External Secrets) validate against
+# datreeio/CRDs-catalog, pinned to a commit.
 [tasks.validate]
-description = "Validate rendered manifests for the defaults and every example against Kubernetes schemas (preview)"
+description = "Validate rendered manifests for the defaults and every example against Kubernetes schemas"
 depends = ["deps"]
 run = """
 crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/501527ab9c40c827144c8f45945b25a023e344ce/{{ "{{" }}.Group}}/{{ "{{" }}.ResourceKind}}_{{ "{{" }}.ResourceAPIVersion}}.json'

@@ -30,12 +30,13 @@ This page is the maintainer checklist for adding migrations after the active `V1
 2. Add matching files under both migration directories.
 3. Keep names descriptive, for example `V18__route_compatibility_profiles.sql`.
 4. Update the migration registry if the runner requires an explicit include.
-5. Add or update store tests for new constraints, indexes, and repository behavior.
-6. Run the libsql/SQLite path locally.
-7. Run the PostgreSQL path locally.
-8. Update data-model docs when the entity graph changes.
-9. Update admin/user docs when the migration changes visible behavior.
-10. Add or update an ADR when the schema change reflects an architectural decision.
+5. Start the PostgreSQL migration with `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout`, and resolve any other squawk findings (see below).
+6. Add or update store tests for new constraints, indexes, and repository behavior.
+7. Run the libsql/SQLite path locally.
+8. Run the PostgreSQL path locally.
+9. Update data-model docs when the entity graph changes.
+10. Update admin/user docs when the migration changes visible behavior.
+11. Add or update an ADR when the schema change reflects an architectural decision.
 
 ## Local Validation
 
@@ -48,6 +49,14 @@ mise run //gateway:prod:migrate
 mise run //crates/gateway-store:test:postgres
 mise run //crates/gateway-store:smoke:postgres
 ```
+
+CI runs squawk on PostgreSQL migrations that a pull request adds. Run the same check locally:
+
+```bash
+mise run //store:migrations-lint-new
+```
+
+`.squawk.toml` sets Postgres 18 and assumes each migration runs in its own transaction, as the runner does. `CREATE INDEX CONCURRENTLY` is unavailable for the same reason, so the concurrent-index rules are disabled. `SET LOCAL` keeps the timeouts scoped to the migration's transaction. Applied migrations are checksummed and must not change, so findings in them are not fixed.
 
 For full pre-handoff validation, use:
 

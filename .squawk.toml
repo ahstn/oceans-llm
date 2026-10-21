@@ -1,4 +1,8 @@
-# squawk lints Postgres migrations (`mise run //store:migrations-lint`).
+# squawk lints Postgres migrations. CI runs it on migrations a pull request adds
+# (`mise run //store:migrations-lint-new`); `//store:migrations-lint` checks all.
 pg_version = "18"
 # The migration runner wraps each migration in its own transaction.
 assume_in_transaction = true
+# CREATE/DROP INDEX CONCURRENTLY cannot run inside a transaction, so these rules
+# cannot be satisfied without changing the runner.
+excluded_rules = ["require-concurrent-index-creation", "require-concurrent-index-deletion"]

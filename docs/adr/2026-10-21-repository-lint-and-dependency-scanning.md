@@ -11,7 +11,7 @@ The first runs of the new tools found 14 broken documentation links and anchors,
 
 ## Decision
 
-Add seven single-binary tools through mise, pinned in `mise.lock`:
+Add nine single-binary tools through mise, pinned in `mise.lock`:
 
 - zizmor audits GitHub Actions workflows and Dependabot config.
 - taplo formats and validates TOML.
@@ -20,6 +20,8 @@ Add seven single-binary tools through mise, pinned in `mise.lock`:
 - typos checks spelling.
 - cargo-deny checks Rust advisories, licenses, and sources.
 - osv-scanner checks every lockfile against OSV.
+- squawk lints new Postgres migrations.
+- kubeconform validates rendered Helm manifests.
 
 Dependency scanning gates new vulnerabilities, not the existing backlog. Pull requests fail when they introduce an advisory. The backlog is reported to code scanning weekly and is cleared by dependency upgrades.
 
@@ -35,9 +37,8 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - `mise run deps-audit` runs osv-scanner over every tracked lockfile. It lists lockfiles with `git ls-files` because the scanner's recursive walk finds nothing in a linked git worktree.
 - `mise run links-check-external` also fetches remote URLs. It stays out of CI because remote documentation sites change anchors and rate-limit requests.
 
-- Two preview checks are installed but not part of `lint` or CI:
-  - `mise run //store:migrations-lint` runs squawk over the Postgres migrations, using `.squawk.toml` for Postgres 18 and per-migration transactions. It reports 204 findings in the 58 existing migrations. Applied migrations are checksummed and cannot change, so these are informational.
-  - `mise run //helm:validate` runs kubeconform over the chart defaults and every example. CRDs validate against datreeio/CRDs-catalog pinned to a commit. All rendered resources are valid.
+- squawk lints Postgres migrations. `repo-lint.yml` runs `mise run //store:migrations-lint-new`, which checks only migrations added since the base commit, because applied migrations are checksummed and cannot change. `.squawk.toml` sets Postgres 18, assumes one transaction per migration, and disables the concurrent-index rules that a transaction makes impossible. New migrations must set `SET LOCAL lock_timeout` and `statement_timeout`. `mise run //store:migrations-lint` reports all 174 findings in the 58 existing migrations.
+- kubeconform validates the chart. `helm-ci.yml` runs `mise run //helm:validate` over the defaults and every example. CRDs validate against datreeio/CRDs-catalog pinned to a commit.
 
 ## Reasons and tradeoffs
 
@@ -49,8 +50,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 
 ## Follow up
 
-- Decide whether to gate squawk on new migrations only, and which rules to keep. The runner wraps each migration in a transaction, so `CREATE INDEX CONCURRENTLY` is unavailable and `require-concurrent-index-creation` cannot be satisfied without a runner change.
-- Add `//helm:validate` to `helm-ci.yml` if it stays clean.
+- Supporting `CREATE INDEX CONCURRENTLY` would need a non-transactional migration mode in the runner. Re-enable the concurrent-index rules if that lands.
 
 - Clear the advisory backlog, starting with zip 9 and rustls-webpki. Remove each `deny.toml` ignore as its advisory is fixed.
 - Add container image and Helm misconfiguration scanning if the threat model needs it. Trivy covers both, but pin it through aqua rather than its GitHub Action after its March 2026 compromise.
