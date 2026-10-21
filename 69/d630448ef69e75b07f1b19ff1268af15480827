@@ -1,0 +1,97 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_3909cf4958a3af::t_fdcffb915a45ee 47,72
+.editorconfig
+  s_3909cf4958a3af::t_dab58c185670de 2
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_636fd6b6f8ac80 31-34,37-47,51,63-66
+.pre-commit-config.yaml
+  s_3909cf4958a3af::t_0759c19438b9fb 47-51
+.squawk.toml
+  s_3909cf4958a3af::t_5ef0eb07e6a169 1
+Cargo.toml
+  s_3909cf4958a3af::t_62d0f34acf5372 1-2
+_typos.toml
+  s_3909cf4958a3af::t_22d9e891524bba 1,4
+actions/review-agent/mise.toml
+  s_3909cf4958a3af::t_298eb96f1a16dd 1
+cliff.toml
+  s_3909cf4958a3af::t_072b79d5c94920 1-2
+crates/admin-ui/Cargo.toml
+  s_3909cf4958a3af::t_9c33e84a1adc97 1-2
+crates/admin-ui/web/mise.toml
+  s_3909cf4958a3af::t_06b1d15f0b8937 1
+crates/agent-session-analysis/Cargo.toml
+  s_3909cf4958a3af::t_7abfdc94507602 1-2
+crates/gateway-client-config/Cargo.toml
+  s_3909cf4958a3af::t_7f1ebf4e4b5b46 1-2
+crates/gateway-client-ip/Cargo.toml
+  s_3909cf4958a3af::t_cc4e2f5e49cfdc 1-2
+crates/gateway-core/Cargo.toml
+  s_3909cf4958a3af::t_4215f8350b99e9 1-2
+crates/gateway-guardrails/Cargo.toml
+  s_3909cf4958a3af::t_c874f0fa8d200d 1-2
+crates/gateway-mcp/Cargo.toml
+  s_3909cf4958a3af::t_40de4f561346da 1-2
+crates/gateway-providers/Cargo.toml
+  s_3909cf4958a3af::t_82a5f2560b47ec 1-2
+crates/gateway-service/Cargo.toml
+  s_3909cf4958a3af::t_897190afa994f5 1-2
+crates/gateway-skills/Cargo.toml
+  s_3909cf4958a3af::t_934951aee80d0f 1-2
+crates/gateway-store/Cargo.toml
+  s_3909cf4958a3af::t_8dd96101b68002 1-2
+crates/gateway-store/mise.toml
+  s_3909cf4958a3af::t_3150efe54cc9fe 1,76,79
+crates/gateway/Cargo.toml
+  s_3909cf4958a3af::t_c1804a0685c99b 1-2
+crates/gateway/mise.toml
+  s_3909cf4958a3af::t_b4dbcd04ecde87 1
+crates/oceans-cli/Cargo.toml
+  s_3909cf4958a3af::t_2274184719717e 1-2
+crates/oceans-cli/mise.toml
+  s_3909cf4958a3af::t_c057e1398bbb61 1
+deny.toml
+  s_3909cf4958a3af::t_05f4be4d1b5f27 1
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_a5eb6f493001da 1
+dist-workspace.toml
+  s_3909cf4958a3af::t_71efc522e5bc97 1
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_e25bd3b4a72bf6 14,17,21,31-33,50
+docs/mise.toml
+  s_3909cf4958a3af::t_6a647a0a1c1c52 1-2
+lychee.toml
+  s_3909cf4958a3af::t_c67851e3bc6030 1,5
+mise.lock
+  s_3909cf4958a3af::t_7c07fe5dd9432e 318-346,575-607
+mise.rustfs.toml
+  s_3909cf4958a3af::t_1e937cf916d375 1,4
+mise.selfhost-rustfs.toml
+  s_3909cf4958a3af::t_9713f039785478 1
+mise.selfhost.toml
+  s_3909cf4958a3af::t_c3af0e854230d1 1,9
+mise.toml
+  s_3909cf4958a3af::t_e6a631f083e522 5-6,52,58,150,153,156,158-159,182-202,204-212
+rust-analyzer.toml
+  s_3909cf4958a3af::t_07827bd9833109 1
+tests/harness-integration/mise.toml
+  s_3909cf4958a3af::t_357d8e12a19bde 1
+tombi.toml
+  s_3909cf4958a3af::t_f4fefedbbcdf4c 1-3,5-10,12-18,20-23,25,27-29,31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69d630448ef69e75b07f1b19ff1268af15480827",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
