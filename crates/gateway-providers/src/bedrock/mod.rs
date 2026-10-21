@@ -287,11 +287,19 @@ impl BedrockProvider {
         let api_style = self.api_style(context)?;
         let input = match api_style {
             AwsBedrockApiStyle::RuntimeAnthropicInvoke => {
-                let body = map_chat_request_to_anthropic_messages(
+                let mut body = map_chat_request_to_anthropic_messages(
                     request,
                     context,
                     AnthropicMessagesTarget::RuntimeInvoke,
                 )?;
+                let betas = crate::anthropic::beta::take_request_betas(
+                    &mut body,
+                    context,
+                    &self.config.default_headers,
+                )?;
+                if let Some(object) = body.as_object_mut() {
+                    crate::anthropic::beta::put_body_betas(object, betas);
+                }
                 let body = serde_json::to_vec(&body).map_err(|error| {
                     ProviderError::InvalidRequest(format!(
                         "failed to serialize aws_bedrock request: {error}"
@@ -440,12 +448,31 @@ impl BedrockProvider {
     async fn build_json_request(
         &self,
         url: String,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
         accept: &'static str,
         extra_headers: Vec<(&'static str, &'static str)>,
         api_style: AwsBedrockApiStyle,
     ) -> Result<reqwest::Request, ProviderError> {
+        let anthropic = matches!(
+            api_style,
+            AwsBedrockApiStyle::RuntimeAnthropicInvoke
+                | AwsBedrockApiStyle::MantleAnthropicMessages
+        );
+        let mut betas = Vec::new();
+        // CountTokens already contains the merged betas in its base64-encoded InvokeModel body.
+        if anthropic && !url.ends_with("/count-tokens") {
+            betas = crate::anthropic::beta::take_request_betas(
+                &mut body,
+                context,
+                &self.config.default_headers,
+            )?;
+            if api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke
+                && let Some(object) = body.as_object_mut()
+            {
+                crate::anthropic::beta::put_body_betas(object, std::mem::take(&mut betas));
+            }
+        }
         let body = serde_json::to_vec(&body).map_err(|error| {
             ProviderError::InvalidRequest(format!(
                 "failed to serialize aws_bedrock request: {error}"
@@ -456,13 +483,23 @@ impl BedrockProvider {
         request = request.header("accept", accept);
 
         for (name, value) in &self.config.default_headers {
+            if anthropic && name.eq_ignore_ascii_case("anthropic-beta") {
+                continue;
+            }
             request = request.header(name, value);
         }
 
         for (name, value) in &context.extra_headers {
+            if anthropic && name.eq_ignore_ascii_case("anthropic-beta") {
+                continue;
+            }
             if let Some(value) = value.as_str() {
                 request = request.header(name, value);
             }
+        }
+
+        if !betas.is_empty() {
+            request = request.header("anthropic-beta", betas.join(","));
         }
 
         request = request.header("x-request-id", &context.request_id);

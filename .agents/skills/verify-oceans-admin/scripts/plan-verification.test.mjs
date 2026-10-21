@@ -58,3 +58,49 @@ test('every admin UI route file is routed to a feature', () => {
   const plan = planFor(routes, routing)
   assert.deepEqual(plan.unmapped, [], 'add these routes to features/routing.json')
 })
+
+test('Messages production boundaries select the dedicated compatibility recipe', () => {
+  for (const file of [
+    'crates/gateway/src/http/mod.rs',
+    'crates/gateway/src/http/handlers.rs',
+    'crates/gateway/src/http/anthropic_stream.rs',
+    'crates/gateway/src/http/request_body/mod.rs',
+    'crates/gateway/src/http/handlers/auth.rs',
+    'crates/gateway-core/src/protocol/anthropic.rs',
+    'crates/gateway-core/src/protocol/translate.rs',
+    'crates/gateway-core/src/claude_models.rs',
+    'crates/gateway-core/src/domain.rs',
+    'crates/gateway-providers/src/anthropic/thinking.rs',
+    'crates/gateway-providers/src/anthropic_compat.rs',
+    'crates/gateway-providers/src/vertex/anthropic.rs',
+    'crates/gateway-providers/src/bedrock/request/thinking.rs',
+    'crates/gateway-providers/src/bedrock/response.rs',
+    'crates/gateway-providers/src/copilot/mod.rs',
+    'crates/gateway-providers/src/openai_compat/anthropic_messages.rs',
+    '.agents/skills/verify-oceans-admin/scripts/check-messages.mjs',
+  ]) {
+    const feature = planFor([file], routing).proofs.find((proof) => proof.id === 'anthropic-messages')
+    assert.ok(feature, file)
+    assert.equal(feature.file, 'anthropic-messages.md')
+    assert.deepEqual(feature.proof, { manual: true })
+    assert.equal(feature.paid, true)
+  }
+})
+
+test('Messages routing preserves separate live/log coverage and skips unrelated paths', () => {
+  for (const file of ['crates/gateway-core/src/protocol/anthropic.rs', 'crates/gateway-core/src/domain.rs']) {
+    const shared = planFor([file], routing)
+    for (const id of ['anthropic-messages', 'live-llm-requests', 'request-logs']) {
+      assert.ok(shared.proofs.some((proof) => proof.id === id), `${file}: ${id}`)
+    }
+  }
+  const unrelated = planFor([
+    'crates/gateway-providers/src/anthropic/request_tests.rs',
+    'crates/gateway-providers/src/vertex/tests/anthropic_messages.rs',
+    '.agents/skills/verify-oceans-admin/features/anthropic-messages.md',
+    'crates/gateway-providers/src/vertex/gemini.rs',
+    'crates/gateway/src/http/handlers/embeddings.rs',
+  ], routing)
+  assert.ok(!unrelated.proofs.some((proof) => proof.id === 'anthropic-messages'))
+  assert.equal(unrelated.skipped.length, 3)
+})

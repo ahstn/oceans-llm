@@ -4,6 +4,7 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeThinkingPolicy {
+    /// Manual thinking budgets are unsupported; defaults and thinking-off rules vary by model.
     AdaptiveOnly,
     AdaptivePreferred,
     ManualWithEffort,

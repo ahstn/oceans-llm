@@ -5,7 +5,65 @@ use crate::anthropic::{
     thinking::{resolve_thinking_off, validate_adaptive_effort},
 };
 
-pub(super) fn apply_anthropic_thinking_compatibility(
+pub(super) fn apply_messages_thinking(
+    body: &mut Map<String, Value>,
+    extra: &mut BTreeMap<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    // Bedrock historically accepts an effort-only OpenAI alias on Opus 4.5.
+    // Keep that extension explicit here without applying Chat Completions defaults.
+    if claude_thinking_policy(upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
+        && let Some(effort) = extract_anthropic_reasoning_effort(extra)?
+    {
+        return apply_messages_manual_effort_alias(body, extra, effort, upstream_model);
+    }
+    for field in [
+        "reasoning",
+        "reasoning_effort",
+        "thinking_budget_tokens",
+        "reasoning_budget_tokens",
+    ] {
+        if let Some(value) = extra.remove(field) {
+            body.insert(field.to_string(), value);
+        }
+    }
+    crate::anthropic::apply_messages_thinking(body, upstream_model)?;
+    if claude_thinking_policy(upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
+        && body
+            .get("output_config")
+            .and_then(|config| config.get("effort"))
+            .is_some_and(|effort| !effort.is_null())
+    {
+        ensure_anthropic_beta(body, "effort-2025-11-24")?;
+    }
+    Ok(())
+}
+
+fn apply_messages_manual_effort_alias(
+    body: &mut Map<String, Value>,
+    extra: &mut BTreeMap<String, Value>,
+    effort: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let native_effort = extract_existing_anthropic_output_effort(body)?;
+    let effort = merge_optional_efforts(Some(effort), native_effort, upstream_model)?
+        .expect("the caller supplied a reasoning effort");
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra)?;
+    validate_caller_thinking_for_policy(
+        body,
+        ClaudeThinkingPolicy::ManualWithEffort,
+        upstream_model,
+    )?;
+    if let Some(budget_tokens) = budget_tokens.or_else(|| existing_manual_thinking_budget(body)) {
+        ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+    }
+    merge_anthropic_output_effort(body, effort, upstream_model)?;
+    ensure_anthropic_beta(body, "effort-2025-11-24")?;
+    Ok(())
+}
+
+/// Bedrock's Chat Completions contract enables adaptive thinking only when effort is set.
+pub(super) fn apply_chat_completions_thinking(
     body: &mut Map<String, Value>,
     extra: &mut BTreeMap<String, Value>,
     upstream_model: &str,
@@ -14,11 +72,16 @@ pub(super) fn apply_anthropic_thinking_compatibility(
     let native_effort = extract_existing_anthropic_output_effort(body)?;
     let has_native_effort = native_effort.is_some();
     let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
-    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra)?;
     let policy = claude_thinking_policy(upstream_model);
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly && budget_tokens.is_some() {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
+        )));
+    }
     let caller_thinking_type = body
         .get("thinking")
         .and_then(|thinking| thinking.get("type"))
@@ -26,11 +89,6 @@ pub(super) fn apply_anthropic_thinking_compatibility(
     if policy == ClaudeThinkingPolicy::AdaptiveOnly
         && matches!(caller_thinking_type, Some("disabled" | "between_tools"))
     {
-        if budget_tokens.is_some() {
-            return Err(ProviderError::InvalidRequest(format!(
-                "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
-            )));
-        }
         return apply_anthropic_thinking_off(body, effort, upstream_model);
     }
 
@@ -196,15 +254,20 @@ pub(super) fn merge_optional_efforts(
 /// A null budget counts as absent, as on the Anthropic adapter.
 pub(super) fn extract_anthropic_reasoning_budget_tokens(
     extra: &mut BTreeMap<String, Value>,
-) -> Option<Value> {
-    for key in ["thinking_budget_tokens", "reasoning_budget_tokens"] {
-        if let Some(value) = extra.remove(key)
-            && !value.is_null()
-        {
-            return Some(value);
-        }
+) -> Result<Option<Value>, ProviderError> {
+    let thinking_budget = extra
+        .remove("thinking_budget_tokens")
+        .filter(|value| !value.is_null());
+    let reasoning_budget = extra
+        .remove("reasoning_budget_tokens")
+        .filter(|value| !value.is_null());
+    match (thinking_budget, reasoning_budget) {
+        (Some(left), Some(right)) if left != right => Err(ProviderError::InvalidRequest(
+            "`thinking_budget_tokens` conflicts with `reasoning_budget_tokens` for Anthropic mapping".to_string(),
+        )),
+        (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
     }
-    None
 }
 
 pub(super) fn validate_caller_thinking_for_policy(
@@ -416,7 +479,7 @@ pub(super) fn apply_converse_anthropic_thinking_compatibility(
     }
 
     let effort = extract_anthropic_reasoning_effort(extra)?;
-    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra)?;
     let policy = claude_thinking_policy(upstream_model);
     move_converse_thinking_effort(body, upstream_model)?;
 

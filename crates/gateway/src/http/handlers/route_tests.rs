@@ -118,6 +118,10 @@ impl ProviderClient for RecordingProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         self.record("count_tokens");
+        assert_eq!(
+            context.chat_protocol,
+            gateway_core::ChatRequestProtocol::AnthropicMessages
+        );
         if !self.counts_tokens {
             return Err(ProviderError::NotImplemented(
                 "openai_compat does not support token counting".to_string(),

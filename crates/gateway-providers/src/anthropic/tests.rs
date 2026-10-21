@@ -12,7 +12,7 @@ use super::error::AnthropicAdapterError;
 use super::request::{AnthropicRequestOptions, map_anthropic_request};
 use super::response::{map_anthropic_finish_reason, normalize_anthropic_response};
 use super::streaming::normalize_anthropic_stream;
-use super::thinking::{apply_anthropic_thinking_compatibility, validate_anthropic_tool_choice};
+use super::thinking::{apply_chat_completions_thinking, validate_anthropic_tool_choice};
 use crate::anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
@@ -25,6 +25,7 @@ fn test_context(upstream_model: &str) -> ProviderRequestContext {
         upstream_model: upstream_model.to_string(),
         owner_user_id: None,
         expected_provider_credential_id: None,
+        chat_protocol: Default::default(),
         extra_headers: serde_json::Map::new(),
         extra_body: serde_json::Map::new(),
         request_headers: BTreeMap::new(),
@@ -218,7 +219,7 @@ fn builds_request_with_bearer_auth_and_custom_version() {
 }
 
 #[test]
-fn fable_5_1_defaults_to_adaptive_thinking_with_high_effort() {
+fn chat_completions_defaults_fable_5_1_to_adaptive_high() {
     let request = CoreChatRequest {
         model: "claude-fable-5-1".to_string(),
         messages: vec![CoreChatMessage {
@@ -236,8 +237,8 @@ fn fable_5_1_defaults_to_adaptive_thinking_with_high_effort() {
     let body = map_anthropic_request(&request, &context, false, &options).expect("mapped");
 
     assert_eq!(body["model"], "claude-fable-5-1");
-    assert_eq!(body["thinking"], json!({ "type": "adaptive" }));
-    assert_eq!(body["output_config"], json!({ "effort": "high" }));
+    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
+    assert_eq!(body["output_config"], json!({"effort": "high"}));
 }
 
 #[test]
@@ -369,7 +370,7 @@ fn adaptive_only_models_keep_thinking_off_in_the_form_each_accepts() {
             body.insert("reasoning_effort".to_string(), json!(effort));
         }
 
-        apply_anthropic_thinking_compatibility(&mut body, model)
+        apply_chat_completions_thinking(&mut body, model)
             .unwrap_or_else(|error| panic!("{model} {thinking}: {error}"));
 
         assert_eq!(
@@ -393,7 +394,7 @@ fn thinking_off_rejects_effort_above_high_where_upstream_does() {
                 ("thinking".to_string(), json!({ "type": "disabled" })),
                 ("output_config".to_string(), json!({ "effort": effort })),
             ]);
-            let error = apply_anthropic_thinking_compatibility(&mut body, model)
+            let error = apply_chat_completions_thinking(&mut body, model)
                 .expect_err("effort above high with thinking off");
             assert!(
                 matches!(
@@ -411,7 +412,7 @@ fn always_on_thinking_models_reject_disabled_with_guidance() {
     for model in ["claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"] {
         let mut body =
             serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
-        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+        let error = apply_chat_completions_thinking(&mut body, model)
             .expect_err("thinking cannot be turned off");
         assert!(
             matches!(
@@ -443,8 +444,8 @@ fn between_tools_is_rejected_outside_sonnet_5_5() {
             "thinking".to_string(),
             json!({ "type": "between_tools" }),
         )]);
-        let error = apply_anthropic_thinking_compatibility(&mut body, model)
-            .expect_err("between_tools rejected");
+        let error =
+            apply_chat_completions_thinking(&mut body, model).expect_err("between_tools rejected");
         assert!(
             matches!(
                 error,
@@ -470,7 +471,7 @@ fn thinking_off_sends_only_the_type_and_rejects_budgets() {
         ),
     ] {
         let mut body = serde_json::Map::from_iter([("thinking".to_string(), thinking)]);
-        apply_anthropic_thinking_compatibility(&mut body, model)
+        apply_chat_completions_thinking(&mut body, model)
             .unwrap_or_else(|error| panic!("{model}: {error}"));
         assert_eq!(body["thinking"], json!({ "type": expected }), "{model}");
     }
@@ -480,7 +481,7 @@ fn thinking_off_sends_only_the_type_and_rejects_budgets() {
             "thinking".to_string(),
             json!({ "type": "disabled", "budget_tokens": 1024 }),
         )]);
-        let error = apply_anthropic_thinking_compatibility(&mut body, model)
+        let error = apply_chat_completions_thinking(&mut body, model)
             .expect_err("budget with thinking off");
         assert!(
             matches!(
@@ -510,8 +511,7 @@ fn dotted_fable_5_1_rejects_forced_tool_choice() {
 fn dotted_sonnet_5_5_maps_disabled_thinking_to_between_tools() {
     let mut body =
         serde_json::Map::from_iter([("thinking".to_string(), json!({ "type": "disabled" }))]);
-    apply_anthropic_thinking_compatibility(&mut body, "anthropic/claude-sonnet-5.5")
-        .expect("mapped");
+    apply_chat_completions_thinking(&mut body, "anthropic/claude-sonnet-5.5").expect("mapped");
     assert_eq!(body["thinking"], json!({ "type": "between_tools" }));
 }
 
@@ -522,7 +522,7 @@ fn opus_5_and_haiku_5_5_accept_adaptive_thinking_and_effort() {
             ("thinking".to_string(), json!({ "type": "adaptive" })),
             ("reasoning_effort".to_string(), json!("low")),
         ]);
-        apply_anthropic_thinking_compatibility(&mut body, model)
+        apply_chat_completions_thinking(&mut body, model)
             .unwrap_or_else(|error| panic!("{model}: {error}"));
         assert_eq!(body["thinking"], json!({ "type": "adaptive" }), "{model}");
         assert_eq!(body["output_config"], json!({ "effort": "low" }), "{model}");
@@ -1080,14 +1080,11 @@ fn fable_adaptive_thinking_rejects_budget_tokens_in_adaptive_object() {
         json!({"type": "adaptive", "budget_tokens": 10000}),
     )]);
 
-    let error = apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+    let error = apply_chat_completions_thinking(&mut body, "claude-fable-5-1")
         .expect_err("should reject manual budget for adaptive only");
     assert!(
-        matches!(
-            error,
-            AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { .. }
-        ),
-        "expected AdaptiveOnlyBudgetNotSupported, got {error:?}"
+        matches!(error, AnthropicAdapterError::ThinkingBudgetNotSupported),
+        "expected ThinkingBudgetNotSupported, got {error:?}"
     );
 }
 
@@ -1098,7 +1095,7 @@ fn fable_adaptive_thinking_rejects_unsupported_effort_levels() {
             "output_config".to_string(),
             json!({"effort": invalid_effort}),
         )]);
-        let error = apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+        let error = apply_chat_completions_thinking(&mut body, "claude-fable-5-1")
             .expect_err("should reject invalid effort");
         assert!(
             matches!(
@@ -1114,7 +1111,7 @@ fn fable_adaptive_thinking_rejects_unsupported_effort_levels() {
             "output_config".to_string(),
             json!({"effort": valid_effort}),
         )]);
-        apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
+        apply_chat_completions_thinking(&mut body, "claude-fable-5-1")
             .expect("valid effort should succeed");
         assert_eq!(body["output_config"]["effort"], valid_effort);
     }

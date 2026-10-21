@@ -125,10 +125,22 @@ impl VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let request = self.client.post(endpoint).bearer_auth(token).json(body);
-        self.apply_request_headers(request, context)
-            .build()
-            .map_err(map_reqwest_error)
+        let mut body = body.clone();
+        let betas = if context.upstream_model.starts_with("anthropic/") {
+            crate::anthropic::beta::take_request_betas(
+                &mut body,
+                context,
+                &self.config.default_headers,
+            )?
+        } else {
+            Vec::new()
+        };
+        let request = self.client.post(endpoint).bearer_auth(token).json(&body);
+        let mut request = self.apply_request_headers(request, context);
+        if !betas.is_empty() {
+            request = request.header("anthropic-beta", betas.join(","));
+        }
+        request.build().map_err(map_reqwest_error)
     }
 
     fn apply_request_headers(
@@ -138,9 +150,19 @@ impl VertexProvider {
     ) -> reqwest::RequestBuilder {
         request = request.header("x-request-id", &context.request_id);
         for (name, value) in &self.config.default_headers {
+            if context.upstream_model.starts_with("anthropic/")
+                && name.eq_ignore_ascii_case("anthropic-beta")
+            {
+                continue;
+            }
             request = request.header(name, value);
         }
         for (name, value) in &context.extra_headers {
+            if context.upstream_model.starts_with("anthropic/")
+                && name.eq_ignore_ascii_case("anthropic-beta")
+            {
+                continue;
+            }
             if let Some(value) = value.as_str() {
                 request = request.header(name, value);
             }

@@ -205,6 +205,7 @@ async fn count_tokens_inner(
         &auth,
         request_headers,
     );
+    context.chat_protocol = gateway_core::ChatRequestProtocol::AnthropicMessages;
     context.expected_provider_credential_id = expected_provider_credential_id;
     let span = provider_operation_span(
         &request_id,
