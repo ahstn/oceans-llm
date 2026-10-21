@@ -42,6 +42,11 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - squawk lints Postgres migrations. `repo-lint.yml` runs `mise run //store:migrations-lint-changed`, which checks only migrations added or edited since the base commit, because older migrations predate squawk. `.squawk.toml` sets Postgres 18, assumes one transaction per migration, and disables the concurrent-index rules that a transaction makes impossible. New migrations must set `SET LOCAL lock_timeout` and `statement_timeout`. `mise run //store:migrations-lint` reports all 174 findings in the 58 existing migrations.
 - kubeconform validates the chart. `mise run //helm:template`, which `//helm:check` runs in `helm-ci.yml` and `release-product.yml`, renders the defaults and every example once and validates each render. Helm and kubeconform both target Kubernetes 1.35.9, the oldest minor still supported upstream. CRDs validate against datreeio/CRDs-catalog pinned to a commit.
 
+- Cargo settings changed alongside these checks, after a survey of uv, ruff, oxc, zed, ripgrep, tokio, bevy, rust-analyzer, mise, and oh-my-pi:
+  - `CARGO_TARGET_DIR` is each checkout's `target/`. A shared target dir let a parallel worktree replace the `debug/gateway` another was testing; none of the surveyed repos shares one. `CARGO_BUILD_BUILD_DIR` stays central, keyed by workspace path.
+  - `rust-lint` sets `CARGO_BUILD_WARNINGS=deny` instead of passing `-D warnings` to clippy, as uv, ruff, and oxc do.
+  - The dev profile uses `debug = "line-tables-only"` for workspace crates and no debug info for dependencies, with Cargo's default incremental and codegen settings. Rust CI sets `CARGO_INCREMENTAL=0`.
+
 ## Reasons and tradeoffs
 
 - Single-binary tools installed by mise keep local runs and CI identical without adding Node or Python dependencies. All of the checks in `repo-lint` finish in under a second.
