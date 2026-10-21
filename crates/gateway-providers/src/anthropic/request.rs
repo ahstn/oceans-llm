@@ -35,9 +35,22 @@ pub fn map_anthropic_request(
     stream: bool,
     options: &AnthropicRequestOptions<'_>,
 ) -> Result<Value, ProviderError> {
+    // Bound beta metadata before cloning request extras; route body overrides take precedence.
+    let has_context_beta = super::beta::request_has_beta(
+        context
+            .extra_body
+            .get("anthropic_beta")
+            .or_else(|| request.extra.get("anthropic_beta")),
+        context,
+        options.default_headers,
+        "context-management-2025-06-27",
+    )?;
     let mut body: Map<String, Value> = request
         .extra
         .iter()
+        .filter(|(key, _)| {
+            key.as_str() != "anthropic_beta" || !context.extra_body.contains_key("anthropic_beta")
+        })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     body.remove("model");
@@ -76,7 +89,7 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
-    if !has_anthropic_beta(&body, context, options, "context-management-2025-06-27")? {
+    if !has_context_beta {
         body.remove("context_management");
     }
 
@@ -596,17 +609,6 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), AnthropicAdapterE
         }
     }
     Ok(())
-}
-
-fn has_anthropic_beta(
-    body: &Map<String, Value>,
-    context: &ProviderRequestContext,
-    options: &AnthropicRequestOptions<'_>,
-    beta: &str,
-) -> Result<bool, ProviderError> {
-    let mut betas = super::beta::body_betas(body.get("anthropic_beta"))?;
-    betas.extend(super::beta::header_betas(context, options.default_headers));
-    Ok(betas.iter().any(|candidate| candidate == beta))
 }
 
 fn merge_object_overrides(target: &mut Map<String, Value>, overrides: &Map<String, Value>) {

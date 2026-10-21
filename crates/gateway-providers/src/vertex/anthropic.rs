@@ -67,24 +67,23 @@ fn apply_body_betas(
     context: &ProviderRequestContext,
     default_headers: &BTreeMap<String, String>,
 ) -> Result<(), ProviderError> {
-    let mut betas = crate::anthropic::beta::body_betas(body.remove("anthropic_beta").as_ref())?;
-    for beta in crate::anthropic::beta::header_betas(context, Some(default_headers)) {
-        push_unique(&mut betas, &beta);
-    }
-    if body
+    let needs_effort_beta = body
         .get("output_config")
         .and_then(|config| config.get("effort"))
         .is_some_and(|effort| !effort.is_null())
-        && claude_thinking_policy(&context.upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
-    {
-        push_unique(&mut betas, EFFORT_BETA);
-    }
+        && claude_thinking_policy(&context.upstream_model)
+            == ClaudeThinkingPolicy::ManualWithEffort;
+    let betas = crate::anthropic::beta::merged_request_betas(
+        body.get("anthropic_beta"),
+        context,
+        Some(default_headers),
+        if needs_effort_beta {
+            &[EFFORT_BETA]
+        } else {
+            &[]
+        },
+    )?;
+    body.remove("anthropic_beta");
     crate::anthropic::beta::put_body_betas(body, betas);
     Ok(())
-}
-
-fn push_unique(betas: &mut Vec<String>, beta: &str) {
-    if !betas.iter().any(|existing| existing == beta) {
-        betas.push(beta.to_string());
-    }
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted; Anthropic-on-Vertex beta transport superseded in part on 2026-10-21.
 
 ## Context
 
@@ -53,3 +53,7 @@ Gemini 3.7 Flash and 3.8 Flash on Vertex AI (Agent Platform) are the primary Goo
 
 - Live-verify against a Vertex project: `functionCall.id` acceptance on Gemini 3.7 Flash, and `output_config.effort` through `rawPredict` with the body beta.
 - Consider retrying `429`/`503` with `Retry-After` in the Vertex transport; `ProviderError::is_retryable` exists but the adapter does not use it.
+
+## Supersession — 2026-10-21
+
+[PR #564](https://github.com/ahstn/oceans-llm/pull/564) supersedes the Context claim that Vertex ignores `anthropic-beta`, Decision 6's body-beta transport, and the corresponding body-beta follow-up. The current [Anthropic-on-Vertex contract](../providers/gcp-vertex.md#claude-example) sends beta opt-ins in one `anthropic-beta` header and removes the legacy `anthropic_beta` body field before transport. Any live effort verification should use that header contract. The remaining decisions stay accepted; the original text above is retained as history.

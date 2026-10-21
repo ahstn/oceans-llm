@@ -392,6 +392,13 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     context: &ProviderRequestContext,
     target: AnthropicMessagesTarget,
 ) -> Result<Value, ProviderError> {
+    // Bound effective beta metadata before cloning the caller's passthrough fields.
+    let beta_value = context
+        .extra_body
+        .get("anthropic_beta")
+        .or_else(|| request.extra.get("anthropic_beta"));
+    crate::anthropic::beta::validate_request_betas(beta_value, context, None)?;
+    let betas = crate::anthropic::beta::normalized_body_betas(beta_value)?;
     if request.stream && target == AnthropicMessagesTarget::RuntimeInvoke {
         return Err(ProviderError::InvalidRequest(
             "aws_bedrock Anthropic Claude Messages streaming is gated until native InvokeModelWithResponseStream mapping lands"
@@ -460,7 +467,14 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
     body.insert("messages".to_string(), Value::Array(messages));
 
-    let mut passthrough = request.extra.clone();
+    let mut passthrough: BTreeMap<_, _> = request
+        .extra
+        .iter()
+        .filter(|(key, _)| {
+            key.as_str() != "anthropic_beta" || !context.extra_body.contains_key("anthropic_beta")
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     passthrough.remove("model");
     passthrough.remove("messages");
     passthrough.remove("stream");
@@ -471,6 +485,10 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
     merge_object_overrides(&mut body, &context.extra_body);
+    // Canonicalize validated entries before model policy adds an automatic effort beta. Raw
+    // duplicates at the input limit must not make that generated entry exceed the array limit.
+    body.remove("anthropic_beta");
+    crate::anthropic::beta::put_body_betas(&mut body, betas);
     // Checked after route `extra_body` merges, so an admin override decides the final choice.
     if let Some(tool_choice) = body.get("tool_choice") {
         validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;

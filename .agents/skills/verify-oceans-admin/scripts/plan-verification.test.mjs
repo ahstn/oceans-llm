@@ -69,6 +69,7 @@ test('Messages production boundaries select the dedicated compatibility recipe',
     'crates/gateway-core/src/protocol/anthropic.rs',
     'crates/gateway-core/src/protocol/translate.rs',
     'crates/gateway-core/src/claude_models.rs',
+    'crates/gateway-core/src/domain.rs',
     'crates/gateway-providers/src/anthropic/thinking.rs',
     'crates/gateway-providers/src/anthropic_compat.rs',
     'crates/gateway-providers/src/vertex/anthropic.rs',
@@ -87,9 +88,11 @@ test('Messages production boundaries select the dedicated compatibility recipe',
 })
 
 test('Messages routing preserves separate live/log coverage and skips unrelated paths', () => {
-  const shared = planFor(['crates/gateway-core/src/protocol/anthropic.rs'], routing)
-  for (const id of ['anthropic-messages', 'live-llm-requests', 'request-logs']) {
-    assert.ok(shared.proofs.some((proof) => proof.id === id), id)
+  for (const file of ['crates/gateway-core/src/protocol/anthropic.rs', 'crates/gateway-core/src/domain.rs']) {
+    const shared = planFor([file], routing)
+    for (const id of ['anthropic-messages', 'live-llm-requests', 'request-logs']) {
+      assert.ok(shared.proofs.some((proof) => proof.id === id), `${file}: ${id}`)
+    }
   }
   const unrelated = planFor([
     'crates/gateway-providers/src/anthropic/request_tests.rs',

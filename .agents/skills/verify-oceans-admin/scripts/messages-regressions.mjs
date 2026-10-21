@@ -21,6 +21,8 @@ export const requiredChecks = [
   ['caller-beta-ingress', 'request_headers_preserve_repeated_anthropic_beta_opt_ins'],
   ['caller-beta-wire', 'native_messages_beta_controls_reach_each_provider_over_http'],
   ['count-tokens-beta-wire', 'native_count_tokens_forwards_caller_beta_headers_over_http'],
+  ['beta-resource-limits', 'beta_merge_rejects_resource_limit_overflows'],
+  ['beta-rejection-before-dispatch', 'beta_resource_limits_prevent_provider_http_dispatch'],
   ['separate-api-thinking', 'chat_completions_and_messages_use_separate_thinking_contracts'],
   ['bedrock-api-thinking', 'bedrock_chat_completions_and_messages_use_separate_thinking_contracts'],
   ['vertex-chat-default', 'vertex_chat_completions_defaults_adaptive_only_models_to_high'],

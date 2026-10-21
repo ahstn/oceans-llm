@@ -374,7 +374,7 @@
         "crates/gateway/src/http/request_body/**",
         "crates/gateway/src/http/handlers/{auth,inference,count_tokens}.rs",
         "crates/gateway-core/src/protocol/{anthropic,translate}.rs",
-        "crates/gateway-core/src/{claude_models,reasoning_policy}.rs",
+        "crates/gateway-core/src/{claude_models,domain,reasoning_policy}.rs",
         "crates/gateway-providers/src/anthropic/**",
         "crates/gateway-providers/src/anthropic_compat.rs",
         "crates/gateway-providers/src/vertex/{anthropic,mod}.rs",

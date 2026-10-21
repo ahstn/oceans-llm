@@ -63,6 +63,8 @@ OpenAI-shaped `reasoning_effort` and `reasoning.effort` retain the model-aware t
 
 Effort-changing system messages retain their position and `output_config`, including empty content. Native `safeguards` requests and opaque `safeguard_results` responses are preserved, including verdicts in stream message-start and message-delta fields. These fields support [Claude Code auto mode](https://code.claude.com/docs/en/llm-gateway-protocol); auto mode is not an effort value, and neither `"auto"` nor `"none"` is a native Anthropic effort. This support does not establish complete Claude Code compatibility: arbitrary mid-conversation system messages without effort controls are still hoisted, and unknown SSE event types are not passed through.
 
+Beta opt-ins retain their first-seen order when deduplicated across body inputs and caller, route, and provider headers. For direct Anthropic, Vertex Claude, and Bedrock Anthropic transports, Oceans limits the merged list to 1,024 distinct names, each at most 256 UTF-8 bytes. A body array may contain at most 1,024 entries, including duplicates; a comma-separated body string and the combined header values each have a 256 KiB limit before splitting. These gateway resource limits bound parsing and deduplication work and return a local invalid-request error before provider dispatch. Upstream APIs still validate beta availability and may impose smaller limits.
+
 ## Messages Token Counting
 
 `POST /v1/messages/count_tokens` selects a route like `POST /v1/messages` and forwards only the prompt-defining fields to the provider's own count API. The gateway does not estimate tokens locally.

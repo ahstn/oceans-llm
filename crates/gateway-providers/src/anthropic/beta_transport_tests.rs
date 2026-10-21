@@ -113,6 +113,14 @@ fn provider(kind: &str, base_url: &str) -> Box<dyn ProviderClient> {
         "anthropic-beta".into(),
         "context-management-2025-06-27".into(),
     )]);
+    provider_with_headers(kind, base_url, default_headers)
+}
+
+fn provider_with_headers(
+    kind: &str,
+    base_url: &str,
+    default_headers: BTreeMap<String, String>,
+) -> Box<dyn ProviderClient> {
     match kind {
         "direct" => {
             let mut config = AnthropicCompatConfig::new(kind.into(), base_url.into());
@@ -309,5 +317,272 @@ async fn native_messages_body_beta_preserves_context_management_over_http() {
         request.extra["context_management"]
     );
     assert!(body.get("anthropic_beta").is_none());
+    server.abort();
+}
+
+#[test]
+fn beta_merge_rejects_resource_limit_overflows() {
+    let context = context("direct");
+    let defaults = BTreeMap::new();
+    for value in [
+        json!(
+            (0..1_025)
+                .map(|index| format!("future-beta-{index}"))
+                .collect::<Vec<_>>()
+        ),
+        json!(vec!["duplicate"; 1_025]),
+        json!(["a".repeat(257)]),
+        json!(["é".repeat(129)]),
+        json!(",".repeat(256 * 1024 + 1)),
+    ] {
+        let mut body = json!({"anthropic_beta": value});
+        let error = super::beta::take_request_betas(&mut body, &context, &defaults)
+            .expect_err("oversized beta metadata must fail before HTTP dispatch");
+        assert!(matches!(
+            error,
+            gateway_core::ProviderError::InvalidRequest(_)
+        ));
+        assert!(error.to_string().contains("beta"));
+        assert!(error.to_string().contains("limit"));
+    }
+}
+
+#[test]
+fn beta_merge_preserves_order_and_checks_combined_boundaries() {
+    let mut context = context("direct");
+    context.extra_headers.clear();
+    context.request_headers.clear();
+    let mut defaults = BTreeMap::new();
+    let names = (0..1_024)
+        .map(|index| format!("future-beta-{index}"))
+        .collect::<Vec<_>>();
+    let body = json!(names);
+    context
+        .request_headers
+        .insert("anthropic-beta".into(), names.join(","));
+    let merged =
+        super::beta::merged_request_betas(Some(&body), &context, Some(&defaults), &[]).unwrap();
+    assert_eq!(
+        merged, names,
+        "canonical names repeated in headers must not consume the distinct-name limit twice"
+    );
+    defaults.insert("anthropic-beta".into(), "another-future-beta".into());
+    let error =
+        super::beta::merged_request_betas(Some(&body), &context, Some(&defaults), &[]).unwrap_err();
+    assert!(error.to_string().contains("distinct name count"));
+    let error =
+        super::beta::merged_request_betas(Some(&body), &context, None, &["effort-2025-11-24"])
+            .unwrap_err();
+    assert!(error.to_string().contains("distinct name count"));
+
+    defaults.insert("anthropic-beta".into(), "second,first".into());
+    context
+        .extra_headers
+        .insert("Anthropic-Beta".into(), json!("third,second"));
+    context
+        .request_headers
+        .insert("anthropic-beta".into(), "fourth,first".into());
+    let body = json!(["first", "first"]);
+    assert_eq!(
+        super::beta::merged_request_betas(
+            Some(&body),
+            &context,
+            Some(&defaults),
+            &["fifth", "second"]
+        )
+        .unwrap(),
+        ["first", "second", "third", "fourth", "fifth"]
+    );
+    let body = json!(["é".repeat(128)]);
+    assert!(super::beta::merged_request_betas(Some(&body), &context, None, &[]).is_ok());
+
+    defaults.insert("anthropic-beta".into(), ",".repeat(128 * 1_024));
+    context
+        .extra_headers
+        .insert("Anthropic-Beta".into(), json!(",".repeat(128 * 1_024)));
+    context.request_headers.clear();
+    assert!(
+        super::beta::merged_request_betas(None, &context, Some(&defaults), &[])
+            .unwrap()
+            .is_empty()
+    );
+    context
+        .request_headers
+        .insert("anthropic-beta".into(), ",".into());
+    let error =
+        super::beta::merged_request_betas(None, &context, Some(&defaults), &[]).unwrap_err();
+    assert!(error.to_string().contains("combined header byte length"));
+}
+
+#[tokio::test]
+async fn beta_resource_limits_prevent_provider_http_dispatch() {
+    let captured: Captured = Arc::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let app = Router::new()
+        .route("/{*path}", post(capture))
+        .with_state(captured.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    for kind in ["direct", "vertex", "runtime", "mantle"] {
+        for source in [
+            "body-array",
+            "body-name",
+            "body-string",
+            "route-body",
+            "caller-header",
+            "route-header",
+            "provider-header",
+            "merged-count",
+            "vertex-effort",
+        ] {
+            if source == "vertex-effort" && kind != "vertex" {
+                continue;
+            }
+            let mut context = context(kind);
+            context.extra_headers.clear();
+            context.request_headers.clear();
+            let mut defaults = BTreeMap::new();
+            let native: AnthropicMessagesRequest = serde_json::from_value(json!({
+                "model": "claude", "max_tokens": 1024,
+                "messages": [{"role": "user", "content": "never dispatch"}]
+            }))
+            .unwrap();
+            let mut request = anthropic_messages_request_to_core(&native);
+            match source {
+                "body-array" => {
+                    request
+                        .extra
+                        .insert("anthropic_beta".into(), json!(vec!["duplicate"; 1_025]));
+                }
+                "body-name" => {
+                    request
+                        .extra
+                        .insert("anthropic_beta".into(), json!(["x".repeat(257)]));
+                }
+                "body-string" => {
+                    request
+                        .extra
+                        .insert("anthropic_beta".into(), json!(",".repeat(256 * 1_024 + 1)));
+                }
+                "route-body" => {
+                    context
+                        .extra_body
+                        .insert("anthropic_beta".into(), json!(vec!["duplicate"; 1_025]));
+                }
+                "caller-header" => {
+                    context
+                        .request_headers
+                        .insert("anthropic-beta".into(), "x".repeat(257));
+                }
+                "route-header" => {
+                    context
+                        .extra_headers
+                        .insert("anthropic-beta".into(), json!("x".repeat(257)));
+                }
+                "provider-header" => {
+                    defaults.insert("anthropic-beta".into(), "x".repeat(257));
+                }
+                "merged-count" => {
+                    request.extra.insert(
+                        "anthropic_beta".into(),
+                        json!(
+                            (0..700)
+                                .map(|index| format!("beta-{index}"))
+                                .collect::<Vec<_>>()
+                        ),
+                    );
+                    defaults.insert(
+                        "anthropic-beta".into(),
+                        (700..1_025)
+                            .map(|index| format!("beta-{index}"))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    );
+                }
+                "vertex-effort" => {
+                    context.upstream_model = "anthropic/claude-opus-4-5".into();
+                    request.extra.insert(
+                        "anthropic_beta".into(),
+                        json!(
+                            (0..1_024)
+                                .map(|index| format!("beta-{index}"))
+                                .collect::<Vec<_>>()
+                        ),
+                    );
+                    request
+                        .extra
+                        .insert("output_config".into(), json!({"effort":"high"}));
+                }
+                _ => unreachable!(),
+            }
+            let provider = provider_with_headers(kind, &url, defaults);
+            let result = provider.chat_completions(&request, &context).await;
+            assert!(
+                matches!(result, Err(gateway_core::ProviderError::InvalidRequest(_))),
+                "{kind}/{source}: {result:?}"
+            );
+            if kind != "runtime" {
+                let result = provider.chat_completions_stream(&request, &context).await;
+                assert!(
+                    matches!(result, Err(gateway_core::ProviderError::InvalidRequest(_))),
+                    "{kind}/{source} stream"
+                );
+            }
+            if kind != "mantle" {
+                let result = provider.count_tokens(&request, &context).await;
+                assert!(
+                    matches!(result, Err(gateway_core::ProviderError::InvalidRequest(_))),
+                    "{kind}/{source} count: {result:?}"
+                );
+            }
+            assert!(
+                captured.lock().await.is_none(),
+                "{kind}/{source} made an upstream HTTP call"
+            );
+        }
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn bedrock_beta_array_boundary_allows_generated_effort_beta() {
+    let captured: Captured = Arc::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let app = Router::new()
+        .route("/{*path}", post(capture))
+        .with_state(captured.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    for kind in ["runtime", "mantle"] {
+        let provider = provider_with_headers(kind, &url, BTreeMap::new());
+        let mut context = context(kind);
+        context.upstream_model = "anthropic.claude-opus-4-5".into();
+        context.extra_headers.clear();
+        context.request_headers.clear();
+        let native: AnthropicMessagesRequest = serde_json::from_value(json!({
+            "model":"claude", "max_tokens":1024,
+            "messages":[{"role":"user", "content":"hello"}],
+            "anthropic_beta":vec!["future-capability";1_024], "output_config":{"effort":"high"}
+        }))
+        .unwrap();
+        let request = anthropic_messages_request_to_core(&native);
+        provider.chat_completions(&request, &context).await.unwrap();
+        let (_, headers, body) = captured.lock().await.take().unwrap();
+        if kind == "runtime" {
+            assert_eq!(
+                body["anthropic_beta"],
+                json!(["future-capability", "effort-2025-11-24"])
+            );
+        } else {
+            assert_eq!(
+                headers["anthropic-beta"],
+                "future-capability,effort-2025-11-24"
+            );
+        }
+    }
     server.abort();
 }

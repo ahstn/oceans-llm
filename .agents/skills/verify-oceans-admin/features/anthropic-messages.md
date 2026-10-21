@@ -47,7 +47,7 @@ Preconditions:
    | Thinking modes | Manual `enabled` budgets remain valid on older models; current model-specific disabled/between-tools restrictions remain intact; OpenAI aliases retain their separate translation |
    | Negative controls | Invalid display identifies display; real adaptive budgets identify budget; conflicting budget/effort aliases fail; invalid effort values are not silently converted |
    | Native continuity | Empty signed thinking, signatures, tool-use IDs/results, cache boundaries, beta extensions, in-sequence system effort messages and safeguard results survive mapping |
-   | Beta transport | Repeated caller beta headers merge with configured/body opt-ins without duplicates; direct Anthropic, Vertex and Mantle use a header, Runtime uses `anthropic_beta`; Messages and token counting preserve opt-ins without forwarding caller credentials |
+   | Beta transport | Repeated caller beta headers merge with configured/body opt-ins without duplicates; direct Anthropic, Vertex and Mantle use a header, Runtime uses `anthropic_beta`; Messages and token counting preserve opt-ins without forwarding caller credentials; oversized beta lists and names fail locally before dispatch, while allowed unknown names retain their order |
    | Streaming | Assistant role appears first and once, metadata does not precede it, usage is retained, tool/content blocks close in order and `message_stop` terminates the response; pending metadata survives DONE/EOF even without a finish reason |
    | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging |
 
