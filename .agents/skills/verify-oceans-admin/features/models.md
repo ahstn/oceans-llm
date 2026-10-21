@@ -11,6 +11,7 @@ Models lets a signed-in user review configured model IDs, routing status, provid
 - `models-client-config` opens client configuration for a configurable model via the row `Config` button.
 - `models-select-config` selects several configurable models with `Select model <id>` and opens one `Client config` dialog through `Generate config`.
 - `models-pagination` pages 30 models at a time with `Previous` and `Next`.
+- `models-litellm-info` serves the LiteLLM-compatible `GET /model_group/info` list to gateway API keys, so clients such as omp can use `discovery.type: litellm`.
 
 ## How to get to it (user POV)
 
@@ -32,6 +33,7 @@ Preconditions:
 - **Columns.** Intelligence Index is always visible. Choose `Columns`, then select `Context window` or `Capabilities`. The matching optional table header becomes visible without a route change.
 - **Client configuration.** Choose the button named `Generate client config for gpt-6-astra`. A dialog headed `Client config` appears. Do not treat generated configuration as live-provider proof.
 - **Decisions-only model.** The `jev` row shows `—` in its Config cell, and `Select model jev` is disabled.
+- **LiteLLM model info.** Create a temporary user API key through [API keys](./api-keys.md) and keep it in memory. `GET /model_group/info` with `Authorization: Bearer <key>` returns `200`. The set of `data[].model_group` IDs equals the set of `data[].id` from `GET /v1/models` with the same key. Every row has a non-empty lowercase `providers` array, `mode` (`chat` or `embedding`), a boolean `supports_vision`, a boolean `supports_function_calling`, and a `supported_openai_params` array. A priced row has all four cost fields per token (`input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost`); an unpriced row has none of them. The response must not contain a provider base URL or credential. This check makes no provider call. `drive models` does not run it, so report it beside the driver proof. Revoke the key afterwards.
 - **Proof.** Retain the Models screenshots and ARIA snapshots, including `03-model-benchmarks` (plus one `05-model-client-config-<key>` pair per client config), and `models-proof.json` in the run evidence directory.
 
 ## Gotchas

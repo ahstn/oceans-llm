@@ -36,6 +36,8 @@ Each card now carries `name` (a copy of `display_name`) and `supported_endpoint_
 
 Decision models have no new-api endpoint type, and inventing one would only help clients that adopt it. Instead, cards for decision-capable models add `decisions` to `architecture.output_modalities`, OpenRouter's existing marker, which omp's OpenRouter discovery already reads. omp proxy discovery ignores that field and falls back to the provider-level API. Follow-up: propose an omp change that maps `decisions` rows to its `openrouter-decisions` API, whose `{baseUrl}/decisions` path matches the gateway's `/v1/decisions`.
 
+Superseded for omp (2026-10-21): omp should now use `discovery.type: litellm`, which reads `GET /model_group/info`. Proxy discovery sent no reasoning effort to GPT models and reported $0 cost. See [ADR: LiteLLM Model Group Info for omp Discovery](2026-10-21-litellm-model-group-info.md). `supported_endpoint_types` stays for proxy-style clients.
+
 ## Review follow-ups (2026-10-03)
 
 - **Anthropic request features.** `/v1/messages` passes Anthropic content blocks, `thinking`, and `output_config` to the route untranslated. Only Anthropic-shaped adapters consume them. `effort`, `thinking`, `image_input`, `pdf_input`, and `structured_outputs` in `capabilities` are therefore reported only when the primary route's native format is Anthropic Messages. Otherwise Claude Code would send fields that an OpenAI-compatible or Gemini upstream rejects. Bedrock now derives its native format from the route `api_style`, so Claude on Bedrock keeps these capabilities. Claude on Converse does not, because Converse fronts many families. Translating these fields for other upstreams would let the gate widen later.

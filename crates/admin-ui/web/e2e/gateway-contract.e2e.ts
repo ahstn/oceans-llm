@@ -129,6 +129,45 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
   })
   expect(JSON.stringify(modelsBody)).not.toMatch(/base_?url|api_?key/i)
 
+  // omp `discovery.type: litellm` reads the same model set from the LiteLLM-compatible endpoint.
+  const modelGroupInfoResponse = await request.get(`${root}/model_group/info`, {
+    headers: {
+      authorization: `Bearer ${gatewayApiKey}`,
+    },
+  })
+  expect(modelGroupInfoResponse.status()).toBe(200)
+  const modelGroupInfoBody = (await modelGroupInfoResponse.json()) as {
+    data: Array<Record<string, unknown>>
+  }
+  // Both endpoints list the visible models in the same order.
+  const modelIds = (modelsBody.data as Array<{ id: string }>).map((model) => model.id)
+  expect(modelGroupInfoBody.data.map((group) => group.model_group)).toEqual(modelIds)
+  const costFields = [
+    'input_cost_per_token',
+    'output_cost_per_token',
+    'cache_read_input_token_cost',
+    'cache_creation_input_token_cost',
+  ]
+  for (const group of modelGroupInfoBody.data) {
+    expect(group).toEqual(
+      expect.objectContaining({
+        model_group: expect.any(String),
+        mode: expect.any(String),
+        supports_vision: expect.any(Boolean),
+        supports_function_calling: expect.any(Boolean),
+        supported_openai_params: expect.any(Array),
+      }),
+    )
+    expect(Array.isArray(group.providers)).toBe(true)
+    expect((group.providers as unknown[]).length).toBeGreaterThan(0)
+    const presentCosts = costFields.filter((field) => field in group)
+    expect([0, costFields.length]).toContain(presentCosts.length)
+    for (const field of presentCosts) {
+      expect(typeof group[field]).toBe('number')
+    }
+  }
+  expect(JSON.stringify(modelGroupInfoBody)).not.toMatch(/base_?url|api_?key/i)
+
   const clearResponse = await request.delete(stubAdminUrl('/__admin/requests'))
   expect(clearResponse.ok()).toBe(true)
 
