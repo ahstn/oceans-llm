@@ -1,0 +1,40 @@
+# Spell checking for `mise run typos`. typos flags known misspellings only, so
+# entries here are words it would otherwise "correct".
+[files]
+# Check .agents/ and .github/ too; .gitignore still applies.
+ignore-hidden = false
+extend-exclude = [
+  "videos/",
+  "gha-research/",
+  "*.lock",
+  # Generated from upstream provider catalogs; product names are not ours to fix.
+  "crates/gateway-service/data/pricing_catalog_fallback.json",
+]
+
+[default]
+extend-ignore-re = [
+  # Regex fragments like `(?-i:S)ecret` in secret-redaction rules.
+  "\\(\\?-i:[A-Za-z]\\)[a-z]+",
+  # Hex trace and span IDs.
+  "\\b[0-9a-f]{16,}\\b",
+  # Plural SQL keywords in comments, such as `UPDATEs`.
+  "\\b[A-Z]{3,}s\\b",
+  # Placeholder-shaped secret fixtures, such as `EXAMPLEq7pK9mT4zQ2`.
+  "\\bEXAMPLE[a-z0-9]\\w*",
+]
+
+[default.extend-words]
+# Both spellings are valid; existing identifiers and error text use this one.
+unparseable = "unparseable"
+# Postgres block range index.
+brin = "brin"
+# Streaming tests split "hello" across chunks.
+hel = "hel"
+# A deliberately misspelled `--require-curent` flag in proof.test.mjs.
+curent = "curent"
+
+[default.extend-identifiers]
+# Deliberately misspelled config keys in tests for unknown-field rejection.
+hard_limti = "hard_limti"
+max_reasoning_efort = "max_reasoning_efort"
+stratgey = "stratgey"

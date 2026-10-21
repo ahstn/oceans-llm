@@ -58,7 +58,7 @@ Why:
 
 ### 2. Make declarative identity config desired-state for listed entries, not global pruning
 
-The config now supports top-level `teams` and `users` in [../../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs), but the reconciliation scope is intentionally narrow:
+The config now supports top-level `teams` and `users` in [../../crates/gateway/src/config/mod.rs](../../crates/gateway/src/config/mod.rs), but the reconciliation scope is intentionally narrow:
 
 - listed teams are authoritative for their mutable fields and active budget,
 - listed users are authoritative for their mutable fields, membership, and active budget,
@@ -125,7 +125,7 @@ Why:
 
 ### Config and seed DTOs
 
-- [../../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs)
+- [../../crates/gateway/src/config/mod.rs](../../crates/gateway/src/config/mod.rs)
   - adds `teams` and `users`,
   - validates reserved identifiers, duplicate emails, membership rules, and budget config,
   - emits `seed_teams()` and `seed_users()`.

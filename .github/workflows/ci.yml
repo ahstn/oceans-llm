@@ -49,10 +49,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise, Rust, Bun, and Node.js
+      - name: Setup mise, Rust, Bun, Node.js, and cargo-deny
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          install_args: rust bun node
+          install_args: rust bun node cargo-deny
 
       - name: Cache Cargo artifacts
         uses: ./.github/actions/rust-cache
@@ -62,6 +62,9 @@ jobs:
 
       - name: Lint Rust workspace
         run: mise run rust-lint
+
+      - name: Check Rust dependency advisories, licenses, and sources
+        run: mise run rust-deny
 
       - name: Check generated admin contract
         run: mise run admin-contract-check

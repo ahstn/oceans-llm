@@ -15,7 +15,7 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
 - Internal notes:
   - [internal/](internal)
 - Development workflows:
-  - [development/](development)
+  - [contributing/development/](contributing/development)
 
 What lives where:
 

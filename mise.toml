@@ -47,6 +47,13 @@ cargo-release = "1.1.6"
 actionlint = "1.7.12"
 shellcheck = "0.11.0"
 prek = "latest"
+zizmor = "1.31.1"
+taplo = "0.10.0"
+lychee = "0.24.2"
+editorconfig-checker = "4.0.2"
+typos = "1.51.1"
+osv-scanner = "2.7.0"
+cargo-deny = "0.20.2"
 
 [env]
 CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
@@ -134,12 +141,68 @@ run = "node scripts/build-shadcn-theme.mjs --build"
 description = "Fail when registry.json, docs/public/r or the docs dark theme no longer match the admin UI tokens in globals.css"
 run = "node scripts/build-shadcn-theme.mjs --check"
 
+# Language-agnostic checks. Each reads its config from the repo root
+# (.taplo.toml, .editorconfig, lychee.toml, .github/zizmor.yml).
+[tasks.toml-fmt]
+description = "Format tracked TOML files"
+env = { RUST_LOG = "warn" }
+run = "git ls-files -z '*.toml' | xargs -0 taplo fmt"
+
+[tasks.toml-check]
+description = "Check TOML formatting and validate TOML files against their schemas"
+env = { RUST_LOG = "warn" }
+run = [
+  "git ls-files -z '*.toml' | xargs -0 taplo fmt --check",
+  "git ls-files -z '*.toml' | xargs -0 taplo lint",
+]
+
+[tasks.editorconfig-check]
+description = "Check line endings, final newlines, and trailing whitespace against .editorconfig"
+run = "editorconfig-checker"
+
+[tasks.links-check]
+description = "Check local Markdown links and heading anchors"
+run = "lychee --offline --no-progress ."
+
+[tasks.links-check-external]
+description = "Check local and remote Markdown links; set GITHUB_TOKEN to avoid GitHub rate limits"
+run = "lychee --no-progress ."
+
+[tasks.actions-audit]
+description = "Audit GitHub Actions workflows and Dependabot config; set GH_TOKEN for online audits"
+run = "zizmor --quiet --no-progress ."
+
+[tasks.typos]
+description = "Check spelling in source, docs, and config; allowed words live in _typos.toml"
+run = "typos"
+
+[tasks.repo-lint]
+description = "Run language-agnostic checks for TOML, whitespace, spelling, links, and GitHub Actions"
+depends = ["toml-check", "editorconfig-check", "typos", "links-check", "actions-audit"]
+
+[tasks.rust-deny]
+description = "Check Rust dependencies for RustSec advisories, licenses, and sources (deny.toml)"
+run = "cargo deny check"
+
+# Lockfiles are listed explicitly: osv-scanner's recursive walk finds nothing in
+# a linked git worktree. Reports the full backlog, so it is not part of `lint`;
+# CI gates pull requests on newly introduced vulnerabilities instead.
+[tasks.deps-audit]
+description = "Scan every tracked lockfile for known vulnerabilities with osv-scanner"
+run = """
+git ls-files -z '*Cargo.lock' '*bun.lock' '*package-lock.json' \
+  | xargs -0 printf -- '--lockfile=%s\n' \
+  | xargs osv-scanner scan source
+"""
+
 [tasks.lint]
 description = "Run repository formatting checks, linting, and static checks"
 depends = [
   "rust-fmt-check",
   "rust-lint",
+  "rust-deny",
   "shadcn-theme-check",
+  "repo-lint",
   "//crates/admin-ui/web:fmt-check",
   "//crates/admin-ui/web:lint",
   "//actions/review-agent:typecheck",

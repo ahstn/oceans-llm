@@ -1,0 +1,68 @@
+# Rust dependency policy for `mise run rust-deny`: RustSec advisories, licenses,
+# banned crates, and allowed sources. osv-scanner covers every lockfile; this adds
+# RustSec's unmaintained and yanked notices plus license and source policy.
+
+[graph]
+all-features = true
+
+[advisories]
+# Advisories present when cargo-deny was adopted on 2026-10-21. Each one still
+# needs an upgrade; remove its entry in the change that clears it so the check
+# keeps failing on anything new.
+ignore = [
+  # zip 8.6 -> 9.0. Bundles are read entry by entry; nothing calls `extract()`.
+  { id = "RUSTSEC-2026-0367", reason = "baseline: fixed in zip 9; extract() is unused" },
+  { id = "RUSTSEC-2026-0368", reason = "baseline: fixed in zip 9; extract() is unused" },
+  { id = "RUSTSEC-2026-0369", reason = "baseline: fixed in zip 9; extract() is unused" },
+  # rustls 0.21/0.22/0.23 and rustls-webpki 0.101/0.102/0.103, pulled in by the
+  # AWS SDK, libsql, and reqwest. Clearing them needs those crates to move.
+  { id = "RUSTSEC-2026-0346", reason = "baseline: rustls upgrade pending" },
+  { id = "RUSTSEC-2026-0347", reason = "baseline: rustls upgrade pending" },
+  { id = "RUSTSEC-2026-0348", reason = "baseline: rustls upgrade pending" },
+  { id = "RUSTSEC-2026-0349", reason = "baseline: rustls upgrade pending" },
+  { id = "RUSTSEC-2026-0049", reason = "baseline: rustls-webpki upgrade pending" },
+  { id = "RUSTSEC-2026-0098", reason = "baseline: rustls-webpki upgrade pending" },
+  { id = "RUSTSEC-2026-0099", reason = "baseline: rustls-webpki upgrade pending" },
+  { id = "RUSTSEC-2026-0104", reason = "baseline: rustls-webpki upgrade pending" },
+  { id = "RUSTSEC-2026-0382", reason = "baseline: rustls-webpki upgrade pending" },
+  { id = "RUSTSEC-2026-0381", reason = "baseline: webpki-roots upgrade pending" },
+  { id = "RUSTSEC-2026-0383", reason = "baseline: webpki-root-certs upgrade pending" },
+  { id = "RUSTSEC-2026-0258", reason = "baseline: h2 0.3 upgrade pending" },
+  # No fixed rsa release exists.
+  { id = "RUSTSEC-2023-0071", reason = "baseline: no fixed rsa release" },
+  # Unmaintained transitive crates.
+  { id = "RUSTSEC-2024-0449", reason = "baseline: unsafe-libyaml is unmaintained" },
+  { id = "RUSTSEC-2025-0134", reason = "baseline: rustls-pemfile is unmaintained" },
+  { id = "RUSTSEC-2025-0141", reason = "baseline: bincode is unmaintained" },
+]
+
+[licenses]
+# Every license in the current graph. Adding one needs a deliberate edit here.
+allow = [
+  "0BSD",
+  "AGPL-3.0-only",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions come from upstream crates (AWS SDK, libsql, tonic) and
+# cannot be resolved here; flagging all of them would bury real findings.
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

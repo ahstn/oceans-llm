@@ -31,3 +31,38 @@ repos:
             - "crates/**/src/**/*.rs"
             - "crates/admin-ui/web/src/**/*.ts"
             - "crates/admin-ui/web/src/**/*.tsx"
+      # The checks below also run inside `lint`; these hooks cover commits that
+      # touch no Rust or TypeScript sources.
+      - id: editorconfig-check
+        name: editorconfig-check
+        language: system
+        entry: mise run editorconfig-check
+        pass_filenames: false
+      - id: typos
+        name: typos
+        language: system
+        entry: mise run typos
+        pass_filenames: false
+      - id: toml-check
+        name: toml-check
+        language: system
+        entry: mise run toml-check
+        pass_filenames: false
+        files:
+          glob: ["**/*.toml"]
+      - id: links-check
+        name: links-check
+        language: system
+        entry: mise run links-check
+        pass_filenames: false
+        files:
+          glob: ["**/*.md"]
+      - id: actions-audit
+        name: actions-audit
+        language: system
+        entry: mise run actions-audit
+        pass_filenames: false
+        files:
+          glob:
+            - ".github/**/*.yml"
+            - "**/action.yml"

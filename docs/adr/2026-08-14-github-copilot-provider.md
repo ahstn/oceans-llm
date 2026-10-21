@@ -6,7 +6,7 @@ Accepted.
 
 > **Supersession note (2026-08-16):** [GitHub Copilot Compatibility Evidence and Production Acceptance](2026-08-16-github-copilot-compatibility-and-acceptance.md) supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of this decision. The original decision remains below as history.
 
-> **Implementation note (2026-08-29):** `github_user` now means an encrypted credential stored for one managed Oceans user. The gateway selects it from the authenticated API key's trusted user owner. Provider-level user tokens are no longer part of this mode. See [GitHub Copilot User Tokens](../operations/github-copilot-user-tokens.md).
+> **Implementation note (2026-08-29):** `github_user` now means an encrypted credential stored for one managed Oceans user. The gateway selects it from the authenticated API key's trusted user owner. Provider-level user tokens are no longer part of this mode. See [GitHub Copilot User Tokens](../providers/github-copilot.md#github-user-authentication).
 
 ## Context
 

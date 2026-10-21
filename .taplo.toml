@@ -1,0 +1,7 @@
+# TOML formatting for `mise run toml-fmt` and `mise run toml-check`.
+include = ["**/*.toml"]
+exclude = ["**/node_modules/**", "videos/**"]
+
+[formatting]
+# Matches the width most dependency tables already use.
+column_width = 100

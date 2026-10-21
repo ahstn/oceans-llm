@@ -1,0 +1,55 @@
+name: repo-lint
+
+# Language-agnostic checks. Unlike ci.yml this also runs for docs-only changes,
+# since most of what it checks is Markdown, TOML, and workflow files. Rust
+# dependency policy runs in ci.yml; osv-scanner.yml covers every lockfile.
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup mise and repository lint tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: zizmor taplo lychee editorconfig-checker typos
+
+      - name: Check TOML
+        run: mise run toml-check
+
+      - name: Check whitespace against .editorconfig
+        run: mise run editorconfig-check
+
+      - name: Check spelling
+        run: mise run typos
+
+      - name: Check local links
+        run: mise run links-check
+
+      # The read-only token enables zizmor's online audits, such as known
+      # vulnerable actions and impostor commits.
+      - name: Audit GitHub Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run actions-audit

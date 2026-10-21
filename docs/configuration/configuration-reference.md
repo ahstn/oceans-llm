@@ -172,9 +172,9 @@ Use `auth.mode: github_user` when Copilot usage must use each Oceans user's GitH
 
 `OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. Set it before startup when any `github_user` provider is configured. Keep the same value across gateway replicas. If it changes, existing provider credentials cannot be decrypted.
 
-User-token mode has no fallback credential. A service-account key, an unowned key, or a user without a stored token fails before the Copilot request. One user's token is never selected from a request header or supplied for another user's API key. See [GitHub Copilot User Tokens](../operations/github-copilot-user-tokens.md) for the setup flow.
+User-token mode has no fallback credential. A service-account key, an unowned key, or a user without a stored token fails before the Copilot request. One user's token is never selected from a request header or supplied for another user's API key. See [GitHub Copilot User Tokens](../providers/github-copilot.md#github-user-authentication) for the setup flow.
 
-Copilot route compatibility is fail-closed. Copy support only from a current `/models` response for the exact `upstream_model`. The [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md) produces the required safe projection.
+Copilot route compatibility is fail-closed. Copy support only from a current `/models` response for the exact `upstream_model`. The [GitHub Copilot Installation-Token Canary](../providers/github-copilot.md#github-app-authentication) produces the required safe projection.
 
 ```yaml
 providers:

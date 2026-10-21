@@ -2,6 +2,7 @@
 name = "agent-session-analysis"
 version = "0.43.2"
 edition = "2024"
+license = "AGPL-3.0-only"
 
 [dependencies]
 serde.workspace = true
