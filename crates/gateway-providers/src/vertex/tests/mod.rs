@@ -33,6 +33,7 @@ use super::{
     parse_upstream_model, vertex_api_host_for_location,
 };
 
+mod anthropic_messages;
 mod anthropic_request;
 mod count_tokens;
 mod embeddings;

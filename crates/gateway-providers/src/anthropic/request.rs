@@ -115,6 +115,9 @@ fn map_chat_messages(
 
     for message in messages {
         match message.role.as_str() {
+            "system" if message.extra.contains_key("output_config") => {
+                mapped_messages.push(native_effort_message(message));
+            }
             "system" | "developer" => {
                 append_system_blocks(&mut instructions, &message.content)?;
             }
@@ -148,6 +151,14 @@ fn map_chat_messages(
     }
 
     Ok((mapped_messages, instructions))
+}
+
+/// An effort-only system message changes later turns and must stay in sequence.
+pub(crate) fn native_effort_message(message: &CoreChatMessage) -> Value {
+    let mut mapped: Map<String, Value> = message.extra.clone().into_iter().collect();
+    mapped.insert("role".to_string(), json!("system"));
+    mapped.insert("content".to_string(), message.content.clone());
+    Value::Object(mapped)
 }
 
 /// Preserve native block boundaries, including cache breakpoints and their TTL.

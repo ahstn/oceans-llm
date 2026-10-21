@@ -218,7 +218,7 @@ fn builds_request_with_bearer_auth_and_custom_version() {
 }
 
 #[test]
-fn fable_5_1_defaults_to_adaptive_thinking_with_high_effort() {
+fn fable_5_1_leaves_omitted_thinking_and_effort_to_upstream_defaults() {
     let request = CoreChatRequest {
         model: "claude-fable-5-1".to_string(),
         messages: vec![CoreChatMessage {
@@ -236,8 +236,8 @@ fn fable_5_1_defaults_to_adaptive_thinking_with_high_effort() {
     let body = map_anthropic_request(&request, &context, false, &options).expect("mapped");
 
     assert_eq!(body["model"], "claude-fable-5-1");
-    assert_eq!(body["thinking"], json!({ "type": "adaptive" }));
-    assert_eq!(body["output_config"], json!({ "effort": "high" }));
+    assert!(body.get("thinking").is_none());
+    assert!(body.get("output_config").is_none());
 }
 
 #[test]
@@ -1083,11 +1083,8 @@ fn fable_adaptive_thinking_rejects_budget_tokens_in_adaptive_object() {
     let error = apply_anthropic_thinking_compatibility(&mut body, "claude-fable-5-1")
         .expect_err("should reject manual budget for adaptive only");
     assert!(
-        matches!(
-            error,
-            AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported { .. }
-        ),
-        "expected AdaptiveOnlyBudgetNotSupported, got {error:?}"
+        matches!(error, AnthropicAdapterError::ThinkingBudgetNotSupported),
+        "expected ThinkingBudgetNotSupported, got {error:?}"
     );
 }
 

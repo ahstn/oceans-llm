@@ -135,6 +135,10 @@ pub enum AnthropicAdapterError {
         "`thinking.type: between_tools` is not supported for `{model}`; only Claude Sonnet 5.5 accepts it"
     )]
     BetweenToolsNotSupported { model: String },
+    #[error("`thinking.display` must be `summarized`, `omitted`, `updates` (beta), or null")]
+    InvalidThinkingDisplay,
+    #[error("`thinking.budget_tokens` is not supported with adaptive or between-tools thinking")]
+    ThinkingBudgetNotSupported,
     #[error("`thinking.type: disabled` is not supported for Claude Mythos Preview")]
     MythosDisabledNotSupported,
     #[error("`thinking.type: enabled` for `{model}` must include `budget_tokens`")]

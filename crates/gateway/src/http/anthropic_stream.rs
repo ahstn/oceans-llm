@@ -5,7 +5,9 @@ use axum::body::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
     ProviderStream, SseEventParser,
-    protocol::anthropic::{anthropic_reasoning_blocks, openai_finish_reason_to_anthropic},
+    protocol::anthropic::{
+        anthropic_message_metadata, anthropic_reasoning_blocks, openai_finish_reason_to_anthropic,
+    },
 };
 use serde_json::{Value, json};
 
@@ -18,6 +20,7 @@ struct AnthropicStreamState {
     tool_block_indexes: BTreeMap<i64, i64>,
     latest_usage: Option<Value>,
     pending_stop_reason: Option<String>,
+    pending_message_fields: serde_json::Map<String, Value>,
 }
 
 pub(super) fn anthropic_messages_stream_from_openai(
@@ -112,8 +115,13 @@ fn anthropic_events_from_openai_chunk(
         return events;
     };
 
+    let delta = choice.get("delta").and_then(Value::as_object);
+    let provider_metadata = delta.and_then(|delta| delta.get("provider_metadata"));
+    if let Some(fields) = anthropic_message_metadata(provider_metadata, "message_delta") {
+        state.pending_message_fields.extend(fields.clone());
+    }
     if !state.message_started {
-        let message = json!({
+        let mut message = json!({
             "id": value.get("id").and_then(Value::as_str).unwrap_or("msg_oceans_stream"),
             "type": "message",
             "role": "assistant",
@@ -123,15 +131,19 @@ fn anthropic_events_from_openai_chunk(
             "stop_sequence": null,
             "usage": {"input_tokens": 0, "output_tokens": 0}
         });
+        if let Some(fields) = anthropic_message_metadata(provider_metadata, "message") {
+            message
+                .as_object_mut()
+                .expect("message object")
+                .extend(fields.clone());
+        }
         events.push(anthropic_sse_chunk(
             "message_start",
             json!({"type":"message_start","message":message}),
         ));
         state.message_started = true;
     }
-    let delta = choice.get("delta").and_then(Value::as_object);
-
-    if let Some(provider_metadata) = delta.and_then(|delta| delta.get("provider_metadata")) {
+    if let Some(provider_metadata) = provider_metadata {
         append_anthropic_reasoning_events(provider_metadata, state, &mut events);
     }
 
@@ -300,17 +312,25 @@ fn fallback_anthropic_stream_usage() -> Value {
 
 fn pending_anthropic_message_delta(state: &mut AnthropicStreamState) -> Option<Bytes> {
     let stop_reason = state.pending_stop_reason.take()?;
-    Some(anthropic_sse_chunk(
-        "message_delta",
-        json!({
-            "type":"message_delta",
-            "delta": {
-                "stop_reason": stop_reason,
-                "stop_sequence": null
-            },
-            "usage": state.latest_usage.clone().unwrap_or_else(fallback_anthropic_stream_usage)
-        }),
-    ))
+    let mut message_delta = json!({
+        "type":"message_delta",
+        "delta": {
+            "stop_reason": stop_reason,
+            "stop_sequence": null
+        },
+        "usage": state.latest_usage.clone().unwrap_or_else(fallback_anthropic_stream_usage)
+    });
+    if let Some(Value::Object(fields)) = state.pending_message_fields.remove("delta") {
+        message_delta["delta"]
+            .as_object_mut()
+            .expect("delta object")
+            .extend(fields);
+    }
+    message_delta
+        .as_object_mut()
+        .expect("event object")
+        .extend(std::mem::take(&mut state.pending_message_fields));
+    Some(anthropic_sse_chunk("message_delta", message_delta))
 }
 
 fn append_anthropic_reasoning_events(
@@ -497,6 +517,64 @@ mod tests {
     use serde_json::json;
 
     use super::anthropic_messages_stream_from_openai;
+
+    #[tokio::test]
+    async fn native_anthropic_stream_round_trip_preserves_safeguard_results() {
+        let results = json!({"opaque": [{"tool_use_id": "toolu_exact", "verdict": "test"}]});
+        let upstream_events = [
+            json!({"type": "message_start", "message": {"id": "msg_1", "safeguard_results": results,
+                "usage": {"input_tokens": 7, "output_tokens": 0}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {
+                "type": "tool_use", "id": "toolu_exact", "name": "read", "input": {}
+            }}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{}"}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "message_delta", "delta": {"safeguard_results": results}}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "safeguard_results": results,
+                "usage": {"output_tokens": 2}}),
+            json!({"type": "message_stop"}),
+        ];
+        let upstream = stream::iter(
+            upstream_events
+                .into_iter()
+                .map(|event| Ok(Bytes::from(format!("data: {event}\n\n")))),
+        );
+        let normalized = gateway_providers::anthropic::normalize_anthropic_stream(
+            upstream,
+            "msg_1".into(),
+            0,
+            "claude".into(),
+            "gcp_vertex",
+            "anthropic",
+        );
+        let rendered = render_stream(normalized).await;
+        let mut parser = gateway_core::SseEventParser::default();
+        let events: Vec<serde_json::Value> = parser
+            .push_bytes(rendered.as_bytes())
+            .unwrap()
+            .into_iter()
+            .map(|event| serde_json::from_str(&event.data).unwrap())
+            .collect();
+        assert_eq!(events[0]["type"], "message_start");
+        assert_eq!(events[0]["message"]["role"], "assistant");
+        assert_eq!(events[0]["message"]["safeguard_results"], results);
+        let final_delta = events
+            .iter()
+            .rev()
+            .find(|event| event["type"] == "message_delta")
+            .unwrap();
+        assert_eq!(final_delta["safeguard_results"], results);
+        assert_eq!(final_delta["delta"]["safeguard_results"], results);
+        assert_eq!(final_delta["delta"]["stop_reason"], "tool_use");
+        assert_eq!(final_delta["usage"]["input_tokens"], 7);
+        assert_eq!(final_delta["usage"]["output_tokens"], 2);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["content_block"]["id"] == "toolu_exact")
+        );
+        assert!(!rendered.contains("provider_metadata"));
+    }
 
     #[tokio::test]
     async fn anthropic_messages_stream_adapter_emits_messages_sse() {

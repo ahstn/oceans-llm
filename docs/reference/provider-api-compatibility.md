@@ -53,6 +53,16 @@ This matrix is about current execution support, not provider marketing claims.
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 
+## Native Messages Thinking Controls
+
+For Anthropic-compatible, Vertex Claude, and Bedrock Anthropic Messages routes, native `output_config.effort` is independent of `thinking`. The gateway preserves `low`, `medium`, `high`, `xhigh`, and `max`, subject to the configured model effort ceiling and upstream model support. Omitted effort remains omitted, and `effort: null` remains null. The gateway does not insert a thinking mode or a default effort for native requests. Anthropic defaults Opus 5.5 and Haiku 5.5 to `medium`; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
+
+Adaptive and manual thinking preserve `display: "summarized"`, `display: "omitted"`, and `display: null`. Beta `display: "updates"` and other thinking extension fields are forwarded for upstream beta validation. Invalid display values produce a display error; actual `thinking.budget_tokens` on adaptive or between-tools thinking produces a budget error. Manual-budget models continue to accept `thinking.type: "enabled"` with a budget. The gateway applies the [model-specific thinking-off rules](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models): Sonnet 5.5 maps `disabled` to `between_tools`, and always-on models such as Opus 5.5 reject disabling. Thinking-off requests send only the resolved `type`; effort is preserved and checked against the model's limits. See [Anthropic thinking](https://platform.claude.com/docs/en/build-with-claude/thinking).
+
+OpenAI-shaped `reasoning_effort` and `reasoning.effort` retain the model-aware translations described below. These aliases can enable thinking; native effort alone does not. Conflicting explicit controls remain errors. Opus 4.5 native effort receives the required effort beta on Vertex and Bedrock even when thinking is omitted or disabled.
+
+Effort-changing system messages retain their position and `output_config`, including empty content. Native `safeguards` requests and opaque `safeguard_results` responses are preserved, including verdicts in stream message-start and message-delta fields. These fields support [Claude Code auto mode](https://code.claude.com/docs/en/llm-gateway-protocol); auto mode is not an effort value, and neither `"auto"` nor `"none"` is a native Anthropic effort. This support does not establish complete Claude Code compatibility: arbitrary mid-conversation system messages without effort controls are still hoisted, and unknown SSE event types are not passed through.
+
 ## Messages Token Counting
 
 `POST /v1/messages/count_tokens` selects a route like `POST /v1/messages` and forwards only the prompt-defining fields to the provider's own count API. The gateway does not estimate tokens locally.
@@ -201,7 +211,7 @@ Claude thinking compatibility is model-aware:
 
 | Model family | Gateway behavior |
 | --- | --- |
-| Claude Fable 5.1 | Adaptive thinking is always on. Request-level `reasoning_effort`, `reasoning.effort`, or `output_config.effort` maps to adaptive thinking plus `output_config.effort`. Provider support for beta per-message effort is separate from request-level mapping; see [Google Vertex AI](../providers/gcp-vertex.md#per-message-effort). |
+| Claude Fable 5.1 | Adaptive thinking is always on upstream. `reasoning_effort` or `reasoning.effort` maps to adaptive thinking plus `output_config.effort`; native effort follows [Native Messages Thinking Controls](#native-messages-thinking-controls). Provider support for beta per-message effort is separate from request-level mapping; see [Google Vertex AI](../providers/gcp-vertex.md#per-message-effort). |
 | Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, Claude Haiku 5.5 | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. See [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models) for `thinking.type: "disabled"`. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, though they are deprecated upstream. |
 | Claude Mythos Preview | `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |

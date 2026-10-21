@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 use super::response::{
     anthropic_usage_total, map_anthropic_finish_reason, map_anthropic_stream_usage,
     normalize_anthropic_thinking_delta, normalize_anthropic_thinking_start,
-    provider_reasoning_metadata,
+    preserve_anthropic_message_metadata, provider_reasoning_metadata,
 };
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk};
 
@@ -75,6 +75,21 @@ where
                     .or(event.event.as_deref())
                     .unwrap_or_default();
 
+                let mut metadata_delta = Map::new();
+                if kind == "message_delta" {
+                    preserve_anthropic_message_metadata(
+                        &mut metadata_delta,
+                        &payload,
+                        provider_namespace,
+                        "message_delta",
+                    );
+                }
+                if !metadata_delta.is_empty() {
+                    yield Ok(openai_sse_chunk(&openai_delta_chunk(
+                        &stream_id, created, &model, Value::Object(metadata_delta), None,
+                    )));
+                }
+
                 match kind {
                     "message_start" if !role_emitted => {
                         let mut delta = openai_chunk(
@@ -84,6 +99,12 @@ where
                             Some("assistant"),
                             None,
                             None,
+                        );
+                        preserve_anthropic_message_metadata(
+                            delta["choices"][0]["delta"].as_object_mut().expect("delta object"),
+                            &payload["message"],
+                            provider_namespace,
+                            "message",
                         );
                         if let Some(usage) = map_anthropic_stream_usage(&payload, usage_source) {
                             let usage = merge_openai_stream_usage(&mut latest_usage, &usage);

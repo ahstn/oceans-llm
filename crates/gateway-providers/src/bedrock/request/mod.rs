@@ -406,6 +406,9 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
 
     for message in &request.messages {
         match message.role.as_str() {
+            "system" if message.extra.contains_key("output_config") => {
+                messages.push(crate::anthropic::request::native_effort_message(message));
+            }
             "system" | "developer" => {
                 crate::anthropic::request::append_system_blocks(&mut system, &message.content)?;
             }

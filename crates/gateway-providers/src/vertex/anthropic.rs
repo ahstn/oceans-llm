@@ -4,7 +4,8 @@ use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext};
 use serde_json::{Map, Value};
 
 use crate::anthropic::{
-    AnthropicRequestOptions, COUNT_TOKENS_FIELDS, map_anthropic_request, retain_count_tokens_fields,
+    AnthropicRequestOptions, COUNT_TOKENS_FIELDS, ClaudeThinkingPolicy, claude_thinking_policy,
+    map_anthropic_request, retain_count_tokens_fields,
 };
 
 /// Body field Vertex `rawPredict` requires instead of the `anthropic-version` header.
@@ -104,12 +105,8 @@ fn apply_body_betas(
     if body
         .get("output_config")
         .and_then(|config| config.get("effort"))
-        .is_some()
-        && body
-            .get("thinking")
-            .and_then(|thinking| thinking.get("type"))
-            .and_then(Value::as_str)
-            == Some("enabled")
+        .is_some_and(|effort| !effort.is_null())
+        && claude_thinking_policy(&context.upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
     {
         push_unique(&mut betas, EFFORT_BETA);
     }

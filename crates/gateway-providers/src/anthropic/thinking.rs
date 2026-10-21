@@ -31,43 +31,41 @@ pub fn apply_anthropic_thinking_compatibility(
     let reasoning_effort = extract_anthropic_reasoning_effort(body)?;
     let native_effort = extract_existing_anthropic_output_effort(body)?;
     let has_native_effort = native_effort.is_some();
+    let has_reasoning_effort = reasoning_effort.is_some();
     let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(body)?;
     let policy = claude_thinking_policy(upstream_model);
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 
-    if policy == ClaudeThinkingPolicy::AdaptiveOnly {
-        if budget_tokens.is_some() {
-            return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly && budget_tokens.is_some() {
+        return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+            model: upstream_model.to_string(),
+        });
+    }
+
+    // Native effort controls answer generation independently of thinking. Only
+    // OpenAI-style reasoning aliases opt into a thinking mode on the caller's behalf.
+    if let Some(effort) = &effort {
+        if has_native_effort || policy == ClaudeThinkingPolicy::AdaptiveOnly {
+            validate_adaptive_effort(effort, upstream_model)?;
+        }
+        if has_native_effort && policy == ClaudeThinkingPolicy::ManualOnly {
+            return Err(AnthropicAdapterError::EffortNotSupported {
                 model: upstream_model.to_string(),
             });
         }
-        if matches!(
+    }
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly
+        && matches!(
             caller_thinking_type(body),
             Some("disabled" | "between_tools")
-        ) {
-            return apply_thinking_off(body, effort, upstream_model);
-        }
-        let effort = effort.unwrap_or_else(|| Value::String("high".to_string()));
-        validate_adaptive_effort(&effort, upstream_model)?;
-        apply_policy_effort(
-            body,
-            policy,
-            effort,
-            None,
-            has_native_effort,
-            upstream_model,
-        )?;
-    } else if let Some(effort) = effort {
-        apply_policy_effort(
-            body,
-            policy,
-            effort,
-            budget_tokens,
-            has_native_effort,
-            upstream_model,
-        )?;
+        )
+    {
+        return apply_thinking_off(body, effort, upstream_model);
+    }
+    if let Some(effort) = effort.filter(|_| has_reasoning_effort) {
+        apply_policy_effort(body, policy, effort, budget_tokens, upstream_model)?;
     } else if let Some(budget_tokens) = budget_tokens {
         apply_policy_budget(body, policy, budget_tokens, upstream_model)?;
     }
@@ -146,7 +144,6 @@ fn apply_policy_effort(
     policy: ClaudeThinkingPolicy,
     effort: Value,
     budget_tokens: Option<Value>,
-    has_native_effort: bool,
     upstream_model: &str,
 ) -> Result<(), AnthropicAdapterError> {
     match policy {
@@ -166,11 +163,6 @@ fn apply_policy_effort(
             restore_anthropic_output_effort(body, effort);
         }
         ClaudeThinkingPolicy::ManualOnly => {
-            if has_native_effort {
-                return Err(AnthropicAdapterError::EffortNotSupported {
-                    model: upstream_model.to_string(),
-                });
-            }
             let budget_tokens = budget_tokens
                 .or_else(|| existing_manual_thinking_budget(body))
                 .ok_or_else(|| AnthropicAdapterError::ManualBudgetRequired {
@@ -259,24 +251,18 @@ fn merge_reasoning_budget_tokens(
 }
 
 fn extract_existing_anthropic_output_effort(
-    body: &mut Map<String, Value>,
+    body: &Map<String, Value>,
 ) -> Result<Option<Value>, AnthropicAdapterError> {
-    let (effort, remove_output_config) = {
-        let Some(output_config) = body.get_mut("output_config") else {
-            return Ok(None);
-        };
-        let output_config = output_config
-            .as_object_mut()
-            .ok_or(AnthropicAdapterError::InvalidOutputConfig)?;
-
-        let effort = output_config.remove("effort").filter(|val| !val.is_null());
-        (effort, output_config.is_empty())
+    let Some(output_config) = body.get("output_config") else {
+        return Ok(None);
     };
-    if remove_output_config {
-        body.remove("output_config");
-    }
-
-    Ok(effort)
+    let output_config = output_config
+        .as_object()
+        .ok_or(AnthropicAdapterError::InvalidOutputConfig)?;
+    Ok(output_config
+        .get("effort")
+        .filter(|val| !val.is_null())
+        .cloned())
 }
 
 fn merge_optional_efforts(
@@ -335,6 +321,17 @@ fn validate_caller_thinking_for_policy(
         });
     }
 
+    if !matches!(thinking_type, Some("disabled" | "between_tools"))
+        && let Some(display) = thinking.get("display")
+        && !display.is_null()
+        && !matches!(display.as_str(), Some("summarized" | "omitted" | "updates"))
+    {
+        return Err(AnthropicAdapterError::InvalidThinkingDisplay);
+    }
+    if thinking_type == Some("adaptive") && thinking.contains_key("budget_tokens") {
+        return Err(AnthropicAdapterError::ThinkingBudgetNotSupported);
+    }
+
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
             if thinking_type == Some("enabled") {
@@ -363,13 +360,7 @@ fn validate_caller_thinking_for_policy(
                     model: upstream_model.to_string(),
                 });
             }
-            for key in thinking.keys() {
-                if key != "type" {
-                    return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
-                        model: upstream_model.to_string(),
-                    });
-                }
-            }
+            // Preserve supported display and extension fields for upstream beta validation.
         }
         ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {
             if thinking_type == Some("adaptive") {

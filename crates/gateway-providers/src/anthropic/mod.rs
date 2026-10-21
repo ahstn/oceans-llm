@@ -1,6 +1,8 @@
 mod controls;
 pub mod count_tokens;
 pub mod error;
+#[cfg(test)]
+mod native_metadata_tests;
 pub mod request;
 #[cfg(test)]
 mod request_tests;
