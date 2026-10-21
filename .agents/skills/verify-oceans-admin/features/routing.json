@@ -363,6 +363,30 @@
       ]
     },
     {
+      "id": "anthropic-messages",
+      "file": "anthropic-messages.md",
+      "proof": {
+        "manual": true
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway/src/http/{mod,handlers,anthropic_stream,request_body}.rs",
+        "crates/gateway/src/http/request_body/**",
+        "crates/gateway/src/http/handlers/{auth,inference,count_tokens}.rs",
+        "crates/gateway-core/src/protocol/{anthropic,translate}.rs",
+        "crates/gateway-core/src/{claude_models,reasoning_policy}.rs",
+        "crates/gateway-providers/src/anthropic/**",
+        "crates/gateway-providers/src/anthropic_compat.rs",
+        "crates/gateway-providers/src/vertex/{anthropic,mod}.rs",
+        "crates/gateway-providers/src/bedrock/{mod,response}.rs",
+        "crates/gateway-providers/src/bedrock/request/**",
+        "crates/gateway-providers/src/copilot/mod.rs",
+        "crates/gateway-providers/src/openai_compat.rs",
+        "crates/gateway-providers/src/openai_compat/anthropic_messages.rs",
+        ".agents/skills/verify-oceans-admin/scripts/{check-messages,messages-regressions}.mjs"
+      ]
+    },
+    {
       "id": "backend-gateway",
       "file": "backend-gateway.md",
       "proof": {

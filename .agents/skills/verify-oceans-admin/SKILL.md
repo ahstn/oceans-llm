@@ -1,6 +1,6 @@
 ---
 name: verify-oceans-admin
-description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, usage costs, spend controls, batches, agent sessions, request logs, MCP registry and tool access, OpenRouter routing, guardrails, and Skills storage.
+description: Verify the Oceans LLM admin control plane and backend gateway against the real local stack, seeded demo data, and bounded live providers when required. Use for user-path checks of sign-in, models, API keys, observability, usage costs, spend controls, batches, agent sessions, request logs, Anthropic Messages thinking and effort compatibility, MCP registry and tool access, OpenRouter routing, guardrails, and Skills storage.
 compatibility: Requires mise, git, lsof, and Chromium via `mise run //ui:e2e:install`; macOS or Linux.
 ---
 
@@ -119,6 +119,15 @@ Prove Skills storage and ownership with Oceans and native RustFS:
 Read [features/skills.md](./features/skills.md) before launch. This proof drives regular-user namespace claims, ZIP uploads, file previews, version and default changes, and browser downloads. It compares saved API state and archive digests, verifies shared reads and owner-only updates, and checks service-account restrictions. It sends no LLM request.
 
 ## Live LLM requests
+
+For `/v1/messages`, thinking/display/effort controls, native transport mapping or Messages streaming changes, follow [Anthropic Messages](./features/anthropic-messages.md). The planner selects `anthropic-messages` in addition to applicable live/request-log proofs. Run its offline gate before the live pass:
+
+```bash
+mise exec -- node .agents/skills/verify-oceans-admin/scripts/check-messages.mjs \
+  --output "/tmp/oceans-admin-verification/$OCEANS_VERIFY_RUN_ID/evidence/messages-regressions.json"
+```
+
+The gate requires the native thinking matrix and general gateway regression suites to pass; zero tests or missing named regressions fail. It is an offline helper, not a browser driver or live-native-provider proof. The recipe pairs that evidence with one public Messages canary, its real Request Logs UI/API result, and key revocation. Reuse the same canary for `live-llm-requests`; do not make extra paid requests just to satisfy multiple planned feature IDs. OpenRouter exercises Messages-to-Chat translation, so explicitly record when native Vertex/Bedrock access or a full Claude Code session remains unverified.
 
 Read-only control-plane verification is the default and does not call an upstream provider. Add one short, paid live request when the change affects request routing, provider authentication, request or response translation, streaming, tool calls, usage accounting, request logging, provider error mapping, or another behavior that a configured model list cannot prove. Do not add a paid request for UI-only, documentation-only, seed-only, or unrelated configuration changes.
 
