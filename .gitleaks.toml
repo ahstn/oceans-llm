@@ -1,34 +1,31 @@
 #:schema https://www.schemastore.org/gitleaks.json
-# gitleaks secret scanning (`mise run secrets-check`). Extends the default rules;
-# the allowlists cover fixtures and identifiers the default rules mistake for
-# secrets. Keep them narrow: a path allowlist hides every rule in that file.
+# gitleaks secret scanning (`mise run secrets-check`). Extends the default rules.
+# Each allowlist names an exact fixture value, never a path or field name, so a
+# real secret in the same file or field is still reported.
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Provider and model identifiers, such as `provider_key: \"bedrock-us-east-1\"`"
+description = "Provider and model identifiers in demo seeds and store tests"
 targetRules = ["generic-api-key"]
-regexTarget = "line"
-regexes = ['''\b(provider|model)_key\b''']
+regexes = ['''^(bedrock-us-east-1|claude-3-5-sonnet)$''']
 
 [[allowlists]]
-description = "Placeholder keys in docs, tests, and a since-removed bundled dependency comment"
-regexes = ['''gwk_(abcd1234|wxyz9876|0f3c9a)\.''', '''\babc123xyz456\b''']
+description = "Placeholder gateway keys in docs and config tests"
+regexes = [
+  '''^gwk_(abcd1234\.(secret-one|secret-value|XYZ\.\.\.)|wxyz9876\.secret-two|0f3c9a\.s3cr3t)$''',
+]
 
 [[allowlists]]
-description = "Throwaway RSA keys in provider token tests"
+description = "Throwaway RSA key shared by the token and Copilot tests"
 targetRules = ["private-key"]
-paths = [
-  '''^crates/gateway-providers/src/token\.rs$''',
-  '''^crates/gateway-providers/src/copilot/tests\.rs$''',
-]
+regexes = ['''MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCo1WHWzHdosbKK''']
 
 [[allowlists]]
-description = "Fake tokens in secret-redaction tests and audit-log redaction fixtures"
-paths = [
-  '''^crates/gateway-guardrails/src/redaction/tests\.rs$''',
-  '''^crates/gateway-service/src/admin_audit\.rs$''',
+description = "Fake tokens in redaction tests, and a docs comment in a since-removed bundled dependency"
+regexes = [
+  '''^glpat-0123456789abcdefghij$''',
+  '''^xoxb-1234567890-1234567890-''',
+  '''^abc123xyz456$''',
 ]
-regexes = ['''glpat-0123456789abcdefghij''', '''xox[bp]-''']
-condition = "AND"

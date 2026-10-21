@@ -183,11 +183,11 @@ run = "typos"
 # breaks, so these tasks turn colour off. They scan commits and staged changes
 # rather than the working tree, so gitignored local secrets never match.
 [tasks.secrets-check]
-description = "Scan commits since CHANGE_BASE (default: merge base with origin/main) for secrets with gitleaks"
+description = "Scan every commit since CHANGE_BASE (default: merge base with origin/main) for secrets with gitleaks"
 env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
 run = """
 base="${CHANGE_BASE:-$(git merge-base origin/main HEAD)}"
-gitleaks git --redact --no-banner --log-opts="--first-parent -m $base..HEAD"
+gitleaks git --redact --no-banner --log-opts="$base..HEAD"
 """
 
 [tasks.secrets-check-staged]
