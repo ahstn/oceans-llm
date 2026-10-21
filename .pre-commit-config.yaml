@@ -33,11 +33,11 @@ repos:
             - "crates/admin-ui/web/src/**/*.tsx"
       # The checks below also run inside `lint`; these hooks cover commits that
       # touch no Rust or TypeScript sources.
+      # Checks only the staged files; CI runs the full `mise run editorconfig-check`.
       - id: editorconfig-check
         name: editorconfig-check
         language: system
-        entry: mise run editorconfig-check
-        pass_filenames: false
+        entry: mise exec -- editorconfig-checker
       # Checks only the staged files; CI runs the full `mise run typos` scan.
       - id: typos
         name: typos
