@@ -5,3 +5,15 @@ exclude = ["**/node_modules/**", "videos/**"]
 [formatting]
 # Matches the width most dependency tables already use.
 column_width = 100
+
+# taplo validates only files with an associated schema; its default online
+# catalog no longer parses, so associate the schemas here.
+[[rule]]
+include = ["**/Cargo.toml"]
+[rule.schema]
+path = "https://json.schemastore.org/cargo.json"
+
+[[rule]]
+include = ["**/mise.toml", "**/mise.*.toml"]
+[rule.schema]
+path = "https://mise.jdx.dev/schema/mise.json"

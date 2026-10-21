@@ -26,11 +26,12 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 ## Implementation
 
 - `mise run repo-lint` runs `toml-check`, `editorconfig-check`, `typos`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
-- prek runs each check as its own hook. The existing `lint` hook only fires on Rust and TypeScript changes, so these hooks cover documentation and config commits.
+- `.taplo.toml` associates the Cargo and mise JSON schemas with their files. taplo validates only files with an associated schema, and its default online catalog no longer parses.
+- prek runs each check as its own hook. The typos hook checks staged files only. The existing `lint` hook only fires on Rust and TypeScript changes, so these hooks cover documentation and config commits.
 - `.github/workflows/repo-lint.yml` runs on every pull request, including docs-only ones that `ci.yml` skips. It gives zizmor the read-only `GITHUB_TOKEN` for its online audits. `ci.yml` runs `rust-deny` next to Clippy.
 - `.github/workflows/osv-scanner.yml` calls the upstream reusable workflows. On pull requests it scans the base and head commits and fails only on the difference. SARIF upload is off there, because fork pull requests get a read-only token. The weekly run uploads the full results without failing.
 - `deny.toml` ignores the 19 RustSec advisories present at adoption. Each entry gives a reason. The license allowlist matches the current graph, and the workspace crates now declare `AGPL-3.0-only` to match `LICENSE`. utoipa reads that field, so the generated admin OpenAPI document's `info.license` now names it too.
-- `.github/zizmor.yml` ignores findings in the cargo-dist generated `release.yml`. It also disables the `self-repository` audit, because actionlint 1.7.12 rejects the `$/` syntax that audit recommends.
+- `.github/zizmor.yml` ignores the current findings in the cargo-dist generated `release.yml` line by line, so a regenerated or extended workflow is audited again. It also disables the `self-repository` audit, because actionlint 1.7.12 rejects the `$/` syntax that audit recommends.
 - `mise run deps-audit` runs osv-scanner over every tracked lockfile. It lists lockfiles with `git ls-files` because the scanner's recursive walk finds nothing in a linked git worktree.
 - `mise run links-check-external` also fetches remote URLs. It stays out of CI because remote documentation sites change anchors and rate-limit requests.
 

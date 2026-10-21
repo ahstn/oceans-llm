@@ -38,11 +38,12 @@ repos:
         language: system
         entry: mise run editorconfig-check
         pass_filenames: false
+      # Checks only the staged files; CI runs the full `mise run typos` scan.
       - id: typos
         name: typos
         language: system
-        entry: mise run typos
-        pass_filenames: false
+        entry: mise exec -- typos --force-exclude
+        types: [text]
       - id: toml-check
         name: toml-check
         language: system
