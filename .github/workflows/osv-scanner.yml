@@ -1,10 +1,17 @@
 name: osv-scanner
 
 # Scans every lockfile (Cargo, Bun, npm) against OSV. Pull requests fail only on
-# vulnerabilities they introduce; the weekly run reports the whole backlog to
-# code scanning. `mise run deps-audit` runs the same full scan locally.
+# vulnerabilities they introduce. Lockfile changes pushed to main, and a weekly
+# run, report the whole backlog to code scanning. `mise run deps-audit` runs the
+# same full scan locally.
 on:
   pull_request:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/Cargo.lock"
+      - "**/bun.lock"
+      - "**/package-lock.json"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:

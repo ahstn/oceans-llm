@@ -50,27 +50,13 @@ jobs:
         with:
           install_args: zizmor tombi lychee editorconfig-checker typos gitleaks github:sbdchd/squawk
 
-      - name: Check TOML
-        run: mise run toml-check
-
-      - name: Check whitespace against .editorconfig
-        run: mise run editorconfig-check
-
-      - name: Check spelling
-        run: mise run typos
+      # `repo-lint` in mise.toml owns the list of checks: TOML, whitespace,
+      # spelling, secrets, links, and GitHub Actions. The read-only token
+      # enables zizmor's online audits, such as known vulnerable actions.
+      - name: Run repository lint checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run repo-lint
 
       - name: Lint added or edited Postgres migrations
         run: mise run //store:migrations-lint-changed
-
-      - name: Scan new commits for secrets
-        run: mise run secrets-check
-
-      - name: Check local links
-        run: mise run links-check
-
-      # The read-only token enables zizmor's online audits, such as known
-      # vulnerable actions and impostor commits.
-      - name: Audit GitHub Actions
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: mise run actions-audit

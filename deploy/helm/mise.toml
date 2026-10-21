@@ -39,8 +39,11 @@ env = { KUBE_VERSION = "1.35.9" }
 run = """
 crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/501527ab9c40c827144c8f45945b25a023e344ce/{{ "{{" }}.Group}}/{{ "{{" }}.ResourceKind}}_{{ "{{" }}.ResourceAPIVersion}}.json'
 render() { helm template oceans-llm oceans-llm --kube-version "$KUBE_VERSION" "$@"; }
+# Schemas come from pinned URLs, so one gitignored cache serves every render.
+schemas=".local/kubeconform-schemas"
+mkdir -p "$schemas"
 validate() {
-  kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" \
+  kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" -cache "$schemas" \
     -schema-location default -schema-location "$crds"
 }
 # Render to a file first: the task shell has no pipefail, so a failed render

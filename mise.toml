@@ -190,10 +190,16 @@ base="${CHANGE_BASE:-$(git merge-base origin/main HEAD)}"
 gitleaks git --redact --no-banner --log-opts="$base..HEAD"
 """
 
+# `gitleaks git --pre-commit --staged` misses some secrets in 8.30.1
+# (gitleaks/gitleaks#2281), so scan a copy of the staged files instead.
 [tasks.secrets-check-staged]
-description = "Scan staged changes for secrets with gitleaks"
-env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
-run = "gitleaks git --pre-commit --staged --redact --no-banner"
+description = "Scan staged files for secrets with gitleaks"
+run = """
+staged="$(mktemp -d)"
+trap 'rm -rf "$staged"' EXIT
+git diff --cached --name-only --diff-filter=ACMR -z | git checkout-index --prefix="$staged/" -z --stdin
+gitleaks dir "$staged" --config .gitleaks.toml --redact --no-banner
+"""
 
 [tasks.secrets-check-history]
 description = "Scan the full git history for secrets with gitleaks"
