@@ -170,7 +170,7 @@ run = "lychee --no-progress ."
 
 [tasks.actions-audit]
 description = "Audit GitHub Actions workflows and Dependabot config; set GH_TOKEN for online audits"
-run = "zizmor --quiet --no-progress ."
+run = "zizmor --quiet --no-progress --strict-collection ."
 
 [tasks.typos]
 description = "Check spelling in source, docs, and config; allowed words live in _typos.toml"
