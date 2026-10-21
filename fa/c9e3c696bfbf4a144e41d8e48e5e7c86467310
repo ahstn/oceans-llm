@@ -1,0 +1,19 @@
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_b5366d26fb04f3 45-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fac9e3c696bfbf4a144e41d8e48e5e7c86467310",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
