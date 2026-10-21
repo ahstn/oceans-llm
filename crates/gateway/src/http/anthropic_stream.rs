@@ -311,7 +311,10 @@ fn fallback_anthropic_stream_usage() -> Value {
 }
 
 fn pending_anthropic_message_delta(state: &mut AnthropicStreamState) -> Option<Bytes> {
-    let stop_reason = state.pending_stop_reason.take()?;
+    let stop_reason = state.pending_stop_reason.take();
+    if stop_reason.is_none() && state.pending_message_fields.is_empty() {
+        return None;
+    }
     let mut message_delta = json!({
         "type":"message_delta",
         "delta": {
@@ -574,6 +577,52 @@ mod tests {
                 .any(|event| event["content_block"]["id"] == "toolu_exact")
         );
         assert!(!rendered.contains("provider_metadata"));
+    }
+
+    #[tokio::test]
+    async fn messages_stream_preserves_pending_metadata_without_finish_reason() {
+        let results = json!({"opaque": [{"tool_use_id": "toolu_exact"}]});
+        for terminal in ["data: [DONE]\n\n", ""] {
+            let chunks = [
+                json!({"choices": [{"delta": {"role": "assistant", "content": "hi"}}],
+                    "usage": {"prompt_tokens": 7, "completion_tokens": 0}}),
+                json!({"choices": [{"delta": {"provider_metadata": {"anthropic": {
+                    "message_delta": {"safeguard_results": results, "delta": {"safeguard_results": results}}
+                }}}, "finish_reason": null}], "usage": {"completion_tokens": 2}}),
+            ];
+            let upstream: ProviderStream = Box::pin(stream::iter(
+                chunks
+                    .into_iter()
+                    .map(|chunk| Ok(Bytes::from(format!("data: {chunk}\n\n"))))
+                    .chain([Ok(Bytes::from(terminal))]),
+            ));
+            let rendered = render_stream(upstream).await;
+            let mut parser = gateway_core::SseEventParser::default();
+            let events: Vec<serde_json::Value> = parser
+                .push_bytes(rendered.as_bytes())
+                .unwrap()
+                .into_iter()
+                .map(|event| serde_json::from_str(&event.data).unwrap())
+                .collect();
+            let final_delta = &events[events.len() - 2];
+            assert_eq!(final_delta["type"], "message_delta");
+            assert_eq!(final_delta["safeguard_results"], results);
+            assert_eq!(final_delta["delta"]["safeguard_results"], results);
+            assert!(final_delta["delta"]["stop_reason"].is_null());
+            assert_eq!(
+                final_delta["usage"],
+                json!({"input_tokens": 7, "output_tokens": 2})
+            );
+            assert_eq!(events[events.len() - 3]["type"], "content_block_stop");
+            assert_eq!(events.last().unwrap()["type"], "message_stop");
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.get("safeguard_results").is_some())
+                    .count(),
+                1
+            );
+        }
     }
 
     #[tokio::test]

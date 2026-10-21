@@ -55,6 +55,7 @@ In the gateway's [model classifier](../../crates/gateway-core/src/claude_models.
 Native Messages fields and OpenAI-shaped aliases have different responsibilities:
 
 - A native `output_config.effort` is forwarded without adding a thinking mode. Adaptive or enabled thinking retains its display setting, and absence or null of effort retains its meaning. Thinking-off modes normalize to the model's supported type-only form.
+- The native Messages path preserves omitted thinking and effort independently of Chat Completions. For adaptive-only models, Chat Completions retains its existing adaptive-thinking default with high effort on the shared Anthropic and Vertex adapters, and its effort-driven adaptive mapping on Bedrock. The originating API is trusted gateway context, not a caller-supplied body field.
 - `reasoning_effort` and `reasoning.effort` are gateway compatibility aliases. They request the existing model-aware translation to Anthropic controls. Manual-only models still need an explicit budget for that translation.
 - Explicit alias/native disagreements remain errors. Model or alias reasoning-effort ceilings remain enforced before provider mapping; omission does not invent an effort value to validate against the ceiling.
 - An invalid display value should report a display validation error. A budget error requires an actual manual budget or unsupported manual configuration.
@@ -70,7 +71,7 @@ Current documented extensions include:
 
 - `display: updates`, with beta `thinking-display-updates-2026-08-18`. Reasoning text remains hidden while progress updates can be visible. Without the beta value, upstream rejects it like an unknown display value.
 - `thinking.block_binding`, with beta `thinking-binding-controls-2026-08-01`, for supported models' handling of signed thinking after conversation-prefix changes.
-- Per-message effort, with beta `per-message-effort-2026-08-01`, on supported models and platforms. It uses `output_config.effort` on a special system message in `messages`; its location determines when it takes effect.
+- Per-message effort, with beta `mid-conversation-output-config-2026-07-01`, on supported models and platforms. Claude API and Google Cloud requests opt in through the `anthropic-beta` header; Bedrock InvokeModel requests use the `anthropic_beta` body array. It uses `output_config.effort` on a special system message in `messages`; its location determines when it takes effect.
 
 See [progress updates](https://platform.claude.com/docs/en/build-with-claude/thinking#progress-updates-between-tool-calls), [signature validation](https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#a-400-error-says-a-thinking-block-signature-is-invalid), and [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#per-message-effort-beta). Native adaptive objects must preserve extension fields for upstream validation. `between_tools` is different: the upstream accepts no extra thinking fields with that type.
 

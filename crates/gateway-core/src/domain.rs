@@ -2872,6 +2872,15 @@ pub struct ProviderConnection {
     pub secrets: Option<Value>,
 }
 
+/// Public API contract used when dispatching through the common chat execution path.
+/// This is trusted endpoint metadata, never inferred from a caller's JSON fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChatRequestProtocol {
+    #[default]
+    ChatCompletions,
+    AnthropicMessages,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderRequestContext {
     pub request_id: String,
@@ -2884,6 +2893,9 @@ pub struct ProviderRequestContext {
     /// Credential generation selected during routing, if the provider uses user credentials.
     #[serde(default)]
     pub expected_provider_credential_id: Option<Uuid>,
+    /// Only relevant to chat execution; skipped so callers cannot override the endpoint contract.
+    #[serde(skip)]
+    pub chat_protocol: ChatRequestProtocol,
     #[serde(default)]
     pub extra_headers: Map<String, Value>,
     #[serde(default)]

@@ -1,3 +1,6 @@
+pub(crate) mod beta;
+#[cfg(test)]
+mod beta_transport_tests;
 mod controls;
 pub mod count_tokens;
 pub mod error;
@@ -25,8 +28,8 @@ pub use response::{
 };
 pub use streaming::normalize_anthropic_stream;
 pub use thinking::{
-    ClaudeThinkingOff, ClaudeThinkingPolicy, apply_anthropic_thinking_compatibility,
-    claude_rejects_forced_tool_choice, claude_thinking_off, claude_thinking_policy,
-    contains_exact_claude_model_marker, is_adaptive_only_claude,
+    ClaudeThinkingOff, ClaudeThinkingPolicy, apply_chat_completions_thinking,
+    apply_messages_thinking, claude_rejects_forced_tool_choice, claude_thinking_off,
+    claude_thinking_policy, contains_exact_claude_model_marker, is_adaptive_only_claude,
     validate_anthropic_sampling_fields, validate_anthropic_tool_choice,
 };

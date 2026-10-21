@@ -149,6 +149,7 @@ mod tests {
             upstream_model: "upstream-jev".to_string(),
             owner_user_id: None,
             expected_provider_credential_id: None,
+            chat_protocol: Default::default(),
             extra_headers: Map::new(),
             extra_body: Map::from_iter([("seed".to_string(), json!(7))]),
             request_headers: BTreeMap::new(),

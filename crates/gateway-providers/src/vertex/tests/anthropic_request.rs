@@ -630,7 +630,7 @@ fn omits_effort_beta_for_adaptive_thinking_models() {
 // --- context_management gating ---------------------------------------------------------------
 
 #[test]
-fn omits_context_management_when_beta_only_appears_in_caller_request_headers() {
+fn preserves_context_management_when_beta_only_appears_in_caller_request_headers() {
     let mut request = chat_request(vec![user("start")]);
     request.extra.insert(
         "context_management".to_string(),
@@ -649,8 +649,14 @@ fn omits_context_management_when_beta_only_appears_in_caller_request_headers() {
 
     let mapped = anthropic_body(&request, &context, false).expect("mapped");
 
-    assert!(mapped.get("context_management").is_none());
-    assert!(mapped.get("anthropic_beta").is_none());
+    assert_eq!(
+        mapped["context_management"],
+        request.extra["context_management"]
+    );
+    assert_eq!(
+        mapped["anthropic_beta"],
+        json!(["context-management-2025-06-27"])
+    );
 }
 
 #[test]
@@ -731,4 +737,16 @@ fn allows_context_management_with_matching_provider_default_beta_header() {
         mapped["anthropic_beta"],
         json!(["context-management-2025-06-27"])
     );
+}
+
+#[test]
+fn vertex_chat_completions_defaults_adaptive_only_models_to_high() {
+    for model in ["anthropic/claude-opus-4-7", "anthropic/claude-opus-5-5"] {
+        for stream in [false, true] {
+            let request = chat_request(vec![user("ping")]);
+            let mapped = anthropic_body(&request, &context(model), stream).unwrap();
+            assert_eq!(mapped["thinking"], json!({"type": "adaptive"}));
+            assert_eq!(mapped["output_config"], json!({"effort": "high"}));
+        }
+    }
 }

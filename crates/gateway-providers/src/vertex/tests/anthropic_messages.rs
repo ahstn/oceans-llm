@@ -4,6 +4,13 @@ use gateway_core::{
     anthropic_messages_request_to_core, protocol::anthropic::AnthropicMessagesRequest,
 };
 
+fn messages_context(model: &str) -> ProviderRequestContext {
+    ProviderRequestContext {
+        chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
+        ..context(model)
+    }
+}
+
 type CapturedRequests = Arc<Mutex<Vec<(String, Value)>>>;
 
 #[test]
@@ -31,8 +38,12 @@ fn vertex_native_opus_4_5_effort_beta_is_independent_of_thinking_mode() {
         let native: AnthropicMessagesRequest = serde_json::from_value(payload).unwrap();
         let request = anthropic_messages_request_to_core(&native);
         for stream in [false, true] {
-            let mapped = anthropic_body(&request, &context("anthropic/claude-opus-4-5"), stream)
-                .expect("native effort mapping");
+            let mapped = anthropic_body(
+                &request,
+                &messages_context("anthropic/claude-opus-4-5"),
+                stream,
+            )
+            .expect("native effort mapping");
             assert_eq!(mapped.get("thinking"), controls.get("thinking"));
             assert_eq!(mapped.get("output_config"), controls.get("output_config"));
             if needs_beta {
@@ -94,7 +105,7 @@ async fn vertex_native_messages_preserves_opus_5_5_thinking_controls_over_http()
         .with_state(captured.clone());
     let host = start_router(app).await;
     let provider = vertex_provider_for_test(format!("http://{host}"));
-    let context = context("anthropic/claude-opus-5-5");
+    let context = messages_context("anthropic/claude-opus-5-5");
     let mut cases = vec![
         json!({}),
         json!({"thinking": {"type": "adaptive", "display": "summarized"}}),

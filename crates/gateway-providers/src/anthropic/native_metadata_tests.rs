@@ -20,6 +20,7 @@ fn context() -> ProviderRequestContext {
         upstream_model: "claude-sonnet-4-6".into(),
         owner_user_id: None,
         expected_provider_credential_id: None,
+        chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
         extra_headers: Default::default(),
         extra_body: Default::default(),
         request_headers: Default::default(),
@@ -42,11 +43,14 @@ fn native_effort_messages_and_safeguards_survive_provider_mapping() {
             "model": "claude", "max_tokens": 1024,
             "system": [{"type": "text", "text": "System instruction"}],
             "messages": messages, "safeguards": safeguards,
-            "anthropic_beta": ["per-message-effort-2026-08-01"]
+            "anthropic_beta": ["mid-conversation-output-config-2026-07-01"]
         }))
         .unwrap();
         let request = anthropic_messages_request_to_core(&native);
-        let context = context();
+        let context = ProviderRequestContext {
+            upstream_model: "claude-opus-5-5".into(),
+            ..context()
+        };
         let mapped = [
             map_anthropic_request(
                 &request,
@@ -78,7 +82,7 @@ fn native_effort_messages_and_safeguards_survive_provider_mapping() {
             assert_eq!(body["safeguards"], safeguards);
             assert_eq!(
                 body["anthropic_beta"],
-                json!(["per-message-effort-2026-08-01"])
+                json!(["mid-conversation-output-config-2026-07-01"])
             );
         }
     }

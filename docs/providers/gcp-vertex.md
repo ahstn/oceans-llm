@@ -124,6 +124,8 @@ Native Claude invocation requires `max_tokens`. If callers omit both `max_tokens
 
 Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude model supports tool use. The gateway maps OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations, and streaming tool-use deltas to and from the Anthropic Messages shape used by Vertex. Keep `vision: false` unless you have tested image/document content blocks for the exact route; the Anthropic-on-Vertex mapper still rejects non-text content blocks in this slice.
 
+Claude beta opt-ins travel in one `anthropic-beta` header on Vertex `rawPredict`, `streamRawPredict`, and `count-tokens:rawPredict` requests. Oceans merges caller beta names with provider defaults, route headers, and legacy `anthropic_beta` body inputs, removing duplicate names. It removes the body field before sending the request. This follows the [Claude beta-header contract](https://platform.claude.com/docs/en/api/beta-headers): Google Cloud reads only one occurrence of the header. Beta names remain open for upstream validation; caller credentials and unrelated request headers are not forwarded.
+
 ### Claude Thinking Compatibility
 
 For Anthropic-on-Vertex, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. The gateway also applies model-aware thinking policy before sending the Vertex request.

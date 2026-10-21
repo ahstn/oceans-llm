@@ -17,6 +17,15 @@ export const requiredChecks = [
   ['gateway-accounting', 'inference_endpoints_normalize_models_and_account_for_success'],
   ['gateway-budget-rejection', 'inference_endpoints_reject_exhausted_budget_before_dispatch'],
   ['native-stream-metadata', 'native_anthropic_stream_round_trip_preserves_safeguard_results'],
+  ['stream-metadata-without-stop', 'messages_stream_preserves_pending_metadata_without_finish_reason'],
+  ['caller-beta-ingress', 'request_headers_preserve_repeated_anthropic_beta_opt_ins'],
+  ['caller-beta-wire', 'native_messages_beta_controls_reach_each_provider_over_http'],
+  ['count-tokens-beta-wire', 'native_count_tokens_forwards_caller_beta_headers_over_http'],
+  ['separate-api-thinking', 'chat_completions_and_messages_use_separate_thinking_contracts'],
+  ['bedrock-api-thinking', 'bedrock_chat_completions_and_messages_use_separate_thinking_contracts'],
+  ['vertex-chat-default', 'vertex_chat_completions_defaults_adaptive_only_models_to_high'],
+  ['trusted-api-ingress', 'chat_and_messages_handlers_set_trusted_protocol'],
+  ['trusted-api-context', 'request_json_cannot_override_trusted_chat_protocol'],
 ]
 
 export function assessResults(output, exitCode) {

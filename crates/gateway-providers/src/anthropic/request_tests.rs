@@ -12,10 +12,18 @@ fn context() -> ProviderRequestContext {
         upstream_model: "claude-sonnet-4-6".into(),
         owner_user_id: None,
         expected_provider_credential_id: None,
+        chat_protocol: Default::default(),
         extra_headers: Default::default(),
         extra_body: Default::default(),
         request_headers: Default::default(),
         compatibility: Default::default(),
+    }
+}
+
+fn messages_context() -> ProviderRequestContext {
+    ProviderRequestContext {
+        chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
+        ..context()
     }
 }
 
@@ -48,8 +56,68 @@ fn native_messages_request(extra: Value) -> CoreChatRequest {
 }
 
 #[test]
+fn chat_completions_and_messages_use_separate_thinking_contracts() {
+    for model in ["claude-opus-4-7", "claude-opus-5-5", "claude-fable-5-1"] {
+        for controls in [
+            json!({}),
+            json!({"output_config": {"effort": null}}),
+            json!({"output_config": {"effort": "low"}}),
+            json!({"thinking": {"type": "adaptive", "display": "summarized"}}),
+        ] {
+            let request = chat(controls.clone());
+            for stream in [false, true] {
+                for protocol in [
+                    gateway_core::ChatRequestProtocol::ChatCompletions,
+                    gateway_core::ChatRequestProtocol::AnthropicMessages,
+                ] {
+                    let context = ProviderRequestContext {
+                        upstream_model: model.into(),
+                        chat_protocol: protocol,
+                        ..context()
+                    };
+                    let body = map_anthropic_request(
+                        &request,
+                        &context,
+                        stream,
+                        &AnthropicRequestOptions::default(),
+                    )
+                    .unwrap();
+                    if protocol == gateway_core::ChatRequestProtocol::ChatCompletions {
+                        assert_eq!(body["thinking"]["type"], "adaptive", "{model}");
+                        let effort = controls["output_config"]["effort"]
+                            .as_str()
+                            .unwrap_or("high");
+                        assert_eq!(body["output_config"]["effort"], effort, "{model}");
+                    } else {
+                        assert_eq!(body.get("thinking"), controls.get("thinking"), "{model}");
+                        assert_eq!(
+                            body.get("output_config"),
+                            controls.get("output_config"),
+                            "{model}"
+                        );
+                    }
+                    assert!(body.get("chat_protocol").is_none());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn request_json_cannot_override_trusted_chat_protocol() {
+    let mut serialized = serde_json::to_value(messages_context()).unwrap();
+    assert!(serialized.get("chat_protocol").is_none());
+    serialized["chat_protocol"] = json!("AnthropicMessages");
+    let restored: ProviderRequestContext = serde_json::from_value(serialized).unwrap();
+    assert_eq!(
+        restored.chat_protocol,
+        gateway_core::ChatRequestProtocol::ChatCompletions
+    );
+}
+
+#[test]
 fn native_opus_5_5_preserves_adaptive_display_and_all_efforts() {
-    let mut context = context();
+    let mut context = messages_context();
     context.upstream_model = "claude-opus-5-5".into();
     for display in [json!("summarized"), json!("omitted"), Value::Null] {
         for effort in ["low", "medium", "high", "xhigh", "max"] {
@@ -77,7 +145,7 @@ fn native_opus_5_5_preserves_adaptive_display_and_all_efforts() {
 
 #[test]
 fn native_opus_5_5_leaves_omitted_thinking_and_effort_to_upstream_defaults() {
-    let mut context = context();
+    let mut context = messages_context();
     context.upstream_model = "claude-opus-5-5".into();
     let format = json!({
         "type": "json_schema", "schema": {"type": "object", "properties": {}}
@@ -118,7 +186,7 @@ fn native_effort_preserves_independent_thinking_modes() {
             "display": "omitted"}),
         ),
     ] {
-        let mut context = context();
+        let mut context = messages_context();
         context.upstream_model = model.into();
         let request = native_messages_request(json!({
             "thinking": thinking, "output_config": {"effort": "high"}
@@ -143,7 +211,7 @@ fn native_thinking_off_preserves_null_effort_and_normalizes_unused_fields() {
         ("claude-opus-5", "disabled"),
         ("claude-sonnet-5-5", "between_tools"),
     ] {
-        let mut context = context();
+        let mut context = messages_context();
         context.upstream_model = model.into();
         let request = native_messages_request(json!({
             "thinking": {"type": mode, "display": "unused", "budget_tokens": null},
@@ -165,7 +233,7 @@ fn native_thinking_off_preserves_null_effort_and_normalizes_unused_fields() {
 
 #[test]
 fn native_thinking_preserves_beta_display_and_future_fields() {
-    let mut context = context();
+    let mut context = messages_context();
     context.upstream_model = "claude-opus-5-5".into();
     context.extra_headers.insert(
         "anthropic-beta".into(),
@@ -225,7 +293,7 @@ fn manual_only_models_preserve_legacy_minimal_reasoning_alias_with_budget() {
 
 #[test]
 fn native_opus_5_5_reports_invalid_display_separately_from_manual_budgets() {
-    let mut context = context();
+    let mut context = messages_context();
     context.upstream_model = "claude-opus-5-5".into();
     for display in [json!("unsupported"), json!(true), json!(42)] {
         let request = native_messages_request(json!({
@@ -273,7 +341,7 @@ fn native_system_cache_boundaries_survive_translation() {
     for stream in [false, true] {
         let body = map_anthropic_request(
             &request,
-            &context(),
+            &messages_context(),
             stream,
             &AnthropicRequestOptions::default(),
         )

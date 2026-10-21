@@ -129,6 +129,7 @@ impl Endpoint {
 #[derive(Default)]
 struct RecordingProvider {
     calls: Mutex<Vec<(Endpoint, bool)>>,
+    chat_protocols: Mutex<Vec<gateway_core::ChatRequestProtocol>>,
 }
 
 #[async_trait]
@@ -153,6 +154,10 @@ impl ProviderClient for RecordingProvider {
         assert_eq!(request.model, "fast");
         assert_eq!(context.upstream_model, "fast-upstream");
         self.calls.lock().unwrap().push((Endpoint::Chat, false));
+        self.chat_protocols
+            .lock()
+            .unwrap()
+            .push(context.chat_protocol);
         Ok(json!({
             "model": "fast-upstream", "choices": [{"message": {"role": "assistant", "content": "ok"}}],
             "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
@@ -179,9 +184,13 @@ impl ProviderClient for RecordingProvider {
     async fn chat_completions_stream(
         &self,
         _request: &CoreChatRequest,
-        _context: &ProviderRequestContext,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
         self.calls.lock().unwrap().push((Endpoint::Chat, true));
+        self.chat_protocols
+            .lock()
+            .unwrap()
+            .push(context.chat_protocol);
         Err(ProviderError::Transport("connection reset".to_string()))
     }
 
@@ -228,6 +237,36 @@ async fn request_detail(state: &AppState) -> RequestLogDetail {
         .get_request_log_detail(page.items[0].request_log_id)
         .await
         .unwrap()
+}
+
+#[tokio::test]
+async fn chat_and_messages_handlers_set_trusted_protocol() {
+    for (endpoint, expected) in [
+        (
+            Endpoint::Chat,
+            gateway_core::ChatRequestProtocol::ChatCompletions,
+        ),
+        (
+            Endpoint::Messages,
+            gateway_core::ChatRequestProtocol::AnthropicMessages,
+        ),
+    ] {
+        for streaming in [false, true] {
+            let (_directory, state, provider) = setup().await;
+            let result = endpoint.call(state, streaming).await;
+            if streaming {
+                assert!(result.is_err(), "mock stream fails after dispatch");
+            } else {
+                assert_eq!(
+                    result
+                        .unwrap_or_else(|error| panic!("{}", error.0))
+                        .status(),
+                    200
+                );
+            }
+            assert_eq!(*provider.chat_protocols.lock().unwrap(), [expected]);
+        }
+    }
 }
 
 #[tokio::test]

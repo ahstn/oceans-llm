@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 
 use super::error::AnthropicAdapterError;
 use super::thinking::{
-    apply_anthropic_thinking_compatibility, validate_anthropic_sampling_fields,
+    apply_chat_completions_thinking, apply_messages_thinking, validate_anthropic_sampling_fields,
     validate_anthropic_tool_choice,
 };
 
@@ -76,7 +76,7 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
-    if !has_anthropic_beta(context, options, "context-management-2025-06-27") {
+    if !has_anthropic_beta(&body, context, options, "context-management-2025-06-27")? {
         body.remove("context_management");
     }
 
@@ -101,7 +101,14 @@ pub fn map_anthropic_request(
 
     convert_openai_tools_for_anthropic(&mut body, &context.upstream_model)?;
     super::controls::translate_chat_controls(&mut body)?;
-    apply_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
+    match context.chat_protocol {
+        gateway_core::ChatRequestProtocol::ChatCompletions => {
+            apply_chat_completions_thinking(&mut body, &context.upstream_model)?;
+        }
+        gateway_core::ChatRequestProtocol::AnthropicMessages => {
+            apply_messages_thinking(&mut body, &context.upstream_model)?;
+        }
+    }
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
 
     Ok(Value::Object(body))
@@ -592,27 +599,14 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), AnthropicAdapterE
 }
 
 fn has_anthropic_beta(
+    body: &Map<String, Value>,
     context: &ProviderRequestContext,
     options: &AnthropicRequestOptions<'_>,
     beta: &str,
-) -> bool {
-    let in_extra = context.extra_headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("anthropic-beta")
-            && value
-                .as_str()
-                .is_some_and(|betas| betas.split(',').any(|cand| cand.trim() == beta))
-    });
-    if in_extra {
-        return true;
-    }
-    if let Some(default_headers) = options.default_headers {
-        default_headers.iter().any(|(name, value)| {
-            name.eq_ignore_ascii_case("anthropic-beta")
-                && value.split(',').any(|cand| cand.trim() == beta)
-        })
-    } else {
-        false
-    }
+) -> Result<bool, ProviderError> {
+    let mut betas = super::beta::body_betas(body.get("anthropic_beta"))?;
+    betas.extend(super::beta::header_betas(context, options.default_headers));
+    Ok(betas.iter().any(|candidate| candidate == beta))
 }
 
 fn merge_object_overrides(target: &mut Map<String, Value>, overrides: &Map<String, Value>) {

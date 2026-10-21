@@ -475,7 +475,14 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
     if let Some(tool_choice) = body.get("tool_choice") {
         validate_anthropic_tool_choice(tool_choice, &context.upstream_model)?;
     }
-    apply_anthropic_thinking_compatibility(&mut body, &mut passthrough, &context.upstream_model)?;
+    match context.chat_protocol {
+        gateway_core::ChatRequestProtocol::ChatCompletions => {
+            apply_chat_completions_thinking(&mut body, &mut passthrough, &context.upstream_model)?;
+        }
+        gateway_core::ChatRequestProtocol::AnthropicMessages => {
+            apply_messages_thinking(&mut body, &mut passthrough, &context.upstream_model)?;
+        }
+    }
     reject_openai_only_fields(&passthrough)?;
     reject_unknown_anthropic_messages_fields(&passthrough)?;
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;

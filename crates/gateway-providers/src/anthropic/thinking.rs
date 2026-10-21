@@ -24,7 +24,51 @@ pub(crate) fn validate_adaptive_effort(
     Ok(())
 }
 
-pub fn apply_anthropic_thinking_compatibility(
+/// Translates the OpenAI Chat Completions reasoning contract into Anthropic controls.
+/// Adaptive-only models retain the gateway's historical adaptive/high default.
+pub fn apply_chat_completions_thinking(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), AnthropicAdapterError> {
+    let reasoning_effort = extract_anthropic_reasoning_effort(body)?;
+    let native_effort = extract_existing_anthropic_output_effort(body)?;
+    let has_native_effort = native_effort.is_some();
+    let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(body)?;
+    let policy = claude_thinking_policy(upstream_model);
+
+    validate_caller_thinking_for_policy(body, policy, upstream_model)?;
+    if has_native_effort && policy == ClaudeThinkingPolicy::ManualOnly {
+        return Err(AnthropicAdapterError::EffortNotSupported {
+            model: upstream_model.to_string(),
+        });
+    }
+    if policy == ClaudeThinkingPolicy::AdaptiveOnly {
+        if budget_tokens.is_some() {
+            return Err(AnthropicAdapterError::AdaptiveOnlyBudgetNotSupported {
+                model: upstream_model.to_string(),
+            });
+        }
+        if matches!(
+            caller_thinking_type(body),
+            Some("disabled" | "between_tools")
+        ) {
+            return apply_thinking_off(body, effort, upstream_model);
+        }
+        let effort = effort.unwrap_or_else(|| json!("high"));
+        validate_adaptive_effort(&effort, upstream_model)?;
+        apply_policy_effort(body, policy, effort, None, upstream_model)?;
+    } else if let Some(effort) = effort {
+        apply_policy_effort(body, policy, effort, budget_tokens, upstream_model)?;
+    } else if let Some(budget_tokens) = budget_tokens {
+        apply_policy_budget(body, policy, budget_tokens, upstream_model)?;
+    }
+    Ok(())
+}
+
+/// Preserves the native Messages thinking contract, including omitted/default controls
+/// and output effort that is independent of whether thinking is enabled.
+pub fn apply_messages_thinking(
     body: &mut Map<String, Value>,
     upstream_model: &str,
 ) -> Result<(), AnthropicAdapterError> {

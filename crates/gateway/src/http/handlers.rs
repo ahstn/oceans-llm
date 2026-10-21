@@ -341,6 +341,7 @@ async fn v1_messages_inner(
         &auth,
         request_headers,
     );
+    context.chat_protocol = gateway_core::ChatRequestProtocol::AnthropicMessages;
     context.expected_provider_credential_id = expected_provider_credential_id;
 
     if core_request.stream {
@@ -1045,6 +1046,7 @@ fn build_provider_context(
         upstream_model: route.upstream_model.clone(),
         owner_user_id: auth.owner_user_id,
         expected_provider_credential_id: None,
+        chat_protocol: Default::default(),
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
         request_headers,
@@ -2365,7 +2367,7 @@ fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<Stri
 }
 
 fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
-    headers
+    let mut extracted = headers
         .iter()
         .filter_map(|(name, value)| {
             value
@@ -2373,7 +2375,18 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
                 .ok()
                 .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
         })
-        .collect::<BTreeMap<_, _>>()
+        .collect::<BTreeMap<_, _>>();
+    // Anthropic permits repeated beta headers, but the provider context stores
+    // one value per name. Preserve every opt-in before transport-specific mapping.
+    let betas = headers
+        .get_all("anthropic-beta")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect::<Vec<_>>();
+    if !betas.is_empty() {
+        extracted.insert("anthropic-beta".to_string(), betas.join(","));
+    }
+    extracted
 }
 
 #[cfg(test)]
@@ -2423,6 +2436,28 @@ mod tests {
         assert_eq!(payload["status"], "ok");
         assert_eq!(payload["service"], "gateway");
         assert_eq!(payload["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn request_headers_preserve_repeated_anthropic_beta_opt_ins() {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            "anthropic-beta",
+            HeaderValue::from_static("thinking-display-updates-2026-08-18"),
+        );
+        headers.append(
+            "Anthropic-Beta",
+            HeaderValue::from_static("mid-conversation-output-config-2026-07-01"),
+        );
+        headers.insert("x-request-id", HeaderValue::from_static("request_1"));
+
+        let extracted = super::extract_request_headers(&headers);
+        assert_eq!(
+            extracted["anthropic-beta"],
+            "thinking-display-updates-2026-08-18,mid-conversation-output-config-2026-07-01"
+        );
+        assert_eq!(extracted["x-request-id"], "request_1");
+        assert!(super::extract_request_headers(&HeaderMap::new()).is_empty());
     }
 
     struct StaticProvider {

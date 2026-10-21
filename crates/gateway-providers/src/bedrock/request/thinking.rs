@@ -5,31 +5,70 @@ use crate::anthropic::{
     thinking::{resolve_thinking_off, validate_adaptive_effort},
 };
 
-pub(super) fn apply_anthropic_thinking_compatibility(
+pub(super) fn apply_messages_thinking(
+    body: &mut Map<String, Value>,
+    extra: &mut BTreeMap<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    // Bedrock historically accepts an effort-only OpenAI alias on Opus 4.5.
+    // Keep that extension explicit here without applying Chat Completions defaults.
+    if claude_thinking_policy(upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
+        && let Some(effort) = extract_anthropic_reasoning_effort(extra)?
+    {
+        return apply_messages_manual_effort_alias(body, extra, effort, upstream_model);
+    }
+    for field in [
+        "reasoning",
+        "reasoning_effort",
+        "thinking_budget_tokens",
+        "reasoning_budget_tokens",
+    ] {
+        if let Some(value) = extra.remove(field) {
+            body.insert(field.to_string(), value);
+        }
+    }
+    crate::anthropic::apply_messages_thinking(body, upstream_model)?;
+    if claude_thinking_policy(upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
+        && body
+            .get("output_config")
+            .and_then(|config| config.get("effort"))
+            .is_some_and(|effort| !effort.is_null())
+    {
+        ensure_anthropic_beta(body, "effort-2025-11-24")?;
+    }
+    Ok(())
+}
+
+fn apply_messages_manual_effort_alias(
+    body: &mut Map<String, Value>,
+    extra: &mut BTreeMap<String, Value>,
+    effort: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let native_effort = extract_existing_anthropic_output_effort(body)?;
+    let effort = merge_optional_efforts(Some(effort), native_effort, upstream_model)?
+        .expect("the caller supplied a reasoning effort");
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra)?;
+    validate_caller_thinking_for_policy(
+        body,
+        ClaudeThinkingPolicy::ManualWithEffort,
+        upstream_model,
+    )?;
+    if let Some(budget_tokens) = budget_tokens.or_else(|| existing_manual_thinking_budget(body)) {
+        ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+    }
+    merge_anthropic_output_effort(body, effort, upstream_model)?;
+    ensure_anthropic_beta(body, "effort-2025-11-24")?;
+    Ok(())
+}
+
+/// Bedrock's Chat Completions contract enables adaptive thinking only when effort is set.
+pub(super) fn apply_chat_completions_thinking(
     body: &mut Map<String, Value>,
     extra: &mut BTreeMap<String, Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
     let reasoning_effort = extract_anthropic_reasoning_effort(extra)?;
-    // Preserve native Messages controls through the same validator as Anthropic
-    // and Vertex. Bedrock's legacy reasoning aliases retain their translation below.
-    if reasoning_effort.is_none() {
-        for field in ["thinking_budget_tokens", "reasoning_budget_tokens"] {
-            if let Some(value) = extra.remove(field) {
-                body.insert(field.to_string(), value);
-            }
-        }
-        crate::anthropic::apply_anthropic_thinking_compatibility(body, upstream_model)?;
-        if claude_thinking_policy(upstream_model) == ClaudeThinkingPolicy::ManualWithEffort
-            && body
-                .get("output_config")
-                .and_then(|config| config.get("effort"))
-                .is_some_and(|effort| !effort.is_null())
-        {
-            ensure_anthropic_beta(body, "effort-2025-11-24")?;
-        }
-        return Ok(());
-    }
     let native_effort = extract_existing_anthropic_output_effort(body)?;
     let has_native_effort = native_effort.is_some();
     let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
