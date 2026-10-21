@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Gateway operator tasks. From the repo root: `mise run //crates/gateway:<task>`.
 # Each task mirrors a `gateway` subcommand. `prod:*` tasks use gateway.prod.yaml and need POSTGRES_URL.
 

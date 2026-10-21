@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Helm chart tasks. From the repo root: `mise run //deploy/helm:<task>`.
 
 [env]

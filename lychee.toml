@@ -1,6 +1,8 @@
+#:schema https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/schema.json
 # Link checking for `mise run links-check` (local links only) and
 # `mise run links-check-external` (also fetches remote URLs).
 # Walk .agents/ and .github/ too; .gitignore still applies.
+
 hidden = true
 exclude_path = ["(^|/)\\.git/", "(^|/)videos/", "(^|/)gha-research/", "node_modules"]
 # Local servers and example hosts in guides are not reachable from CI.

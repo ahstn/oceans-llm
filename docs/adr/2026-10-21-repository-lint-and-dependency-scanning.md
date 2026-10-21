@@ -11,13 +11,14 @@ The first runs of the new tools found 14 broken documentation links and anchors,
 
 ## Decision
 
-Add nine single-binary tools through mise, pinned in `mise.lock`:
+Add ten single-binary tools through mise, pinned in `mise.lock`:
 
 - zizmor audits GitHub Actions workflows and Dependabot config.
-- taplo formats and validates TOML.
+- tombi formats TOML and validates each file against the schema it declares.
 - lychee checks Markdown links and heading anchors.
 - editorconfig-checker enforces `.editorconfig` line endings, final newlines, and trailing whitespace.
 - typos checks spelling.
+- gitleaks scans new commits and staged changes for secrets.
 - cargo-deny checks Rust advisories, licenses, and sources.
 - osv-scanner checks every lockfile against OSV.
 - squawk lints new Postgres migrations.
@@ -27,8 +28,9 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 
 ## Implementation
 
-- `mise run repo-lint` runs `toml-check`, `editorconfig-check`, `typos`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
-- `.taplo.toml` associates the Cargo and mise JSON schemas with their files. taplo validates only files with an associated schema, and its default online catalog no longer parses.
+- `mise run repo-lint` runs `toml-check`, `editorconfig-check`, `typos`, `secrets-check`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
+- Every TOML file starts with a `#:schema` directive, so editors and tombi validate it against that schema. `deny.toml`, `dist-workspace.toml`, `rust-analyzer.toml`, and `.squawk.toml` have no published schema; their first line links the configuration reference instead. `tombi.toml` keeps Cargo manifests on TOML 1.0, because the SchemaStore Cargo schema declares TOML 1.1 and tombi would otherwise rewrite dependency tables as multi-line inline tables. It also turns off schema-driven key and array reordering and preserves string quote styles.
+- gitleaks scans commits since the change base (`secrets-check`) and staged changes (`secrets-check-staged`), not the working tree, so gitignored local secrets such as `mise.local.toml` never match. `.gitleaks.toml` extends the default rules and allowlists fixtures: provider and model identifiers, placeholder `gwk_` keys, throwaway RSA keys in token tests, and fake tokens in redaction tests. With it, the full history (`secrets-check-history`) is clean. The tasks turn off `color.ui`, because coloured `git log -p` output makes gitleaks scan nothing.
 - prek runs each check as its own hook. The typos hook checks staged files only. The existing `lint` hook only fires on Rust and TypeScript changes, so these hooks cover documentation and config commits.
 - `.github/workflows/repo-lint.yml` runs on every pull request, including docs-only ones that `ci.yml` skips. It gives zizmor the read-only `GITHUB_TOKEN` for its online audits. `ci.yml` runs `rust-deny` next to Clippy.
 - `.github/workflows/osv-scanner.yml` calls the upstream reusable workflows. On pull requests it scans the base and head commits and fails only on the difference. SARIF upload is off there, because fork pull requests get a read-only token. The weekly run uploads the full results without failing.
@@ -45,7 +47,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - Single-binary tools installed by mise keep local runs and CI identical without adding Node or Python dependencies. All of the checks in `repo-lint` finish in under a second.
 - Gating only new advisories lets the checks ship now without a large upgrade change. The cost is that existing advisories stay until someone upgrades the affected crates and packages. The `deny.toml` baseline must shrink rather than grow.
 - osv-scanner was chosen over Trivy, Grype, Snyk, Socket, and Semgrep Supply Chain. It is the only option that parses text `bun.lock`, `Cargo.lock`, and `package-lock.json` without an account. Its pull-request workflow compares base and head results. cargo-deny adds RustSec unmaintained notices and license and source policy, which osv-scanner does not cover.
-- taplo was chosen over tombi. tombi re-sorts keys in 12 files and writes multi-line inline tables, which need TOML 1.1.
+- tombi replaced taplo. taplo's last release (0.10.0, May 2025) predates TOML 1.1.0 (December 2025), its default schema catalogue no longer parses, and `taplo lint` validates nothing unless each file is associated with a schema. tombi is actively maintained and reads `#:schema` directives, but its schema-driven reordering and the Cargo schema's TOML 1.1 setting need turning off to avoid churn.
 - Duplicate crate versions are allowed in `deny.toml`. They come from upstream crates such as the AWS SDK and libsql, and 69 warnings would bury real findings.
 
 ## Follow up

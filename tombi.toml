@@ -1,0 +1,32 @@
+#:schema https://www.schemastore.org/tombi.json
+# TOML formatting and linting for `mise run toml-fmt` and `mise run toml-check`.
+# Every TOML file declares its schema with a `#:schema` directive on line 1.
+
+toml-version = "v1.0.0"
+
+[files]
+exclude = ["**/node_modules/**", "videos/**", "**/mise.local.toml"]
+
+[format.rules]
+# Matches the width most dependency tables already use.
+line-width = 100
+string-quote-style = "preserve"
+
+# Keep the author's key and array order instead of the order a schema suggests.
+[schema.format.rules]
+table-keys-order.enabled = false
+array-values-order.enabled = false
+
+# The SchemaStore Cargo schema declares TOML 1.1, which would rewrite dependency
+# tables as multi-line inline tables. Keep manifests readable by TOML 1.0 tools.
+[[schemas]]
+path = "https://www.schemastore.org/cargo.json"
+include = ["**/Cargo.toml"]
+toml-version = "v1.0.0"
+
+# The mise schema leaves daemon preset options open, so strict mode would reject
+# valid keys such as `daemons.db.options.database`.
+[[schemas]]
+path = "https://mise.jdx.dev/schema/mise.json"
+include = ["**/mise.toml", "**/mise.*.toml"]
+strict = false

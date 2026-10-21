@@ -1,3 +1,4 @@
+# No JSON schema is published (EmbarkStudios/cargo-deny#632). Reference: https://embarkstudios.github.io/cargo-deny/checks/cfg.html
 # Rust dependency policy for `mise run rust-deny`: RustSec advisories, licenses,
 # banned crates, and allowed sources. osv-scanner covers every lockfile; this adds
 # RustSec's unmaintained and yanked notices plus license and source policy.

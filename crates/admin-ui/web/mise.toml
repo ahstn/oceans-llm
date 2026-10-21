@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Admin UI tasks. From the repo root: `mise run //crates/admin-ui/web:<task>`.
 
 [tasks.install]

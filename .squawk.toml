@@ -1,3 +1,4 @@
+# No JSON schema is published for squawk config. Reference: https://squawkhq.com/docs/cli#squawktoml-configuration-file
 # squawk lints Postgres migrations. CI runs it on migrations a change adds or edits
 # (`mise run //store:migrations-lint-changed`); `//store:migrations-lint` checks all.
 pg_version = "18"

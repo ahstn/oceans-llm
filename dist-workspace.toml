@@ -1,3 +1,4 @@
+# No JSON schema is published for dist config. Reference: https://axodotdev.github.io/cargo-dist/book/reference/config.html
 [workspace]
 members = ["cargo:."]
 

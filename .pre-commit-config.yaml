@@ -44,6 +44,11 @@ repos:
         language: system
         entry: mise exec -- typos --force-exclude
         types: [text]
+      - id: gitleaks
+        name: gitleaks
+        language: system
+        entry: mise run secrets-check-staged
+        pass_filenames: false
       - id: toml-check
         name: toml-check
         language: system

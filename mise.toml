@@ -2,7 +2,8 @@
 # Repository-wide tools and cross-cutting tasks. Project tasks live next to their code
 # (see config_roots); run them from anywhere with `mise run //<dir>:<task>`, or list
 # everything with `mise tasks ls --all`.
-min_version = "2026.9.16" # [monorepo.path_aliases]
+
+min_version = "2026.9.16"  # [monorepo.path_aliases]
 monorepo_root = true
 
 [settings]
@@ -48,12 +49,13 @@ actionlint = "1.7.12"
 shellcheck = "0.11.0"
 prek = "latest"
 zizmor = "1.31.1"
-taplo = "0.10.0"
+tombi = "1.8.4"
 lychee = "0.24.2"
 editorconfig-checker = "4.0.2"
 typos = "1.51.1"
 osv-scanner = "2.7.0"
 cargo-deny = "0.20.2"
+gitleaks = "8.30.1"
 # CI runs these through `//store:migrations-lint-changed` (repo-lint.yml) and `//helm:check` (helm-ci.yml).
 "github:sbdchd/squawk" = "2.69.0"
 kubeconform = "0.8.0"
@@ -145,18 +147,16 @@ description = "Fail when registry.json, docs/public/r or the docs dark theme no 
 run = "node scripts/build-shadcn-theme.mjs --check"
 
 # Language-agnostic checks. Each reads its config from the repo root
-# (.taplo.toml, .editorconfig, lychee.toml, .github/zizmor.yml).
+# (tombi.toml, .editorconfig, lychee.toml, .github/zizmor.yml).
 [tasks.toml-fmt]
 description = "Format tracked TOML files"
-env = { RUST_LOG = "warn" }
-run = "git ls-files -z '*.toml' | xargs -0 taplo fmt"
+run = "git ls-files -z '*.toml' | xargs -0 tombi format"
 
 [tasks.toml-check]
-description = "Check TOML formatting and validate TOML files against their schemas"
-env = { RUST_LOG = "warn" }
+description = "Check TOML formatting and validate TOML files against the schema each one declares"
 run = [
-  "git ls-files -z '*.toml' | xargs -0 taplo fmt --check",
-  "git ls-files -z '*.toml' | xargs -0 taplo lint",
+  "git ls-files -z '*.toml' | xargs -0 tombi format --check",
+  "git ls-files -z '*.toml' | xargs -0 tombi lint",
 ]
 
 [tasks.editorconfig-check]
@@ -179,9 +179,37 @@ run = "zizmor --quiet --no-progress --strict-collection ."
 description = "Check spelling in source, docs, and config; allowed words live in _typos.toml"
 run = "typos"
 
+# gitleaks parses `git log -p` and `git diff` output, which `color.ui = always`
+# breaks, so these tasks turn colour off. They scan commits and staged changes
+# rather than the working tree, so gitignored local secrets never match.
+[tasks.secrets-check]
+description = "Scan commits since CHANGE_BASE (default: merge base with origin/main) for secrets with gitleaks"
+env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
+run = """
+base="${CHANGE_BASE:-$(git merge-base origin/main HEAD)}"
+gitleaks git --redact --no-banner --log-opts="--first-parent -m $base..HEAD"
+"""
+
+[tasks.secrets-check-staged]
+description = "Scan staged changes for secrets with gitleaks"
+env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
+run = "gitleaks git --pre-commit --staged --redact --no-banner"
+
+[tasks.secrets-check-history]
+description = "Scan the full git history for secrets with gitleaks"
+env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
+run = "gitleaks git --redact --no-banner"
+
 [tasks.repo-lint]
-description = "Run language-agnostic checks for TOML, whitespace, spelling, links, and GitHub Actions"
-depends = ["toml-check", "editorconfig-check", "typos", "links-check", "actions-audit"]
+description = "Run language-agnostic checks for TOML, whitespace, spelling, secrets, links, and GitHub Actions"
+depends = [
+  "toml-check",
+  "editorconfig-check",
+  "typos",
+  "secrets-check",
+  "links-check",
+  "actions-audit"
+]
 
 [tasks.rust-deny]
 description = "Check Rust dependencies for RustSec advisories, licenses, and sources (deny.toml)"

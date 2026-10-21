@@ -1,5 +1,7 @@
+#:schema https://raw.githubusercontent.com/crate-ci/typos/v1.51.1/config.schema.json
 # Spell checking for `mise run typos`. typos flags known misspellings only, so
 # entries here are words it would otherwise "correct".
+
 [files]
 # Check .agents/ and .github/ too; .gitignore still applies.
 ignore-hidden = false
