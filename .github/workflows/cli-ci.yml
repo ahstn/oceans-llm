@@ -33,6 +33,8 @@ permissions:
 env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
   MISE_EXEC_AUTO_INSTALL: "false"
+  # Fresh CI builds gain nothing from incremental state; it only grows the cache.
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   test:

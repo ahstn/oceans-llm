@@ -7,7 +7,7 @@ Use `mise` for all repo tooling and task execution.
 - Project-specific tasks live in the `mise.toml` of their directory (listed under `[monorepo] config_roots`). Run them as `mise run //<path-or-alias>:<task>`, such as `mise run //ui:check`, and list them with `mise tasks ls --all`. Keep the root file for repo-wide tasks.
 - When code changes are introduced, run linting before handing work off:
   - `mise run lint` for mixed Rust/UI changes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` if only Rust changed.
+  - `mise run rust-lint` if only Rust changed. It runs `cargo clippy --workspace --all-targets` with `CARGO_BUILD_WARNINGS=deny`.
 
 ## Verification
 - Before handing off a change that touches runtime behaviour, verify it end to end with the `verify-oceans-admin` skill (`.agents/skills/verify-oceans-admin/SKILL.md`; also linked at `.claude/skills/verify-oceans-admin`).

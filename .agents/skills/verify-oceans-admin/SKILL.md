@@ -50,7 +50,7 @@ Teardown uses the recorded process IDs:
 
 ### Shared machine state
 
-- **Cargo output.** Root `mise.toml` sets `CARGO_TARGET_DIR=$HOME/.cache/cargo/target/` in `[env]`, and mise applies it over the caller's shell, so exporting `CARGO_TARGET_DIR` before `launch` or `drive` has no effect. Every checkout writes final binaries such as `debug/gateway` and `debug/oceans` there; only intermediate artifacts are per checkout through `CARGO_BUILD_BUILD_DIR`. A build in another checkout can therefore replace the binary the Skills proof imports with. To pin it, build it, copy it out, and export `OCEANS_CLI_BIN=<copy>` before `drive skills`.
+- **Cargo output.** Root `mise.toml` sets `CARGO_TARGET_DIR={{config_root}}/target` in `[env]`, and mise applies it over the caller's shell, so exporting `CARGO_TARGET_DIR` before `launch` or `drive` has no effect. Final binaries such as `debug/gateway` and `debug/oceans` stay in this checkout's `target/`, so a build in another checkout cannot replace the binary a proof is using. Intermediate artifacts go to a central per-checkout build dir through `CARGO_BUILD_BUILD_DIR`.
 - **pitchfork version warning.** mise supervises daemons through one per-user pitchfork supervisor shared by every checkout. If the `pitchfork` CLI was upgraded since that supervisor started, commands warn about a CLI and supervisor version mismatch. The warning is harmless for verification. Do not restart the supervisor from a verification run, because that stops daemons other checkouts rely on. When nothing else needs them, the user can run `pitchfork supervisor stop` and let the next `mise` daemon command start a current one.
 
 ## Doctor

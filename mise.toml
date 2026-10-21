@@ -61,7 +61,11 @@ gitleaks = "8.30.1"
 kubeconform = "0.8.0"
 
 [env]
-CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
+# Final artifacts (`debug/gateway`, test binaries) stay in each checkout, so a
+# build in a parallel worktree cannot replace the binary another one is testing.
+# Intermediate artifacts, which are most of the disk use, go to a central build
+# dir keyed by workspace path. These override the caller's shell values.
+CARGO_TARGET_DIR = "{{config_root}}/target"
 CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/{workspace-path-hash}"
 
 # Local Postgres for development and Postgres-backed tests. Supervised by pitchfork
@@ -96,9 +100,13 @@ run = "cargo fmt --all"
 description = "Check Rust source formatting without modifying files"
 run = "cargo fmt --all -- --check"
 
+# `build.warnings = "deny"` fails on warnings without passing clippy extra
+# flags, so a plain `cargo clippy` and this task share cached results, and
+# warnings replayed from that cache still fail.
 [tasks.rust-lint]
 description = "Lint all Rust workspace targets"
-run = "cargo clippy --workspace --all-targets -- -D warnings"
+env = { CARGO_BUILD_WARNINGS = "deny" }
+run = "cargo clippy --workspace --all-targets"
 
 [tasks.rust-build]
 description = "Build all Rust workspace crates"
