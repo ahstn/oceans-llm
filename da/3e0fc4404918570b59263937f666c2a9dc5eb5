@@ -1,0 +1,35 @@
+.github/zizmor.yml
+  s_3909cf4958a3af::t_2d8c7d43bca278 4-7,11,14-20,23,26-27
+.pre-commit-config.yaml
+  s_3909cf4958a3af::t_3136eb3e4d1e8e 41,45-46
+.taplo.toml
+  s_3909cf4958a3af::t_75aa308fb3adc9 8-19
+docs/adr/2026-08-16-github-copilot-compatibility-and-acceptance.md
+  s_3909cf4958a3af::t_9d81e21ccb73e0 5
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_3909cf4958a3af::t_6c639bced2e288 29
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_ede9aa2050db1c 29-30,34
+docs/configuration/configuration-reference.md
+  s_3909cf4958a3af::t_86a7958ecc9ce1 177
+docs/operations/operator-runbooks.md
+  s_3909cf4958a3af::t_f0d80669da504f 5
+docs/providers/github-copilot.md
+  s_3909cf4958a3af::t_b3d55e704636bf 107-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da3e0fc4404918570b59263937f666c2a9dc5eb5",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
