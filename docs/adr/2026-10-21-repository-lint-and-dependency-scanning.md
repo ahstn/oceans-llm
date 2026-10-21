@@ -37,7 +37,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - `mise run deps-audit` runs osv-scanner over every tracked lockfile. It lists lockfiles with `git ls-files` because the scanner's recursive walk finds nothing in a linked git worktree.
 - `mise run links-check-external` also fetches remote URLs. It stays out of CI because remote documentation sites change anchors and rate-limit requests.
 
-- squawk lints Postgres migrations. `repo-lint.yml` runs `mise run //store:migrations-lint-new`, which checks only migrations added since the base commit, because applied migrations are checksummed and cannot change. `.squawk.toml` sets Postgres 18, assumes one transaction per migration, and disables the concurrent-index rules that a transaction makes impossible. New migrations must set `SET LOCAL lock_timeout` and `statement_timeout`. `mise run //store:migrations-lint` reports all 174 findings in the 58 existing migrations.
+- squawk lints Postgres migrations. `repo-lint.yml` runs `mise run //store:migrations-lint-changed`, which checks only migrations added or edited since the base commit, because older migrations predate squawk. `.squawk.toml` sets Postgres 18, assumes one transaction per migration, and disables the concurrent-index rules that a transaction makes impossible. New migrations must set `SET LOCAL lock_timeout` and `statement_timeout`. `mise run //store:migrations-lint` reports all 174 findings in the 58 existing migrations.
 - kubeconform validates the chart. `mise run //helm:template`, which `//helm:check` runs in `helm-ci.yml` and `release-product.yml`, renders the defaults and every example once and validates each render. Helm and kubeconform both target Kubernetes 1.35.9, the oldest minor still supported upstream. CRDs validate against datreeio/CRDs-catalog pinned to a commit.
 
 ## Reasons and tradeoffs
@@ -50,6 +50,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 
 ## Follow up
 
+- The migration runner records each applied migration by file name, not by content, so editing a released migration goes undetected and fresh installs diverge from upgraded ones. Unreleased migrations are edited routinely during a release cycle, so a guard should compare against the last release tag, or the registry should store a content digest.
 - Supporting `CREATE INDEX CONCURRENTLY` would need a non-transactional migration mode in the runner. Re-enable the concurrent-index rules if that lands.
 
 - Clear the advisory backlog, starting with zip 9 and rustls-webpki. Remove each `deny.toml` ignore as its advisory is fixed.

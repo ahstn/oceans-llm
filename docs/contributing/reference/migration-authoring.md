@@ -50,13 +50,13 @@ mise run //crates/gateway-store:test:postgres
 mise run //crates/gateway-store:smoke:postgres
 ```
 
-CI runs squawk on PostgreSQL migrations that a pull request adds. Run the same check locally:
+CI runs squawk on PostgreSQL migrations that a pull request adds or edits. Run the same check locally:
 
 ```bash
-mise run //store:migrations-lint-new
+mise run //store:migrations-lint-changed
 ```
 
-`.squawk.toml` sets Postgres 18 and assumes each migration runs in its own transaction, as the runner does. `CREATE INDEX CONCURRENTLY` is unavailable for the same reason, so the concurrent-index rules are disabled. `SET LOCAL` keeps the timeouts scoped to the migration's transaction. Applied migrations are checksummed and must not change, so findings in them are not fixed.
+`.squawk.toml` sets Postgres 18 and assumes each migration runs in its own transaction, as the runner does. `CREATE INDEX CONCURRENTLY` is unavailable for the same reason, so the concurrent-index rules are disabled. `SET LOCAL` keeps the timeouts scoped to the migration's transaction. Migrations that predate squawk are not linted unless they are edited. The runner records applied migrations by file name only, so editing a migration that has shipped in a release changes fresh installs without changing upgraded ones. Add a new migration instead.
 
 For full pre-handoff validation, use:
 

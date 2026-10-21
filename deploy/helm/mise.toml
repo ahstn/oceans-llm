@@ -42,10 +42,16 @@ validate() {
   kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" \
     -schema-location default -schema-location "$crds"
 }
-render --set database.external.existingSecret.name=oceans-llm-postgres | validate
+# Render to a file first: the task shell has no pipefail, so a failed render
+# piped straight into kubeconform would pass.
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+render --set database.external.existingSecret.name=oceans-llm-postgres >"$out"
+validate <"$out"
 for values in oceans-llm/examples/*.yaml; do
   echo "$values"
-  render --values "$values" | validate
+  render --values "$values" >"$out"
+  validate <"$out"
 done
 """
 

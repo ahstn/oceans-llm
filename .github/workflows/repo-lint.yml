@@ -48,7 +48,7 @@ jobs:
 
       # Pull requests diff against the merge commit's first parent. A push to main
       # can carry several commits, so it diffs against the ref before the push.
-      - name: Lint new Postgres migrations
+      - name: Lint added or edited Postgres migrations
         env:
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
@@ -58,7 +58,7 @@ jobs:
           else
             export MIGRATIONS_BASE=HEAD^1
           fi
-          mise run //store:migrations-lint-new
+          mise run //store:migrations-lint-changed
 
       - name: Check local links
         run: mise run links-check
