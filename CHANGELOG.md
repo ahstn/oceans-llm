@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.43.2](https://github.com/ahstn/oceans-llm/compare/v0.43.1...v0.43.2) - 2026-10-21
+
+### :bug: Bug fixes
+- *(anthropic)* Preserve Messages thinking controls and gate compatibility by @ahstn in [#564](https://github.com/ahstn/oceans-llm/pull/564)
+
 ## [0.43.1](https://github.com/ahstn/oceans-llm/compare/v0.43.0...v0.43.1) - 2026-10-20
 
 ### :bug: Bug fixes
