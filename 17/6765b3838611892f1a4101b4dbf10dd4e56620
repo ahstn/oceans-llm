@@ -1,0 +1,19 @@
+.gitleaks.toml
+  s_3909cf4958a3af::t_89225cb9bf7f77 16,21-23,27-32,36-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "176765b3838611892f1a4101b4dbf10dd4e56620",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
