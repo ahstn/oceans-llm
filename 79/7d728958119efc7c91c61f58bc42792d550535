@@ -1,0 +1,27 @@
+.github/workflows/osv-scanner.yml
+  s_3909cf4958a3af::t_861361fcfcd79f 4-6,9-14
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_7727ea5bdcdc2f 53-59
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_a18dfa6a44b006 42-44,46
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_59caaa4f9a49bd 33,36
+mise.toml
+  s_3909cf4958a3af::t_df9f8de6d75455 193-194,196-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "797d728958119efc7c91c61f58bc42792d550535",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
