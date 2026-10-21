@@ -27,28 +27,25 @@ description = "Lint the chart"
 depends = ["deps"]
 run = "helm lint oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
+# Renders the defaults and every example once, and validates each render with
+# kubeconform. Schemas are pinned to KUBE_VERSION, the oldest Kubernetes minor
+# still supported upstream; CRDs (CloudNativePG, External Secrets) use
+# datreeio/CRDs-catalog pinned to a commit.
 [tasks.template]
-description = "Render the chart defaults and every example values file"
+description = "Render the chart defaults and every example, and validate them against Kubernetes schemas"
 depends = ["deps"]
-run = """
-helm template oceans-llm oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
-for values in oceans-llm/examples/*.yaml; do
-  helm template oceans-llm oceans-llm --values "$values" >/dev/null
-done
-"""
-
-# Runs in helm-ci.yml. CRDs (CloudNativePG, External Secrets) validate against
-# datreeio/CRDs-catalog, pinned to a commit.
-[tasks.validate]
-description = "Validate rendered manifests for the defaults and every example against Kubernetes schemas"
-depends = ["deps"]
+env = { KUBE_VERSION = "1.35.9" }
 run = """
 crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/501527ab9c40c827144c8f45945b25a023e344ce/{{ "{{" }}.Group}}/{{ "{{" }}.ResourceKind}}_{{ "{{" }}.ResourceAPIVersion}}.json'
-validate() { kubeconform -strict -summary -schema-location default -schema-location "$crds"; }
-helm template oceans-llm oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres | validate
+render() { helm template oceans-llm oceans-llm --kube-version "$KUBE_VERSION" "$@"; }
+validate() {
+  kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" \
+    -schema-location default -schema-location "$crds"
+}
+render --set database.external.existingSecret.name=oceans-llm-postgres | validate
 for values in oceans-llm/examples/*.yaml; do
   echo "$values"
-  helm template oceans-llm oceans-llm --values "$values" | validate
+  render --values "$values" | validate
 done
 """
 
@@ -58,5 +55,5 @@ depends = ["deps"]
 run = "bash check-skills.sh"
 
 [tasks.check]
-description = "Lint and render the chart"
+description = "Lint, render, and validate the chart"
 depends = ["lint", "template", "skills-check"]

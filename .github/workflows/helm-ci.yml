@@ -42,8 +42,5 @@ jobs:
         with:
           install_args: helm kubeconform
 
-      - name: Run Helm checks
+      - name: Lint, render, and validate the chart
         run: mise run //helm:check
-
-      - name: Validate rendered manifests against Kubernetes schemas
-        run: mise run //helm:validate

@@ -28,8 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The first parent is the base: the PR merge commit's target, or main's
-          # previous commit on push. The migration check diffs against it.
+          # A pull request's merge commit has its base as the first parent.
           fetch-depth: 2
           persist-credentials: false
 
@@ -47,10 +46,19 @@ jobs:
       - name: Check spelling
         run: mise run typos
 
+      # Pull requests diff against the merge commit's first parent. A push to main
+      # can carry several commits, so it diffs against the ref before the push.
       - name: Lint new Postgres migrations
         env:
-          MIGRATIONS_BASE: HEAD^1
-        run: mise run //store:migrations-lint-new
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            git fetch --no-tags --depth=1 origin "$PUSH_BEFORE"
+            export MIGRATIONS_BASE="$PUSH_BEFORE"
+          else
+            export MIGRATIONS_BASE=HEAD^1
+          fi
+          mise run //store:migrations-lint-new
 
       - name: Check local links
         run: mise run links-check

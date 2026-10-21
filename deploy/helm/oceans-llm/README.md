@@ -135,7 +135,7 @@ deleted immediately.
 
 ## Examples
 
-Render the checked-in examples with:
+Render the checked-in examples and validate them against Kubernetes schemas with:
 
 ```bash
 mise run //helm:template

@@ -38,7 +38,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 - `mise run links-check-external` also fetches remote URLs. It stays out of CI because remote documentation sites change anchors and rate-limit requests.
 
 - squawk lints Postgres migrations. `repo-lint.yml` runs `mise run //store:migrations-lint-new`, which checks only migrations added since the base commit, because applied migrations are checksummed and cannot change. `.squawk.toml` sets Postgres 18, assumes one transaction per migration, and disables the concurrent-index rules that a transaction makes impossible. New migrations must set `SET LOCAL lock_timeout` and `statement_timeout`. `mise run //store:migrations-lint` reports all 174 findings in the 58 existing migrations.
-- kubeconform validates the chart. `helm-ci.yml` runs `mise run //helm:validate` over the defaults and every example. CRDs validate against datreeio/CRDs-catalog pinned to a commit.
+- kubeconform validates the chart. `mise run //helm:template`, which `//helm:check` runs in `helm-ci.yml` and `release-product.yml`, renders the defaults and every example once and validates each render. Helm and kubeconform both target Kubernetes 1.35.9, the oldest minor still supported upstream. CRDs validate against datreeio/CRDs-catalog pinned to a commit.
 
 ## Reasons and tradeoffs
 
