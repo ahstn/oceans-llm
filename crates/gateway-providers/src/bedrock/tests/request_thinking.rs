@@ -1,6 +1,198 @@
 use super::*;
 
 #[test]
+fn bedrock_chat_completions_and_messages_use_separate_thinking_contracts() {
+    for controls in [json!({}), json!({"output_config": {"effort": "low"}})] {
+        let request: CoreChatRequest = serde_json::from_value(json!({
+            "model": "claude", "max_tokens": 4096,
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap();
+        let mut request = request;
+        request.extra.extend(controls.as_object().unwrap().clone());
+        for target in [
+            AnthropicMessagesTarget::RuntimeInvoke,
+            AnthropicMessagesTarget::MantleMessages,
+        ] {
+            for protocol in [
+                gateway_core::ChatRequestProtocol::ChatCompletions,
+                gateway_core::ChatRequestProtocol::AnthropicMessages,
+            ] {
+                let context = ProviderRequestContext {
+                    chat_protocol: protocol,
+                    ..context("anthropic.claude-opus-5-5")
+                };
+                let body =
+                    map_chat_request_to_anthropic_messages_target(&request, &context, target)
+                        .unwrap();
+                assert_eq!(body.get("output_config"), controls.get("output_config"));
+                if protocol == gateway_core::ChatRequestProtocol::ChatCompletions
+                    && controls.get("output_config").is_some()
+                {
+                    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
+                } else {
+                    assert!(body.get("thinking").is_none());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn native_messages_preserves_thinking_controls_across_bedrock_transports() {
+    let cases = [
+        ("anthropic.claude-opus-5-5", json!({})),
+        (
+            "anthropic.claude-opus-5-5",
+            json!({"output_config": {"effort": null}}),
+        ),
+        (
+            "anthropic.claude-opus-5-5",
+            json!({"output_config": {"effort": "high"}}),
+        ),
+        (
+            "anthropic.claude-opus-5-5",
+            json!({
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": "xhigh"}
+            }),
+        ),
+        (
+            "anthropic.claude-opus-5-5",
+            json!({
+                "thinking": {"type": "adaptive", "display": "omitted"}
+            }),
+        ),
+        (
+            "anthropic.claude-sonnet-5-5",
+            json!({
+                "thinking": {"type": "between_tools"}, "output_config": {"effort": "high"}
+            }),
+        ),
+        (
+            "anthropic.claude-sonnet-4-6",
+            json!({
+                "thinking": {"type": "disabled"}, "output_config": {"effort": "high"}
+            }),
+        ),
+        (
+            "anthropic.claude-opus-4-5",
+            json!({
+                "thinking": {"type": "disabled"}, "output_config": {"effort": "high"}
+            }),
+        ),
+    ];
+    for (model, controls) in cases {
+        for (target, streaming) in [
+            (AnthropicMessagesTarget::RuntimeInvoke, false),
+            (AnthropicMessagesTarget::MantleMessages, false),
+            (AnthropicMessagesTarget::MantleMessages, true),
+        ] {
+            let mut payload = json!({
+                "model": "claude", "max_tokens": 4096, "stream": streaming,
+                "messages": [{"role": "user", "content": "hello"}]
+            });
+            payload
+                .as_object_mut()
+                .unwrap()
+                .extend(controls.as_object().unwrap().clone());
+            let native: gateway_core::protocol::anthropic::AnthropicMessagesRequest =
+                serde_json::from_value(payload).unwrap();
+            let request = gateway_core::anthropic_messages_request_to_core(&native);
+            let context = ProviderRequestContext {
+                chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
+                ..context(model)
+            };
+            let mapped =
+                map_chat_request_to_anthropic_messages_target(&request, &context, target).unwrap();
+            assert_eq!(mapped.get("thinking"), controls.get("thinking"), "{model}");
+            assert_eq!(
+                mapped.get("output_config"),
+                controls.get("output_config"),
+                "{model}"
+            );
+        }
+    }
+}
+
+#[test]
+fn native_messages_preserves_bedrock_manual_effort_alias_without_budget() {
+    for alias in [
+        json!({"reasoning_effort": "high"}),
+        json!({"reasoning": {"effort": "high"}}),
+    ] {
+        let mut request: CoreChatRequest = serde_json::from_value(json!({
+            "model": "claude", "max_tokens": 4096,
+            "messages": [{"role": "user", "content": "hello"}]
+        }))
+        .unwrap();
+        request.extra.extend(alias.as_object().unwrap().clone());
+        let context = ProviderRequestContext {
+            chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
+            ..context("anthropic.claude-opus-4-5")
+        };
+        for target in [
+            AnthropicMessagesTarget::RuntimeInvoke,
+            AnthropicMessagesTarget::MantleMessages,
+        ] {
+            let body =
+                map_chat_request_to_anthropic_messages_target(&request, &context, target).unwrap();
+            assert!(body.get("thinking").is_none());
+            assert_eq!(body["output_config"], json!({"effort": "high"}));
+            assert_eq!(body["anthropic_beta"], json!(["effort-2025-11-24"]));
+            assert!(body.get("reasoning_effort").is_none());
+            assert!(body.get("reasoning").is_none());
+        }
+    }
+}
+
+#[test]
+fn adaptive_reasoning_alias_ignores_null_manual_budget() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Think carefully")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(4096)),
+            ("reasoning_effort".to_string(), json!("high")),
+            ("reasoning_budget_tokens".to_string(), Value::Null),
+        ]),
+    };
+    let mapped =
+        map_chat_request_to_anthropic_messages(&request, &context("anthropic.claude-opus-5-5"))
+            .expect("null budget does not request manual thinking");
+    assert_eq!(mapped["thinking"], json!({"type": "adaptive"}));
+    assert_eq!(mapped["output_config"], json!({"effort": "high"}));
+    assert!(mapped.get("reasoning_budget_tokens").is_none());
+}
+
+#[test]
+fn reasoning_alias_rejects_conflicting_manual_budgets_across_bedrock_transports() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Think carefully")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(4096)),
+            ("reasoning_effort".to_string(), json!("high")),
+            ("thinking_budget_tokens".to_string(), json!(1024)),
+            ("reasoning_budget_tokens".to_string(), json!(2048)),
+        ]),
+    };
+    let context = context("anthropic.claude-sonnet-4-5");
+    for result in [
+        map_chat_request_to_anthropic_messages(&request, &context),
+        map_chat_request_to_converse(&request, &context),
+    ] {
+        let error = result
+            .expect_err("conflicting budget aliases must not silently override")
+            .to_string();
+        assert!(error.contains("thinking_budget_tokens"), "{error}");
+        assert!(error.contains("reasoning_budget_tokens"), "{error}");
+    }
+}
+
+#[test]
 fn maps_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
     for upstream_model in [
         "global.anthropic.claude-fable-5",
@@ -27,6 +219,440 @@ fn maps_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
         assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
         assert!(body.get("reasoning_effort").is_none());
         assert!(body.get("temperature").is_none());
+    }
+}
+
+#[test]
+fn keeps_thinking_off_in_the_form_each_adaptive_only_model_accepts() {
+    for (upstream_model, effort, expected_thinking) in [
+        (
+            "global.anthropic.claude-opus-4-8",
+            Some("xhigh"),
+            "disabled",
+        ),
+        ("global.anthropic.claude-sonnet-5", None, "disabled"),
+        ("global.anthropic.claude-opus-5", Some("high"), "disabled"),
+        ("global.anthropic.claude-haiku-5-5", None, "disabled"),
+        ("global.anthropic.claude-sonnet-5-5", None, "between_tools"),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            Some("low"),
+            "between_tools",
+        ),
+    ] {
+        let mut extra = BTreeMap::from([
+            ("max_tokens".to_string(), json!(1024)),
+            ("thinking".to_string(), json!({ "type": "disabled" })),
+        ]);
+        if let Some(effort) = effort {
+            extra.insert("reasoning_effort".to_string(), json!(effort));
+        }
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra,
+        };
+
+        let body = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": expected_thinking }),
+            "{upstream_model}"
+        );
+        assert_eq!(
+            body.get("output_config"),
+            effort.map(|effort| json!({ "effort": effort })).as_ref(),
+            "{upstream_model}"
+        );
+    }
+}
+
+#[test]
+fn rejects_thinking_off_where_the_upstream_model_would() {
+    for (upstream_model, effort, expected) in [
+        (
+            "global.anthropic.claude-fable-5-1",
+            None,
+            "adaptive thinking is always enabled",
+        ),
+        (
+            "global.anthropic.claude-opus-5-5",
+            None,
+            "adaptive thinking is always enabled",
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            Some("max"),
+            "effort `high` or below",
+        ),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            Some("xhigh"),
+            "effort `high` or below",
+        ),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            Some("minimal"),
+            "supported effort levels",
+        ),
+        (
+            "global.anthropic.claude-opus-4-8",
+            Some("XHIGH"),
+            "supported effort levels",
+        ),
+    ] {
+        let mut extra = BTreeMap::from([
+            ("max_tokens".to_string(), json!(1024)),
+            ("thinking".to_string(), json!({ "type": "disabled" })),
+        ]);
+        if let Some(effort) = effort {
+            extra.insert("reasoning_effort".to_string(), json!(effort));
+        }
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra,
+        };
+
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("thinking off rejected")
+            .to_string();
+
+        assert!(error.contains(expected), "{upstream_model}: {error}");
+    }
+}
+
+#[test]
+fn thinking_off_sends_only_the_type() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Summarize this page")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(1024)),
+            (
+                "thinking".to_string(),
+                json!({ "type": "disabled", "display": "omitted" }),
+            ),
+        ]),
+    };
+
+    let body = map_chat_request_to_anthropic_messages(
+        &request,
+        &context("global.anthropic.claude-opus-5"),
+    )
+    .expect("mapped");
+
+    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
+}
+
+#[test]
+fn ignores_null_budgets_when_thinking_is_off() {
+    for (key, value) in [
+        ("reasoning_budget_tokens", json!(null)),
+        ("thinking_budget_tokens", json!(null)),
+        ("reasoning", json!({ "budget_tokens": null })),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("thinking".to_string(), json!({ "type": "disabled" })),
+                (key.to_string(), value),
+            ]),
+        };
+
+        let body = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("global.anthropic.claude-sonnet-5-5"),
+        )
+        .unwrap_or_else(|error| panic!("{key}: {error}"));
+
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "between_tools" }),
+            "{key}"
+        );
+    }
+}
+
+#[test]
+fn adaptive_only_models_validate_effort_and_reject_adaptive_budgets() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("reasoning_effort".to_string(), json!("minimal")),
+            ]),
+        };
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("minimal effort rejected")
+            .to_string();
+        assert!(
+            error.contains("supported effort levels"),
+            "{upstream_model}: {error}"
+        );
+
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                (
+                    "thinking".to_string(),
+                    json!({ "type": "adaptive", "budget_tokens": 1024 }),
+                ),
+            ]),
+        };
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("adaptive budget rejected")
+            .to_string();
+        assert!(error.contains("budget_tokens"), "{upstream_model}: {error}");
+    }
+}
+
+#[test]
+fn converse_validates_effort_for_adaptive_only_models() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("reasoning_effort".to_string(), json!("minimal")),
+            ]),
+        };
+        let error = map_chat_request_to_converse(&request, &context(upstream_model))
+            .expect_err("minimal effort rejected")
+            .to_string();
+        assert!(
+            error.contains("supported effort levels"),
+            "{upstream_model}: {error}"
+        );
+    }
+}
+
+#[test]
+fn converse_rejects_native_budgets_and_invalid_effort_for_adaptive_only_models() {
+    for (thinking, expected) in [
+        (
+            json!({ "type": "adaptive", "budget_tokens": 1024 }),
+            "budget_tokens",
+        ),
+        (
+            json!({ "type": "adaptive", "effort": "minimal" }),
+            "supported effort levels",
+        ),
+    ] {
+        for upstream_model in [
+            "global.anthropic.claude-opus-5",
+            "global.anthropic.claude-haiku-5-5",
+        ] {
+            let request = CoreChatRequest {
+                model: "claude".to_string(),
+                messages: vec![message("user", "Think carefully")],
+                stream: true,
+                extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+            };
+            let mut context = context(upstream_model);
+            context.extra_body.insert(
+                "additionalModelRequestFields".to_string(),
+                json!({ "thinking": thinking.clone() }),
+            );
+
+            let error = map_chat_request_to_converse(&request, &context)
+                .expect_err("native thinking rejected")
+                .to_string();
+
+            assert!(error.contains(expected), "{upstream_model}: {error}");
+        }
+    }
+}
+
+fn converse_request_with_thinking(
+    upstream_model: &str,
+    thinking: Value,
+) -> Result<Value, ProviderError> {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Summarize this page")],
+        stream: true,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+    };
+    let mut context = context(upstream_model);
+    context.extra_body.insert(
+        "additionalModelRequestFields".to_string(),
+        json!({ "thinking": thinking }),
+    );
+    map_chat_request_to_converse(&request, &context)
+}
+
+#[test]
+fn converse_moves_caller_thinking_effort_to_output_config() {
+    for upstream_model in [
+        "us.anthropic.claude-sonnet-4-6-v1:0",
+        "global.anthropic.claude-opus-5",
+    ] {
+        let body = converse_request_with_thinking(
+            upstream_model,
+            json!({ "type": "adaptive", "effort": "low" }),
+        )
+        .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "low" }
+            }),
+            "{upstream_model}"
+        );
+    }
+}
+
+#[test]
+fn converse_native_output_effort_turns_on_adaptive_thinking() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-5",
+        "us.anthropic.claude-sonnet-4-6-v1:0",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([("max_tokens".to_string(), json!(1024))]),
+        };
+        let mut context = context(upstream_model);
+        context.extra_body.insert(
+            "additionalModelRequestFields".to_string(),
+            json!({ "output_config": { "effort": "low" } }),
+        );
+
+        let body = map_chat_request_to_converse(&request, &context)
+            .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "low" }
+            }),
+            "{upstream_model}"
+        );
+    }
+}
+
+#[test]
+fn converse_applies_thinking_off_rules() {
+    for (upstream_model, thinking, expected) in [
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            json!({ "type": "disabled" }),
+            json!({ "thinking": { "type": "between_tools" } }),
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "effort": "high" }),
+            json!({
+                "thinking": { "type": "disabled" },
+                "output_config": { "effort": "high" }
+            }),
+        ),
+        (
+            "global.anthropic.claude-opus-4-8",
+            json!({ "type": "disabled" }),
+            json!({ "thinking": { "type": "disabled" } }),
+        ),
+        (
+            "global.anthropic.claude-sonnet-5-5",
+            json!({ "type": "disabled", "display": "omitted", "budget_tokens": null }),
+            json!({ "thinking": { "type": "between_tools" } }),
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "display": "omitted", "effort": "low" }),
+            json!({
+                "thinking": { "type": "disabled" },
+                "output_config": { "effort": "low" }
+            }),
+        ),
+    ] {
+        let body = converse_request_with_thinking(upstream_model, thinking)
+            .unwrap_or_else(|error| panic!("{upstream_model}: {error}"));
+        assert_eq!(
+            body["additionalModelRequestFields"], expected,
+            "{upstream_model}"
+        );
+    }
+
+    for (upstream_model, thinking, expected) in [
+        (
+            "global.anthropic.claude-fable-5-1",
+            json!({ "type": "disabled" }),
+            "adaptive thinking is always enabled",
+        ),
+        (
+            "global.anthropic.claude-opus-5",
+            json!({ "type": "disabled", "effort": "max" }),
+            "effort `high` or below",
+        ),
+        (
+            "us.anthropic.claude-sonnet-4-6-v1:0",
+            json!({ "type": "between_tools" }),
+            "`thinking.type: between_tools` is not supported",
+        ),
+    ] {
+        let error = converse_request_with_thinking(upstream_model, thinking)
+            .expect_err("thinking off rejected")
+            .to_string();
+        assert!(error.contains(expected), "{upstream_model}: {error}");
+    }
+}
+
+#[test]
+fn rejects_between_tools_outside_sonnet_5_5() {
+    for upstream_model in [
+        "global.anthropic.claude-opus-4-8",
+        "global.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-haiku-5-5",
+        "global.anthropic.claude-opus-5-5",
+        "us.anthropic.claude-sonnet-4-6-v1:0",
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Summarize this page")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(1024)),
+                ("thinking".to_string(), json!({ "type": "between_tools" })),
+            ]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(&request, &context(upstream_model))
+            .expect_err("between_tools rejected")
+            .to_string();
+
+        assert!(
+            error.contains("`thinking.type: between_tools` is not supported"),
+            "{upstream_model}: {error}"
+        );
     }
 }
 
@@ -203,10 +829,8 @@ fn maps_claude_converse_reasoning_effort_to_additional_model_request_fields() {
         body["additionalModelRequestFields"],
         json!({
             "trace": "enabled",
-            "thinking": {
-                "type": "adaptive",
-                "effort": "high"
-            }
+            "thinking": { "type": "adaptive" },
+            "output_config": { "effort": "high" }
         })
     );
     assert!(body.get("reasoning_effort").is_none());
@@ -236,10 +860,8 @@ fn maps_adaptive_only_claude_converse_reasoning_effort() {
         assert_eq!(
             body["additionalModelRequestFields"],
             json!({
-                "thinking": {
-                    "type": "adaptive",
-                    "effort": "xhigh"
-                }
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": "xhigh" }
             })
         );
         assert!(body.get("reasoning_effort").is_none());
@@ -299,9 +921,9 @@ fn maps_opus_4_5_converse_reasoning_effort_with_manual_budget() {
         json!({
             "thinking": {
                 "type": "enabled",
-                "budget_tokens": 1024,
-                "effort": "medium"
-            }
+                "budget_tokens": 1024
+            },
+            "output_config": { "effort": "medium" }
         })
     );
 }
@@ -351,7 +973,7 @@ fn rejects_conflicting_claude_converse_reasoning_effort() {
             .expect_err("conflict rejected")
             .to_string();
 
-    assert!(error.contains("additionalModelRequestFields.thinking.effort"));
+    assert!(error.contains("additionalModelRequestFields.output_config.effort"));
 }
 
 #[test]

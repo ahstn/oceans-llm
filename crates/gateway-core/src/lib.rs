@@ -3,6 +3,7 @@ pub mod audit;
 pub mod auth;
 pub mod batch;
 pub mod budgets;
+pub mod claude_models;
 pub mod credential_scopes;
 pub mod domain;
 pub mod error;
@@ -68,10 +69,11 @@ pub use domain::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
-    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ExternalMcpAuthMode,
-    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
-    ExternalMcpServerStatus, ExternalMcpServerUpdate, ExternalMcpToolRecord, ExternalMcpTransport,
-    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ChatRequestProtocol,
+    ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpServerUpdate,
+    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
+    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,

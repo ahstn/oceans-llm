@@ -242,7 +242,7 @@ Rejected because UI-only enforcement would be bypassable and would not protect d
 
 ### 3. Implement transfer as remove-then-add
 
-Rejected because the existing one-team-per-user uniqueness rule makes that sequence too easy to partially apply or mis-handle under failure.
+Rejected because the existing one-team-per-user uniqueness rule makes that sequence too easy to partially apply or mishandle under failure.
 
 ### 4. Treat transfer as ownership and accounting migration
 

@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 
 use super::error::AnthropicAdapterError;
 use super::thinking::{
-    apply_anthropic_thinking_compatibility, validate_anthropic_sampling_fields,
+    apply_chat_completions_thinking, apply_messages_thinking, validate_anthropic_sampling_fields,
     validate_anthropic_tool_choice,
 };
 
@@ -35,9 +35,22 @@ pub fn map_anthropic_request(
     stream: bool,
     options: &AnthropicRequestOptions<'_>,
 ) -> Result<Value, ProviderError> {
+    // Bound beta metadata before cloning request extras; route body overrides take precedence.
+    let has_context_beta = super::beta::request_has_beta(
+        context
+            .extra_body
+            .get("anthropic_beta")
+            .or_else(|| request.extra.get("anthropic_beta")),
+        context,
+        options.default_headers,
+        "context-management-2025-06-27",
+    )?;
     let mut body: Map<String, Value> = request
         .extra
         .iter()
+        .filter(|(key, _)| {
+            key.as_str() != "anthropic_beta" || !context.extra_body.contains_key("anthropic_beta")
+        })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     body.remove("model");
@@ -76,7 +89,7 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
-    if !has_anthropic_beta(context, options, "context-management-2025-06-27") {
+    if !has_context_beta {
         body.remove("context_management");
     }
 
@@ -101,7 +114,14 @@ pub fn map_anthropic_request(
 
     convert_openai_tools_for_anthropic(&mut body, &context.upstream_model)?;
     super::controls::translate_chat_controls(&mut body)?;
-    apply_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
+    match context.chat_protocol {
+        gateway_core::ChatRequestProtocol::ChatCompletions => {
+            apply_chat_completions_thinking(&mut body, &context.upstream_model)?;
+        }
+        gateway_core::ChatRequestProtocol::AnthropicMessages => {
+            apply_messages_thinking(&mut body, &context.upstream_model)?;
+        }
+    }
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
 
     Ok(Value::Object(body))
@@ -115,6 +135,9 @@ fn map_chat_messages(
 
     for message in messages {
         match message.role.as_str() {
+            "system" if message.extra.contains_key("output_config") => {
+                mapped_messages.push(native_effort_message(message));
+            }
             "system" | "developer" => {
                 append_system_blocks(&mut instructions, &message.content)?;
             }
@@ -148,6 +171,14 @@ fn map_chat_messages(
     }
 
     Ok((mapped_messages, instructions))
+}
+
+/// An effort-only system message changes later turns and must stay in sequence.
+pub(crate) fn native_effort_message(message: &CoreChatMessage) -> Value {
+    let mut mapped: Map<String, Value> = message.extra.clone().into_iter().collect();
+    mapped.insert("role".to_string(), json!("system"));
+    mapped.insert("content".to_string(), message.content.clone());
+    Value::Object(mapped)
 }
 
 /// Preserve native block boundaries, including cache breakpoints and their TTL.
@@ -578,30 +609,6 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), AnthropicAdapterE
         }
     }
     Ok(())
-}
-
-fn has_anthropic_beta(
-    context: &ProviderRequestContext,
-    options: &AnthropicRequestOptions<'_>,
-    beta: &str,
-) -> bool {
-    let in_extra = context.extra_headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("anthropic-beta")
-            && value
-                .as_str()
-                .is_some_and(|betas| betas.split(',').any(|cand| cand.trim() == beta))
-    });
-    if in_extra {
-        return true;
-    }
-    if let Some(default_headers) = options.default_headers {
-        default_headers.iter().any(|(name, value)| {
-            name.eq_ignore_ascii_case("anthropic-beta")
-                && value.split(',').any(|cand| cand.trim() == beta)
-        })
-    } else {
-        false
-    }
 }
 
 fn merge_object_overrides(target: &mut Map<String, Value>, overrides: &Map<String, Value>) {

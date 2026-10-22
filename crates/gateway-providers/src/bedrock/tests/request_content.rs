@@ -36,16 +36,16 @@ fn native_system_cache_blocks_survive_both_messages_targets() {
         "messages": [{"role": "user", "content": "hello"}]
     })).unwrap();
     let request = gateway_core::anthropic_messages_request_to_core(&native);
+    let context = ProviderRequestContext {
+        chat_protocol: gateway_core::ChatRequestProtocol::AnthropicMessages,
+        ..context("anthropic.claude-sonnet-4-6")
+    };
     for target in [
         AnthropicMessagesTarget::RuntimeInvoke,
         AnthropicMessagesTarget::MantleMessages,
     ] {
-        let body = map_chat_request_to_anthropic_messages_target(
-            &request,
-            &context("anthropic.claude-sonnet-4-6"),
-            target,
-        )
-        .unwrap();
+        let body =
+            map_chat_request_to_anthropic_messages_target(&request, &context, target).unwrap();
         assert_eq!(&body["system"], native.system.as_ref().unwrap());
     }
 }

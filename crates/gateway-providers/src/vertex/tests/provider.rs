@@ -512,8 +512,5 @@ async fn vertex_provider_anthropic_stream_handles_fragmented_crlf_events() {
     );
     assert!(request_payload.get("model").is_none());
     assert_eq!(request_payload["stream"], Value::Bool(true));
-    assert_eq!(
-        request_payload["anthropic_beta"],
-        json!(["files-api-2025-04-14"])
-    );
+    assert!(request_payload.get("anthropic_beta").is_none());
 }

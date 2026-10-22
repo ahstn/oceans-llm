@@ -124,6 +124,8 @@ Native Claude invocation requires `max_tokens`. If callers omit both `max_tokens
 
 Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude model supports tool use. The gateway maps OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations, and streaming tool-use deltas to and from the Anthropic Messages shape used by Vertex. Keep `vision: false` unless you have tested image/document content blocks for the exact route; the Anthropic-on-Vertex mapper still rejects non-text content blocks in this slice.
 
+Claude beta opt-ins travel in one `anthropic-beta` header on Vertex `rawPredict`, `streamRawPredict`, and `count-tokens:rawPredict` requests. Oceans merges caller beta names with provider defaults, route headers, and legacy `anthropic_beta` body inputs, removing duplicate names. It removes the body field before sending the request. This follows the [Claude beta-header contract](https://platform.claude.com/docs/en/api/beta-headers): Google Cloud reads only one occurrence of the header. Beta names remain open for upstream validation; caller credentials and unrelated request headers are not forwarded.
+
 ### Claude Thinking Compatibility
 
 For Anthropic-on-Vertex, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. The gateway also applies model-aware thinking policy before sending the Vertex request.
@@ -172,7 +174,7 @@ Model behavior:
 | Model family | Gateway behavior |
 | --- | --- |
 | Claude Fable 5.1 | Adaptive thinking is always on. Request-level `reasoning_effort`, `reasoning.effort`, or `output_config.effort` maps to adaptive thinking plus `output_config.effort`. The checked-in example caps explicit effort at `high`, so `xhigh` and `max` are rejected by the gateway before Vertex routing. |
-| Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`. Manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Claude Opus 4.7 and later, Claude Opus 5.x, Claude Sonnet 5.x, Claude Haiku 5.5 | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`. Manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. See [Turn thinking off on adaptive-only Claude models](../configuration/model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models) for `thinking.type: "disabled"`. |
 | Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, but they are deprecated upstream. |
 | Claude Mythos Preview | Adaptive thinking is the default when `thinking` is unset. `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |
 | Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when a manual thinking budget is also supplied. |

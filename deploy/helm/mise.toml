@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Helm chart tasks. From the repo root: `mise run //deploy/helm:<task>`.
 
 [env]
@@ -27,13 +28,34 @@ description = "Lint the chart"
 depends = ["deps"]
 run = "helm lint oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
+# Renders the defaults and every example once, and validates each render with
+# kubeconform. Schemas are pinned to KUBE_VERSION, the oldest Kubernetes minor
+# still supported upstream; CRDs (CloudNativePG, External Secrets) use
+# datreeio/CRDs-catalog pinned to a commit.
 [tasks.template]
-description = "Render the chart defaults and every example values file"
+description = "Render the chart defaults and every example, and validate them against Kubernetes schemas"
 depends = ["deps"]
+env = { KUBE_VERSION = "1.35.9" }
 run = """
-helm template oceans-llm oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
+crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/501527ab9c40c827144c8f45945b25a023e344ce/{{ "{{" }}.Group}}/{{ "{{" }}.ResourceKind}}_{{ "{{" }}.ResourceAPIVersion}}.json'
+render() { helm template oceans-llm oceans-llm --kube-version "$KUBE_VERSION" "$@"; }
+# Schemas come from pinned URLs, so one gitignored cache serves every render.
+schemas=".local/kubeconform-schemas"
+mkdir -p "$schemas"
+validate() {
+  kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" -cache "$schemas" \
+    -schema-location default -schema-location "$crds"
+}
+# Render to a file first: the task shell has no pipefail, so a failed render
+# piped straight into kubeconform would pass.
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+render --set database.external.existingSecret.name=oceans-llm-postgres >"$out"
+validate <"$out"
 for values in oceans-llm/examples/*.yaml; do
-  helm template oceans-llm oceans-llm --values "$values" >/dev/null
+  echo "$values"
+  render --values "$values" >"$out"
+  validate <"$out"
 done
 """
 
@@ -43,5 +65,5 @@ depends = ["deps"]
 run = "bash check-skills.sh"
 
 [tasks.check]
-description = "Lint and render the chart"
+description = "Lint, render, and validate the chart"
 depends = ["lint", "template", "skills-check"]

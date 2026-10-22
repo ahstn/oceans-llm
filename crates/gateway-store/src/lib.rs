@@ -7411,6 +7411,7 @@ pub(crate) mod tests {
                         upstream_model: seeded_route.upstream_model.clone(),
                         owner_user_id: None,
                         expected_provider_credential_id: None,
+                        chat_protocol: Default::default(),
                         extra_headers: seeded_route.extra_headers.clone(),
                         extra_body: seeded_route.extra_body.clone(),
                         request_headers: BTreeMap::new(),

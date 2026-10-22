@@ -418,6 +418,7 @@ pub(super) fn extract_anthropic_passthrough_fields(
         "container",
         "context_management",
         "metadata",
+        "safeguards",
     ] {
         if let Some(value) = extra.remove(field) {
             body.insert(field.to_string(), value);

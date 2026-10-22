@@ -33,6 +33,7 @@ use super::{
     parse_upstream_model, vertex_api_host_for_location,
 };
 
+mod anthropic_messages;
 mod anthropic_request;
 mod count_tokens;
 mod embeddings;
@@ -51,6 +52,7 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
         upstream_model: upstream_model.to_string(),
         owner_user_id: None,
         expected_provider_credential_id: None,
+        chat_protocol: Default::default(),
         extra_headers: Map::new(),
         extra_body: Map::new(),
         request_headers: std::collections::BTreeMap::new(),

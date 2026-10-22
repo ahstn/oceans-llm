@@ -47,6 +47,7 @@ pub fn normalize_anthropic_response(
             provider_reasoning_metadata(provider_namespace, "anthropic_messages", thinking_blocks),
         );
     }
+    preserve_anthropic_message_metadata(&mut message, value, provider_namespace, "message");
     let tool_calls = extract_anthropic_tool_calls(blocks);
     if !tool_calls.is_empty() {
         message.insert("tool_calls".to_string(), Value::Array(tool_calls));
@@ -77,6 +78,33 @@ pub fn normalize_anthropic_response(
     }
 
     Value::Object(completion)
+}
+
+/// Keep opaque classifier verdicts through the common chat representation.
+pub(crate) fn preserve_anthropic_message_metadata(
+    message: &mut Map<String, Value>,
+    source: &Value,
+    provider_namespace: &str,
+    event: &str,
+) {
+    let mut fields = Map::new();
+    if let Some(results) = source.get("safeguard_results") {
+        fields.insert("safeguard_results".to_string(), results.clone());
+    }
+    if event == "message_delta"
+        && let Some(results) = source
+            .get("delta")
+            .and_then(|delta| delta.get("safeguard_results"))
+    {
+        fields.insert("delta".to_string(), json!({"safeguard_results": results}));
+    }
+    if fields.is_empty() {
+        return;
+    }
+    let metadata = message
+        .entry("provider_metadata")
+        .or_insert_with(|| json!({}));
+    metadata[provider_namespace][event] = Value::Object(fields);
 }
 
 pub fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {

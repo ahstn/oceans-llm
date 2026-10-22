@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.43.2](https://github.com/ahstn/oceans-llm/compare/v0.43.1...v0.43.2) - 2026-10-21
+
+### :bug: Bug fixes
+- *(anthropic)* Preserve Messages thinking controls and gate compatibility by @ahstn in [#564](https://github.com/ahstn/oceans-llm/pull/564)
+
+## [0.43.1](https://github.com/ahstn/oceans-llm/compare/v0.43.0...v0.43.1) - 2026-10-20
+
+### :bug: Bug fixes
+- *(providers)* Align Claude 5.x thinking and tool_choice handling with upstream by @ahstn in [#559](https://github.com/ahstn/oceans-llm/pull/559)
+
+### Changed
+- *(deps)* Bump unicode-normalization from 0.1.25 to 0.1.26 by @dependabot[bot] in [#557](https://github.com/ahstn/oceans-llm/pull/557)
+- *(deps-dev)* Bump the testing group across 1 directory with 2 updates by @dependabot[bot] in [#556](https://github.com/ahstn/oceans-llm/pull/556)
+- *(deps-dev)* Bump the review-agent-tooling group in /actions/review-agent with 2 updates by @dependabot[bot] in [#555](https://github.com/ahstn/oceans-llm/pull/555)
+- *(deps)* Bump the pi group in /actions/review-agent with 5 updates by @dependabot[bot] in [#554](https://github.com/ahstn/oceans-llm/pull/554)
+- *(deps)* Bump shadcn from 4.21.5 to 4.22.0 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#553](https://github.com/ahstn/oceans-llm/pull/553)
+
 ## [0.43.0](https://github.com/ahstn/oceans-llm/compare/v0.42.0...v0.43.0) - 2026-10-20
 
 ### :rocket: New features

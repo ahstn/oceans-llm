@@ -142,6 +142,7 @@ mod tests {
             upstream_model: "typesafe/jev-1.13".to_string(),
             owner_user_id: None,
             expected_provider_credential_id: None,
+            chat_protocol: Default::default(),
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),

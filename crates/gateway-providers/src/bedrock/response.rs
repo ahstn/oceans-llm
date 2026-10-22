@@ -121,6 +121,12 @@ pub(crate) fn normalize_anthropic_messages_response(
             provider_reasoning_metadata(provider_namespace, "anthropic_messages", thinking_blocks),
         );
     }
+    crate::anthropic::response::preserve_anthropic_message_metadata(
+        &mut message,
+        value,
+        provider_namespace,
+        "message",
+    );
 
     let mut completion = Map::new();
     completion.insert("id".to_string(), Value::String(id));
@@ -247,11 +253,16 @@ where
                     let usage = map_anthropic_stream_usage(&value)
                         .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                     if !sent_role {
+                        let mut delta = Map::new();
+                        delta.insert("role".to_string(), json!("assistant"));
+                        crate::anthropic::response::preserve_anthropic_message_metadata(
+                            &mut delta, &value["message"], provider_namespace, "message",
+                        );
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
                             created,
                             &context,
-                            json!({"role": "assistant"}),
+                            Value::Object(delta),
                             None,
                             usage,
                         )).unwrap_or_else(|_| "{}".to_string())));
@@ -415,12 +426,16 @@ where
                         .map(map_stop_reason);
                     let usage = map_anthropic_stream_usage(&value)
                         .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
-                    if finish_reason.is_some() || usage.is_some() {
+                    let mut delta = Map::new();
+                    crate::anthropic::response::preserve_anthropic_message_metadata(
+                        &mut delta, &value, provider_namespace, "message_delta",
+                    );
+                    if finish_reason.is_some() || usage.is_some() || !delta.is_empty() {
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
                             created,
                             &context,
-                            json!({}),
+                            Value::Object(delta),
                             finish_reason,
                             usage,
                         )).unwrap_or_else(|_| "{}".to_string())));

@@ -1027,6 +1027,7 @@ mod tests {
                 upstream_model: route.upstream_model.clone(),
                 owner_user_id: auth.owner_user_id,
                 expected_provider_credential_id: None,
+                chat_protocol: Default::default(),
                 extra_headers: Default::default(),
                 extra_body: Default::default(),
                 request_headers: BTreeMap::new(),

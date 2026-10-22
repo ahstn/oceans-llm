@@ -104,3 +104,27 @@ Prepare a GitHub App and installation as described in [GitHub's server-to-server
 
 > [!NOTE]
 > GitHub does not document where to enable "Copilot requests from GitHub App installations" (step 4). It may map to the organization Copilot policy **Allow use of Copilot CLI billed to the organization**, found under **Copilot CLI** in the organization's Copilot policy settings. This is unconfirmed. Enable that policy if the App is rejected with `401 Unauthorized`, and report back whether it resolves the error.
+
+### Run the installation-token canary
+
+Run the canary before you enable a provider in GitHub App mode. It mints a `ghs_` installation token and sends it straight to the Copilot API. It checks the installation owner and permissions, `/models`, `/chat/completions`, `/v1/messages`, streaming, and a tool-call continuation. It makes six inference requests and can consume Copilot AI credits, so do not run it in normal CI.
+
+Store the App private key outside the repository with `chmod 600`. The canary refuses a key that group or other users can read. Set the App values in your shell, not in a checked-in file:
+
+```bash
+export COPILOT_CANARY_APP_ID="<github-app-id>"
+export COPILOT_CANARY_INSTALLATION_ID="<installation-id>"
+export COPILOT_CANARY_REPOSITORY_ID="<numeric-repository-id>"
+export COPILOT_CANARY_EXPECTED_OWNER="<organization-login>"
+export COPILOT_CANARY_PRIVATE_KEY_PATH="/secure/path/copilot-canary.private-key.pem"
+```
+
+Run it once without model variables to list the enabled models:
+
+```bash
+mise run copilot-installation-canary >copilot-canary-discovery.json
+```
+
+This first run reports `INCOMPLETE` and sends no inference request. Its `models` check lists each model's endpoints and a safe projection of `capabilities.supports`, where a value is `true` only when `/models` returns exactly `true`. Copy route compatibility from this projection for the exact `upstream_model`, then set `COPILOT_CANARY_CHAT_MODEL` and `COPILOT_CANARY_MESSAGES_MODEL` from the same response and run the canary again.
+
+The canary exits `0` for `PASS`, `1` for `FAIL`, and `2` for `INCOMPLETE`. Do not enable GitHub App mode after a `FAIL`. The report never contains the App JWT, private key, installation tokens, or request bodies. When GitHub rejects a request, the failing check includes up to 2,000 characters of the error response, with GitHub tokens and bearer credentials redacted, so review a failed report before sharing it. Supply `COPILOT_CANARY_BILLING_TOKEN` from an organization administrator to compare the organization's daily AI-credit usage before and after the run.

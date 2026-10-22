@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { planFor } from './plan-verification.mjs'
+import { assessMessagesRegressions } from './messages-regressions.mjs'
 
 export const SCHEMA_VERSION = 1
 export const STATUSES = ['pass', 'fail', 'blocked']
@@ -169,6 +170,9 @@ export function assessProof(proof, { requireCurrent = false, runId, evidenceDir,
     return [`schemaVersion ${proof.schemaVersion ?? 'missing'} is not ${SCHEMA_VERSION}; re-run the proof`]
   }
   const problems = []
+  if (proof.featureIds?.includes('anthropic-messages')) {
+    problems.push(...assessMessagesRegressions(proof, evidenceDir, requireCurrent))
+  }
   if (proof.verdict !== verdictFor(proof.checks ?? [])) problems.push('verdict does not match its checks')
   if (proof.verdict !== 'pass') {
     const failing = (proof.checks ?? []).filter((check) => check.status !== 'pass' && check.required !== false)

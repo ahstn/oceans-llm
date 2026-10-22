@@ -1,7 +1,10 @@
+#:schema https://www.schemastore.org/cargo.json
+
 [package]
 name = "gateway-core"
-version = "0.43.0"
+version = "0.43.2"
 edition = "2024"
+license = "AGPL-3.0-only"
 
 [dependencies]
 agent-session-analysis.workspace = true

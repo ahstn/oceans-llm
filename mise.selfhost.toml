@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Self-hosting overlay. Loaded only when the `selfhost` config environment is active
 # (MISE_ENV=selfhost or `.miserc.local.toml` with env = ["selfhost"]), so developer
 # machines and CI never see these daemons.
@@ -5,6 +6,7 @@
 # Runbook: docs/setup/self-hosting-mise-daemons.md
 # Optional local Skills storage: add the `rustfs,selfhost-rustfs` environments.
 # Mask these values in captured task output. Applies to `required` variables too.
+
 redactions = [
   "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
   "GATEWAY_BOOTSTRAP_ADMIN_PASSWORD",

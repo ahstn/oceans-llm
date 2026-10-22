@@ -103,13 +103,21 @@ impl AnthropicCompatProvider {
     pub(crate) fn build_request_to(
         &self,
         url: String,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
+        let betas = crate::anthropic::beta::take_request_betas(
+            &mut body,
+            context,
+            &self.config.default_headers,
+        )?;
         let mut request = self.client.post(url).json(&body);
 
         let mut has_version = false;
         for (header_name, header_value) in &self.config.default_headers {
+            if header_name.eq_ignore_ascii_case("anthropic-beta") {
+                continue;
+            }
             if header_name.eq_ignore_ascii_case("anthropic-version") {
                 has_version = true;
             }
@@ -131,9 +139,16 @@ impl AnthropicCompatProvider {
         }
 
         for (header_name, value) in &context.extra_headers {
+            if header_name.eq_ignore_ascii_case("anthropic-beta") {
+                continue;
+            }
             if let Some(val) = value.as_str() {
                 request = request.header(header_name, val);
             }
+        }
+
+        if !betas.is_empty() {
+            request = request.header("anthropic-beta", betas.join(","));
         }
 
         request = request.header("x-request-id", &context.request_id);
@@ -258,7 +273,13 @@ impl ProviderClient for AnthropicCompatProvider {
             default_headers: Some(&self.config.default_headers),
         };
         let body = map_anthropic_request(request, context, false, &options)?;
-        let body = retain_count_tokens_fields(body, COUNT_TOKENS_FIELDS);
+        // Keep legacy body beta inputs until build_request_to promotes them to the header.
+        let fields: Vec<_> = COUNT_TOKENS_FIELDS
+            .iter()
+            .copied()
+            .chain(["anthropic_beta"])
+            .collect();
+        let body = retain_count_tokens_fields(body, &fields);
         let req = self.build_request_to(self.count_tokens_endpoint_url()?, body, context)?;
         let value = execute_json_request(
             &self.client,

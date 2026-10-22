@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Postgres store tasks. From the repo root: `mise run //crates/gateway-store:<task>`.
 # The `db` daemon is declared in the root mise.toml and exports DATABASE_URL.
 
@@ -62,4 +63,27 @@ trap 'status=$?; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || tru
 
 curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/readyz >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
+"""
+
+# CI lints only the migrations a change adds or edits; older migrations predate
+# squawk. Settings live in .squawk.toml at the repository root.
+[tasks.migrations-lint]
+description = "Lint every Postgres migration with squawk, including applied ones"
+dir = "{{config_root}}"
+run = "squawk migrations/postgres/*.sql"
+
+[tasks.migrations-lint-changed]
+description = "Lint Postgres migrations added or edited since CHANGE_BASE (default: merge base with origin/main) with squawk"
+dir = "{{config_root}}"
+run = """
+base="${CHANGE_BASE:-$(git merge-base origin/main HEAD)}"
+changed="$({
+  git diff --relative --diff-filter=AM --name-only "$base" -- 'migrations/postgres/*.sql'
+  git ls-files --others --exclude-standard -- 'migrations/postgres/*.sql'
+} | sort -u)"
+if [ -z "$changed" ]; then
+  echo "No added or edited Postgres migrations since $base."
+  exit 0
+fi
+echo "$changed" | xargs squawk
 """

@@ -401,6 +401,21 @@ Visibility does not guarantee that a route can execute every API family. A model
 
 Messages support still depends on the selected provider and route. Disable unsupported tools, vision, or other features so the request fails before provider execution.
 
+#### Turn thinking off on adaptive-only Claude models
+
+Newer Claude models accept only adaptive thinking, and each handles a request to turn thinking off differently. Claude Code sends `thinking: { "type": "disabled" }` on background work such as WebFetch summaries and session titles. The gateway keeps that request in the form the upstream model accepts, on `anthropic_compat`, Vertex `anthropic/*`, and Bedrock Anthropic Messages routes. Bedrock Converse routes apply the same rules to `additionalModelRequestFields.thinking`, with effort in `additionalModelRequestFields.output_config.effort`:
+
+| Upstream model | `thinking.type: "disabled"` |
+| --- | --- |
+| Claude Opus 4.7, Opus 4.8, Sonnet 5 | Forwarded unchanged at every effort level. |
+| Claude Opus 5, Haiku 5.5 | Forwarded unchanged at effort `high` or below. With `xhigh` or `max`, the gateway rejects the request. |
+| Claude Sonnet 5.5 | Rewritten to `thinking: { "type": "between_tools" }`, the model's thinking-off setting. With `xhigh` or `max`, the gateway rejects the request. Callers can also send `between_tools` directly. |
+| Claude Opus 5.5, Fable 5, Fable 5.1, Mythos Preview | Rejected. These models always think, so the gateway returns a 400 instead of running thinking the caller turned off. |
+
+With thinking off, the gateway adds no adaptive thinking and no default effort, and forwards any effort the caller set. Other models reject `between_tools`. For Chat Completions on `anthropic_compat` and Vertex `anthropic/*` routes, adaptive-only models receive adaptive thinking and `output_config.effort: high` when `thinking` is omitted. Bedrock Chat Completions adds adaptive thinking only when the request sets an effort. Native `/v1/messages` and `/messages` requests use a separate thinking implementation across these transports: omitted thinking and effort remain omitted, and native `output_config.effort` remains independent of thinking mode.
+
+To keep Claude Code background work on a model that always thinks, point it at a model that can turn thinking off. See [Claude Code background model](client-harness-configuration.md#claude-code-background-model).
+
 ### Anthropic Messages token counting
 
 `POST /v1/messages/count_tokens` and `POST /messages/count_tokens` accept a Messages request body and return `{"input_tokens": N}`. They use the same authentication (`Authorization` or `x-api-key`), model resolution, model grants, reasoning-effort ceiling, and route selection as `POST /v1/messages`. Errors use the Anthropic error envelope.

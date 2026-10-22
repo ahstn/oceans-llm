@@ -26,7 +26,7 @@ The initial targets are Linux x86-64 and ARM64, macOS Intel and Apple Silicon, a
 - [release-cli-check.yml](../../.github/workflows/release-cli-check.yml) runs the packaged executable on each target.
 - [cli-ci.yml](../../.github/workflows/cli-ci.yml) tests CLI and bundle behavior on macOS and Windows when those crates change. `ci.yml` covers Linux.
 - [release-product.yml](../../.github/workflows/release-product.yml) retains the image and chart publication jobs as a reusable workflow. cargo-dist calls it before announce.
-- [cog.toml](../../cog.toml) updates all Cargo versions and explicitly writes `CHANGELOG.md` before the version commit. Both release tools are declared in [mise.toml](../../mise.toml).
+- `cog.toml` updated all Cargo versions and explicitly wrote `CHANGELOG.md` before the version commit. Both release tools were declared in [mise.toml](../../mise.toml). The current procedure is documented in the [release process](../contributing/reference/release-process.md).
 
 Pull requests only run `dist plan`; artifacts are built and checked for release tags. Until 2026-10-13 every pull request push also built and checked all five targets. That added ten native-runner jobs per push and contributed to GitHub API rate limiting, so release builds are now exercised only by tags. The release check also stopped compiling `cli-test` on every target: tag runs cannot restore a cache, which made it the slowest step of a release. Cross-platform CLI tests now run before merge instead. The generated workflow remains unedited. Build setup installs the repository Rust toolchain through `mise`, and reusable job commands run through `mise`.
 

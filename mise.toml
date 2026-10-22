@@ -2,7 +2,8 @@
 # Repository-wide tools and cross-cutting tasks. Project tasks live next to their code
 # (see config_roots); run them from anywhere with `mise run //<dir>:<task>`, or list
 # everything with `mise tasks ls --all`.
-min_version = "2026.9.16" # [monorepo.path_aliases]
+
+min_version = "2026.9.16"  # [monorepo.path_aliases]
 monorepo_root = true
 
 [settings]
@@ -47,9 +48,23 @@ cargo-release = "1.1.6"
 actionlint = "1.7.12"
 shellcheck = "0.11.0"
 prek = "latest"
+zizmor = "1.31.1"
+tombi = "1.8.4"
+lychee = "0.24.2"
+typos = "1.51.1"
+osv-scanner = "2.7.0"
+cargo-deny = "0.20.2"
+gitleaks = "8.30.1"
+# CI runs these through `//store:migrations-lint-changed` (repo-lint.yml) and `//helm:check` (helm-ci.yml).
+"github:sbdchd/squawk" = "2.69.0"
+kubeconform = "0.8.0"
 
 [env]
-CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
+# Final artifacts (`debug/gateway`, test binaries) stay in each checkout, so a
+# build in a parallel worktree cannot replace the binary another one is testing.
+# Intermediate artifacts, which are most of the disk use, go to a central build
+# dir keyed by workspace path. These override the caller's shell values.
+CARGO_TARGET_DIR = "{{config_root}}/target"
 CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/{workspace-path-hash}"
 
 # Local Postgres for development and Postgres-backed tests. Supervised by pitchfork
@@ -84,9 +99,13 @@ run = "cargo fmt --all"
 description = "Check Rust source formatting without modifying files"
 run = "cargo fmt --all -- --check"
 
+# `build.warnings = "deny"` fails on warnings without passing clippy extra
+# flags, so a plain `cargo clippy` and this task share cached results, and
+# warnings replayed from that cache still fail.
 [tasks.rust-lint]
 description = "Lint all Rust workspace targets"
-run = "cargo clippy --workspace --all-targets -- -D warnings"
+env = { CARGO_BUILD_WARNINGS = "deny" }
+run = "cargo clippy --workspace --all-targets"
 
 [tasks.rust-build]
 description = "Build all Rust workspace crates"
@@ -134,12 +153,89 @@ run = "node scripts/build-shadcn-theme.mjs --build"
 description = "Fail when registry.json, docs/public/r or the docs dark theme no longer match the admin UI tokens in globals.css"
 run = "node scripts/build-shadcn-theme.mjs --check"
 
+# Language-agnostic checks. Each reads its config from the repo root
+# (tombi.toml, lychee.toml, _typos.toml, .gitleaks.toml, .github/zizmor.yml).
+[tasks.toml-fmt]
+description = "Format tracked TOML files"
+run = "git ls-files -z '*.toml' | xargs -0 tombi format"
+
+[tasks.toml-check]
+description = "Check TOML formatting and validate TOML files against the schema each one declares"
+run = [
+  "git ls-files -z '*.toml' | xargs -0 tombi format --check",
+  "git ls-files -z '*.toml' | xargs -0 tombi lint",
+]
+
+[tasks.links-check]
+description = "Check local Markdown links and heading anchors"
+run = "lychee --offline --no-progress ."
+
+[tasks.links-check-external]
+description = "Check local and remote Markdown links; set GITHUB_TOKEN to avoid GitHub rate limits"
+run = "lychee --no-progress ."
+
+[tasks.actions-audit]
+description = "Audit GitHub Actions workflows and Dependabot config; set GH_TOKEN for online audits"
+run = "zizmor --quiet --no-progress --strict-collection ."
+
+[tasks.typos]
+description = "Check spelling in source, docs, and config; allowed words live in _typos.toml"
+run = "typos"
+
+# gitleaks parses `git log -p` and `git diff` output, which `color.ui = always`
+# breaks, so these tasks turn colour off. They scan commits and staged changes
+# rather than the working tree, so gitignored local secrets never match.
+[tasks.secrets-check]
+description = "Scan every commit since CHANGE_BASE (default: merge base with origin/main) for secrets with gitleaks"
+env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
+run = """
+base="${CHANGE_BASE:-$(git merge-base origin/main HEAD)}"
+gitleaks git --redact --no-banner --log-opts="$base..HEAD"
+"""
+
+# `gitleaks git --pre-commit --staged` misses some secrets in 8.30.1
+# (gitleaks/gitleaks#2281), so scan a copy of the staged files instead.
+[tasks.secrets-check-staged]
+description = "Scan staged files for secrets with gitleaks"
+run = """
+staged="$(mktemp -d)"
+trap 'rm -rf "$staged"' EXIT
+git diff --cached --name-only --diff-filter=ACMR -z | git checkout-index --prefix="$staged/" -z --stdin
+gitleaks dir "$staged" --config .gitleaks.toml --redact --no-banner
+"""
+
+[tasks.secrets-check-history]
+description = "Scan the full git history for secrets with gitleaks"
+env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
+run = "gitleaks git --redact --no-banner"
+
+[tasks.repo-lint]
+description = "Run language-agnostic checks for TOML, spelling, secrets, links, and GitHub Actions"
+depends = ["toml-check", "typos", "secrets-check", "links-check", "actions-audit"]
+
+[tasks.rust-deny]
+description = "Check Rust dependencies for RustSec advisories, licenses, and sources (deny.toml)"
+run = "cargo deny check"
+
+# Lockfiles are listed explicitly: osv-scanner's recursive walk finds nothing in
+# a linked git worktree. Reports the full backlog, so it is not part of `lint`;
+# CI gates pull requests on newly introduced vulnerabilities instead.
+[tasks.deps-audit]
+description = "Scan every tracked lockfile for known vulnerabilities with osv-scanner"
+run = """
+git ls-files -z '*Cargo.lock' '*bun.lock' '*package-lock.json' \
+  | xargs -0 printf -- '--lockfile=%s\n' \
+  | xargs osv-scanner scan source
+"""
+
 [tasks.lint]
 description = "Run repository formatting checks, linting, and static checks"
 depends = [
   "rust-fmt-check",
   "rust-lint",
+  "rust-deny",
   "shadcn-theme-check",
+  "repo-lint",
   "//crates/admin-ui/web:fmt-check",
   "//crates/admin-ui/web:lint",
   "//actions/review-agent:typecheck",

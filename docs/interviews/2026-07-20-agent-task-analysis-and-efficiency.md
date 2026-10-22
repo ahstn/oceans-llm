@@ -189,7 +189,7 @@ The resulting plan narrows v1 to passive gateway observation while preserving a 
 
 **Decision:** Accept any bounded `session_id` header.
 
-**Superseded during implementation:** Accept only bounded session identifiers supplied by a versioned, recognized harness adapter. Unknown or policy-blocked harnesses remain sessionless. See [Passive Agent Correlation](../contributing/reference/agent-session-analysis.md#passive-correlation-and-task-boundaries).
+**Superseded during implementation:** Accept only bounded session identifiers supplied by a versioned, recognized harness adapter. Unknown or policy-blocked harnesses remain sessionless. See [Passive Agent Correlation](../contributing/reference/agent-session-analysis.md#passive-session-adapter-registry).
 
 **Safety constraints added to the plan:**
 

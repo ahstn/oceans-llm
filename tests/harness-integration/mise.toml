@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Native coding-harness integration tests. From the repo root: `mise run //tests/harness-integration:<task>`.
 
 [tasks.install]

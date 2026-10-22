@@ -18,7 +18,6 @@
 - Admin UI:
   - [../../crates/admin-ui/web/src/routes/-auth-routing.ts](../../crates/admin-ui/web/src/routes/-auth-routing.ts)
   - [../../crates/admin-ui/web/src/routes/__root.tsx](../../crates/admin-ui/web/src/routes/__root.tsx)
-  - [../../crates/admin-ui/web/src/routes/-admin-guard.ts](../../crates/admin-ui/web/src/routes/-admin-guard.ts)
   - [../../crates/admin-ui/web/src/components/layout/app-shell.tsx](../../crates/admin-ui/web/src/components/layout/app-shell.tsx)
   - [../../crates/admin-ui/web/src/components/app-sidebar.tsx](../../crates/admin-ui/web/src/components/app-sidebar.tsx)
 - Docs:

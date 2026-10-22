@@ -66,6 +66,12 @@ The Claude Code tab emits `.claude/settings.json` content with the SchemaStore C
 
 Claude Code appends Anthropic endpoints such as `/v1/messages`, `/v1/messages/count_tokens`, and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. Token counting returns a real count only when the selected route's provider has an upstream count API; other routes return `501 not_implemented_error`. See [Anthropic Messages token counting](model-routing-and-api-behavior.md#anthropic-messages-token-counting). OpenCode and Pi still use the OpenAI-compatible `/v1` base URL, grouped by client API style when needed.
 
+### Claude Code background model
+
+Claude Code runs background work, such as WebFetch summaries and session titles, on its small/fast model, and sends `thinking: { "type": "disabled" }` with it. The generated snippet sets `ANTHROPIC_SMALL_FAST_MODEL` to the first selected model that can turn thinking off, and falls back to the first selected model with a note when every selected model always thinks. On Claude Sonnet 5.5 the gateway turns that request into the model's `between_tools` setting, and on Opus 4.7, Opus 4.8, Sonnet 5, Opus 5, and Haiku 5.5 it forwards it unchanged (Opus 5 and Haiku 5.5 only at effort `high` or below). Claude Opus 5.5 and Fable 5.x always think, so the gateway rejects these requests with a 400 and Claude Code reports a tool failure. To avoid that, include a Haiku or Sonnet model in the selection, or set `ANTHROPIC_SMALL_FAST_MODEL` and `ANTHROPIC_DEFAULT_HAIKU_MODEL` to a gateway model that can turn thinking off. See [Turn thinking off on adaptive-only Claude models](model-routing-and-api-behavior.md#turn-thinking-off-on-adaptive-only-claude-models).
+
+When a host app manages Claude Code's provider settings, such as the Claude desktop app with `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`, user-level overrides of these variables may not apply. In that case, choose a main model that can turn thinking off.
+
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 
 ## Codex

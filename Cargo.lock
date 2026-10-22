@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admin-ui"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "axum 0.8.9",
  "gateway-client-ip",
@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "agent-session-analysis"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "admin-ui",
  "anyhow",
@@ -1894,8 +1894,9 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
+ "gateway-core",
  "serde",
  "serde_json",
  "toml",
@@ -1903,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-ip"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "hmac 0.12.1",
  "http 1.5.0",
@@ -1913,7 +1914,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "aes-gcm",
  "agent-session-analysis",
@@ -1932,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-guardrails"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "aho-corasick",
  "async-trait",
@@ -1953,7 +1954,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-mcp"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "axum 0.8.9",
  "futures-util",
@@ -1968,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1999,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -2031,7 +2032,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-skills"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -2050,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -3361,7 +3362,7 @@ dependencies = [
 
 [[package]]
 name = "oceans-cli"
-version = "0.43.0"
+version = "0.43.2"
 dependencies = [
  "anyhow",
  "axum 0.8.9",

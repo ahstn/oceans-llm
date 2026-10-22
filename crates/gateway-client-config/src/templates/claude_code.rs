@@ -5,7 +5,11 @@ use serde_json::{Map, Value, json};
 use crate::{
     api_style::uses_anthropic_messages_api,
     format::to_pretty_json,
-    templates::notes::{ClientConfigNote, claude_code_note_items, thinking_note_items},
+    templates::notes::{
+        ClientConfigNote, claude_code_background_model_note, claude_code_note_items,
+        thinking_note_items,
+    },
+    thinking::claude_always_thinks,
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
         ClientConfigSetupItem, ClientConfigTemplate,
@@ -140,7 +144,7 @@ fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> 
         ("ANTHROPIC_MODEL".to_string(), json!(input.model_id)),
         (
             "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
-            json!(input.model_id),
+            json!(claude_code_background_model(inputs).model_id),
         ),
     ]);
 
@@ -152,6 +156,27 @@ fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> 
     }
 
     env
+}
+
+/// Claude Code runs background work on its small/fast model with thinking turned off, so prefer
+/// the first selected model that can turn thinking off.
+fn claude_code_background_model<'a>(inputs: &[&'a ClientConfigInput]) -> &'a ClientConfigInput {
+    inputs
+        .iter()
+        .copied()
+        .find(|input| !claude_code_input_always_thinks(input))
+        .unwrap_or(inputs[0])
+}
+
+fn claude_code_input_always_thinks(input: &ClientConfigInput) -> bool {
+    claude_always_thinks(
+        [
+            Some(input.model_id.as_str()),
+            input.upstream_model.as_deref(),
+        ]
+        .into_iter()
+        .flatten(),
+    )
 }
 
 fn claude_code_model_overrides(inputs: &[&ClientConfigInput]) -> Map<String, Value> {
@@ -230,6 +255,11 @@ fn claude_code_notes_for_models(
         .iter()
         .flat_map(|input| thinking_note_items(input))
         .collect::<Vec<_>>();
+
+    let background = claude_code_background_model(inputs);
+    if claude_code_input_always_thinks(background) {
+        note_items.push(claude_code_background_model_note(&background.model_id));
+    }
 
     let mut seen_kinds = note_items
         .iter()

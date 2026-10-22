@@ -76,7 +76,7 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
         content.extend(tool_calls.iter().filter_map(anthropic_tool_use_from_openai));
     }
 
-    json!({
+    let mut response = json!({
         "id": id,
         "type": "message",
         "role": "assistant",
@@ -89,7 +89,30 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
             .unwrap_or("end_turn"),
         "stop_sequence": null,
         "usage": anthropic_usage_from_openai(value.get("usage"))
-    })
+    });
+    if let Some(fields) = anthropic_message_metadata(provider_metadata, "message") {
+        response
+            .as_object_mut()
+            .expect("message object")
+            .extend(fields.clone());
+    }
+    response
+}
+
+/// Native message fields retained by an Anthropic provider normalizer.
+pub fn anthropic_message_metadata<'a>(
+    provider_metadata: Option<&'a Value>,
+    event: &str,
+) -> Option<&'a Map<String, Value>> {
+    [
+        "gcp_vertex",
+        "aws_bedrock",
+        "github_copilot",
+        "anthropic_compat",
+        "anthropic",
+    ]
+    .into_iter()
+    .find_map(|namespace| provider_metadata?.get(namespace)?.get(event)?.as_object())
 }
 
 pub fn anthropic_reasoning_blocks<'a>(

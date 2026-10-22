@@ -1,3 +1,5 @@
+#:schema https://www.schemastore.org/git-cliff.json
+
 [remote.github]
 owner = "ahstn"
 repo = "oceans-llm"

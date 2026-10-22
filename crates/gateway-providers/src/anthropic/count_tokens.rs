@@ -146,6 +146,7 @@ mod tests {
             upstream_model: "claude-sonnet-4-6".to_string(),
             owner_user_id: None,
             expected_provider_credential_id: None,
+            chat_protocol: Default::default(),
             extra_headers: serde_json::Map::new(),
             extra_body: serde_json::Map::new(),
             request_headers: BTreeMap::new(),
