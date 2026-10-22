@@ -23,7 +23,7 @@
 - **No way to split the file.** The gateway read one file. A missing file silently produced an empty config. Helm replaces lists across `-f` values files, so `gateway.config.models` could not be split across values files either.
 - **Silent mistakes.**
   - Duplicate model ids were accepted: validation kept the last entry and seeding upserted both.
-  - Routes, route `capabilities` and `compatibility`, and six of seven provider types ignored unknown fields, so a typo such as `capabilites:` did nothing.
+  - Routes, route `capabilities` and `compatibility`, and six of seven provider types ignored unknown fields, so a misnamed key such as `capability:` did nothing.
   - Guardrails were validated against model route keys before the models themselves.
 - **Repeated values.** Admins restated what other config already decided. Across the checked-in configs:
   - 11 of 12 `pricing_provider_id` values followed from the provider host.

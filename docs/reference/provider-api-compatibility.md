@@ -116,7 +116,7 @@ models:
             openai_base_path: /openai/v1
 ```
 
-`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles use `openai_base_path`, which defaults to the AWS path for the endpoint; see [`aws_bedrock`](../configuration/configuration-reference.md#aws-bedrock) for the defaults. The example sets `/openai/v1` because Mantle serves GPT-5.5 there; omit it for Mantle models served under the default `/v1`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
+`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles use `openai_base_path`, which defaults to the AWS path for the endpoint; see [AWS Bedrock](../providers/aws-bedrock.md) for the defaults. The example sets `/openai/v1` because Mantle serves GPT-5.5 there; omit it for Mantle models served under the default `/v1`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
 
 Runtime Converse compatibility also accepts optional `supports_strict_tools`. When absent, transparent model IDs use model-family detection; set it explicitly for opaque application-inference-profile IDs or ARNs so Claude Opus 4.7/4.8 routes omit the unsupported `strict` field while supported models retain it.
 
