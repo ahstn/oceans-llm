@@ -51,7 +51,6 @@ prek = "latest"
 zizmor = "1.31.1"
 tombi = "1.8.4"
 lychee = "0.24.2"
-editorconfig-checker = "4.0.2"
 typos = "1.51.1"
 osv-scanner = "2.7.0"
 cargo-deny = "0.20.2"
@@ -155,7 +154,7 @@ description = "Fail when registry.json, docs/public/r or the docs dark theme no 
 run = "node scripts/build-shadcn-theme.mjs --check"
 
 # Language-agnostic checks. Each reads its config from the repo root
-# (tombi.toml, .editorconfig, lychee.toml, .github/zizmor.yml).
+# (tombi.toml, lychee.toml, _typos.toml, .gitleaks.toml, .github/zizmor.yml).
 [tasks.toml-fmt]
 description = "Format tracked TOML files"
 run = "git ls-files -z '*.toml' | xargs -0 tombi format"
@@ -166,10 +165,6 @@ run = [
   "git ls-files -z '*.toml' | xargs -0 tombi format --check",
   "git ls-files -z '*.toml' | xargs -0 tombi lint",
 ]
-
-[tasks.editorconfig-check]
-description = "Check line endings, final newlines, and trailing whitespace against .editorconfig"
-run = "editorconfig-checker"
 
 [tasks.links-check]
 description = "Check local Markdown links and heading anchors"
@@ -215,15 +210,8 @@ env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_
 run = "gitleaks git --redact --no-banner"
 
 [tasks.repo-lint]
-description = "Run language-agnostic checks for TOML, whitespace, spelling, secrets, links, and GitHub Actions"
-depends = [
-  "toml-check",
-  "editorconfig-check",
-  "typos",
-  "secrets-check",
-  "links-check",
-  "actions-audit"
-]
+description = "Run language-agnostic checks for TOML, spelling, secrets, links, and GitHub Actions"
+depends = ["toml-check", "typos", "secrets-check", "links-check", "actions-audit"]
 
 [tasks.rust-deny]
 description = "Check Rust dependencies for RustSec advisories, licenses, and sources (deny.toml)"

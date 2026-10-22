@@ -69,7 +69,7 @@
     },
     {
       "reason": "repository lint and dependency policy configuration; mise run lint runs it",
-      "paths": [".editorconfig", ".editorconfig-checker.json", ".gitleaks.toml", ".squawk.toml", "_typos.toml", "deny.toml", "lychee.toml", "tombi.toml"]
+      "paths": [".gitleaks.toml", ".squawk.toml", "_typos.toml", "deny.toml", "lychee.toml", "tombi.toml"]
     },
     {
       "reason": "agent harness and repository wiring",

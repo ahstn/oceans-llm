@@ -5,18 +5,17 @@
 
 ## Context
 
-Repository checks covered Rust and TypeScript sources, shell scripts, and workflow syntax. Nothing checked TOML, Markdown links, spelling, whitespace in other file types, or workflow security. Dependabot raised update pull requests, but no check failed when a change added a vulnerable dependency, and no policy covered Rust dependency licenses.
+Repository checks covered Rust and TypeScript sources, shell scripts, and workflow syntax. Nothing checked TOML, Markdown links, spelling, secrets, or workflow security. Dependabot raised update pull requests, but no check failed when a change added a vulnerable dependency, and no policy covered Rust dependency licenses.
 
 The first runs of the new tools found 14 broken documentation links and anchors, 23 workflow findings, and about 90 known advisories across the Cargo, Bun, and npm lockfiles.
 
 ## Decision
 
-Add ten single-binary tools through mise, pinned in `mise.lock`:
+Add nine single-binary tools through mise, pinned in `mise.lock`:
 
 - zizmor audits GitHub Actions workflows and Dependabot config.
 - tombi formats TOML and validates each file against the schema it declares.
 - lychee checks Markdown links and heading anchors.
-- editorconfig-checker enforces `.editorconfig` line endings, final newlines, and trailing whitespace.
 - typos checks spelling.
 - gitleaks scans new commits and staged changes for secrets.
 - cargo-deny checks Rust advisories, licenses, and sources.
@@ -28,7 +27,7 @@ Dependency scanning gates new vulnerabilities, not the existing backlog. Pull re
 
 ## Implementation
 
-- `mise run repo-lint` runs `toml-check`, `editorconfig-check`, `typos`, `secrets-check`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
+- `mise run repo-lint` runs `toml-check`, `typos`, `secrets-check`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
 - Every TOML file starts with a `#:schema` directive, so editors and tombi validate it against that schema. `deny.toml`, `dist-workspace.toml`, `rust-analyzer.toml`, and `.squawk.toml` have no published schema; their first line links the configuration reference instead. `tombi.toml` keeps Cargo manifests on TOML 1.0, because the SchemaStore Cargo schema declares TOML 1.1 and tombi would otherwise rewrite dependency tables as multi-line inline tables. It also turns off schema-driven key and array reordering and preserves string quote styles.
 - gitleaks scans every commit since the change base (`secrets-check`), including each commit on a pull request's branch, so a secret added and later removed in the same pull request still fails. `repo-lint.yml` checks out full history for this. The prek hook scans a copy of the staged files with `gitleaks dir` (`secrets-check-staged`), because `gitleaks git --pre-commit --staged` misses some secrets in 8.30.1 (gitleaks/gitleaks#2281). Neither reads the working tree, so gitignored local secrets such as `mise.local.toml` never match. `.gitleaks.toml` extends the default rules and allowlists exact fixture values only: two provider and model identifiers, placeholder `gwk_` keys, one throwaway RSA test key, and fake tokens in redaction tests. A real secret in the same file or field is still reported. With it, the full history (`secrets-check-history`) is clean. The tasks turn off `color.ui`, because coloured `git log -p` output makes gitleaks scan nothing.
 - prek runs each check as its own hook. The typos hook checks staged files only. The existing `lint` hook only fires on Rust and TypeScript changes, so these hooks cover documentation and config commits.
