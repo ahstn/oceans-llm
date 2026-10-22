@@ -937,8 +937,8 @@ fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
     let path = tmp.path().join("gateway.yaml");
     for (provider_yaml, expected) in [
         (
-            "    base_url: https://api.openai.com/v1\n    pricing_provder_id: openai\n",
-            "unknown field `pricing_provder_id`",
+            "    base_url: https://api.openai.com/v1\n    pricing_provider: openai\n",
+            "unknown field `pricing_provider`",
         ),
         (
             "    base_url: https://api.openai.com/v1\n    auth: { kind: basic, token: literal.test }\n",

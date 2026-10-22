@@ -707,8 +707,8 @@ fn rejects_ambiguous_model_shapes() {
             "duplicate entry with key",
         ),
         (
-            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5, capabilites: { tools: false } }\n",
-            "unknown field `capabilites`",
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5, capability: { tools: false } }\n",
+            "unknown field `capability`",
         ),
     ] {
         write_config(
