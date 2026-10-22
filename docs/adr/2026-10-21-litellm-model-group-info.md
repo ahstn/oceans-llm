@@ -49,16 +49,18 @@ The eligibility, transport, thinking policy, ceiling, and summary calculation mo
 | `mode` | `chat`, or `embedding` when the model serves only embeddings |
 | `max_input_tokens` | Input limit, else the context window |
 | `max_output_tokens` | Output limit |
-| Four cost fields | Primary route price in USD per million tokens, divided by 1,000,000. All four or none |
+| Four cost fields | Primary route price in USD per million tokens, divided by 1,000,000. Input and output together or no cost fields; each cache cost when its price is known |
 | `supports_function_calling` | `tools` capability |
 | `supports_vision` | `vision` capability, always `true` or `false` |
-| `supports_reasoning` | Catalog reasoning flag or thinking policy, not limited to Anthropic Messages routes |
+| `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible chat route, not limited to Anthropic Messages routes |
 | `supports_response_schema` | Structured output capability |
-| `supported_openai_params` | Fixed base list, plus `tools`, `tool_choice`, `reasoning_effort`, `response_format`, and `temperature` when the model supports them |
+| `supported_openai_params` | Fixed base list, plus `tools`, `tool_choice`, `response_format`, and `temperature` when the model supports them. `reasoning_effort` when every eligible chat route accepts at least one effort level |
 
 The `providers` rule follows the way omp selects an API. omp sends every `providers: ["openai"]` model to `/v1/responses`. Route selection can use any eligible route, so one route without Responses would make some requests fail. A GPT model behind such a route gets the primary route's provider type instead, and omp sends it to chat completions.
 
-omp calls more LiteLLM endpoints when a row has only some costs or no `supports_vision` value. The projection therefore always sets `supports_vision` and sends the four costs together.
+Reasoning follows the same rule. omp sends `reasoning_effort` on every request to a model that lists it, and providers reject it for a model that cannot reason. The projection therefore reports reasoning only when every eligible chat route reasons, and lists `reasoning_effort` only when their effort levels overlap.
+
+omp calls more LiteLLM endpoints when a row has no `supports_vision` value, so the projection always sets it. omp also calls them when a row has some costs but not all four above zero. The projection still sends input and output costs when a cache price is unknown. Without them, omp uses its own price for the model ID, and gateway IDs such as aliases have none, so omp shows the model as free.
 
 ## Why
 
@@ -79,6 +81,7 @@ GPT models now get reasoning effort, prices are correct, and Claude models get t
 - **Claude uses chat completions.** No LiteLLM field selects Anthropic Messages, so omp sends Claude models to `/v1/chat/completions`. The gateway translates these requests. Users who need `/v1/messages` set `modelOverrides.<id>.api: anthropic-messages` in omp.
 - **Aliases.** omp gets effort levels and display names from its own catalog, by model ID. Aliases such as `claude-sonnet-latest` and `gpt-sol-latest` do not match it. They get the generic `minimal` to `xhigh` list, and the display name is the ID. The Oceans reasoning ceiling cannot be sent in this format. Users can set `modelOverrides.<alias>.thinking` in omp.
 - **Tiered prices.** The row has one price per token type. omp ignores tiered prices, for example the higher GPT price above 272k tokens.
+- **Unknown cache prices.** omp counts cache tokens at 0 when the row has no cache cost. On each model list refresh, omp also makes three more metadata requests, which get 404.
 - **Decision models.** `mode` has no value that excludes decision models, so omp lists them as chat models.
 - **One endpoint.** The gateway serves only `/model_group/info`. omp does not need `/model/info`, `/v1/model/info`, `/v2/model/info`, or `/v1/model_group/info`.
 - **Base URL.** The omp provider `baseUrl` must end in `/v1`. Without it, omp calls the unversioned chat routes.

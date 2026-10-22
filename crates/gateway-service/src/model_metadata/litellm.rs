@@ -7,7 +7,7 @@ use gateway_core::{
 use serde::Serialize;
 
 use super::{
-    listing::{MODEL_OWNER, ModelView, effort_levels},
+    listing::{MODEL_OWNER, ModelView},
     load_routes,
 };
 use crate::{
@@ -40,8 +40,9 @@ pub struct ModelGroupInfo {
     /// omp reads this as the context window.
     pub max_input_tokens: Option<i64>,
     pub max_output_tokens: Option<i64>,
-    /// USD per token. The four costs are all present or all absent, because a partial set
-    /// makes omp probe further LiteLLM endpoints.
+    /// USD per token. Input and output are present together or not at all; a cache cost is
+    /// present only when they are and the cache rate is known. Without input and output omp
+    /// falls back to its bundled price for the id, which gateway aliases do not have.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_cost_per_token: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,8 +72,8 @@ pub enum ModelGroupMode {
 struct TokenCosts {
     input: f64,
     output: f64,
-    cache_read: f64,
-    cache_write: f64,
+    cache_read: Option<f64>,
+    cache_write: Option<f64>,
 }
 
 pub(crate) async fn list_model_groups<R>(
@@ -97,7 +98,8 @@ fn model_group_info(view: &ModelView<'_>) -> ModelGroupInfo {
     let limits = &view.summary.limits;
     // Unlike `/v1/models` thinking, this is not gated on Anthropic Messages routes: omp asks
     // for effort over the OpenAI wires (`reasoning_effort`, `reasoning.effort`), not `thinking`.
-    let reasoning = view.can_reason();
+    // It is gated on every chat route instead, since omp sends effort on every request.
+    let reasoning = view.chat_reasoning.reasons;
     let costs = view
         .primary_detail
         .and_then(|index| view.summary.routes[index].pricing.as_ref())
@@ -110,18 +112,18 @@ fn model_group_info(view: &ModelView<'_>) -> ModelGroupInfo {
         max_output_tokens: limits.output,
         input_cost_per_token: costs.map(|costs| costs.input),
         output_cost_per_token: costs.map(|costs| costs.output),
-        cache_read_input_token_cost: costs.map(|costs| costs.cache_read),
-        cache_creation_input_token_cost: costs.map(|costs| costs.cache_write),
+        cache_read_input_token_cost: costs.and_then(|costs| costs.cache_read),
+        cache_creation_input_token_cost: costs.and_then(|costs| costs.cache_write),
         supports_function_calling: capabilities.tools == Some(true),
         supports_vision: capabilities.vision == Some(true),
         supports_reasoning: reasoning,
         supports_response_schema: capabilities.structured_output == Some(true),
-        supported_openai_params: supported_openai_params(view, reasoning),
+        supported_openai_params: supported_openai_params(view),
     }
 }
 
 /// Catalog prices are USD per million tokens; LiteLLM wants USD per token. `None` unless
-/// all four rates are known.
+/// both the input and the output rate are known. Many catalog entries have no cache rate.
 fn per_token_costs(pricing: &PricingCatalogCostDocument) -> Option<TokenCosts> {
     let rate = |value: Option<&str>| {
         value?
@@ -133,8 +135,8 @@ fn per_token_costs(pricing: &PricingCatalogCostDocument) -> Option<TokenCosts> {
     Some(TokenCosts {
         input: rate(pricing.input.as_deref())?,
         output: rate(pricing.output.as_deref())?,
-        cache_read: rate(pricing.cache_read.as_deref())?,
-        cache_write: rate(pricing.cache_write.as_deref())?,
+        cache_read: rate(pricing.cache_read.as_deref()),
+        cache_write: rate(pricing.cache_write.as_deref()),
     })
 }
 
@@ -192,7 +194,7 @@ const fn icon_vendor(key: ModelIconKey) -> Option<&'static str> {
     }
 }
 
-fn supported_openai_params(view: &ModelView<'_>, reasoning: bool) -> Vec<&'static str> {
+fn supported_openai_params(view: &ModelView<'_>) -> Vec<&'static str> {
     let capabilities = &view.summary.capabilities;
     let mut params = BASE_OPENAI_PARAMS.to_vec();
     if accepts_temperature(view) {
@@ -201,8 +203,9 @@ fn supported_openai_params(view: &ModelView<'_>, reasoning: bool) -> Vec<&'stati
     if capabilities.tools == Some(true) {
         params.extend(["tools", "tool_choice"]);
     }
-    // Manual-budget Claude models and ceilings below the ladder leave no effort to request.
-    if !effort_levels(reasoning, view.thinking_policy, view.reasoning_ceiling).is_empty() {
+    // Manual-budget Claude models, ceilings below the ladder, and routes whose effort
+    // ladders do not overlap leave no effort to request.
+    if !view.chat_reasoning.effort_levels.is_empty() {
         params.push("reasoning_effort");
     }
     if capabilities.structured_output == Some(true) {

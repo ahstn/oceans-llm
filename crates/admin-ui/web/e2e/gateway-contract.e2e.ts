@@ -161,7 +161,12 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
     expect(Array.isArray(group.providers)).toBe(true)
     expect((group.providers as unknown[]).length).toBeGreaterThan(0)
     const presentCosts = costFields.filter((field) => field in group)
-    expect([0, costFields.length]).toContain(presentCosts.length)
+    // Input and output prices come together; a cache price only comes with them.
+    const priced = 'input_cost_per_token' in group
+    expect('output_cost_per_token' in group).toBe(priced)
+    if (!priced) {
+      expect(presentCosts).toEqual([])
+    }
     for (const field of presentCosts) {
       expect(typeof group[field]).toBe('number')
     }

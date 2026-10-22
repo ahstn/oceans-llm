@@ -413,21 +413,23 @@ Each row has these fields:
 | `mode` | Route transport | `chat` when the model serves Chat Completions or Responses. `embedding` when the model serves only embeddings |
 | `max_input_tokens` | Conservative input limit, else the context window | `null` when unknown. omp uses this value as the context window |
 | `max_output_tokens` | Conservative output limit | `null` when unknown |
-| `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price | USD per token. All four are present, or none |
+| `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price | USD per token. Input and output are present together, or no cost field is present. A cache cost is present only when its price is known |
 | `supports_function_calling` | `tools` capability | |
 | `supports_vision` | `vision` capability | Always `true` or `false`, never `null` |
-| `supports_reasoning` | Catalog reasoning flag or the model's thinking policy | Not limited to Anthropic Messages routes |
+| `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible chat route | Not limited to Anthropic Messages routes. `false` when one chat route cannot reason |
 | `supports_response_schema` | Structured output capability | Standard LiteLLM field. omp ignores it |
 | `supported_openai_params` | Derived from the fields above | See below |
 
-The gateway stores prices in USD per million tokens. This endpoint divides each price by 1,000,000. For example, an input price of 4 USD per million tokens gives `"input_cost_per_token": 0.000004`. A row has all four costs or no cost fields. omp calls other LiteLLM endpoints when a row has only some of the costs, or when `supports_vision` is unknown.
+The gateway stores prices in USD per million tokens. This endpoint divides each price by 1,000,000. For example, an input price of 4 USD per million tokens gives `"input_cost_per_token": 0.000004`. When the input or the output price is unknown, the row has no cost fields, and omp uses its own price for the model ID, if it has one. Many models have no cache price, so the row then has input and output costs only, and omp counts the cache tokens at 0.
 
 `supported_openai_params` always contains `max_tokens`, `max_completion_tokens`, `stream`, and `stream_options`. The gateway adds these values:
 
 - `tools` and `tool_choice` when the model supports tools.
-- `reasoning_effort` when the model can reason. omp enables reasoning effort only when this value is present.
+- `reasoning_effort` when every eligible chat route accepts at least one effort level. omp enables reasoning effort only when this value is present. A model can have `supports_reasoning: true` without `reasoning_effort`, for example a Claude model that needs a manual thinking budget, or a model whose reasoning ceiling is below `low`.
 - `response_format` when the model supports structured output.
 - `temperature`, unless the catalog sets `temperature: false` for the model.
+
+Reasoning uses every eligible chat route, not only the primary route. Route selection does not check for reasoning, so a request with `reasoning_effort` can go to any of these routes. A provider rejects `reasoning_effort` for a model that cannot reason, for example a Gemini model without thinking on Vertex.
 
 The gateway finds the vendor for `providers` in this order:
 
@@ -463,7 +465,7 @@ providers:
 - omp ignores tiered prices, for example a higher price above a context threshold.
 - `mode` has no value for decision models, so omp lists them as chat models.
 
-The gateway does not serve `/model/info`, `/v1/model/info`, `/v2/model/info`, or `/v1/model_group/info`. omp reads `/model_group/info` first. When every row has `supports_vision` and all four costs or none, omp does not call the other endpoints. See [ADR: LiteLLM model group info for omp discovery](../adr/2026-10-21-litellm-model-group-info.md).
+The gateway does not serve `/model/info`, `/v1/model/info`, `/v2/model/info`, or `/v1/model_group/info`. omp reads `/model_group/info` first. omp calls the other endpoints when a row has some costs but not all four costs above zero, or when `supports_vision` is unknown. These calls get 404, and omp then uses the rows from `/model_group/info`. This happens only when omp refreshes its model list. See [ADR: LiteLLM model group info for omp discovery](../adr/2026-10-21-litellm-model-group-info.md).
 
 ### Chat Completions
 

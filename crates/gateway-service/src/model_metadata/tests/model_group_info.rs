@@ -63,8 +63,9 @@ async fn group_info(
     group_info_with(model, routes, provider, &snapshot).await
 }
 
-fn assert_costs(card: &serde_json::Value, expected: [f64; 4]) {
-    for (field, expected) in COST_FIELDS.into_iter().zip(expected) {
+/// Checks the leading cost fields, in `COST_FIELDS` order.
+fn assert_costs(card: &serde_json::Value, expected: &[f64]) {
+    for (field, expected) in COST_FIELDS.into_iter().zip(expected.iter().copied()) {
         let actual = card[field]
             .as_f64()
             .unwrap_or_else(|| panic!("{field} missing"));
@@ -100,7 +101,7 @@ async fn model_group_info_converts_per_million_prices_to_per_token_costs() {
         cache_write_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
     });
     let configured = group_info(model("gpt"), vec![priced], provider()).await;
-    assert_costs(&configured, [4e-6, 20e-6, 0.2e-6, 5e-6]);
+    assert_costs(&configured, &[4e-6, 20e-6, 0.2e-6, 5e-6]);
 
     // Catalog prices take the same conversion: Opus 4.7 lists 5 / 25 / 0.5 / 6.25 per million.
     let catalog = group_info(
@@ -109,24 +110,29 @@ async fn model_group_info_converts_per_million_prices_to_per_token_costs() {
         vertex_provider(),
     )
     .await;
-    assert_costs(&catalog, [5e-6, 25e-6, 0.5e-6, 6.25e-6]);
+    assert_costs(&catalog, &[5e-6, 25e-6, 0.5e-6, 6.25e-6]);
 }
 
 #[tokio::test]
-async fn model_group_info_sends_all_four_costs_or_none() {
-    // The catalog prices gpt-5 input, output and cache reads, but not cache writes.
+async fn model_group_info_keeps_known_prices_when_a_cache_rate_is_missing() {
+    // The catalog prices gpt-5 input, output and cache reads, but not cache writes. Gateway
+    // ids such as `gpt` have no bundled omp price, so dropping the set would make them free.
     let catalog = group_info(model("gpt"), vec![route()], provider()).await;
-    assert_no_costs(&catalog);
+    assert_costs(&catalog, &[1.25e-6, 10e-6, 0.125e-6]);
+    assert!(catalog.get("cache_creation_input_token_cost").is_none());
 
     let mut partial = route();
     partial.pricing_override = Some(RoutePricingOverride {
         input_cost_per_million_tokens: Money4::from_scaled(10_000),
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
-        cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+        cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
     });
     let configured = group_info(model("gpt"), vec![partial], provider()).await;
-    assert_no_costs(&configured);
+    assert_costs(&configured, &[1e-6, 2e-6]);
+    for field in &COST_FIELDS[2..] {
+        assert!(configured.get(*field).is_none(), "{field} must be omitted");
+    }
 }
 
 #[tokio::test]
@@ -231,18 +237,18 @@ async fn model_group_info_offers_reasoning_effort_without_anthropic_routes() {
     );
 
     // A thinking policy implies reasoning even when the catalog has no entry.
-    let mut uncatalogued = route();
-    uncatalogued.upstream_model = "house-tuned".into();
+    let mut uncataloged = route();
+    uncataloged.upstream_model = "house-tuned".into();
     let gemini = group_info(
         model("gemini-2.5-pro-house"),
-        vec![uncatalogued.clone()],
+        vec![uncataloged.clone()],
         provider(),
     )
     .await;
     assert_eq!(gemini["supports_reasoning"], json!(true));
     assert!(params(&gemini).contains(&"reasoning_effort"));
 
-    let plain = group_info(model("house-small"), vec![uncatalogued], provider()).await;
+    let plain = group_info(model("house-small"), vec![uncataloged], provider()).await;
     assert!(!params(&plain).contains(&"reasoning_effort"));
 
     // A ceiling below the effort ladder leaves nothing to request.
@@ -253,6 +259,25 @@ async fn model_group_info_offers_reasoning_effort_without_anthropic_routes() {
     let capped = group_info(capped, vec![route()], provider()).await;
     assert_eq!(capped["supports_reasoning"], json!(true));
     assert!(!params(&capped).contains(&"reasoning_effort"));
+}
+
+#[tokio::test]
+async fn model_group_info_needs_reasoning_on_every_chat_route() {
+    // The primary route's name implies Gemini thinking, but the fallback serves gpt-4.1,
+    // which cannot reason. A request with effort can land on either route.
+    let mut gemini = route();
+    gemini.upstream_model = "gemini-2.5-pro-house".into();
+    let mut fallback = route();
+    fallback.upstream_model = "gpt-4.1".into();
+    fallback.priority = 10;
+
+    let primary_only = group_info(model("house"), vec![gemini.clone()], provider()).await;
+    assert_eq!(primary_only["supports_reasoning"], json!(true));
+    assert!(params(&primary_only).contains(&"reasoning_effort"));
+
+    let mixed = group_info(model("house"), vec![gemini, fallback], provider()).await;
+    assert_eq!(mixed["supports_reasoning"], json!(false));
+    assert!(!params(&mixed).contains(&"reasoning_effort"));
 }
 
 #[tokio::test]

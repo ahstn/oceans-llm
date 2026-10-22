@@ -177,8 +177,20 @@ pub(super) struct ModelView<'a> {
     /// Index of the primary route in `summary.routes`, when that route is enabled.
     pub(super) primary_detail: Option<usize>,
     pub(super) thinking_policy: Option<ThinkingPolicy>,
+    /// Reasoning that every chat-capable route honours.
+    pub(super) chat_reasoning: ChatReasoning,
     /// Limits and capabilities summarised across the enabled routes.
     pub(super) summary: ModelMetadata,
+}
+
+/// Reasoning a client can rely on whichever chat-capable route serves the request.
+/// Providers reject `reasoning_effort` for a model that cannot think, and route selection
+/// does not check for reasoning, so one route without it removes it for the model.
+#[derive(Debug, Default)]
+pub(super) struct ChatReasoning {
+    pub(super) reasons: bool,
+    /// Effort levels every chat-capable route accepts, within the model's ceiling.
+    pub(super) effort_levels: Vec<ReasoningEffort>,
 }
 
 type EligibleRoute<'a> = (&'a ModelRoute, &'a ProviderConnection, ProviderCapabilities);
@@ -215,9 +227,19 @@ impl<'a> ModelView<'a> {
         // priority tier and falls back to later tiers. Served APIs are therefore the union,
         // while request features need every chat-capable route to honour them.
         let eligible = eligible_routes(loaded, routes);
+        let reasoning_ceiling = loaded.reasoning_ceilings[index];
+        let chat_reasoning = chat_reasoning(&eligible, reasoning_ceiling, |route, provider| {
+            let catalog = enabled
+                .iter()
+                .position(|enabled| enabled.id == route.id)
+                .and_then(|position| details[position].capabilities.reasoning);
+            let display = resolve_provider_display(&route.provider_key, Some(provider));
+            let policy = route_thinking_policy(model, execution, route, provider, Some(&display));
+            (catalog == Some(true), policy)
+        });
         Self {
             model,
-            reasoning_ceiling: loaded.reasoning_ceilings[index],
+            reasoning_ceiling,
             transport: served_apis(&eligible),
             messages_native: every_chat_route(
                 &eligible,
@@ -235,22 +257,55 @@ impl<'a> ModelView<'a> {
                 .and_then(|(primary, _)| enabled.iter().position(|route| route.id == primary.id)),
             primary,
             thinking_policy,
+            chat_reasoning,
             summary: summarize(model.model_key.clone(), details),
         }
     }
 
     /// Catalog reasoning, or a thinking policy that implies it, whatever wire the client uses.
     pub(super) fn can_reason(&self) -> bool {
-        self.summary.capabilities.reasoning == Some(true)
-            || matches!(
-                self.thinking_policy,
-                Some(
-                    ThinkingPolicy::AnthropicSafeEffort
-                        | ThinkingPolicy::GeminiLevel { .. }
-                        | ThinkingPolicy::GeminiBudget
-                )
-            )
+        self.summary.capabilities.reasoning == Some(true) || implies_reasoning(self.thinking_policy)
     }
+}
+
+fn implies_reasoning(policy: Option<ThinkingPolicy>) -> bool {
+    matches!(
+        policy,
+        Some(
+            ThinkingPolicy::AnthropicSafeEffort
+                | ThinkingPolicy::GeminiLevel { .. }
+                | ThinkingPolicy::GeminiBudget
+        )
+    )
+}
+
+/// Intersects the reasoning of every chat-capable route. `route_reasoning` returns whether
+/// the route's catalog entry reasons, and the route's thinking policy.
+fn chat_reasoning(
+    eligible: &[EligibleRoute<'_>],
+    ceiling: Option<ReasoningEffort>,
+    route_reasoning: impl Fn(&ModelRoute, &ProviderConnection) -> (bool, Option<ThinkingPolicy>),
+) -> ChatReasoning {
+    eligible
+        .iter()
+        .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
+        .map(|(route, provider, _)| {
+            let (catalog, policy) = route_reasoning(route, provider);
+            let reasons = catalog || implies_reasoning(policy);
+            ChatReasoning {
+                reasons,
+                effort_levels: effort_levels(reasons, policy, ceiling),
+            }
+        })
+        .reduce(|acc, next| ChatReasoning {
+            reasons: acc.reasons && next.reasons,
+            effort_levels: acc
+                .effort_levels
+                .into_iter()
+                .filter(|level| next.effort_levels.contains(level))
+                .collect(),
+        })
+        .unwrap_or_default()
 }
 
 fn eligible_routes<'a>(
@@ -448,7 +503,7 @@ fn supported_endpoint_types(
 
 /// Effort levels a client may request, mirroring the Pi `thinkingLevelMap` translation and
 /// clamped to the model's configured ceiling.
-pub(super) fn effort_levels(
+fn effort_levels(
     reasoning: bool,
     policy: Option<ThinkingPolicy>,
     ceiling: Option<ReasoningEffort>,

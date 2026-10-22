@@ -124,8 +124,12 @@ async fn model_group_info_lists_the_visible_models_in_litellm_shape() {
     let costs: BTreeSet<&str> = COST_FIELDS.into_iter().collect();
     assert!(keys.is_superset(&required), "{info}");
     let extra: BTreeSet<&str> = keys.difference(&required).copied().collect();
-    // The four cost fields appear together or not at all, and nothing else does.
-    assert!(extra.is_empty() || extra == costs, "{info}");
+    // Only cost fields are optional. Input and output come together, and a cache cost
+    // only comes with them.
+    assert!(extra.is_subset(&costs), "{info}");
+    let priced = extra.contains("input_cost_per_token");
+    assert_eq!(priced, extra.contains("output_cost_per_token"), "{info}");
+    assert!(priced || extra.is_empty(), "{info}");
     assert!(
         extra
             .iter()
