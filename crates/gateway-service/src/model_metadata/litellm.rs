@@ -18,12 +18,7 @@ use crate::{
 
 const OPENAI: &str = "openai";
 const TOKENS_PER_MILLION: f64 = 1_000_000.0;
-const BASE_OPENAI_PARAMS: [&str; 4] = [
-    "max_tokens",
-    "max_completion_tokens",
-    "stream",
-    "stream_options",
-];
+const BASE_OPENAI_PARAMS: [&str; 2] = ["max_tokens", "max_completion_tokens"];
 
 #[derive(Debug, Serialize)]
 pub struct ModelGroupInfoResponse {
@@ -94,7 +89,7 @@ where
 }
 
 fn model_group_info(view: &ModelView<'_>) -> ModelGroupInfo {
-    let capabilities = &view.summary.capabilities;
+    let features = view.chat_features;
     let limits = &view.summary.limits;
     // Unlike `/v1/models` thinking, this is not gated on Anthropic Messages routes: omp asks
     // for effort over the OpenAI wires (`reasoning_effort`, `reasoning.effort`), not `thinking`.
@@ -114,10 +109,10 @@ fn model_group_info(view: &ModelView<'_>) -> ModelGroupInfo {
         output_cost_per_token: costs.map(|costs| costs.output),
         cache_read_input_token_cost: costs.and_then(|costs| costs.cache_read),
         cache_creation_input_token_cost: costs.and_then(|costs| costs.cache_write),
-        supports_function_calling: capabilities.tools == Some(true),
-        supports_vision: capabilities.vision == Some(true),
+        supports_function_calling: features.tools,
+        supports_vision: features.vision,
         supports_reasoning: reasoning,
-        supports_response_schema: capabilities.structured_output == Some(true),
+        supports_response_schema: features.structured_output,
         supported_openai_params: supported_openai_params(view),
     }
 }
@@ -148,10 +143,14 @@ fn mode(transport: ProviderCapabilities) -> ModelGroupMode {
     }
 }
 
-/// The vendor family of the primary route's upstream model. `openai` is claimed only when
-/// every chat route serves Responses, because omp then sends the model over `/v1/responses`;
-/// otherwise the route's provider type stands in.
+/// The vendor family of the primary route's upstream model. omp sends `openai` models over
+/// `/v1/responses` and every other model over chat completions. `openai` is therefore claimed
+/// only when every chat route serves Responses, with the route's provider type standing in
+/// otherwise, and always when no route serves chat completions.
 fn provider_family(view: &ModelView<'_>) -> String {
+    if view.transport.responses && !view.transport.chat_completions {
+        return OPENAI.to_string();
+    }
     let host = view
         .primary
         .map(|(_, provider)| provider.provider_type.trim().to_ascii_lowercase())
@@ -195,12 +194,15 @@ const fn icon_vendor(key: ModelIconKey) -> Option<&'static str> {
 }
 
 fn supported_openai_params(view: &ModelView<'_>) -> Vec<&'static str> {
-    let capabilities = &view.summary.capabilities;
+    let features = view.chat_features;
     let mut params = BASE_OPENAI_PARAMS.to_vec();
+    if features.stream {
+        params.extend(["stream", "stream_options"]);
+    }
     if accepts_temperature(view) {
         params.push("temperature");
     }
-    if capabilities.tools == Some(true) {
+    if features.tools {
         params.extend(["tools", "tool_choice"]);
     }
     // Manual-budget Claude models, ceilings below the ladder, and routes whose effort
@@ -208,7 +210,7 @@ fn supported_openai_params(view: &ModelView<'_>) -> Vec<&'static str> {
     if !view.chat_reasoning.effort_levels.is_empty() {
         params.push("reasoning_effort");
     }
-    if capabilities.structured_output == Some(true) {
+    if features.structured_output {
         params.push("response_format");
     }
     params

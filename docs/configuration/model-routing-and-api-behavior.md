@@ -409,27 +409,30 @@ Each row has these fields:
 | Field | Source | Rule |
 | --- | --- | --- |
 | `model_group` | Gateway model key | Equal to `id` in `/v1/models` |
-| `providers` | One lowercase vendor of the primary route's upstream model | `["openai"]` only when every eligible chat route serves the Responses API. See below |
+| `providers` | One lowercase vendor of the primary route's upstream model | `["openai"]` only when every eligible chat route serves the Responses API, and always when no route serves Chat Completions. See below |
 | `mode` | Route transport | `chat` when the model serves Chat Completions or Responses. `embedding` when the model serves only embeddings |
 | `max_input_tokens` | Conservative input limit, else the context window | `null` when unknown. omp uses this value as the context window |
 | `max_output_tokens` | Conservative output limit | `null` when unknown |
 | `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price | USD per token. Input and output are present together, or no cost field is present. A cache cost is present only when its price is known |
-| `supports_function_calling` | `tools` capability | |
-| `supports_vision` | `vision` capability | Always `true` or `false`, never `null` |
+| `supports_function_calling` | `tools` capability of the routes that serve tools | See below |
+| `supports_vision` | `vision` capability of the routes that serve images | Always `true` or `false`, never `null` |
 | `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible chat route | Not limited to Anthropic Messages routes. `false` when one chat route cannot reason |
-| `supports_response_schema` | Structured output capability | Standard LiteLLM field. omp ignores it |
+| `supports_response_schema` | Structured output capability of the routes that serve JSON schemas | Standard LiteLLM field. omp ignores it |
 | `supported_openai_params` | Derived from the fields above | See below |
 
 The gateway stores prices in USD per million tokens. This endpoint divides each price by 1,000,000. For example, an input price of 4 USD per million tokens gives `"input_cost_per_token": 0.000004`. When the input or the output price is unknown, the row has no cost fields, and omp uses its own price for the model ID, if it has one. Many models have no cache price, so the row then has input and output costs only, and omp counts the cache tokens at 0.
 
-`supported_openai_params` always contains `max_tokens`, `max_completion_tokens`, `stream`, and `stream_options`. The gateway adds these values:
+`supported_openai_params` always contains `max_tokens` and `max_completion_tokens`. The gateway adds these values:
 
+- `stream` and `stream_options` when an eligible chat route can stream.
 - `tools` and `tool_choice` when the model supports tools.
 - `reasoning_effort` when every eligible chat route accepts at least one effort level. omp enables reasoning effort only when this value is present. A model can have `supports_reasoning: true` without `reasoning_effort`, for example a Claude model that needs a manual thinking budget, or a model whose reasoning ceiling is below `low`.
 - `response_format` when the model supports structured output.
 - `temperature`, unless the catalog sets `temperature: false` for the model.
 
 Reasoning uses every eligible chat route, not only the primary route. Route selection does not check for reasoning, so a request with `reasoning_effort` can go to any of these routes. A provider rejects `reasoning_effort` for a model that cannot reason, for example a Gemini model without thinking on Vertex.
+
+Tools, images, JSON schemas, and streaming are different, because route selection checks for them. A request that uses tools goes only to the eligible routes whose provider and route settings serve tools. A route without them therefore does not remove the feature. The feature is `true` when at least one eligible chat route serves it, and the catalog says that the model on each of these routes has it. A route that serves tools for a model that the catalog does not know makes `supports_function_calling` `false`, because a tools request can go to that route. Streaming has no catalog flag, so one eligible chat route that can stream is enough.
 
 The gateway finds the vendor for `providers` in this order:
 
@@ -440,7 +443,9 @@ The gateway finds the vendor for `providers` in this order:
 
 When the vendor is `openai` but an eligible chat route does not serve Responses, the gateway sends the provider type of the primary route instead, for example `openai_compat`. If that value is empty or `openai`, the gateway sends `oceans-llm`.
 
-The `providers` rule controls the API that omp uses. omp sends a model with `providers: ["openai"]` to `/v1/responses` with `reasoning.effort`. omp sends all other models to the provider `api`, for example `/v1/chat/completions` with `reasoning_effort`. Route selection can use any eligible route, and a route that cannot serve Responses rejects a `/v1/responses` request. The gateway therefore reports `openai` only when every eligible chat route serves Responses. A GPT model behind a route that serves only Chat Completions does not get `["openai"]`.
+When no eligible route serves Chat Completions but a route serves Responses, the gateway sends `["openai"]` for every vendor. For example, a Claude model on a Responses-only route gets `["openai"]`.
+
+The `providers` rule controls the API that omp uses. omp sends a model with `providers: ["openai"]` to `/v1/responses` with `reasoning.effort`. omp sends all other models to the provider `api`, for example `/v1/chat/completions` with `reasoning_effort`. Route selection can use any eligible route, and a route that cannot serve Responses rejects a `/v1/responses` request. The gateway therefore reports `openai` only when every eligible chat route serves Responses. A GPT model behind a route that serves only Chat Completions does not get `["openai"]`. A model that no route serves over Chat Completions gets `["openai"]`, because a chat completions request would find no route.
 
 No field selects Anthropic Messages. omp sends Claude models to `/v1/chat/completions` by default. The gateway translates these requests for Claude routes.
 

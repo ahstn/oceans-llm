@@ -150,6 +150,13 @@ async fn model_group_info_claims_openai_only_when_every_chat_route_serves_respon
     let mixed = group_info(model("gpt"), vec![route(), chat_only], provider()).await;
     assert_eq!(mixed["providers"], json!(["openai_compat"]));
 
+    // omp sends every other vendor over chat completions, which no route here serves.
+    let mut responses_only = route();
+    responses_only.upstream_model = "claude-sonnet-4-5".into();
+    responses_only.capabilities.chat_completions = false;
+    let claude_responses = group_info(model("claude"), vec![responses_only], provider()).await;
+    assert_eq!(claude_responses["providers"], json!(["openai"]));
+
     let claude = group_info(
         model("house-large"),
         vec![vertex_claude_route()],
@@ -196,6 +203,51 @@ async fn model_group_info_reports_unknown_capabilities_as_false() {
             "temperature",
         ]
     );
+}
+
+#[tokio::test]
+async fn model_group_info_counts_only_routes_that_routing_keeps_for_a_feature() {
+    // Routing sends a request with tools, images, a JSON schema, or `stream` only to routes
+    // whose transport serves it, so a route without that transport does not remove it.
+    let mut plain = route();
+    plain.capabilities.tools = false;
+    plain.capabilities.vision = false;
+    plain.capabilities.json_schema = false;
+    plain.capabilities.stream = false;
+    let subset = group_info(model("gpt"), vec![route(), plain.clone()], provider()).await;
+    assert_eq!(subset["supports_function_calling"], json!(true));
+    assert_eq!(subset["supports_vision"], json!(true));
+    assert_eq!(subset["supports_response_schema"], json!(true));
+    for param in [
+        "stream",
+        "stream_options",
+        "tools",
+        "tool_choice",
+        "response_format",
+    ] {
+        assert!(params(&subset).contains(&param), "{param} missing");
+    }
+
+    let none = group_info(model("gpt"), vec![plain], provider()).await;
+    assert_eq!(none["supports_function_calling"], json!(false));
+    assert_eq!(none["supports_vision"], json!(false));
+    assert_eq!(none["supports_response_schema"], json!(false));
+    for param in [
+        "stream",
+        "stream_options",
+        "tools",
+        "tool_choice",
+        "response_format",
+    ] {
+        assert!(!params(&none).contains(&param), "{param} must be omitted");
+    }
+
+    // Routing keeps this route for tools too, but the catalog cannot vouch for its model.
+    let mut unknown = route();
+    unknown.upstream_model = "house-tuned".into();
+    let mixed = group_info(model("gpt"), vec![route(), unknown], provider()).await;
+    assert_eq!(mixed["supports_function_calling"], json!(false));
+    assert!(!params(&mixed).contains(&"tools"));
 }
 
 #[tokio::test]

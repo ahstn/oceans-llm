@@ -45,20 +45,22 @@ The eligibility, transport, thinking policy, ceiling, and summary calculation mo
 | Field | Rule |
 | --- | --- |
 | `model_group` | Gateway model key |
-| `providers` | One lowercase vendor: the model family from the upstream model name, else its `vendor/` prefix, else the primary route's provider type, else `oceans-llm`. `openai` only when every eligible chat route serves Responses |
+| `providers` | One lowercase vendor: the model family from the upstream model name, else its `vendor/` prefix, else the primary route's provider type, else `oceans-llm`. `openai` only when every eligible chat route serves Responses, and always when no route serves Chat Completions |
 | `mode` | `chat`, or `embedding` when the model serves only embeddings |
 | `max_input_tokens` | Input limit, else the context window |
 | `max_output_tokens` | Output limit |
 | Four cost fields | Primary route price in USD per million tokens, divided by 1,000,000. Input and output together or no cost fields; each cache cost when its price is known |
-| `supports_function_calling` | `tools` capability |
-| `supports_vision` | `vision` capability, always `true` or `false` |
+| `supports_function_calling` | `tools` capability of the eligible chat routes that serve tools |
+| `supports_vision` | `vision` capability of the eligible chat routes that serve images, always `true` or `false` |
 | `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible chat route, not limited to Anthropic Messages routes |
-| `supports_response_schema` | Structured output capability |
-| `supported_openai_params` | Fixed base list, plus `tools`, `tool_choice`, `response_format`, and `temperature` when the model supports them. `reasoning_effort` when every eligible chat route accepts at least one effort level |
+| `supports_response_schema` | Structured output capability of the eligible chat routes that serve JSON schemas |
+| `supported_openai_params` | `max_tokens` and `max_completion_tokens`, plus `stream`, `stream_options`, `tools`, `tool_choice`, `response_format`, and `temperature` when the model supports them. `reasoning_effort` when every eligible chat route accepts at least one effort level |
 
-The `providers` rule follows the way omp selects an API. omp sends every `providers: ["openai"]` model to `/v1/responses`. Route selection can use any eligible route, so one route without Responses would make some requests fail. A GPT model behind such a route gets the primary route's provider type instead, and omp sends it to chat completions.
+The `providers` rule follows the way omp selects an API. omp sends every `providers: ["openai"]` model to `/v1/responses`, and every other model to chat completions. Route selection can use any eligible route, so one route without Responses would make some requests fail. A GPT model behind such a route gets the primary route's provider type instead, and omp sends it to chat completions. A model of any vendor that no route serves over chat completions gets `openai`, so omp sends it to `/v1/responses`.
 
 Reasoning follows the same rule. omp sends `reasoning_effort` on every request to a model that lists it, and providers reject it for a model that cannot reason. The projection therefore reports reasoning only when every eligible chat route reasons, and lists `reasoning_effort` only when their effort levels overlap.
+
+Tools, images, JSON schemas, and streaming use a different rule, because route selection checks for them. A request that uses one goes only to the routes whose transport serves it. Those routes alone decide the flag: at least one must exist, and the catalog must say that the model on each of them has the feature. `/v1/models` keeps its stricter rule over every enabled route.
 
 omp calls more LiteLLM endpoints when a row has no `supports_vision` value, so the projection always sets it. omp also calls them when a row has some costs but not all four above zero. The projection still sends input and output costs when a cache price is unknown. Without them, omp uses its own price for the model ID, and gateway IDs such as aliases have none, so omp shows the model as free.
 

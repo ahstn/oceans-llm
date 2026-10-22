@@ -179,6 +179,8 @@ pub(super) struct ModelView<'a> {
     pub(super) thinking_policy: Option<ThinkingPolicy>,
     /// Reasoning that every chat-capable route honours.
     pub(super) chat_reasoning: ChatReasoning,
+    /// Request features a chat request can rely on, after routing filters on them.
+    pub(super) chat_features: ChatFeatures,
     /// Limits and capabilities summarised across the enabled routes.
     pub(super) summary: ModelMetadata,
 }
@@ -193,7 +195,21 @@ pub(super) struct ChatReasoning {
     pub(super) effort_levels: Vec<ReasoningEffort>,
 }
 
+/// Request features routing filters on. A request that uses one goes only to the eligible
+/// routes whose transport serves it, so those routes alone decide the answer: at least one
+/// must exist, and each must serve a model the catalog says has the feature. Routes without
+/// the transport do not count against it.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct ChatFeatures {
+    pub(super) stream: bool,
+    pub(super) tools: bool,
+    pub(super) vision: bool,
+    pub(super) structured_output: bool,
+}
+
 type EligibleRoute<'a> = (&'a ModelRoute, &'a ProviderConnection, ProviderCapabilities);
+/// An eligible chat-capable route and its metadata.
+type ChatRoute<'a, 'b> = (&'b EligibleRoute<'a>, Option<&'b RouteMetadata>);
 
 impl<'a> ModelView<'a> {
     pub(super) fn build(
@@ -224,19 +240,27 @@ impl<'a> ModelView<'a> {
             route_thinking_policy(model, execution, route, provider, Some(&display))
         });
         // A request can land on any eligible route: the planner picks by weight within a
-        // priority tier and falls back to later tiers. Served APIs are therefore the union,
-        // while request features need every chat-capable route to honour them.
+        // priority tier and falls back to later tiers. Served APIs are therefore the union.
+        // Features routing filters on need only the routes that pass the filter; others,
+        // such as reasoning, need every chat-capable route to honour them.
         let eligible = eligible_routes(loaded, routes);
+        let chat_routes = eligible
+            .iter()
+            .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
+            .map(|eligible| {
+                let detail = enabled
+                    .iter()
+                    .position(|enabled| enabled.id == eligible.0.id)
+                    .map(|position| &details[position]);
+                (eligible, detail)
+            })
+            .collect::<Vec<ChatRoute<'_, '_>>>();
         let reasoning_ceiling = loaded.reasoning_ceilings[index];
-        let chat_reasoning = chat_reasoning(&eligible, reasoning_ceiling, |route, provider| {
-            let catalog = enabled
-                .iter()
-                .position(|enabled| enabled.id == route.id)
-                .and_then(|position| details[position].capabilities.reasoning);
+        let chat_reasoning = chat_reasoning(&chat_routes, reasoning_ceiling, |route, provider| {
             let display = resolve_provider_display(&route.provider_key, Some(provider));
-            let policy = route_thinking_policy(model, execution, route, provider, Some(&display));
-            (catalog == Some(true), policy)
+            route_thinking_policy(model, execution, route, provider, Some(&display))
         });
+        let chat_features = chat_features(&chat_routes);
         Self {
             model,
             reasoning_ceiling,
@@ -258,6 +282,7 @@ impl<'a> ModelView<'a> {
             primary,
             thinking_policy,
             chat_reasoning,
+            chat_features,
             summary: summarize(model.model_key.clone(), details),
         }
     }
@@ -279,19 +304,19 @@ fn implies_reasoning(policy: Option<ThinkingPolicy>) -> bool {
     )
 }
 
-/// Intersects the reasoning of every chat-capable route. `route_reasoning` returns whether
-/// the route's catalog entry reasons, and the route's thinking policy.
+/// Intersects the reasoning of every chat-capable route: its catalog reasoning flag, or a
+/// thinking policy from `policy` that implies reasoning.
 fn chat_reasoning(
-    eligible: &[EligibleRoute<'_>],
+    chat_routes: &[ChatRoute<'_, '_>],
     ceiling: Option<ReasoningEffort>,
-    route_reasoning: impl Fn(&ModelRoute, &ProviderConnection) -> (bool, Option<ThinkingPolicy>),
+    policy: impl Fn(&ModelRoute, &ProviderConnection) -> Option<ThinkingPolicy>,
 ) -> ChatReasoning {
-    eligible
+    chat_routes
         .iter()
-        .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
-        .map(|(route, provider, _)| {
-            let (catalog, policy) = route_reasoning(route, provider);
-            let reasons = catalog || implies_reasoning(policy);
+        .map(|((route, provider, _), detail)| {
+            let catalog = detail.and_then(|detail| detail.capabilities.reasoning);
+            let policy = policy(route, provider);
+            let reasons = catalog == Some(true) || implies_reasoning(policy);
             ChatReasoning {
                 reasons,
                 effort_levels: effort_levels(reasons, policy, ceiling),
@@ -306,6 +331,26 @@ fn chat_reasoning(
                 .collect(),
         })
         .unwrap_or_default()
+}
+
+fn chat_features(chat_routes: &[ChatRoute<'_, '_>]) -> ChatFeatures {
+    let routed = |transport: fn(&ProviderCapabilities) -> bool,
+                  catalog: fn(&super::ModelCapabilities) -> Option<bool>| {
+        let mut serving = chat_routes
+            .iter()
+            .filter(|((_, _, caps), _)| transport(caps))
+            .peekable();
+        serving.peek().is_some()
+            && serving.all(|(_, detail)| {
+                detail.is_some_and(|detail| catalog(&detail.capabilities) == Some(true))
+            })
+    };
+    ChatFeatures {
+        stream: chat_routes.iter().any(|((_, _, caps), _)| caps.stream),
+        tools: routed(|caps| caps.tools, |catalog| catalog.tools),
+        vision: routed(|caps| caps.vision, |catalog| catalog.vision),
+        structured_output: routed(|caps| caps.json_schema, |catalog| catalog.structured_output),
+    }
 }
 
 fn eligible_routes<'a>(
