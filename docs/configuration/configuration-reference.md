@@ -1346,7 +1346,7 @@ An omitted capability flag takes the value the route's provider and compatibilit
 | `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions`, `embeddings`, and `decisions` |
 | `aws_bedrock`, `api_style: runtime_anthropic_invoke` | `chat_completions`, `tools`, `vision`, and `developer_role` |
 | `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, `embeddings`, and `decisions` |
-| `openai_compat` and `gcp_cloud_run_openai_compat` | Everything except `decisions` |
+| `openai_compat` without `decisions_api`, and `gcp_cloud_run_openai_compat` | Everything except `decisions` |
 
 An explicit flag replaces the derived value. Validation still rejects a flag the profile cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. At request time the gateway also intersects route flags with what the provider type can serve, so a route can narrow provider capability but cannot expand it.
 

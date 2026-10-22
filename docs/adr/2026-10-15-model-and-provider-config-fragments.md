@@ -63,20 +63,20 @@ The following are now validated:
 | Bedrock `openai_base_path` | `/openai/v1` for `runtime_openai_chat`, `/v1` for the Mantle OpenAI styles, per AWS's documented base URLs. Mantle models served under `/openai/v1`, such as GPT-5.5, still set it. |
 | Provider icon | `aws_bedrock` type maps to the `aws` icon. |
 
-Inference runs once after files are merged and before validation. It never consults the pricing catalog, which refreshes at runtime, so validation stays deterministic and offline.
+Inference runs while each file is parsed, so every parsed config carries the inferred values, including configs that tests build without the loader. Each value depends only on its own entry: a provider's base URL, or the other routes of the same model, which one file defines. Inference never consults the pricing catalog, which refreshes at runtime, so validation stays deterministic and offline.
 
 ### 4. Route capabilities default from the profile
 
 Each `capabilities` flag is optional. An omitted flag takes the value implied by the route:
 
-- **Decisions transports** (`typesafe` and OpenRouter `api: decisions`): `decisions` only.
+- **Decisions transports** (`typesafe`, `openai_compat` with `decisions_api: openai`, and OpenRouter `api: decisions`): `decisions` only.
 - **Copilot routes:** `github_copilot_route_capabilities` from the route's compatibility block.
 - **Bedrock routes:** the `api_style` rules.
 - **Any other route:** everything except `decisions`.
 
 An explicit flag replaces the derived value. Validation still rejects flags a profile cannot serve. At request time route flags are still intersected with provider capability.
 
-The per-provider-type baselines now live once in `gateway-core`: `ProviderCapabilities::for_provider_type` and `route_provider_capabilities`. Provider clients and model metadata both use them.
+The per-provider-type baselines and the route narrowing above now live once in `gateway-core`: `ProviderCapabilities::for_provider_type`, `route_capability_defaults`, and `route_provider_capabilities`. Config defaults, provider clients, and model metadata all use them.
 
 ### 5. Config directory
 
@@ -85,6 +85,8 @@ The per-provider-type baselines now live once in `gateway-core`: `ProviderCapabi
 **Which files are read:**
 - `*.yaml` and `*.yml` files, read recursively in lexical order of relative path.
 - Dot entries are skipped, which covers Kubernetes `..data` directories. Symlinks are followed.
+- Every file and directory is resolved to its real path, and the loader fails at startup, naming the link and its target, when that path is outside the config directory. It reads the resolved path it checked, so swapping a link after the walk cannot redirect the read. Kubernetes ConfigMap mounts link only within the mount, so they pass.
+- A main file inside the config directory is read once, as the main file.
 
 **What a fragment may contain:**
 - Only `providers` and `models`.
@@ -144,6 +146,7 @@ Trade-offs:
 - **A missing explicit config path fails.** Deployments that pointed `GATEWAY_CONFIG` at a missing file and relied on the empty default now fail at startup.
 - **List form in Helm is noisy.** List-form `providers` and `models` in Helm values log a Helm notice, because the chart defaults are now maps.
 - **External fragment changes are not detected.** The chart cannot checksum ConfigMaps it does not render, so changing one does not restart pods or reseed. A reseed needs the seed-config Job.
+- **Symlinks cannot leave the config directory.** A layout that links fragments in from elsewhere, such as a shared directory outside `--config-dir`, fails at startup. Mount or copy those files under the directory instead. This keeps a stray or planted link from making the gateway read an arbitrary file.
 - **Removing a fragment removes nothing.** Seeding still never prunes providers or models, and the routes of a deleted model stay enabled.
 
 ## Follow-up
