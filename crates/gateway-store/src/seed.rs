@@ -219,6 +219,28 @@ fn route_id_candidates(
     (keyed, legacy)
 }
 
+/// The distinct `(model id, provider, upstream model)` groups the configured routes belong to.
+/// Surviving rows outside them never matter to seeding: a route's own id encodes its provider and
+/// upstream model, a renamed route reuses only a row with the same provider, upstream model, and
+/// priority, and parking moves rows only within one group.
+pub(crate) fn configured_route_groups(
+    models: &[gateway_core::SeedModel],
+) -> std::collections::BTreeSet<(Uuid, String, String)> {
+    models
+        .iter()
+        .flat_map(|model| {
+            let model_id = model_uuid(&model.model_key);
+            model.routes.iter().map(move |route| {
+                (
+                    model_id,
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                )
+            })
+        })
+        .collect()
+}
+
 /// Every id [`configured_route_uuid`] may pick for these models. Seeding checks which of them
 /// already exist, so it never reads route history beyond the current configuration.
 pub(crate) fn configured_route_candidate_ids(models: &[gateway_core::SeedModel]) -> Vec<Uuid> {

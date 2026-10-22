@@ -93,7 +93,10 @@ use uuid::Uuid;
 
 use crate::{
     GatewayStore,
-    seed::{api_key_uuid, configured_route_candidate_ids, configured_route_uuid, model_uuid},
+    seed::{
+        api_key_uuid, configured_route_candidate_ids, configured_route_groups,
+        configured_route_uuid, model_uuid,
+    },
 };
 
 use support::*;

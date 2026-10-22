@@ -253,10 +253,6 @@ impl LibsqlStore {
         // Query in fixed-size chunks so a large config stays under SQLite's host-parameter limit.
         // An empty config runs no query, which also avoids an invalid `IN ()`.
         const IN_LIST_CHUNK: usize = 500;
-        let configured_model_ids = model_ids
-            .values()
-            .map(|model_id| libsql::Value::Text(model_id.to_string()))
-            .collect::<Vec<_>>();
         // Which ids the configured routes may take already exist, so a route can keep a legacy
         // id it still has (see `configured_route_uuid`). Only those ids are looked up.
         let candidate_route_ids = configured_route_candidate_ids(models)
@@ -386,21 +382,36 @@ impl LibsqlStore {
         // batch-referenced survivors. Loading them now, in one query, means the snapshot cannot
         // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
         // of inserting a second row that the (model, provider, upstream, priority) unique key
-        // rejects.
+        // rejects. Only survivors in a configured route group are loaded, so batch history for
+        // providers and upstream models no longer configured is never read.
+        let group_params = configured_route_groups(models)
+            .into_iter()
+            .map(|(model_id, provider, upstream)| {
+                [
+                    libsql::Value::Text(model_id.to_string()),
+                    libsql::Value::Text(provider),
+                    libsql::Value::Text(upstream),
+                ]
+            })
+            .collect::<Vec<_>>();
         let mut survivors_by_model =
             std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
-        for chunk in configured_model_ids.chunks(IN_LIST_CHUNK) {
-            let placeholders = (1..=chunk.len())
-                .map(|index| format!("?{index}"))
+        // Three parameters per group keeps each chunk under the same host-parameter limit.
+        for chunk in group_params.chunks(IN_LIST_CHUNK / 3) {
+            let rows = (0..chunk.len())
+                .map(|index| {
+                    let base = index * 3;
+                    format!("(?{}, ?{}, ?{})", base + 1, base + 2, base + 3)
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             let mut survivor_rows = self
                 .connection
                 .query(
                     &format!(
-                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id IN ({placeholders})"
+                        "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE (model_id, provider_key, upstream_model) IN (VALUES {rows})"
                     ),
-                    libsql::params::Params::Positional(chunk.to_vec()),
+                    libsql::params::Params::Positional(chunk.concat()),
                 )
                 .await
                 .map_err(to_query_error)?;

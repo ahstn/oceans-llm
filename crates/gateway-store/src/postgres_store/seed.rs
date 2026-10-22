@@ -367,15 +367,21 @@ impl PostgresStore {
         // batch-referenced survivors. Loading them now, in one query, means the snapshot cannot
         // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
         // of inserting a second row that the (model, provider, upstream, priority) unique key
-        // rejects.
-        let configured_model_ids = model_ids
-            .values()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
+        // rejects. Only survivors in a configured route group are loaded, so batch history for
+        // providers and upstream models no longer configured is never read.
+        let (mut group_model_ids, mut group_providers, mut group_upstreams) =
+            (Vec::new(), Vec::new(), Vec::new());
+        for (model_id, provider, upstream) in configured_route_groups(models) {
+            group_model_ids.push(model_id.to_string());
+            group_providers.push(provider);
+            group_upstreams.push(upstream);
+        }
         let survivor_rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE model_id = ANY($1)",
+            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE (model_id, provider_key, upstream_model) IN (SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]))",
         )
-        .bind(&configured_model_ids)
+        .bind(&group_model_ids)
+        .bind(&group_providers)
+        .bind(&group_upstreams)
         .fetch_all(&self.pool)
         .await
         .map_err(to_query_error)?;
