@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for implementation. Production use of GitHub App authentication requires the live installation-token canary in [GitHub Copilot Installation-Token Canary](../operations/github-copilot-installation-canary.md).
+Accepted for implementation. Production use of GitHub App authentication requires the live installation-token canary in [GitHub Copilot Installation-Token Canary](../providers/github-copilot.md#run-the-installation-token-canary).
 
 This decision supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of [GitHub Copilot Gateway Provider Architecture](2026-08-14-github-copilot-provider.md).
 

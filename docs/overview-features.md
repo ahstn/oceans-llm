@@ -14,7 +14,7 @@ Oceans LLM gives teams one governed gateway for AI traffic: route requests acros
 
 - **First-class users, teams, and service accounts**: Model all identities separately, with service-account credentials, ownership, model grants, and budgets that remain independent from team membership.
 
-  - Budgets are intentionly dropped for teams, avoiding spend abuse and promoting fairness.
+  - Budgets are intentionally dropped for teams, avoiding spend abuse and promoting fairness.
 
 - **Scoped API keys and model access**: Gateway API keys for users or service accounts providing smoother on-boarding, granular model access, and credential revocation.
 

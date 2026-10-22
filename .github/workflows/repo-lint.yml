@@ -1,0 +1,62 @@
+name: repo-lint
+
+# Language-agnostic checks. Unlike ci.yml this also runs for docs-only changes,
+# since most of what it checks is Markdown, TOML, and workflow files. Rust
+# dependency policy runs in ci.yml; osv-scanner.yml covers every lockfile.
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The secret scan reads every commit since the change base, including
+          # each commit on a pull request's branch, so it needs full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Diff-based checks compare against this base: the merge commit's first
+      # parent on pull requests, or the ref before the push on main.
+      - name: Resolve the change base
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "CHANGE_BASE=$PUSH_BEFORE" >> "$GITHUB_ENV"
+          else
+            echo "CHANGE_BASE=HEAD^1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup mise and repository lint tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: zizmor tombi lychee typos gitleaks github:sbdchd/squawk
+
+      # `repo-lint` in mise.toml owns the list of checks: TOML, spelling,
+      # secrets, links, and GitHub Actions. The read-only token
+      # enables zizmor's online audits, such as known vulnerable actions.
+      - name: Run repository lint checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run repo-lint
+
+      - name: Lint added or edited Postgres migrations
+        run: mise run //store:migrations-lint-changed

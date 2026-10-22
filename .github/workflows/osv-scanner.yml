@@ -1,0 +1,49 @@
+name: osv-scanner
+
+# Scans every lockfile (Cargo, Bun, npm) against OSV. Pull requests fail only on
+# vulnerabilities they introduce. Lockfile changes pushed to main, and a weekly
+# run, report the whole backlog to code scanning. `mise run deps-audit` runs the
+# same full scan locally.
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/Cargo.lock"
+      - "**/bun.lock"
+      - "**/package-lock.json"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  new-vulnerabilities:
+    if: github.event_name == 'pull_request'
+    # The called workflow declares these; fork pull requests still get a read-only token.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Fork pull requests cannot write code scanning results; annotations and
+      # the job result carry the outcome instead.
+      upload-sarif: false
+
+  backlog:
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Existing advisories are tracked in code scanning, not by a red run.
+      fail-on-vuln: false

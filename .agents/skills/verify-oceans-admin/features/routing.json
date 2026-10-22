@@ -44,6 +44,7 @@
         "actions/**",
         "gha-research/**",
         "cliff.toml",
+        "dist-workspace.toml",
         "cog.toml",
         "scripts/release.sh",
         "skills-lock.json",
@@ -65,6 +66,10 @@
     {
       "reason": "admin UI lint configuration; mise run lint and the React Doctor workflow run it",
       "paths": ["crates/admin-ui/web/.oxlintrc.json", "crates/admin-ui/web/doctor.config.json"]
+    },
+    {
+      "reason": "repository lint and dependency policy configuration; mise run lint runs it",
+      "paths": [".gitleaks.toml", ".squawk.toml", "_typos.toml", "deny.toml", "lychee.toml", "tombi.toml"]
     },
     {
       "reason": "agent harness and repository wiring",

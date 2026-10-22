@@ -1,5 +1,7 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Optional Skills object store. Select with `mise -E rustfs ...`.
 # Self-hosting: select `selfhost,rustfs,selfhost-rustfs` in that order.
+
 min_version = "2026.9.18"
 
 [tools]

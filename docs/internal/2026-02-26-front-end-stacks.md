@@ -18,7 +18,7 @@ Recommended stacks (summary):
 - **Balanced (most common “production admin” posture):** Split deployment: CDN-hosted SPA + Rust API (Axum/Actix); OIDC; SSE for streaming; strong observability via tracing + OpenTelemetry; typed API via OpenAPI.
 - **High-performance (fast first paint + typed full-stack):** Rust SSR/hydration with Leptos on Axum/Actix; server functions for “admin actions”; SSE/streams for model output; fewer client-side dependencies.
 
-GitHub adoption signals (stars) support these practical recommendations: React (~243k) is materially larger than the other front-end options; shadcn/ui is also extremely popular (~107k). Among the alternatives, Svelte (~85.9k) and Vue core (~53.1k) are sizeable, while Solid (~35.2k) and Qwik (~21.9k) are smaller but non-trivial. For Rust/WASM, Yew (~32.4k) is visible, and Leptos (~20.2k) is rapidly adopted for full-stack Rust UI.  
+GitHub adoption signals (stars) support these practical recommendations: React (~243k) is materially larger than the other front-end options; shadcn/ui is also extremely popular (~107k). Among the alternatives, Svelte (~85.9k) and Vue core (~53.1k) are sizeable, while Solid (~35.2k) and Qwik (~21.9k) are smaller but non-trivial. For Rust/WASM, Yew (~32.4k) is visible, and Leptos (~20.2k) is rapidly adopted for full-stack Rust UI.
 
 Sources: citeturn4view0turn7view1turn4view1turn4view3turn5view0turn8view1turn21view0turn2view1
 
@@ -57,39 +57,39 @@ This section compares deployment models that combine a Rust backend (gateway con
 | Rust SSR/hydration “full-stack Rust UI” (Leptos SSR) | 3 | 3 | 5 | 3 | Excellent perf + typed server functions; Rust/WASM toolchain complexity. |
 | WASM SPA (Yew/Leptos CSR) + Rust API (split or same-origin) | 2 | 2 | 4 | 2 | Rust end-to-end on client; heavier build pipeline + ecosystem gaps for admin UI. |
 
-Popularity signals for the Rust gateway layer itself show Axum (~25.1k stars), Actix Web (~24.5k), and Rocket (~25.7k) are all widely used; for Rust-first UI, Leptos (~20.2k) and Yew (~32.4k) are significant but smaller than mainstream JS approaches.  
+Popularity signals for the Rust gateway layer itself show Axum (~25.1k stars), Actix Web (~24.5k), and Rocket (~25.7k) are all widely used; for Rust-first UI, Leptos (~20.2k) and Yew (~32.4k) are significant but smaller than mainstream JS approaches.
 
 Sources: citeturn2view0turn1view2turn2view2turn2view1turn21view0
 
 ### Deployment model and static asset serving
 
-**Split API + SPA**  
+**Split API + SPA**
 - UI is built to static assets (HTML/CSS/JS) and hosted on a CDN/object store.
 - Rust API is deployed separately behind a reverse proxy/load balancer.
 - Static asset caching is excellent; rollbacks can be clean if you version assets.
 
 Operationally, this introduces at least two deployment pipelines and forces early decisions about **CORS**, auth tokens/cookies, and environment configuration.
 
-**Single-origin Rust-served UI + API**  
+**Single-origin Rust-served UI + API**
 - Rust serves the compiled SPA output under `/` (or `/admin`) and also exposes `/api/*` on the same host.
-- In Rust, static files can be served with framework-specific helpers such as `tower-http`’s `ServeDir` (common with Axum), Actix’s `actix-files`, or Rocket’s `FileServer`.  
+- In Rust, static files can be served with framework-specific helpers such as `tower-http`’s `ServeDir` (common with Axum), Actix’s `actix-files`, or Rocket’s `FileServer`.
 
 Sources: citeturn9search3turn13search7turn13search2
 
 This pattern is operationally attractive: one container/service, one TLS termination point, and you can still put a CDN in front later if desired.
 
-**SSR/hybrid** (JS meta-framework or Rust SSR)  
+**SSR/hybrid** (JS meta-framework or Rust SSR)
 - A server component generates HTML and may hydrate on the client.
 - You can keep the UI and API same-origin, avoiding CORS headaches.
 - You pay for server rendering complexity and caching strategy decisions (per-route caching, auth-aware caching).
 
-Leptos explicitly supports client-side rendering, server-side rendering, and SSR with hydration, and even notes support for HTTP streaming of data/HTML (e.g., suspense streaming).  
+Leptos explicitly supports client-side rendering, server-side rendering, and SSR with hydration, and even notes support for HTTP streaming of data/HTML (e.g., suspense streaming).
 
 Sources: citeturn1view1
 
 ### Authentication/authorisation and session strategy
 
-For admin surfaces, **OIDC over OAuth 2.0** is the most common SSO-friendly approach, with the OpenID Connect Core spec defining the authentication layer on top of OAuth 2.0.  
+For admin surfaces, **OIDC over OAuth 2.0** is the most common SSO-friendly approach, with the OpenID Connect Core spec defining the authentication layer on top of OAuth 2.0.
 
 Sources: citeturn11search5turn11search1
 
@@ -100,7 +100,7 @@ How architecture affects auth:
   - **Cookie-based auth across origins:** requires careful SameSite/Secure settings and explicit CORS allowlists + `Access-Control-Allow-Credentials`. This is workable but fiddly.
   - **Bearer token auth (JWT or opaque tokens) stored in memory:** avoids cross-site cookies but requires robust refresh flows and careful XSS hardening.
 
-Cookie/session best practices (rotation, secure flags, avoiding fixation) are emphasised in OWASP’s session guidance and modern browser cookie guidance (SameSite and Secure/HttpOnly).  
+Cookie/session best practices (rotation, secure flags, avoiding fixation) are emphasised in OWASP’s session guidance and modern browser cookie guidance (SameSite and Secure/HttpOnly).
 
 Sources: citeturn10search3turn11search11turn11search3turn11search7
 
@@ -113,7 +113,7 @@ Architecturally, the authorisation model is mostly backend-driven, but SSR and s
 
 ### CORS and API design
 
-CORS is an HTTP-header-based mechanism that controls which origins can read responses; browsers may issue a **preflight** request before the actual request.  
+CORS is an HTTP-header-based mechanism that controls which origins can read responses; browsers may issue a **preflight** request before the actual request.
 
 Sources: citeturn11search2turn11search6turn11search10
 
@@ -139,11 +139,11 @@ Admin UIs for LLM gateways often need:
 - Live metrics overlays (latency, error rates),
 - “Cancel run” semantics during testing.
 
-**WebSockets** provide a persistent, bidirectional session between browser and server.  
+**WebSockets** provide a persistent, bidirectional session between browser and server.
 
 Sources: citeturn10search1turn10search5
 
-**Server-Sent Events (SSE)** provide a server→client stream over HTTP, supported via `EventSource`, and require the `text/event-stream` content type.  
+**Server-Sent Events (SSE)** provide a server→client stream over HTTP, supported via `EventSource`, and require the `text/event-stream` content type.
 
 Sources: citeturn10search12turn10search4turn10search0
 
@@ -154,7 +154,7 @@ Sources: citeturn10search12turn10search4turn10search0
   - simpler infra (works well with proxies and HTTP/2 in many setups).
 - Prefer **WebSockets** if you genuinely need bidirectional low-latency messaging (e.g., collaborative editing, multiplexed channels with client-to-server commands beyond simple POSTs).
 
-On the Rust side, Axum provides dedicated support for SSE responses (`axum::response::sse::Sse`) and WebSocket handling (`axum::extract::ws`).  
+On the Rust side, Axum provides dedicated support for SSE responses (`axum::response::sse::Sse`) and WebSocket handling (`axum::extract::ws`).
 
 Sources: citeturn13search0turn13search1turn13search5turn13search13
 
@@ -162,13 +162,13 @@ Sources: citeturn13search0turn13search1turn13search5turn13search1
 
 Toolchains diverge sharply by UI technology:
 
-- **JS SPA or JS SSR:** typically use Vite or a meta-framework toolchain. Vite’s model is a fast dev server plus a bundling build step (Rollup-based) and is extremely widely used.  
+- **JS SPA or JS SSR:** typically use Vite or a meta-framework toolchain. Vite’s model is a fast dev server plus a bundling build step (Rollup-based) and is extremely widely used.
 
   Sources: citeturn7view2turn8view0
 
 - **Rust/WASM UI:** typically add:
   - `wasm-pack` (build Rust→WASM packages targeting the JS ecosystem) and/or
-  - Trunk (a Rust-focused WASM bundler).  
+  - Trunk (a Rust-focused WASM bundler).
 
   Sources: citeturn9search21turn9search13turn9search12turn9search20
 
@@ -181,11 +181,11 @@ For admin UIs, scalability is rarely about raw throughput; it is more about:
 - avoiding head-of-line blocking for streaming endpoints,
 - horizontally scaling stateless services.
 
-Observability is non-negotiable in an LLM gateway context. In Rust, the `tracing` ecosystem is the standard approach for structured, event-based diagnostics, and OpenTelemetry provides vendor-neutral telemetry export, including OTLP as a protocol for exporting traces/metrics/logs.  
+Observability is non-negotiable in an LLM gateway context. In Rust, the `tracing` ecosystem is the standard approach for structured, event-based diagnostics, and OpenTelemetry provides vendor-neutral telemetry export, including OTLP as a protocol for exporting traces/metrics/logs.
 
 Sources: citeturn12search1turn12search5turn12search4turn12search20
 
-If you publish Prometheus-style metrics, the OpenMetrics spec strongly associates metrics exposition with an HTTP GET endpoint (often `/metrics`).  
+If you publish Prometheus-style metrics, the OpenMetrics spec strongly associates metrics exposition with an HTTP GET endpoint (often `/metrics`).
 
 Sources: citeturn12search2
 
@@ -230,14 +230,14 @@ flowchart LR
 
 GitHub stars are an imperfect metric, but they are a useful proxy for ecosystem “surface area” (tutorials, issues answered, community components). As of 26 Feb 2026:
 
-- React: ~243k stars  
-- Svelte: ~85.9k  
-- Vue core: ~53.1k  
-- Solid: ~35.2k  
-- Qwik: ~21.9k  
-- Yew: ~32.4k  
-- Leptos: ~20.2k  
-- shadcn/ui: ~107k (React component approach commonly combined with Tailwind + Radix primitives)  
+- React: ~243k stars
+- Svelte: ~85.9k
+- Vue core: ~53.1k
+- Solid: ~35.2k
+- Qwik: ~21.9k
+- Yew: ~32.4k
+- Leptos: ~20.2k
+- shadcn/ui: ~107k (React component approach commonly combined with Tailwind + Radix primitives)
 
 Sources: citeturn4view0turn4view1turn4view3turn5view0turn8view1turn21view0turn2view1turn7view1
 
@@ -255,7 +255,7 @@ For admin UIs specifically, an ecosystem’s **table/grid**, **form**, and **dat
 | WASM UI: Yew | 2 | 2 | 4 | 2 | Rust-to-WASM; interop possible; maturity/upgrade risk and admin UI libs thinner. |
 | WASM UI: Leptos (CSR) | 3 | 2 | 5 | 3 | Very fast reactive model; can evolve to SSR; tooling complexity remains. |
 
-Important nuance: **Leptos as SSR/hydration** often scores higher on overall system performance and same-origin simplicity than Leptos CSR-only, because SSR can improve first render and can reduce some client complexity. Leptos also highlights “server functions” (client-callable functions that run only on the server) as a way to avoid maintaining a separate REST API for some workflows—this is ergonomically attractive for admin “actions”.  
+Important nuance: **Leptos as SSR/hydration** often scores higher on overall system performance and same-origin simplicity than Leptos CSR-only, because SSR can improve first render and can reduce some client complexity. Leptos also highlights “server functions” (client-callable functions that run only on the server) as a way to avoid maintaining a separate REST API for some workflows—this is ergonomically attractive for admin “actions”.
 
 Sources: citeturn1view1
 
@@ -273,7 +273,7 @@ Practical patterns regardless of framework:
 - Prefer **server-side validation** as source of truth and treat client validation as UX optimisation.
 
 In the React/shadcn/ui ecosystem, the general pattern is:
-- headless components + Tailwind styling (shadcn/ui is positioned as a set of customizable components)  
+- headless components + Tailwind styling (shadcn/ui is positioned as a set of customizable components)\
   Sources: citeturn7view1
 - pair with a strong data/schema stack for forms (exact library choices vary, but the pattern is stable).
 
@@ -285,7 +285,7 @@ LLM gateway admin UIs often require:
 - live appends (log tail),
 - row expansion (request/response metadata).
 
-Headless table tooling like TanStack Table positions itself specifically for powerful datagrids with full control, with features such as sorting/filtering/grouping and virtualisation friendliness.  
+Headless table tooling like TanStack Table positions itself specifically for powerful datagrids with full control, with features such as sorting/filtering/grouping and virtualisation friendliness.
 
 Sources: citeturn18view1
 
@@ -297,7 +297,7 @@ Admin UIs have a mix of:
 - “server state” (models, routes, logs),
 - local UI state (selected rows, filter chips, modal open/close).
 
-TanStack Query is an example of a widely used “server state” library, focusing on caching, refetching, pagination, and async state management across frameworks.  
+TanStack Query is an example of a widely used “server state” library, focusing on caching, refetching, pagination, and async state management across frameworks.
 
 Sources: citeturn19view0
 
@@ -312,11 +312,11 @@ For an LLM “test console”, the UI should:
 - keep the UI responsive while appending output,
 - support cancellation.
 
-SSE is often the most straightforward browser-native approach for “append-only streams”; it is explicitly designed for servers to push data to pages, and uses `EventSource`.  
+SSE is often the most straightforward browser-native approach for “append-only streams”; it is explicitly designed for servers to push data to pages, and uses `EventSource`.
 
 Sources: citeturn10search12turn10search0turn10search4
 
-If you need richer bi-directional interactive sessions, WebSockets provide a two-way interactive communication channel.  
+If you need richer bi-directional interactive sessions, WebSockets provide a two-way interactive communication channel.
 
 Sources: citeturn10search1
 
@@ -330,11 +330,11 @@ An admin UI values:
 - a cohesive design system.
 
 In the React ecosystem, a common pairing is:
-- Tailwind CSS (utility-first styling, very widely adopted)  
+- Tailwind CSS (utility-first styling, very widely adopted)\
   Sources: citeturn17search2
-- Radix Primitives for accessible, low-level components (the repo emphasises accessibility/customisation/DevEx)  
+- Radix Primitives for accessible, low-level components (the repo emphasises accessibility/customisation/DevEx)\
   Sources: citeturn18view0
-- shadcn/ui as a distribution/customisation approach built around such primitives (extremely popular)  
+- shadcn/ui as a distribution/customisation approach built around such primitives (extremely popular)\
   Sources: citeturn7view1
 
 This combination is particularly effective for admin UIs because it provides accessible primitives while allowing consistent theming and fast iteration.
@@ -352,12 +352,12 @@ WASM UIs can be compelling if you want:
 - tighter control over client performance characteristics.
 
 However, they come with costs:
-- build tooling (Trunk/wasm-pack) and toolchain pinning,  
+- build tooling (Trunk/wasm-pack) and toolchain pinning,\
   Sources: citeturn9search12turn9search13turn9search20
 - JS interop friction for complex UI libraries,
 - fewer off-the-shelf admin components compared with React ecosystems.
 
-Yew explicitly warns it is not yet 1.0 and that breaking changes may require refactors, which is a material maintenance risk for long-lived admin products.  
+Yew explicitly warns it is not yet 1.0 and that breaking changes may require refactors, which is a material maintenance risk for long-lived admin products.
 
 Sources: citeturn21view0
 
@@ -373,9 +373,9 @@ Sources: citeturn21view0
 - **Real-time:** SSE endpoints for:
   - `/api/v1/logs/tail` (EventSource),
   - `/api/v1/test/stream` (stream model output).
-- **Observability:** `tracing` with structured logs; add OpenTelemetry exporter once you need distributed tracing.  
+- **Observability:** `tracing` with structured logs; add OpenTelemetry exporter once you need distributed tracing.
 
-Why: This avoids CORS entirely and keeps credentials out of JS by default (HttpOnly cookies), aligning well with OWASP session guidance and modern cookie best practices.  
+Why: This avoids CORS entirely and keeps credentials out of JS by default (HttpOnly cookies), aligning well with OWASP session guidance and modern cookie best practices.
 
 Sources: citeturn12search1turn10search3turn11search11turn9search3turn19view0
 
@@ -399,9 +399,9 @@ Maintenance notes:
   - Tables: TanStack Table + virtualisation for logs.
 - **Auth:** OIDC (SSO), using authorisation code flow; session stored server-side or in encrypted cookie.
 - **CORS:** explicitly allow UI origin(s); enable credentials only if using cookies; otherwise use token-based auth.
-- **Observability:** `tracing` + OpenTelemetry (OTLP) + metrics endpoint consumable by Prometheus-style scrapers (`/metrics`).  
+- **Observability:** `tracing` + OpenTelemetry (OTLP) + metrics endpoint consumable by Prometheus-style scrapers (`/metrics`).
 
-This stack matches common industry practice for “admin control planes”: independent UI rollout, robust telemetry, and explicit auth boundaries.  
+This stack matches common industry practice for “admin control planes”: independent UI rollout, robust telemetry, and explicit auth boundaries.
 
 Sources: citeturn11search5turn11search2turn11search10turn12search1turn12search4turn12search20turn12search2turn19view0turn18view1
 
@@ -422,7 +422,7 @@ Maintenance notes:
 - **Streaming:** SSE for model output and log tail; use WebSockets only for genuinely bidirectional experiences.
 - **Tooling:** cargo-leptos/Trunk-style workflows, pinned toolchains.
 
-Leptos positions itself as full-stack and explicitly supports client-side rendering, server-side rendering, SSR with hydration, and HTTP streaming, which makes it well-suited to “fast, interactive control planes” if your team accepts the Rust/WASM tooling complexity.  
+Leptos positions itself as full-stack and explicitly supports client-side rendering, server-side rendering, SSR with hydration, and HTTP streaming, which makes it well-suited to “fast, interactive control planes” if your team accepts the Rust/WASM tooling complexity.
 
 Sources: citeturn1view1turn9search12turn9search20turn10search12
 
@@ -563,7 +563,7 @@ Design notes for streaming endpoints:
 - Add heartbeat/keep-alive to keep intermediaries from closing idle connections.
 - Use a separate POST endpoint for cancellation if you want to keep SSE one-way.
 
-SSE requires `text/event-stream`, and common browser usage patterns are documented around `EventSource`.  
+SSE requires `text/event-stream`, and common browser usage patterns are documented around `EventSource`.
 
 Sources: citeturn10search4turn10search0turn13search0
 
@@ -595,30 +595,30 @@ Key principle: **don’t introduce CORS until you get a clear benefit** (indepen
 Even though developer ergonomics vary, three integration needs are consistent: static assets, streaming, and middleware.
 
 - **Static assets**
-  - Axum commonly uses `tower-http`’s file services such as `ServeDir`.  
+  - Axum commonly uses `tower-http`’s file services such as `ServeDir`.\
     Sources: citeturn9search3turn9search11
-  - Actix Web uses `actix-files` (non-blocking static file serving).  
+  - Actix Web uses `actix-files` (non-blocking static file serving).\
     Sources: citeturn13search7turn13search3
-  - Rocket provides `rocket::fs::FileServer` for serving static files from a directory.  
+  - Rocket provides `rocket::fs::FileServer` for serving static files from a directory.\
     Sources: citeturn13search2
 
 - **Real-time**
-  - Axum has first-class SSE and WebSocket support in its API surface.  
+  - Axum has first-class SSE and WebSocket support in its API surface.\
     Sources: citeturn13search0turn13search5turn13search13
-  - Actix Web highlights WebSocket support and streaming among its features and positions itself as extremely fast.  
+  - Actix Web highlights WebSocket support and streaming among its features and positions itself as extremely fast.\
     Sources: citeturn1view2
-  - Rocket focuses on usability, security, extensibility, and speed; static serving is straightforward via FileServer.  
+  - Rocket focuses on usability, security, extensibility, and speed; static serving is straightforward via FileServer.\
     Sources: citeturn1view3turn13search2
 
 ### Integration with build tools: Trunk, wasm-pack, Vite
 
-- **Vite** is a de facto standard dev/build tool for JS SPAs and is extremely widely adopted; it combines a dev server and a production bundling step, and is commonly used across React/Vue/Svelte/Solid ecosystems.  
+- **Vite** is a de facto standard dev/build tool for JS SPAs and is extremely widely adopted; it combines a dev server and a production bundling step, and is commonly used across React/Vue/Svelte/Solid ecosystems.\
   Sources: citeturn7view2turn8view0
 
-- **Trunk** is a Rust-focused WASM web bundler that uses a source HTML file to bundle WASM, JS snippets, and other assets; it is commonly used in Rust/WASM UI workflows.  
+- **Trunk** is a Rust-focused WASM web bundler that uses a source HTML file to bundle WASM, JS snippets, and other assets; it is commonly used in Rust/WASM UI workflows.\
   Sources: citeturn9search12turn9search20
 
-- **wasm-pack** targets building Rust-generated WebAssembly packages for use alongside JavaScript and in npm-based workflows.  
+- **wasm-pack** targets building Rust-generated WebAssembly packages for use alongside JavaScript and in npm-based workflows.\
   Sources: citeturn9search21turn9search13
 
 Practical guidance:
@@ -633,10 +633,10 @@ For gateway control planes, production readiness typically implies:
 - distributed tracing export (OTLP),
 - metrics endpoint for time-series.
 
-`tracing` is a standard Rust approach for structured diagnostics, and OpenTelemetry’s Rust documentation describes generating and collecting telemetry (metrics/logs/traces) with Rust.  
+`tracing` is a standard Rust approach for structured diagnostics, and OpenTelemetry’s Rust documentation describes generating and collecting telemetry (metrics/logs/traces) with Rust.
 
 Sources: citeturn12search1turn12search4turn12search20
 
-Prometheus/OpenMetrics conventions for exposing metrics over HTTP (often `/metrics`) are documented in the OpenMetrics spec.  
+Prometheus/OpenMetrics conventions for exposing metrics over HTTP (often `/metrics`) are documented in the OpenMetrics spec.
 
 Sources: citeturn12search2

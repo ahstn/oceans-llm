@@ -1,12 +1,13 @@
-# Keep rust-analyzer's builds (metadata, build scripts, proc macros, flychecks)
-# in target/rust-analyzer instead of the shared ./target build dir. Three RA
-# instances running `cargo check --workspace --all-targets` were serializing
-# every CLI cargo invocation behind the build-dir lock for minutes.
+# No JSON schema is published for rust-analyzer.toml. Reference: https://rust-analyzer.github.io/book/configuration.html
+# Put rust-analyzer's build output (metadata, build scripts, proc macros,
+# flychecks) under target/rust-analyzer, apart from CLI builds. Intermediate
+# artifacts still go to the checkout's central build dir from mise.toml, so a
+# background check can briefly delay a CLI build in the same checkout.
 [cargo]
 targetDir = true
 
-# Flycheck only the saved package, not the whole 46-crate workspace on every
-# save; workspace-wide diagnostics come from `just check` / CI.
+# Flycheck only the saved package, not the whole 13-crate workspace on every
+# save. Workspace-wide diagnostics come from `mise run rust-lint` and CI.
 [check]
 workspace = false
 

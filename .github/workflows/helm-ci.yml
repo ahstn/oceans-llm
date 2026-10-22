@@ -37,10 +37,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise and Helm
+      - name: Setup mise, Helm, and kubeconform
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          install_args: helm
+          install_args: helm kubeconform
 
-      - name: Run Helm checks
+      - name: Lint, render, and validate the chart
         run: mise run //helm:check

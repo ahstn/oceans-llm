@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Oceans CLI tasks. From the repo root: `mise run //crates/oceans-cli:<task>`.
 # Release packaging stays in the root `dist-*` tasks because cargo-dist owns the workspace.
 

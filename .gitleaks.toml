@@ -1,0 +1,48 @@
+#:schema https://www.schemastore.org/gitleaks.json
+# gitleaks secret scanning (`mise run secrets-check`). Extends the default rules.
+# Each allowlist names an exact fixture value, never a path or field name, so a
+# real secret in the same file or field is still reported.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Provider and model identifiers in demo seeds and store tests"
+targetRules = ["generic-api-key"]
+regexes = ['''^(bedrock-us-east-1|claude-3-5-sonnet)$''']
+
+[[allowlists]]
+description = "Placeholder gateway keys in docs and config tests"
+targetRules = ["generic-api-key", "curl-auth-header"]
+regexes = [
+  '''^gwk_(abcd1234\.(secret-one|secret-value|XYZ\.\.\.)|wxyz9876\.secret-two|0f3c9a\.s3cr3t)$''',
+]
+
+# Matches the shared throwaway test key: the PKCS#8 header plus the first
+# characters of its modulus, which only this key has. Matches report partial
+# captures of the key, so the whole value cannot be anchored.
+[[allowlists]]
+description = "Throwaway RSA key shared by the token and Copilot tests"
+targetRules = ["private-key"]
+condition = "AND"
+# `(^|/)` because the staged-file scan reports paths under a temporary directory.
+paths = [
+  '''(^|/)crates/gateway-providers/src/token\.rs$''',
+  '''(^|/)crates/gateway-providers/src/copilot/tests\.rs$''',
+]
+regexes = ['''MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCo1WHWzHdosbKK''']
+
+[[allowlists]]
+description = "Fake GitLab token in an audit-log redaction test"
+targetRules = ["gitlab-pat", "generic-api-key"]
+regexes = ['''^glpat-0123456789abcdefghij$''']
+
+[[allowlists]]
+description = "Fake Slack token in a secret-redaction test"
+targetRules = ["slack-bot-token"]
+regexes = ['''^xoxb-1234567890-1234567890-$''']
+
+[[allowlists]]
+description = "Docs comment in a since-removed bundled dependency"
+targetRules = ["generic-api-key"]
+regexes = ['''^abc123xyz456$''']

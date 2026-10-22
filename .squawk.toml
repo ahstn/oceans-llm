@@ -1,0 +1,9 @@
+# No JSON schema is published for squawk config. Reference: https://squawkhq.com/docs/cli#squawktoml-configuration-file
+# squawk lints Postgres migrations. CI runs it on migrations a change adds or edits
+# (`mise run //store:migrations-lint-changed`); `//store:migrations-lint` checks all.
+pg_version = "18"
+# The migration runner wraps each migration in its own transaction.
+assume_in_transaction = true
+# CREATE/DROP INDEX CONCURRENTLY cannot run inside a transaction, so these rules
+# cannot be satisfied without changing the runner.
+excluded_rules = ["require-concurrent-index-creation", "require-concurrent-index-deletion"]

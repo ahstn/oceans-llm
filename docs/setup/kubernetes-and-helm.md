@@ -20,7 +20,7 @@ Local chart checks live behind `mise`:
 mise run //helm:check
 ```
 
-That task updates chart dependencies, runs `helm lint`, and renders the default chart plus every checked-in example under [../../deploy/helm/oceans-llm/examples](../../deploy/helm/oceans-llm/examples).
+That task updates chart dependencies, runs `helm lint`, and renders the default chart plus every checked-in example under [../../deploy/helm/oceans-llm/examples](../../deploy/helm/oceans-llm/examples). It validates each render with kubeconform against Kubernetes 1.35 schemas.
 
 ## Runtime Topology
 

@@ -1,3 +1,4 @@
+#:schema https://mise.jdx.dev/schema/mise.json
 # Optional native RustFS dependency for mise.selfhost.toml.
 # Select `selfhost,rustfs,selfhost-rustfs`; see the self-hosting runbook.
 # A daemon override replaces its complete definition.
