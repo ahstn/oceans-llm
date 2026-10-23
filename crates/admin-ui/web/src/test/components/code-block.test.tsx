@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import {
   CodeBlock,
@@ -34,9 +34,13 @@ describe('CodeBlock', () => {
       'overflow-hidden',
     )
     expect(viewport).toHaveClass('min-w-0', 'max-w-full', 'overflow-auto')
-    expect(viewport).toHaveStyle({
-      maxHeight: 'calc(2 * 1.5rem + 2rem)',
+    // calc(2 * 1.5rem + 2rem) is rem-based, so it must follow the root font size.
+    expect(viewport).toHaveStyle({ maxHeight: '80px' })
+    onTestFinished(() => {
+      document.documentElement.style.removeProperty('font-size')
     })
+    document.documentElement.style.fontSize = '20px'
+    expect(viewport).toHaveStyle({ maxHeight: '100px' })
     fireEvent.click(screen.getByRole('button', { name: 'Copy code' }))
 
     await waitFor(() => expect(onCopyError).toHaveBeenCalledOnce())
