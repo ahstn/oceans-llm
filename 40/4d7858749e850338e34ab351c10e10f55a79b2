@@ -1,0 +1,21 @@
+crates/admin-ui/web/bun.lock
+  s_85219a7516ce76::t_b8aef87324205b 58,1554
+crates/admin-ui/web/package.json
+  s_85219a7516ce76::t_00c6c5b41572d8 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "404d7858749e850338e34ab351c10e10f55a79b2",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
