@@ -1,0 +1,21 @@
+crates/gateway/Dockerfile
+  s_85219a7516ce76::t_10eebf8d340358 3
+mise.toml
+  s_85219a7516ce76::t_338808af3eab03 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a932f2769b27586b1251b73167099061e7ff3a49",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
