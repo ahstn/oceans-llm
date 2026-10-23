@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG RUST_VERSION=1.99.1
+# Pinned in mise.toml; pass with --build-arg RUST_VERSION="$(mise tool rust --requested)".
+ARG RUST_VERSION
 
 FROM rust:${RUST_VERSION}-slim-bookworm AS builder
 

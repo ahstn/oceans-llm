@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: crates/gateway/Dockerfile
+      args:
+        RUST_VERSION: ${RUST_VERSION:?set RUST_VERSION from mise.toml, e.g. RUST_VERSION="$(mise tool rust --requested)"}
     depends_on:
       admin-ui:
         condition: service_started
