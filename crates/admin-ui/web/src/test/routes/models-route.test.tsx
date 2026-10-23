@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ModelsPage } from '@/routes/models'
@@ -1092,8 +1092,11 @@ describe('ModelsPage multi-model configuration', () => {
     const claudeCode = within(dialog).getByRole('region', { name: 'json code' })
     expect(claudeCode).toHaveTextContent('"claude-sonnet-4-6": "claude-sonnet"')
     expect(claudeCode).not.toHaveTextContent('fast')
-    // Computed calc(10 * 1.5rem + 2rem) at a 16px root.
+    // calc(10 * 1.5rem + 2rem) is rem-based, so it must follow the root font size.
     expect(claudeCode).toHaveStyle({ maxHeight: '272px' })
+    onTestFinished(() => document.documentElement.style.removeProperty('font-size'))
+    document.documentElement.style.fontSize = '20px'
+    expect(claudeCode).toHaveStyle({ maxHeight: '340px' })
   })
 })
 
