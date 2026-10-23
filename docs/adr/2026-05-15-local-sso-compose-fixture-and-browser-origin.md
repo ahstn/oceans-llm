@@ -12,6 +12,8 @@
   - [Testing Authentication Locally](../contributing/development/authentication-testing.md)
   - [ADR: Authentik Local SSO Test IdP](2026-05-15-authentik-local-sso-test-idp.md)
 
+> **Amendment note (2026-10-23):** `compose.local.yaml` now requires `BUN_VERSION` and `RUST_VERSION` build arguments, both pinned in `mise.toml`. The compose commands under Consequences and Validation are kept as written history; prefix them with `BUN_VERSION="$(mise tool bun --requested)" RUST_VERSION="$(mise tool rust --requested)"`, as [Testing Authentication Locally](../contributing/development/authentication-testing.md) shows.
+
 ## Context
 
 The OIDC implementation moved from a development simulation to a real authorization-code flow. That changed the local test requirement. It is no longer enough for the login screen to render a provider button; the local stack must exercise the browser redirect, provider discovery, code exchange, callback, JIT policy, and existing `ogw_session` cookie issuance.
