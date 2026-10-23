@@ -36,7 +36,9 @@ describe('CodeBlock', () => {
     expect(viewport).toHaveClass('min-w-0', 'max-w-full', 'overflow-auto')
     // calc(2 * 1.5rem + 2rem) is rem-based, so it must follow the root font size.
     expect(viewport).toHaveStyle({ maxHeight: '80px' })
-    onTestFinished(() => document.documentElement.style.removeProperty('font-size'))
+    onTestFinished(() => {
+      document.documentElement.style.removeProperty('font-size')
+    })
     document.documentElement.style.fontSize = '20px'
     expect(viewport).toHaveStyle({ maxHeight: '100px' })
     fireEvent.click(screen.getByRole('button', { name: 'Copy code' }))

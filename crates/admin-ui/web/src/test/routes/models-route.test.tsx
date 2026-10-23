@@ -1094,7 +1094,9 @@ describe('ModelsPage multi-model configuration', () => {
     expect(claudeCode).not.toHaveTextContent('fast')
     // calc(10 * 1.5rem + 2rem) is rem-based, so it must follow the root font size.
     expect(claudeCode).toHaveStyle({ maxHeight: '272px' })
-    onTestFinished(() => document.documentElement.style.removeProperty('font-size'))
+    onTestFinished(() => {
+      document.documentElement.style.removeProperty('font-size')
+    })
     document.documentElement.style.fontSize = '20px'
     expect(claudeCode).toHaveStyle({ maxHeight: '340px' })
   })
