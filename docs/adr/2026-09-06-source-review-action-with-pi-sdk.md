@@ -12,7 +12,7 @@ The review action used a committed Rolldown bundle and invoked `pi review` with 
 
 ## Decision
 
-Keep the composite action and run its TypeScript entry point with Node.js 24 and `tsx`. Install exact dependencies from the Bun lockfile at action startup. Remove the bundle and its build and freshness scripts.
+Keep the composite action and run its TypeScript entry point with Node.js 26 and `tsx`. Install exact dependencies from the Bun lockfile at action startup. Remove the bundle and its build and freshness scripts.
 
 Use the Pi SDK in a child process with a temporary home and configuration directory. Keep Oceans configuration, run reporting, and GitHub publishing in the parent. Load the action-owned review rubric and skill, plus the locked `pi-mcp-adapter`, `pi-subagents`, and `pi-web-access` packages. Require a structured `submit_review` call whose finding locations match changed RIGHT-side lines.
 
