@@ -314,55 +314,46 @@ users:
       role: member
 
 providers:
-  - id: openai-prod
+  openai-prod:
     type: openai_compat
     base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY
 
-  - id: openai-secondary
+  openai-secondary:
     type: openai_compat
     base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY_SECONDARY
 
-  - id: openrouter
+  openrouter:
     type: openai_compat
     base_url: https://openrouter.ai/api/v1
-    pricing_provider_id: openrouter
     auth:
-      kind: bearer
       token: env.OPENROUTER_API_KEY
 
-  - id: github-copilot-user
+  github-copilot-user:
     type: github_copilot
     pricing_provider_id: openai
     auth:
       mode: github_user
     display:
       label: GitHub Copilot (user token)
-      icon_key: openai
 
-  - id: vertex-adc
+  vertex-adc:
     type: gcp_vertex
     project_id: your-gcp-project
-    location: global
     auth:
       mode: adc
 
-  - id: vertex-claude
+  vertex-claude:
     type: gcp_vertex
     project_id: your-gcp-project
-    location: global
     auth:
       mode: service_account
       credentials_path: /path/to/service-account.json
 
-  - id: bedrock-us-east-1
+  bedrock-us-east-1:
     type: aws_bedrock
     region: us-east-1
     endpoint_kind: bedrock_runtime
@@ -370,9 +361,8 @@ providers:
       mode: default_chain
     display:
       label: AWS Bedrock
-      icon_key: aws
 
-  - id: bedrock-mantle-us-east-1
+  bedrock-mantle-us-east-1:
     type: aws_bedrock
     region: us-east-1
     endpoint_kind: bedrock_mantle
@@ -380,10 +370,11 @@ providers:
       mode: default_chain
     display:
       label: AWS Bedrock Mantle
-      icon_key: aws
 
+# Route ids default to the provider key, and capabilities default to what the provider and
+# compatibility profile can serve. See docs/configuration/configuration-reference.md#model-config.
 models:
-  - id: gpt-6-astra
+  gpt-6-astra:
     description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
     routes:
       - provider: openai-prod
@@ -393,175 +384,138 @@ models:
         upstream_model: gpt-6-astra
         weight: 1.0
 
-  - id: openai-fast
+  openai-fast:
     description: Alias kept for backward compatibility
     alias_of: gpt-6-astra
 
-  - id: openai-fast-v2
+  openai-fast-v2:
     description: Legacy local demo alias
     alias_of: gpt-6-astra
 
-  - id: copilot-gpt-5.6-luna
+  copilot-gpt-5.6-luna:
     description: GPT-5.6 Luna through GitHub Copilot user-token authentication
-    routes:
-      - provider: github-copilot-user
-        upstream_model: gpt-5.6-luna
-        context_window_tokens: 1050000
-        capabilities:
-          chat_completions: false
-          responses: true
-          stream: true
-          embeddings: false
-          tools: true
-          vision: true
-          json_schema: true
-          developer_role: false
-        compatibility:
-          github_copilot:
-            supports_responses: true
-            upstream_supports:
-              streaming: true
-              tool_calls: true
-              vision: true
-              structured_outputs: true
+    route:
+      provider: github-copilot-user
+      upstream_model: gpt-5.6-luna
+      compatibility:
+        github_copilot:
+          supports_responses: true
+          upstream_supports:
+            streaming: true
+            tool_calls: true
+            vision: true
+            structured_outputs: true
 
-  - id: deepseek-v4-pro
-    routes:
-      - provider: openrouter
-        upstream_model: deepseek/deepseek-v4-pro
+  deepseek-v4-pro:
+    route:
+      provider: openrouter
+      upstream_model: deepseek/deepseek-v4-pro
 
-  - id: deepseek-v4.1-flash
+  deepseek-v4.1-flash:
     description: Low-cost OpenRouter model for generic live request verification
-    routes:
-      - provider: openrouter
-        upstream_model: deepseek/deepseek-v4.1-flash
+    route:
+      provider: openrouter
+      upstream_model: deepseek/deepseek-v4.1-flash
 
-  - id: claude-haiku-5.5
+  claude-haiku-5.5:
     description: Claude Haiku 5.5 through OpenRouter for Anthropic Messages verification
-    routes:
-      - provider: openrouter
-        upstream_model: anthropic/claude-haiku-5.5
+    route:
+      provider: openrouter
+      upstream_model: anthropic/claude-haiku-5.5
 
-  - id: deepseek-v4-flash-0731
+  deepseek-v4-flash-0731:
     description: Older pinned DeepSeek Flash; prefer deepseek-v4.1-flash
-    routes:
-      - provider: openrouter
-        upstream_model: deepseek/deepseek-v4-flash-0731
-        pricing_override:
-          input_usd_per_million_tokens: "0.0300"
-          output_usd_per_million_tokens: "0.1000"
+    route:
+      provider: openrouter
+      upstream_model: deepseek/deepseek-v4-flash-0731
+      pricing_override:
+        input_usd_per_million_tokens: "0.0300"
+        output_usd_per_million_tokens: "0.1000"
 
-  - id: qwen-3.6-27b
-    routes:
-      - provider: openrouter
-        upstream_model: qwen/qwen3.6-27b
+  qwen-3.6-27b:
+    route:
+      provider: openrouter
+      upstream_model: qwen/qwen3.6-27b
 
-  - id: jev
+  jev:
     description: TypeSafe Jev decisions through OpenRouter alpha transport
-    routes:
-      - provider: openrouter
-        upstream_model: typesafe/jev-1.13
-        pricing_override:
-          input_usd_per_million_tokens: "0.0420"
-          output_usd_per_million_tokens: "0.0000"
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
-        compatibility:
-          openrouter:
-            api: decisions
+    route:
+      provider: openrouter
+      upstream_model: typesafe/jev-1.13
+      pricing_override:
+        input_usd_per_million_tokens: "0.0420"
+        output_usd_per_million_tokens: "0.0000"
+      compatibility:
+        openrouter:
+          api: decisions
 
-  - id: claude-sonnet
+  claude-sonnet:
     description: Claude on Vertex
-    routes:
-      - provider: vertex-claude
-        upstream_model: anthropic/claude-sonnet-4-6
+    route:
+      provider: vertex-claude
+      upstream_model: anthropic/claude-sonnet-4-6
 
-  - id: claude-opus-4-7
+  claude-opus-4-7:
     description: Claude Opus on Vertex
-    routes:
-      - provider: vertex-claude
-        upstream_model: anthropic/claude-opus-4-7
+    route:
+      provider: vertex-claude
+      upstream_model: anthropic/claude-opus-4-7
 
-  - id: claude-opus
+  claude-opus:
     description: Legacy local demo alias
     alias_of: claude-opus-4-7
 
-  - id: claude-fable-5.1
+  claude-fable-5.1:
     description: Claude Fable 5.1 on Vertex
     max_reasoning_effort: high
-    routes:
-      - provider: vertex-claude
-        upstream_model: anthropic/claude-fable-5-1
+    route:
+      provider: vertex-claude
+      upstream_model: anthropic/claude-fable-5-1
 
-  - id: claude-sonnet-4.6
+  claude-sonnet-4.6:
     description: Claude Sonnet on AWS Bedrock
-    routes:
-      - provider: bedrock-us-east-1
-        upstream_model: us.anthropic.claude-sonnet-4-6
-        capabilities:
-          responses: false
-          stream: false
-          json_schema: false
-        compatibility:
-          aws_bedrock:
-            api_style: runtime_anthropic_invoke
+    route:
+      provider: bedrock-us-east-1
+      upstream_model: us.anthropic.claude-sonnet-4-6
+      compatibility:
+        aws_bedrock:
+          api_style: runtime_anthropic_invoke
     allowlist:
       users:
         - ben@platform.local
         - diego@research.local
 
-  - id: bedrock-claude-sonnet
+  bedrock-claude-sonnet:
     description: Legacy local demo alias
     alias_of: claude-sonnet-4.6
 
-  - id: gpt-oss-120b
+  gpt-oss-120b:
     description: OpenAI OSS on AWS Bedrock
-    routes:
-      - provider: bedrock-us-east-1
-        upstream_model: openai.gpt-oss-120b-1:0
-        capabilities:
-          responses: false
-          json_schema: false
-        compatibility:
-          aws_bedrock:
-            api_style: runtime_openai_chat
-            openai_base_path: /openai/v1
+    route:
+      provider: bedrock-us-east-1
+      upstream_model: openai.gpt-oss-120b-1:0
+      compatibility:
+        aws_bedrock:
+          api_style: runtime_openai_chat
 
-  - id: gpt-oss-120b-bedrock
+  gpt-oss-120b-bedrock:
     description: Low-cost OpenAI GPT OSS 120B on AWS Bedrock Mantle
-    routes:
-      - provider: bedrock-mantle-us-east-1
-        upstream_model: openai.gpt-oss-120b
-        pricing_override:
-          input_usd_per_million_tokens: "0.1500"
-          output_usd_per_million_tokens: "0.6000"
-        capabilities:
-          chat_completions: false
-          responses: true
-          stream: true
-          embeddings: false
-          tools: true
-          vision: false
-          json_schema: false
-        compatibility:
-          aws_bedrock:
-            api_style: mantle_openai_responses
-            openai_base_path: /v1
+    route:
+      provider: bedrock-mantle-us-east-1
+      upstream_model: openai.gpt-oss-120b
+      capabilities:
+        vision: false
+        json_schema: false
+      compatibility:
+        aws_bedrock:
+          api_style: mantle_openai_responses
 
-  - id: gemini-pro-preview
+  gemini-pro-preview:
     description: Gemini preview on Vertex
-    routes:
-      - provider: vertex-adc
-        upstream_model: google/gemini-3.1-pro-preview
+    route:
+      provider: vertex-adc
+      upstream_model: google/gemini-3.1-pro-preview
 
-  - id: gemini-fast
+  gemini-fast:
     description: Legacy local demo alias
     alias_of: gemini-pro-preview

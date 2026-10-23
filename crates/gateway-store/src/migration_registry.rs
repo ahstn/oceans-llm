@@ -467,6 +467,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V74__external_mcp_server_status_revision.sql"
         ),
     },
+    MigrationManifest {
+        version: 75,
+        name: "batch_jobs_route_index",
+        checksum: "V75__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V75__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V75__batch_jobs_route_index.sql"),
+    },
 ];
 
 #[cfg(test)]

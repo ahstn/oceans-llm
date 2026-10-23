@@ -61,7 +61,11 @@ fn seeds_each_routing_strategy_and_optional_affinity() {
             seeds[0].routes[0].route_key.as_deref(),
             Some("openai-primary")
         );
-        assert!(seeds[1].routes[0].route_key.is_none());
+        assert_eq!(
+            seeds[1].routes[0].route_key.as_deref(),
+            Some("openai"),
+            "an unnamed route defaults its id to a provider key used once in the model"
+        );
     }
 }
 
@@ -147,8 +151,11 @@ fn routing_requires_explicit_unique_route_ids() {
     let yaml = routing_model_config("routing: {}");
     for (yaml, expected_error) in [
         (
-            yaml.replace("      - id: openai-primary\n        provider:", "      - provider:"),
-            "requires an explicit id for every route when routing is configured",
+            yaml.replace(
+                "  - id: plain",
+                "      - provider: openai\n        upstream_model: gpt-5-mini\n  - id: plain",
+            ),
+            "route for provider `openai` needs an explicit id when routing is configured",
         ),
         (
             yaml.replace(
@@ -642,4 +649,118 @@ fn rejects_invalid_benchmark_model_ids() {
             "unexpected error for `{invalid}`: {error_text}"
         );
     }
+}
+
+#[test]
+fn accepts_map_form_and_single_route_shorthand() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  openai:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+models:
+  gpt-5:
+    description: map form
+    route:
+      provider: openai
+      upstream_model: gpt-5
+  gpt-5-alias:
+    alias_of: gpt-5
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let seeds = config.seed_models().expect("seed models");
+    assert_eq!(seeds[0].model_key, "gpt-5");
+    assert_eq!(seeds[0].routes.len(), 1);
+    assert_eq!(seeds[0].routes[0].route_key.as_deref(), Some("openai"));
+    assert_eq!(seeds[1].alias_target_model_key.as_deref(), Some("gpt-5"));
+}
+
+#[test]
+fn rejects_ambiguous_model_shapes() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for (models_yaml, expected) in [
+        (
+            "models:\n  gpt-5:\n    id: gpt-5\n    alias_of: other\n",
+            "models `gpt-5` must not set `id`; the map key is the id",
+        ),
+        (
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5 }\n    routes:\n      - { provider: openai, upstream_model: gpt-5 }\n",
+            "model `gpt-5` cannot define both route and routes",
+        ),
+        (
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5 }\n    routes: []\n",
+            "model `gpt-5` cannot define both route and routes",
+        ),
+        (
+            "models:\n  - id: gpt-5\n    route: { provider: openai, upstream_model: gpt-5 }\n  - id: gpt-5\n    route: { provider: openai, upstream_model: gpt-5 }\n",
+            "model `gpt-5` is defined twice in",
+        ),
+        (
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5 }\n  gpt-5:\n    alias_of: gpt-5\n",
+            "duplicate entry with key",
+        ),
+        (
+            "models:\n  gpt-5:\n    route: { provider: openai, upstream_model: gpt-5, capability: { tools: false } }\n",
+            "unknown field `capability`",
+        ),
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n{models_yaml}"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "expected `{expected}`, got: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn parsing_infers_route_ids_without_taking_an_explicit_id() {
+    let config: GatewayConfig = serde_yaml::from_str(
+        r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  openai-secondary:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+models:
+  fast:
+    route: { provider: openai-prod, upstream_model: gpt-5-mini }
+  pooled:
+    routes:
+      - { id: openai-secondary, provider: openai-prod, upstream_model: gpt-5 }
+      - { provider: openai-secondary, upstream_model: gpt-5 }
+"#,
+    )
+    .expect("config parses");
+
+    let route_ids = |model: usize| {
+        config.models[model]
+            .routes
+            .iter()
+            .map(|route| route.id.clone())
+            .collect::<Vec<_>>()
+    };
+    // Inference runs during parsing, not only in `GatewayConfig::load`.
+    assert_eq!(route_ids(0), [Some("openai-prod".to_string())]);
+    // `openai-secondary` is already an explicit id in this model, so it is not inferred again.
+    assert_eq!(route_ids(1), [Some("openai-secondary".to_string()), None]);
+    let crate::config::ProviderConfig::OpenAiCompat(provider) = &config.providers[0] else {
+        panic!("openai_compat provider");
+    };
+    assert_eq!(provider.pricing_provider_id, "openai");
+    config.validate().expect("valid config");
 }

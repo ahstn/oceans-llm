@@ -19,7 +19,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 
 ## Top-Level Sections
 
-Unknown top-level, model, user, and user-membership fields are rejected. Correct misspelled keys instead of relying on silently ignored values.
+Unknown fields are rejected at the top level and in models, routes, route `capabilities` and `compatibility`, providers, users, and user memberships. Correct misspelled keys instead of relying on silently ignored values.
 
 - `server`
 - `database`
@@ -32,10 +32,62 @@ Unknown top-level, model, user, and user-membership fields are rejected. Correct
 - `rate_limits`
 - `request_logging`
 - `agent_analysis`
+- `guardrails`
 - `providers`
 - `models`
 - `teams`
+- `service_accounts`
 - `users`
+
+## Config Files and Fragments
+
+The gateway reads one main file and, optionally, a directory of fragments.
+
+| Flag | Environment variable | Default | When the path is missing |
+| --- | --- | --- | --- |
+| `--config` | `GATEWAY_CONFIG` | `./gateway.yaml` | Startup fails when the path was set explicitly. Only the implicit default may be absent; the gateway then starts with built-in defaults. |
+| `--config-dir` | `GATEWAY_CONFIG_DIR` | none | Startup fails. |
+
+`providers` and `models` accept either a list of entries with `id`, or a map keyed by id. Prefer the map form: Helm merges maps across `-f` values files but replaces lists, and a map cannot repeat an id. A map entry must not also set `id`.
+
+```yaml
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    auth:
+      token: env.OPENAI_API_KEY
+models:
+  gpt-5.6-luna:
+    route:
+      provider: openai-prod
+      upstream_model: gpt-5.6-luna
+```
+
+Fragment rules:
+
+- The gateway reads `*.yaml` and `*.yml` files below `--config-dir` recursively, in lexical order of relative path.
+- It skips files and directories whose names start with `.`, which covers the `..data` directories in Kubernetes ConfigMap mounts, and it follows symlinks.
+- A symlink must resolve inside `--config-dir`. The loader resolves each file and directory to its real path and fails at startup, naming the link and its target, when that path is outside the directory. It never reads files outside `--config-dir`. Kubernetes ConfigMap mounts link only within the mount, so they pass.
+- A main config file inside `--config-dir` is read once, as the main file, not again as a fragment.
+- A fragment may contain only `providers` and `models`. Every other section stays in the main file.
+- Fragments merge as a union. A provider or model id defined in two places, including the main file, is an error that names both files. No file overrides another.
+- References such as `routes[].provider`, `alias_of`, `budgets.users.model_defaults`, and `service_accounts[].keys[].allowed_models` resolve after the merge, so they can point across files.
+- Validation runs once on the merged result.
+
+A layout that keeps ownership clear puts each provider account and the models that route only to it in one file, and models whose routes span providers in a shared file:
+
+```text
+conf.d/
+  models/
+    openai.yaml          # openai-prod, openai-secondary, and their single-provider models
+    bedrock.yaml
+    multi-provider.yaml  # models whose routes use more than one provider file
+```
+
+[`deploy/examples/config-dir`](../../deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists the file that defined each one. It redacts `literal.` values, header values, and URL credentials (usernames, passwords, query values, and fragments); `env.` and `file.` references stay visible. Redaction covers credentials only: the output still includes identity data such as user emails, team keys, and file paths, so review it before sharing. `gateway config validate` accepts the same flags.
+
+Removing a fragment does not remove what it seeded. Models and providers that disappear from config stay in the database, and their routes stay enabled. Disable a model's routes with `enabled: false` before deleting its entry.
 
 ## Value Sources
 
@@ -68,19 +120,17 @@ auth:
     require_password_change: false
 
 providers:
-  - id: openai
+  openai:
     type: openai_compat
     base_url: "https://api.openai.com/v1"
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY
 
 models:
-  - id: gpt-4o-mini
-    routes:
-      - provider: openai
-        upstream_model: gpt-4o-mini
+  gpt-4o-mini:
+    route:
+      provider: openai
+      upstream_model: gpt-4o-mini
 ```
 
 ## Benchmark catalogue
@@ -305,7 +355,12 @@ Important defaults from config parsing and domain deserialization:
 - route `priority` defaults to `100`
 - route `weight` defaults to `1.0`
 - route `enabled` defaults to `true`
-- route capability flags default to all enabled
+- route `id` defaults to the provider key when that provider appears once in the model and the key is a valid route id
+- route capability flags default to what the provider type and compatibility profile can serve; see [Route Config](#route-config)
+- `pricing_provider_id` defaults from the `base_url` host on `openai_compat` and `anthropic_compat`: `api.openai.com` is `openai`, `openrouter.ai` is `openrouter`, and `opencode.ai` is `opencode`
+- `openai_compat` and `typesafe` `auth.kind` defaults to `bearer`, the only accepted value
+- Bedrock `compatibility.aws_bedrock.openai_base_path` defaults to `/openai/v1` for `runtime_openai_chat` and `/v1` for the Mantle OpenAI styles
+- `aws_bedrock` providers default to the `aws` icon
 - Vertex `location` defaults to `global`
 - Vertex `api_host` defaults to the host that serves `location` (`aiplatform.googleapis.com` for `global`, `aiplatform.{us|eu}.rep.googleapis.com` for multi-region, `{region}-aiplatform.googleapis.com` otherwise)
 - `request_logging.payloads.capture_mode` defaults to `redacted_payloads`
@@ -945,8 +1000,8 @@ Important fields:
 
 - `id`
 - `base_url`
-- `pricing_provider_id`
-- `auth.kind`
+- `pricing_provider_id`, inferred for `api.openai.com`, `openrouter.ai`, and `opencode.ai` hosts
+- optional `auth.kind`, which must be `bearer` when set
 - `auth.token`
 - optional `display.label`
 - optional `display.icon_key`
@@ -962,7 +1017,7 @@ Important fields:
 
 Validation rules that matter:
 
-- `pricing_provider_id` cannot be empty
+- `pricing_provider_id` is required for any other host
 - `pricing_provider_id` must map to a supported internal pricing family
 
 OpenRouter uses this generic provider type with `base_url: https://openrouter.ai/api/v1`. Keep arbitrary OpenAI-compatible endpoints on plain `openai_compat`; add route-level `compatibility.openrouter` only when the route needs OpenRouter provider-selection policy such as ZDR, provider allow/deny lists, provider order, latency preference, or price ceilings. See [OpenRouter](../providers/openrouter.md).
@@ -1116,8 +1171,12 @@ Routing and pricing caveats:
 - `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix; `google/...` routes use Google Vertex pricing and `anthropic/...` routes use Anthropic-on-Vertex pricing
 - Anthropic-on-Vertex pricing is only supported for `location=global`
-- route capabilities default permissively, so partial Vertex routes should explicitly disable unsupported API families
-- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
+- route capabilities derive from `upstream_model`:
+  - supported Google chat models: chat, streaming, tools, vision, `json_schema`, and developer role
+  - `anthropic/...` models: the same without `json_schema`
+  - `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, and `google/text-multilingual-embedding-002`: embeddings only
+  - any other model: chat, streaming, vision, and developer role only, so tools and structured output are rejected
+- the gateway applies the same limits at request time, so setting a capability flag to `true` cannot enable a feature the gateway does not recognize for that model; flags can only narrow these defaults
 - provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
@@ -1158,7 +1217,8 @@ Routing caveats:
 
 - `upstream_model` should be the model identity accepted by the configured Bedrock endpoint and API style.
 - every `aws_bedrock` route requires `compatibility.aws_bedrock.api_style`.
-- OpenAI-shaped API styles require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
+- OpenAI-shaped API styles use `compatibility.aws_bedrock.openai_base_path`. It defaults to `/openai/v1` for `runtime_openai_chat` and `/v1` for `mantle_openai_chat` and `mantle_openai_responses`, which match the AWS defaults. Set it when a Mantle model is served under `/openai/v1` instead.
+- Route capabilities follow from `api_style`. Only `mantle_openai_responses` serves the Responses API and `json_schema`, and it does not serve Chat Completions. `runtime_anthropic_invoke` does not stream.
 - Route `extra_headers` is the supported way to proxy provider headers such as `OpenAI-Project`; arbitrary inbound caller headers are not forwarded to providers.
 - Validate documentation-only updates with `mise run //docs:build`.
 
@@ -1166,10 +1226,12 @@ Routing caveats:
 
 Configured gateway models are either:
 
-- provider-backed models with `routes`
+- provider-backed models with `routes`, or `route` for a single route
 - alias-backed models with `alias_of`
 
-A model cannot be both.
+A model cannot be both, and cannot set both `route` and `routes`. Model ids must be unique.
+
+The model id is the stable key for grants, budgets, request logs, and spend. The gateway never derives it from `upstream_model`, so changing the upstream model does not rename the gateway model.
 
 Important fields:
 
@@ -1193,7 +1255,7 @@ Important fields:
 | `routing.affinity` | Absent; no session affinity | An object; `{}` enables the default timeout |
 | `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
 
-Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
+Every route needs an id when `routing` is present, including `routing: {}`. A route's id defaults to its provider key when that key is a valid route id and no other route in the model uses it, either as a provider or as an explicit `id`. Other routes need an explicit `id`, such as routes that share a provider within one model. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
 
 Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
 
@@ -1267,17 +1329,32 @@ Important fields:
 - `extra_headers`
 - `extra_body`
 
-Route `id` is optional for models without a `routing` policy and required for every route in a configured routing pool. It must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep it stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
+Route `id` defaults to the provider key when that provider appears once in the model, the key is a valid route id, and no explicit route `id` in the model already uses it. Set it explicitly when two routes in one model share a provider. A route in a configured routing pool must end up with an id. Ids must be unique within the model and contain 1–128 ASCII letters, digits, periods, underscores, or hyphens. Keep them stable when changing priority, weight, or YAML order. Provider or upstream model changes create a different internal route identity.
+
+A route that still has no id gets an identity from its priority and position, so reordering or reprioritizing it creates a new route.
 
 When a model has `max_reasoning_effort`, startup also validates explicit effort values in each of its route `extra_body` objects. Known values above the ceiling, unknown strings, and malformed non-string values make configuration invalid. Omitted fields and `null` values pass. Startup does not clamp or mutate `extra_body`.
 
-Capability flags default permissively. A route can constrain provider capability. It cannot expand provider truth.
+An omitted capability flag takes the value the route's provider and compatibility profile imply:
+
+| Route | Derived capabilities |
+| --- | --- |
+| `typesafe` provider, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` only |
+| GitHub Copilot (`type: github_copilot`) provider | From `compatibility.github_copilot`: `chat_api`, `supports_responses`, `supports_embeddings`, and `upstream_supports` |
+| `gcp_vertex` provider | From the `upstream_model`: Google chat models, Anthropic models, and supported embedding models each have their own set |
+| `anthropic_compat` provider | `chat_completions`, `stream`, `tools`, and `vision` |
+| `aws_bedrock`, `api_style: mantle_openai_responses` | Everything except `chat_completions`, `embeddings`, and `decisions` |
+| `aws_bedrock`, `api_style: runtime_anthropic_invoke` | `chat_completions`, `tools`, `vision`, and `developer_role` |
+| `aws_bedrock`, any other `api_style` | Everything except `responses`, `json_schema`, `embeddings`, and `decisions` |
+| `openai_compat` without `decisions_api`, and `gcp_cloud_run_openai_compat` | Everything except `decisions` |
+
+An explicit flag replaces the derived value. Validation still rejects a flag the profile cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. At request time the gateway also intersects route flags with what the provider type can serve, so a route can narrow provider capability but cannot expand it.
 
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
-`decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`.
+`decisions` is `true` only on Decisions transports: `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`. Those routes derive every other flag as `false`, and validation rejects any other flag set to `true`.
 
 Vertex embedding-only route:
 
@@ -1343,45 +1420,32 @@ OpenRouter Decisions route:
 
 ```yaml
 models:
-  - id: jev
-    routes:
-      - provider: openrouter
-        upstream_model: typesafe/jev-1.13
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
-        compatibility:
-          openrouter:
-            api: decisions
+  jev:
+    route:
+      provider: openrouter
+      upstream_model: typesafe/jev-1.13
+      # Capabilities derive as decisions-only from the decisions API.
+      compatibility:
+        openrouter:
+          api: decisions
 ```
 
 AWS Bedrock route profile:
 
 ```yaml
 models:
-  - id: gpt-55-bedrock
-    routes:
-      - provider: bedrock-mantle-openai
-        upstream_model: openai.gpt-5.5
-        capabilities:
-          chat_completions: false
-          responses: true
-          stream: true
-          embeddings: false
-          json_schema: true
-        extra_headers:
-          OpenAI-Project: proj_123
-        compatibility:
-          aws_bedrock:
-            api_style: mantle_openai_responses
-            openai_base_path: /openai/v1
+  gpt-55-bedrock:
+    route:
+      provider: bedrock-mantle-openai
+      upstream_model: openai.gpt-5.5
+      extra_headers:
+        OpenAI-Project: proj_123
+      # Capabilities derive from mantle_openai_responses: Responses, no Chat Completions.
+      compatibility:
+        aws_bedrock:
+          api_style: mantle_openai_responses
+          # GPT-5.5 is served under /openai/v1 on Mantle, not the /v1 default.
+          openai_base_path: /openai/v1
 ```
 
 `compatibility.aws_bedrock.api_style` values:
@@ -1393,15 +1457,15 @@ models:
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
 
-Every Bedrock route must include an explicit `capabilities` block. Omitted capability fields default to `true`; defaults are not inferred from `api_style`. Configure these fields for the selected style:
+Bedrock route capabilities derive from `api_style`, so a route needs no `capabilities` block for these limits:
 
-| API style | Required capability settings |
+| API style | Derived as `false` |
 | --- | --- |
-| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `responses: false`, `json_schema: false` |
-| `runtime_anthropic_invoke` | `responses: false`, `json_schema: false`, `stream: false` |
-| `mantle_openai_responses` | `chat_completions: false` |
+| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `responses`, `json_schema` |
+| `runtime_anthropic_invoke` | `responses`, `json_schema`, `stream` |
+| `mantle_openai_responses` | `chat_completions` |
 
-Also disable API families that the selected upstream model does not support, such as `embeddings`. Configuration validation rejects conflicting capabilities; it does not establish live model support.
+Configuration validation rejects an explicit flag that the style cannot serve, such as `stream: true` on `runtime_anthropic_invoke`. Set other flags to `false` when the selected upstream model lacks a feature, such as `vision`. Bedrock providers never serve `embeddings`. Validation checks styles against capabilities; it does not establish live model support.
 
 `compatibility.aws_bedrock.supports_strict_tools` is optional. When unset, Runtime Converse routes infer support from transparent upstream model IDs and omit `strict` for Claude Opus 4.7/4.8. Set it to `false` for opaque application-inference-profile IDs or ARNs backed by those models; explicit `true` or `false` overrides inference.
 
@@ -1519,23 +1583,17 @@ models:
           skip_special_tokens: false
 ```
 
-Bedrock routes can execute Chat Completions through Claude native Messages, Converse, and ConverseStream depending on the upstream model and request shape. Keep Responses and embeddings disabled:
+Bedrock routes can execute Chat Completions through Claude native Messages, Converse, and ConverseStream depending on the upstream model and request shape. The `runtime_converse` style already disables Responses and `json_schema`, and Bedrock providers never serve embeddings:
 
 ```yaml
 models:
-  - id: claude-bedrock
-    routes:
-      - provider: bedrock
-        upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
-        compatibility:
-          aws_bedrock:
-            api_style: runtime_converse
-        capabilities:
-          chat_completions: true
-          responses: false
-          embeddings: false
-          stream: true
-          json_schema: false
+  claude-bedrock:
+    route:
+      provider: bedrock
+      upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+      compatibility:
+        aws_bedrock:
+          api_style: runtime_converse
 ```
 
 OpenAI-compatible embeddings-only routes should narrow route capability so chat and Responses requests fail early:
@@ -1557,8 +1615,9 @@ models:
 
 Config load catches these failure classes up front:
 
-- invalid or empty provider fields
+- invalid, empty, or unknown provider, model, and route fields
 - unsupported pricing-provider mappings
+- duplicate provider or model ids, including across config fragments
 - invalid alias references
 - invalid route or provider wiring
 

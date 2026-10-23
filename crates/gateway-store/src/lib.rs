@@ -280,6 +280,475 @@ pub(crate) mod tests {
         }
     }
 
+    /// A batch keeps its route row through reseeding. Renaming that route keeps its
+    /// (model, provider, upstream, priority), so the reseed must reuse the surviving row
+    /// instead of inserting a second row that the unique key rejects.
+    /// Inserts one queued batch that references `route`, so reseeding keeps that route row.
+    async fn insert_batch_for_route<S>(
+        store: &S,
+        api_key: &gateway_core::ApiKeyRecord,
+        model: &gateway_core::GatewayModel,
+        route: &gateway_core::ModelRoute,
+        label: &str,
+    ) -> Uuid
+    where
+        S: GatewayStore + Sync,
+    {
+        let batch_id = Uuid::new_v4();
+        let now = OffsetDateTime::now_utc();
+        store
+            .insert_batch(&NewBatchJob {
+                job: BatchJobRecord {
+                    batch_id,
+                    idempotency_key: format!("{label}-idempotency"),
+                    request_hash: format!("{label}-request-hash"),
+                    api_key_id: api_key.id,
+                    user_id: api_key.owner_user_id,
+                    team_id: api_key.owner_team_id,
+                    service_account_id: api_key.owner_service_account_id,
+                    model_id: model.id,
+                    model_key: model.model_key.clone(),
+                    resolved_model_key: model.model_key.clone(),
+                    route_id: route.id,
+                    provider_key: route.provider_key.clone(),
+                    upstream_model: route.upstream_model.clone(),
+                    endpoint: BatchEndpoint::Responses,
+                    status: BatchStatus::Queued,
+                    provider_batch_id: None,
+                    request_count: 1,
+                    completed_count: 0,
+                    failed_count: 0,
+                    cost_usd: None,
+                    pricing_status: BatchPricingStatus::Pending,
+                    provider_usage: None,
+                    error: None,
+                    created_at: now,
+                    submitted_at: None,
+                    completed_at: None,
+                    updated_at: now,
+                    next_poll_at: None,
+                    lease_owner: None,
+                    lease_expires_at: None,
+                    provider_context: ProviderRequestContext {
+                        request_id: batch_id.to_string(),
+                        model_key: model.model_key.clone(),
+                        provider_key: route.provider_key.clone(),
+                        upstream_model: route.upstream_model.clone(),
+                        owner_user_id: None,
+                        expected_provider_credential_id: None,
+                        chat_protocol: Default::default(),
+                        extra_headers: route.extra_headers.clone(),
+                        extra_body: route.extra_body.clone(),
+                        request_headers: BTreeMap::new(),
+                        compatibility: route.compatibility.clone(),
+                    },
+                    pricing_snapshot: None,
+                },
+                items: vec![NewBatchItem {
+                    batch_item_id: Uuid::new_v4(),
+                    custom_id: format!("{label}-item"),
+                    request_body: json!({"input": "keep route history"}),
+                }],
+            })
+            .await
+            .expect("insert batch");
+        batch_id
+    }
+
+    async fn exercise_inferred_route_key_keeps_legacy_id<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let mut models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                route_key: None,
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::openai_compat_baseline(),
+                compatibility: RouteCompatibility::default(),
+            }],
+            allowlist: None,
+        }];
+        let providers = &providers;
+        let route_id = |models: Vec<SeedModel>| async move {
+            store
+                .seed_from_inputs(providers, &models, &[], &[], &[], &[], &[], &[])
+                .await
+                .expect("seed");
+            let routes = store
+                .list_routes_for_model(crate::seed::model_uuid("fast"))
+                .await
+                .expect("routes");
+            assert_eq!(routes.len(), 1);
+            routes[0].id
+        };
+
+        let legacy = route_id(models.clone()).await;
+        assert_eq!(
+            legacy,
+            crate::seed::route_uuid("fast", None, "openai-prod", "gpt-4o-mini", 10, 0)
+        );
+
+        // After upgrading, the route id defaults to the provider key; the route keeps its id.
+        models[0].routes[0].route_key = Some("openai-prod".to_string());
+        assert_eq!(route_id(models.clone()).await, legacy);
+        assert_eq!(
+            route_id(models.clone()).await,
+            legacy,
+            "stable across reseeds"
+        );
+
+        // A priority change would have moved the legacy id, so the route takes its keyed id.
+        models[0].routes[0].priority = 20;
+        let keyed = crate::seed::route_uuid(
+            "fast",
+            Some("openai-prod"),
+            "openai-prod",
+            "gpt-4o-mini",
+            20,
+            0,
+        );
+        assert_eq!(route_id(models.clone()).await, keyed);
+        models[0].routes[0].priority = 10;
+        assert_eq!(
+            route_id(models).await,
+            keyed,
+            "keyed ids no longer depend on priority"
+        );
+    }
+
+    async fn exercise_batch_referenced_route_rename<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let mut models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                route_key: None,
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::openai_compat_baseline(),
+                compatibility: RouteCompatibility::default(),
+            }],
+            allowlist: None,
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        let seed = |models: Vec<SeedModel>| {
+            let providers = providers.clone();
+            let api_keys = api_keys.clone();
+            async move {
+                store
+                    .seed_from_inputs(
+                        &providers,
+                        &models,
+                        &api_keys,
+                        &seed_api_key_service_accounts(),
+                        &[],
+                        &[],
+                        &seed_api_key_teams(),
+                        &[],
+                    )
+                    .await
+            }
+        };
+        seed(models.clone()).await.expect("seed unnamed route");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("seeded key");
+        let model = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("query models")
+            .into_iter()
+            .next()
+            .expect("seeded model");
+        let route = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("query routes")
+            .into_iter()
+            .next()
+            .expect("seeded route");
+        let batch_id = insert_batch_for_route(store, &api_key, &model, &route, "rename").await;
+
+        // Config now names the route, which changes its derived identity.
+        models[0].routes[0].route_key = Some("openai-prod".to_string());
+        seed(models.clone()).await.expect("reseed renamed route");
+
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after rename");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].id, route.id);
+        assert!(routes[0].enabled);
+        let batch = store
+            .get_batch(batch_id, BatchAccessScope::All)
+            .await
+            .expect("batch after rename");
+        assert_eq!(batch.route_id, route.id);
+
+        // A priority change moves the route to its keyed id; the legacy row keeps its batch.
+        let keyed = crate::seed::route_uuid(
+            "fast",
+            Some("openai-prod"),
+            "openai-prod",
+            "gpt-4o-mini",
+            20,
+            0,
+        );
+        for priority in [20, 10] {
+            models[0].routes[0].priority = priority;
+            seed(models.clone())
+                .await
+                .expect("reseed reprioritized route");
+            let routes = store
+                .list_routes_for_model(model.id)
+                .await
+                .expect("routes after priority change");
+            let enabled = routes
+                .iter()
+                .filter(|route| route.enabled)
+                .map(|route| (route.id, route.priority))
+                .collect::<Vec<_>>();
+            // Reverting the priority keeps the keyed id instead of reviving the legacy row.
+            assert_eq!(enabled, [(keyed, priority)], "priority {priority}");
+            assert!(
+                routes.iter().any(|row| row.id == route.id && !row.enabled),
+                "the batch-referenced legacy row stays, disabled"
+            );
+        }
+
+        // Only rows that survived the delete are reused. Two configured routes that share
+        // (provider, upstream, priority) must still fail instead of overwriting each other.
+        let mut duplicate = models[0].routes[0].clone();
+        duplicate.route_key = Some("second".to_string());
+        models[0].routes.push(duplicate);
+        seed(models)
+            .await
+            .expect_err("routes sharing provider, upstream, and priority must not merge");
+    }
+
+    /// Two named routes share a provider and upstream model, and both have batch history. A
+    /// priority swap must keep each route on its own row, and a removed route's surviving row
+    /// must not block another route that moves onto its priority.
+    async fn exercise_batch_referenced_route_reprioritize<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let route = |route_key: &str, priority: i32| SeedModelRoute {
+            route_key: Some(route_key.to_string()),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            priority,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            capabilities: ProviderCapabilities::openai_compat_baseline(),
+            compatibility: RouteCompatibility::default(),
+        };
+        let model_with = |routes: Vec<SeedModelRoute>| SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            max_reasoning_effort: None,
+            routing: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes,
+            allowlist: None,
+        };
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        let seed = |models: Vec<SeedModel>| {
+            let providers = providers.clone();
+            let api_keys = api_keys.clone();
+            async move {
+                store
+                    .seed_from_inputs(
+                        &providers,
+                        &models,
+                        &api_keys,
+                        &seed_api_key_service_accounts(),
+                        &[],
+                        &[],
+                        &seed_api_key_teams(),
+                        &[],
+                    )
+                    .await
+            }
+        };
+        seed(vec![model_with(vec![route("a", 10), route("b", 20)])])
+            .await
+            .expect("seed two named routes");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("seeded key");
+        let model = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("query models")
+            .into_iter()
+            .next()
+            .expect("seeded model");
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("query routes");
+        let id_at = |priority: i32| {
+            routes
+                .iter()
+                .find(|route| route.priority == priority)
+                .expect("route at priority")
+                .id
+        };
+        let (route_a, route_b) = (id_at(10), id_at(20));
+        for (route_id, label) in [(route_a, "a"), (route_b, "b")] {
+            let route = routes
+                .iter()
+                .find(|route| route.id == route_id)
+                .expect("route");
+            insert_batch_for_route(store, &api_key, &model, route, label).await;
+        }
+
+        // A true swap: each route moves onto the other's old priority.
+        seed(vec![model_with(vec![route("a", 20), route("b", 10)])])
+            .await
+            .expect("reseed swapped priorities");
+        let route_state = |routes: &[gateway_core::ModelRoute], route_id: Uuid| {
+            routes
+                .iter()
+                .find(|route| route.id == route_id)
+                .map(|route| (route.priority, route.enabled))
+        };
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after swap");
+        assert_eq!(routes.len(), 2);
+        assert_eq!(
+            route_state(&routes, route_a),
+            Some((20, true)),
+            "route a keeps its row"
+        );
+        assert_eq!(
+            route_state(&routes, route_b),
+            Some((10, true)),
+            "route b keeps its row"
+        );
+
+        // `a` leaves the config while its batch row survives on priority 20, the priority `b`
+        // now wants. `a`'s row moves aside instead of blocking `b`.
+        seed(vec![model_with(vec![route("b", 20)])])
+            .await
+            .expect("reseed onto a removed route's priority");
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after removal");
+        assert_eq!(route_state(&routes, route_b), Some((20, true)));
+        let (parked_priority, parked_enabled) =
+            route_state(&routes, route_a).expect("batch history keeps route a's row");
+        assert!(!parked_enabled, "the removed route stays disabled");
+        assert!(parked_priority < 20, "the removed route's row moved aside");
+
+        // A new route listed first takes `b`'s current priority while `b` moves on. `b` must
+        // keep its own row instead of losing it to the new route's tuple match.
+        seed(vec![model_with(vec![route("n", 20), route("b", 40)])])
+            .await
+            .expect("reseed with a new route ahead of a moving one");
+        let routes = store
+            .list_routes_for_model(model.id)
+            .await
+            .expect("routes after the new route");
+        assert_eq!(
+            route_state(&routes, route_b),
+            Some((40, true)),
+            "route b keeps its row"
+        );
+        let enabled = routes
+            .iter()
+            .filter(|route| route.enabled)
+            .map(|route| (route.id, route.priority))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            enabled.len(),
+            2,
+            "both configured routes have their own row"
+        );
+        assert!(
+            enabled
+                .iter()
+                .any(|(id, priority)| *id != route_b && *priority == 20),
+            "the new route gets its own row at priority 20"
+        );
+    }
+
     async fn exercise_managed_service_account_seed<S>(store: &S)
     where
         S: GatewayStore + Sync,
@@ -6677,6 +7146,123 @@ pub(crate) mod tests {
             .expect("status after retry");
         assert_eq!(applied_status.pending_count(), 0);
         assert!(applied_status.entries.iter().all(|entry| entry.applied));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn seed_keeps_own_rows_when_batch_referenced_routes_reprioritize() {
+        let temp = tempdir().expect("tempdir");
+        let db_path = temp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_batch_referenced_route_reprioritize(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_keeps_own_rows_when_batch_referenced_routes_reprioritize() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres route reprioritize seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_batch_referenced_route_reprioritize(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn seed_reuses_batch_referenced_route_after_rename() {
+        let temp = tempdir().expect("tempdir");
+        let db_path = temp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_batch_referenced_route_rename(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_reuses_batch_referenced_route_after_rename() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres route rename seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_batch_referenced_route_rename(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn seed_keeps_legacy_route_id_when_route_key_is_inferred() {
+        let temp = tempdir().expect("tempdir");
+        let db_path = temp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_inferred_route_key_keeps_legacy_id(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_keeps_legacy_route_id_when_route_key_is_inferred() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres legacy route id seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_inferred_route_key_keeps_legacy_id(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]

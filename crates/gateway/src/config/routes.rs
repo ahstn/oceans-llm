@@ -8,11 +8,13 @@ use gateway_core::{
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
     RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
+    route_capability_defaults,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value};
 
+use super::models::is_valid_route_id;
 use super::providers::{AwsBedrockProviderConfig, ProviderConfig};
 
 const fn default_route_priority() -> i32 {
@@ -28,6 +30,7 @@ const fn default_enabled() -> bool {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelRouteConfig {
     #[serde(default)]
     pub id: Option<String>,
@@ -54,6 +57,31 @@ pub struct ModelRouteConfig {
 }
 
 impl ModelRouteConfig {
+    /// Capabilities that the route's provider and compatibility profile already determine.
+    /// Explicit `capabilities` flags override these, and validation still rejects flags a
+    /// profile cannot serve. The policy lives in [`route_capability_defaults`] so seeded route
+    /// flags and request routing cannot drift apart.
+    pub(super) fn capability_defaults(
+        &self,
+        provider: Option<&ProviderConfig>,
+    ) -> ProviderCapabilities {
+        // An unknown provider fails validation; use the generic default until then.
+        let provider_type = provider.map_or("openai_compat", ProviderConfig::provider_type);
+        route_capability_defaults(
+            provider_type,
+            &self.upstream_model,
+            &self.compatibility.clone().into_compatibility(),
+        )
+    }
+
+    pub(super) fn effective_capabilities(
+        &self,
+        provider: Option<&ProviderConfig>,
+    ) -> ProviderCapabilities {
+        self.capabilities
+            .resolve(self.capability_defaults(provider))
+    }
+
     pub(super) fn validate(
         &self,
         model_id: &str,
@@ -61,11 +89,7 @@ impl ModelRouteConfig {
         provider: Option<&ProviderConfig>,
     ) -> anyhow::Result<()> {
         if let Some(id) = &self.id
-            && (id.is_empty()
-                || id.len() > 128
-                || !id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-')))
+            && !is_valid_route_id(id)
         {
             bail!(
                 "model `{model_id}` route id must contain 1 to 128 ASCII letters, digits, underscores, periods, or hyphens"
@@ -109,10 +133,52 @@ impl ModelRouteConfig {
                 self.provider
             );
         }
+        let capabilities = self.effective_capabilities(provider);
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
-            validate_aws_bedrock_route_compatibility(model_id, self, provider)?;
+            validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
-        validate_decisions_route_capability(model_id, self, provider)?;
+        validate_decisions_route_capability(model_id, self, provider, capabilities)?;
+        if provider.is_some() {
+            self.validate_capabilities_within_profile(model_id, provider)?;
+        }
+        Ok(())
+    }
+
+    /// Rejects an explicit `true` for a capability the provider and compatibility profile
+    /// cannot serve. Request routing limits every route to its profile, so such a flag would
+    /// pass validation but never take effect. `decisions` has its own, more specific checks.
+    fn validate_capabilities_within_profile(
+        &self,
+        model_id: &str,
+        provider: Option<&ProviderConfig>,
+    ) -> anyhow::Result<()> {
+        let defaults = self.capability_defaults(provider);
+        let explicit = &self.capabilities;
+        for (name, flag, supported) in [
+            (
+                "chat_completions",
+                explicit.chat_completions,
+                defaults.chat_completions,
+            ),
+            ("responses", explicit.responses, defaults.responses),
+            ("stream", explicit.stream, defaults.stream),
+            ("embeddings", explicit.embeddings, defaults.embeddings),
+            ("tools", explicit.tools, defaults.tools),
+            ("vision", explicit.vision, defaults.vision),
+            ("json_schema", explicit.json_schema, defaults.json_schema),
+            (
+                "developer_role",
+                explicit.developer_role,
+                defaults.developer_role,
+            ),
+        ] {
+            if flag == Some(true) && !supported {
+                bail!(
+                    "model `{model_id}` route for provider `{}` enables capabilities.{name}, which its provider and compatibility profile cannot serve; remove the flag",
+                    self.provider
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -195,61 +261,49 @@ fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
     Ok(rate)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Explicit route capability flags. An omitted flag takes the value implied by the route's
+/// provider and compatibility profile (see [`ModelRouteConfig::capability_defaults`]).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouteCapabilitiesConfig {
-    #[serde(default = "default_enabled")]
-    pub chat_completions: bool,
-    #[serde(default = "default_enabled")]
-    pub responses: bool,
-    #[serde(default = "default_enabled")]
-    pub stream: bool,
-    #[serde(default = "default_enabled")]
-    pub embeddings: bool,
     #[serde(default)]
-    pub decisions: bool,
-    #[serde(default = "default_enabled")]
-    pub tools: bool,
-    #[serde(default = "default_enabled")]
-    pub vision: bool,
-    #[serde(default = "default_enabled")]
-    pub json_schema: bool,
-    #[serde(default = "default_enabled")]
-    pub developer_role: bool,
+    pub chat_completions: Option<bool>,
+    #[serde(default)]
+    pub responses: Option<bool>,
+    #[serde(default)]
+    pub stream: Option<bool>,
+    #[serde(default)]
+    pub embeddings: Option<bool>,
+    #[serde(default)]
+    pub decisions: Option<bool>,
+    #[serde(default)]
+    pub tools: Option<bool>,
+    #[serde(default)]
+    pub vision: Option<bool>,
+    #[serde(default)]
+    pub json_schema: Option<bool>,
+    #[serde(default)]
+    pub developer_role: Option<bool>,
 }
 
 impl RouteCapabilitiesConfig {
-    pub(super) fn into_capabilities(self) -> ProviderCapabilities {
+    fn resolve(&self, defaults: ProviderCapabilities) -> ProviderCapabilities {
         ProviderCapabilities {
-            chat_completions: self.chat_completions,
-            responses: self.responses,
-            stream: self.stream,
-            embeddings: self.embeddings,
-            decisions: self.decisions,
-            tools: self.tools,
-            vision: self.vision,
-            json_schema: self.json_schema,
-            developer_role: self.developer_role,
-        }
-    }
-}
-
-impl Default for RouteCapabilitiesConfig {
-    fn default() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
+            chat_completions: self.chat_completions.unwrap_or(defaults.chat_completions),
+            responses: self.responses.unwrap_or(defaults.responses),
+            stream: self.stream.unwrap_or(defaults.stream),
+            embeddings: self.embeddings.unwrap_or(defaults.embeddings),
+            decisions: self.decisions.unwrap_or(defaults.decisions),
+            tools: self.tools.unwrap_or(defaults.tools),
+            vision: self.vision.unwrap_or(defaults.vision),
+            json_schema: self.json_schema.unwrap_or(defaults.json_schema),
+            developer_role: self.developer_role.unwrap_or(defaults.developer_role),
         }
     }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouteCompatibilityConfig {
     #[serde(default)]
     pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
@@ -277,6 +331,7 @@ impl RouteCompatibilityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwsBedrockRouteCompatibilityConfig {
     pub api_style: AwsBedrockApiStyle,
     #[serde(default)]
@@ -289,13 +344,37 @@ impl AwsBedrockRouteCompatibilityConfig {
     pub(super) fn into_compatibility(self) -> AwsBedrockRouteCompatibility {
         AwsBedrockRouteCompatibility {
             api_style: self.api_style,
-            openai_base_path: self.openai_base_path,
+            openai_base_path: self.resolved_openai_base_path(),
             supports_strict_tools: self.supports_strict_tools,
+        }
+    }
+
+    /// The configured OpenAI base path, or the AWS-documented default for the api_style:
+    /// `/openai/v1` on `bedrock-runtime` and `/v1` on `bedrock-mantle`. Some Mantle models are
+    /// served under `/openai/v1` instead and must set it explicitly.
+    fn resolved_openai_base_path(&self) -> Option<String> {
+        if let Some(path) = self
+            .openai_base_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            return Some(path.to_string());
+        }
+        match self.api_style {
+            AwsBedrockApiStyle::RuntimeOpenaiChat => Some("/openai/v1".to_string()),
+            AwsBedrockApiStyle::MantleOpenaiResponses | AwsBedrockApiStyle::MantleOpenaiChat => {
+                Some("/v1".to_string())
+            }
+            AwsBedrockApiStyle::RuntimeConverse
+            | AwsBedrockApiStyle::RuntimeAnthropicInvoke
+            | AwsBedrockApiStyle::MantleAnthropicMessages => None,
         }
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatRouteCompatibilityConfig {
     #[serde(default = "default_enabled")]
     pub supports_store: bool,
@@ -380,6 +459,7 @@ fn validate_decisions_route_capability(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: Option<&ProviderConfig>,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
     let openrouter_decisions = route
         .compatibility
@@ -406,26 +486,26 @@ fn validate_decisions_route_capability(
                 route.provider
             );
         }
-        if !route.capabilities.decisions {
+        if !capabilities.decisions {
             bail!(
                 "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled",
                 route.provider
             );
         }
     }
-    if openrouter_decisions && !route.capabilities.decisions {
+    if openrouter_decisions && !capabilities.decisions {
         bail!(
             "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but capabilities.decisions is not enabled",
             route.provider
         );
     }
-    if is_typesafe && !route.capabilities.decisions {
+    if is_typesafe && !capabilities.decisions {
         bail!(
             "model `{model_id}` route for typesafe provider `{}` must enable capabilities.decisions",
             route.provider
         );
     }
-    if !route.capabilities.decisions {
+    if !capabilities.decisions {
         return Ok(());
     }
     if !is_typesafe && !openrouter_decisions && !openai_decisions {
@@ -435,14 +515,14 @@ fn validate_decisions_route_capability(
         );
     }
     for (capability, enabled) in [
-        ("chat_completions", route.capabilities.chat_completions),
-        ("responses", route.capabilities.responses),
-        ("embeddings", route.capabilities.embeddings),
-        ("stream", route.capabilities.stream),
-        ("tools", route.capabilities.tools),
-        ("vision", route.capabilities.vision),
-        ("json_schema", route.capabilities.json_schema),
-        ("developer_role", route.capabilities.developer_role),
+        ("chat_completions", capabilities.chat_completions),
+        ("responses", capabilities.responses),
+        ("embeddings", capabilities.embeddings),
+        ("stream", capabilities.stream),
+        ("tools", capabilities.tools),
+        ("vision", capabilities.vision),
+        ("json_schema", capabilities.json_schema),
+        ("developer_role", capabilities.developer_role),
     ] {
         if enabled {
             bail!(
@@ -601,6 +681,7 @@ fn validate_aws_bedrock_route_compatibility(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: &AwsBedrockProviderConfig,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
     let Some(compatibility) = route.compatibility.aws_bedrock.as_ref() else {
         bail!(
@@ -619,20 +700,6 @@ fn validate_aws_bedrock_route_compatibility(
             provider.id,
             compatibility.api_style,
             provider.endpoint_kind.as_config_value()
-        );
-    }
-
-    if compatibility.api_style.is_openai_shaped()
-        && compatibility
-            .openai_base_path
-            .as_deref()
-            .map(str::trim)
-            .is_none_or(str::is_empty)
-    {
-        bail!(
-            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` requires compatibility.aws_bedrock.openai_base_path",
-            provider.id,
-            compatibility.api_style
         );
     }
 
@@ -659,7 +726,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if route.capabilities.responses
+    if capabilities.responses
         && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
     {
         bail!(
@@ -669,7 +736,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if route.capabilities.json_schema
+    if capabilities.json_schema
         && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
     {
         bail!(
@@ -680,7 +747,7 @@ fn validate_aws_bedrock_route_compatibility(
     }
 
     if compatibility.api_style == AwsBedrockApiStyle::MantleOpenaiResponses
-        && route.capabilities.chat_completions
+        && capabilities.chat_completions
     {
         bail!(
             "model `{model_id}` route for aws_bedrock provider `{}` api_style `mantle_openai_responses` cannot enable chat_completions capability",
@@ -688,8 +755,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke
-        && route.capabilities.stream
+    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke && capabilities.stream
     {
         bail!(
             "model `{model_id}` route for aws_bedrock provider `{}` api_style `runtime_anthropic_invoke` cannot enable stream capability",
