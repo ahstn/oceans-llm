@@ -35,7 +35,8 @@ describe('CodeBlock', () => {
     )
     expect(viewport).toHaveClass('min-w-0', 'max-w-full', 'overflow-auto')
     expect(viewport).toHaveStyle({
-      maxHeight: 'calc(2 * 1.5rem + 2rem)',
+      // Computed calc(2 * 1.5rem + 2rem) at a 16px root.
+      maxHeight: '80px',
     })
     fireEvent.click(screen.getByRole('button', { name: 'Copy code' }))
 

@@ -1092,7 +1092,8 @@ describe('ModelsPage multi-model configuration', () => {
     const claudeCode = within(dialog).getByRole('region', { name: 'json code' })
     expect(claudeCode).toHaveTextContent('"claude-sonnet-4-6": "claude-sonnet"')
     expect(claudeCode).not.toHaveTextContent('fast')
-    expect(claudeCode).toHaveStyle({ maxHeight: 'calc(10 * 1.5rem + 2rem)' })
+    // Computed calc(10 * 1.5rem + 2rem) at a 16px root.
+    expect(claudeCode).toHaveStyle({ maxHeight: '272px' })
   })
 })
 
