@@ -10,6 +10,8 @@ mod inference;
 #[cfg(test)]
 mod inference_tests;
 #[cfg(test)]
+mod model_group_info_tests;
+#[cfg(test)]
 mod model_metadata_tests;
 #[cfg(test)]
 mod route_tests;
@@ -163,6 +165,24 @@ pub async fn v1_models(
         )
         .await?;
     Ok(Json(state.service.models_list_for_api_key(&auth).await?))
+}
+
+/// LiteLLM's `GET /model_group/info`, so LiteLLM-aware clients can discover
+/// models with their limits, pricing, and capabilities.
+pub async fn v1_model_group_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<gateway_service::model_metadata::ModelGroupInfoResponse>, AppError> {
+    let auth = state
+        .service
+        .authenticate_for_scope(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            gateway_core::SCOPE_INFERENCE,
+        )
+        .await?;
+    Ok(Json(
+        state.service.model_group_info_for_api_key(&auth).await?,
+    ))
 }
 
 pub async fn v1_messages(

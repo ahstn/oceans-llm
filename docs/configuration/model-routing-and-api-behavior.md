@@ -11,6 +11,7 @@ The gateway exposes these authenticated endpoints:
 | Endpoint | API family | Route requirement |
 | --- | --- | --- |
 | `GET /v1/models` | OpenAI- and Anthropic-compatible model discovery | Model is visible to the caller |
+| `GET /model_group/info` | LiteLLM-compatible model metadata | Model is visible to the caller |
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
@@ -22,7 +23,7 @@ The gateway exposes these authenticated endpoints:
 | `POST /messages/count_tokens` | Anthropic Messages token counting alias | Chat-capable route whose provider has an upstream count API |
 | `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses, or Embeddings items | Capability matching the batch `endpoint` |
 
-Clients whose base URL stops at the gateway root can drop the `/v1` prefix. `POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` share the handler, authentication, and body limit of their `/v1` endpoint. These aliases sit beside the admin UI (served under `/admin` by default) and the `/api/*` admin and batch routes without overlapping them. `/v1/model-metadata` and `/api/v1/batches` have no unversioned alias.
+Clients whose base URL stops at the gateway root can drop the `/v1` prefix. `POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` share the handler, authentication, and body limit of their `/v1` endpoint. These aliases sit beside the admin UI (served under `/admin` by default) and the `/api/*` admin and batch routes without overlapping them. `/v1/model-metadata` and `/api/v1/batches` have no unversioned alias. `/model_group/info` has no `/v1` form, because LiteLLM serves it at the root.
 
 Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
 
@@ -385,11 +386,91 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 
 `anthropic-messages` is listed for every chat-capable model because `/v1/messages` is translated onto the chat pipeline. `preferred_api_format` comes from the primary route's provider type: `anthropic_compat` and Vertex `anthropic/*` routes prefer Anthropic Messages, GitHub Copilot follows its configured `chat_api`, and Bedrock follows its `api_style`. A route whose upstream speaks the Responses API prefers it even when chat completions is also served. Other provider types fall back to model-name matching. OpenCode `variants` and Pi `thinkingLevelMap` respect the effective reasoning ceiling: OpenCode presets above it are dropped, and Pi levels above it map to the strongest effort the thinking policy sends within the ceiling. If the policy has no such effort, for example Claude under a `minimal` ceiling, those Pi levels are `null`. Harness blocks use each harness's own config keys and match the snippets from [Client Harness Configuration](client-harness-configuration.md). They never contain a base URL or API key. Embedding-only and Decisions-only models omit `client_hints`.
 
-`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-aware clients can pick a wire per model. The preferred format comes first: `anthropic` for Anthropic-preferred models, and `openai-response` before `openai` for Responses-preferred models. Clients such as omp with `discovery.type: proxy` choose Anthropic Messages whenever `anthropic` is listed. The gateway therefore lists `anthropic` only when `preferred_api_format` is `anthropic-messages`, even though `/v1/messages` accepts every chat-capable model. Use `client_hints.api_formats` for the complete list.
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients, which read new-api model lists, can pick a wire per model. The preferred format comes first: `anthropic` for Anthropic-preferred models, and `openai-response` before `openai` for Responses-preferred models. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed. The gateway therefore lists `anthropic` only when `preferred_api_format` is `anthropic-messages`, even though `/v1/messages` accepts every chat-capable model. Use `client_hints.api_formats` for the complete list.
+
+omp (Oh My Pi) can also read this field with `discovery.type: proxy`. That mode ignores prices and the Responses endpoint type, and it sends no reasoning effort to OpenAI-family models. Configure omp with `discovery.type: litellm` instead, as the next section shows.
 
 Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
+
+### LiteLLM model metadata (`GET /model_group/info`)
+
+`GET /model_group/info` returns model metadata in the LiteLLM proxy format. Clients that read LiteLLM metadata use it to get the limits, prices, and feature flags of each model. omp with `discovery.type: litellm` uses these values to select the API and the reasoning effort for each model, and to calculate cost.
+
+The endpoint uses the same authentication and visibility as `GET /v1/models`. Send the API key in `Authorization: Bearer` or `x-api-key`. The key must have the `inference` scope:
+
+- A request without a key gets `401`.
+- A key without the `inference` scope gets `403` with code `insufficient_scope`.
+- The response is `{ "data": [...] }`, with one row for each model that `/v1/models` shows to the same key.
+
+Each row has these fields:
+
+| Field | Source | Rule |
+| --- | --- | --- |
+| `model_group` | Gateway model key | Equal to `id` in `/v1/models` |
+| `providers` | One lowercase vendor of the primary route's upstream model | `["openai"]` only when every eligible chat route serves the Responses API, and always when no route serves Chat Completions. See below |
+| `mode` | Route transport | `chat` when the model serves Chat Completions or Responses. `embedding` when the model serves only embeddings |
+| `max_input_tokens` | Conservative input limit, else the context window | `null` when unknown. omp uses this value as the context window |
+| `max_output_tokens` | Conservative output limit | `null` when unknown |
+| `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price | USD per token. Input and output are present together, or no cost field is present. A cache cost is present only when its price is known |
+| `supports_function_calling` | `tools` capability of the routes that serve tools | See below |
+| `supports_vision` | `vision` capability of the routes that serve images | Always `true` or `false`, never `null` |
+| `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible chat route | Not limited to Anthropic Messages routes. `false` when one chat route cannot reason |
+| `supports_response_schema` | Structured output capability of the routes that serve JSON schemas | Standard LiteLLM field. omp ignores it |
+| `supported_openai_params` | Derived from the fields above | See below |
+
+The gateway stores prices in USD per million tokens. This endpoint divides each price by 1,000,000. For example, an input price of 4 USD per million tokens gives `"input_cost_per_token": 0.000004`. When the input or the output price is unknown, the row has no cost fields, and omp uses its own price for the model ID, if it has one. Many models have no cache price, so the row then has input and output costs only, and omp counts the cache tokens at 0.
+
+`supported_openai_params` always contains `max_tokens` and `max_completion_tokens`. The gateway adds these values:
+
+- `stream` and `stream_options` when an eligible chat route can stream.
+- `tools` and `tool_choice` when the model supports tools.
+- `reasoning_effort` when every eligible chat route accepts at least one effort level. omp enables reasoning effort only when this value is present. A model can have `supports_reasoning: true` without `reasoning_effort`, for example a Claude model that needs a manual thinking budget, or a model whose reasoning ceiling is below `low`.
+- `response_format` when the model supports structured output.
+- `temperature`, unless the catalog sets `temperature: false` for the model.
+
+Reasoning uses every eligible chat route, not only the primary route. Route selection does not check for reasoning, so a request with `reasoning_effort` can go to any of these routes. A provider rejects `reasoning_effort` for a model that cannot reason, for example a Gemini model without thinking on Vertex.
+
+Tools, images, JSON schemas, and streaming are different, because route selection checks for them. A request that uses tools goes only to the eligible routes whose provider and route settings serve tools. A route without them therefore does not remove the feature. The feature is `true` when at least one eligible chat route serves it, and the catalog says that the model on each of these routes has it. A route that serves tools for a model that the catalog does not know makes `supports_function_calling` `false`, because a tools request can go to that route. Streaming has no catalog flag, so one eligible chat route that can stream is enough.
+
+The gateway finds the vendor for `providers` in this order:
+
+1. The model family in the upstream model name: `anthropic` for Claude, `openai` for GPT and other OpenAI models, `google` for Gemini, `deepseek`, `qwen`, or `typesafe`. Hosts such as OpenRouter and Vertex are not vendors.
+2. The prefix before `/` in the upstream model. For example, `acme/model-x` gives `acme`.
+3. The provider type of the primary route, for example `openai_compat`.
+4. `oceans-llm`.
+
+When the vendor is `openai` but an eligible chat route does not serve Responses, the gateway sends the provider type of the primary route instead, for example `openai_compat`. If that value is empty or `openai`, the gateway sends `oceans-llm`.
+
+When no eligible route serves Chat Completions but a route serves Responses, the gateway sends `["openai"]` for every vendor. For example, a Claude model on a Responses-only route gets `["openai"]`.
+
+The `providers` rule controls the API that omp uses. omp sends a model with `providers: ["openai"]` to `/v1/responses` with `reasoning.effort`. omp sends all other models to the provider `api`, for example `/v1/chat/completions` with `reasoning_effort`. Route selection can use any eligible route, and a route that cannot serve Responses rejects a `/v1/responses` request. The gateway therefore reports `openai` only when every eligible chat route serves Responses. A GPT model behind a route that serves only Chat Completions does not get `["openai"]`. A model that no route serves over Chat Completions gets `["openai"]`, because a chat completions request would find no route.
+
+No field selects Anthropic Messages. omp sends Claude models to `/v1/chat/completions` by default. The gateway translates these requests for Claude routes.
+
+This example `models.yml` configures omp for Oceans:
+
+```yaml
+providers:
+  oceans:
+    baseUrl: https://<gateway>/v1
+    apiKey: OCEANS_LLM_API_KEY
+    api: openai-completions
+    discovery:
+      type: litellm
+    modelOverrides:
+      claude-fable-5.1:
+        api: anthropic-messages
+```
+
+- `baseUrl` must end in `/v1`. omp removes `/v1` before it calls `/model_group/info`. Without `/v1`, omp sends chat requests to `/chat/completions`, which the unversioned alias serves.
+- `modelOverrides` is optional. Add `api: anthropic-messages` for each Claude model that must use `/v1/messages`.
+- omp gets the list of effort levels from its own catalog, by model ID. Aliases such as `claude-sonnet-latest` do not match that catalog, so omp shows its generic list for them. Set `modelOverrides.<id>.thinking` in omp to correct the list.
+- omp ignores tiered prices, for example a higher price above a context threshold.
+- `mode` has no value for decision models, so omp lists them as chat models.
+
+The gateway does not serve `/model/info`, `/v1/model/info`, `/v2/model/info`, or `/v1/model_group/info`. omp reads `/model_group/info` first. omp calls the other endpoints when a row has some costs but not all four costs above zero, or when `supports_vision` is unknown. These calls get 404, and omp then uses the rows from `/model_group/info`. This happens only when omp refreshes its model list. See [ADR: LiteLLM model group info for omp discovery](../adr/2026-10-21-litellm-model-group-info.md).
 
 ### Chat Completions
 
