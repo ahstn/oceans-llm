@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/test/components/code-block.test.tsx
+  s_85219a7516ce76::t_882e0ac8d804df 39-41
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_85219a7516ce76::t_1bfebd5d168b2b 1097-1099
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bb45106b592ce553325000bffe99ee9fbba1758",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
