@@ -38,7 +38,7 @@ ui = "crates/admin-ui/web"
 rust = { version = "1.99.0", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
 node = "lts"
-bun = "1.4.3"
+bun = "1.4.4"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
