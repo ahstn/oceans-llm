@@ -31,6 +31,12 @@ ignore = [
   { id = "RUSTSEC-2026-0258", reason = "baseline: h2 0.3 upgrade pending" },
   # No fixed rsa release exists.
   { id = "RUSTSEC-2023-0071", reason = "baseline: no fixed rsa release" },
+  # Published after adoption (2026-10-24). crypto-bigint 0.5 comes from
+  # openidconnect 4.0.1 -> p256/p384 0.13 -> elliptic-curve 0.13; the fix is in
+  # crypto-bigint 0.7.6, which only p256/p384 0.14 use. openidconnect has no
+  # release on those yet. The gateway only verifies ID-token signatures with
+  # public keys and rejects private_key_jwt, so no secret integers reach it.
+  { id = "RUSTSEC-2026-0387", reason = "no openidconnect release on p256/p384 0.14; EC keys are public-only" },
   # Unmaintained transitive crates.
   { id = "RUSTSEC-2024-0449", reason = "baseline: unsafe-libyaml is unmaintained" },
   { id = "RUSTSEC-2025-0134", reason = "baseline: rustls-pemfile is unmaintained" },
