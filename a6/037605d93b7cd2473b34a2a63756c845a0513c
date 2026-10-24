@@ -1,0 +1,23 @@
+CONTRIBUTING.md
+  s_1121327246a626::t_7196acec392c0d 58
+crates/admin-ui/web/AGENTS.md
+  s_1121327246a626::t_18a3a8fb8b6203 6
+docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md
+  s_1121327246a626::t_bc05d4cbc6b5ed 31-32,42,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6037605d93b7cd2473b34a2a63756c845a0513c",
+  "prompts": {},
+  "sessions": {
+    "s_1121327246a626": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b4ef4b8-4d5e-43e9-9d26-60bb85493277",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
