@@ -1,5 +1,10 @@
 # Admin UI Conventions
 
+## Tooling
+
+- Use Bun for packages and scripts: `bun install`, `bun run <script>`, `bunx <tool>`. Do not use npm or npx; `bun.lock` is the only lockfile.
+- Type-check with `bun run typecheck` (or `mise run //ui:typecheck`). It runs tsrs, the Rust port of TypeScript 7. Do not run `tsc` or `npx tsc` to confirm a type check passes: the installed `typescript` package is 5.9 and can report different errors. It stays installed because `openapi-typescript` needs it.
+
 ## Styling Tokens
 
 - `@shadcn/lint` (configured in `.oxlintrc.json`) rejects raw palette colors, arbitrary appearance values, and dynamically built classes on components. Run `bun run lint` and fix findings instead of disabling them.
