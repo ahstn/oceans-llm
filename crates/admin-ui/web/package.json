@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "playwright:install": "playwright install chromium",
     "test:e2e": "node ./e2e/run-playwright.mjs",
-    "doctor": "npx react-doctor@latest"
+    "doctor": "bunx react-doctor@latest"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
