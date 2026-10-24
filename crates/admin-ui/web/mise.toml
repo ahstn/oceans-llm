@@ -49,7 +49,14 @@ run = "bun run test"
 description = "Check formatting, lint, types, test, and build the admin UI"
 # Sequential: a concurrent Vite build starves vitest and trips its 5s test timeouts on CI.
 depends = ["install"]
-run = ["bun run fmt:check", "bun run lint", "bun run typecheck", "bun run test", "bun run build"]
+# typecheck:any runs tsrs, or TypeScript 7 on platforms without a tsrs binary.
+run = [
+  "bun run fmt:check",
+  "bun run lint",
+  "bun run typecheck:any",
+  "bun run test",
+  "bun run build",
+]
 
 [tasks."e2e:install"]
 description = "Install Playwright Chromium for the end-to-end suite"
