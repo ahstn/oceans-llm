@@ -3,7 +3,7 @@
 ## Tooling
 
 - Use Bun for packages and scripts: `bun install`, `bun run <script>`, `bunx <tool>`. Do not use npm or npx; `bun.lock` is the only lockfile.
-- Type-check with `bun run typecheck` (or `mise run //ui:typecheck`). It runs tsrs, the Rust port of TypeScript 7. Do not run `tsc` or `npx tsc` to confirm a type check passes: the installed `typescript` package is 5.9 and can report different errors. It stays installed because `openapi-typescript` needs it. On Intel macOS or Windows, where tsrs has no binary, run `bun run typecheck:ts7`, which uses TypeScript 7.
+- Type-check with `bun run typecheck` (or `mise run //ui:typecheck`). It runs tsrs, the Rust port of TypeScript 7. Do not run `tsc` or `npx tsc` to confirm a type check passes: the installed `typescript` package is 5.9 and can report different errors. It stays installed because `openapi-typescript` needs it. On Intel macOS or Windows, where tsrs has no binary, run `bun run typecheck:ts7`, which uses TypeScript 7.0.2. tsrs tracks a 7.1 snapshot, so the two can disagree; CI's tsrs result is final.
 
 ## Styling Tokens
 

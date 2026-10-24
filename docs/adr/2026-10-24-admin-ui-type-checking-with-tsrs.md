@@ -38,7 +38,7 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 - Moving to TypeScript 7 alone gives most of the gain: about 6.5 times faster than `tsc` 5.9. tsrs is about 3.5 times faster again and uses less than half the memory, which also keeps the check cheap when several worktrees run it at once.
 - tsrs targets TypeScript 7's diagnostics exactly, so switching to the official TypeScript 7 later is a script and dependency change only.
 - tsrs is pre-1.0 and tracks a TypeScript 7.1 dev snapshot. A tsrs bug could hide or invent an error that TypeScript 7 would not report.
-- tsrs has no binary for Intel macOS or Windows, so `typecheck` fails to start there. `typecheck:ts7` (`mise run //ui:typecheck:ts7`) runs TypeScript 7 through `bunx --package typescript@7.0.2` on those platforms. It reports the same errors and adds nothing to `bun.lock`, but it downloads TypeScript 7 on first use.
+- tsrs has no binary for Intel macOS or Windows, so `typecheck` fails to start there. `typecheck:ts7` (`mise run //ui:typecheck:ts7`) runs TypeScript 7 through `bunx --package typescript@7.0.2` on those platforms. It matched tsrs on the tested fixture, but tsrs tracks a 7.1 snapshot, so diagnostics can differ between the two. It adds nothing to `bun.lock`, but it downloads TypeScript 7 on first use.
 - Editors run their bundled TypeScript or the workspace's `typescript` 5.9, while CI runs TypeScript 7.1 semantics through tsrs. An error that changed between versions can appear in only one of them.
 - Only the admin UI changes. `actions/review-agent` and `tests/harness-integration` keep `tsc`.
 

@@ -53,8 +53,8 @@ The admin UI dev loop is more coupled to the gateway than a standalone SPA:
 The admin UI uses Bun for packages and scripts, and tsrs for type checking:
 
 - install and run with Bun (`bun install`, `bun run <script>`, `bunx <tool>`), not npm or npx, so `bun.lock` stays the only lockfile
-- `mise run //ui:typecheck` runs `tsrs --noEmit -p .`, which reports the same errors as TypeScript 7 in a fraction of the time
-- tsrs ships binaries for macOS on Apple silicon and Linux only; on Intel macOS or Windows, run `mise run //ui:typecheck:ts7`, which checks with TypeScript 7 and reports the same errors
+- `mise run //ui:typecheck` runs `tsrs --noEmit -p .`, a port of a TypeScript 7.1 development snapshot that is several times faster than TypeScript 7
+- tsrs ships binaries for macOS on Apple silicon and Linux only; on Intel macOS or Windows, run `mise run //ui:typecheck:ts7`, which checks with TypeScript 7.0.2. It matched tsrs on the tested admin UI fixtures, but 7.0 and 7.1 can report different errors, so CI's tsrs result is final
 - editors still use their bundled TypeScript or the workspace's `typescript` 5.9, which can disagree with tsrs on errors that TypeScript 7 changed; treat `mise run //ui:typecheck` as the source of truth
 
 See [docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md](docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md) for the decision.
