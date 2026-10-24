@@ -13,6 +13,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "typecheck": "tsrs --noEmit -p .",
+    "typecheck:ts7": "bunx --package typescript@7.0.2 tsc --noEmit -p .",
     "test": "vitest run",
     "test:watch": "vitest",
     "playwright:install": "playwright install chromium",
