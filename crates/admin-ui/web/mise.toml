@@ -35,6 +35,11 @@ description = "Type-check the admin UI"
 depends = ["install"]
 run = "bun run typecheck"
 
+[tasks."typecheck:ts7"]
+description = "Type-check the admin UI with TypeScript 7, for platforms tsrs does not support"
+depends = ["install"]
+run = "bun run typecheck:ts7"
+
 [tasks.test]
 description = "Run admin UI unit tests"
 depends = ["install"]
