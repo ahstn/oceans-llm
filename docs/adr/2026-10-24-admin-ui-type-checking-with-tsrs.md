@@ -28,8 +28,8 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 ## Implementation
 
 - `crates/admin-ui/web/package.json` pins `tsrs@0.18.0-ts7.1.0-dev.20260929`. It installs one platform package from its optional dependencies: macOS arm64, or Linux x64 and arm64 with glibc or musl. `bun.lock` records all five.
-- `mise run //ui:typecheck` and `mise run //ui:check` call `bun run typecheck`, so CI picks up tsrs without workflow changes. The tsrs launcher is a Node script; under `bun run` Bun stands in for `node` when Node is absent.
-- `typescript@5.9.3` stays installed. `openapi-typescript` declares a `typescript@^5.x` peer dependency for `generate:admin-api`, and editors can use it as the workspace TypeScript version.
+- `mise run //ui:typecheck` calls `bun run typecheck`, and `mise run //ui:check` calls `bun run typecheck:any`, which runs `typecheck` wherever tsrs has a binary, so CI picks up tsrs without workflow changes. The tsrs launcher is a Node script; under `bun run` Bun stands in for `node` when Node is absent.
+- `typescript` moves from 5.9.3 to 6.0.3, the last JavaScript release, and stays installed for `generate:admin-api` and editors. `openapi-typescript` 7.13.0 builds its output with the `ts.factory` API, which the TypeScript 7 package does not export, so generation crashes on 7. With 6.0.3 it produces output identical to the checked-in `admin-api.ts`, though its peer range is still `^5.x`. `tsconfck`, under `vite-tsconfig-paths`, has an optional `^5.0.0` peer and is unaffected.
 - The Docker build does not type-check, so the image is unchanged.
 - `CONTRIBUTING.md` and `crates/admin-ui/web/AGENTS.md` document the Bun and tsrs workflow.
 
@@ -39,11 +39,11 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 - tsrs targets TypeScript 7's diagnostics exactly, so switching to the official TypeScript 7 later is a script and dependency change only.
 - tsrs is pre-1.0 and tracks a TypeScript 7.1 dev snapshot. A tsrs bug could hide or invent an error that TypeScript 7 would not report.
 - tsrs has no binary for Intel macOS or Windows, so `typecheck` fails to start there. `typecheck:ts7` (`mise run //ui:typecheck:ts7`) runs TypeScript 7 through `bunx --package typescript@7.0.2` on those platforms. It matched tsrs on the tested fixture, but tsrs tracks a 7.1 snapshot, so diagnostics can differ between the two. It adds nothing to `bun.lock`, but it downloads TypeScript 7 on first use. `mise run //ui:check` runs `typecheck:any` (`scripts/typecheck.mjs`), which picks `typecheck` on darwin-arm64, linux-x64 and linux-arm64 and `typecheck:ts7` elsewhere.
-- Editors run their bundled TypeScript or the workspace's `typescript` 5.9, while CI runs TypeScript 7.1 semantics through tsrs. An error that changed between versions can appear in only one of them.
+- Editors run their bundled TypeScript or the workspace's `typescript` 6.0, while CI runs TypeScript 7.1 semantics through tsrs. An error that changed between versions can appear in only one of them.
 - Only the admin UI changes. `actions/review-agent` and `tests/harness-integration` keep `tsc`.
 
 ## Follow up
 
-- Upgrade `typescript` to 7 so editors and the type check share TypeScript 7 semantics, once `openapi-typescript` accepts it as a peer dependency.
+- Upgrade `typescript` to 7 so editors and the type check share TypeScript 7 semantics, once `openapi-typescript` works without the TypeScript 6 JavaScript API.
 - If tsrs reports an error that TypeScript 7 does not, or misses one it does, switch the script to `tsc` from `typescript@7` and file the difference upstream.
 - Revisit `actions/review-agent` and `tests/harness-integration` once tsrs has a stable release.

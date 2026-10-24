@@ -73,7 +73,7 @@
     "postcss": "8.5.31",
     "tailwindcss": "4.3.3",
     "tsrs": "0.18.0-ts7.1.0-dev.20260929",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "8.3.5",
     "vite-tsconfig-paths": "6.1.1",
     "vitest": "5.0.5"
